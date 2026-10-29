@@ -37,12 +37,12 @@ A macOS Node uses the command binary as its enrolled account. Enrollment install
 
 The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
 
-| Source | What it watches | Reported `runtime_status` |
+| Source | What it watches | Reported `runtime_state` |
 | --- | --- | --- |
 | systemd over D-Bus | Units named `orbit-process-*.service` | The unit's `ActiveState`, such as `active`, `inactive`, or `failed`. A missing unit reads as `inactive`. |
 | The Docker socket `/run/docker.sock` | Containers named `orbit-process-*` | The container state, such as `running`, `exited`, or `restarting`. A missing container reads as `exited`. |
 
-The values use the same words as the `runtime_status` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The agent does not read Schedules, role services, CPU, or memory.
+The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The agent does not read Schedules, role services, CPU, or memory.
 
 Without Docker, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
 
@@ -244,7 +244,20 @@ The Gateway owns validation, authorization, records, operations, placement, and 
 
 Tasks workspace scripts, their operation journal, and `gateway.task-workspace-owner` retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
 
-The agent has no job table or general receipt ledger. Operations own recovery, and domain commands retain only the evidence their existing recovery needs. Cancellation finishes the current operation step and starts no next step. A lost result fails for inspection or resumes only through an existing resumable operation step. Detached Tasks checks and topologies keep their own supervision; they are not a generic command runner.
+Operations own recovery. Mutations accept an `effect_key` as `op-<operation id>.<step key>`. Executor transports always supply it after contract authorization. After acquiring command target and resource locks, the shared command layer writes a private intent on the target before the effect and a durable receipt before returning. A repeated key with the same command, input and Operation nonce returns the saved result. A different command or input is refused with `agent.effect_conflict`. An interrupted intent has unknown outcome and is never executed again under that key.
+
+`agent.effect-receipt` reads `{command, effect_key, owner?}` without changing target state. It returns `{command, effect_key, state, exit_code, result_digest, finished_at, result, sanitized, effect_nonce, effect_created_at}`. Status is `succeeded`, `failed`, `running`, or `unknown`; an absent or unfinished receipt has null result, digest, and time. The original invocation supplies protected masks in transient envelope metadata. Before saving a receipt, the shared layer removes those values from the result and discards the masks. The receipt keeps a sanitization flag. Missing metadata refuses execution, and an unproven stored result cannot be recovered. The result is the sanitized agent outcome, including the command's own refusals. The Gateway redacts and filters it before storage or response.
+
+Root receipts live in `/var/lib/orbit-agent/effects`; account receipts live under the account's recorded home in `.orbit/effects`. Directories are private and files have mode 0600. Receipts keep only an input fingerprint, never the input itself. Bounded binary input contributes its digest without moving the consumer's input cursor.
+
+Existing named remote programs reserve and complete their receipts through `agent.effect-reserve` and `agent.effect-complete`. These commands use the same store and execute no program. A reservation binds the program name and input fingerprint. Only its first successful caller may start the program. A lost reservation or program reply leaves an unknown intent; it cannot authorize a repeat. Completion stores the program result before the runner returns. Cancellation finishes the current operation step and starts no next step. Detached Tasks checks and topologies keep their own supervision.
+
+Effect receipts and their per-key locks have a 30-day retention period. Mutating keyed commands prune old files in batches under an exclusive store guard, at most once daily unless more files remain. Active commands hold that guard shared, so pruning cannot split a live lock. Read-only receipt commands never prune. An original effect identity older than the retention period is refused even when its files are absent; cleanup never authorizes an old effect to run again.
+
+The target sanitizer masks matching strings, object keys and numbers before storing results. Boolean masks retain their original type in protected transient metadata; a numeric or string secret equal to `1` does not mask unrelated `true` results.
+
+Uncertain infrastructure refusals leave the unfinished intent. If a typed pre-start or preflight refusal proves that nothing ran, the store removes that intent and syncs its directory while still holding the key lock. The same key can then execute after the precondition clears. Failure to remove the intent remains uncertain. Fixed remote-program receipts retain their failed state and exit code on both live replies and later recovery.
+
 
 ### Fixed read-only task analysis
 
@@ -396,7 +409,7 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`, wha
 | One per Node with open log streams | Each stream's ID, source, `lines`, opening Node, and lease end | Until its last lease ends |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the time of the last write | 30 seconds after its last write |
 
-The subscriber accepts an event only when Reverb's `user_id` is `agent.{id}`. It applies a snapshot once every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the status is a short lowercase word.
+The subscriber accepts an event only when Reverb's `user_id` is `agent.{id}`. It applies a snapshot once every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the state is a short lowercase word.
 
 ### Freshness
 
@@ -416,13 +429,13 @@ These reads ask the view first and fall back when it is not fresh.
 
 | Read | With a fresh view | Otherwise |
 | --- | --- | --- |
-| Process list `runtime_status` | A status the Gateway observed after its own start, stop, or restart wins for 30 seconds. Otherwise the view answers. | [Prometheus](/reference/metrics#process-runtime-status), then SSH |
+| Process list `runtime_state` | A state the Gateway observed after its own start, stop, or restart wins for 30 seconds. Otherwise the view answers. | [Prometheus](/reference/metrics#process-runtime-state), then SSH |
 | Readiness while a hibernated Instance [wakes](/reference/app-dev-runtime-hibernation#wake) | The view answers every 0.5 seconds. A `failed` answer, or the timeout, is checked once over SSH. | SSH every 0.5 seconds |
 | The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips the stop. | `process.control`, which checks ownership and stops |
 | The [scheduler tick](/reference/tasks#session-routing)'s check for new commits | `commits` is greater than 0 | `git` over SSH |
 | The line diff of an active [task](/reference/tasks#tokens-and-line-diff) | `diff.added` and `diff.removed`, unless truncated | `git diff --shortstat` over SSH |
 
-A task read uses a workspace only when its `base` and `start` equal the values the reader would use. Reads that decide what the Gateway commits or tells an agent stay on SSH: the branch check before an approval commit, a subtask's start commit, turn receipts, and the Project check. The status that a start, stop, or restart returns also stays on SSH, because it must show the change the Gateway just made.
+A task read uses a workspace only when its `base` and `start` equal the values the reader would use. Reads that decide what the Gateway commits or tells an agent stay on SSH: the branch check before an approval commit, a subtask's start commit, turn receipts, and the Project check. The state that a start, stop, or restart returns also stays on SSH, because it must show the change the Gateway just made.
 
 ### Publish runs
 
@@ -558,7 +571,7 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 | Observed | Meaning | Repair |
 | --- | --- | --- |
-| `subscriber_down` | The subscriber stopped, or wrote no health in the last 30 seconds. | Check `systemctl status orbit-agent-view` on the Gateway host, or run `php artisan orbit:gateway-web`. |
+| `subscriber_down` | The subscriber stopped, or wrote no health in the last 30 seconds. | Check `systemctl state orbit-agent-view` on the Gateway host, or run `php artisan orbit:gateway-web`. |
 | `disconnected` | The subscriber runs but has no Reverb connection. | Check the `websocket` role with `orbit doctor --family=role`. |
 | `missing` | The subscriber has no complete snapshot from this agent. It asks for one within about 10 seconds of the agent's next event. | Check `journalctl -u orbit-agent` on the Node. |
 | `stale` | No agent event arrived in the last 15 seconds. | Check the Node's network and `journalctl -u orbit-agent`. |
@@ -571,7 +584,7 @@ Tests that create executable tools use the shared `tests/support/executable.rs` 
 
 ### Recipe interruption
 
-The native recipe runner waits directly for its command and treats SIGHUP, SIGINT, and SIGTERM in the child wait status as interruption, even when the agent handler has not run yet on another thread. It owns the command process group and enforces its deadline with TERM, then KILL after one second. Deadline expiry remains exit code 124. An external timeout program cannot preserve this evidence reliably: it can turn a child signal into a numeric exit code.
+The native recipe runner waits directly for its command and treats SIGHUP, SIGINT, and SIGTERM in the child wait state as interruption, even when the agent handler has not run yet on another thread. It owns the command process group and enforces its deadline with TERM, then KILL after one second. Deadline expiry remains exit code 124. An external timeout program cannot preserve this evidence reliably: it can turn a child signal into a numeric exit code.
 
 Required and optional commands both stop the recipe on interruption. The handler flag still detects signals before execution and after a command exits normally. A numeric exit code such as 143 is a command failure, not proof of a signal.
 

@@ -8,6 +8,7 @@
 
 pub mod binary_input;
 pub mod binary_output;
+pub mod effects;
 pub mod identity;
 pub mod lock;
 pub mod registry;
@@ -40,10 +41,32 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.supervisor_not_ready",
     "agent.target_busy",
     "agent.lock_unavailable",
+    "agent.effect_key_invalid",
+    "agent.effect_conflict",
+    "agent.effect_unknown",
+    "agent.effect_receipt_unavailable",
+    "agent.effect_receipt_invalid",
+    "agent.effect_sanitization_required",
+    "agent.effect_unsanitized",
+    "agent.effect_expired",
+];
+
+/// These refusals are emitted only before command locks/receipt intent or supervisor spawn.
+pub const NOT_STARTED_ERRORS: &[&str] = &[
+    "agent.target_busy",
+    "agent.lock_unavailable",
+    "agent.supervisor_not_ready",
+];
+/// Terminal preflight refusals; no command effect or target receipt has started.
+pub const PREFLIGHT_ERRORS: &[&str] = &[
+    "agent.invalid_input",
+    "agent.envelope_invalid",
+    VERSION_MISMATCH,
+    "agent.unknown_command",
 ];
 
 /// A complete result line.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Outcome {
     Ok(Value),
     Refused {

@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
-use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationTransportInput;
 use App\Models\Node;
 use App\Models\Operation;
 
-final readonly class OperationAgentTransport implements OperationTransport, OperationTransportInput
+final readonly class OperationAgentTransport implements OperationEffectTransport, OperationTransportInput
 {
-    public function __construct(private AgentCommandRunner $runner) {}
+    public function __construct(private AgentCommandRunner $runner, private AgentContract $contract, private AgentEffectReceipts $receipts) {}
 
     public function schema(Operation $operation, array $run): array|bool
     {
@@ -25,6 +25,22 @@ final readonly class OperationAgentTransport implements OperationTransport, Oper
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
-        return $this->runner->run(Node::query()->findOrFail($operation->node_id), $run['name'], $input);
+        return $this->runner->run(Node::query()->findOrFail($operation->node_id), $run['name'], $this->effectful($operation, $run) ? AgentEffectReceipts::input($run, $input) : $input);
+    }
+
+    public function effectful(Operation $operation, array $run): bool
+    {
+        $command = $this->contract->command($run['name']);
+
+        return $command->mutates;
+    }
+
+    public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
+    {
+        $node = Node::query()->findOrFail($operation->node_id);
+        $command = $this->contract->command($run['name']);
+        $owner = $command->privilege($node->platform) === 'account' ? $node->user : null;
+
+        return $this->receipts->read($node, $run['name'], $run['effect_key'], $owner);
     }
 }

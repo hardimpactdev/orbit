@@ -51,6 +51,8 @@ pub trait Command {
     /// A mutation runs under its own supervisor and takes the target and resource locks it declares; a read takes no
     /// lock.
     const MUTATES: bool;
+    /// Persist one receipt per effect key; an unfinished intent must never execute again.
+    const KEYED_EFFECT: bool = Self::MUTATES;
     /// The longest the command may run. The envelope's remaining deadline can shorten it.
     const TIMEOUT: Duration;
     /// A read may emit framed binary bytes before its result. Zero means JSON output only.
@@ -92,6 +94,9 @@ pub struct Context {
     pub platform: Platform,
     deadline: Instant,
     binary_input: std::sync::Mutex<Option<std::fs::File>>,
+    effect_masks: Option<Vec<String>>,
+    effect_boolean_masks: Vec<bool>,
+    effect_identity: Option<(String, i64)>,
 }
 impl Context {
     pub fn new(platform: Platform, deadline: Instant) -> Self {
@@ -99,7 +104,36 @@ impl Context {
             platform,
             deadline,
             binary_input: std::sync::Mutex::new(None),
+            effect_masks: None,
+            effect_boolean_masks: Vec::new(),
+            effect_identity: None,
         }
+    }
+    /// Protected invocation metadata. Never included in command input, fingerprints, or receipts.
+    pub fn with_effect_masks(mut self, masks: Vec<String>) -> Self {
+        self.effect_masks = Some(masks);
+        self
+    }
+    pub fn effect_masks(&self) -> Option<&[String]> {
+        self.effect_masks.as_deref()
+    }
+    /// Typed boolean masks cannot be inferred from string or numeric masks.
+    pub fn with_effect_boolean_masks(mut self, masks: Vec<bool>) -> Self {
+        self.effect_boolean_masks = masks;
+        self
+    }
+    pub fn effect_boolean_masks(&self) -> &[bool] {
+        &self.effect_boolean_masks
+    }
+    /// Original Gateway Operation identity, independent of reused numeric database IDs.
+    pub fn with_effect_identity(mut self, nonce: String, created_at: i64) -> Self {
+        self.effect_identity = Some((nonce, created_at));
+        self
+    }
+    pub fn effect_identity(&self) -> Option<(&str, i64)> {
+        self.effect_identity
+            .as_ref()
+            .map(|(nonce, created_at)| (nonce.as_str(), *created_at))
     }
     /// The dispatcher supplies a complete, size-checked private input file.
     pub fn with_binary_input(self, file: std::fs::File) -> Self {
@@ -109,6 +143,15 @@ impl Context {
     /// A binary consumer takes its input once. No pathname crosses the command boundary.
     pub fn take_binary_input(&self) -> Option<std::fs::File> {
         self.binary_input.lock().ok()?.take()
+    }
+    /// The receipt layer hashes the bounded input through positional reads before execution.
+    pub fn clone_binary_input(&self) -> std::io::Result<Option<std::fs::File>> {
+        self.binary_input
+            .lock()
+            .map_err(|_| std::io::Error::other("binary input lock"))?
+            .as_ref()
+            .map(std::fs::File::try_clone)
+            .transpose()
     }
     pub fn deadline(&self) -> Instant {
         self.deadline

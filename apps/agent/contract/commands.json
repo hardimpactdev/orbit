@@ -11,7 +11,26 @@
     "agent.supervisor_failed",
     "agent.supervisor_not_ready",
     "agent.target_busy",
-    "agent.lock_unavailable"
+    "agent.lock_unavailable",
+    "agent.effect_key_invalid",
+    "agent.effect_conflict",
+    "agent.effect_unknown",
+    "agent.effect_receipt_unavailable",
+    "agent.effect_receipt_invalid",
+    "agent.effect_sanitization_required",
+    "agent.effect_unsanitized",
+    "agent.effect_expired"
+  ],
+  "not_started_errors": [
+    "agent.target_busy",
+    "agent.lock_unavailable",
+    "agent.supervisor_not_ready"
+  ],
+  "preflight_errors": [
+    "agent.invalid_input",
+    "agent.envelope_invalid",
+    "agent.version_mismatch",
+    "agent.unknown_command"
   ],
   "commands": [
     {
@@ -4801,6 +4820,39 @@
         "schedule.failed",
         "schedule.run_active"
       ]
+    },
+    {
+      "name": "agent.effect-receipt",
+      "summary": "Read a keyed effect receipt without executing the command.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "errors": []
+    },
+    {
+      "name": "agent.effect-reserve",
+      "summary": "Reserve one named remote program without executing it.",
+      "mutates": true,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": []
+    },
+    {
+      "name": "agent.effect-complete",
+      "summary": "Save the result of a reserved named remote program.",
+      "mutates": true,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": []
     },
     {
       "name": "schedule.logs",
