@@ -134,6 +134,37 @@ it('keeps an uncertain failed create unproven and refuses to drop a database tha
     expect($this->admin->sql())->not->toContain('DROP DATABASE', 'DROP USER');
 });
 
+it('preserves the original create error when the names-absent read fails', function (Throwable $readError): void {
+    $original = new ResourceOperationException('database.create_refused', 'Original create failure.', 502);
+    $failed = false;
+    $readAttempts = 0;
+    $admin = new RetainedDatabaseAdmin($this->admin);
+    $admin->before = static function (string $sql) use ($original, $readError, &$failed, &$readAttempts): void {
+        if (str_contains($sql, 'CREATE DATABASE')) {
+            $failed = true;
+            throw $original;
+        }
+        if ($failed && str_contains($sql, 'SCHEMATA')) {
+            $readAttempts++;
+            throw $readError;
+        }
+    };
+    app()->instance(DatabaseServerAdmin::class, $admin);
+
+    expect(fn () => app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'uncertain', 'uncertain', $this->instance, null))
+        ->toThrow(function (ResourceOperationException $caught) use ($original): void {
+            expect($caught)->toBe($original);
+        });
+
+    expect($readAttempts)->toBe(1)
+        ->and(DatabaseConnection::query()->where('slug', 'uncertain')->sole()->creation_receipts)->toBeNull()
+        ->and(DatabaseExecutionIntent::query()->count())->toBe(0)
+        ->and($this->admin->sql())->not->toContain('DROP DATABASE');
+})->with([
+    'remote refusal' => [new ResourceOperationException('database.server_command_failed', 'Ownership read failed.', 502)],
+    'transport failure' => [new RuntimeException('Ownership transport failed.')],
+]);
+
 it('keeps the PostgreSQL fenced owner check and restores admission after a synchronous failure', function (): void {
     $this->server->update(['driver' => 'pgsql']);
     $connection = DatabaseConnection::query()->create(['slug' => 'foreign', 'driver' => 'pgsql', 'database_server_id' => $this->server->id,

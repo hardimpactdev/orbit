@@ -15,6 +15,7 @@ use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Support\ValidatedData;
 use Illuminate\Support\Str;
+use Throwable;
 
 /** Retained lifecycle callers execute the same guarded SQL plan without admitting an Operation. */
 final readonly class RunSynchronousDatabasePlanAction
@@ -51,8 +52,13 @@ final readonly class RunSynchronousDatabasePlanAction
                 $connection = DatabaseConnection::query()->find($connectionId);
                 if ($connection !== null && ! $connection->targets()->exists()) {
                     $refusedBeforeEffect = ! $effectStarted && $exception->errorCode === 'database.name_conflict';
-                    $absent = $connection->driver->value === 'mysql' && $connection->creation_receipts === null
-                        && $this->admin->execute($server, (new MysqlStatements)->databasesNamed($connection->database ?? '', $connection->test_database)) === [];
+                    $absent = false;
+                    try {
+                        $absent = $connection->driver->value === 'mysql' && $connection->creation_receipts === null
+                            && $this->admin->execute($server, (new MysqlStatements)->databasesNamed($connection->database ?? '', $connection->test_database)) === [];
+                    } catch (Throwable) {
+                        // Retain the unproven reservation and report the original create failure.
+                    }
                     if ($refusedBeforeEffect || $absent) {
                         $connection->delete();
                     }
