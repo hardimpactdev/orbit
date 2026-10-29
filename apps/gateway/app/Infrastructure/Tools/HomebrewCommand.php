@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\InstalledToolInventory;
-use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -18,14 +17,6 @@ use App\Models\Node;
 final readonly class HomebrewCommand
 {
     public function __construct(private AgentCommandRunner $agents, private ?ToolCommandBudget $budget = null) {}
-
-    public function verifyScope(Node $node): void
-    {
-        $scope = $this->run($node, 'tool.inspect-homebrew-scope', [], 'manager-probe');
-        if (! is_string($scope['prefix'] ?? null) || ! is_string($scope['home'] ?? null)) {
-            throw new ToolManagerException('manager-probe', 'The agent returned an invalid Homebrew scope.');
-        }
-    }
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -68,16 +59,5 @@ final readonly class HomebrewCommand
     public function inventory(array $data): InstalledToolInventory
     {
         return new ToolInventoryReceipt()->parse(ToolManagerName::Brew, $data);
-    }
-
-    /** @param array<string, mixed> $data */
-    public function adoption(array $data): ToolAdoptionFact
-    {
-        if (! array_key_exists('installed_version', $data) || ($data['installed_version'] !== null && ! is_string($data['installed_version']))
-            || ! array_key_exists('block', $data) || ($data['block'] !== null && ! is_string($data['block']))) {
-            throw new ToolManagerException('installed-version', 'The agent returned an invalid Homebrew adoption observation.');
-        }
-
-        return new ToolAdoptionFact($data['installed_version'], $data['block']);
     }
 }

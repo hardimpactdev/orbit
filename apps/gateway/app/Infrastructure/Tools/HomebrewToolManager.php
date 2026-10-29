@@ -7,17 +7,13 @@ namespace App\Infrastructure\Tools;
 use App\Domain\Tools\HomebrewPackageName;
 use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\SupportsToolAdoption;
-use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 
-final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolManager
+final readonly class HomebrewToolManager implements ToolManager
 {
     private HomebrewCommand $homebrew;
 
@@ -56,21 +52,6 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         return $data['version'];
     }
 
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        if ($operation === ToolOperation::Remove) {
-            throw new ToolManagerException('candidate-version', 'Homebrew does not provide a removal candidate version.');
-        }
-        $data = $this->agentCommand($node, 'tool.homebrew-formula-candidate', $this->packageInput($node, $package), 'candidate-version');
-        if (! array_key_exists('version', $data) || ($data['version'] !== null && ! is_string($data['version']))) {
-            throw new ToolManagerException('candidate-version', 'The agent returned an invalid Homebrew candidate.');
-        }
-
-        return $data['version'];
-    }
-
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $this->guardSupportedNode($node);
@@ -88,26 +69,6 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
-    }
-
-    public function planRemoval(Node $node, string $package): ToolRemovalPlan
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-
-        return new ToolRemovalPlan([$package]);
-    }
-
-    private function guardMacCpu(Node $node): void
-    {
-        if ($node->architecture === 'arm64' || $node->architecture === 'x86_64') {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: 'candidate-version',
-            message: 'The node architecture has no supported Homebrew bottle.',
-        );
     }
 
     private function guardPackage(string $package): void
@@ -140,25 +101,5 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     private function agentCommand(Node $node, string $command, array $input, string $step): array
     {
         return $this->homebrew->run($node, $command, $input, $step, $this->budget?->seconds());
-    }
-
-    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-
-        return $this->homebrew->adoption($this->agentCommand($node, 'tool.homebrew-formula-adoption', $this->packageInput($node, $package), 'installed-version'));
-    }
-
-    /** @return array<string, mixed> */
-    private function packageInput(Node $node, string $package, bool $needsBottle = true): array
-    {
-        if ($node->platform === 'macos' && $needsBottle) {
-            $this->guardMacCpu($node);
-
-            return ['package' => $package, 'architecture' => $node->architecture];
-        }
-
-        return ['package' => $package];
     }
 }
