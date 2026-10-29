@@ -707,4 +707,4 @@ LAN address selection uses the recorded /24, not Cluster membership; the source 
 
 ### Node publication Operations
 
-`route.caddy_converge` and `route.private_dns_publish` take `{reason}` and use the Operation Node. The Gateway renders and records an exact configuration; Swamp publishes it. A changed render refuses before publication. Caddy returns `stage: render|validate` only with matching saved refusal evidence. DNS validates and atomically publishes its catalog before starting an installed inactive listener. Existing DNS stays open during publication and recovery.
+`route.caddy_converge` and `route.private_dns_publish` take `{reason}` and use the Operation Node. The Gateway renders and records an exact configuration; Swamp publishes it. A changed render, listener address set or Caddy serving role refuses before publication. Caddy returns `stage: render|validate` only with matching saved refusal evidence. An active VPN or Gateway role is required for DNS publication. DNS validates and atomically publishes its catalog before starting an installed inactive listener. Existing DNS stays open during publication and recovery.

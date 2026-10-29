@@ -37,8 +37,14 @@ final readonly class CaddyTransport implements OperationEffectTransport, Operati
 
         return $this->lock->run($node->id, $node->name, function () use ($node, $input, $run): array {
             $render = $this->renderer->render(Node::query()->findOrFail($node->id));
-            if (! $render->buildable() || $render->version !== $input['version']) {
+            if (! $render->buildable()) {
                 return ['error_code' => 'caddy.plan_stale'];
+            }
+
+            foreach (CaddyPublicationPlan::input($render, $node->id) as $field => $value) {
+                if (! array_key_exists($field, $input) || $input[$field] !== $value) {
+                    return ['error_code' => 'caddy.plan_stale'];
+                }
             }
 
             try {

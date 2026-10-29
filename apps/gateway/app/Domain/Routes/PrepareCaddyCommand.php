@@ -6,7 +6,6 @@ namespace App\Domain\Routes;
 
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Node;
@@ -41,12 +40,7 @@ final readonly class PrepareCaddyCommand implements OperationGatewayCommand
             if (! $caddyfile->buildable()) {
                 return ['error_code' => 'caddy.render_failed', 'stage' => 'render'];
             }
-            $operation->update(['state' => [...($operation->state ?? []), 'caddy_plan' => [
-                'content' => $caddyfile->content,
-                'version' => $caddyfile->version,
-                'listen_addresses' => $caddyfile->listenAddresses,
-                'unserved' => $caddyfile->sites === [] || ! CaddySiteRoles::nodeExpectsCaddy($current->id),
-            ]]]);
+            $operation->update(['state' => [...($operation->state ?? []), 'caddy_plan' => CaddyPublicationPlan::input($caddyfile, $current->id)]]);
 
             return ['prepared' => true, 'version' => $caddyfile->version];
         });

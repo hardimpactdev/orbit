@@ -8,6 +8,8 @@ use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Caddy\Build\CaddyListenerRule;
+use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Models\Node;
@@ -210,3 +212,50 @@ it('rejects a reused Caddy receipt identity before recording its result', functi
     expect($result)->not->toHaveKeys(['effect_nonce', 'effect_created_at', 'sanitized']);
     expect(array_column($this->agents->calls, 'command'))->toBe(['caddy.publish', 'agent.effect-receipt', 'agent.effect-receipt']);
 })->with(['effect_nonce', 'effect_created_at']);
+
+it('refuses a changed serving role even when the rendered Caddy version stays the same', function (bool $initiallyServing): void {
+    $source = new class implements NodeCaddySiteSource
+    {
+        public function order(): int
+        {
+            return 1;
+        }
+
+        public function sites(Node $node): array
+        {
+            return [new CaddySite('proof', 'fixed-site', CaddyListenerRule::WireGuard, ['private.test'], 443, "private.test {\n respond proof\n}")];
+        }
+    };
+    $renderer = new NodeCaddyfileRenderer([$source]);
+    app()->instance(NodeCaddyfileRenderer::class, $renderer);
+    if ($initiallyServing) {
+        $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    }
+    $run = ($this->publish)();
+    if ($initiallyServing) {
+        $this->node->roles()->where('role', RoleName::AppDev)->delete();
+    } else {
+        $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    }
+    expect($renderer->render($this->node->fresh())->version)->toBe($run['input']['version'])
+        ->and($run['input']['unserved'])->toBe(! $initiallyServing);
+    $this->postJson($this->path.'/run', $run)->assertOk()->assertJsonPath('data.error_code', 'caddy.plan_stale');
+    expect($this->agents->calls)->toBe([]);
+})->with(['gains Caddy' => false, 'loses Caddy' => true]);
+
+it('prepares private DNS only for an active serving role', function (RoleName $role, LifecycleStatus $status): void {
+    Node::query()->where('name', 'services')->firstOrFail()->accessibleNodes()->attach($this->node);
+    if ($role === RoleName::Gateway && $status === LifecycleStatus::Active) {
+        NodeRole::query()->where('role', RoleName::Gateway)->update(['status' => LifecycleStatus::Failed]);
+    }
+    $this->node->roles()->create(['role' => $role, 'status' => $status]);
+    ($this->claimOperation)('route.private_dns_publish', 'node_route_projection', $this->node->id, ['reason' => 'dev proof']);
+    $response = $this->postJson($this->path.'/run', [...$this->prepare, 'name' => 'route.private-dns-prepare']);
+    if ($status === LifecycleStatus::Active) {
+        $response->assertOk()->assertJsonPath('data.prepared', true);
+    } else {
+        $response->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+        expect($this->operation->fresh()->state)->not->toHaveKey('private_dns_plan');
+    }
+    expect($this->agents->calls)->toBe([]);
+})->with([RoleName::Vpn, RoleName::Gateway])->with([LifecycleStatus::Active, LifecycleStatus::Provisioning, LifecycleStatus::Removing, LifecycleStatus::Failed]);
