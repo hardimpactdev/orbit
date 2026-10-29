@@ -19,8 +19,10 @@ final readonly class StartWebSocketOperationAction
         $nodeId = $this->nodes->activeGatewayId() ?? throw new ResourceOperationException('websocket.gateway_missing', 'A registry change requires an active Gateway Node.', 409);
         $kind = $registry->kind === 'sync' ? 'websocket.sync' : 'websocket.app_'.$registry->kind;
 
-        return $this->operations->execute($kind, 'websocket_revision', $registry->revision, $nodeId,
+        $sync = $registry->kind === 'sync';
+
+        return $this->operations->execute($kind, $sync ? 'websocket_sync' : 'websocket_revision', $registry->revision, $nodeId,
             ['registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
-                'app' => $registry->result, 'caller_node_id' => $registry->actor_node_id], 'operator', null);
+                'app' => $registry->result, 'caller_node_id' => $registry->actor_node_id], 'operator', null, $sync ? ['websocket.sync'] : []);
     }
 }

@@ -51,6 +51,12 @@ class RegistryProbeTest(unittest.TestCase):
              patch('time.monotonic', side_effect=[0, 1, 301]), patch('time.sleep'):
             self.assertEqual(self.main({'registry_operation_id': self.identity}), ('pending', {'backend': 'pending'}))
 
+    def test_missing_ca_is_pending_without_opening_a_connection(self):
+        with patch('ssl.create_default_context', side_effect=FileNotFoundError), \
+             patch('urllib.request.build_opener') as build:
+            self.assertEqual(self.main({'registry_operation_id': self.identity}), ('pending', {'backend': 'pending'}))
+            build.assert_not_called()
+
     def test_malformed_identity_never_connects(self):
         with patch('urllib.request.build_opener') as build:
             for value in [None, 42, '../pairings', 'https://foreign.test']:

@@ -77,7 +77,7 @@ The Gateway refuses with `websocket.app_in_use` while an Instance uses the app, 
 
 ## orbit websocket:app:rotate
 
-Rotate one app's secret and close its sockets with code `4201`. Reverb accepts only the new secret after applying the change. Other apps keep their connections.
+Rotate one app's secret and close its sockets with code `4201`. Reverb applies rotation on its existing 30-second reconciliation and then accepts only the new secret. Other apps keep their connections.
 
 ```bash
 orbit websocket:app:rotate <name> [--force] [--operation-key=<key>] [--json]

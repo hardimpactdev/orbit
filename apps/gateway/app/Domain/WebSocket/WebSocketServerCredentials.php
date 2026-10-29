@@ -13,7 +13,6 @@ final readonly class WebSocketServerCredentials
         #[SensitiveParameter] public string $laravelAppKey,
         public string $processId,
         #[SensitiveParameter] public string $registryToken,
-        #[SensitiveParameter] public string $notificationToken,
     ) {}
 
     /** @return array<string, mixed> */

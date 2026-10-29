@@ -30,7 +30,7 @@ function websocket_runtime_node(): Node
 
 function websocket_runtime_credentials(): WebSocketServerCredentials
 {
-    return new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token', 'test-notification-token');
+    return new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token');
 }
 
 function websocket_runtime_lifecycle(FakeAgentCommandRunner $agents, string $ref = 'release-42'): NativeWebSocketRuntimeLifecycle

@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $node_id
  * @property string $slot
  * @property string $registry_token
- * @property string $notification_token
  * @property bool $required
  * @property ?string $boot_id
  * @property ?string $epoch
@@ -39,12 +38,12 @@ final class WebSocketRuntime extends Model
     protected $guarded = [];
 
     #[\Override]
-    protected $hidden = ['registry_token', 'notification_token'];
+    protected $hidden = ['registry_token'];
 
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['registry_token' => 'encrypted', 'notification_token' => 'encrypted', 'required' => 'boolean',
+        return ['registry_token' => 'encrypted', 'required' => 'boolean',
             'applied_revision' => 'integer', 'report_sequence' => 'integer', 'reported_at' => 'immutable_datetime'];
     }
 

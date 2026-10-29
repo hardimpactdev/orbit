@@ -221,6 +221,8 @@ The public app Route already owns DNS, TLS, and firewall publication. Reserving 
 
 ## Operation execution
 
-Registry writes store their change and a normal Operation, then return HTTP 202. Swamp waits for the registry's fresh process reports through a named probe on the recorded Gateway Node. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. Completion checks the current boot reports again before it succeeds.
+Registry writes store their change and a normal Operation, then return HTTP 202. Release the Gateway, CLI and PHP SDK together: mutation responses put the Operation in `data` and have no top-level `operation` field. Swamp waits for the registry's fresh process reports through a named probe on the recorded Gateway Node. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. Completion checks the current boot reports again before it succeeds.
 
 A missing, stale, or replaced process keeps the Operation pending. If a later registry change supersedes the result before completion, the Operation fails with `websocket.registry_superseded`. Cancelling stops observation and keeps the committed registry intent. The dedicated registry operation URL remains a read of the saved revision and current reports.
+
+Sync observes the current revision under its own `websocket_sync` target, so a pending mutation does not block it. A newer sync replaces a queued sync that has not started. A claimed sync keeps its target until it settles.

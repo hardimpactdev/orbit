@@ -8,6 +8,7 @@ use App\Actions\WebSocket\StartWebSocketOperationAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -29,7 +30,7 @@ beforeEach(function (): void {
     $this->server = registryNode('services', '10.44.0.2');
     $this->runtime = WebSocketRuntime::query()->create([
         'id' => (string) Str::uuid(), 'node_id' => $this->server->id,
-        'registry_token' => 'test-registry-secret', 'notification_token' => 'test-notification-secret',
+        'registry_token' => 'test-registry-secret',
     ]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
 });
@@ -42,7 +43,7 @@ it('commits once and reports pending until both current process boots confirm', 
     expect(WebSocketApp::query()->where('name', 'alpha')->count())->toBe(1);
     $second = WebSocketRuntime::query()->create([
         'id' => (string) Str::uuid(), 'node_id' => $this->server->id, 'slot' => 'second',
-        'registry_token' => 'second-secret', 'notification_token' => 'second-notify',
+        'registry_token' => 'second-secret',
     ]);
     $version = app(WebSocketRegistry::class)->version();
     foreach ([$this->runtime, $second] as $i => $runtime) {
@@ -140,7 +141,7 @@ it('refuses ordinary Node removal while a runtime still requires application', f
 it('withdraws only the default service identity after verified shutdown', function (): void {
     $second = WebSocketRuntime::query()->create([
         'id' => (string) Str::uuid(), 'node_id' => $this->server->id, 'slot' => 'second',
-        'registry_token' => 'second-secret', 'notification_token' => 'second-notify',
+        'registry_token' => 'second-secret',
     ]);
     $manager = app(WebSocketCredentialManager::class);
     $manager->purge($this->server);
@@ -247,4 +248,28 @@ it('binds registry retries to the admitted caller', function (): void {
         ->postJson('/api/v1/websocket-apps', ['name' => 'alpha'])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
     expect(Operation::query()->count())->toBe(1)
         ->and(Operation::query()->findOrFail($response->json('data.id'))->input['caller_node_id'])->toBe($this->gateway->id);
+});
+
+it('admits sync while a registry mutation still waits for a missing Reverb process', function (): void {
+    $created = $this->withHeader('Idempotency-Key', 'overlap-create')->postJson('/api/v1/websocket-apps', ['name' => 'alpha'])->assertAccepted();
+    $mutation = Operation::query()->findOrFail($created->json('data.id'));
+    $sync = $this->withHeader('Idempotency-Key', 'overlap-sync')->postJson('/api/v1/websocket-sync')->assertAccepted();
+    $operation = Operation::query()->findOrFail($sync->json('data.id'));
+    expect($operation->target_id)->toBe($mutation->target_id)
+        ->and($operation->target_type)->toBe('websocket_sync')
+        ->and($operation->lock_key)->not->toBe($mutation->lock_key)
+        ->and($mutation->refresh()->status)->toBe(OperationStatus::Queued);
+});
+
+it('replaces an unstarted sync on the same revision without cancelling the mutation', function (): void {
+    $created = $this->withHeader('Idempotency-Key', 'parallel-create')->postJson('/api/v1/websocket-apps', ['name' => 'alpha'])->assertAccepted();
+    $first = $this->withHeader('Idempotency-Key', 'sync-first')->postJson('/api/v1/websocket-sync')->assertAccepted();
+    $second = $this->withHeader('Idempotency-Key', 'sync-second')->postJson('/api/v1/websocket-sync')->assertAccepted();
+    expect($second->json('data.id'))->not->toBe($first->json('data.id'));
+    $superseded = Operation::query()->findOrFail($first->json('data.id'));
+    expect($superseded->status)->toBe(OperationStatus::Cancelled)
+        ->and($superseded->error_code)->toBe('operation.superseded')
+        ->and($superseded->lock_key)->toBeNull()
+        ->and(Operation::query()->findOrFail($second->json('data.id'))->status)->toBe(OperationStatus::Queued)
+        ->and(Operation::query()->findOrFail($created->json('data.id'))->status)->toBe(OperationStatus::Queued);
 });

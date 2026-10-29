@@ -21,7 +21,10 @@ def main(payload):
     identity = payload.get('registry_operation_id')
     if not isinstance(identity, str) or not re.fullmatch(r'[a-f0-9-]{36}', identity):
         return 'failed', {'error_code': 'websocket.registry_invalid'}
-    context = ssl.create_default_context(cafile='/usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+    try:
+        context = ssl.create_default_context(cafile='/usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+    except (OSError, ssl.SSLError):
+        return 'pending', {'backend': 'pending'}
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:

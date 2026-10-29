@@ -26,7 +26,6 @@ final readonly class WebSocketEnvironmentRenderer
             'REVERB_REGISTRY_URL=https://gateway.orbit/api/v1/websocket-registry',
             "REVERB_PROCESS_ID={$credentials->processId}",
             "REVERB_REGISTRY_TOKEN={$credentials->registryToken}",
-            "REVERB_NOTIFICATION_TOKEN={$credentials->notificationToken}",
             "REVERB_HOST={$host}",
             'REVERB_PORT=443',
             'REVERB_SCHEME=https',

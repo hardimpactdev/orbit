@@ -7,7 +7,7 @@ use App\Infrastructure\WebSocket\WebSocketEnvironmentRenderer;
 use Dotenv\Dotenv;
 
 it('renders protected process credentials and no static app list', function (): void {
-    $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), 'process-id', 'registry-token', 'notification-token');
+    $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), 'process-id', 'registry-token');
     $env = new WebSocketEnvironmentRenderer()->render($credentials, 8790);
     $values = Dotenv::parse($env);
     expect($values)->toMatchArray([
@@ -15,7 +15,7 @@ it('renders protected process credentials and no static app list', function (): 
         'SESSION_DRIVER' => 'file', 'QUEUE_CONNECTION' => 'sync',
         'REVERB_REGISTRY_URL' => 'https://gateway.orbit/api/v1/websocket-registry',
         'REVERB_PROCESS_ID' => 'process-id', 'REVERB_REGISTRY_TOKEN' => 'registry-token',
-        'REVERB_NOTIFICATION_TOKEN' => 'notification-token', 'REVERB_SERVER_PORT' => '8790',
-    ])->not->toHaveKey('REVERB_APPS');
-    expect(print_r($credentials, true))->not->toContain('registry-token', 'notification-token');
+        'REVERB_SERVER_PORT' => '8790',
+    ])->not->toHaveKeys(['REVERB_APPS', 'REVERB_NOTIFICATION_TOKEN']);
+    expect(print_r($credentials, true))->not->toContain('registry-token');
 });

@@ -1245,7 +1245,7 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
 {
     $credentials = Mockery::mock(WebSocketCredentialManager::class);
     $credentials->shouldReceive('ensure')->andReturn(
-        new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token', 'test-notification-token'),
+        new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token'),
     );
     $credentials->shouldReceive('purge');
 
@@ -1669,7 +1669,7 @@ it('withdraws every runtime only on the unreachable websocket role Node', functi
     foreach ([[$node, 'default'], [$node, 'second'], [$other, 'default']] as [$host, $slot]) {
         $runtimes[] = WebSocketRuntime::query()->create([
             'id' => (string) Str::uuid(), 'node_id' => $host->id, 'slot' => $slot,
-            'registry_token' => 'test-registry', 'notification_token' => 'test-notification',
+            'registry_token' => 'test-registry',
         ]);
     }
 

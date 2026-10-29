@@ -43,17 +43,17 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
                 $this->apps->issue(WebSocketApp::GatewayName);
             }
             $runtime = WebSocketRuntime::query()->firstOrCreate(['node_id' => $node->id, 'slot' => 'default'], [
-                'id' => (string) Str::uuid(), 'registry_token' => Str::random(64), 'notification_token' => Str::random(64),
+                'id' => (string) Str::uuid(), 'registry_token' => Str::random(64),
             ]);
             if (! $runtime->required) {
-                $runtime->update(['required' => true, 'registry_token' => Str::random(64), 'notification_token' => Str::random(64),
+                $runtime->update(['required' => true, 'registry_token' => Str::random(64),
                     'boot_id' => null, 'epoch' => null, 'applied_revision' => null, 'reported_at' => null, 'state' => 'starting', 'error' => null]);
             }
 
             return $runtime;
         });
 
-        return new WebSocketServerCredentials($laravelAppKey, $runtime->id, $runtime->registry_token, $runtime->notification_token);
+        return new WebSocketServerCredentials($laravelAppKey, $runtime->id, $runtime->registry_token);
     }
 
     public function current(): ?WebSocketCredentials
