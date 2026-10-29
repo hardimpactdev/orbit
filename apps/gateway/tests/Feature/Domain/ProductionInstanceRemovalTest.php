@@ -270,14 +270,14 @@ it('requires the successful owned database child after runtime cleanup before re
         $row->forceFill(['parent_operation_id' => $operation->id, 'child_key' => $key, 'child_admission' => $snapshot,
             'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
     };
-    foreach (['remove-processes-' => 'process.instance_runtime', 'remove-schedules-' => 'schedule.instance_runtime', 'cleanup-instance-' => 'route.cleanup_instance'] as $key => $kind) {
+    foreach (['cleanup-instance-' => 'route.cleanup_instance'] as $key => $kind) {
         $child($key.$this->instance->id, $kind);
     }
     $home = array_find(app(InstanceLifecycleExecution::class)->context($operation)['descriptors'], fn (array $entry): bool => $entry['key'] === $prefix.'-home-remove');
     expect(fn () => app(RemovalLifecycleExecution::class)->beforeRun($operation, ['worker' => 'proof', ...$home]))->toThrow(ResourceOperationException::class);
     $child('remove-databases-'.$this->instance->id, 'database.destroy_owned');
     app(RemovalLifecycleExecution::class)->beforeRun($operation, ['worker' => 'proof', ...$home]);
-    expect($operation->children()->count())->toBe(4);
+    expect($operation->children()->count())->toBe(2);
 });
 
 it('uses the effective unclustered placement when the Node belongs to an inactive Cluster', function (): void {
