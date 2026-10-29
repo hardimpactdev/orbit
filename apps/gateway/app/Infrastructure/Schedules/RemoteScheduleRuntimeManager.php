@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace App\Infrastructure\Schedules;
 
 use App\Data\Schedules\ScheduleLogsData;
-use App\Domain\Operations\AwaitOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Schedules\ScheduleErrorCode;
-use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\Schedules\ScheduleSpecification;
 use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Shared\StoredValue;
@@ -31,22 +28,27 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
 
     public function __construct(
         private ScheduleTargetResolver $targets,
+        private ScheduleSpecification $specification,
         private AgentCommandRunner $agents,
     ) {}
 
     public function install(#[SensitiveParameter] Schedule $schedule): void
     {
-        $this->await($schedule, 'create');
+        $target = $this->targets->forInstallation($schedule);
+
+        $this->call($target, 'schedule.install', $this->specification->input($schedule, $target), 'install', ScheduleErrorCode::InstallFailed, 'Schedule installation failed.');
     }
 
     public function activate(#[SensitiveParameter] Schedule $schedule): void
     {
-        $this->await($schedule, 'enable');
+        $target = $this->targets->forSchedule($schedule);
+        $this->call($target, 'schedule.activate', $this->runnable($schedule, $target), 'activate', ScheduleErrorCode::ActivationFailed, 'Schedule activation failed.');
     }
 
     public function run(#[SensitiveParameter] Schedule $schedule): void
     {
-        $this->await($schedule, 'run');
+        $target = $this->targets->forSchedule($schedule);
+        $this->call($target, 'schedule.run', $this->runnable($schedule, $target), 'run', ScheduleErrorCode::RunFailed, 'Schedule run failed.');
     }
 
     public function logs(#[SensitiveParameter] Schedule $schedule, int $lines): ScheduleLogsData
@@ -63,18 +65,25 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
 
     public function remove(#[SensitiveParameter] Schedule $schedule, bool $cascade): bool
     {
-        $this->await($schedule, 'destroy', $cascade);
+        $target = $this->targets->forRemoval($schedule);
 
-        return ! Schedule::query()->whereKey($schedule->id)->exists();
+        try {
+            $this->call($target, 'schedule.remove', ['id' => $schedule->id, 'group' => $target->group, 'cascade' => $cascade], 'remove', ScheduleErrorCode::RemoveFailed, 'Schedule removal failed.');
+        } catch (ScheduleOperationException $exception) {
+            if (! $cascade && $exception->getPrevious() instanceof AgentCommandRefused && $exception->getPrevious()->errorCode === 'schedule.run_active') {
+                return false;
+            }
+
+            throw $exception;
+        }
+
+        return true;
     }
 
-    private function await(Schedule $schedule, string $verb, bool $cascade = false): void
+    /** @return array{id: string, user: string, working_directory: string} */
+    private function runnable(Schedule $schedule, ScheduleTarget $target): array
     {
-        $operation = app(ScheduleOperationAdmission::class)->execute($schedule, $verb, $cascade);
-        $result = app(AwaitOperation::class)->execute($operation);
-        if ($result->status !== OperationStatus::Succeeded) {
-            throw new ResourceOperationException($result->error_code ?? 'schedule.operation_failed', 'The Schedule Operation did not succeed.', 409);
-        }
+        return ['id' => $schedule->id, 'user' => $target->user, 'working_directory' => $target->workingDirectory];
     }
 
     /**

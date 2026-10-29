@@ -48,6 +48,13 @@ it('admits a manual run without changing desired timer state', function (): void
     expect($schedule->refresh()->desired_timer_state->value)->toBe('enabled');
 });
 
+it('holds the owning Node across concurrent changes to different Schedules', function (): void {
+    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
+    $this->postJson('/api/v1/schedules', [...$this->payload, 'name' => 'another-timer'])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Schedule::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
+});
+
 it('admits a receipt read before the first effect and refuses an undeclared Schedule step', function (): void {
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();

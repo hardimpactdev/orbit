@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
-use App\Domain\Operations\AwaitOperation;
-use App\Domain\Operations\OperationStatus;
+use App\Data\Schedules\ScheduleData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationAdmission;
+use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -18,14 +21,47 @@ use SensitiveParameter;
 
 final readonly class ActivateScheduleAction
 {
+    public function __construct(
+        private ScheduleRuntimeManager $runtime,
+        private ?RecordEventBroadcaster $broadcaster = null,
+    ) {}
+
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
     {
-        $operation = app(AwaitOperation::class)->execute($this->admit($schedule));
-        if ($operation->status !== OperationStatus::Succeeded) {
-            throw new ResourceOperationException($operation->error_code ?? 'operation.failed', 'The runtime Operation did not succeed.', 409);
+        if (! Instance::isMorphType($schedule->target_type)) {
+            throw new ResourceOperationException(
+                ScheduleErrorCode::TargetInvalid->value,
+                'Only an Instance Schedule can be activated.',
+                422,
+            );
         }
 
-        return $schedule->refresh();
+        if ($schedule->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException(
+                ScheduleErrorCode::StateInvalid->value,
+                'The Schedule cannot be activated in its current state.',
+                409,
+            );
+        }
+
+        $this->runtime->activate($schedule);
+        $changed = $schedule->desired_timer_state !== DesiredTimerState::Enabled;
+
+        if ($changed) {
+            $schedule->update(['desired_timer_state' => DesiredTimerState::Enabled]);
+        }
+
+        $result = $schedule->refresh();
+
+        if ($changed) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::ScheduleUpdated,
+                $result->id,
+                ScheduleData::fromModel($result)->toArray(),
+            );
+        }
+
+        return $result;
     }
 
     public function admit(Schedule $schedule, ?Node $caller = null, ?string $requestId = null): Operation

@@ -35,6 +35,10 @@ Swamp requests failed queue job pruning daily, keeping seven days by default. [G
 
 Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. The Gateway projects a completion only after its successful command receipt is proven. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
 
+All Schedules for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs.
+
+Retained Gateway callers keep the synchronous Schedule actions and native runtime manager until their owning lane cuts over. Clone and deployment definition installation use this path. They do not admit or await Schedule Operations.
+
 ## Fields
 
 The Schedule UUID is its public identity. It is also the only value that names the host artifacts.
