@@ -2,21 +2,33 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\ImportInstanceEnvironmentAction;
+use App\Actions\Instances\UpdateInstanceEnvironmentAction;
 use App\Domain\Instances\Environment\EnvironmentSyncMaterial;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\RouteEnvironmentOperationLock;
 use App\Domain\Shared\LifecycleStatus;
+use App\Http\Controllers\Api\OperationExecutorController;
+use App\Http\Middleware\Instances\SerializeInstanceEnvironment;
+use App\Http\Middleware\Routes\SerializeRouteEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Routing\Router;
 use Tests\Support\FakeAgentCommandRunner;
 
 function environmentChildExecutor($test): array
@@ -164,7 +176,7 @@ it('hydrates a protected Route URL boolean without persisting environment materi
     expect(json_encode($operation->refresh()->toArray()))->not->toContain('Synthetic stored name', 'APP_KEY=');
 })->with([false, true]);
 
-it('admits the exact Route-owned environment child and replays it after the association is removed', function (): void {
+it('completes a Route-owned environment child through both serialization middlewares with native lock reentry', function (bool $multipleTargets): void {
     [$instance, , $agents] = environmentChildExecutor($this);
     $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://fixed.example.test']);
     $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
@@ -172,12 +184,31 @@ it('admits the exact Route-owned environment child and replays it after the asso
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);
     $route->targets()->delete();
+    $owners = [$instance->id];
+    if ($multipleTargets) {
+        $sibling = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            'name' => 'sibling', 'checkout_path' => '/fast/apps/dev935/sibling', 'source_layout' => 'checkout',
+            'branch' => 'main', 'status' => 'active', 'provisioning_step' => 'active', 'source_is_laravel' => false]);
+        $owners[] = $sibling->id;
+    }
+    $pipeline = app(Router::class);
+    $runRoute = $pipeline->getRoutes()->getByAction(OperationExecutorController::class.'@run');
+    $serializers = array_values(array_intersect($pipeline->gatherRouteMiddleware($runRoute), [
+        SerializeInstanceEnvironment::class,
+        SerializeRouteEnvironment::class,
+    ]));
+    expect($serializers)->toBe([
+        SerializeInstanceEnvironment::class,
+        SerializeRouteEnvironment::class,
+    ]);
+    expect(app(InstanceEnvironmentOperationLock::class))
+        ->toBeInstanceOf(RouteEnvironmentOperationLock::class);
     $key = 'environment-synchronized.'.$instance->id;
     $intent = ['key' => $key, 'kind' => 'instance.sync_environment', 'node_id' => $instance->node_id,
         'input' => ['instance_id' => $instance->id, 'route_domain' => 'authoritative']];
     $parent = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $route->id,
         'node_id' => $instance->node_id, 'status' => 'queued', 'sequence' => 1,
-        'input' => ['route_id' => $route->id, 'target_instance_ids' => [], 'previous_target_instance_ids' => [$instance->id]],
+        'input' => ['route_id' => $route->id, 'target_instance_ids' => [], 'previous_target_instance_ids' => $owners],
         'state' => ['route_active_stage' => 'environment-synchronized', 'route_plan' => ['mode' => 'state_only',
             'node_ids' => [$instance->node_id], 'stages' => ['environment-synchronized' => [$intent]]]]]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent'])->assertOk()->assertJsonPath('data.id', $parent->id);
@@ -204,7 +235,7 @@ it('admits the exact Route-owned environment child and replays it after the asso
     expect($instance->refresh()->environment_owned_keys)->toBe(['APP_URL']);
     expect(app(OperationChildren::class)->requireSucceeded($parent->refresh(), $key)->id)->toBe($childId);
 
-});
+})->with(['single target' => false, 'multiple targets' => true]);
 
 it('requires the managed testing write receipt and keeps tracked testing files unchanged', function (): void {
     [$instance, , $agents] = environmentChildExecutor($this);
@@ -252,3 +283,109 @@ it('preserves confirmed safe refusals and unconfirmed environment outcomes', fun
     ['failed', true, 'env.sync_unconfirmed'],
     ['tracked', false, 'env.sync_unconfirmed'],
 ]);
+
+final class EnvironmentChildSerializationLock implements InstanceEnvironmentOperationLock
+{
+    public int $depth = 0;
+
+    public ?Closure $beforeOuter = null;
+
+    public function run(array $instanceIds, Closure $operation): mixed
+    {
+        if ($this->depth === 0 && $this->beforeOuter !== null) {
+            $before = $this->beforeOuter;
+            $this->beforeOuter = null;
+            $before();
+        }
+        $this->depth++;
+        try {
+            return $operation();
+        } finally {
+            $this->depth--;
+        }
+    }
+}
+
+it('serializes environment hydration and dispatch after a concurrent stored change', function (string $change): void {
+    [$instance, , $agents] = environmentChildExecutor($this);
+    $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'synthetic-original']);
+    $locks = new EnvironmentChildSerializationLock;
+    app()->instance(InstanceEnvironmentOperationLock::class, $locks);
+    $preflight = Mockery::mock(InstanceOperationPreflight::class);
+    $preflight->shouldReceive('readWritableEnvironment')->once()->andReturnUsing(function () use ($locks): string {
+        expect($locks->depth)->toBeGreaterThan(0);
+
+        return 'API_TOKEN=synthetic-original';
+    });
+    if ($change === 'import') {
+        $preflight->shouldReceive('assertEnvironmentReadable')->once();
+        $reader = Mockery::mock(InstanceEnvironmentReader::class);
+        $reader->shouldReceive('read')->once()->andReturn("IMPORTED=synthetic-imported\n");
+        app()->instance(InstanceEnvironmentReader::class, $reader);
+    }
+    app()->instance(InstanceOperationPreflight::class, $preflight);
+    $agents->answer('instance.write-environment', function () use ($locks): array {
+        expect($locks->depth)->toBeGreaterThan(0);
+
+        return ['state' => 'changed', 'installed' => true];
+    });
+    $operation = Operation::query()->create(['kind' => 'instance.sync_environment', 'target_type' => 'instance',
+        'target_id' => $instance->id, 'node_id' => $instance->node_id, 'status' => 'queued', 'sequence' => 1,
+        'input' => ['instance_id' => $instance->id]]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'proof'])->assertOk();
+    environmentChildRun($this, $operation, environmentChildDescriptor($this, $operation, 'environment.prepare'));
+    $locks->beforeOuter = function () use ($instance, $change): void {
+        if ($change === 'import') {
+            app(ImportInstanceEnvironmentAction::class)->execute($instance, false);
+        } else {
+            app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'API_TOKEN', 'synthetic-updated');
+        }
+    };
+    environmentChildRun($this, $operation, environmentChildDescriptor($this, $operation, 'environment.write'));
+    $expected = $change === 'import' ? "API_TOKEN=\"synthetic-original\"\nIMPORTED=\"synthetic-imported\"\n" : "API_TOKEN=\"synthetic-updated\"\n";
+    expect($agents->calls[0]['input']['content'])->toBe($expected);
+    expect($instance->refresh()->environment_owned_keys)->toBe($change === 'import' ? ['API_TOKEN', 'IMPORTED'] : ['API_TOKEN']);
+    expect($locks->depth)->toBe(0)->and(json_encode($operation->refresh()->state))->not->toContain('synthetic-original', 'synthetic-updated', 'synthetic-imported');
+})->with(['update', 'import']);
+
+it('refuses public synchronous env sync while a deploy or rollback is open', function (string $kind, string $status): void {
+    [$instance] = environmentChildExecutor($this);
+    Node::query()->where('name', 'services')->sole()->accessibleNodes()->attach($instance->node_id);
+    Operation::query()->create(['kind' => $kind, 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'status' => $status, 'sequence' => 1, 'input' => ['instance_id' => $instance->id]]);
+    $preflight = Mockery::mock(InstanceOperationPreflight::class);
+    $preflight->shouldNotReceive('readWritableEnvironment', 'assertEnvironmentWritable');
+    app()->instance(InstanceOperationPreflight::class, $preflight);
+    $this->call('POST', '/api/v1/instances/'.$instance->id.'/environment/sync', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'env.operation_busy');
+})->with(['instance.deploy', 'instance.rollback'])->with(['queued', 'running', 'waiting']);
+
+it('checks the synchronous env sync deploy guard after acquiring the environment lock', function (): void {
+    [$instance] = environmentChildExecutor($this);
+    Node::query()->where('name', 'services')->sole()->accessibleNodes()->attach($instance->node_id);
+    $locks = new EnvironmentChildSerializationLock;
+    $locks->beforeOuter = function () use ($instance): void {
+        Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => 'running', 'sequence' => 1, 'input' => ['instance_id' => $instance->id]]);
+    };
+    app()->instance(InstanceEnvironmentOperationLock::class, $locks);
+    $this->call('POST', '/api/v1/instances/'.$instance->id.'/environment/sync', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'env.operation_busy');
+    expect($locks->depth)->toBe(0);
+});
+
+it('keeps public env sync synchronous after the deployment has settled', function (string $status): void {
+    [$instance] = environmentChildExecutor($this);
+    Node::query()->where('name', 'services')->sole()->accessibleNodes()->attach($instance->node_id);
+    $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'synthetic-settled']);
+    Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'status' => $status, 'sequence' => 1, 'input' => ['instance_id' => $instance->id]]);
+    $preflight = Mockery::mock(InstanceOperationPreflight::class);
+    $preflight->shouldReceive('readWritableEnvironment')->once()->andReturn('API_TOKEN=old');
+    app()->instance(InstanceOperationPreflight::class, $preflight);
+    $writer = Mockery::mock(InstanceEnvironmentWriter::class);
+    $writer->shouldReceive('write')->once()->andReturn(InstanceEnvironmentWriteResult::unchanged());
+    app()->instance(InstanceEnvironmentWriter::class, $writer);
+    $this->call('POST', '/api/v1/instances/'.$instance->id.'/environment/sync', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()->assertJsonPath('data.changed', false);
+    expect(Operation::query()->count())->toBe(1);
+})->with(['succeeded', 'failed', 'cancelled']);
