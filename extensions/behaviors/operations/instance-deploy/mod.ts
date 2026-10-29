@@ -15,6 +15,7 @@ import {
   Receipt,
 } from "./contract.ts";
 import { deploy } from "./execution.ts";
+import { synchronizeEnvironment } from "./environment.ts";
 import { lifecycleFailure, Phase as LifecyclePhase } from "./lifecycle.ts";
 
 const Kind = z.enum([
@@ -362,8 +363,12 @@ export function instanceDeploy(
           }, 30_000);
           try {
             let completion: z.infer<typeof Completion>;
-            if (
-              operation.kind === "instance.sync_environment" ||
+            if (operation.kind === "instance.sync_environment") {
+              completion = await synchronizeEnvironment(
+                operation.input.instance_id,
+                port,
+              );
+            } else if (
               operation.kind === "instance.run_steps" ||
               operation.kind === "instance.prepare_vp_environment" ||
               operation.kind === "instance.prepare_php_runtime" ||
@@ -403,14 +408,6 @@ export function instanceDeploy(
                   ? ["projection", "verification"]
                   : operation.kind === "instance.prepare_php_runtime"
                   ? ["php_plan", "php_packages", "php_converge", "php_receipt"]
-                  : operation.kind === "instance.sync_environment"
-                  ? [
-                    "environment_prepare",
-                    "environment_sync",
-                    "environment_testing",
-                    "environment_urls",
-                    "environment_receipt",
-                  ]
                   : [
                     "lifecycle_scope",
                     String(operation.input.list),

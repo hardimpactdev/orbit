@@ -64,16 +64,17 @@ export async function fixtureHttp(
     state.invocations = [...(state.invocations ?? []), key];
     if (!(key in state.receipts)) {
       state.effects.push(key);
-      state.receipts[key] = key === "verification"
-        ? {
-          deployment_id: 51,
-          release: null,
-          selected_release: null,
-          commit: "a".repeat(40),
-        }
-        : key.startsWith("before_activation")
-        ? { exit_code: 0, timed_out: false }
-        : { commit: "a".repeat(40) };
+      state.receipts[key] = state.runResults?.[key] ??
+        (key === "verification"
+          ? {
+            deployment_id: 51,
+            release: null,
+            selected_release: null,
+            commit: "a".repeat(40),
+          }
+          : key.startsWith("before_activation")
+          ? { exit_code: 0, timed_out: false }
+          : { commit: "a".repeat(40) });
     }
     data = state.receipts[key];
     if (state.loseRunReply === key) {

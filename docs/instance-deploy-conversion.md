@@ -21,3 +21,17 @@ Project setup and teardown lists use `instance.run_steps`. The Gateway binds the
 Deployment children own environment synchronization, Vite+ readiness, Process/Schedule installation, PHP packages and Process restarts. The family uses the shared B child and I receipt clients. The Gateway gates unavailable children and list-result capabilities before admission. Explicit production environment synchronization remains gated until C supplies the exact restarted Process-ID list; it never falls back to PHP execution. URL-only Route children and production PHP/web-root preparation derive their targets from Gateway-stamped parent metadata and admitted target sets.
 
 The live proof uses a new isolated Project with its own `default` development Instance on Beast Node 9, a harmless fixture repository and synthetic data. Send the new Project and Instance IDs to the orchestrator before running it. Preserve all existing defaults. No public Route, DNS, access change, production copy or forced production deploy is part of that proof.
+
+## Reusable environment child
+
+`instance.sync_environment` runs preparation, the main environment write,
+managed testing-file merge, additional Route URL writes and the final receipt.
+Gateway descriptors use `instance-environment-agent`; they contain protected
+references, not values or encoded environment files. The child never restarts
+Processes or refreshes PHP itself. Those remain separate parent stages.
+
+URL-only web-root and rollback keys may omit the main and testing writes. A
+proven refusal stops later phases. A lost reply leaves the child unfinished so a
+later invocation can adopt the original target receipt. Cancellation stops new
+phases without claiming that an uncertain write succeeded. Existing synchronous
+Gateway callers keep their native path until their owning cutover.

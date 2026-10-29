@@ -62,7 +62,7 @@ class DeploymentNativeTest(unittest.TestCase):
 
     def run_deploy(self, success=True):
         self.swamp('workflow', 'run', 'operation-instance-deploy', '--input',
-                   '{"kind":"instance.deploy","worker":"proof"}', success=success)
+                   json.dumps({'kind': self.state['operation']['kind'], 'worker': 'proof'}), success=success)
 
     def test_lost_node_reply_resumes_without_running_the_script_twice(self):
         self.state['loseRunReply'] = 'before_activation.install'
@@ -78,6 +78,40 @@ class DeploymentNativeTest(unittest.TestCase):
         self.assertEqual(state['claims'], 1)
         self.assertIn('before_activation.install', state['receiptReads'])
         self.assertEqual(state['completions'][0]['result']['deployment_id'], 51)
+
+    def test_environment_child_adopts_the_original_write_after_process_restart(self):
+        operation = self.state['operation']
+        operation['kind'] = 'instance.sync_environment'
+        operation['input'] = {'instance_id': 17}
+        descriptors = []
+        for key, step, name, transport, inputs in (
+            ('environment.prepare', 'environment_prepare', 'instance.environment-prepare', 'gateway', {'instance_id': 17}),
+            ('environment.write', 'environment_sync', 'instance.write-environment', 'instance-environment-agent',
+             {'content': {'$secret': 'instance.environment_sync', 'id': 17}}),
+            ('environment.receipt', 'environment_receipt', 'instance.environment-receipt', 'gateway', {'instance_id': 17}),
+        ):
+            descriptors.append(dict(key=key, step=step, name=name, transport=transport,
+                                    input=inputs, resumable=True, required=True))
+        operation['execution_context']['descriptors'] = descriptors
+        self.state['runResults'] = {
+            'environment.prepare': {'prepared': True, 'no_op': False},
+            'environment.write': {'state': 'changed', 'changed': True, 'confirmed': True},
+            'environment.receipt': {'instance_id': 17, 'confirmed': True, 'changed': True,
+                                    'environment_changed': True, 'key_count': 1,
+                                    'testing_status': None, 'test_database': None},
+        }
+        self.state['loseRunReply'] = 'environment.write'
+        self.save()
+        self.run_deploy(success=False)
+        self.assertEqual(self.read()['completions'], [])
+        self.swamp('workflow', 'resume', 'operation-instance-deploy', '--from', 'execute')
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'succeeded')
+        self.assertEqual(state['invocations'].count('environment.write'), 1)
+        self.assertEqual(state['effects'].count('environment.write'), 1)
+        self.assertIn('environment.write', state['receiptReads'])
+        self.assertEqual(state['claims'], 1)
+        self.assertEqual(state['completions'][0]['result'], self.state['runResults']['environment.receipt'])
 
     def test_lost_completion_reply_replays_saved_intent_without_node_effects(self):
         self.state['loseCompletionReply'] = True
