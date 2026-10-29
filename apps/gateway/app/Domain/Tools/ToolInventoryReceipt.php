@@ -28,7 +28,7 @@ final readonly class ToolInventoryReceipt
             $name = $entry['name'];
             if ($homebrew) {
                 if (! is_array($entry['versions'] ?? null) || ! array_is_list($entry['versions'])
-                    || ! array_all($entry['versions'], is_string(...)) || ! is_bool($entry['unverifiable'] ?? null)) {
+                    || ! array_all($entry['versions'], static fn (mixed $version): bool => is_string($version)) || ! is_bool($entry['unverifiable'] ?? null)) {
                     throw new ToolManagerException('installed-version', 'The agent returned an invalid Homebrew observation.');
                 }
                 $versions[$name] = [...($versions[$name] ?? []), ...$entry['versions']];
