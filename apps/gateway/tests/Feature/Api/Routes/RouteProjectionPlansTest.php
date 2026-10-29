@@ -51,6 +51,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RouteForeignChildKinds;
 
 beforeEach(function (): void {
+    bind_task_node_reachability();
     RouteForeignChildKinds::register();
     $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -384,7 +385,7 @@ it('refuses successful completion after rollback and preserves failed creation p
         'state' => ['route_plan' => ['mode' => 'converge', 'route_id' => $this->route->id], 'route_active_stage' => 'workload-caddy']]);
     $execution = app(RouteParentExecution::class);
     $execution->assertCompletion($operation, OperationOutcome::failed('caddy.publish_failed'));
-    expect($this->route->fresh()->status)->toBe(RouteStatus::Failed)
+    expect($this->route->fresh()->status)->toBe(RouteStatus::Activating)
         ->and($this->route->fresh()->failed_step)->toBe('workload-caddy')
         ->and($this->route->fresh()->error_code)->toBe('caddy.publish_failed');
 

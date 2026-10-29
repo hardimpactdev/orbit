@@ -375,6 +375,22 @@ it('does not return reconciliation_required after Router replacement and still r
     $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
     expect($op->status->value)->toBe('succeeded')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->second->id)
         ->and($route->fresh(['targets'])->toArray())->toBe($before);
-    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router")->assertConflict()->assertJsonPath('error.code', 'route.reconciliation_required');
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])->assertConflict()->assertJsonPath('error.code', 'route.reconciliation_required');
     expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
+it('prepares a rolled-back Router candidate before it renders sites again', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    cluster_router_owned_route($this->cluster, $this->first);
+    $candidate = $this->second->roles()->create(['role' => RoleName::Router, 'cluster_id' => $this->cluster->id,
+        'status' => LifecycleStatus::Failed, 'failed_step' => 'rollback:dns-publication', 'error_code' => 'fixture.child_failed']);
+    $observed = false;
+    $this->swamp->foreign->observe = static function (Operation $child) use ($candidate, &$observed): void {
+        if ($child->kind === 'node.role_converge') {
+            $observed = true;
+            expect(ClusterRouterTransition::candidateServes($candidate->refresh()))->toBeFalse();
+        }
+    };
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($observed)->toBeTrue()->and($op->status->value)->toBe('succeeded');
 });

@@ -52,7 +52,8 @@ final readonly class AdmitClusterRouterOperationAction
                 $candidate = NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
             }
             if ($candidate->status !== LifecycleStatus::Active) {
-                $candidate->update(['status' => LifecycleStatus::Provisioning, 'error_code' => null]);
+                $candidate->update(['status' => LifecycleStatus::Provisioning, 'error_code' => null,
+                    ...($candidate->status === LifecycleStatus::Failed ? ['failed_step' => null] : [])]);
             }
             $routeIds = Route::query()->where('cluster_id', $cluster->id)->orderBy('id')->pluck('id')->map(StoredInteger::from(...))->values()->all();
             $workloadNodes = Node::query()->whereHas('instances.routeTargets', static fn (Builder $q): Builder => $q->whereIn('route_id', $routeIds))->pluck('id')->map(StoredInteger::from(...))->all();
