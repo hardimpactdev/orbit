@@ -3,10 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceLifecycleExecution;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
@@ -121,4 +126,71 @@ it('keeps an admitted checkout immutable when the Node apps root changes', funct
     $this->postJson('/api/v1/instances', [...$this->payload, 'name' => 'later'])->assertAccepted();
     expect($first->refresh()->checkout_path)->toBe('/srv/apps/admission/proof');
     expect(Instance::query()->where('name', 'later')->sole()->checkout_path)->toBe('/mnt/apps/admission/later');
+});
+
+it('keeps failed-create replay context after its proven cleanup deletes the Instance', function (): void {
+    $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
+    $parent = Operation::query()->findOrFail($id);
+    $peer = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway))->sole();
+    config(['operation_executor.worker_node_ids' => [$peer->id]]);
+    $executor = app(SwampOperationExecutor::class);
+    $parent = $executor->claim('instance.create', 'failed-create-proof', $peer->id, $parent->id);
+    $execution = app(InstanceLifecycleExecution::class);
+    $descriptor = array_find($execution->context($parent)['descriptors'], static fn (array $entry): bool => $entry['key'] === 'source-resolve');
+    $parent->update(['state' => [...($parent->state ?? []), 'lifecycle_bindings' => ['source-resolve' => $descriptor],
+        'executor_runs' => ['source-resolve' => [...$descriptor, 'result' => ['error_code' => 'instance.git_failed'],
+            'exit_code' => 1, 'finished_at' => now()->toISOString()]]]]);
+    $input = ['instance_id' => $parent->target_id, 'force' => true];
+    $intent = ['key' => 'rollback-removal', 'kind' => 'instance.destroy', 'node_id' => $parent->node_id, 'input' => $input];
+    $snapshot = ['intent' => $intent, 'admitted' => ['parent_operation_id' => $parent->id, 'key' => $intent['key'],
+        'kind' => $intent['kind'], 'node_id' => $parent->node_id, 'target_type' => 'instance', 'target_id' => $parent->target_id,
+        'input' => $input, 'run_constraints' => []]];
+    $child = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $parent->target_id,
+        'node_id' => $parent->node_id, 'input' => $input, 'status' => 'succeeded']);
+    $child->forceFill(['parent_operation_id' => $parent->id,
+        'child_key' => 'rollback-removal', 'child_admission' => $snapshot,
+        'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    Instance::query()->findOrFail($parent->target_id)->delete();
+
+    $this->postJson('/api/v1/operation-executor/'.$parent->id.'/heartbeat', ['worker' => 'failed-create-proof'])->assertOk();
+    $this->getJson('/api/v1/operations/'.$parent->id.'/instance-lifecycle')->assertOk();
+    $this->getJson('/api/v1/operation-executor/'.$parent->id.'/receipts/source-resolve')->assertOk()
+        ->assertJsonPath('data.state', 'failed')->assertJsonPath('data.result.error_code', 'instance.git_failed');
+    $this->postJson('/api/v1/operation-executor/'.$parent->id.'/step', ['worker' => 'failed-create-proof',
+        'key' => 'source-resolve:finish', 'name' => 'source-resolve', 'status' => 'failed',
+        'error_code' => 'instance.git_failed', 'result' => ['error_code' => 'instance.git_failed']])->assertOk();
+    $context = $execution->context($parent->refresh());
+    expect(array_column($context['descriptors'], 'key'))->toContain('source-resolve');
+    expect($context['descriptors'][0]['input'])->toBe($descriptor['input']);
+    $this->postJson('/api/v1/operation-executor/'.$parent->id.'/complete', ['worker' => 'failed-create-proof',
+        'status' => 'failed', 'result' => [], 'error_code' => 'instance.git_failed'])
+        ->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'instance.git_failed');
+    expect($parent->refresh()->lock_key)->toBeNull();
+});
+
+it('admits the owning destroy child for a prepared create after native Git failure', function (): void {
+    $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
+    $parent = Operation::query()->findOrFail($id);
+    $instance = Instance::query()->findOrFail($parent->target_id);
+    $instance->update(['status' => 'checkout_prepared']);
+    $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
+    $source->shouldReceive('inspect')->once()->andReturn(new InstanceSourceInventory(
+        instanceId: $instance->id, layout: 'checkout', repositoryIdentity: $this->project->repository_identity,
+        checkoutPath: $instance->checkout_path, root: 'public', branch: null, startingCommit: str_repeat('a', 40),
+        commonRepositoryPath: $instance->checkout_path, sourceIdentity: 'prepared:1', linkedWorktreePaths: [$instance->checkout_path],
+        digest: str_repeat('b', 64), origin: $this->project->repository_url));
+    app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
+    $peer = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway))->sole();
+    config(['operation_executor.worker_node_ids' => [$peer->id]]);
+    $executor = app(SwampOperationExecutor::class);
+    $parent = $executor->claim('instance.create', 'failed-create-proof', $peer->id, $parent->id);
+    $parent->update(['state' => [...($parent->state ?? []), 'executor_runs' => ['source-resolve' => [
+        'result' => ['error_code' => 'instance.git_failed']]]]]);
+
+    $child = $executor->child($parent, ['worker' => 'failed-create-proof', 'key' => 'rollback-removal'], $peer->id)['operation'];
+
+    expect($child->kind)->toBe('instance.destroy')->and($child->input['force'])->toBeTrue();
+    expect($child->parent_operation_id)->toBe($parent->id)->and($child->input['members'][0]['instance_id'])->toBe($instance->id)
+        ->and($child->input['members'][0]['run_teardown'])->toBeFalse();
+    $this->assertModelExists($instance);
 });

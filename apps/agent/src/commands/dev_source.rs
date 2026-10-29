@@ -500,6 +500,36 @@ impl Command for ResolveDevelopmentSource {
                 "the source branch exists",
             )?;
         }
+        let current = git_output(
+            checkout,
+            &["symbolic-ref", "--quiet", "--short", "HEAD"],
+            true,
+        );
+        let worktrees = git_in(checkout, &["worktree", "list", "--porcelain", "-z"], true);
+        require(
+            worktrees.status.success(),
+            || git_failed("read the worktree branches"),
+            "the worktree inventory is readable",
+        )?;
+        let occupied = |branch: &str| {
+            current.as_deref() != Some(branch.as_bytes())
+                && worktrees
+                    .stdout
+                    .split(|byte| *byte == 0)
+                    .any(|field| field == format!("branch refs/heads/{branch}").as_bytes())
+        };
+        if occupied(&branch) {
+            let attempt = source
+                .prepare_id
+                .as_deref()
+                .filter(|attempt| !attempt.is_empty())
+                .ok_or_else(|| git_failed("select a private worktree branch"))?;
+            branch = format!("orbit/instance/{attempt}");
+            check(
+                !occupied(&branch),
+                "the private branch is not checked out elsewhere",
+            )?;
+        }
         run_git(
             git_args![
                 "-C",

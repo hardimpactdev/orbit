@@ -219,3 +219,13 @@ function developmentSourceFixture(string $name = 'dev'): array
 
     return [$source, $agents, $instance];
 }
+
+it('accepts only the seeded preparation private branch at the retained source boundary', function (): void {
+    [$source, $agents, $instance] = developmentSourceFixture();
+    $instance->update(['seed_commit' => str_repeat('a', 40), 'seed_repository' => '/srv/orbit/apps/site/default', 'source_layout' => 'worktree']);
+    $agents->answer('instance.resolve-development-source', ['branch' => 'orbit/instance/attempt-1', 'commit' => str_repeat('a', 40)]);
+
+    expect($source->resolve($instance)->branch)->toBe('orbit/instance/attempt-1');
+    $agents->answer('instance.resolve-development-source', ['branch' => 'orbit/instance/other', 'commit' => str_repeat('a', 40)]);
+    expect(fn () => $source->resolve($instance))->toThrow(RuntimeConvergenceException::class);
+});

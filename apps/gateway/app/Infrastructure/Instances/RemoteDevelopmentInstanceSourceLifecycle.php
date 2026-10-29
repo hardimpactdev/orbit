@@ -243,7 +243,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     private function resolution(mixed $branch, mixed $commit, Instance $instance): DevelopmentSourceResolution
     {
         if (
-            $branch !== $this->selectedBranch($instance)
+            ! is_string($branch) || ! DevelopmentSourceResolution::matchesBranch($branch, $this->selectedBranch($instance), $instance->seed_commit, $instance->source_prepare_id)
             || ! is_string($commit)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
         ) {

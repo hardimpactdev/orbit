@@ -324,7 +324,7 @@ final readonly class InstanceLifecycleChildren
             return false;
         }
 
-        return in_array($code, ['instance.source_step_failed', 'instance.clone_failed', 'instance.branch_resolution_failed',
+        return in_array($code, ['instance.source_step_failed', 'instance.git_failed', 'instance.clone_failed', 'instance.branch_resolution_failed',
             'instance.source_identity_invalid', 'instance.branch_not_checked_out', 'app-dev.php_version_unsupported',
             'instance.database_create_failed', 'instance.database_clone_failed', 'instance.environment_sync_failed'], true);
     }

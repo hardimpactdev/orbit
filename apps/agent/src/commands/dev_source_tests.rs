@@ -630,3 +630,69 @@ fn idle_inspection_is_a_local_read_and_creates_no_lock_file() {
     assert_eq!(fs::read(checkout.join(".git/index")).unwrap(), index);
     assert_eq!(sh_git(&checkout, &["show-ref"]), refs);
 }
+
+#[test]
+fn a_branch_held_by_the_seed_uses_a_private_local_branch_without_changing_the_seed() {
+    let f = Fixture::new();
+    let seed = f.source("default", None);
+    f.prepare(f.source("default", None), false, true).unwrap();
+    let resolved = f
+        .resolve(f.source("default", None), "default", &["file"])
+        .unwrap();
+    let before = sh_git(&seed.checkout, &["status", "--porcelain"]);
+    for (name, selected, attempt) in [
+        ("main", None, "attempt-main"),
+        ("proof", Some("main"), "attempt-proof"),
+    ] {
+        let source = || {
+            let mut source = f.source(name, Some(attempt));
+            source.seed_repository = Some(seed.checkout.clone());
+            source
+        };
+        PrepareDevelopmentSource::run(
+            PrepareInput {
+                source: source(),
+                allow_existing: false,
+                seed_commit: Some(resolved.commit.clone()),
+                network: false,
+                git_read: GitRead::default(),
+            },
+            &context(),
+        )
+        .unwrap();
+        let run = || {
+            ResolveDevelopmentSource::run(
+                ResolveInput {
+                    source: source(),
+                    instance_name: name.into(),
+                    default_branch: "main".into(),
+                    branch_override: selected.map(str::to_owned),
+                    seed_commit: Some(resolved.commit.clone()),
+                    network: false,
+                    protocols: vec![],
+                    git_read: GitRead::default(),
+                },
+                &context(),
+            )
+            .unwrap()
+        };
+        let result = run();
+        assert_eq!(result.branch, format!("orbit/instance/{attempt}"));
+        assert_eq!(result.commit, resolved.commit);
+        assert_eq!(
+            sh_git(&source().checkout, &["symbolic-ref", "--short", "HEAD"]),
+            result.branch
+        );
+        assert!(source().checkout.join("README").is_file());
+        assert_eq!(run(), result);
+    }
+    assert_eq!(
+        sh_git(&seed.checkout, &["symbolic-ref", "--short", "HEAD"]),
+        "main"
+    );
+    assert_eq!(
+        sh_git(&seed.checkout, &["rev-parse", "HEAD"]),
+        resolved.commit
+    );
+    assert_eq!(sh_git(&seed.checkout, &["status", "--porcelain"]), before);
+}

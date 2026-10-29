@@ -111,6 +111,8 @@ Orbit checks the recorded path, managed ownership, repository layout, and Projec
 
 Cleanup that cannot finish retains the Instance and removal progress. When a cleanup step fails after the removal started, for example on a busy lock, the create resumes that removal once before it returns.
 
+A proven native Git refusal during create admits the same cleanup child as other confirmed source failures. The parent waits for that child, then settles as failed with the original error. An uncertain effect does not authorize cleanup.
+
 If cleanup still cannot finish, the failed create reports its original error with `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. An identical create retry first finishes that forced cleanup without `--force`, then creates the Instance afresh. A retry with another Node, root, or branch returns `instance.placement_conflict` and leaves the cleanup as it is. You can also finish removal with the recovery command; `--yes` supplies consent and `--force` waives only the normal dirty, unpublished-source, and linked-worktree refusals. Cleanup never deletes the Instance row before its owned resources have been handled.
 
 Git checks that inspect file contents, ownership checks, and deletion run as the Node's managed account. Git checks run without a credential environment.

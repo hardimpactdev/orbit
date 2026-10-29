@@ -137,6 +137,8 @@ function bind_task_workspace_fakes(): object
 
         public ?Closure $onPrepare = null;
 
+        public ?Closure $onResolve = null;
+
         public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->calls[] = 'prepare';
@@ -154,7 +156,8 @@ function bind_task_workspace_fakes(): object
         {
             $this->calls[] = 'resolve';
 
-            return new DevelopmentSourceResolution($instance->name, str_repeat('a', 40));
+            return $this->onResolve !== null ? ($this->onResolve)($instance)
+                : new DevelopmentSourceResolution($instance->name, str_repeat('a', 40));
         }
 
         public function inspectResolved(Instance $instance): DevelopmentSourceResolution
@@ -774,4 +777,22 @@ it('seeds task VM package caches after source resolution has observed the lockfi
 
     expect($instance)->toBeInstanceOf(Instance::class);
     expect($mount->seeded)->toBeTrue();
+});
+
+it('retains a seeded private local branch without changing the requested task branch', function (): void {
+    $project = provisioner_app('private-branch');
+    $node = provisioner_node('private-branch-dev', '10.44.0.139');
+    $group = provisioner_group($project, vmNode: $node);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->onPrepare = static function (Instance $instance): void {
+        $instance->update(['seed_commit' => str_repeat('a', 40), 'seed_repository' => '/srv/orbit/apps/private-branch/default',
+            'source_layout' => 'worktree']);
+    };
+    $fakes->source->onResolve = static fn (Instance $instance): DevelopmentSourceResolution => new DevelopmentSourceResolution('orbit/instance/'.$instance->source_prepare_id, str_repeat('a', 40));
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
+    expect($instance?->branch)->toBe('orbit/instance/'.$instance?->source_prepare_id);
+    expect($instance?->branch_override)->toBe(TaskWorkspaceName::for($group));
 });

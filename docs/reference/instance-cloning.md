@@ -20,6 +20,8 @@ Runtime installation uses the shipped `process.install_instance_definitions` and
 
 `instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
 
+A candidate on a private local branch such as `orbit/instance/<preparation-id>` needs `--branch` naming the repository branch for the production target. The candidate stays on its own local branch.
+
 ## Prepare the Node
 
 The destination Node needs its own TLD for the preview domain. Set it when you add the Node:

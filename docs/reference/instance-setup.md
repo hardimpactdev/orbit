@@ -74,6 +74,8 @@ The Gateway prepares a development checkout as the Node's managed user. The chec
 
 Every Gateway Git call sets `core.hooksPath=/dev/null` and `core.fsmonitor=false`, so a hook path or a filesystem monitor in `.git/config` never runs. A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Caddy can read only the web root and the public storage target; [Caddy access](/reference/routes#caddy-access) describes the walk.
 
+If another worktree already has the selected branch checked out, resolution uses the private local branch `orbit/instance/<preparation-id>` at the selected commit. It keeps the other worktree and its branch unchanged. The Instance records the local branch it actually uses; an explicit source branch remains in its admission input.
+
 A task workspace is a checkout inside its own [task VM](/reference/compute-drivers#task-vms). There the VM's managed user `orbit` owns it and runs the agents, the setup steps, and the checks.
 
 The Gateway names the Instance's Git directory from its records: `<seed>/.git` for a worktree of a seed, otherwise `<checkout>/.git`. It never asks Git for it, because Git follows `.git/commondir` and a `.git` file in the checkout.
