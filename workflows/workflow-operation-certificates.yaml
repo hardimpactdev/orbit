@@ -1,0 +1,24 @@
+id: 0eef618f-3b0c-464e-919a-ebb793d6aa9e
+name: operation-certificates
+description: Claim and execute one certificate kind on the same worker Node.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: { type: string }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: certificates
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-certificates'
+          behaviorName: "operation-certificates"
+          methodName: execute
+          inputs:
+            kind: '${{ inputs.kind }}'
+            worker: '${{ inputs.worker }}'
