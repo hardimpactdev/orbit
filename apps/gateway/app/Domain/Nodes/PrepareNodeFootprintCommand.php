@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
@@ -101,6 +102,7 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
                     'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id]],
                 'caddy-package' => AgentCaddyPackage::input(),
                 'tmpfiles' => ['rule' => TmpfilesFootprintArtifact::Rule],
+                'php-runtime' => ['configurations' => app(PhpRuntimeFootprintArtifact::class)->inputs($node)],
                 'peer-dns' => ['dns_server' => $this->dns->server($node),
                     'public_key' => (string) $node->wireguard_public_key, 'domains' => $this->dns->domains($node)],
                 default => [],

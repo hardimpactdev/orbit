@@ -182,6 +182,14 @@ final readonly class RemotePhpPackageManager
         return $this->configureRuntime($node, $versions, $role, $profile);
     }
 
+    /** @return array<string, mixed> */
+    public function runtimeInput(Node $node, string $version): array
+    {
+        $profile = self::runtimeProfile($node);
+
+        return $this->profileInput($version, $profile, $profile === 'app-dev' ? RoleName::AppDev : RoleName::AppProd);
+    }
+
     /** @param list<string> $versions */
     private function configureRuntime(Node $node, array $versions, RoleName $role, string $profile): bool
     {

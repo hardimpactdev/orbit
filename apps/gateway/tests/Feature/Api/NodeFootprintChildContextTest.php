@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeFootprintOperationExecution;
 use App\Domain\Operations\OperationChildIntent;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\Fleet\FleetFixtures;
 
 function footprintContextOperation(array $artifacts, array $children, array $payloads = []): Operation
@@ -119,3 +121,36 @@ it('clears a failed agent pin only when the bound installer receipt proves repla
 
     expect(Node::query()->findOrFail($operation->node_id)->agent_failed_pin)->toBe($proven ? null : str_repeat('a', 64));
 })->with([false, true]);
+
+it('binds PHP inputs and withholds later versions and artifacts until proof', function (): void {
+    $inputs = array_map(static fn (string $version): array => ['version' => $version, 'runtime_ini' => 'rendered', 'release' => ['id' => 'ubuntu', 'codenames' => ['resolute']]], ['8.4', '8.5']);
+    $operation = footprintContextOperation(['php-runtime', 'tmpfiles'], [], ['php-runtime' => ['configurations' => $inputs], 'tmpfiles' => ['rule' => 'owned']]);
+    $execution = app(NodeFootprintOperationExecution::class);
+    $contract = app(OperationExecutionContract::class);
+    $run = ['worker' => 'worker', 'key' => 'footprint-php-runtime-8.4', 'transport' => 'agent', 'name' => 'php.configure-runtime', 'input' => $inputs[0]];
+    expect($contract->authorizeRun($operation, $run)['name'])->toBe('php.configure-runtime');
+    foreach (['version' => '8.5', 'runtime_ini' => 'unowned', 'release' => ['id' => 'other', 'codenames' => ['resolute']]] as $field => $value) {
+        expect(fn () => $contract->authorizeRun($operation, [...$run, 'input' => [...$inputs[0], $field => $value]]))->toThrow(ResourceOperationException::class);
+    }
+    expect(fn () => $contract->authorizeRun($operation, [...$run, 'key' => 'footprint-php-runtime-8.5', 'input' => $inputs[1]]))->toThrow(ResourceOperationException::class);
+    foreach ([['changed' => false], ['error_code' => 'php.runtime_configuration_failed'], []] as $result) {
+        footprintContextReceipt($operation, 'footprint-php-runtime-8.4', 'agent', 'php.configure-runtime', $result);
+        $keys = array_column($execution->context($operation)['descriptors'], 'key');
+        expect(in_array('footprint-php-runtime-8.5', $keys, true))->toBe(isset($result['changed']));
+        expect($keys)->not->toContain('footprint-tmpfiles');
+    }
+    footprintContextReceipt($operation, 'footprint-php-runtime-8.4', 'agent', 'php.configure-runtime', ['changed' => false]);
+    footprintContextReceipt($operation, 'footprint-php-runtime-8.5', 'agent', 'php.configure-runtime', ['changed' => true]);
+    expect(array_column($execution->context($operation)['descriptors'], 'key'))->toContain('footprint-tmpfiles');
+});
+
+it('keeps deferred PHP masters in sanitized results and logs their warning', function (): void {
+    $input = ['version' => '8.5', 'runtime_ini' => 'rendered', 'release' => ['id' => 'ubuntu', 'codenames' => ['resolute']]];
+    $operation = footprintContextOperation(['php-runtime'], [], ['php-runtime' => ['configurations' => [$input]]]);
+    $run = ['worker' => 'worker', 'key' => 'footprint-php-runtime-8.5', 'transport' => 'agent', 'name' => 'php.configure-runtime', 'input' => $input];
+    $receipt = ['changed' => true, 'reloaded' => false, 'deferred' => ['orbit-php-instance-42.service']];
+    Log::spy();
+    expect(app(NodeFootprintOperationExecution::class)->received($operation, $run, $receipt))->toBe($receipt);
+    expect(app(OperationExecutionContract::class)->result($operation, [...$receipt, 'unlisted' => 'private']))->toBe($receipt);
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context['node_id'] === $operation->node_id && $context['masters'] === $receipt['deferred']);
+});

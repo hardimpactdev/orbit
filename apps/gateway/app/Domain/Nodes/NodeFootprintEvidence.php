@@ -115,13 +115,6 @@ final readonly class NodeFootprintEvidence
                 $changed = $child->kind === 'route.caddy_converge' && ($child->result['result'] ?? null) === 'unchanged'
                     ? false : ($child->result['changed'] ?? true);
             } else {
-                [$transport, $command] = match ($name) {
-                    'agent' => ['agent', 'agent.configure'],
-                    'caddy-package' => ['agent', 'caddy.install-package'],
-                    'peer-dns' => ['agent', 'wireguard.repair-peer-dns'],
-                    'tmpfiles' => ['agent', 'node.publish-tmpfiles'],
-                    default => throw $this->unproven(),
-                };
                 if ($name === 'agent') {
                     $install = $runs['footprint-agent-install'] ?? null;
                     if (is_array($install) && ($install['transport'] ?? null) === 'node-agent' && ($install['name'] ?? null) === 'agent.install'
@@ -132,15 +125,24 @@ final readonly class NodeFootprintEvidence
                         return $this->result($artifacts, $skipped, $retained, ValidatedData::string($install['result']['error_code']));
                     }
                 }
-                $run = $runs['footprint-'.$name] ?? null;
-                if (! is_array($run) || ($run['transport'] ?? null) !== $transport || ($run['name'] ?? null) !== $command || ! is_array($run['result'] ?? null)) {
-                    if ($allowIncomplete) {
-                        return $this->result($artifacts, $skipped, [...$recorded, ...$applied], null);
+                $changed = false;
+                foreach ($this->directRuns($snapshot, $name) as $key => [$transport, $command]) {
+                    $run = $runs[$key] ?? null;
+                    if (! is_array($run) || ($run['transport'] ?? null) !== $transport || ($run['name'] ?? null) !== $command || ! is_array($run['result'] ?? null)) {
+                        if ($allowIncomplete) {
+                            return $this->result($artifacts, $skipped, [...$recorded, ...$applied], null);
+                        }
+                        throw $this->unproven();
                     }
-                    throw $this->unproven();
+                    $error = isset($run['result']['error_code']) ? ValidatedData::string($run['result']['error_code']) : null;
+                    if ($error !== null) {
+                        break;
+                    }
+                    if ($name === 'php-runtime' && ! is_bool($run['result']['changed'] ?? null)) {
+                        throw $this->unproven();
+                    }
+                    $changed = ($run['result']['changed'] ?? true) !== false || $changed;
                 }
-                $error = isset($run['result']['error_code']) ? ValidatedData::string($run['result']['error_code']) : null;
-                $changed = $run['result']['changed'] ?? true;
                 if ($name === 'agent' && $error === null) {
                     $install = $runs['footprint-agent-install'] ?? null;
                     if (! is_array($install) || ($install['transport'] ?? null) !== 'node-agent' || ($install['name'] ?? null) !== 'agent.install'
@@ -162,6 +164,32 @@ final readonly class NodeFootprintEvidence
         }
 
         return $this->result($artifacts, $skipped, $applied, $firstCaddyFailure ? 'node.footprint_caddy_failed' : null);
+    }
+
+    /** @param array<string, mixed> $snapshot
+     * @return array<string, array{string, string}>
+     */
+    private function directRuns(array $snapshot, string $name): array
+    {
+        if ($name === 'php-runtime') {
+            $payload = ValidatedData::object(ValidatedData::object($snapshot['payloads'] ?? [])[$name] ?? []);
+            $configurations = $payload['configurations'] ?? null;
+            if (! is_array($configurations) || ! array_is_list($configurations)) {
+                throw $this->unproven();
+            }
+            $runs = [];
+            foreach ($configurations as $input) {
+                $runs['footprint-php-runtime-'.ValidatedData::string(ValidatedData::object($input)['version'])] = ['agent', 'php.configure-runtime'];
+            }
+
+            return $runs;
+        }
+
+        return ['footprint-'.$name => ['agent', match ($name) {
+            'agent' => 'agent.configure', 'caddy-package' => 'caddy.install-package',
+            'peer-dns' => 'wireguard.repair-peer-dns', 'tmpfiles' => 'node.publish-tmpfiles',
+            default => throw $this->unproven(),
+        }]];
     }
 
     /** @param list<array<string, mixed>> $artifacts

@@ -694,6 +694,8 @@ Only changed artifacts run unless force or owned drift requires repair. A failed
 
 Caddy render or validation refusals and residue cleanup failures may be skipped. If Caddy refuses validation on the first visit and managed code changed, the footprint fails. An owned drift repair keeps the skip. Other child failures stop later artifacts. Completion derives its results from transport receipts and stamped children, then records only proven artifact digests.
 
+For a required `php-runtime` artifact, the Gateway records one `php.configure-runtime` input per recipe-profile or active Instance PHP version, sorted by version. Swamp applies those inputs in order. The Gateway records the artifact digest only after every version has a successful receipt with a boolean `changed` result. Missing runtimes remain a native no-op. Deferred PHP-FPM master names stay in the declared run and step results and the Gateway warning log. Retained synchronous callers use the same runtime input renderer.
+
 The Swamp footprint refuses a required AI-router effect with `operation.kind_unavailable` before recording child intent if `ai_router.collector_converge` is not registered.
 
 On VPN and Gateway Nodes, the Swamp footprint stages the private DNS listener release and units before publication. It restarts an active listener against its existing catalog. A fresh install stays inactive until the publication child atomically writes its first catalog and enables the socket. The footprint does not write DNS records itself. Retained synchronous fleet convergence keeps its existing private DNS scope and digests; Gateway listener staging belongs to Swamp preparation.
