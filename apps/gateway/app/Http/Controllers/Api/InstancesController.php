@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Instances\CreateInstanceAction;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\ShowInstanceAction;
+use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
@@ -51,20 +51,12 @@ final class InstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceCreation)]
-    public function store(StoreInstanceRequest $request, CreateInstanceAction $action): JsonResponse
+    #[StartsOperation('instance.create')]
+    public function store(StoreInstanceRequest $request, StartDevelopmentInstanceCreateAction $action): JsonResponse
     {
-        $result = $action->execute($request->payload());
+        $operation = $action->execute($request->payload(), $this->caller($request), $request->attributes->getString('orbit.request_id'));
 
-        return response()->json(
-            [
-                'data' => [
-                    ...InstanceData::fromModel($result['instance'])->toArray(),
-                    'name_converted_from' => $result['name_converted_from'],
-                ],
-                'meta' => $this->meta($request),
-            ],
-            $result['created'] ? 201 : 200,
-        );
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::Caller)]
@@ -111,12 +103,15 @@ final class InstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[StartsOperation('instance.rename')]
     public function rename(RenameInstanceRequest $request, Instance $instance, RenameInstanceAction $action): JsonResponse
     {
+        $operation = $action->execute($instance, $request->payload(), $this->caller($request), $request->attributes->getString('orbit.request_id'));
+
         return response()->json([
-            'data' => InstanceData::fromModel($action->execute($instance, $request->payload()))->toArray(),
+            'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]

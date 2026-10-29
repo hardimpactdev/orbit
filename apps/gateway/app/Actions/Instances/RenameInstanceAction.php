@@ -4,51 +4,43 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Actions\Routes\UpdateRouteAction;
-use App\Data\Instances\InstanceData;
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\RenameInstanceData;
-use App\Data\Routes\UpdateRouteData;
-use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Instances\DevelopmentInstanceBranchInspector;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceLifecycleAvailability;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceTransfer;
+use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 
 final readonly class RenameInstanceAction
 {
     public function __construct(
-        private InstanceEnvironmentOperationLock $environmentOperations,
-        private AppDevSourceOperationLock $sourceLock,
-        private DevelopmentInstanceBranchInspector $source,
-        private UpdateRouteAction $routes,
-        private RecordEventBroadcaster $broadcaster,
+        private StartOperationAction $operations,
+        private OperationIdempotency $idempotency,
         private ReservedPrivateHostname $reservedHostnames,
+        private ManagedUserAccountResolver $accounts,
+        private CheckoutRemovalBoundary $boundaries,
     ) {}
 
-    public function execute(Instance $instance, RenameInstanceData $data): Instance
+    public function execute(Instance $instance, RenameInstanceData $data, ?string $caller = null, ?string $requestId = null): Operation
     {
-        try {
-            return $this->environmentOperations->run([$instance->id], fn (): Instance => $this->sourceLock->synchronized(
-                $instance->node_id,
-                fn (): Instance => $this->renameOwned($instance->refresh(), $data),
-            ));
-        } catch (ResourceOperationException $exception) {
-            if ($exception->errorCode === 'env.operation_busy') {
-                throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance is busy with another lifecycle operation.', 409, previous: $exception);
-            }
-            throw $exception;
+        if (($replay = $this->idempotency->replay('instance.rename')) !== null) {
+            return $replay;
         }
+        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.rename');
+
+        return DB::transaction(fn (): Operation => $this->admit($instance->refresh(), $data, $caller, $requestId));
     }
 
-    private function renameOwned(Instance $instance, RenameInstanceData $data): Instance
+    private function admit(Instance $instance, RenameInstanceData $data, ?string $caller, ?string $requestId): Operation
     {
         if (! $instance->placedOnAppDev() || $instance->source_layout !== InstanceSourceLayout::Checkout->value) {
             throw new ResourceOperationException('instance.rename_unsupported', 'Rename requires a development checkout Instance.', 409);
@@ -62,7 +54,7 @@ final readonly class RenameInstanceAction
         if ($instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('instance.rename_inactive', 'Rename requires an active Instance.', 409);
         }
-        $this->source->assertBranchCheckedOut($instance, $data->branch);
+        $routeId = null;
 
         if ($data->domain !== null) {
             $this->reservedHostnames->assertAvailable($data->domain);
@@ -75,20 +67,22 @@ final readonly class RenameInstanceAction
                 || $routes->contains(static fn (Route $other): bool => $other->id !== $route->id && $other->replaces_route_id !== $route->id)) {
                 throw new ResourceOperationException('instance.route_required', 'Rename requires the Instance’s own single-target Project Route.', 409);
             }
-            $moved = $this->routes->execute($route, new UpdateRouteData(true, $data->domain, false, null), allowGenerated: true);
-            if ($instance->source_is_laravel === true) {
-                InstanceEnvironmentValue::query()->updateOrCreate(
-                    ['instance_id' => $instance->id, 'env_key' => 'APP_URL'],
-                    ['env_value' => "https://{$moved->domain}"],
-                );
+            $routeId = $route->id;
+            if (Route::query()->where('domain', $data->domain)->whereKeyNot($route->id)->exists()) {
+                throw new ResourceOperationException('route.domain_conflict', 'Another Route owns the requested domain.', 409);
             }
         }
-        if ($data->branch !== null && $instance->branch !== $data->branch) {
-            $instance->update(['branch' => $data->branch, 'branch_override' => $data->branch]);
-        }
-        $instance->refresh()->load(['project', 'node', 'routes.targets']);
-        $this->broadcaster->broadcast(RecordEventType::InstanceUpdated, $instance->id, InstanceData::fromModel($instance)->toArray());
 
-        return $instance;
+        $account = $this->accounts->resolve($instance->node);
+
+        return $this->operations->execute('instance.rename', 'instance', $instance->id, $instance->node_id, [
+            'instance_id' => $instance->id, 'project_id' => $instance->project_id,
+            'branch' => $data->branch, 'domain' => $data->domain, 'route_id' => $routeId,
+            'checkout' => $instance->checkout_path, 'repository_identity' => $instance->project->repository_identity,
+            'repository' => $instance->project->repository_url, 'source_layout' => $instance->source_layout,
+            'prepare_id' => $instance->source_prepare_id, 'seed_repository' => $instance->seed_repository,
+            'user' => $account->user, 'group' => $account->group,
+            'source_root' => $this->boundaries->instanceRoot($instance, $account)->value,
+        ], $caller, $requestId);
     }
 }

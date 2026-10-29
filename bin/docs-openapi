@@ -2136,10 +2136,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 'warnings': {'type': 'array', 'items': {'type': 'string'},
                     'description': 'Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply.'},
             }, 'required': ['warnings']}]}
-        if route['name'] == 'instance:create':
-            data = {'allOf': [data, {'type': 'object', 'properties': {
-                'name_converted_from': NAME_CONVERTED_FROM,
-            }, 'required': ['name_converted_from']}]}
         if route['name'] == 'instance:register':
             registration = components['InstanceRegistration']
             registration['properties']['name_converted_from'] = NAME_CONVERTED_FROM

@@ -4,21 +4,23 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RenameInstanceCommand extends GatewayCommand
 {
-    use InstanceOutput;
+    use FollowsOperations;
 
     #[\Override]
     protected $signature = 'instance:rename
         {instance : Numeric Instance ID}
         {--branch= : Branch already checked out on the Node}
         {--domain= : New domain for the Instance Route}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -42,21 +44,16 @@ final class RenameInstanceCommand extends GatewayCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $response = $this->sendWithProgress(
-            $connector,
-            new RenameInstanceRequest($id, $branch, $domain),
-            InstanceResponse::class,
-            ['Rename Instance', 'Renaming Instance', 'Renamed Instance'],
-        );
-        if (! $response instanceof InstanceResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
-        } else {
-            $this->writeInstanceDetails($response);
-        }
+        $operation = $this->send($connector, new RenameInstanceRequest(
+            $id, $branch, $domain, $this->stringOption('idempotency-key'),
+        ), OperationResponse::class);
 
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Rename Instance', 'Instance rename')
+            : self::FAILURE;
     }
 }

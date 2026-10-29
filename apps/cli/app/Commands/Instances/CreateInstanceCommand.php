@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CreateInstanceCommand extends GatewayCommand
 {
-    use InstanceOutput;
+    use FollowsOperations;
 
     #[\Override]
     protected $signature = 'instance:create
@@ -23,6 +24,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
         {--database-server= : Database server that gets the new Instance database before setup}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -62,34 +64,19 @@ HELP;
             return self::FAILURE;
         }
 
-        $instance = $this->sendWithProgress(
-            $connector,
-            new CreateInstanceRequest(
-                projectId: $projectId,
-                nodeId: $nodeId,
-                name: $name,
-                root: $this->stringOption('root'),
-                domain: $this->stringOption('domain'),
-                branch: $this->stringOption('branch'),
-                databaseServer: $this->stringOption('database-server'),
-            ),
-            InstanceResponse::class,
-            ['Create Instance', 'Creating Instance', 'Created Instance'],
-        );
-
-        if (! $instance instanceof InstanceResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new CreateInstanceRequest(
+            projectId: $projectId, nodeId: $nodeId, name: $name,
+            root: $this->stringOption('root'), domain: $this->stringOption('domain'),
+            branch: $this->stringOption('branch'), databaseServer: $this->stringOption('database-server'),
+            idempotencyKey: $this->stringOption('idempotency-key'),
+        ), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($instance->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $this->writeNameConversion($instance->nameConvertedFrom, 'created');
-        $this->writeInstanceDetails($instance);
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Create Instance', 'Instance creation')
+            : self::FAILURE;
     }
 }

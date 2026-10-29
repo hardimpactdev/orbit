@@ -26,6 +26,7 @@ final readonly class InstanceLifecycleChildren
             throw new ResourceOperationException('operation.child_forbidden', 'Lifecycle children require their recorded Instance and Node.', 422);
         }
         $children = match ($parent->kind) {
+            'instance.create' => $this->create($parent, $id),
             'instance.rename' => $this->rename($parent),
             'instance.destroy' => $this->destroy($parent),
             default => [],
@@ -51,6 +52,45 @@ final readonly class InstanceLifecycleChildren
         }
 
         return ['intent' => ['node_ids' => array_values(array_unique($nodes))], 'children' => array_values($indexed)];
+    }
+
+    /** @return list<ChildIntent> */
+    private function create(Operation $parent, int $id): array
+    {
+        $input = $parent->input;
+        if ($input['initial_status'] === 'active' && $input['first_setup_pending'] === false) {
+            return [];
+        }
+        $children = [];
+        $new = $input['initial_status'] !== 'active';
+        if ($new && $this->ready($parent, 'source-configuration')) {
+            $children[] = $this->child($parent, 'environment-sync', 'instance.sync_environment', ['instance_id' => $id]);
+            if ($this->succeeded($parent, 'environment-sync')) {
+                $children[] = $this->child($parent, 'vp-environment', 'instance.prepare_vp_environment', ['instance_id' => $id]);
+            }
+            if ($input['route_id'] !== null && $this->succeeded($parent, 'vp-environment')) {
+                $children[] = $this->child($parent, 'route-converge', 'route.converge', ['instance_id' => $id, 'route_id' => $input['route_id']]);
+            }
+        }
+        $activated = $this->ready($parent, $new ? 'instance-activate' : 'source-inspect');
+        $needsDatabase = $input['database_server_id'] !== null || $input['database_clone_source_id'] !== null;
+        if ($activated && $needsDatabase && $this->ready($parent, 'database-intent')) {
+            $children[] = app(InstanceDatabaseIntent::class)->child($parent, 'database');
+            if ($this->succeeded($parent, 'database')) {
+                $children[] = $this->child($parent, 'database-environment-sync', 'instance.sync_environment', ['instance_id' => $id]);
+            }
+        }
+        if ($activated && (! $needsDatabase || $this->succeeded($parent, 'database-environment-sync'))) {
+            $children[] = $this->steps($parent, 'setup', $id, 'setup', $input['setup_digest']);
+        }
+        if ($new && $this->rollbackSetup($parent)) {
+            $children[] = $this->steps($parent, 'rollback-teardown', $id, 'teardown', $input['teardown_digest']);
+        }
+        if ($new && $this->canRemoveFailedCreate($parent)) {
+            $children[] = $this->child($parent, 'rollback-removal', 'instance.destroy', ['instance_id' => $id, 'force' => true]);
+        }
+
+        return $children;
     }
 
     /** @return list<ChildIntent> */

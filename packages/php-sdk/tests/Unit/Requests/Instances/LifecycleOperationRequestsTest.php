@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -25,6 +27,10 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
         ->and($mock->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('lifecycle-proof')
         ->and($request->resolveEndpoint())->toBe($endpoint)->and($request->body()->all())->toBe($body);
 })->with([
+    'create' => [new CreateInstanceRequest(50, 9, 'proof', root: 'server/web/public', idempotencyKey: 'lifecycle-proof'),
+        'instance.create', '/api/v1/instances', ['project_id' => 50, 'node_id' => 9, 'name' => 'proof', 'root' => 'server/web/public']],
+    'rename' => [new RenameInstanceRequest(501, 'feature', idempotencyKey: 'lifecycle-proof'),
+        'instance.rename', '/api/v1/instances/501/rename', ['branch' => 'feature']],
     'destroy' => [new DestroyInstanceRequest(501, force: true, idempotencyKey: 'lifecycle-proof'),
         'instance.destroy', '/api/v1/instances/501', ['force' => true]],
 ]);

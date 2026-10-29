@@ -23,7 +23,7 @@ final class InstanceLifecycleContextController extends Controller
     {
         $input = match ($operation->kind) {
             'instance.destroy' => app(RemovalLifecycleExecution::class)->intent($operation),
-            'instance.rename' => $operation->input,
+            'instance.create', 'instance.rename' => $operation->input,
             default => throw new ResourceOperationException('operation.execution_forbidden', 'The Operation is outside the lifecycle family.', 422),
         };
         $execution = $contract->execution($operation);

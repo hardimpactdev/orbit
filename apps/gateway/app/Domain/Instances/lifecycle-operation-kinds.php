@@ -14,6 +14,12 @@ return (static function (): array {
     $url = $agent('instance.write-development-url', ['app_key' => 'instance.lifecycle_url', 'app_name' => 'instance.lifecycle_url']);
     $gateway = ['transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'resumable' => true];
     $commands = [
+        'create' => [
+            $agent('instance.prepare-development-source', $git),
+            $agent('instance.inspect-development-source'),
+            $agent('instance.resolve-development-source', $git),
+            $agent('instance.inspect-development-profile'), $url,
+        ],
         'rename' => [$agent('instance.inspect-development-source')],
         'destroy' => [
             $agent('instance.prepare-source-removal'),
@@ -22,6 +28,7 @@ return (static function (): array {
         ],
     ];
     $children = [
+        'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
         'rename' => ['route.update'],
         'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];

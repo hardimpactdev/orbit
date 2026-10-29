@@ -41,10 +41,20 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
 
         return match ($input['action']) {
             'configuration' => ['written' => true],
+            'activate' => $this->activate($operation),
             'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
+            'database-intent' => app(InstanceDatabaseIntent::class)->record($operation),
             'finish' => $this->finish($operation),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown lifecycle state transition.', 422),
         };
+    }
+
+    /** @return array<string, mixed> */
+    private function activate(Operation $operation): array
+    {
+        $this->state->activated($operation, true);
+
+        return ['activated' => true];
     }
 
     /** @return array<string, mixed> */
@@ -64,6 +74,9 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
         if ($operation->kind === 'instance.rename') {
             $source = app(InstanceLifecycleExecution::class)->proven($operation, 'rename-inspect');
             $this->state->renamed($operation, $source);
+        } elseif ($operation->kind === 'instance.create'
+            && ! (($operation->input['initial_status'] ?? null) === 'active' && ($operation->input['first_setup_pending'] ?? true) === false)) {
+            $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
         }
         $result = ['lifecycle_complete' => true, 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'name' => $instance->name,
             'status' => $instance->refresh()->status->value, 'branch' => $instance->branch,
