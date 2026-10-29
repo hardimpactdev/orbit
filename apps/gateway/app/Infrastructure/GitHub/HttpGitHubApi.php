@@ -280,6 +280,11 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $strict;
     }
 
+    public function repositorySquashToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write']);
+    }
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,
@@ -681,11 +686,21 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $id;
     }
 
+    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
+    {
+        return $this->merge($token, $repository, $number, $sha, 'squash');
+    }
+
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
+    {
+        return $this->merge($token, $repository, $number, $sha, 'merge');
+    }
+
+    private function merge(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha, string $method): GitHubMergeResult
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)->put(
             $this->repositoryPath($repository).'/pulls/'.$number.'/merge',
-            ['sha' => $sha, 'merge_method' => 'merge'],
+            ['sha' => $sha, 'merge_method' => $method],
         ));
         $message = $response->json('message');
         $message = is_string($message) ? rtrim($message, '.') : '';

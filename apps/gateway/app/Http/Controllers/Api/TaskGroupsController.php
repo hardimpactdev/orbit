@@ -65,7 +65,8 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function store(CreateTaskGroupRequest $request, CreateTaskGroupAction $action): JsonResponse
     {
-        $group = $action->execute($request->payload());
+        $caller = $request->user();
+        $group = $action->execute($request->payload(), $caller instanceof Node ? $caller : null);
 
         return response()->json([
             'data' => TaskGroupData::fromModel($group)->toArray(),

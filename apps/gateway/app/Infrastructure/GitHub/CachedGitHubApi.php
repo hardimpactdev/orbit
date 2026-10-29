@@ -69,6 +69,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->protectionRequiresUpToDate($token, $repository, $branch);
     }
 
+    public function repositorySquashToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    {
+        return $this->github->repositorySquashToken($credentials, $installationId, $repository);
+    }
+
     public function repositoryPullRequestToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
     {
         return $this->github->repositoryPullRequestToken($credentials, $installationId, $repository);
@@ -177,6 +182,11 @@ final readonly class CachedGitHubApi implements GitHubApi
     public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int
     {
         return $this->github->submitReview($token, $repository, $number, $commitId, $event, $body);
+    }
+
+    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
+    {
+        return $this->github->squashPullRequest($token, $repository, $number, $sha);
     }
 
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
