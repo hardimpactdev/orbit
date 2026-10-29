@@ -125,6 +125,8 @@ A checkout with registered worktrees needs `--force`. Then Orbit removes every w
 
 Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
 
+Existing Gateway callers keep synchronous removal until their owning workflow composes an `instance.destroy` child. They do not admit an Operation and wait while holding a Route or task-workspace lock. The direct `instance:destroy` entrypoint uses the Swamp Operation.
+
 ## Removal steps
 
 Once accepted, the Gateway marks each member `removing` and completes five steps per member, one member after another.
