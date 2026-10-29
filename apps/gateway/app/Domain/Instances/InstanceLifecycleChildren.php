@@ -87,6 +87,60 @@ final readonly class InstanceLifecycleChildren
         return true;
     }
 
+    /** @return array<string,mixed>|null */
+    public function stepOutcome(Operation $parent, string $key): ?array
+    {
+        if (! $parent->children()->where('child_key', $key)->exists()) {
+            return null;
+        }
+        $child = app(OperationChildren::class)->child($parent, $key);
+        if (! $child->status->terminal()) {
+            return null;
+        }
+
+        return [...($child->result ?? []), 'error_code' => $child->error_code ?? $child->result['error_code'] ?? null];
+    }
+
+    public function rollbackSetup(Operation $parent): bool
+    {
+        return in_array($this->stepOutcome($parent, 'setup')['outcome'] ?? null, ['missing', 'failed', 'deadline'], true);
+    }
+
+    public function canRemoveFailedCreate(Operation $parent): bool
+    {
+        if ($parent->kind !== 'instance.create' || $parent->input['initial_status'] === 'active') {
+            return false;
+        }
+        foreach (['source-prepare', 'source-inspect', 'source-resolve', 'source-profile', 'source-configuration'] as $key) {
+            $result = app(InstanceLifecycleExecution::class)->recordedResult($parent, $key);
+            if ($this->confirmedRefusal($result)) {
+                return true;
+            }
+        }
+        foreach (['environment-sync', 'vp-environment', 'route-converge', 'database', 'database-environment-sync'] as $key) {
+            $outcome = $this->stepOutcome($parent, $key);
+            if ($outcome !== null && $this->confirmedRefusal($outcome)) {
+                return true;
+            }
+        }
+        $teardown = $this->stepOutcome($parent, 'rollback-teardown');
+
+        return $this->rollbackSetup($parent) && in_array($teardown['outcome'] ?? null, ['succeeded', 'missing', 'failed', 'deadline'], true);
+    }
+
+    /** @param array<string,mixed> $result */
+    public function confirmedRefusal(array $result): bool
+    {
+        $code = $result['error_code'] ?? null;
+        if (isset($result['outcome']) && ! in_array($result['outcome'], ['failed', 'missing'], true)) {
+            return false;
+        }
+
+        return is_string($code) && ! in_array($code, ['operation.cancelled', 'instance.lifecycle_busy', 'instance.source_busy',
+            'operation.execution_uncertain', 'operation.execution_busy', 'operation.execution_failed', 'operation.outcome_unknown',
+            'operation.receipt_unavailable', 'operation.child_unproven', 'operation.lease_lost'], true);
+    }
+
     /** @param array<string,mixed> $input
      * @return ChildIntent
      */
