@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\TaskVms\AdmitTaskVmChildAction;
 use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
@@ -19,6 +20,7 @@ use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -29,6 +31,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmGuestCommand;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
 use App\Infrastructure\TaskVms\TaskVmUpCloudImageCommand;
+use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -39,6 +42,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -599,3 +603,99 @@ it('proves provider deletion and workspace cleanup before admitting owning Node 
         expect($removal->child_admission['intent'])->toBe($intent);
     }
 });
+
+function taskVmDestroyParent(string $provider = 'incus'): Operation
+{
+    $previous = taskVmEffectFixture();
+    $vm = TaskVm::query()->findOrFail($previous->target_id);
+    $previous->delete();
+    $vm->update(['provider' => $provider, 'host_node_id' => $provider === 'incus' ? $vm->host_node_id : null,
+        'provider_id' => $provider === 'upcloud' ? '00000000-0000-4000-8000-000000000001' : null]);
+
+    return app(StartTaskVmLifecycleOperationAction::class)->execute($vm->id, 'destroy');
+}
+
+function taskVmProveDeletion(Operation $parent): Operation
+{
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $vm->update(['state' => 'destroying']);
+    taskVmStampedChild($parent, 'destroy-intent')->update(['status' => 'succeeded', 'result' => ['ready' => true]]);
+    $child = taskVmStampedChild($parent, 'provider-delete');
+    $path = "/api/v1/operation-executor/{$child->id}";
+    test()->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'worker' => 'delete-proof'])->assertOk()->assertJsonPath('data.id', $child->id);
+    if ($parent->input['provider'] === 'incus') {
+        $runner = Mockery::mock(AgentCommandRunner::class);
+        $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name, array $input): bool => $node->id === $child->node_id
+            && $name === 'incus.vm' && $input['vm']['name'] === $vm->name && $input['operation']['kind'] === 'delete')->andReturn(['ready' => true]);
+        app()->instance(AgentCommandRunner::class, $runner);
+        $run = ['transport' => 'agent', 'name' => 'incus.vm', 'input' => array_intersect_key($child->input, array_flip(['vm', 'operation']))];
+        $result = ['ready' => true];
+        $step = 'incus-delete';
+    } else {
+        app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'ucat_cancel_guard_test'));
+        Http::preventStrayRequests();
+        Http::fake(['https://api.upcloud.com/1.3/server/'.$vm->provider_id => Http::response([], 404)]);
+        $run = ['transport' => 'task_vm_upcloud', 'name' => 'task_vm.upcloud', 'input' => ['task_vm_id' => $vm->id, 'token' => $child->input['token'], 'action' => 'delete']];
+        $result = ['ready' => true, 'provider_id' => $vm->provider_id];
+        $step = 'upcloud-delete';
+    }
+    test()->postJson($path.'/run', ['worker' => 'delete-proof', 'key' => $step, ...$run])->assertOk()->assertJsonPath('data.ready', true);
+    test()->postJson($path.'/step', ['worker' => 'delete-proof', 'key' => 'finish', 'name' => $step, 'status' => 'succeeded', 'result' => $result])->assertOk();
+    test()->postJson($path.'/complete', ['worker' => 'delete-proof', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.status', 'succeeded');
+    if ($parent->input['provider'] === 'upcloud') {
+        Http::assertSentCount(1);
+    }
+
+    return $child->refresh();
+}
+
+it('allows destroy cancellation before proven provider deletion even when the VM is destroying', function (string $status): void {
+    $parent = taskVmDestroyParent();
+    TaskVm::query()->whereKey($parent->target_id)->update(['state' => 'destroying']);
+    if ($status !== 'missing') {
+        taskVmStampedChild($parent, 'provider-delete')->update(['status' => $status]);
+    }
+
+    $cancelled = app(CancelOperationAction::class)->execute($parent);
+
+    expect($cancelled->cancel_requested_at)->not->toBeNull();
+    expect($cancelled->status)->toBe(OperationStatus::Cancelled);
+})->with(['missing', 'queued', 'running', 'failed']);
+
+it('refuses destroy cancellation after the exact proven provider deletion without changing cleanup', function (string $provider): void {
+    $parent = taskVmDestroyParent($provider);
+    $deletion = taskVmProveDeletion($parent);
+    $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
+    $this->withServerVariables(['REMOTE_ADDR' => Node::query()->where('name', 'gateway')->sole()->wireguard_ip]);
+
+    $this->call('POST', "/api/v1/operations/{$parent->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'operation.cancel_refused');
+
+    expect($parent->fresh()->cancel_requested_at)->toBeNull();
+    expect($parent->fresh()->status)->toBe(OperationStatus::Queued);
+    expect($cleanup->fresh()->cancel_requested_at)->toBeNull();
+    expect($cleanup->fresh()->status)->toBe(OperationStatus::Queued);
+    expect($deletion->fresh()->status)->toBe(OperationStatus::Succeeded);
+})->with(['incus', 'upcloud']);
+
+it('refuses cancellation when a succeeded provider-delete row has no valid deletion proof', function (string $corruption): void {
+    $parent = taskVmDestroyParent();
+    $deletion = taskVmProveDeletion($parent);
+    $code = 'operation.child_unproven';
+    if ($corruption === 'step') {
+        $deletion->steps()->delete();
+        $code = 'operation.completion_unproven';
+    } elseif ($corruption === 'kind') {
+        $deletion->update(['kind' => 'task_vm.incus_stop']);
+    } elseif ($corruption === 'target') {
+        $deletion->update(['target_id' => $deletion->target_id + 1]);
+    } else {
+        $deletion->forceFill(['child_fingerprint' => str_repeat('0', 64)])->save();
+    }
+    $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
+
+    expect(fn () => app(CancelOperationAction::class)->execute($parent))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
+    expect($parent->fresh()->cancel_requested_at)->toBeNull();
+    expect($cleanup->fresh()->cancel_requested_at)->toBeNull();
+})->with(['step', 'kind', 'target', 'stamp']);

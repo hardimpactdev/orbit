@@ -6,6 +6,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\TaskVms\TaskVmAgentExecution;
 use App\Domain\TaskVms\TaskVmChildAdmission;
 use App\Domain\TaskVms\TaskVmCommandContracts;
+use App\Domain\TaskVms\TaskVmDestroyCancelGuard;
 use App\Domain\TaskVms\TaskVmEffectCompletion;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Domain\TaskVms\TaskVmSweepContracts;
@@ -33,6 +34,14 @@ return (static function (): array {
 
     $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::packageCacheKinds(), ...TaskVmCommandContracts::cacheMountKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
     foreach ($kinds as $kind => &$definition) {
+        if ($kind === 'task_vm.destroy') {
+            if (! OperationKinds::supports('cancel_guard')) {
+                unset($kinds[$kind]);
+
+                continue;
+            }
+            $definition['cancel_guard'] = TaskVmDestroyCancelGuard::class;
+        }
         $localKinds = ['task_vm.model_issue', 'task_vm.model_revoke', 'task_vm.runtime_confirm', 'task_vm.image_phase_confirm'];
         if (! OperationKinds::supports('receipts') && ! in_array($kind, $localKinds, true)) {
             unset($kinds[$kind]);
