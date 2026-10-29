@@ -161,7 +161,7 @@ it('takes the existing Instance environment lock before storing Route mutation i
         ->and($this->agents->calls)->toBe([]);
 });
 
-it('records the target Metrics child without calling the retained PHP reconciler at admission', function (string $mode): void {
+it('skips Metrics for target associations without calling the retained PHP reconciler at admission', function (string $mode): void {
     RouteForeignChildKinds::register();
     $this->node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $this->route->update(['status' => 'pending', 'sites_published' => false]);
@@ -172,11 +172,12 @@ it('records the target Metrics child without calling the retained PHP reconciler
     $admission = app(AdmitRouteOperationAction::class);
     $operation = $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route);
     expect($operation->status->value)->toBe('queued')
-        ->and($operation->state['route_plan']['stages']['metrics-reconciled'][0]['kind'])->toBe('metrics.reconcile')
+        ->and($operation->state['route_plan']['metrics'])->toBeFalse()
+        ->and($operation->state['route_plan']['stages'])->not->toHaveKey('metrics-reconciled')
         ->and($operation->children()->exists())->toBeFalse()->and($this->agents->calls)->toBe([]);
 })->with(['set', 'unset']);
 
-it('does not announce a target change when admission preparation refuses', function (string $mode): void {
+it('does not announce a target change when its enclosing admission transaction rolls back', function (string $mode): void {
     $this->node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $this->route->update(['status' => 'pending', 'sites_published' => false]);
     if ($mode === 'set') {
@@ -187,8 +188,10 @@ it('does not announce a target change when admission preparation refuses', funct
     Event::fake([RecordBroadcast::class]);
     $admission = app(AdmitRouteOperationAction::class);
 
-    expect(fn () => $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route))
-        ->toThrow(ResourceOperationException::class, 'metrics.reconcile');
+    expect(fn () => DB::transaction(function () use ($mode, $admission): never {
+        $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route);
+        throw new ResourceOperationException('route.fixture_refused', 'Refuse before the enclosing admission commits.', 409);
+    }))->toThrow(ResourceOperationException::class, 'Refuse before the enclosing admission commits.');
 
     Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated);
     expect($this->route->targets()->pluck('instance_id')->all())->toBe($mode === 'set' ? [] : [$this->instance->id])
