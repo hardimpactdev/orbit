@@ -6,25 +6,18 @@ namespace Tests\Support;
 
 use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ReservesRolePackages;
-use App\Domain\Tools\SupportsToolAdoption;
-use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolRemovalPlan;
 use App\Models\Node;
 use Throwable;
 
-final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoption, ToolManager
+final class FakeToolManager implements ReservesRolePackages, ToolManager
 {
     /** @var list<string> */
     public array $roleOwned = [];
 
     /** @var list<string|null|Throwable> */
     public array $installedVersions = [];
-
-    /** @var list<string|null|Throwable> */
-    public array $candidateVersions = [];
 
     /** @var list<string> */
     public array $calls = [];
@@ -38,18 +31,11 @@ final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoptio
 
     public bool $validPackage = true;
 
-    public ?ToolAdoptionFact $adoption = null;
-
-    public ?Throwable $adoptionFailure = null;
-
-    public ToolRemovalPlan $removalPlan;
-
     public InstalledToolInventory $inventory;
 
     public function __construct(
         public ToolManagerName $managerName = ToolManagerName::Apt,
     ) {
-        $this->removalPlan = new ToolRemovalPlan([]);
         $this->inventory = new InstalledToolInventory([]);
     }
 
@@ -83,21 +69,11 @@ final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoptio
         return $this->validPackage;
     }
 
-    public function materialize(Node $node): void
-    {
-        $this->failOrCall('materialize');
-    }
-
     public function managerVersion(Node $node): string
     {
         $this->calls[] = 'managerVersion';
 
         return '1.0.0';
-    }
-
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
-    {
-        return $this->next($this->candidateVersions, 'candidateVersion');
     }
 
     public function installedInventory(Node $node): InstalledToolInventory
@@ -115,39 +91,6 @@ final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoptio
     public function normalizeVersion(string $rawVersion): ?string
     {
         return preg_match('/\A\d+(?:\.\d+){0,2}\z/', $rawVersion) === 1 ? $rawVersion : null;
-    }
-
-    public function install(Node $node, string $package): void
-    {
-        $this->failOrCall('install');
-    }
-
-    public function update(Node $node, string $package): void
-    {
-        $this->failOrCall('update');
-    }
-
-    public function planRemoval(Node $node, string $package): ToolRemovalPlan
-    {
-        $this->failOrCall('planRemoval');
-
-        return $this->removalPlan;
-    }
-
-    public function remove(Node $node, string $package): void
-    {
-        $this->failOrCall('remove');
-    }
-
-    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
-    {
-        $this->calls[] = 'inspectForAdoption';
-
-        if ($this->adoptionFailure instanceof Throwable) {
-            throw $this->adoptionFailure;
-        }
-
-        return $this->adoption ?? new ToolAdoptionFact('1.2.3', null);
     }
 
     /** @param list<string|null|Throwable> $queue */
