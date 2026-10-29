@@ -925,3 +925,12 @@ it('allows parent cancellation when a terminal child no longer needs its guard',
     expect(array_keys($guard->seen))->toBe([$this->parent->id])->and($this->parent->refresh()->cancel_requested_at)->not->toBeNull()
         ->and($child->refresh()->status)->toBe(OperationStatus::Succeeded);
 });
+
+it('encodes an empty child receipt result as an object while retaining the children list', function (): void {
+    $child = childKitAdmit($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child', 'operation_id' => $child->id])->assertOk();
+    $this->postJson('/api/v1/operation-executor/'.$child->id.'/complete', ['worker' => 'child', 'status' => 'failed', 'error_code' => 'test.failed', 'result' => (object) []])->assertOk();
+    $wire = json_decode($this->getJson($this->path.'/children')->assertOk()->getContent(), flags: JSON_THROW_ON_ERROR);
+    expect($wire->data)->toBeArray()->and($wire->data[0]->result)->toBeInstanceOf(stdClass::class)
+        ->and($child->refresh()->result)->toBe([]);
+});

@@ -176,6 +176,19 @@ final class KitGatewayCommand implements OperationGatewayCommand
     }
 }
 
+final class KitEmptyMapCommand implements OperationGatewayCommand
+{
+    public function schema(): array
+    {
+        return ['type' => 'object', 'properties' => ['options' => ['type' => 'object'], 'ids' => ['type' => 'array', 'items' => ['type' => 'integer']]], 'additionalProperties' => false];
+    }
+
+    public function run(Operation $operation, #[SensitiveParameter] array $input): array
+    {
+        return [];
+    }
+}
+
 final class KitBooleanCommand implements OperationGatewayCommand
 {
     public int $runs = 0;
@@ -612,7 +625,7 @@ it('marks all hydrated-value and redaction parameters as sensitive', function ()
         [RemoteProgramRunner::class, 'run', 'input'],
         [SshProgramRunner::class, 'run', 'input'],
     ] as [$class, $method, $name]) {
-        expect((new ReflectionParameter([$class, $method], $name))->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+        expect(new ReflectionParameter([$class, $method], $name)->getAttributes(SensitiveParameter::class))->toHaveCount(1);
     }
 });
 
@@ -620,7 +633,7 @@ it('collects typed agent tokens and scalar protected values for redaction', func
     $token = 'ghs_kit_secret_token';
     $value = new OperationSecretValue(new AgentGitHubToken($token));
     expect($value->strings())->toContain($token, base64_encode('x-access-token:'.$token));
-    $values = (new OperationSecretValue(['pin' => 123456, 'ratio' => 12.5, 'enabled' => true]))->strings();
+    $values = new OperationSecretValue(['pin' => 123456, 'ratio' => 12.5, 'enabled' => true])->strings();
     expect($values)->toContain('123456', '12.5')->not->toContain('1');
     $secrets = app(OperationSecrets::class);
     expect($secrets->redact(['pin' => 123456, 'text' => 'pin 123456', 'ratio' => 12.5], $values))
@@ -691,7 +704,7 @@ it('hydrates protected booleans through the HTTP schema without masking digit on
     $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.result', $result);
     expect($source->resolves)->toBe(1)->and($command->runs)->toBe(1)
-        ->and((new OperationSecretValue($stored))->strings())->toBe([])
+        ->and(new OperationSecretValue($stored)->strings())->toBe([])
         ->and($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
 })->with([true, false]);
 
@@ -864,3 +877,57 @@ it('refuses an oversized completion or step result without changing Operation re
     expect($this->operation->refresh()->getAttributes())->toBe($before);
     expect($this->operation->steps()->count())->toBe(0);
 })->with(['step', 'complete']);
+
+it('encodes empty executor maps as JSON objects and keeps lists as arrays on the wire', function (): void {
+    $this->spec = [...array_diff_key($this->spec, ['execution' => true]), 'runs' => [['transport' => 'gateway', 'name' => 'test.empty']],
+        'completion_contract' => ['step' => 'effect', 'transport' => 'gateway', 'name' => 'test.empty', 'result' => []], 'result_fields' => []];
+    ($this->register)();
+    $this->operation->update(['input' => [], 'state' => ['executor_lease_node_id' => $this->executorNodeId]]);
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.empty' => KitEmptyMapCommand::class]));
+    $this->operation->update(['status' => OperationStatus::Queued, 'worker' => null]);
+    $claim = $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.protected', 'worker' => 'worker'])->assertOk();
+    expect(json_decode($claim->getContent(), flags: JSON_THROW_ON_ERROR)->data->input)->toBeInstanceOf(stdClass::class);
+    $wire = json_decode($this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->getContent(), flags: JSON_THROW_ON_ERROR);
+    expect($wire->data->input)->toBeInstanceOf(stdClass::class)
+        ->and($wire->data->execution_context)->toBeInstanceOf(stdClass::class)
+        ->and($wire->data->execution_context->descriptors)->toBe([])
+        ->and($wire->data->step_results)->toBeInstanceOf(stdClass::class)
+        ->and($wire->data->result)->toBeNull();
+    $run = ['worker' => 'worker', 'key' => 'empty', 'transport' => 'gateway', 'name' => 'test.empty', 'input' => (object) []];
+    foreach ([1, 2] as $_) {
+        $wire = json_decode($this->postJson($this->path.'/run', $run)->assertOk()->getContent(), flags: JSON_THROW_ON_ERROR);
+        expect($wire->data)->toBeInstanceOf(stdClass::class)->and(get_object_vars($wire->data))->toBe([]);
+    }
+    $receipt = json_decode($this->getJson($this->path.'/receipts/empty')->assertOk()->getContent(), flags: JSON_THROW_ON_ERROR);
+    expect($receipt->data->result)->toBeInstanceOf(stdClass::class);
+    $step = $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'empty.done', 'name' => 'effect', 'status' => 'succeeded', 'result' => (object) []])->assertOk();
+    expect(json_decode($step->getContent(), flags: JSON_THROW_ON_ERROR)->data->step_results->effect)->toBeInstanceOf(stdClass::class);
+    $complete = $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'test.failed', 'result' => (object) []])->assertOk();
+    expect(json_decode($complete->getContent(), flags: JSON_THROW_ON_ERROR)->data->result)->toBeInstanceOf(stdClass::class);
+    expect($this->operation->refresh()->input)->toBe([])->and($this->operation->state['executor_runs']['empty']['input'])->toBe([])
+        ->and($this->operation->state['executor_runs']['empty']['result'])->toBe([]);
+});
+
+it('encodes descriptor maps through their schema without changing lists or resolving sources', function (bool $nested): void {
+    $this->spec['runs'] = [['transport' => 'gateway', 'name' => 'test.empty']];
+    $this->spec['result_fields'] = [];
+    ($this->register)();
+    $input = $nested ? ['options' => [], 'ids' => []] : [];
+    $descriptor = ['key' => 'empty', 'step' => 'effect', 'transport' => 'gateway', 'name' => 'test.empty', 'input' => $input, 'resumable' => false, 'required' => true];
+    $this->operation->update(['input' => ['descriptors' => [$descriptor]], 'state' => [...$this->operation->state, 'family_projection' => []]]);
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.empty' => KitEmptyMapCommand::class]));
+    $wire = json_decode($this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->getContent(), flags: JSON_THROW_ON_ERROR);
+    expect($wire->data->execution_context->descriptors)->toBeArray()
+        ->and($wire->data->execution_context->descriptors[0]->input)->toBeInstanceOf(stdClass::class)
+        ->and($wire->data->execution_context->result)->toBeInstanceOf(stdClass::class)
+        ->and($this->source->resolves)->toBe(0)->and($this->command->runs)->toBe(0)
+        ->and($this->operation->refresh()->input['descriptors'][0]['input'])->toBe($input);
+    if ($nested) {
+        expect($wire->data->execution_context->descriptors[0]->input->options)->toBeInstanceOf(stdClass::class)
+            ->and($wire->data->execution_context->descriptors[0]->input->ids)->toBe([]);
+    } else {
+        expect(get_object_vars($wire->data->execution_context->descriptors[0]->input))->toBe([]);
+    }
+    $unknown = $this->getJson($this->path.'/receipts/empty')->assertOk();
+    expect(json_decode($unknown->getContent(), flags: JSON_THROW_ON_ERROR)->data->result)->toBeNull();
+})->with([false, true]);

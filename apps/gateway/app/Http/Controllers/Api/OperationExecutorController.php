@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationExecutorJson;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -29,6 +30,8 @@ use Illuminate\Http\JsonResponse;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class OperationExecutorController extends Controller
 {
+    public function __construct(private readonly OperationExecutorJson $json) {}
+
     public function claimable(ClaimableExecutorRequest $request, SwampOperationExecutor $executor): JsonResponse
     {
         return $this->respond($request, ['kinds' => $executor->claimable()]);
@@ -58,7 +61,7 @@ final class OperationExecutorController extends Controller
 
     public function run(RunExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
-        return $this->respond($request, $executor->run($operation, $request->runInput(), $request->peerNodeId()));
+        return $this->respond($request, OperationExecutorJson::result($executor->run($operation, $request->runInput(), $request->peerNodeId())));
     }
 
     public function children(ChildrenExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
@@ -70,7 +73,7 @@ final class OperationExecutorController extends Controller
 
     public function readChildren(ReadChildrenExecutorRequest $request, Operation $operation, OperationChildren $children): JsonResponse
     {
-        return $this->respond($request, $children->receipts($operation));
+        return $this->respond($request, array_map(OperationExecutorJson::receipt(...), $children->receipts($operation)));
     }
 
     public function wait(WaitExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
@@ -80,11 +83,11 @@ final class OperationExecutorController extends Controller
 
     public function effectReceipt(ReceiptExecutorRequest $request, Operation $operation, string $step, SwampOperationExecutor $executor): JsonResponse
     {
-        return $this->respond($request, $executor->receipt($operation, $step, $request->peerNodeId()));
+        return $this->respond($request, OperationExecutorJson::receipt($executor->receipt($operation, $step, $request->peerNodeId())));
     }
 
-    /** @param array<string, mixed>|list<array<string,mixed>>|null $data */
-    private function respond(ExecutorRequest $request, ?array $data): JsonResponse
+    /** @param array<string, mixed>|list<array<string,mixed>>|\stdClass|null $data */
+    private function respond(ExecutorRequest $request, array|\stdClass|null $data): JsonResponse
     {
         return response()->json(['data' => $data, 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
@@ -95,7 +98,7 @@ final class OperationExecutorController extends Controller
         $wait = ValidatedData::object($operation->state['executor_wait'] ?? []);
         $tuples = is_array($wait['children'] ?? null) ? $wait['children'] : [];
 
-        return [...OperationsController::withSteps($operation, null, null),
+        return $this->json->operation($operation, [...OperationsController::withSteps($operation, null, null),
             'node_id' => app(OperationChildren::class)->nodeId($operation),
             'parent_operation_id' => $operation->parent_operation_id, 'child_key' => $operation->child_key,
             'worker' => $operation->worker,
@@ -103,6 +106,6 @@ final class OperationExecutorController extends Controller
             'waiting_for' => array_map(static fn (mixed $tuple): array => ['key' => ValidatedData::object($tuple)['key'], 'id' => ValidatedData::object($tuple)['id']], $tuples),
             'step_results' => $operation->state['steps'] ?? [],
             'execution_context' => app(OperationExecutionContract::class)->context($operation),
-        ];
+        ]);
     }
 }

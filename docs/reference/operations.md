@@ -70,6 +70,8 @@ The steps appear when a worker first starts the operation, all `pending`. A queu
 
 ### Swamp child Operations
 
+Executor responses encode map fields as JSON objects, including empty Operation inputs, execution contexts, descriptor inputs, step-result maps, run results and receipt results. Descriptor input schemas preserve nested maps as objects and lists as arrays. Empty lists remain `[]`, and absent results remain null. This conversion happens only at the HTTP boundary, after authorization and redaction; stored input, fingerprints and receipts retain their original values. Reading a response does not hydrate secrets or run transports.
+
 A Swamp parent admits children through its owning family's `OperationFamilyChildren::childContext()`. The context returns exact keyed intents `{key,kind,node_id,input}` from admitted input or prepared Gateway state. The parent kind declares allowed child kinds and Node relations. Each child kind registers an `OperationChildAdmission` adapter that calls its normal owning admission action. Swamp posts `{worker,key}` to `operation-executor/{parent}/children`; optional kind, Node and input fields are exact assertions only. Repeating a key returns the same child before repeating family admission.
 
 The Gateway stamps `parent_operation_id`, `child_key` and an admission fingerprint. `OperationChildren::requireSucceeded(parent,key)` verifies the child's exact recorded target, input and constraints before returning its result. Parents cannot finish while any admitted child is nonterminal. A `children_succeeded` completion contract requires matching successful children, including each eligible keyed intent. Unsupported guarantees fail when the kind loads; families check `OperationKinds::supports()` before registration.
