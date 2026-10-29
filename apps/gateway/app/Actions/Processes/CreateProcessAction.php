@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
@@ -24,6 +25,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SshProcessUserResolver;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -218,5 +220,27 @@ final readonly class CreateProcessAction
                 status: 409,
             );
         }
+    }
+
+    public function admit(#[SensitiveParameter] AddProcessData $data, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
+            throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
+        }
+        $this->targets->resolve($data->targetType, $data->targetId);
+        $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
+
+        return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(function () use ($data, $caller, $requestId): Operation {
+            $admission = $this->reserveAdmission($data);
+
+            return $this->lease->run($admission['process'], function (Process $fresh) use ($admission, $caller, $requestId): Operation {
+                if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
+                    throw new ResourceOperationException('process.name_taken', "Process [{$fresh->name}] already exists with different configuration.", 409);
+                }
+                $fresh->fill($admission['attributes'])->save();
+
+                return app(ProcessOperationAdmission::class)->execute($fresh, 'create', $admission['created'], caller: $caller, requestId: $requestId);
+            });
+        }));
     }
 }

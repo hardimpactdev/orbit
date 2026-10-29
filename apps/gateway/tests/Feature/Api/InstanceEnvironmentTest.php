@@ -15,6 +15,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteProvenance;
@@ -23,6 +24,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -35,6 +37,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
@@ -759,8 +762,7 @@ it('requires explicit Process recovery after a real restart failure even if the 
     $runtime = Mockery::mock(ProcessRuntimeManager::class);
     $runtime->shouldReceive('restart')->once()->ordered()
         ->andThrow(new ProcessOperationException('restart', 'process.restart_failed', 'SECRET systemctl output'));
-    $runtime->shouldReceive('restart')->once()->ordered()->andReturnNull();
-    $runtime->shouldReceive('status')->twice()->andReturn('running');
+    $runtime->shouldReceive('assertCanStart')->once();
     app()->instance(ProcessRuntimeManager::class, $runtime);
     $url = "/api/v1/instances/{$this->instance->id}/environment/sync";
 
@@ -778,9 +780,25 @@ it('requires explicit Process recovery after a real restart failure even if the 
         ->assertJsonPath('data.runtime_refresh', 'config_cache_and_opcache_refreshed')
         ->assertJsonPath('data.restarted_process_ids', []);
     $this->assertDatabaseHas('processes', ['id' => $process->id, 'status' => 'failed']);
+    $this->assertDatabaseCount('operations', 0);
 
-    $this->postJson("/api/v1/processes/{$process->id}/restart")
-        ->assertOk()->assertJsonPath('data.status', 'active');
+    $agents = (new FakeAgentCommandRunner)->answer('process.check-release', ['available' => true])
+        ->answer('process.control', [])->answer('process.status', ['state' => 'active']);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $id = $this->postJson("/api/v1/processes/{$process->id}/restart")
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.restart')->json('data.id');
+    $this->assertDatabaseHas('processes', ['id' => $process->id, 'status' => 'provisioning']);
+    config(['dependency_detection.services_node_id' => $this->caller->id]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.restart', 'operation_id' => $id, 'worker' => 'explicit-recovery'])->assertOk();
+    $operation = Operation::query()->findOrFail($id);
+    $path = '/api/v1/operation-executor/'.$id;
+    foreach (app(OperationExecutionContract::class)->context($operation)['descriptors'] as $descriptor) {
+        $result = $this->postJson($path.'/run', ['worker' => 'explicit-recovery', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'],
+            'name' => $descriptor['name'], 'input' => $descriptor['input']])->assertOk()->json('data');
+        $this->postJson($path.'/step', ['worker' => 'explicit-recovery', 'key' => $descriptor['key'].'-done', 'name' => $descriptor['step'],
+            'status' => 'succeeded', 'result' => $result])->assertOk();
+    }
+    $this->postJson($path.'/complete', ['worker' => 'explicit-recovery', 'status' => 'succeeded', 'result' => $result])->assertOk();
     $this->assertDatabaseHas('processes', ['id' => $process->id, 'status' => 'active', 'error_code' => null]);
     $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
         ->assertOk()->assertJsonPath('data.runtime_refresh', 'skipped_unchanged')

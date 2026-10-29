@@ -9,13 +9,17 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 final readonly class RestartProcessAction
@@ -91,5 +95,16 @@ final readonly class RestartProcessAction
 
             return $result;
         });
+    }
+
+    public function admit(Process $process, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        $admit = fn (): Operation => DB::transaction(fn (): Operation => $this->lease->run($process, function (Process $fresh) use ($caller, $requestId): Operation {
+            $this->runtime->assertCanStart($fresh);
+
+            return app(ProcessOperationAdmission::class)->execute($fresh, 'restart', caller: $caller, requestId: $requestId);
+        }));
+
+        return $this->admissions->run(Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [], $admit);
     }
 }

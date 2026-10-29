@@ -12,6 +12,7 @@ final class StartProcessCommand extends ProcessActionCommand
     #[\Override]
     protected $signature = 'process:start
         {process : Numeric process ID}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -19,7 +20,7 @@ final class StartProcessCommand extends ProcessActionCommand
 
     protected function request(int $processId): GatewayRequest
     {
-        return new StartProcessRequest($processId);
+        return new StartProcessRequest($processId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
     }
 
     protected function pastTense(): string

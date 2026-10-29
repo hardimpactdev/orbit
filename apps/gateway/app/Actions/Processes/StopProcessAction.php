@@ -8,12 +8,16 @@ use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 final readonly class StopProcessAction
@@ -67,5 +71,14 @@ final readonly class StopProcessAction
 
             return $result;
         });
+    }
+
+    public function admit(Process $process, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        $admit = fn (): Operation => DB::transaction(fn (): Operation => $this->lease->run($process, function (Process $fresh) use ($caller, $requestId): Operation {
+            return app(ProcessOperationAdmission::class)->execute($fresh, 'stop', caller: $caller, requestId: $requestId);
+        }));
+
+        return $admit();
     }
 }
