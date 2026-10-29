@@ -29,7 +29,7 @@ final class MetricsFleetChildren
         $healthyServices = [];
         $ready = true;
         $fatal = false;
-        if ($ready && ! $input['unreachable']) {
+        if (! $input['unreachable']) {
             foreach (['node_exporter', 'cadvisor'] as $component) {
                 $snapshots = [];
                 foreach ($fleet as $node) {
