@@ -275,3 +275,13 @@ Gate `children_settled` with its matching capability. Its completion contract na
 Optional stages should use a mandatory final Gateway proof and family `assertCompletion` that calls `OperationChildren::requireSucceeded` for the exact stored plan keys. Do not list every optional kind as an unconditional `children_succeeded` requirement.
 
 Result list strings are limited to 1024 bytes and the full encoded result to 256 KiB. Declarations are limited to 65,536 total list items after expanding nested bounds. A children_settled kind must declare skipped with child_id:int, reason:string and optional key:string/kind:string; its max must cover its child kinds. Child admission enforces the count and byte budget before effects, preserving room for derived failure receipts. Executor routes preserve empty strings and exact bytes by bypassing TrimStrings and ConvertEmptyStringsToNull.
+
+## Declarative Tools proof
+
+The Tools proof compiles one fixed-command family spec in Orbit and reads its
+admitted descriptors here. It removes the worker's duplicate command catalogue
+and input builder. Swamp owns package execution policy; Gateway still owns
+admission, exact Node/command/input binding, public projection, and generic
+receipt checks. Nick approved the executor trust change on 2026-10-29. The orchestrator
+owns independent review and merge. See [Tools boundary proof](simplify-boundary-proof.md).
+Other families keep their current contracts.

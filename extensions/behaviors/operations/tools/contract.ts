@@ -33,48 +33,6 @@ export const Completion = z.object({
   result: ReceiptResult,
   error_code: z.string().regex(/^[a-z0-9_.-]+$/).nullable(),
 });
-export const commands = {
-  apt: {
-    version: "tool.apt-version",
-    inventory: "tool.apt-inventory",
-    candidate: "tool.apt-candidate",
-    plan: "tool.apt-removal-plan",
-    mutate: "tool.apt-",
-    adoption: null,
-  },
-  composer: {
-    version: "tool.composer-version",
-    inventory: "tool.composer-inventory",
-    candidate: "tool.composer-candidate",
-    plan: "tool.composer-removal-plan",
-    mutate: "tool.composer-",
-    adoption: null,
-  },
-  vp: {
-    version: "tool.vp-version",
-    inventory: "tool.vp-inventory",
-    candidate: "tool.vp-candidate",
-    plan: "tool.vp-removal-plan",
-    mutate: "tool.vp-",
-    adoption: null,
-  },
-  brew: {
-    version: "tool.homebrew-version",
-    inventory: "tool.homebrew-formula-inventory",
-    candidate: "tool.homebrew-formula-candidate",
-    plan: null,
-    mutate: "tool.homebrew-formula-",
-    adoption: "tool.homebrew-formula-adoption",
-  },
-  "brew-cask": {
-    version: "tool.homebrew-version",
-    inventory: "tool.homebrew-cask-inventory",
-    candidate: "tool.homebrew-cask-candidate",
-    plan: null,
-    mutate: "tool.homebrew-cask-",
-    adoption: "tool.homebrew-cask-adoption",
-  },
-} as const;
 
 export class ToolRefusal extends Error {
   constructor(readonly code: string, readonly result: Result = {}) {
@@ -184,15 +142,6 @@ export function verifyInstalled(input: ToolInput, version: string): void {
   if (!allows(input, version)) {
     throw new ToolRefusal("tool.installed_version_constraint_violated");
   }
-}
-export function packageInput(input: ToolInput, bottle = true): Result {
-  return {
-    package: input.package,
-    ...(input.platform === "macos" && bottle &&
-        (input.manager === "brew" || input.manager === "brew-cask")
-      ? { architecture: input.architecture }
-      : {}),
-  };
 }
 
 export function refusalCode(step: string, code: string, kind: string): string {

@@ -1,3 +1,5 @@
+import { fixturePlan } from "./plan_fixture.ts";
+import { Operation } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 // Disposable native workflow fixture. No real Gateway or Node is contacted.
@@ -5,6 +7,9 @@ export const fixtureHttp: Http = async (method, path, raw) => {
   const state = JSON.parse(await Deno.readTextFile("native-tools.json"));
   const body = (raw ?? {}) as Record<string, unknown>;
   state.calls.push({ method, path, body });
+  state.operation.execution_context = fixturePlan(
+    Operation.parse(state.operation),
+  );
   let data: unknown = state.operation;
   if (path === `/api/v1/operations/${state.operation.id}`) {
     await Deno.writeTextFile("native-tools.json", JSON.stringify(state));

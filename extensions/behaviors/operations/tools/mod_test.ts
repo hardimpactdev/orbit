@@ -4,6 +4,7 @@ import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016
 import { type Context, Operation } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { tools } from "./mod.ts";
+import { fixturePlan } from "./plan_fixture.ts";
 import {
   allows,
   Completion,
@@ -68,6 +69,7 @@ class Fixture {
   emptyResultsAsArrays = true;
   mutationResultOverride: unknown = undefined;
   receiptStateOverride: "running" | "unknown" | undefined;
+  admittedPlan = fixturePlan;
   http: Http = async (method, path, raw) => {
     const body = (raw ?? {}) as Record<string, unknown>;
     this.calls.push({ method, peer: this.peer, path, body });
@@ -75,6 +77,7 @@ class Fixture {
     if (this.leaseLost) {
       return { status: 409, body: { error: { code: "operation.lease_lost" } } };
     }
+    this.operation.execution_context = this.admittedPlan(this.operation);
     let data: unknown = this.operation;
     if (path === `/api/v1/operations/${this.operation.id}`) {
       return {
@@ -989,4 +992,76 @@ Deno.test("compiled ranges preserve Composer 3.5.1 constraint decisions", async 
       );
     }
   }
+});
+
+Deno.test("missing admitted mutation descriptor refuses before a package effect", async () => {
+  const f = new Fixture();
+  f.admittedPlan = (operation) => ({
+    descriptors: fixturePlan(operation).descriptors.filter((entry) =>
+      entry.key !== "package-mutate"
+    ),
+  });
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.execution_forbidden",
+  );
+  assertEquals(f.mutations, 0);
+  assertEquals(f.calls.some((call) => call.path.endsWith("/complete")), false);
+});
+
+Deno.test("fake admission matches 100 actual Gateway descriptor contexts", async () => {
+  const contexts: unknown[] = [];
+  for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {
+    for (
+      const verb of ["install", "update", "remove", "adopt", "manager_converge"]
+    ) {
+      for (const platform of ["linux", "macos"]) {
+        for (const intent_only of [false, true]) {
+          const operation = Operation.parse({
+            id: 11,
+            kind: `tool.${verb}`,
+            node_id: 2,
+            status: "running",
+            cancel_requested: false,
+            step_results: {},
+            input: {
+              manager,
+              package: "is-number",
+              platform,
+              architecture: "arm64",
+              tool_id: null,
+              intent_only,
+              version_constraint: null,
+              materialize_command: "tool.materialize-vp",
+              materialize_fields: ["username", "release"],
+              username: "orbit",
+              release: "pinned",
+            },
+          });
+          contexts.push(fixturePlan(operation));
+        }
+      }
+    }
+  }
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+        Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+          .map(([key, entry]) => [key, canonical(entry)]),
+      )
+      : value;
+  const digest = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(JSON.stringify(canonical(contexts))),
+    ),
+  );
+  // Generated from ToolOperationExecution::context at Orbit a321a32b; empty input maps normalized as on the wire.
+  assertEquals(
+    Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    "b7628f410f75c7b741cde57f95a4930c56d665fb4351b5429cc3bd37baa3a01a",
+  );
 });

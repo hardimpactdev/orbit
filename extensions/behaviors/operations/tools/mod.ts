@@ -9,11 +9,9 @@ import {
 } from "../../operation-runner/mod.ts";
 import {
   allows,
-  commands,
   Completion,
   Input,
   normalizeVersion,
-  packageInput,
   ReceiptResult,
   refusalCode,
   type Result,
@@ -33,7 +31,7 @@ export function tools(
 ) {
   return {
     type: "@nckrtl/operation-tools",
-    version: "2026.10.29.2",
+    version: "2026.10.29.3",
     globalArguments: Globals,
     resources: {
       assignment: {
@@ -172,8 +170,7 @@ export function tools(
               status: completion.status,
             };
           }
-          const input = Input.parse(operation.input),
-            command = commands[input.manager];
+          const input = Input.parse(operation.input);
           if (input.node_id !== operation.node_id) {
             throw new Error("Wrong Tool Node");
           }
@@ -191,10 +188,17 @@ export function tools(
           };
           const run = async (
             step: string,
-            name: string,
-            body: Result,
           ): Promise<Result> => {
             checkLease();
+            const descriptor = operation.execution_context.descriptors.find(
+              (entry) =>
+                entry.key === step && entry.step === step &&
+                entry.transport === "agent",
+            );
+            if (!descriptor) {
+              throw new ExecutorError("operation.execution_forbidden");
+            }
+            const { name, input: body } = descriptor;
             const recorded = operation.step_results[step];
             if (recorded) {
               return ReceiptResult.parse(recorded);
@@ -285,38 +289,25 @@ export function tools(
               });
             }
             let final: Result;
-            if (verb === "install" || verb === "manager_converge") {
-              const materialize = operation.input.materialize_command;
-              if (typeof materialize === "string") {
-                const fields = z.array(z.string()).parse(
-                  operation.input.materialize_fields,
-                );
-                const body = Object.fromEntries(
-                  fields.map((field) => [field, operation.input[field]]),
-                );
-                await run("manager-materialize", materialize, body);
-              }
+            if (
+              operation.execution_context.descriptors.some((entry) =>
+                entry.key === "manager-materialize"
+              )
+            ) {
+              await run("manager-materialize");
             }
-            await run("manager-ready", command.version, {});
+            await run("manager-ready");
             if (verb === "manager_converge") {
-              final = await run("tool-verified", command.version, {});
+              final = await run("tool-verified");
             } else if (input.intent_only) {
-              final = await run("tool-verified", command.version, {});
+              final = await run("tool-verified");
             } else if (verb === "adopt") {
               let composerRoots: unknown;
               if (input.manager === "composer") {
-                const scope = await run(
-                  "adoption-scope",
-                  "tool.inspect-composer-scope",
-                  {},
-                );
+                const scope = await run("adoption-scope");
                 composerRoots = scope.roots;
               }
-              final = await run(
-                "tool-verified",
-                command.adoption ?? command.inventory,
-                command.adoption ? packageInput(input) : {},
-              );
+              final = await run("tool-verified");
               if (final.installed_version === null && final.block === null) {
                 throw new ToolRefusal("tool.package_absent");
               }
@@ -339,11 +330,7 @@ export function tools(
               }
               verifyInstalled(input, final.installed_version);
             } else {
-              const beforeReceipt = await run(
-                "package-before",
-                command.inventory,
-                {},
-              );
+              const beforeReceipt = await run("package-before");
               const before = beforeReceipt.installed_version;
               if (before !== null && !safeVersion(before)) {
                 throw new ToolRefusal("tool.version_probe_failed");
@@ -363,16 +350,7 @@ export function tools(
                 mutate && (verb === "install" || verb === "update") &&
                 input.constraint_intervals !== null
               ) {
-                const candidate = await run(
-                  "package-candidate",
-                  command.candidate,
-                  {
-                    ...packageInput(input),
-                    ...(input.manager === "composer"
-                      ? { operation: verb }
-                      : {}),
-                  },
-                );
+                const candidate = await run("package-candidate");
                 if (!safeVersion(candidate.version)) {
                   throw new ToolRefusal("tool.candidate_version_unavailable");
                 }
@@ -388,26 +366,22 @@ export function tools(
                   mutate = false;
                 }
               }
-              if (mutate && verb === "remove" && command.plan) {
-                const plan = await run("package-removal-plan", command.plan, {
-                  package: input.package,
-                });
+              if (
+                mutate && verb === "remove" &&
+                operation.execution_context.descriptors.some((entry) =>
+                  entry.key === "package-removal-plan"
+                )
+              ) {
+                const plan = await run("package-removal-plan");
                 if (
                   !Array.isArray(plan.packages) || plan.packages.length !== 1 ||
                   plan.packages[0] !== input.package
                 ) throw new ToolRefusal("tool.removal_plan_unsafe");
               }
               if (mutate) {
-                await run(
-                  "package-mutate",
-                  `${command.mutate}${verb}`,
-                  packageInput(
-                    input,
-                    verb !== "remove" || input.manager === "brew-cask",
-                  ),
-                );
+                await run("package-mutate");
               }
-              final = await run("tool-verified", command.inventory, {});
+              final = await run("tool-verified");
               const after = final.installed_version;
               if (after !== null && !safeVersion(after)) {
                 throw new ToolRefusal("tool.version_probe_failed");
