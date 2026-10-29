@@ -216,3 +216,12 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 ### Node metrics through Grafana
 
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
+
+
+## Reconciliation child Operation
+
+Route parents preserve their Metrics hook with `metrics.reconcile {}` on the one active Metrics serving Node. Metrics validates that assignment and captures its exporter fleet and service Instances when the child is requested. The parent cannot provide credentials, a fleet or another serving Node. Planning creates no runnable child.
+
+Swamp snapshots exporters and service monitoring before changing them. It then refreshes the Metrics runtime, verifies Grafana credentials and proves service Caddy updates through the owning Route child. Reconciliation keeps the existing Metrics publication; it makes no certificate or private DNS change. Only proven matching child results permit successful completion. Failed or cancelled reconciliation requires restoration from the same parent's successful snapshots before it ends. A lost Node lock, lost Operation lease or cancelled service recovery stops reconciliation and requires fleet rollback. A refused or cancelled rollback completes as `metrics.rollback_failed`. Once the new runtime succeeds, later failure preserves it for recovery.
+
+Runtime configuration and credentials are resolved inside the Gateway through owner-bound secret references. Receipts keep only declared redacted metadata. Retained Gateway callers keep the synchronous fleet reconciler and its tests until their owning parent composition converts them. This child adds no HTTP cutover and deletes no retained executor.
