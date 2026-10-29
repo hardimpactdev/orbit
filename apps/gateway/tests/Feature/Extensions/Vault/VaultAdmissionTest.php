@@ -259,24 +259,6 @@ it('skips every unfinished Vault Operation without admitting another or contacti
     Http::assertNothingSent();
 })->with(['queued', 'running', 'waiting']);
 
-it('reports an unclaimed setup after five minutes without freeing its target hold', function (): void {
-    $this->freezeTime();
-    $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();
-    $operation = Operation::query()->sole();
-    $this->artisan('orbit:vault-sync')->assertSuccessful();
-    $this->getJson('/api/v1/vault')->assertJsonPath('data.last_error', null);
-    $this->travel(5)->minutes();
-
-    $this->artisan('orbit:vault-sync')->assertFailed();
-
-    $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.configured', false)
-        ->assertJsonPath('data.last_error.code', 'vault.executor_unclaimed');
-    expect(app(VaultSettings::class)->lastError()['message'])->toContain((string) $operation->id);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)->and(Operation::query()->count())->toBe(1);
-    $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
-    Http::assertNothingSent();
-});
-
 it('keeps a failure exit code until a later collection completion proves success', function (): void {
     $settings = app(VaultSettings::class);
     $settings->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'fixture-secret', 'fixture-password', 'fixture-device'),

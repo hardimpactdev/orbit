@@ -680,7 +680,7 @@ After the PHP package child succeeds, each deploy and rollback publishes the Orb
 
 ## Missing executor and Gateway revert
 
-An unclaimed deploy or rollback needs attention after five minutes. Its Operation exposes `assistance.error_code: deployment.executor_unclaimed`. The scheduled `orbit:instance-deployment-operations-check` command reports the same code and fails while such work remains. Check Services placement, the target worker and the registered deployment workflow. This check does not execute or cancel work, change a target hold, or mark a commit as failed. The alert clears after a claim or terminal outcome.
+Deploy and rollback Operations use the generic [executor health](/reference/operations#executor-health) checks for missing workers, stalled progress and repeated reclaims. Assistance does not change a target hold or mark a commit as failed.
 
 To undo this cutover, prepare a revert of Orbit PR #1590 on the Gateway. Drain Gateway deploy workers and stop new deploy admission before switching executors. While the current Gateway still exposes the Swamp contracts, let running Swamp Operations finish, including their runtime children after proven activation. Keep Services and its deployed workflows available until that work settles. Never clear a hold while a worker can still write.
 
