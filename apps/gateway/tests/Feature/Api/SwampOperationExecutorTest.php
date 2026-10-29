@@ -273,7 +273,7 @@ it('does not project success from an inactive, wrong or refused Node receipt', f
     'refused' => [['backend' => 'active', 'error_code' => 'firewall.rule_collision']],
 ]);
 
-it('drops undeclared run and completion fields and redacts retained fields and step output before persistence', function (): void {
+it('drops undeclared result fields and redacts step output before persistence', function (): void {
     [, $id] = firewallAdmission($this);
     asExecutor($this);
     $runner = Mockery::mock(AgentCommandRunner::class);

@@ -139,6 +139,7 @@ final readonly class OperationSecrets
     /** @param list<string> $values */
     private function redactValues(#[\SensitiveParameter] mixed $value, #[\SensitiveParameter] array $values): mixed
     {
+        // Boolean proof carries no secret bytes; casting true to "1" would match numeric hydration metadata.
         if ((is_int($value) || is_float($value)) && in_array((string) $value, $values, true)) {
             return '[REDACTED]';
         }

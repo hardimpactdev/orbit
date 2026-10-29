@@ -415,7 +415,11 @@ Each kind declares a closed list of allowed transport/name pairs, typed input bi
 
 Immediately before a new Node command, the Gateway rechecks status, worker lease and cancellation. Cancellation returns a keyed `operation.cancelled` refusal without invoking the Node; a saved successful receipt can still be completed. Step names support dotted phase names such as `setup.install`. Step and completion error codes contain only lowercase letters, digits, underscores, dots and hyphens.
 
-Undeclared result fields are dropped. Structured result sensitivity follows the kind’s `result_fields` declarations: secret outputs use their declared stores and return owning-record references. Public fields are not masked by name, including `environment` and `key`. Boolean completion proofs keep their native type. Hydrated secret values and secret text patterns remain masked before projection, storage or return; numeric masks never coerce booleans. Activity inputs, logs and errors retain their existing redaction rules.
+Undeclared result fields are dropped. Structured result sensitivity follows the kind’s `result_fields` declarations: secret outputs use their declared stores and return owning-record references.
+
+Kind loading rejects public result paths containing a secret word, including nested and list fields, unless the exact path is `key`, `skipped.key`, `child_phases.key`, `public_key`, `host_key_fingerprint` or `key_count`. Other secret-named results require a declared secret output. Public fields such as `environment` keep their declared structure. Boolean completion proofs keep their native type.
+
+Hydrated secret values and secret text patterns remain masked before projection, storage or return; numeric masks never coerce booleans. Activity inputs, logs and errors retain their existing redaction rules.
 
 Firewall `allow`, `deny` and `remove` use Swamp. Their normal commands validate and record managed intent before returning the Operation. Firewall list, live-list, managed-list and fleet-list remain reads in Orbit. The agent's existing `firewall.rule` command converges or removes the exact owned UFW rule. The conversion recipe is maintained in `hardimpactdev/orbit-swamp`, `docs/conversion-kit.md`.
 
