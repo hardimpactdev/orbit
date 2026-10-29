@@ -441,7 +441,6 @@ fn infrastructure_refusals_never_fill_the_result_slot() {
     for error in [
         "agent.deadline_exceeded",
         "agent.supervisor_failed",
-        "agent.target_busy",
         "agent.effect_receipt_unavailable",
         "agent.effect_unknown",
     ] {
@@ -455,11 +454,7 @@ fn infrastructure_refusals_never_fill_the_result_slot() {
                 &context(),
                 || Outcome::refused(error, "unproven", json!({}))
             )),
-            if super::super::NOT_STARTED_ERRORS.contains(&error) {
-                "agent.effect_unknown"
-            } else {
-                error
-            }
+            error
         );
         let receipt = store
             .receipt("test.effect", "op-42.uncertain")
@@ -678,5 +673,75 @@ fn numeric_and_string_masks_do_not_hide_unrelated_boolean_results() {
             .unwrap_or_else(|_| panic!("receipt"))
             .result,
         Some(outcome.to_json())
+    );
+}
+
+#[test]
+fn a_proven_prestart_refusal_inside_the_effect_removes_intent_and_the_key_runs_once() {
+    for error in super::super::NOT_STARTED_ERRORS
+        .iter()
+        .chain(super::super::PREFLIGHT_ERRORS)
+    {
+        let fixture = Fixture::new();
+        let store = fixture.store();
+        let key = "op-42.prestart";
+        let ctx = context();
+        assert_eq!(
+            code(store.execute("test.effect", key, "input", &ctx, || {
+                assert!(
+                    store.path(key).exists(),
+                    "the refusal happens after saving intent"
+                );
+                Outcome::refused(error, "Nothing started.", json!({}))
+            })),
+            *error
+        );
+        assert!(!store.path(key).exists());
+        assert_eq!(
+            store
+                .receipt("test.effect", key)
+                .unwrap_or_else(|_| panic!("receipt"))
+                .state,
+            "unknown"
+        );
+        let calls = AtomicUsize::new(0);
+        let result = store.execute("test.effect", key, "input", &ctx, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Outcome::Ok(json!({"ran":true}))
+        });
+        assert_eq!(result, Outcome::Ok(json!({"ran":true})));
+        assert_eq!(
+            store.execute("test.effect", key, "input", &ctx, || panic!(
+                "must not repeat"
+            )),
+            result
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn a_failed_prestart_intent_removal_cannot_report_that_the_key_is_unused() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let key = "op-42.failed-removal";
+    let ctx = context();
+    let path = store.path(key);
+    let original = fixture.0.join("intent");
+    assert_eq!(
+        code(store.execute("test.effect", key, "input", &ctx, || {
+            fs::rename(&path, &original).unwrap();
+            fs::create_dir(&path).unwrap();
+            Outcome::refused("agent.supervisor_not_ready", "Nothing started.", json!({}))
+        })),
+        "agent.effect_receipt_unavailable"
+    );
+    fs::remove_dir(&path).unwrap();
+    fs::rename(&original, &path).unwrap();
+    assert_eq!(
+        code(store.execute("test.effect", key, "input", &ctx, || panic!(
+            "unproven cleanup cannot authorize replay"
+        ))),
+        "agent.effect_unknown"
     );
 }

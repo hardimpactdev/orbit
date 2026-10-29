@@ -254,7 +254,9 @@ Existing named remote programs reserve and complete their receipts through `agen
 
 Effect receipts and their per-key locks have a 30-day retention period. Mutating keyed commands prune old files in batches under an exclusive store guard, at most once daily unless more files remain. Active commands hold that guard shared, so pruning cannot split a live lock. Read-only receipt commands never prune. An original effect identity older than the retention period is refused even when its files are absent; cleanup never authorizes an old effect to run again.
 
-The target sanitizer masks matching strings, object keys and numbers before storing results. Boolean masks retain their original type in protected transient metadata; a numeric or string secret equal to `1` does not mask unrelated `true` results. Infrastructure refusals leave only the unfinished intent. Fixed remote-program receipts retain their failed state and exit code on both live replies and later recovery.
+The target sanitizer masks matching strings, object keys and numbers before storing results. Boolean masks retain their original type in protected transient metadata; a numeric or string secret equal to `1` does not mask unrelated `true` results.
+
+Uncertain infrastructure refusals leave the unfinished intent. If a typed pre-start or preflight refusal proves that nothing ran, the store removes that intent and syncs its directory while still holding the key lock. The same key can then execute after the precondition clears. Failure to remove the intent remains uncertain. Fixed remote-program receipts retain their failed state and exit code on both live replies and later recovery.
 
 
 ### Fixed read-only task analysis
