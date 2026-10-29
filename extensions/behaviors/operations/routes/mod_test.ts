@@ -15,6 +15,27 @@ class Fixture {
     input: Record<string, unknown>;
   }[] = [];
   get preparation() {
+    if (this.kind === "route.workload_prepare") {
+      return {
+        key: "workload-prepare",
+        name: "route.workload",
+        input: { ...this.intent, action: "prepare" },
+      };
+    }
+    if (this.kind === "route.offline_residue_clean") {
+      return {
+        key: "offline-residue-prepare",
+        name: "route.offline-residue",
+        input: { ...this.intent, action: "prepare" },
+      };
+    }
+    if (this.kind.endsWith("_instance")) {
+      return {
+        key: "instance-runtime-prepare",
+        name: "route.instance-runtime",
+        input: { ...this.intent, action: "prepare" },
+      };
+    }
     return { key: "prepare", name: this.spec.prepare, input: this.intent };
   }
   calls: { path: string; body: Record<string, unknown> }[] = [];
@@ -30,6 +51,33 @@ class Fixture {
   refusalStage: string | null = null;
   final: Record<string, unknown> = { result: "published", ready: true };
   get spec() {
+    if (this.kind === "route.workload_prepare") {
+      return {
+        prepare: "route.workload",
+        key: "workload-proof",
+        name: "route.workload",
+        transport: "gateway",
+        input: { ...this.intent, action: "prove" },
+      };
+    }
+    if (this.kind === "route.offline_residue_clean") {
+      return {
+        prepare: "route.offline-residue",
+        key: "offline-residue-proof",
+        transport: "gateway",
+        name: "route.offline-residue",
+        input: { ...this.intent, action: "prove" },
+      };
+    }
+    if (this.kind.endsWith("_instance")) {
+      return {
+        prepare: "route.instance-runtime",
+        key: "instance-runtime-proof",
+        transport: "gateway",
+        name: "route.instance-runtime",
+        input: { ...this.intent, action: "prove" },
+      };
+    }
     return this.kind === "route.caddy_converge"
       ? {
         prepare: "route.caddy-prepare",
@@ -309,6 +357,96 @@ Deno.test("unproven publication never completes successfully", async () => {
   assertEquals(f.calls.some((x) => x.path.endsWith("/complete")), false);
 });
 
+Deno.test("historical residue passes null unchanged and finishes only after Node cleanup effects", async () => {
+  const f = new Fixture();
+  f.kind = "route.offline_residue_clean";
+  f.intent = { removed_node_id: null };
+  f.effects = [{
+    key: "offline-residue-caddy",
+    transport: "route-caddy",
+    name: "caddy.publish",
+    input: { content: "surviving sites" },
+  }, {
+    key: "offline-residue-certificate-0",
+    transport: "agent",
+    name: "certificate.remove-leaf",
+    input: { scope: "route-33-router", home: "/home/orbit" },
+  }];
+  f.final = { ready: true, removed: ["route-33-router"] };
+  assertEquals((await f.execute()).status, "succeeded");
+  const runs = f.calls.filter((c) => c.path.endsWith("/run")).map((c) =>
+    c.body
+  );
+  assertEquals(runs.map((r) => r.key), [
+    "offline-residue-prepare",
+    "offline-residue-caddy",
+    "offline-residue-certificate-0",
+    "offline-residue-proof",
+  ]);
+  assertEquals(runs[0].input, { removed_node_id: null, action: "prepare" });
+  assertEquals(f.calls.at(-1)!.body.result, f.final);
+});
+Deno.test("a Node id scopes new residue without adding Route or command inputs", async () => {
+  const f = new Fixture();
+  f.kind = "route.offline_residue_clean";
+  f.intent = { removed_node_id: 42 };
+  f.final = { ready: true, removed: [] };
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.calls.find((c) => c.path.endsWith("/run"))!.body.input, {
+    removed_node_id: 42,
+    action: "prepare",
+  });
+});
+Deno.test("an unrouted Instance still withdraws shared PHP pools using an empty map", async () => {
+  const f = new Fixture();
+  f.kind = "route.withdraw_instance";
+  f.intent = { instance_id: 12 };
+  f.effects = [{
+    key: "instance-php-withdraw",
+    transport: "agent",
+    name: "php.converge-shared-pools",
+    input: { configurations: {} },
+  }];
+  f.final = { ready: true };
+  assertEquals((await f.execute()).status, "succeeded");
+  const runs = f.calls.filter((c) => c.path.endsWith("/run")).map((c) =>
+    c.body
+  );
+  assertEquals(runs.map((r) => r.name), [
+    "route.instance-runtime",
+    "php.converge-shared-pools",
+    "route.instance-runtime",
+  ]);
+  assertEquals(runs[1].input, { configurations: {} });
+});
+Deno.test("cleanup after source deletion withdraws Caddy before the unused Instance leaf", async () => {
+  const f = new Fixture();
+  f.kind = "route.cleanup_instance";
+  f.intent = { instance_id: 12 };
+  f.effects = [{
+    key: "instance-caddy-clean",
+    transport: "route-caddy",
+    name: "caddy.publish",
+    input: { content: "surviving sites" },
+  }, {
+    key: "instance-certificate-clean",
+    transport: "agent",
+    name: "certificate.remove-leaf",
+    input: { scope: "app-instance-12", home: "/home/orbit" },
+  }];
+  f.final = { ready: true };
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.key),
+    [
+      "instance-runtime-prepare",
+      "instance-caddy-clean",
+      "instance-certificate-clean",
+      "instance-runtime-proof",
+    ],
+  );
+});
+
 Deno.test("a running target receipt stops recovery without replaying or completing the effect", async () => {
   const f = new Fixture();
   f.loseRun = true;
@@ -327,6 +465,51 @@ Deno.test("only an unknown target receipt permits re-invoking the same effect ke
   const runs = f.calls.filter((c) => c.body.key === "caddy-publish");
   assertEquals(runs.length, 2);
   assertEquals(runs[0].body, runs[1].body);
+});
+
+Deno.test("workload preparation executes only the Gateway descriptors before its proof", async () => {
+  const f = new Fixture();
+  f.kind = "route.workload_prepare";
+  f.intent = { route_id: 8, instance_id: 12 };
+  f.effects = [
+    {
+      key: "workload-source-access",
+      transport: "route-workload",
+      name: "instance.grant-development-caddy-access",
+      input: {
+        user: "orbit",
+        sites: [{
+          checkout: "/srv/proof/private",
+          relative_root: "public",
+          application: "/srv/proof/private",
+        }],
+      },
+    },
+    {
+      key: "workload-php-inspect",
+      transport: "route-workload",
+      name: "php.inspect-shared-pools",
+      input: { configurations: { $secret: "route.php_pools", id: 17 } },
+    },
+    {
+      key: "workload-php-pools",
+      transport: "route-workload",
+      name: "php.converge-shared-pools",
+      input: { configurations: { $secret: "route.php_pools", id: 17 } },
+    },
+  ];
+  f.final = { ready: true };
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.key),
+    [
+      "workload-prepare",
+      "workload-source-access",
+      "workload-php-inspect",
+      "workload-php-pools",
+      "workload-proof",
+    ],
+  );
 });
 
 Deno.test("Caddy validation failure keeps its proven stage in final and replayed completion", async () => {

@@ -15,14 +15,57 @@ import {
   NodePublicationIntent,
 } from "./contract.ts";
 import { RouteRefusal } from "./contract.ts";
+import { analyticsKinds, executeAnalytics } from "./analytics.ts";
+import { executeRoot, rootKinds } from "./roots.ts";
 
 const Publication = Operation.extend({ execution_context: ExecutionContext });
+const nodeEffectKinds = [
+  "route.router_lan_retire",
+  "route.workload_firewall",
+  "route.lan_converge",
+  "route.lan_remove",
+  "route.workload_verify",
+  "route.public_verify",
+  "route.public_firewall",
+  "route.shared_php_withdraw",
+  "route.transfer_php_withdraw",
+  "route.transfer_lan_remove",
+];
 const specs: Record<string, { step: string; transport: string; name: string }> =
   {
+    ...Object.fromEntries(
+      nodeEffectKinds.map(
+        (kind) => [kind, {
+          step: "node-effect-proof",
+          transport: "gateway",
+          name: "route.node-effect",
+        }],
+      ),
+    ),
+    "route.workload_prepare": {
+      step: "workload-proof",
+      transport: "gateway",
+      name: "route.workload",
+    },
     "route.caddy_converge": {
       step: "caddy-publish",
       transport: "route-caddy",
       name: "caddy.publish",
+    },
+    "route.offline_residue_clean": {
+      step: "offline-residue-proof",
+      transport: "gateway",
+      name: "route.offline-residue",
+    },
+    "route.withdraw_instance": {
+      step: "instance-runtime-proof",
+      transport: "gateway",
+      name: "route.instance-runtime",
+    },
+    "route.cleanup_instance": {
+      step: "instance-runtime-proof",
+      transport: "gateway",
+      name: "route.instance-runtime",
     },
     "route.private_dns_publish": {
       step: "private-dns-publish",
@@ -166,9 +209,40 @@ export function routes(
             });
             return { status: completion.status };
           }
+          if (analyticsKinds.includes(operation.kind)) {
+            return executeAnalytics(args, ctx, http, operation);
+          }
+          if (rootKinds.includes(operation.kind)) {
+            return executeRoot(args, ctx, http, operation);
+          }
           const spec = specs[operation.kind];
           if (!spec) throw new Error("Unknown Route publication kind");
-          NodePublicationIntent.parse(operation.input);
+          if (
+            ["route.caddy_converge", "route.private_dns_publish"].includes(
+              operation.kind,
+            )
+          ) {
+            NodePublicationIntent.parse(operation.input);
+          } else if (operation.kind === "route.offline_residue_clean") {
+            z.object({
+              removed_node_id: z.number().int().positive().nullable(),
+            }).strict().parse(operation.input);
+          } else if (nodeEffectKinds.includes(operation.kind)) {
+            z.object({
+              route_id: z.number().int().positive().optional(),
+              instance_id: z.number().int().positive().optional(),
+              router_node_id: z.number().int().positive().optional(),
+              transfer_id: z.string().uuid().optional(),
+            }).strict().parse(operation.input);
+          } else if (operation.kind === "route.workload_prepare") {
+            z.object({
+              route_id: z.number().int().positive(),
+              instance_id: z.number().int().positive(),
+            }).strict().parse(operation.input);
+          } else {
+            z.object({ instance_id: z.number().int().positive() }).strict()
+              .parse(operation.input);
+          }
           let heartbeatError: unknown;
           const timer = setInterval(() => {
             heartbeat().catch((error) => {
