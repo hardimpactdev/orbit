@@ -26,6 +26,36 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
       body.kind !== state.operation.kind || state.operation.status !== "queued"
     ) data = null;
     else state.operation.status = "running";
+  } else if (path.endsWith("/children")) {
+    if (_method === "POST") {
+      if (
+        body.key !== "add-bootstrap-probe" ||
+        Object.keys(body).sort().join() !== "key,worker"
+      ) throw new Error("Unexpected child intent");
+      state.child ??= {
+        id: 20,
+        key: "add-bootstrap-probe",
+        kind: "node.bootstrap_probe",
+        node_id: 2,
+        status: "queued",
+        error_code: null,
+        result: {},
+      };
+      data = {
+        ...state.child,
+        input: {},
+        cancel_requested: false,
+        step_results: {},
+      };
+      if (state.loseChildReply) {
+        state.loseChildReply = false;
+        await Deno.writeTextFile(file, JSON.stringify(state));
+        throw new Error("Lost child admission reply");
+      }
+    } else data = state.child ? [state.child] : [];
+  } else if (path.endsWith("/wait")) {
+    state.operation.status = "waiting";
+    data = { ...state.operation, worker: null, lease_seconds: 0 };
   } else if (path.includes("/receipts/")) {
     data = {
       effect_key: "op-7.node-storage-root",
@@ -35,13 +65,20 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
       finished_at: null,
     };
   } else if (path.endsWith("/run")) {
-    if (
+    const parent = state.operation.kind === "node.add";
+    if (parent) {
+      if (
+        body.key !== "node-lifecycle-result" || body.transport !== "gateway" ||
+        body.name !== "node.lifecycle-result" ||
+        state.child?.status !== "succeeded"
+      ) throw new Error("Unproven lifecycle result");
+    } else if (
       body.key !== "node-storage-root" || body.transport !== "agent" ||
       body.name !== "node.prepare-storage-root"
     ) throw new Error("Unexpected Node effect");
     if (state.receipt === null) {
       state.runs++;
-      state.receipt = {};
+      state.receipt = parent ? { node_plan_proven: true, enrolled: true } : {};
     }
     data = state.receipt;
     if (state.loseRunReply) {

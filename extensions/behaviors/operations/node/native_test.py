@@ -103,5 +103,36 @@ class NodeWorkflowTest(unittest.TestCase):
         self.assertEqual(len(state["completions"]), 1)
         self.assertEqual(state["operation"]["status"], "succeeded")
 
+    def test_parent_recovers_lost_admission_and_waits_before_completion(self):
+        self.state["operation"]["kind"] = "node.add"
+        self.state["operation"]["input"] = {"_node_plan": [{
+            "type": "child", "key": "add-bootstrap-probe", "kind": "node.bootstrap_probe",
+            "node_id": 2, "input": {}, "optional": False,
+        }]}
+        self.state["loseChildReply"] = True
+        self.save()
+        self.swamp("workflow", "run", "operation-runner", success=False)
+        state = self.read()
+        self.assertEqual(state["child"]["id"], 20)
+        self.assertEqual(state["runs"], 0)
+        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        state = self.read()
+        self.assertEqual(state["operation"]["status"], "waiting")
+        self.assertEqual(state["completions"], [])
+        self.assertEqual(state["calls"].count("/api/v1/operation-executor/7/children"), 3)
+        state["child"]["status"] = "succeeded"
+        state["operation"]["status"] = "queued"
+        state["loseBeforeCommit"] = True
+        self.state = state
+        self.save()
+        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.assertEqual(self.read()["runs"], 1)
+        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        state = self.read()
+        self.assertEqual(state["runs"], 1)
+        self.assertEqual(state["operation"]["status"], "succeeded")
+        self.assertEqual(len(state["completions"]), 1)
+        self.assertEqual(state["child"]["id"], 20)
+
 if __name__ == "__main__":
     unittest.main()

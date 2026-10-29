@@ -10,6 +10,41 @@ import {
 
 import { converge } from "./converge.ts";
 import { bootstrap } from "./bootstrap.ts";
+import { lifecycle } from "./lifecycle.ts";
+import { network } from "./network.ts";
+import { role } from "./role.ts";
+import { projectWireGuard } from "./wireguard.ts";
+const LifecycleKinds = [
+  "node.add",
+  "node.remove",
+  "node.removal_begin",
+  "node.removal_restore",
+  "node.network_projection",
+  "node.bootstrap_host",
+  "node.bootstrap_verify",
+  "node.macos_inspect",
+  "node.enrollment_begin",
+  "node.enrollment_activate",
+  "node.enrollment_commit",
+  "node.enrollment_restore",
+  "node.enrollment_settings",
+];
+const RoleKinds = [
+  "node.role_add",
+  "node.role_converge",
+  "node.role_remove",
+  "node.role_relocate",
+  "node.role_relocate_source",
+  "node.role_relocate_target",
+];
+const AdditionalKinds = [
+  ...LifecycleKinds,
+  ...RoleKinds,
+  "node.network_converge",
+  "node.network_rollback",
+  "node.wireguard_hub_converge",
+] as const;
+
 import { NodeExecution, PendingEffect } from "./execution.ts";
 
 const Result = z.preprocess(
@@ -136,6 +171,7 @@ export function node(
             "node.converge",
             "node.bootstrap_probe",
             "node.bootstrap_install",
+            ...AdditionalKinds,
           ]),
           worker: z.string().min(1),
         }),
@@ -191,6 +227,7 @@ export function node(
               "node.converge",
               "node.bootstrap_probe",
               "node.bootstrap_install",
+              ...AdditionalKinds,
             ]
               .includes(
                 operation.kind,
@@ -221,7 +258,12 @@ export function node(
             throw new ExecutorError("operation.target_missing");
           }
           if (
-            ["node.converge", "node.bootstrap_probe", "node.bootstrap_install"]
+            [
+              "node.converge",
+              "node.bootstrap_probe",
+              "node.bootstrap_install",
+              ...AdditionalKinds,
+            ]
               .includes(operation.kind)
           ) {
             const execution = new NodeExecution(
@@ -231,7 +273,15 @@ export function node(
               ctx,
             );
             try {
-              const outcome = operation.kind === "node.converge"
+              const outcome = LifecycleKinds.includes(operation.kind)
+                ? await lifecycle(execution)
+                : RoleKinds.includes(operation.kind)
+                ? await role(execution)
+                : operation.kind === "node.network_converge"
+                ? await network(execution)
+                : operation.kind === "node.wireguard_hub_converge"
+                ? await projectWireGuard(execution)
+                : operation.kind === "node.converge"
                 ? await converge(execution, ctx)
                 : await bootstrap(execution);
               if ("waiting" in outcome) {

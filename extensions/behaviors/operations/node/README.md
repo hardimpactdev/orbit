@@ -63,3 +63,21 @@ architecture. The Gateway checks the observed host key and resolves the existing
 credential. Saved target receipts recover lost installer replies; an uncertain
 receipt never starts a second installation. Retained enrollment callers keep
 their synchronous path.
+
+`node.add` and `node.remove` execute ordered Gateway-recorded child plans.
+Enrollment proves generated Route changes before pinned bootstrap, private
+WireGuard verification, role preparation, committed Node placement and DNS
+publication. Removal retains Route source relations until each serving Node's
+residue cleanup succeeds, then deletes the Node in the Gateway completion. Every
+target and child input comes from recorded intent; Swamp submits only child
+keys. Architecture aliases compare as `x86_64` or `arm64` without changing the
+admitted run payload.
+
+A failed required stage stops the plan. Existing Nodes restore their retained
+membership through a separate compensation child after a proven begin boundary.
+Cancellation runs no later parent effect. Saved child and target receipts
+survive worker restarts and lost replies. Role children retain assignment
+identity and Settings scopes, and Cluster-owned Router candidates remain
+Provisioning until the Cluster commits them. Existing synchronous
+enrollment/removal/role callers and executor-Node recovery are unchanged by
+these child admissions.

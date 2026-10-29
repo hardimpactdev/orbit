@@ -98,3 +98,23 @@ Deno.test("bootstrap cancellation before dispatch performs no first-contact effe
   assertEquals((await f.execute()).status, "cancelled");
   assertEquals(f.runs(), []);
 });
+
+Deno.test("bootstrap compares canonical architectures while forwarding the exact admitted aliases", async () => {
+  for (
+    const [expected, observed] of [["amd64", "x86_64"], ["x86_64", "amd64"], [
+      "aarch64",
+      "arm64",
+    ], ["arm64", "aarch64"]]
+  ) {
+    const f = fixture(true);
+    f.operation.input.command_input = { expected_architecture: expected };
+    f.replies.set("bootstrap-probe", { probed: true, architecture: observed });
+    assertEquals((await f.execute()).status, "succeeded");
+    const run = f.calls.find((c) => c.path.endsWith("/run"))!;
+    assertEquals(run.body.input, f.operation.input);
+  }
+  const f = fixture(true);
+  f.operation.input.command_input = { expected_architecture: "aarch64" };
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.completion()?.error_code, "node.architecture_mismatch");
+});
