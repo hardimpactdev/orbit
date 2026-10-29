@@ -27,6 +27,7 @@ class Fixture {
   loseCompletion = false;
   receiptState: "succeeded" | "failed" | "running" | "unknown" = "succeeded";
   leaseLost = false;
+  completionRefusal: string | null = null;
   cancelAtRun = false;
   prestart: string | null = null;
   http: Http = async (_method, path, raw) => {
@@ -77,6 +78,12 @@ class Fixture {
       if (body.status === "succeeded") {
         this.operation.step_results[String(body.name)] = body.result;
       }
+    }
+    if (
+      path.endsWith("/complete") && body.status === "succeeded" &&
+      this.completionRefusal !== null
+    ) {
+      return { status: 409, body: { error: { code: this.completionRefusal } } };
     }
     if (path.endsWith("/complete")) {
       this.operation.status = String(body.status);
@@ -650,6 +657,104 @@ Deno.test("Vault failed collection deletion or write cannot complete as a succes
     f.result = { outcome: "failed", data: { error_code: "vault.unreachable" } };
     assertEquals((await f.execute()).status, "failed");
     assertEquals(f.calls.at(-1)?.body.error_code, "vault.unreachable");
+    assertEquals(f.effects, 1);
+  }
+});
+
+Deno.test("all registry mutations use only the admitted read probe and preserve it after a lost reply", async () => {
+  for (const verb of ["app_create", "app_destroy", "app_rotate", "sync"]) {
+    const f = new Fixture();
+    f.operation.kind = `websocket.${verb}`;
+    f.operation.input = {
+      registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
+      revision: 9,
+      app: { name: "disposable" },
+    };
+    f.result = { outcome: "succeeded", data: { backend: "applied" } };
+    f.loseRun = true;
+    await assertRejects(() => f.execute(), Error, "Lost run reply");
+    assertEquals((await f.execute()).status, "succeeded");
+    assertEquals(f.effects, 1);
+    const runs = f.calls.filter((call) => call.path.endsWith("/run"));
+    assertEquals(runs.length, 1);
+    assertEquals(runs[0].body, {
+      worker: "workflow-12",
+      key: "reverb-registry-applied:0",
+      transport: "remote_program",
+      name: "websocket.registry-applied",
+      input: { registry_operation_id: f.operation.input.registry_operation_id },
+    });
+    const count = f.calls.length;
+    await f.execute();
+    assertEquals(f.effects, 1);
+    assertEquals(
+      f.calls.slice(count).some((call) => call.path.endsWith("/run")),
+      false,
+    );
+  }
+});
+
+Deno.test("a superseded registry revision fails without claiming success or restarting Reverb", async () => {
+  const f = new Fixture();
+  f.operation.kind = "websocket.app_rotate";
+  f.operation.input = {
+    registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
+  };
+  f.result = {
+    outcome: "superseded",
+    data: { error_code: "websocket.registry_superseded" },
+  };
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(
+    f.calls.at(-1)!.body.error_code,
+    "websocket.registry_superseded",
+  );
+  assertEquals(
+    f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
+      call.body.name
+    ),
+    ["websocket.registry-applied"],
+  );
+});
+
+Deno.test("cancellation before a registry probe stops observation and preserves the saved registry", async () => {
+  const f = new Fixture();
+  f.operation.kind = "websocket.app_destroy";
+  f.operation.input = {
+    registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
+  };
+  f.operation.cancel_requested = true;
+  assertEquals((await f.execute()).status, "cancelled");
+  assertEquals(f.effects, 0);
+  assertEquals(f.calls.some((call) => call.path.endsWith("/run")), false);
+});
+
+Deno.test("a superseded result between probe and completion ends failed across saved-intent re-entry", async () => {
+  for (const reentry of [false, true]) {
+    const f = new Fixture();
+    f.operation.kind = "websocket.app_create";
+    f.operation.input = {
+      registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
+    };
+    f.result = { outcome: "succeeded", data: { backend: "applied" } };
+    if (reentry) {
+      f.completionRefusal = "websocket.registry_pending";
+      await assertRejects(
+        () => f.execute(),
+        ExecutorError,
+        "websocket.registry_pending",
+      );
+      assertEquals(f.resources.get("operation-12")!.status, "succeeded");
+    }
+    f.completionRefusal = "websocket.registry_superseded";
+    assertEquals((await f.execute()).status, "failed");
+    assertEquals(f.effects, 1);
+    assertEquals(f.resources.get("operation-12")!.status, "failed");
+    assertEquals(
+      f.calls.at(-1)!.body.error_code,
+      "websocket.registry_superseded",
+    );
+    await f.execute();
     assertEquals(f.effects, 1);
   }
 });

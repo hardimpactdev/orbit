@@ -3,6 +3,7 @@ import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import {
   type Context,
   Executor,
+  ExecutorError,
   Globals,
   Operation,
 } from "../../operation-runner/mod.ts";
@@ -125,11 +126,13 @@ export function integrations(
           const saved = await ctx.readResource(resource);
           if (saved) {
             const completion = Completion.parse(saved);
-            await executor.post(`${path}/complete`, {
-              worker: args.worker,
-              ...completion,
-            });
-            return { status: completion.status };
+            return await finish(
+              executor,
+              operation,
+              args.worker,
+              ctx,
+              completion,
+            );
           }
           if (
             operation.input.flow !== undefined ||
@@ -336,16 +339,13 @@ export function integrations(
                 error_code: error,
               };
             }
-            const handle = await ctx.writeResource(
-              "receipt",
-              resource,
+            return await finish(
+              executor,
+              operation,
+              args.worker,
+              ctx,
               completion,
             );
-            await executor.post(`${path}/complete`, {
-              worker: args.worker,
-              ...completion,
-            });
-            return { dataHandles: [handle], status: completion.status };
           } finally {
             clearInterval(timer);
           }
@@ -372,4 +372,48 @@ function canonical(value: unknown): string {
     return item;
   };
   return JSON.stringify(sort(value));
+}
+
+/** A successful read can be superseded before the Gateway's final fresh-state check. */
+async function finish(
+  executor: Executor,
+  operation: z.infer<typeof Operation>,
+  worker: string,
+  ctx: Context,
+  completion: z.infer<typeof Completion>,
+) {
+  let handle = await ctx.writeResource(
+    "receipt",
+    `operation-${operation.id}`,
+    completion,
+  );
+  try {
+    await executor.post(`${operation.id}/complete`, { worker, ...completion });
+  } catch (error) {
+    if (
+      !(error instanceof ExecutorError) ||
+      error.code !== "websocket.registry_superseded" ||
+      completion.status !== "succeeded" ||
+      ![
+        "websocket.app_create",
+        "websocket.app_destroy",
+        "websocket.app_rotate",
+        "websocket.sync",
+      ].includes(operation.kind)
+    ) {
+      throw error;
+    }
+    completion = {
+      status: "failed",
+      result: { error_code: "websocket.registry_superseded" },
+      error_code: "websocket.registry_superseded",
+    };
+    handle = await ctx.writeResource(
+      "receipt",
+      `operation-${operation.id}`,
+      completion,
+    );
+    await executor.post(`${operation.id}/complete`, { worker, ...completion });
+  }
+  return { dataHandles: [handle], status: completion.status };
 }
