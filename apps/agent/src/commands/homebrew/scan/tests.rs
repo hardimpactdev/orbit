@@ -159,7 +159,7 @@ fn failed_formula_scan_keeps_successful_casks_and_linux_never_reads_casks() {
     assert_eq!(output.formulae.state, State::Incomplete);
     assert!(output.formulae.packages.is_empty());
     assert_eq!(output.casks.state, State::Complete);
-    let mut host = Fake::new(vec![text("aarch64"), metadata(vec![], vec![]), text("")]);
+    let mut host = Fake::new(vec![text("x86_64"), metadata(vec![], vec![]), text("")]);
     let output = scan(
         &mut host,
         &scope(),

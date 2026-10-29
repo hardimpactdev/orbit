@@ -13,7 +13,7 @@ use App\Models\Node;
 
 it('scans through the agent on the serving Gateway or the selected jump Node', function (bool $viaJump): void {
     $gateway = Node::query()->create(['name' => 'gateway-scan', 'public_ssh_host' => '192.0.2.1', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit']);
-    $jump = Node::query()->create(['name' => 'jump-scan', 'public_ssh_host' => '192.0.2.2', 'platform' => 'linux', 'architecture' => 'aarch64', 'user' => 'nick']);
+    $jump = Node::query()->create(['name' => 'jump-scan', 'public_ssh_host' => '192.0.2.2', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'nick']);
     $serving = app(GatewayServingHost::class);
     $serving->remember($gateway);
     $target = $viaJump ? $jump : $gateway;

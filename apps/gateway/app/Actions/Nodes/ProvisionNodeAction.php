@@ -25,10 +25,10 @@ use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeAgentRuntime;
-use App\Domain\Nodes\NodeArchitectureMismatchException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -362,7 +362,7 @@ final readonly class ProvisionNodeAction
         }
 
         $clock = app(TaskVmStepClock::class);
-        $recordObservation = fn (NodeObservation $observation) => $this->recordArchitecture($node, $data, $observation);
+        $recordObservation = fn (NodeObservation $observation) => $this->recordArchitecture($node, $observation);
         try {
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
                 $this->converger->convergeRecoverably(
@@ -396,16 +396,6 @@ final readonly class ProvisionNodeAction
             $this->handleFailure($node, $exception, $priorActiveState);
 
             throw $exception;
-        } catch (NodeArchitectureMismatchException $exception) {
-            $failure = new NodeProvisioningException(
-                step: 'machine-architecture',
-                errorCode: NodeArchitectureMismatchException::ERROR_CODE,
-                message: $exception->getMessage(),
-                previous: $exception,
-            );
-            $this->handleFailure($node, $failure, $priorActiveState);
-
-            throw $exception->toRefusal();
         } catch (SshHostKeyScanException $exception) {
             $failure = new NodeProvisioningException(
                 step: 'ssh-host-key',
@@ -944,6 +934,13 @@ final readonly class ProvisionNodeAction
             );
         }
 
+        if ($data->architecture !== null && $data->architecture !== MachineArchitecture::Linux) {
+            throw new ResourceOperationException(
+                errorCode: 'node.architecture_unsupported',
+                message: "Node architecture [{$data->architecture}] is not supported. Linux Nodes must be [".MachineArchitecture::Linux.'].',
+            );
+        }
+
         return $platform;
     }
 
@@ -955,19 +952,13 @@ final readonly class ProvisionNodeAction
     }
 
     /**
-     * Record the architecture the bootstrap observed on a Node that has none.
-     *
-     * An existing record wins over the request and the observation. A request
-     * value for a Node without a record must equal the observation.
+     * Record the architecture the bootstrap observed on a Node that has none. An existing record wins. The
+     * converger has refused any observation other than x86_64, which is also the only request value accepted.
      */
-    private function recordArchitecture(Node $node, ProvisionNodeData $data, NodeObservation $observation): void
+    private function recordArchitecture(Node $node, NodeObservation $observation): void
     {
         if ($this->recordedArchitecture($node) !== null) {
             return;
-        }
-
-        if ($data->architecture !== null && $data->architecture !== $observation->architecture) {
-            throw new NodeArchitectureMismatchException($node->name, $data->architecture, $observation->architecture);
         }
 
         $node->update(['architecture' => $observation->architecture]);

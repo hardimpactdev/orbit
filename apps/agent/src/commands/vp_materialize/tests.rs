@@ -39,7 +39,7 @@ impl Fixture {
         for name in ["vp", "vp-cli", "node", "pnpm"] {
             tools.insert(name.into(), recipe["tools"][name].clone());
         }
-        let input = serde_json::from_value(json!({"user":account.name,"snapshot":recipe["ubuntu"]["snapshot"],"architecture":if cfg!(target_arch="aarch64") {"arm64"} else {"amd64"}, "tools":tools,"artifact_mirror":recipe["artifact_mirror"],"vp_lock":include_str!("../../../../gateway/resources/machine-software/vite-plus-package-lock.json")})).unwrap();
+        let input = serde_json::from_value(json!({"user":account.name,"snapshot":recipe["ubuntu"]["snapshot"],"architecture":"amd64", "tools":tools,"artifact_mirror":recipe["artifact_mirror"],"vp_lock":include_str!("../../../../gateway/resources/machine-software/vite-plus-package-lock.json")})).unwrap();
         Self {
             _work: work,
             files,

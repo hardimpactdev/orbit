@@ -108,6 +108,8 @@ Actions use pinned commits. Build and check jobs have read-only tokens. The CLI 
 
 Generated API contracts, web types, documentation navigation, and context are built in CI and stay out of Git. The Gateway Composer install builds its runtime MCP catalogue before generated-contract and web checks.
 
+Managed Linux Nodes, recipe artifacts, and PHP builds support amd64 only. The Linux agent delivery builds once for x86_64 when its source changes; unchanged source reuses the authenticated published delivery.
+
 The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
 
 ### Gateway shards

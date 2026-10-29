@@ -148,17 +148,13 @@ pub fn record_receipt(
         &serde_json::to_vec(&receipt).expect("string map"),
     )
 }
-pub fn repair_ubuntu(
-    host: &mut impl Host,
-    files: &Files,
-    architecture: &str,
-) -> Result<(), Failure> {
+pub fn repair_ubuntu(host: &mut impl Host, files: &Files) -> Result<(), Failure> {
     let Some(content) = sources::ubuntu_repair(files)? else {
         return Ok(());
     };
     let path = files.apt().join("sources.list.d/ubuntu.sources");
     let backup = sources::backup(files, &path, &content, "snapshot", false)?;
-    files.publish_root(&path, sources::rolling_source(architecture).as_bytes())?;
+    files.publish_root(&path, sources::rolling_source().as_bytes())?;
     run(
         host,
         &Invocation::new(&[
@@ -243,23 +239,14 @@ pub fn incus_firmware(files: &Files, input: &Input) -> Result<(), Failure> {
         return Ok(());
     }
     let firmware = files.path("/opt/incus/share/qemu");
-    let aliases: &[(&str, &str)] = if input.architecture.name() == "amd64" {
-        &[
-            ("OVMF_CODE_4M.ms.fd", "OVMF_CODE.4MB.fd"),
-            ("OVMF_CODE_4M.secboot.fd", "OVMF_CODE.4MB.fd"),
-            ("OVMF_CODE_4M.fd", "OVMF_CODE.4MB.fd"),
-            ("OVMF_VARS_4M.ms.fd", "OVMF_VARS.4MB.ms.fd"),
-            ("OVMF_VARS_4M.fd", "OVMF_VARS.4MB.fd"),
-            ("OVMF_VARS_4M.secboot.fd", "OVMF_VARS.4MB.ms.fd"),
-        ]
-    } else {
-        &[
-            ("AAVMF_CODE.fd", "OVMF_CODE.4MB.fd"),
-            ("AAVMF_VARS.fd", "OVMF_VARS.4MB.fd"),
-            ("AAVMF_CODE.ms.fd", "OVMF_CODE.4MB.fd"),
-            ("AAVMF_VARS.ms.fd", "OVMF_VARS.4MB.ms.fd"),
-        ]
-    };
+    let aliases = [
+        ("OVMF_CODE_4M.ms.fd", "OVMF_CODE.4MB.fd"),
+        ("OVMF_CODE_4M.secboot.fd", "OVMF_CODE.4MB.fd"),
+        ("OVMF_CODE_4M.fd", "OVMF_CODE.4MB.fd"),
+        ("OVMF_VARS_4M.ms.fd", "OVMF_VARS.4MB.ms.fd"),
+        ("OVMF_VARS_4M.fd", "OVMF_VARS.4MB.fd"),
+        ("OVMF_VARS_4M.secboot.fd", "OVMF_VARS.4MB.ms.fd"),
+    ];
     let mut create = vec![];
     for (name, target) in aliases {
         let path = firmware.join(name);

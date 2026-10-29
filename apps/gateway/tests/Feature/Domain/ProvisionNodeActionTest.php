@@ -1852,7 +1852,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
-            'architecture' => 'aarch64',
+            'architecture' => 'x86_64',
             'tld' => 'app-dev.test',
             'public_ssh_host' => '192.0.2.20',
             'public_ssh_port' => 2222,
@@ -1872,7 +1872,7 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($converger->observed)
             ->toBe([
                 'platform' => 'linux',
-                'architecture' => 'aarch64',
+                'architecture' => 'x86_64',
                 'public_ssh_port' => 2222,
                 'user' => 'orbit',
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
@@ -2270,7 +2270,7 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('records the architecture observed during bootstrap for a new Node without an input', function (): void {
-        app()->instance(NodeConverger::class, provision_node_observing_converger('aarch64'));
+        app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64'));
 
         $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: 'linux-node',
@@ -2281,9 +2281,9 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($node->status)
             ->toBe(LifecycleStatus::Active)
             ->and($node->architecture)
-            ->toBe('aarch64')
+            ->toBe('x86_64')
             ->and(Node::query()->where('name', 'linux-node')->sole()->architecture)
-            ->toBe('aarch64');
+            ->toBe('x86_64');
     });
 
     it('records an explicit architecture that matches the observed one for a new Node', function (): void {
@@ -2299,7 +2299,7 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($node->status)->toBe(LifecycleStatus::Active)->and($node->architecture)->toBe('x86_64');
     });
 
-    it('refuses an explicit architecture that differs from the observed one before roles converge', function (): void {
+    it('refuses a Linux ARM machine at the architecture step before roles converge', function (): void {
         $roleEvents = [];
         app()->instance(RoleBaselineConverger::class, new class($roleEvents) implements RoleBaselineConverger
         {
@@ -2319,31 +2319,43 @@ describe(ProvisionNodeAction::class, function (): void {
         });
         $materializer = new FakeToolManagerMaterializer;
         app()->instance(ToolManagerMaterializer::class, $materializer);
-        app()->instance(NodeConverger::class, provision_node_observing_converger('aarch64'));
-
-        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
-            name: 'mismatched-node',
-            publicSshHost: '192.0.2.61',
-            roles: [RoleName::AppProd],
-            architecture: 'x86_64',
-            expectedSshHostFingerprint: 'SHA256:pinned',
-        )))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)
-                ->toBe('node.architecture_mismatch')
-                ->and($exception->status)
-                ->toBe(409)
-                ->and($exception->getMessage())
-                ->toBe('Node [mismatched-node] reports architecture [aarch64], not [x86_64].');
+        // The native converger refuses this observation before it stages the agent.
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
+            ): NodeObservation {
+                throw new NodeProvisioningException('machine-architecture', 'node.architecture_unsupported', "Node [{$node->name}] reports architecture [aarch64]. Linux Nodes must be [x86_64].", status: 422);
+            }
         });
 
-        $node = Node::query()->where('name', 'mismatched-node')->sole();
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'arm-node',
+            publicSshHost: '192.0.2.61',
+            roles: [RoleName::AppProd],
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('node.architecture_unsupported')
+                ->and($exception->status)
+                ->toBe(422)
+                ->and($exception->step)
+                ->toBe('machine-architecture')
+                ->and($exception->getMessage())
+                ->toBe('Node [arm-node] reports architecture [aarch64]. Linux Nodes must be [x86_64].');
+        });
+
+        $node = Node::query()->where('name', 'arm-node')->sole();
 
         expect($node->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($node->failed_step)
             ->toBe('machine-architecture')
             ->and($node->error_code)
-            ->toBe('node.architecture_mismatch')
+            ->toBe('node.architecture_unsupported')
             ->and($node->architecture)
             ->toBeNull()
             ->and($node->roles()->count())
@@ -2353,6 +2365,39 @@ describe(ProvisionNodeAction::class, function (): void {
             ->and($roleEvents)
             ->toBe([]);
     });
+
+    it('refuses a Linux ARM architecture in the request before it connects', function (string $architecture): void {
+        $converger = new class implements NodeConverger
+        {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
+            ): NodeObservation {
+                $this->calls++;
+
+                return new NodeObservation('x86_64');
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'arm-request',
+            publicSshHost: '192.0.2.64',
+            architecture: $architecture,
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))->toThrow(function (ResourceOperationException $exception) use ($architecture): void {
+            expect($exception->errorCode)->toBe('node.architecture_unsupported')
+                ->and($exception->status)->toBe(422)
+                ->and($exception->getMessage())->toBe("Node architecture [{$architecture}] is not supported. Linux Nodes must be [x86_64].");
+        });
+
+        expect(Node::query()->where('name', 'arm-request')->exists())->toBeFalse()
+            ->and($converger->calls)->toBe(0);
+    })->with(['aarch64', 'arm64', 'amd64']);
 
     it('keeps the recorded architecture of an existing Node whatever the request carries', function (): void {
         app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64'));
@@ -2400,7 +2445,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Closure $completion,
                 bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
-                $observation = new NodeObservation('aarch64');
+                $observation = new NodeObservation('x86_64');
                 $recordObservation?->__invoke($observation);
                 $completion($observation);
             }
@@ -2420,7 +2465,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: $existing->public_ssh_host,
         ));
 
-        expect($node->status)->toBe(LifecycleStatus::Active)->and($node->architecture)->toBe('aarch64');
+        expect($node->status)->toBe(LifecycleStatus::Active)->and($node->architecture)->toBe('x86_64');
     });
 
     it('marks the node failed when initial role convergence fails', function (): void {

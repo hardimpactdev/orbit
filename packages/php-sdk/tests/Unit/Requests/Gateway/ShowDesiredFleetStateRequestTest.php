@@ -46,7 +46,8 @@ describe(ShowDesiredFleetStateRequest::class, function (): void {
             ->and($state->cli->asset('macos-arm64')?->name)->toBe('orbit-0.4681.0-macos-arm64')
             ->and($state->cli->asset('windows-x86_64'))->toBeNull()
             ->and($state->agent->commit)->toBe('0123456789abcdef0123456789abcdef01234567')
-            ->and($state->agent->asset('linux-aarch64')?->sha256)->toBe('c74a22f1c7b269ad5b98c820bb2b44c7088df04f576174e458ac795ab9fd485c');
+            ->and($state->agent->asset('linux-x86_64')?->sha256)->toBe('bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa')
+            ->and($state->agent->asset('linux-aarch64'))->toBeNull();
     });
 
     it('reads the recorded desired state while the CLI release is pending', function (): void {

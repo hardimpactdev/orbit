@@ -15,7 +15,7 @@ final class MachineRecipeCommand extends Command
     protected $signature = 'orbit:machine-recipe
         {--path= : Candidate recipe JSON; defaults to the repository recipe}
         {--role= : Show gateway, app-dev, app-prod, operator, or base}
-        {--architecture= : Require the displayed profile(s) to support amd64 or arm64}
+        {--architecture= : Require the displayed profile(s) to support this architecture; the recipe has amd64 only}
         {--validate-ubuntu : Verify all Ubuntu pins against signed snapshot indexes without fetching artifacts}
         {--validate : Verify signed snapshot indexes and all artifact bytes}
         {--json : Print the complete recipe, identity, validation state, and selected effective profiles as JSON}

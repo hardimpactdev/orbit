@@ -436,18 +436,18 @@ describe('native pnpm preparation failures', function (): void {
         'process failure' => ['{"ok":true,"data":{"changed":false,"retired":[]}}', 1],
     ]);
 
-    it('refuses an unsupported architecture before staging any binary', function (): void {
+    it('refuses an unsupported architecture before staging any binary', function (string $architecture): void {
         $incus = settlingGuests();
         $incus->respond(static fn (string $instance, array $argv): ?array => match ($argv[0]) {
             'sh' => ["boot\n", '', 0],
-            'dpkg' => ["unsupported\n", '', 0],
+            'dpkg' => ["{$architecture}\n", '', 0],
             default => null,
         });
 
         expect(fn () => pnpmPreparer()->settle(preparerTarget()))->toThrow(RuntimeException::class, 'Cannot determine the pnpm architecture')
             ->and($incus->callsOf('file', 'push'))->toBe([])
             ->and(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'mkdir'))->toBe([]);
-    });
+    })->with(['unsupported', 'arm64']);
 
     it('requires the source build before staging on a guest', function (): void {
         $incus = settlingGuests();

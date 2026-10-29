@@ -54,7 +54,6 @@ describe(AgentDelivery::class, function (): void {
         $pin = $delivery->pin(deliveryNode());
 
         expect($pin)->toMatch('/\A[0-9a-f]{64}\z/')
-            ->and($delivery->pin(deliveryNode('arm64')))->toBe($delivery->pin(deliveryNode('aarch64')))->not->toBe($pin)
             ->and($delivery->reportedVersion(deliveryNode()))->toBe('0.5.0+'.substr($pin, 0, 16))
             ->and(hash_file('sha256', $delivery->localFile(deliveryNode())))->toBe($pin);
     });
@@ -63,6 +62,18 @@ describe(AgentDelivery::class, function (): void {
         expect(fn () => app(AgentDelivery::class)->pin(deliveryNode('aarch64', 'macos')))
             ->toThrow(RuntimeException::class, 'no build for [macos-aarch64]');
     });
+
+    it('maps Apple silicon to the macOS ARM build and gives a Linux ARM Node no build', function (string $architecture): void {
+        $manifest = temporaryDelivery(['commit' => str_repeat('c', 40), 'version' => '0.5.0', 'artifacts' => [
+            'linux-x86_64' => ['sha256' => str_repeat('a', 64)],
+            'macos-aarch64' => ['sha256' => str_repeat('b', 64)],
+        ]]);
+        $delivery = new AgentDelivery($manifest, sys_get_temp_dir());
+
+        expect($delivery->pin(deliveryNode($architecture, 'macos')))->toBe(str_repeat('b', 64))
+            ->and($delivery->pin(deliveryNode('amd64')))->toBe(str_repeat('a', 64))
+            ->and(fn () => $delivery->pin(deliveryNode($architecture)))->toThrow(RuntimeException::class, "no build for [linux-{$architecture}]");
+    })->with(['arm64', 'aarch64']);
 
     it('refuses a delivered file that does not match its pin', function (): void {
         $manifest = temporaryDelivery(

@@ -13,4 +13,4 @@ scripts/check-crates test --locked
 cargo build --release --locked
 ```
 
-Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. CI additionally builds the `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` release targets. Commit `Cargo.lock` with dependency changes.
+Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. CI additionally builds the static `x86_64-unknown-linux-musl` release target with `scripts/build-delivery`, which needs `musl-tools`. Orbit builds no Linux ARM agent. Commit `Cargo.lock` with dependency changes.

@@ -25,9 +25,9 @@ The desired fleet state names what every machine should run for the Gateway's co
 | --- | --- |
 | `commit` | The full SHA of the Gateway's commit, or null when the Gateway version is not a commit |
 | `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
-| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit`, and one asset per Linux architecture. `self-update` does not read it. |
+| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit`, and its Linux x86_64 asset. `self-update` does not read it. |
 
-Each asset has `platform`, the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`. CLI assets have the platform `linux-x86_64` or `macos-arm64`. Agent assets name the Linux architectures that the pinned delivery holds.
+Each asset has `platform` (`linux-x86_64` or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
 
 ```json
 {
@@ -63,7 +63,7 @@ Each asset has `platform`, the release asset `name`, the HTTPS download `url`, a
 }
 ```
 
-The example shows one asset of each list. The Gateway returns the Linux x86_64 and macOS arm64 CLI assets and the agent assets in the release manifest.
+The example shows one asset of each list. The Gateway returns Linux x86_64 and macOS arm64 CLI assets and Linux x86_64 and both macOS agent architectures.
 
 ### Where it is served
 

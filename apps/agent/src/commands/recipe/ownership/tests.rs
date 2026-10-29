@@ -165,7 +165,7 @@ fn incus_requires_three_pins_and_firmware_aliases_are_repeatable_without_changin
             .stage,
         "incus:incomplete"
     );
-    let mut input = input(&["incus", "incus-base", "incus-client"]);
+    let input = input(&["incus", "incus-base", "incus-client"]);
     let firmware = files.path("/opt/incus/share/qemu");
     fs::create_dir_all(&firmware).unwrap();
     for name in [
@@ -188,14 +188,7 @@ fn incus_requires_three_pins_and_firmware_aliases_are_repeatable_without_changin
         fs::read_link(firmware.join("OVMF_CODE_4M.ms.fd")).unwrap(),
         Path::new("OVMF_CODE.4MB.fd")
     );
-    input.architecture = Architecture::Arm64;
-    for _ in 0..2 {
-        incus_firmware(&files, &input).unwrap();
-    }
-    assert_eq!(
-        fs::read_link(firmware.join("AAVMF_VARS.ms.fd")).unwrap(),
-        Path::new("OVMF_VARS.4MB.ms.fd")
-    );
+    assert!(!firmware.join("AAVMF_VARS.ms.fd").exists());
 }
 
 #[test]

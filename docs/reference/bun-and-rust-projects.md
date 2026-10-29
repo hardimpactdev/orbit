@@ -73,7 +73,7 @@ bun run test
 bun run build
 ```
 
-`bun run build` type-checks the server and compiles it to one binary, `dist/pi-server`. `bun run build:linux` compiles the `x86_64` and `aarch64` Linux binaries that Nodes run.
+`bun run build` type-checks the server and compiles it to one binary, `dist/pi-server`. `bun run build:linux` compiles the `x86_64` Linux binary that Nodes run.
 
 Vitest runs test files in parallel with `maxWorkers: "100%"`.
 

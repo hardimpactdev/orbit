@@ -169,7 +169,6 @@ fn bottle_tag(
     let tag = match platform {
         Platform::Linux => match value {
             "x86_64" => "x86_64_linux".into(),
-            "arm64" | "aarch64" => "arm64_linux".into(),
             _ => return Err(Error::Bottle {}),
         },
         Platform::Macos => {

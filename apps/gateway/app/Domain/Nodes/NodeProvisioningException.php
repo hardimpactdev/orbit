@@ -22,6 +22,8 @@ final class NodeProvisioningException extends RuntimeException implements Render
         string $message,
         ?Throwable $previous = null,
         public readonly ?CommandResult $result = null,
+        /** HTTP 502 for a failed step; a refusal that changed nothing, such as an unsupported architecture, is 422. */
+        public readonly int $status = 502,
     ) {
         parent::__construct($message, previous: $previous);
     }

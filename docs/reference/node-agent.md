@@ -463,7 +463,6 @@ Each Gateway release pins one agent build: the delivery in its commit's [release
   "version": "0.5.0",
   "artifacts": {
     "linux-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-linux-x86_64", "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.N.0/orbit-agent-linux-x86_64"},
-    "linux-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-linux-aarch64", "url": "..."},
     "macos-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-macos-aarch64", "url": "..."},
     "macos-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-macos-x86_64", "url": "..."}
   }
@@ -603,7 +602,6 @@ After main's required checks pass, the Orbit CLI Release workflow downloads that
 | Asset | Contents |
 | --- | --- |
 | `orbit-agent-linux-x86_64` | Static binary for `x86_64` Nodes |
-| `orbit-agent-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `orbit-agent-macos-aarch64` | Command binary for Apple silicon Macs |
 | `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
 | `manifest.json` | The delivery manifest, with each binary's URL in this release |

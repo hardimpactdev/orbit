@@ -6,8 +6,7 @@
         "snapshot": "20261029T000000Z"
     },
     "architectures": [
-        "amd64",
-        "arm64"
+        "amd64"
     ],
     "tools": {
         "acl": {
@@ -42,10 +41,6 @@
                 "amd64": {
                     "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip",
                     "sha256": "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18"
-                },
-                "arm64": {
-                    "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-aarch64.zip",
-                    "sha256": "efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21"
                 }
             }
         },
@@ -61,10 +56,6 @@
                 "amd64": {
                     "url": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.deb",
                     "sha512": "47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9"
-                },
-                "arm64": {
-                    "url": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_arm64.deb",
-                    "sha512": "ac32f03f0eea04021f2d4e5d89bfd01b84ead115f2eba9d2a0d06447e86d4af932899e56f090993a566d0925dbd1063002929b395541a8c5f5e51d7039f7375a"
                 }
             }
         },
@@ -85,10 +76,6 @@
                 "amd64": {
                     "url": "https://static.rust-lang.org/dist/2026-10-01/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
                     "sha256": "d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
-                },
-                "arm64": {
-                    "url": "https://static.rust-lang.org/dist/2026-10-01/cargo-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
-                    "sha256": "113229fcc16cc1ba004923a4cc275fbf3281dafaaf8b97269f9c00189d497fd4"
                 }
             }
         },
@@ -99,10 +86,6 @@
                 "amd64": {
                     "url": "https://static.rust-lang.org/dist/2026-10-01/clippy-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
                     "sha256": "982442e32ad8dd3f0bb3a30db74038da5f71fd9bf1a865cc71da8ea5d4ec71ec"
-                },
-                "arm64": {
-                    "url": "https://static.rust-lang.org/dist/2026-10-01/clippy-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
-                    "sha256": "42e49dc02d29949395c0c072585961f6c9b5408110236087828d4e2f94ca96ef"
                 }
             }
         },
@@ -153,10 +136,6 @@
                 "amd64": {
                     "url": "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/pool/main/g/git/git_2.55.0-0ppa1~ubuntu26.04.2_amd64.deb",
                     "sha256": "519a9d31b6029a479142f3b2180f7277ffcb0fba889611d1b795bcefb9f54585"
-                },
-                "arm64": {
-                    "url": "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/pool/main/g/git/git_2.55.0-0ppa1~ubuntu26.04.2_arm64.deb",
-                    "sha256": "297725ecb8652f40dd18ac813055f79fc5f6805576e0e21ee82e2cc0c87e2fda"
                 }
             }
         },
@@ -165,10 +144,6 @@
             "version": "1:2.55.0-0ppa1~ubuntu26.04.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/pool/main/g/git/git-man_2.55.0-0ppa1~ubuntu26.04.2_all.deb",
-                    "sha256": "9b809f56c6dee1f11f1512dd91f73d2187473affbd2ed85fd7b2aea33828f73d"
-                },
-                "arm64": {
                     "url": "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/pool/main/g/git/git-man_2.55.0-0ppa1~ubuntu26.04.2_all.deb",
                     "sha256": "9b809f56c6dee1f11f1512dd91f73d2187473affbd2ed85fd7b2aea33828f73d"
                 }
@@ -187,11 +162,6 @@
                     "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.1-ubuntu26.04-202609250211_amd64.deb",
                     "sha256": "cacd26f8f577a5f651bcceadffc6ff9dbe9724c28dd2795d5628b58b6300ffa9",
                     "version": "1:7.0.1-ubuntu26.04-202609250211"
-                },
-                "arm64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.1-ubuntu26.04-202609250512_arm64.deb",
-                    "sha256": "0e15ed36ba8de31eda65b828e905b1effb3be87c1cd5ad5f7bf00779b136f844",
-                    "version": "1:7.0.1-ubuntu26.04-202609250512"
                 }
             }
         },
@@ -337,10 +307,6 @@
                 "amd64": {
                     "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz",
                     "sha256": "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6"
-                },
-                "arm64": {
-                    "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-arm64.tar.xz",
-                    "sha256": "dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e"
                 }
             }
         },
@@ -787,10 +753,6 @@
                 "amd64": {
                     "url": "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.11.2.tgz",
                     "sha512": "14aed029edb8018829a49c0ede6a68a18a6d76ebaf206a8a24f8b969cecc7675a48d4cb8e8905f621096d20ae7916282f1839fd31faf1af8ae42a2448f74a941"
-                },
-                "arm64": {
-                    "url": "https://registry.npmjs.org/@pnpm/exe.linux-arm64/-/exe.linux-arm64-12.11.2.tgz",
-                    "sha512": "e9ef190105301570161c71efe457ac5aa7ff9042b4e30ba2b41bf97ff831ce40b40e205f6a2c6bf9ffba25079d7bc485e098b92dc33054525bcc0b5f7e95b112"
                 }
             }
         },
@@ -806,10 +768,6 @@
                 "amd64": {
                     "url": "https://static.rust-lang.org/dist/2026-10-01/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
                     "sha256": "77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
-                },
-                "arm64": {
-                    "url": "https://static.rust-lang.org/dist/2026-10-01/rustc-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
-                    "sha256": "89c0f1a3a44df63c95e5d5f2ba093d0a12c5f5f57f8635f8a7a0ce50cf86600e"
                 }
             }
         },
@@ -820,10 +778,6 @@
                 "amd64": {
                     "url": "https://static.rust-lang.org/dist/2026-10-01/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
                     "sha256": "3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
-                },
-                "arm64": {
-                    "url": "https://static.rust-lang.org/dist/2026-10-01/rust-std-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
-                    "sha256": "1cf7e2ef58ed1cfa6f1adea18e155cbf254c1951f39e5f5e3376879f55fd64a4"
                 }
             }
         },
@@ -834,10 +788,6 @@
                 "amd64": {
                     "url": "https://static.rust-lang.org/dist/2026-10-01/rustfmt-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
                     "sha256": "b22c09ab9e258ec5571da170d88bd1624a4ea602e6d70d95720c5b47494cadce"
-                },
-                "arm64": {
-                    "url": "https://static.rust-lang.org/dist/2026-10-01/rustfmt-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
-                    "sha256": "4b9162fef99fd5246d2f83a2430c144e9bb9095aac6d1de0aaebde45ec01e09a"
                 }
             }
         },
@@ -864,10 +814,6 @@
                 "amd64": {
                     "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.4.0.tgz",
                     "sha512": "6cbc9428d165d178db1dedb41690cce8eba49ce6f6138b9ea162825b89fec0c3b6fa542d03db660235be5ecd177bdae0dbeb42818dd6d7718e803876c23c2301"
-                },
-                "arm64": {
-                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.4.0.tgz",
-                    "sha512": "6cbc9428d165d178db1dedb41690cce8eba49ce6f6138b9ea162825b89fec0c3b6fa542d03db660235be5ecd177bdae0dbeb42818dd6d7718e803876c23c2301"
                 }
             }
         },
@@ -878,10 +824,6 @@
                 "amd64": {
                     "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.4.0/vp-x86_64-unknown-linux-gnu.tar.gz",
                     "sha256": "992558abc9621384434a22d80e06e117615680f14a3e17a58eb287fd30a07694"
-                },
-                "arm64": {
-                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.4.0/vp-aarch64-unknown-linux-gnu.tar.gz",
-                    "sha256": "8eee2d3e9a5bf8654f5150048f5a82b86d4f546c34c530f052545f5058db60de"
                 }
             }
         },
@@ -898,11 +840,6 @@
                     "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.1-ubuntu26.04-202609250211_amd64.deb",
                     "sha256": "61f58086f5e756076c6b29fa1b8a675c4cb63ff4d3a20c8d04cb68dca49bedb0",
                     "version": "1:7.0.1-ubuntu26.04-202609250211"
-                },
-                "arm64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.1-ubuntu26.04-202609250512_arm64.deb",
-                    "sha256": "3199b9b1025551b4b840812626934746afab77470910afcfcd49994ef2a71165",
-                    "version": "1:7.0.1-ubuntu26.04-202609250512"
                 }
             }
         },
@@ -914,11 +851,6 @@
                     "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.1-ubuntu26.04-202609250211_amd64.deb",
                     "sha256": "27d20fa3b37916bbd3c3752483fb317e18139d46ffd4b073799a3859361e5265",
                     "version": "1:7.0.1-ubuntu26.04-202609250211"
-                },
-                "arm64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.1-ubuntu26.04-202609250512_arm64.deb",
-                    "sha256": "f98bf56f5243e532903567f00511f4157b08e8b647e8bdbc7b397b5df11a2cfa",
-                    "version": "1:7.0.1-ubuntu26.04-202609250512"
                 }
             }
         },
@@ -929,10 +861,6 @@
                 "amd64": {
                     "url": "https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-x86_64",
                     "sha256": "940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d"
-                },
-                "arm64": {
-                    "url": "https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-aarch64",
-                    "sha256": "e330db5133f68255f3735c65e4f7508f879d34f6aa9a929a13f5a64fb5cbd88a"
                 }
             }
         }

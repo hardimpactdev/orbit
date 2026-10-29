@@ -195,7 +195,7 @@ fn only_exact_snapshot_sources_are_repairable() {
     for content in [
         format!("{original}# user edit\n"),
         original.replace("Check-Valid-Until: no\n", ""),
-        rolling_source("arm64"),
+        rolling_source(),
     ] {
         fs::write(&source, &content).unwrap();
         assert_eq!(ubuntu_repair(&files).unwrap(), None);
@@ -206,8 +206,9 @@ fn only_exact_snapshot_sources_are_repairable() {
     fs::write(&target, &original).unwrap();
     symlink(&target, &source).unwrap();
     assert_eq!(ubuntu_repair(&files).unwrap(), None);
-    assert!(rolling_source("arm64").contains("ports.ubuntu.com/ubuntu-ports"));
-    assert!(rolling_source("amd64").contains("security.ubuntu.com/ubuntu"));
+    assert!(rolling_source().contains("URIs: http://archive.ubuntu.com/ubuntu\n"));
+    assert!(rolling_source().contains("URIs: http://security.ubuntu.com/ubuntu\n"));
+    assert!(!rolling_source().contains("ports.ubuntu.com"));
 }
 
 #[test]

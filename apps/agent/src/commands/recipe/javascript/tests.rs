@@ -466,11 +466,6 @@ fn real_pinned_dispatcher_runs_projects_and_preserves_existing_global_content() 
         )
         .into(),
     );
-    input.architecture = if cfg!(target_arch = "aarch64") {
-        super::super::types::Architecture::Arm64
-    } else {
-        super::super::types::Architecture::Amd64
-    };
     let old = scope.join("old/node_modules/vite-plus");
     fs::create_dir_all(&old).unwrap();
     fs::write(

@@ -88,8 +88,7 @@ fn fixture() -> (WorkDir, Files, PackageInput, FakeHost) {
     let digest = format!("{:x}", Sha512::digest(&payload));
     let input = PackageInput {
         release: "2.11.7".into(),
-        amd64_sha512: digest.clone(),
-        arm64_sha512: digest,
+        amd64_sha512: digest,
         minimum_version: "2.9.0".into(),
     };
     let host = FakeHost {
@@ -106,65 +105,62 @@ fn programs(host: &FakeHost) -> Vec<&str> {
     host.calls.iter().map(|c| c.argv[0].as_str()).collect()
 }
 #[test]
-fn installs_missing_or_old_packages_on_both_architectures_and_repeats() {
-    for architecture in ["amd64", "arm64"] {
-        for version in [None, Some("2.6.2")] {
-            let (_work, files, input, mut host) = fixture();
-            host.architecture = architecture.into();
-            host.version = version.map(str::to_string);
-            let result = install(&input, &files, &mut host).unwrap();
-            assert_eq!(
-                result,
-                Package {
-                    changed: true,
-                    version: "2.11.7".into()
-                }
-            );
-            let download = host.calls.iter().find(|c| c.argv[0] == "curl").unwrap();
-            assert_eq!(download.argv.last().unwrap(), &format!("https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_{architecture}.deb"));
-            assert!(download
-                .argv
-                .windows(2)
-                .any(|a| a == ["--proto-redir", "=https"]));
-            let apt = host.calls.iter().find(|c| c.argv[0] == "apt-get").unwrap();
-            assert_eq!(
-                &apt.argv[..10],
-                [
-                    "apt-get",
-                    "-o",
-                    "DPkg::Lock::Timeout=300",
-                    "-o",
-                    "Dpkg::Options::=--force-confold",
-                    "install",
-                    "--yes",
-                    "--no-install-recommends",
-                    "--no-remove",
-                    "--"
-                ]
-            );
-            assert_eq!(
-                apt.environment,
-                [("DEBIAN_FRONTEND".into(), "noninteractive".into())]
-            );
-            assert!(
-                !Path::new(apt.argv.last().unwrap()).exists(),
-                "package staging survived completion"
-            );
-            let setting = files.path(SETTING);
-            let meta = fs::metadata(&setting).unwrap();
-            assert_eq!(
-                (meta.uid(), meta.gid(), meta.mode() & 0o7777),
-                (files.uid, files.gid, 0o644)
-            );
-            assert_eq!(
-                fs::read_to_string(&setting).unwrap(),
-                "net.ipv4.tcp_migrate_req = 1\n"
-            );
-            host.calls.clear();
-            assert!(!install(&input, &files, &mut host).unwrap().changed);
-            assert_eq!(programs(&host), ["caddy", "dpkg", "sysctl", "dpkg"]);
-            assert_eq!(fs::metadata(setting).unwrap().ino(), meta.ino());
-        }
+fn installs_missing_or_old_packages_on_amd64_and_repeats() {
+    for version in [None, Some("2.6.2")] {
+        let (_work, files, input, mut host) = fixture();
+        host.version = version.map(str::to_string);
+        let result = install(&input, &files, &mut host).unwrap();
+        assert_eq!(
+            result,
+            Package {
+                changed: true,
+                version: "2.11.7".into()
+            }
+        );
+        let download = host.calls.iter().find(|c| c.argv[0] == "curl").unwrap();
+        assert_eq!(download.argv.last().unwrap(), "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.deb");
+        assert!(download
+            .argv
+            .windows(2)
+            .any(|a| a == ["--proto-redir", "=https"]));
+        let apt = host.calls.iter().find(|c| c.argv[0] == "apt-get").unwrap();
+        assert_eq!(
+            &apt.argv[..10],
+            [
+                "apt-get",
+                "-o",
+                "DPkg::Lock::Timeout=300",
+                "-o",
+                "Dpkg::Options::=--force-confold",
+                "install",
+                "--yes",
+                "--no-install-recommends",
+                "--no-remove",
+                "--"
+            ]
+        );
+        assert_eq!(
+            apt.environment,
+            [("DEBIAN_FRONTEND".into(), "noninteractive".into())]
+        );
+        assert!(
+            !Path::new(apt.argv.last().unwrap()).exists(),
+            "package staging survived completion"
+        );
+        let setting = files.path(SETTING);
+        let meta = fs::metadata(&setting).unwrap();
+        assert_eq!(
+            (meta.uid(), meta.gid(), meta.mode() & 0o7777),
+            (files.uid, files.gid, 0o644)
+        );
+        assert_eq!(
+            fs::read_to_string(&setting).unwrap(),
+            "net.ipv4.tcp_migrate_req = 1\n"
+        );
+        host.calls.clear();
+        assert!(!install(&input, &files, &mut host).unwrap().changed);
+        assert_eq!(programs(&host), ["caddy", "dpkg", "sysctl", "dpkg"]);
+        assert_eq!(fs::metadata(setting).unwrap().ino(), meta.ino());
     }
 }
 #[test]
@@ -215,7 +211,7 @@ fn refuses_bad_pins_or_paths_before_any_command_or_write() {
             0 => input.release = "../other".into(),
             1 => input.minimum_version = "invalid".into(),
             2 => input.amd64_sha512 = "a".repeat(127),
-            _ => input.arm64_sha512 = "x".repeat(128),
+            _ => input.amd64_sha512 = "x".repeat(128),
         }
         assert_eq!(
             install(&input, &files, &mut host).unwrap_err(),
@@ -270,12 +266,11 @@ fn refuses_symlinks_wrong_types_or_unsafe_ownership_and_mode_before_commands() {
 }
 #[test]
 fn refuses_bad_digest_and_unsupported_architecture_before_kernel_or_package_mutation() {
-    for bad_digest in [true, false] {
+    for architecture in [None, Some("arm64"), Some("riscv64")] {
         let (_work, files, input, mut host) = fixture();
-        if bad_digest {
-            host.payload = b"wrong bytes".to_vec();
-        } else {
-            host.architecture = "riscv64".into();
+        match architecture {
+            None => host.payload = b"wrong bytes".to_vec(),
+            Some(other) => host.architecture = other.into(),
         }
         assert!(matches!(
             install(&input, &files, &mut host),
@@ -284,6 +279,9 @@ fn refuses_bad_digest_and_unsupported_architecture_before_kernel_or_package_muta
         assert!(!programs(&host)
             .iter()
             .any(|p| matches!(*p, "sysctl" | "apt-get")));
+        if architecture.is_some() {
+            assert!(!programs(&host).contains(&"curl"));
+        }
         assert!(!files.path(SETTING).exists());
     }
 }
@@ -320,8 +318,9 @@ fn rejects_caller_selected_paths_and_sources() {
         "kernel_setting",
         "legacy_paths",
         "release_url",
+        "arm64_sha512",
     ] {
-        let mut value = serde_json::json!({"release":"2.11.7","minimum_version":"2.9.0","amd64_sha512":"a".repeat(128),"arm64_sha512":"b".repeat(128)});
+        let mut value = serde_json::json!({"release":"2.11.7","minimum_version":"2.9.0","amd64_sha512":"a".repeat(128)});
         value[field] = serde_json::json!("/tmp/other");
         assert!(serde_json::from_value::<PackageInput>(value).is_err());
     }

@@ -204,10 +204,10 @@ describe('Node convergence', function () {
     it('provisions a workload Node with its base role, TLD, WireGuard address, and scanned host key', function (string $node, string $role, string $address) {
         $fixture = convergeNodeFixture();
 
-        expect(runGuestScript($fixture, ['provision', $node, '192.0.2.12', 'aarch64', $address, $role, $node])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['provision', $node, '192.0.2.12', 'x86_64', $address, $role, $node])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
                 'ssh-keyscan -T 5 -t ed25519 -- 192.0.2.12',
-                "php artisan orbit:node-provision {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=aarch64 --user=orbit "
+                "php artisan orbit:node-provision {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=x86_64 --user=orbit "
                     ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction",
             ]);
     })->with([
@@ -244,6 +244,7 @@ describe('Node convergence', function () {
         'address' => [['provision', 'app-dev', 'example', 'x86_64', '10.44.0.2'], 64],
         'Node key' => [['provision', 'App_Dev', '192.0.2.11', 'x86_64', '10.44.0.2'], 64],
         'architecture' => [['provision', 'app-dev', '192.0.2.11', 'armv7', '10.44.0.2'], 65],
+        'Linux ARM' => [['provision', 'app-dev', '192.0.2.11', 'aarch64', '10.44.0.2'], 65],
         'WireGuard address' => [['provision', 'app-prod', '192.0.2.12', 'x86_64', '10.45.0.3'], 65],
         'role' => [['provision', 'app-prod', '192.0.2.12', 'x86_64', '10.44.0.3', 'App Prod', 'app-prod'], 64],
     ]);

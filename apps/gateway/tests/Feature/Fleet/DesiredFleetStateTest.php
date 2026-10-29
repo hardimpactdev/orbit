@@ -37,12 +37,6 @@ describe(DesiredFleetState::class, function (): void {
                         'url' => 'https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-x86_64',
                         'sha256' => app(AgentDelivery::class)->artifacts()['linux-x86_64']['sha256'],
                     ],
-                    [
-                        'platform' => 'linux-aarch64',
-                        'name' => 'orbit-agent-linux-aarch64',
-                        'url' => 'https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-aarch64',
-                        'sha256' => app(AgentDelivery::class)->artifacts()['linux-aarch64']['sha256'],
-                    ],
                 ],
             ]);
     });

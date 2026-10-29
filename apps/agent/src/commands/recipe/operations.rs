@@ -56,7 +56,7 @@ pub fn plan(
         actions.insert(0, "repair_ubuntu_sources".into());
         Some(apt::Indexes::temporary(
             host,
-            &super::sources::rolling_source(input.architecture.name()),
+            &super::sources::rolling_source(),
         )?)
     } else {
         None
@@ -129,8 +129,8 @@ pub fn apply(
             ));
         }
         stage = "apt-source";
-        ownership::repair_ubuntu(host, files, input.architecture.name())?;
-        let origins = apt::Indexes::refresh(host, input.architecture.name(), &input.snapshot)?;
+        ownership::repair_ubuntu(host, files)?;
+        let origins = apt::Indexes::refresh(host, &input.snapshot)?;
         stage = "preflight";
         let before = apt::packages(host)?;
         let versions = javascript::inspect(host, files, &input.tools, Some(account))?;

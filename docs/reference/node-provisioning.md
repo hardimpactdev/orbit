@@ -75,7 +75,13 @@ Name a bootstrap user with `--user` when root cannot log in, or when the managed
 
 ### Machine architecture
 
-Before staging the first agent binary, the runner selects its platform and architecture with a fixed `uname -sm` probe over the pinned bootstrap connection. After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before agent installation or any role convergence.
+Linux Nodes are x86_64 only. Orbit has no Linux ARM agent, CLI, or recipe software. macOS Nodes on Apple silicon stay supported; see [macOS Nodes](#macos-nodes).
+
+Before staging the first agent binary, the runner selects its platform and architecture with a fixed `uname -sm` probe over the pinned bootstrap connection. A Linux machine that reports anything other than `x86_64`, such as `aarch64`, fails with `node.architecture_unsupported` (HTTP 422) at step `machine-architecture`. The Gateway records no architecture, stages no agent, and converges no role. Adding a role to such a Node fails before any assignment: `node_role.convergence_failed` (HTTP 422) with `error_code` `node.architecture_unsupported` at step `converge:machine-architecture`.
+
+After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value.
+
+`--architecture` is optional. For a Linux Node, the only accepted value is `x86_64`. Any other value fails with `node.architecture_unsupported` (HTTP 422) before the Gateway connects or records the Node.
 
 ### Failure codes
 
@@ -99,7 +105,8 @@ Each failure names the check or step that stopped the request.
 | `node.bootstrap_failed` | The bootstrap failed as the bootstrap user. |
 | `node.orbit_ssh_failed` | The Gateway could not connect as the managed user after the bootstrap. |
 | `node.architecture_unavailable` | The Gateway could not read the architecture. |
-| `node.architecture_mismatch` | The requested architecture differs from the observed one. HTTP 409 at `machine-architecture`. |
+| `node.architecture_mismatch` | macOS only: the requested architecture differs from the observed one. HTTP 409 at `machine-architecture`. |
+| `node.architecture_unsupported` | A Linux Node is not `x86_64`, or the request names another architecture. HTTP 422. An observed architecture fails at `machine-architecture`, before the agent is staged. |
 | `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
 | `node.agent_install_failed` | The Node agent failed to install. |
 
@@ -141,7 +148,7 @@ Older migrated versions remain adopted content. A link is briefly absent between
 
 On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
 
-The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
+The command requires an active managed Ubuntu Node on x86_64. Another architecture fails with `node.recipe_architecture`. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
 
 The Gateway sends those pins and the enrolled account to `recipe.inspect`, `recipe.incus-preflight`, and `recipe.apply` through the agent runner. Rust owns package inventory, origin proof, source retirement, verified downloads, runtime installation, and service checks. The applying command holds the package resource lock. It removes its temporary package restart policy on failure or graceful interruption and reserves cleanup time before its command deadline. A command terminated by SIGHUP, SIGINT, or SIGTERM stops the recipe, including an optional command. [Recipe interruption](/reference/node-agent#recipe-interruption) explains how the runner detects the signal.
 
@@ -153,9 +160,9 @@ The `ci-runner` role selects its recipe tool set through the same role union as 
 
 A dry run changes no host configuration, installed packages, or system APT indexes. Origin verification can fetch authenticated indexes into a temporary directory, which it removes afterward. It takes no remote lock and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
 
-Application shares the role-converge lock with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. Each binary installer takes the self-update lock for its own replacement; package work and Doctor do not hold that lock. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content.
+Application shares the role-converge lock with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. Each binary installer takes the self-update lock for its own replacement; package work and Doctor do not hold that lock. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources. It preserves other source content.
 
-Every applying run refreshes these Ubuntu pockets through a temporary Ubuntu-only source file, whether or not preflight repaired `ubuntu.sources`. An unrelated third-party source cannot block convergence. A failed Ubuntu refresh still stops convergence. Even a Node configured with a regional mirror must reach `archive.ubuntu.com` and `security.ubuntu.com` on amd64, or `ports.ubuntu.com` on arm64.
+Every applying run refreshes these Ubuntu pockets through a temporary Ubuntu-only source file, whether or not preflight repaired `ubuntu.sources`. An unrelated third-party source cannot block convergence. A failed Ubuntu refresh still stops convergence. Even a Node configured with a regional mirror must reach `archive.ubuntu.com` and `security.ubuntu.com`.
 
 Recipe package resolution uses a temporary snapshot source. It refreshes the snapshot indexes only when an Ubuntu package or Debian artifact needs installation. Index refreshes fetch package metadata without translations, desktop metadata, or command suggestions, and retain APT's cached lists. It downloads and verifies pinned release artifacts, installs missing or older Ubuntu packages at the selected pins, exact artifacts, and their dependencies with package removal disabled, and verifies installed versions. Exact Debian artifacts can downgrade after a dependency simulation; Ubuntu recipe packages and other dependencies cannot. Installation ends with `apt-get check`.
 
@@ -473,7 +480,7 @@ For PHP, the Gateway sends each pin's URL, version, and SHA-256 digest to the No
 
 The installer also repairs the [managed PHP settings](/reference/compute-drivers#install-the-php-build) when the packages already match. A settings-only repair validates every active FPM master, including dedicated production masters, and gracefully reloads those that pass. Instance steps defer and log invalid masters while keeping the INI and continuing with the other masters. Recipe convergence instead fails and restores the previous settings. The log also warns when masters are left running without a restart or reload because they may still use the previous build or settings.
 
-For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
+For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.deb`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture, including `arm64`, fails the step with `caddy.package_failed`. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 
 ### Role prerequisites
 

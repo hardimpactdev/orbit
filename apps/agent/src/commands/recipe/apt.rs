@@ -163,14 +163,10 @@ impl Indexes {
         Ok(Self { work, options })
     }
     /// Applying refreshes only Ubuntu indexes, preserving cached snapshot evidence for origin checks.
-    pub fn refresh(
-        host: &mut impl Host,
-        architecture: &str,
-        snapshot: &str,
-    ) -> Result<Self, Failure> {
+    pub fn refresh(host: &mut impl Host, snapshot: &str) -> Result<Self, Failure> {
         let work = WorkDir::new()?;
         let source_path = work.0.join("ubuntu.sources");
-        let rolling = sources::rolling_source(architecture);
+        let rolling = sources::rolling_source();
         fs::write(&source_path, &rolling)
             .map_err(|e| Failure::io("apt-source", &source_path, e))?;
         let options = source_options(&source_path);
@@ -204,7 +200,6 @@ pub fn ubuntu_index(index: &str, signed: &sources::SignedSources) -> bool {
         && ([
             "archive.ubuntu.com",
             "security.ubuntu.com",
-            "ports.ubuntu.com",
             "snapshot.ubuntu.com",
         ]
         .contains(&host)
@@ -279,7 +274,7 @@ pub fn architecture(host: &mut impl Host) -> Result<String, Failure> {
     .stdout
     .trim()
     .to_string();
-    if !["amd64", "arm64"].contains(&arch.as_str()) {
+    if arch != "amd64" {
         return Err(Failure::new(
             "architecture",
             "Unsupported package architecture",

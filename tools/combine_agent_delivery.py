@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import sys
 
-PLATFORMS = {"linux-x86_64", "linux-aarch64", "macos-aarch64", "macos-x86_64"}
+PLATFORMS = {"linux-x86_64", "macos-aarch64", "macos-x86_64"}
 
 
 def combine(destination, sources):

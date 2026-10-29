@@ -28,7 +28,6 @@ fn failed(reason: impl ToString) -> PackageError {
 pub struct PackageInput {
     pub release: String,
     pub amd64_sha512: String,
-    pub arm64_sha512: String,
     /// The oldest Caddy release Orbit renders against.
     pub minimum_version: String,
 }
@@ -54,12 +53,11 @@ fn version(value: &str) -> bool {
 fn validate(input: &PackageInput) -> Result<(), PackageError> {
     if !version(&input.release)
         || !version(&input.minimum_version)
-        || [&input.amd64_sha512, &input.arm64_sha512].iter().any(|s| {
-            s.len() != 128
-                || !s
-                    .bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        })
+        || input.amd64_sha512.len() != 128
+        || !input
+            .amd64_sha512
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
         return Err(PackageError::Invalid {});
     }
@@ -150,15 +148,12 @@ fn install(
     let package = if needs_package {
         let architecture = run(host, &["dpkg", "--print-architecture"])?;
         let architecture = architecture.trim();
-        let expected = match architecture {
-            "amd64" => &input.amd64_sha512,
-            "arm64" => &input.arm64_sha512,
-            other => {
-                return Err(failed(format!(
-                    "Orbit pins no Caddy package for the {other} architecture."
-                )))
-            }
-        };
+        if architecture != "amd64" {
+            return Err(failed(format!(
+                "Orbit pins no Caddy package for the {architecture} architecture."
+            )));
+        }
+        let expected = &input.amd64_sha512;
         let name = format!("caddy_{}_linux_{architecture}.deb", input.release);
         let path = work.0.join(&name);
         let url = format!(

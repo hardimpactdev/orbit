@@ -51,7 +51,7 @@ final class GatewayExceptionStatus
             $exception instanceof RoleAssignmentException,
             $exception instanceof NodeRoleValidationException => Response::HTTP_UNPROCESSABLE_ENTITY,
             $exception instanceof NodeRoleOperationException,
-            $exception instanceof NodeProvisioningException,
+            $exception instanceof NodeProvisioningException => $exception->status,
             $exception instanceof NodeRemovalException,
             $exception instanceof RuntimeConvergenceException,
             $exception instanceof ProcessOperationException => Response::HTTP_BAD_GATEWAY,

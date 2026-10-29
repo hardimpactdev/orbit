@@ -32,23 +32,20 @@ final readonly class MachineRecipe
         public array $agentDigests = [],
     ) {}
 
-    /** The recipe architecture of a machine architecture, or null when the recipe has none for it. */
+    /**
+     * The recipe architecture of a machine architecture, or null when the recipe has none for it. Linux Nodes are
+     * x86_64 only, so only amd64 has one.
+     */
     public static function architecture(?string $architecture): ?string
     {
-        return match ($architecture) {
-            'x86_64', 'amd64' => 'amd64',
-            'aarch64', 'arm64' => 'arm64',
-            default => null,
-        };
+        return in_array($architecture, ['x86_64', 'amd64'], true) ? 'amd64' : null;
     }
 
     public function agentDigest(string $architecture): string
     {
-        $platform = match ($architecture) {
-            'amd64', 'x86_64' => 'linux-x86_64',
-            'arm64', 'aarch64' => 'linux-aarch64',
-            default => throw new InvalidArgumentException("The recipe has no agent platform for [{$architecture}]."),
-        };
+        $platform = self::architecture($architecture) === 'amd64'
+            ? 'linux-x86_64'
+            : throw new InvalidArgumentException("The recipe has no agent platform for [{$architecture}].");
 
         return $this->agentDigests[$platform] ?? throw new InvalidArgumentException("The recipe has no resolved agent digest for [{$platform}].");
     }
@@ -87,11 +84,6 @@ final readonly class MachineRecipe
             foreach ($tools as $name) {
                 $pin = $this->tools[$name];
                 if ($pin->source !== 'ubuntu' && ! isset($pin->artifacts[$architecture])) {
-                    foreach ($this->php as $build) {
-                        if (in_array($name, $build->packages, true)) {
-                            throw new InvalidArgumentException("PHP is not available for {$architecture}");
-                        }
-                    }
                     throw new InvalidArgumentException("Profile [{$role}] requires tool [{$name}], unavailable for architecture [{$architecture}].");
                 }
             }

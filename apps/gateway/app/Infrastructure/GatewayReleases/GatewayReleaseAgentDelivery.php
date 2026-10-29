@@ -39,14 +39,6 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
     /** @var list<string> */
     public const array Platforms = ['linux-x86_64', 'macos-aarch64', 'macos-x86_64'];
 
-    /**
-     * Releases built before Orbit dropped Linux ARM still deliver this platform. Prepare verifies it with the rest
-     * and installs nothing from it. The next change removes this allowance once the Gateway runs this code.
-     *
-     * @var list<string>
-     */
-    public const array RetiredPlatforms = ['linux-aarch64'];
-
     private const int MetadataMaxBytes = 65536;
 
     /**
@@ -193,7 +185,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
             || ! is_string($manifest['version'] ?? null) || $manifest['version'] === '' || ! is_array($artifacts)) {
             throw $this->invalid($sha, 'The release agent manifest has no commit, version, or artifacts.');
         }
-        $keys = array_values(array_diff(array_keys($artifacts), self::RetiredPlatforms));
+        $keys = array_keys($artifacts);
         sort($keys);
         if ($keys !== self::Platforms) {
             throw $this->invalid($sha, 'The release agent manifest does not name exactly the delivered platforms.');

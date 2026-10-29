@@ -50,7 +50,7 @@ impl Host for FakeHost {
             .push([vec![program.into()], args.to_vec()].concat());
         Ok((true, String::new()))
     }
-    fn download(&mut self, _: &str) -> Result<Vec<u8>> {
+    fn download(&mut self) -> Result<Vec<u8>> {
         self.downloads += 1;
         Ok(if self.bad_download {
             b"wrong".to_vec()
@@ -93,7 +93,6 @@ fn fixture() -> Fixture {
         binary: base.join("exporter"),
         owner: rustix::process::getuid().as_raw(),
         checksum: format!("{:x}", Sha256::digest(b"exporter")),
-        machine: "amd64",
         host: FakeHost::default(),
     })
 }
@@ -337,4 +336,15 @@ fn checksum_failure_does_not_publish_or_start_the_exporter() {
     assert!(runtime.host.mutations.is_empty());
     assert!(!runtime.binary.exists());
     assert!(!runtime.root.join("transaction.json").exists());
+}
+
+#[test]
+fn pins_the_exporter_only_for_x86_64() {
+    assert!(exporter_checksum("x86_64").is_ok());
+    for architecture in ["aarch64", "riscv64"] {
+        assert!(matches!(
+            exporter_checksum(architecture),
+            Err(ServiceMetricsError::Invalid { reason }) if reason == "exporter architecture"
+        ));
+    }
 }
