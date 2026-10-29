@@ -20,7 +20,6 @@ use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use App\Models\TaskVm;
 use Closure;
-use Illuminate\Support\Facades\Config;
 
 final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
 {
@@ -31,20 +30,6 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
     public const string Device = 'package-cache';
 
     public function __construct(private AgentCommandRunner $agents, private GuestAgentCommandRunner $guests) {}
-
-    /** @param list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}> $artifacts
-     * @return array{hashes:array<string,string>,failures:array<string,string>}
-     */
-    public function fill(TaskVmHost $host, Node $node, array $artifacts, #[\SensitiveParameter] ?string $githubToken = null): array
-    {
-        $maxBytes = Config::integer('package_cache.max_bytes');
-        if ($maxBytes < 1) {
-            throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
-        }
-        $response = $this->request(fn () => $this->agents->run($node, 'package-cache.host', ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken === null ? null : new AgentGitHubToken($githubToken)]));
-
-        return self::verifiedResult($artifacts, $response);
-    }
 
     /**
      * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
