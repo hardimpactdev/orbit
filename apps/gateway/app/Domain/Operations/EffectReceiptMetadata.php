@@ -8,12 +8,39 @@ use App\Domain\Shared\ResourceOperationException;
 use JsonSerializable;
 
 /** Request-memory-only masks for the original invocation. No source resolution on recovery. */
-final readonly class EffectReceiptMetadata implements JsonSerializable
+final class EffectReceiptMetadata implements JsonSerializable
 {
     public const string InputKey = '__orbit_effect_receipt';
 
-    /** @param list<string> $masks */
-    public function __construct(#[\SensitiveParameter] private array $masks) {}
+    /** @var array<string, mixed> */
+    private array $receipt = [];
+
+    /** @param list<string> $masks
+     * @param  array{nonce:string,created_at:int}|null  $identity
+     */
+    public function __construct(#[\SensitiveParameter] private readonly array $masks, private readonly ?array $identity = null) {}
+
+    /** @return array{nonce:string,created_at:int} */
+    public function identity(): array
+    {
+        if ($this->identity === null) {
+            throw new ResourceOperationException('operation.receipt_unproven', 'An original Operation identity is required before execution.', 422);
+        }
+
+        return $this->identity;
+    }
+
+    /** @param array<string,mixed> $receipt */
+    public function received(array $receipt): void
+    {
+        $this->receipt = array_intersect_key($receipt, array_flip(['state', 'exit_code', 'finished_at', 'effect_nonce', 'effect_created_at']));
+    }
+
+    /** @return array<string,mixed> */
+    public function receipt(): array
+    {
+        return $this->receipt;
+    }
 
     /** @param array<string, mixed> $run */
     public static function fromRun(#[\SensitiveParameter] array $run): self
@@ -38,10 +65,10 @@ final readonly class EffectReceiptMetadata implements JsonSerializable
         return [...$input, self::InputKey => $this];
     }
 
-    /** @return array{redactions: list<string>} Protected stdin only. */
+    /** @return array{redactions: list<string>,nonce:string,created_at:int} Protected stdin only. */
     public function envelope(): array
     {
-        return ['redactions' => $this->masks];
+        return ['redactions' => $this->masks, ...$this->identity()];
     }
 
     /** @return array{protected: true} */

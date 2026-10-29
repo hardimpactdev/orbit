@@ -165,16 +165,18 @@ pub fn execute_stream(
             )
         }
     };
-    let effect_masks = match fields.remove("effect_receipt") {
+    let effect_metadata = match fields.remove("effect_receipt") {
         None => None,
         Some(value) => {
             #[derive(serde::Deserialize)]
             #[serde(deny_unknown_fields)]
             struct Protected {
                 redactions: Vec<String>,
+                nonce: String,
+                created_at: i64,
             }
             match serde_json::from_value::<Protected>(value) {
-                Ok(metadata) => Some(metadata.redactions),
+                Ok(metadata) => Some(metadata),
                 Err(_) => {
                     return Outcome::refused(
                         "agent.envelope_invalid",
@@ -276,8 +278,10 @@ pub fn execute_stream(
         let _ = sender.send(super::binary_input::receive(stream, stream_bytes));
     });
     let context = Context::new(host.platform, deadline);
-    let context = match effect_masks {
-        Some(masks) => context.with_effect_masks(masks),
+    let context = match effect_metadata {
+        Some(metadata) => context
+            .with_effect_masks(metadata.redactions)
+            .with_effect_identity(metadata.nonce, metadata.created_at),
         None => context,
     };
     let context = match receiver.recv_timeout(context.remaining()) {

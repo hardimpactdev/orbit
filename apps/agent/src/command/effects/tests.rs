@@ -28,7 +28,15 @@ fn context() -> Context {
         Platform::Linux,
         std::time::Instant::now() + Duration::from_secs(3),
     )
+    .with_effect_identity(
+        "11111111-1111-4111-8111-111111111111".into(),
+        time::OffsetDateTime::now_utc().unix_timestamp(),
+    )
     .with_effect_masks(vec![])
+    .with_effect_identity(
+        "11111111-1111-4111-8111-111111111111".into(),
+        time::OffsetDateTime::now_utc().unix_timestamp(),
+    )
 }
 fn code(outcome: Outcome) -> String {
     match outcome {
@@ -371,7 +379,12 @@ fn a_failed_remote_program_keeps_its_exit_code_and_result() {
 fn original_masks_sanitize_receipts_before_disk_and_are_never_persisted() {
     let fixture = Fixture::new();
     let store = fixture.store();
-    let ctx = context().with_effect_masks(vec!["private-original-token".into()]);
+    let ctx = context()
+        .with_effect_identity(
+            "11111111-1111-4111-8111-111111111111".into(),
+            time::OffsetDateTime::now_utc().unix_timestamp(),
+        )
+        .with_effect_masks(vec!["private-original-token".into()]);
     let outcome = store.execute("test.effect", "op-42.safe", "input", &ctx, || Outcome::Ok(json!({"classified":"laravel","echo":"prefix private-original-token suffix","nested":{"private-original-token":"private-original-token"}})));
     let json = serde_json::to_string(&outcome.to_json()).unwrap();
     assert!(!json.contains("private-original-token"));
@@ -414,9 +427,230 @@ fn missing_sanitization_metadata_refuses_before_execution_and_old_raw_receipts_a
             finished_at: Some("2026-10-28T20:00:00Z".into()),
             running_until: None,
             sanitized: false,
+            effect_nonce: Some("11111111-1111-4111-8111-111111111111".into()),
+            effect_created_at: Some(time::OffsetDateTime::now_utc().unix_timestamp()),
         })
         .unwrap_or_else(|_| panic!("old fixture"));
     assert!(
         matches!(store.receipt("test.effect", "op-42.old"),Err(Outcome::Refused { code,.. }) if code=="agent.effect_unsanitized")
     );
+}
+
+#[test]
+fn infrastructure_refusals_never_fill_the_result_slot() {
+    for error in [
+        "agent.deadline_exceeded",
+        "agent.supervisor_failed",
+        "agent.target_busy",
+        "agent.effect_receipt_unavailable",
+        "agent.effect_unknown",
+    ] {
+        let fixture = Fixture::new();
+        let store = fixture.store();
+        assert_eq!(
+            code(store.execute(
+                "test.effect",
+                "op-42.uncertain",
+                "input",
+                &context(),
+                || Outcome::refused(error, "unproven", json!({}))
+            )),
+            error
+        );
+        let receipt = store
+            .receipt("test.effect", "op-42.uncertain")
+            .unwrap_or_else(|_| panic!("receipt"));
+        assert_eq!(receipt.state, "unknown");
+        assert!(receipt.result.is_none());
+        assert_eq!(
+            code(store.execute(
+                "test.effect",
+                "op-42.uncertain",
+                "input",
+                &context(),
+                || panic!("cannot repeat")
+            )),
+            "agent.effect_unknown"
+        );
+    }
+}
+
+#[test]
+fn final_save_failure_leaves_only_the_original_unfinished_intent() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let intent = fixture.0.join("original-intent");
+    let path = store.path("op-42.final-save");
+    let outcome = store.execute(
+        "test.effect",
+        "op-42.final-save",
+        "input",
+        &context(),
+        || {
+            fs::rename(&path, &intent).unwrap();
+            fs::create_dir(&path).unwrap();
+            Outcome::Ok(json!({"effect_applied":true}))
+        },
+    );
+    assert_eq!(code(outcome), "agent.effect_receipt_unavailable");
+    fs::remove_dir(&path).unwrap();
+    fs::rename(&intent, &path).unwrap();
+    let receipt = store
+        .receipt("test.effect", "op-42.final-save")
+        .unwrap_or_else(|_| panic!("intent readable"));
+    assert_eq!(receipt.state, "unknown");
+    assert!(receipt.result.is_none());
+    assert_eq!(
+        code(store.execute(
+            "test.effect",
+            "op-42.final-save",
+            "input",
+            &context(),
+            || panic!("effect already ran")
+        )),
+        "agent.effect_unknown"
+    );
+}
+
+#[test]
+fn restored_numeric_ids_cannot_adopt_receipts_from_another_operation_nonce() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    store.execute(
+        "test.effect",
+        "op-500.restart",
+        "same-input",
+        &context(),
+        || Outcome::Ok(json!({"old":true})),
+    );
+    let next = context().with_effect_identity(
+        "22222222-2222-4222-8222-222222222222".into(),
+        time::OffsetDateTime::now_utc().unix_timestamp(),
+    );
+    assert_eq!(
+        code(store.execute(
+            "test.effect",
+            "op-500.restart",
+            "same-input",
+            &next,
+            || panic!("conflicting identity cannot execute")
+        )),
+        "agent.effect_conflict"
+    );
+    let receipt = store
+        .receipt("test.effect", "op-500.restart")
+        .unwrap_or_else(|_| panic!("receipt"));
+    assert_eq!(
+        receipt.effect_nonce.as_deref(),
+        Some("11111111-1111-4111-8111-111111111111")
+    );
+}
+
+#[test]
+fn masks_numbers_and_booleans_before_persisting_a_receipt() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let masks =
+        context().with_effect_masks(vec!["731".into(), "1".into(), "4.25".into(), "82".into()]);
+    store.execute("test.effect", "op-42.scalars", "input", &masks, || {
+        Outcome::Ok(
+            json!({"integer":731,"boolean":true,"float":4.25,"whole_float":82.0,"public":false}),
+        )
+    });
+    let result = store
+        .receipt("test.effect", "op-42.scalars")
+        .unwrap_or_else(|_| panic!("receipt"))
+        .result
+        .unwrap();
+    assert_eq!(
+        result["data"],
+        json!({"integer":"[REDACTED]","boolean":"[REDACTED]","float":"[REDACTED]","whole_float":"[REDACTED]","public":false})
+    );
+    let bytes = fs::read_to_string(store.path("op-42.scalars")).unwrap();
+    assert!(!bytes.contains("731"));
+    assert!(!bytes.contains("4.25"));
+}
+
+#[test]
+fn pruning_expired_receipts_and_locks_cannot_authorize_an_old_effect() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    store.execute("test.effect", "op-42.expired", "input", &context(), || {
+        Outcome::Ok(json!({"done":true}))
+    });
+    let old = std::time::SystemTime::now() - RETENTION - Duration::from_secs(3600);
+    let receipt_path = store.path("op-42.expired");
+    let lock_path = store
+        .directory
+        .join(format!("{}.lock", digest(b"op-42.expired")));
+    for path in [
+        &receipt_path,
+        &lock_path,
+        &store.directory.join(".store.lock"),
+    ] {
+        OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    store.prune().unwrap_or_else(|_| panic!("prune"));
+    assert!(!receipt_path.exists());
+    assert!(!lock_path.exists());
+    let original = context().with_effect_identity(
+        "11111111-1111-4111-8111-111111111111".into(),
+        time::OffsetDateTime::now_utc().unix_timestamp() - RETENTION.as_secs() as i64 - 3600,
+    );
+    assert_eq!(
+        code(store.execute(
+            "test.effect",
+            "op-42.expired",
+            "input",
+            &original,
+            || panic!("expired identity cannot execute")
+        )),
+        "agent.effect_expired"
+    );
+    assert_eq!(
+        store
+            .receipt("test.effect", "op-42.expired")
+            .unwrap_or_else(|_| panic!("unknown"))
+            .state,
+        "unknown"
+    );
+}
+
+#[test]
+fn pruning_cannot_unlink_a_lock_while_an_effect_holds_the_namespace() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let (entered, running) = std::sync::mpsc::channel();
+    let (release, resume) = std::sync::mpsc::channel();
+    let worker_store = fixture.store();
+    let thread = std::thread::spawn(move || {
+        worker_store.execute("test.effect", "op-42.active", "input", &context(), || {
+            entered.send(()).unwrap();
+            resume.recv().unwrap();
+            Outcome::Ok(json!({}))
+        })
+    });
+    running.recv().unwrap();
+    let old = std::time::SystemTime::now() - RETENTION - Duration::from_secs(3600);
+    for name in [
+        format!("{}.json", digest(b"op-42.active")),
+        format!("{}.lock", digest(b"op-42.active")),
+        ".store.lock".into(),
+    ] {
+        OpenOptions::new()
+            .write(true)
+            .open(store.directory.join(name))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    store.prune().unwrap_or_else(|_| panic!("busy prune skips"));
+    assert!(store.path("op-42.active").exists());
+    release.send(()).unwrap();
+    assert_eq!(code(thread.join().unwrap()), "ok");
 }
