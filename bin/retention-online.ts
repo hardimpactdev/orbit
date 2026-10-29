@@ -138,6 +138,7 @@ export async function pruneOnline(
  CREATE TABLE IF NOT EXISTS directory_entries(path TEXT NOT NULL,name TEXT NOT NULL,is_directory INTEGER NOT NULL,PRIMARY KEY(path,name));
  CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,kind TEXT NOT NULL,pending INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS nodes(key TEXT PRIMARY KEY,path TEXT NOT NULL,kind TEXT NOT NULL,stamp TEXT NOT NULL DEFAULT '',value TEXT NOT NULL DEFAULT '',root INTEGER NOT NULL DEFAULT 0,ref TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',ended TEXT NOT NULL DEFAULT '');
+ CREATE TABLE IF NOT EXISTS catalog_references(ref TEXT NOT NULL,key TEXT NOT NULL,ordinal INTEGER NOT NULL,scoped INTEGER NOT NULL,PRIMARY KEY(ref,key));
  CREATE TABLE IF NOT EXISTS aliases(ref TEXT NOT NULL,node TEXT NOT NULL,PRIMARY KEY(ref,node));
  CREATE TABLE IF NOT EXISTS edges(src TEXT NOT NULL,dst TEXT NOT NULL,PRIMARY KEY(src,dst));
  CREATE TABLE IF NOT EXISTS pins(ref TEXT PRIMARY KEY,done INTEGER NOT NULL DEFAULT 0,cursor TEXT NOT NULL DEFAULT '');
@@ -174,8 +175,15 @@ export async function pruneOnline(
       String(r.version),
       "raw",
     );
-  const alias = (ref: string, key: string) =>
-    db.prepare("INSERT OR IGNORE INTO aliases VALUES (?,?)").run(ref, key);
+  const alias = (ref: string, key: string) => {
+    const added = db.prepare("INSERT OR IGNORE INTO aliases VALUES (?,?)").run(
+      ref,
+      key,
+    );
+    if (added.changes) {
+      db.prepare("UPDATE pins SET done=0,cursor='' WHERE ref=?").run(ref);
+    }
+  };
   const pin = (ref: string) =>
     db.prepare("INSERT OR IGNORE INTO pins(ref,done) VALUES (?,0)").run(ref);
   const edge = (src: string, dst: string) =>
@@ -292,6 +300,20 @@ export async function pruneOnline(
     set("phase", "validate");
     set("validate", "");
   }
+  if (!get("catalog-reference-schema")) {
+    // Backfill locators while keeping parsed files, graph and deletion cursors.
+    db.exec("BEGIN");
+    set("catalog-reference-schema", "1");
+    set("catalog", "0");
+    set("phase", "inventory");
+    db.exec("COMMIT");
+  }
+  const catalogAdvanced = () =>
+    Number(
+      catalog.prepare(
+        "SELECT COALESCE(MAX(rowid),0) AS n FROM catalog WHERE namespace=''",
+      ).get()!.n,
+    ) > Number(get("catalog"));
   try {
     while (clock() < end) {
       steps++;
@@ -312,6 +334,16 @@ export async function pruneOnline(
             continue;
           }
           for (const r of rows) {
+            const scoped = Number(
+              stateTypes.includes(normalize(r.type_normalized)) &&
+                r.content_type === "application/json",
+            );
+            const key = `${r.id}/${r.version}`;
+            for (const ref of [key, `${r.data_name}/${r.version}`]) {
+              db.prepare(
+                "INSERT INTO catalog_references VALUES (?,?,?,?) ON CONFLICT(ref,key) DO UPDATE SET ordinal=excluded.ordinal,scoped=excluded.scoped",
+              ).run(ref, key, r.ordinal, scoped);
+            }
             if (
               stateTypes.includes(normalize(r.type_normalized)) &&
               r.content_type === "application/json" && !r.is_pending &&
@@ -478,28 +510,66 @@ export async function pruneOnline(
             set("validate", "");
             continue;
           }
-          const nodes = db.prepare(
-            "SELECT n.* FROM aliases a JOIN nodes n ON n.key=a.node WHERE a.ref=? AND n.key>? UNION SELECT * FROM nodes WHERE key=? AND key>? ORDER BY key LIMIT 100",
-          ).all(p.ref, p.cursor, p.ref, p.cursor) as unknown as Node[];
           const version = /^(.*)\/([1-9]\d*)$/.exec(p.ref);
-          if (!nodes.length && version) {
-            // Deferred promotion can update an existing catalog row. Resolve
-            // reached versions directly as well as through the inventory cache.
-            const reached = catalog.prepare(
-              "SELECT * FROM catalog WHERE namespace='' AND (id=? OR data_name=?) AND version=? AND id||'/'||version>? ORDER BY id||'/'||version LIMIT 100",
+          const nodes: Node[] = [];
+          let full: boolean, cursor: string;
+          if (version) {
+            // One cursor covers both cached aliases and unpublished locators.
+            // A cached higher key must not hide a lower pending row promoted
+            // in-place since inventory (no new native rowid).
+            const reached = db.prepare(
+              `SELECT k.key,c.ordinal,c.scoped FROM (
+                SELECT key FROM catalog_references WHERE ref=? AND key>?
+                UNION SELECT n.key FROM aliases a JOIN nodes n ON n.key=a.node WHERE a.ref=? AND n.key>?
+                UNION SELECT key FROM nodes WHERE key=? AND key>?
+              ) k LEFT JOIN catalog_references c ON c.ref=? AND c.key=k.key
+              ORDER BY k.key LIMIT 100`,
             ).all(
-              version[1],
-              version[1],
-              Number(version[2]),
+              p.ref,
               p.cursor,
-            ) as unknown as Row[];
-            for (const r of reached) {
+              p.ref,
+              p.cursor,
+              p.ref,
+              p.cursor,
+              p.ref,
+            ) as unknown as {
+              key: string;
+              ordinal: number | null;
+              scoped: number | null;
+            }[];
+            if (!reached.length && catalogAdvanced()) {
+              set("phase", "inventory");
+              continue;
+            }
+            full = reached.length === 100;
+            cursor = reached.at(-1)?.key ?? p.cursor;
+            for (const location of reached) {
+              if (location.ordinal === null) {
+                const cached = db.prepare("SELECT * FROM nodes WHERE key=?")
+                  .get(location.key) as Node | undefined;
+                if (cached) nodes.push(cached);
+                continue;
+              }
+              if (!location.scoped) continue;
+              // Recheck publication and identity; pending rows can be promoted
+              // without adding a row. Never scan the native namespace per edge.
+              const r = catalog.prepare(
+                "SELECT * FROM catalog WHERE rowid=? AND namespace=''",
+              ).get(location.ordinal) as Row | undefined;
+              if (!r || `${r.id}/${r.version}` !== location.key) {
+                // Native compaction can move rowids. Rebuild only the derived
+                // locator inventory in batches; retain all reachability pins.
+                db.exec("DELETE FROM catalog_references");
+                set("catalog", "0");
+                set("phase", "inventory");
+                break;
+              }
               if (
                 !stateTypes.includes(normalize(r.type_normalized)) ||
                 r.is_pending || r.content_type !== "application/json" ||
                 r.lifecycle === "deleted"
               ) continue;
-              const key = `${r.id}/${r.version}`;
+              const key = location.key;
               db.prepare(
                 "INSERT OR IGNORE INTO nodes(key,path,kind) VALUES (?,?,'data')",
               ).run(key, source(r));
@@ -509,7 +579,16 @@ export async function pruneOnline(
                 db.prepare("SELECT * FROM nodes WHERE key=?").get(key) as Node,
               );
             }
+          } else {
+            nodes.push(
+              ...db.prepare(
+                "SELECT n.* FROM aliases a JOIN nodes n ON n.key=a.node WHERE a.ref=? AND n.key>? UNION SELECT * FROM nodes WHERE key=? AND key>? ORDER BY key LIMIT 100",
+              ).all(p.ref, p.cursor, p.ref, p.cursor) as unknown as Node[],
+            );
+            full = nodes.length === 100;
+            cursor = nodes.at(-1)?.key ?? p.cursor;
           }
+          if (get("phase") === "inventory") continue;
           for (const n of nodes) {
             if (n.kind === "data") await readNode(n);
             for (
@@ -525,8 +604,8 @@ export async function pruneOnline(
             )
           ) pin(String(e.dst));
           db.prepare("UPDATE pins SET done=?,cursor=? WHERE ref=?").run(
-            Number(nodes.length < 100),
-            nodes.at(-1)?.key ?? p.cursor,
+            Number(!full),
+            cursor,
             p.ref,
           );
         } else if (phase === "validate") {

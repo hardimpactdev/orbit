@@ -151,3 +151,174 @@ for (const publication of ["new", "replacement"]) {
     }
   });
 }
+
+for (const mode of ["pending", "relocated", "mixed"]) {
+  const moveRows = mode === "relocated", mixed = mode === "mixed";
+  Deno.test(`paged locators retain a promoted carrier (${mode})`, async () => {
+    const { DatabaseSync } = await import("node:sqlite");
+    const root = await Deno.makeTempDir();
+    const { catalog, id, model, run } = await retentionFixture(root, false);
+    try {
+      await Deno.writeTextFile(
+        join(root, ".swamp/data/nckrtl/orbit-group-run", model, "launch/1/raw"),
+        JSON.stringify({
+          runId: run,
+          dataArtifacts: [{ name: "carrier", version: 1 }],
+        }),
+      );
+      let promotedId = "";
+      for (let i = 0; i < (mixed ? 2 : 102); i++) {
+        const suffix = String(i).padStart(12, "0");
+        const dataId = `70000000-0000-4000-8000-${suffix}`;
+        const producer = `80000000-0000-4000-8000-${suffix}`;
+        for (const version of [1, 2]) {
+          catalog.prepare(
+            "INSERT INTO catalog VALUES ('',?,'nckrtl/orbit-group-run',?,'carrier',?,?, '2020-01-01T00:00:00Z','tick','application/json',?,'active','{}')",
+          )
+            .run(
+              dataId,
+              producer,
+              version,
+              Number(version === 2),
+              Number(version === 1 && (!mixed || i === 0)),
+            );
+          const dir = join(
+            root,
+            ".swamp/data/nckrtl/orbit-group-run",
+            producer,
+            "carrier",
+            String(version),
+          );
+          await Deno.mkdir(dir, { recursive: true });
+          await Deno.writeTextFile(
+            join(dir, "raw"),
+            JSON.stringify(
+              version === 1 && i === (mixed ? 0 : 101)
+                ? { dataArtifacts: [{ dataId: id, name: "tick", version: 3 }] }
+                : {},
+            ),
+          );
+        }
+        if (!mixed || i === 0) promotedId = dataId;
+      }
+      const removed: number[] = [];
+      let promoted = false, done = false;
+      for (let attempt = 0; attempt < 1000; attempt++) {
+        let tick = 0;
+        const result = await pruneOnline(root, {
+          limit: 100,
+          budgetMs: promoted ? 20 : 2,
+          clock: () => tick++,
+          deleteVersion: (r) => {
+            removed.push(r.version);
+            catalog.prepare("DELETE FROM catalog WHERE id=? AND version=?").run(
+              r.id,
+              r.version,
+            );
+            return Promise.resolve(true);
+          },
+        });
+        const db = new DatabaseSync(join(root, ".swamp/retention-planner.db"), {
+          readOnly: true,
+        });
+        const carrier = db.prepare(
+          mixed
+            ? "SELECT ref FROM pins WHERE ref='carrier/1' AND cursor='' AND done=0"
+            : "SELECT ref FROM pins WHERE ref='carrier/1' AND (cursor!='' OR done=1)",
+        ).get();
+        db.close();
+        if (carrier && !promoted) {
+          if (moveRows) catalog.exec("UPDATE catalog SET rowid=rowid+1000");
+          catalog.prepare(
+            "UPDATE catalog SET is_pending=0 WHERE id=? AND version=1",
+          ).run(promotedId);
+          promoted = true;
+        }
+        if (!result.partial) {
+          done = true;
+          break;
+        }
+      }
+      assert(promoted);
+      assert(done);
+      assertEquals(
+        removed,
+        [1],
+        "a later published carrier's transitive version must survive filtered-page pagination",
+      );
+    } finally {
+      catalog.close();
+      await Deno.remove(root, { recursive: true });
+    }
+  });
+}
+
+Deno.test("locator backfill reuses parsed history from an existing checkpoint", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const root = await Deno.makeTempDir();
+  const { catalog, run, runs } = await retentionFixture(root, false);
+  const originalRead = Deno.readTextFile;
+  try {
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      let tick = 0;
+      const p = await pruneOnline(root, {
+        limit: 1,
+        budgetMs: 4,
+        clock: () => tick++,
+        deleteVersion: () => {
+          throw Error("no deletion before graph");
+        },
+      });
+      if (p.phase === "graph") break;
+      assert(attempt < 999);
+    }
+    const checkpoint = new DatabaseSync(
+      join(root, ".swamp/retention-planner.db"),
+    );
+    // Represent the deployed checkpoint that predates the locator table.
+    checkpoint.exec(
+      "DROP TABLE catalog_references;DELETE FROM state WHERE key='catalog-reference-schema'",
+    );
+    checkpoint.close();
+    let historyReads = 0;
+    Deno.readTextFile = (...args) => {
+      if (String(args[0]).startsWith(runs + "/")) historyReads++;
+      return originalRead(...args);
+    };
+    const removed: number[] = [];
+    let done = false;
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      let tick = 0;
+      const p = await pruneOnline(root, {
+        limit: 100,
+        budgetMs: 20,
+        clock: () => tick++,
+        deleteVersion: (r) => {
+          removed.push(r.version);
+          catalog.prepare("DELETE FROM catalog WHERE id=? AND version=?").run(
+            r.id,
+            r.version,
+          );
+          return Promise.resolve(true);
+        },
+      });
+      if (["history", "cleanup", "done"].includes(p.phase)) {
+        done = true;
+        break;
+      }
+    }
+    assert(done);
+    assertEquals(removed.sort(), [1, 3]);
+    assertEquals(historyReads, 0);
+    assert((await Deno.stat(join(runs, `workflow-run-${run}.yaml`))).isFile);
+    assertEquals(
+      catalog.prepare("PRAGMA index_list(catalog)").all(),
+      [],
+      "native catalog schema stays unchanged",
+    );
+  } finally {
+    Deno.readTextFile = originalRead;
+    catalog.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
