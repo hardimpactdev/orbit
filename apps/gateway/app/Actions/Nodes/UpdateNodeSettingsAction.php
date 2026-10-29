@@ -71,6 +71,23 @@ final readonly class UpdateNodeSettingsAction
         $this->apply($node, $normalized);
     }
 
+    /** @return array{settings:array<string,mixed>|null,storage:array{root:string,user:string,group:string,create_missing:bool}|null} */
+    public function enrollmentIntent(Node $node, ?NodeSettingsData $settings): array
+    {
+        $normalized = $this->normalizer->normalize($settings);
+        $this->validateHostBridge($node, $normalized);
+        $this->validator->validateGrammar($normalized);
+        $create = $this->hasActiveAppDevRole($node);
+        $storage = null;
+        if ($create || $normalized?->appsPath() !== null) {
+            $account = $this->accounts->resolve($node);
+            $root = $this->validator->validateEffective($normalized, $node, $account);
+            $storage = ['root' => $root->value, 'user' => $account->user, 'group' => $account->group, 'create_missing' => $create];
+        }
+
+        return ['settings' => $this->normalizer->stored($normalized), 'storage' => $storage];
+    }
+
     private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
     {
         if ($settings?->task_vms === null) {

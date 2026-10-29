@@ -33,6 +33,7 @@ use App\Domain\WebSocket\WebSocketRegistry;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\DatabaseServer;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
@@ -67,6 +68,11 @@ final readonly class RemoveNodeAction
      * task VM. An offline removal then skips the reachability probes, which would each wait out the SSH connect
      * timeout against the dead address.
      */
+    public function start(Node $node, Node $caller, bool $offline = false, bool $force = false, bool $deleted = false, ?string $requestId = null): Operation
+    {
+        return app(AdmitNodeRemovalOperationAction::class)->execute($node, $caller, $offline, $force, $deleted, $requestId);
+    }
+
     public function execute(
         Node $node,
         Node $caller,

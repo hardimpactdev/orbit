@@ -732,3 +732,14 @@ Gateway-owned runner records and their credential flow remain in progress in [AD
 ### Pinned bootstrap transport
 
 The Node enrollment workflow uses `bootstrap-ssh` before its WireGuard address is available. `node.bootstrap_probe` proves the admitted host fingerprint and architecture. `node.bootstrap_install` installs the admitted agent pin only after that probe succeeds. Host, port, login and host fingerprint come from the Operation input. The worker cannot select a connection or credential. The Gateway resolves the existing SSH identity through a protected reference and refuses a different observed fingerprint before running a command. Receipt reads reuse that identity without creating or rotating credentials. These child primitives do not change the retained synchronous enrollment callers.
+
+
+### Node lifecycle children
+
+Internal callers admit `node.add` through `ProvisionNodeAction::start` and `node.remove` through `RemoveNodeAction::start`. Both record normal Operations whose Node effects run in Swamp. CLI commands and existing provisioning callers keep their synchronous methods until their own cutover. Services and configured executor workers use synchronous recovery and refuse these parent admissions.
+
+Enrollment records its pinned bootstrap connection, candidate placement and generated Route changes before execution. Generated-domain children can run before candidate placement is committed; private DNS children see only committed placement. Each effect on another Node belongs to a child whose serving Node and input come from the recorded intent. Bootstrap architecture aliases `amd64` and `aarch64` normalize to `x86_64` and `arm64` before validation.
+
+Removal records role and Route evidence before withdrawal. Offline cleanup children keep the departing Node's Route associations until every serving Node has proved cleanup. Finalization rechecks the captured rows and child receipts before deleting the Node. Cancellation and failure use declared restoration children; an uncertain effect cannot prove restoration or successful completion.
+
+Cross-family child enrollment uses the internal `ProvisionNodeData` field names and a reserved Node with a matching name and `node_id`. Removal uses exactly `{caller_node_id, offline, force, deleted}` and the recorded Node. The kit stamps and replays the enriched child admission. Neither child adapter accepts a different target or creates an admission-and-wait wrapper.

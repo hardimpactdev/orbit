@@ -24,12 +24,12 @@ final readonly class NodeBootstrapSshIdentitySource implements OperationConnecti
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['node', 'node_bootstrap'];
+        return ['node'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
-        return in_array($operation->kind, ['node.bootstrap_probe', 'node.bootstrap_install'], true)
+        return in_array($operation->kind, ['node.add', 'node.bootstrap_probe', 'node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect', 'node.network_converge', 'node.network_rollback'], true)
             && $operation->target_id === $operation->node_id
             && Node::query()->whereKey($operation->node_id)->exists() ? $operation->node_id : null;
     }

@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationTransportInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentEffectReceipts;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -23,7 +26,9 @@ use LogicException;
 final readonly class BootstrapSshOperationTransport implements OperationEffectTransport, OperationTransportInput
 {
     private const array Commands = [
-        'node.probe-bootstrap', 'agent.install',
+        'node.probe-bootstrap', 'agent.install', 'agent.status', 'node.bootstrap', 'node.inspect-macos-enrollment',
+        'firewall.rules', 'wireguard.prepare-peer-key', 'wireguard.publish-peer',
+        'wireguard.commit-peer', 'wireguard.rollback-peer',
     ];
 
     public function __construct(
@@ -40,7 +45,7 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
 
     public function wireInput(Operation $operation, array $run, #[\SensitiveParameter] array $input): mixed
     {
-        $input['command_input'] = (object) ValidatedData::object($input['command_input'] ?? []);
+        $input['command_input'] = AgentSchemas::wireInput(ValidatedData::object($input['command_input'] ?? []));
 
         return (object) $input;
     }
@@ -61,40 +66,50 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
             if ($command !== []) {
                 throw $this->forbidden();
             }
+        } else {
+            try {
+                AgentSchemas::assertInput($name, $command);
+            } catch (LogicException) {
+                throw $this->forbidden();
+            }
         }
 
         [$node, $connection, $key] = $this->connection($operation, $run, $input, $input['bootstrap_identity'] ?? null);
         if ($name === 'node.probe-bootstrap') {
-            $architecture = $this->agents->architectureOver($node, $connection);
+            $architecture = $this->architecture($node, $connection);
             if (! in_array($architecture, $node->platform === 'linux' ? ['x86_64', 'amd64'] : ['x86_64', 'amd64', 'arm64', 'aarch64'], true)) {
                 return ['error_code' => 'node.architecture_unsupported'];
             }
-            $expected = $node->architecture ?? $command['expected_architecture'];
+            $expected = MachineArchitecture::normalize($node->architecture ?? $command['expected_architecture']);
             if (($expected !== null && $expected !== $architecture)
-                || ($node->platform === 'macos' && $command['expected_architecture'] !== null && $command['expected_architecture'] !== $architecture)) {
+                || ($node->platform === 'macos' && $command['expected_architecture'] !== null && MachineArchitecture::normalize($command['expected_architecture']) !== $architecture)) {
                 return ['error_code' => 'node.architecture_mismatch'];
             }
 
             return ['probed' => true, 'architecture' => $architecture, 'host_type' => $key->type,
                 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
         }
-        $architecture = $this->agents->architectureOver($node, $connection);
-        if ($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true)) {
-            throw new ResourceOperationException('node.architecture_unsupported', 'Managed Linux Nodes require x86_64.', 422);
-        }
-        if ($node->architecture !== null && $node->architecture !== $architecture) {
-            throw new ResourceOperationException('node.architecture_mismatch', 'The bootstrap architecture differs from the admitted Node.', 409);
-        }
-        $node->architecture = $architecture;
-        $changed = $this->installer->installEffect($node, ValidatedData::string($operation->input['agent_pin'] ?? null), $run, $connection);
+        if ($name === 'agent.install') {
+            $architecture = $this->architecture($node, $connection);
+            if ($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true)) {
+                throw new ResourceOperationException('node.architecture_unsupported', 'Managed Linux Nodes require x86_64.', 422);
+            }
+            if ($node->architecture !== null && MachineArchitecture::normalize($node->architecture) !== $architecture) {
+                throw new ResourceOperationException('node.architecture_mismatch', 'The bootstrap architecture differs from the admitted Node.', 409);
+            }
+            $node->architecture = $architecture;
+            $changed = $this->installer->installEffect($node, ValidatedData::string($operation->input['agent_pin'] ?? null), $run, $connection);
 
-        return ['installed' => true, 'changed' => $changed, 'architecture' => $architecture,
-            'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
+            return ['installed' => true, 'changed' => $changed, 'architecture' => $architecture,
+                'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
+        }
+
+        return $this->normalize($this->agents->runOver($node, $connection, $name, $this->effectful($operation, $run) ? AgentEffectReceipts::input($run, $command) : $command));
     }
 
     public function effectful(Operation $operation, array $run): bool
     {
-        return $run['name'] === 'agent.install';
+        return in_array($run['name'], self::Commands, true) && ! in_array($run['name'], ['node.probe-bootstrap', 'agent.status', 'node.inspect-macos-enrollment'], true);
     }
 
     public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
@@ -102,9 +117,9 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
         $identity = app(OperationSecrets::class)->connection($operation, $run, 'bootstrap_identity');
         [$node, $connection, $key] = $this->connection($operation, $run, $input, $identity->value);
         if ($run['name'] === 'agent.install') {
-            $architecture = $this->agents->architectureOver($node, $connection);
+            $architecture = $this->architecture($node, $connection);
             if (($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true))
-                || ($node->architecture !== null && $node->architecture !== $architecture)) {
+                || ($node->architecture !== null && MachineArchitecture::normalize($node->architecture) !== $architecture)) {
                 throw $this->forbidden();
             }
             $node->architecture = $architecture;
@@ -118,7 +133,28 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
                 'architecture' => $node->architecture, 'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
         }
 
+        if (is_array($receipt['result'] ?? null)) {
+            $receipt['result'] = $this->normalize($receipt['result']);
+        }
+
         return $receipt;
+    }
+
+    /** @param array<string,mixed> $receipt
+     * @return array<string,mixed>
+     */
+    private function normalize(array $receipt): array
+    {
+        if (is_string($receipt['architecture'] ?? null)) {
+            $receipt['architecture'] = MachineArchitecture::normalize($receipt['architecture']);
+        }
+
+        return $receipt;
+    }
+
+    private function architecture(Node $node, SshConnection $connection): string
+    {
+        return MachineArchitecture::normalize($this->agents->architectureOver($node, $connection)) ?? '';
     }
 
     /** @param array<string, mixed> $run
@@ -165,16 +201,22 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
     /** @return array<string, mixed> */
     public static function inputSchema(string $name): array
     {
-        if (! in_array($name, self::Commands, true)) {
-            throw new LogicException('Only the bootstrap probe and pinned installer have bootstrap inputs.');
+        if ($name === 'node.probe-bootstrap') {
+            $command = ['type' => 'object', 'additionalProperties' => false, 'required' => ['expected_architecture'],
+                'properties' => ['expected_architecture' => ['type' => ['string', 'null']]]];
+        } elseif ($name === 'agent.install') {
+            $command = ['anyOf' => [['type' => 'object', 'additionalProperties' => false], ['type' => 'array', 'maxItems' => 0]]];
+        } else {
+            $schemas = ValidatedData::object(json_decode((string) file_get_contents(AgentSchemas::Path), true, flags: JSON_THROW_ON_ERROR));
+            $commands = ValidatedData::object($schemas['commands'] ?? null);
+            $entry = ValidatedData::object($commands[$name] ?? null);
+            $command = ValidatedData::object($entry['input'] ?? null);
         }
-        $command = $name === 'node.probe-bootstrap'
-            ? ['type' => 'object', 'additionalProperties' => false, 'required' => ['expected_architecture'],
-                'properties' => ['expected_architecture' => ['type' => ['string', 'null']]]]
-            : ['anyOf' => [['type' => 'object', 'additionalProperties' => false], ['type' => 'array', 'maxItems' => 0]]];
+        $definitions = $command['$defs'] ?? [];
+        unset($command['$defs']);
 
         $schema = [
-            'type' => 'object', 'additionalProperties' => false,
+            'type' => 'object', 'additionalProperties' => false, '$defs' => $definitions,
             'required' => ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
             'properties' => [
                 'agent_pin' => ['type' => 'string', 'pattern' => '^[0-9a-f]{64}$'],

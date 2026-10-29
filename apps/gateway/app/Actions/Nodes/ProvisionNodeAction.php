@@ -56,6 +56,7 @@ use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Route;
 use App\Models\TaskVm;
 use Illuminate\Database\QueryException;
@@ -89,6 +90,11 @@ final readonly class ProvisionNodeAction
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?VpnConfigurationRepository $vpnConfiguration = null,
     ) {}
+
+    public function start(ProvisionNodeData $data, ?string $requestId = null): Operation
+    {
+        return app(AdmitNodeEnrollmentOperationAction::class)->execute($data, $requestId);
+    }
 
     public function execute(ProvisionNodeData $data): Node
     {
