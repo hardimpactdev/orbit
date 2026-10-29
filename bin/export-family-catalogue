@@ -1,0 +1,13 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Operations\OperationFamilyCatalogue;
+use Illuminate\Contracts\Console\Kernel;
+
+require __DIR__.'/../apps/gateway/vendor/autoload.php';
+
+$app = require __DIR__.'/../apps/gateway/bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+fwrite(STDOUT, $app->make(OperationFamilyCatalogue::class)->json());
