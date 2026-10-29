@@ -20,6 +20,7 @@ function find_fixture_cli_release(): array
 }
 
 describe(GitHubCliReleaseCatalog::class, function (): void {
+    // The fixture release still holds a Linux ARM binary, as releases did before Orbit dropped Linux ARM; the catalog ignores it.
     it('reads each platform checksum from the published SHA256SUMS of the release', function (): void {
         fake_cli_release_github();
 
@@ -36,12 +37,6 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
                     'name' => 'orbit-0.4681.0-linux-x86_64',
                     'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64',
                     'sha256' => '79d7424eeafdc38c773b8f0a7d1b67b21e38e6abb6b458f3e42b89e2cde7a0ce',
-                ],
-                [
-                    'platform' => 'linux-aarch64',
-                    'name' => 'orbit-0.4681.0-linux-aarch64',
-                    'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-aarch64',
-                    'sha256' => '302392f9254b17c6acfd2ab5861fd1b1881495b0db83fad390fa4ef685e021e5',
                 ],
                 [
                     'platform' => 'macos-arm64',

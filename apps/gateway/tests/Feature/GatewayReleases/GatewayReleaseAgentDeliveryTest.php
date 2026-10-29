@@ -161,6 +161,27 @@ it('refuses a manifest that does not match the release or its SHA256SUMS', funct
     expect($error->errorCode)->toBe('gateway.release_agent_delivery_invalid')->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
 })->with(['checksum', 'other release', 'missing platform']);
 
+// Releases built before Orbit dropped Linux ARM still deliver it. Prepare verifies that artifact like the others and
+// installs nothing from it; any other extra platform still refuses.
+it('accepts a release that still delivers the retired Linux ARM agent, verified against its SHA256SUMS', function (string $fault): void {
+    foreach ([...GatewayReleaseAgentDelivery::RetiredPlatforms, ...($fault === 'unknown platform' ? ['linux-riscv64'] : [])] as $platform) {
+        $name = 'orbit-agent-'.$platform;
+        $this->binaries[$name] = 'binary for '.$platform;
+        $digest = hash('sha256', $this->binaries[$name]);
+        $this->checksums .= $digest.'  '.$name."\n";
+        $this->manifest['artifacts'][$platform] = ['sha256' => $fault === 'checksum' ? str_repeat('d', 64) : $digest, 'path' => $name, 'url' => $this->download.'/'.$name];
+    }
+    ($this->publish)();
+
+    if ($fault === 'none') {
+        expect(($this->delivery)()->fetch($this->sha, $this->gateway))->toBe(['sha' => $this->sha, 'manifest' => json_encode($this->manifest)]);
+        Http::assertNotSent(static fn ($request): bool => str_ends_with($request->url(), 'linux-aarch64'));
+
+        return;
+    }
+    expect(release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway))->errorCode)->toBe('gateway.release_agent_delivery_invalid');
+})->with(['none', 'checksum', 'unknown platform']);
+
 it('refuses a Gateway binary whose bytes do not match the pin', function (): void {
     $this->binaries['orbit-agent-linux-x86_64'] = 'tampered';
     ($this->publish)();
