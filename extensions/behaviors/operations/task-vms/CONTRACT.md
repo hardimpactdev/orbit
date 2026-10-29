@@ -1,8 +1,10 @@
 # Task VM Operations
 
 The Gateway records VM, runtime, image and host sweep intent. This family drives
-their effects through fixed Operations. The existing task-group executor remains
-the Tasks family.
+their effects through fixed Operations. Discovery dispatches a kind and worker;
+the placed family claims its Operation and saves that assignment before effects.
+A retry reuses the assignment and checks a terminal saved receipt against the
+Gateway. The existing task-group executor remains the Tasks family.
 
 The paired Gateway change registers each kind's transport, command, input
 bindings, redacted result fields and completion proof. Parent Operations use kit
@@ -66,10 +68,14 @@ reports strays. Deletion rechecks ownership. Two distinct sweep Operations must
 miss a VM before its row fails; a replay of one observation cannot count twice.
 
 Results are closed scalar fields such as `ready`, `changed`, Node/Process IDs,
-fingerprints, template UUIDs and native phase state. Cache results use bounded
-parallel scalar lists for archive keys/hashes and failures. The Gateway
-validates and redacts them before storage and projects partial cache success
-only from a proven fill receipt.
+fingerprints, template UUIDs and native phase state. Each cache fill batch uses
+bounded parallel scalar lists for archive keys/hashes and failures. The Gateway
+partitions input so worst-case receipts fit the shared 1 KiB string and 256 KiB
+result limits. The host-wide parent settles its fill children and retains only
+outcome and failed child identities. Failed and cancelled completions let the
+Gateway derive skipped entries from child rows. The Gateway validates and
+redacts them before storage and projects partial cache success only from a
+proven fill receipt.
 
 ## Required shared interfaces
 

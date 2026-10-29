@@ -1,6 +1,12 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { ExecutorError } from "../../operation-runner/mod.ts";
-import { CacheMountInput, preparePackageCache } from "./package-cache.ts";
+import {
+  CacheFillInput,
+  CacheMountInput,
+  fillPackageCache,
+  preparePackageCache,
+} from "./package-cache.ts";
+import { ChildFailed, FamilyWaiting } from "./driver.ts";
 import type { FamilyEffects } from "./runtime.ts";
 
 const input = CacheMountInput.parse({
@@ -67,4 +73,55 @@ Deno.test("a failed cache mount never seeds the guest and resumes from its exist
   effects.refuse = null;
   await preparePackageCache(input, effects);
   assertEquals(effects.keys, ["cache-initialize", "cache-mount", "cache-seed"]);
+});
+
+const fillInput = CacheFillInput.parse({
+  host_node_id: 3,
+  deadline_at: 4_000_000_000,
+  batches: [{ artifacts: [], conflicts: {} }, { artifacts: [], conflicts: {} }],
+});
+
+Deno.test("host cache fill settles bounded batches with stable child keys and a small parent result", async () => {
+  const effects = new Effects();
+  assertEquals(await fillPackageCache(fillInput, effects), {
+    ready: true,
+    skipped: [],
+  });
+  assertEquals(effects.keys, ["fill-0", "fill-1"]);
+  await fillPackageCache(fillInput, effects);
+  assertEquals(effects.keys, ["fill-0", "fill-1"]);
+});
+
+Deno.test("one terminal fill failure does not prevent the remaining batches; Gateway derives skipped", async () => {
+  const effects = new Effects();
+  const child = effects.child.bind(effects);
+  effects.child = async (key, ...args) => {
+    if (key === "fill-0") throw new ChildFailed("task_vm.package_cache_failed");
+    return await child(key, ...args);
+  };
+  await assertRejects(
+    () => fillPackageCache(fillInput, effects),
+    ExecutorError,
+    "task_vm.package_cache_failed",
+  );
+  assertEquals(effects.keys, ["fill-1"]);
+});
+
+Deno.test("pending or uncertain cache children yield without admitting the next batch", async () => {
+  for (
+    const error of [
+      new FamilyWaiting(),
+      new ExecutorError("operation.outcome_unknown"),
+      new ExecutorError("operation.lease_lost"),
+    ]
+  ) {
+    const effects = new Effects();
+    effects.child = () => Promise.reject(error);
+    await assertRejects(
+      () => fillPackageCache(fillInput, effects),
+      ExecutorError,
+      error.code,
+    );
+    assertEquals(effects.keys, []);
+  }
 });

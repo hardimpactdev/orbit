@@ -16,6 +16,8 @@ export class FamilyWaiting extends ExecutorError {
     super("operation.waiting");
   }
 }
+export class ChildFailed extends ExecutorError {}
+
 export class FamilyDriver implements FamilyEffects {
   constructor(
     private operationId: number,
@@ -104,7 +106,7 @@ export class FamilyDriver implements FamilyEffects {
       }
       if (child.status === "failed" || child.status === "cancelled") {
         this.checkDeadline();
-        throw new ExecutorError(child.error_code ?? "operation.cancelled");
+        throw new ChildFailed(child.error_code ?? "operation.cancelled");
       }
       if (Date.now() / 1000 >= this.deadline) {
         await this.request("POST", `operations/${id}/cancel`, {});

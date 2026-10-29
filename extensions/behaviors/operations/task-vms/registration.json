@@ -38,6 +38,7 @@
     "task_vm.guest_image_start_phase",
     "task_vm.guest_image_restart_phase",
     "task_vm.guest_image_verify",
+    "task_vm.fill_package_cache_batch",
     "task_vm.fill_package_cache",
     "task_vm.image_remove",
     "task_vm.image_launch",

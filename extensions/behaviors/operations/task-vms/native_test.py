@@ -29,7 +29,10 @@ class TaskVmNativeTest(unittest.TestCase):
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
         (self.repo / "workflows").mkdir()
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
-            shutil.copy(path, self.repo / "workflows" / path.name)
+            # Local receipt recovery uses fresh processes; worker placement has its own harness.
+            source = "\n".join(line for line in path.read_text().splitlines()
+                               if not line.startswith(("labels:", "queueTimeout:"))) + "\n"
+            (self.repo / "workflows" / path.name).write_text(source)
         self.state = {"operation": {"id": 19, "kind": "task_vm.incus_start", "node_id": 3,
                      "status": "queued", "cancel_requested": False, "step_results": {}, "steps": [],
                      "input": {"task_vm_id": 5, "vm": {"project":"tasks", "name":"tvm-5", "cidr":"10.1.0.1/24"}, "operation":{"kind":"start"}}},

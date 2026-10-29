@@ -49,10 +49,18 @@ export const Completion = z.object({
     template_uuid: z.string().nullable().optional(),
     provider_id: z.string().nullable().optional(),
     stopped: z.boolean().optional(),
-    hash_keys: z.array(z.string()).max(100_000).optional(),
-    hash_values: z.array(z.string()).max(100_000).optional(),
-    failed_keys: z.array(z.string()).max(100_000).optional(),
-    failed_values: z.array(z.string()).max(100_000).optional(),
+    archive_ids: z.array(z.string()).max(4096).optional(),
+    archive_digests: z.array(z.string()).max(4096).optional(),
+    failed_ids: z.array(z.string()).max(4096).optional(),
+    failure_reasons: z.array(z.string()).max(4096).optional(),
+    skipped: z.array(
+      z.object({
+        child_id: z.number().int().positive(),
+        reason: z.string().min(1),
+        key: z.string(),
+        kind: z.string(),
+      }).strict(),
+    ).max(128).optional(),
     fingerprint: z.string().nullable().optional(),
     name: z.string().optional(),
     state: z.string().optional(),
@@ -225,7 +233,7 @@ for (
       : "ready",
   };
 }
-runtimeEffects["task_vm.fill_package_cache"] = {
+runtimeEffects["task_vm.fill_package_cache_batch"] = {
   name: "task_vm.package-cache",
   transport: "task_vm_package-cache",
   fields: [

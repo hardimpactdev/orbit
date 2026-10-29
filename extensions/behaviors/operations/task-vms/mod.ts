@@ -7,14 +7,19 @@ import {
   Globals,
   Operation,
 } from "../../operation-runner/mod.ts";
-import { Completion, invocationFor } from "./contract.ts";
+import { Completion, invocationFor, leafKinds } from "./contract.ts";
 import { ChildIntent, FamilyDriver, FamilyWaiting } from "./driver.ts";
 import { prepareRuntime, RuntimeInput } from "./runtime.ts";
 import { lifecycle, LifecycleInput } from "./lifecycle.ts";
 import { buildImage, ImageInput } from "./images.ts";
 import { buildUpCloudImage, UpCloudImageInput } from "./upcloud-images.ts";
 import { sweepHost, SweepInput } from "./sweep.ts";
-import { CacheMountInput, preparePackageCache } from "./package-cache.ts";
+import {
+  CacheFillInput,
+  CacheMountInput,
+  fillPackageCache,
+  preparePackageCache,
+} from "./package-cache.ts";
 
 export function taskVms(
   makeHttp = (ctx: Context) =>
@@ -30,6 +35,12 @@ export function taskVms(
     version: "2026.10.28.1",
     globalArguments: Globals,
     resources: {
+      assignment: {
+        description: "The first Operation claimed by this placed dispatch",
+        schema: z.object({ operation_id: z.number().int().positive() }),
+        lifetime: "7d",
+        garbageCollection: 1,
+      },
       checkpoint: {
         description: "Proven ordered family stage",
         schema: z.object({ value: z.unknown() }),
@@ -57,19 +68,94 @@ export function taskVms(
     },
     methods: {
       execute: {
-        description:
-          "Execute a fixed task VM effect and retain its proven receipt",
+        description: "Claim and execute a task VM kind on one placed worker",
         arguments: z.object({
-          operationId: z.number().int().positive(),
-          worker: z.string(),
+          kind: z.enum(
+            [
+              ...leafKinds,
+              "task_vm.fill_package_cache",
+              "task_vm.prepare_package_cache",
+              "task_vm.prepare_runtime",
+              "task_vm.provision",
+              "task_vm.enroll",
+              "task_vm.resume",
+              "task_vm.park",
+              "task_vm.destroy",
+              "task_vm.image_build",
+              "task_vm.upcloud_image_build",
+              "task_vm.sweep_host",
+            ],
+          ),
+          worker: z.string().min(1),
         }),
         execute: async (
-          args: { operationId: number; worker: string },
+          args: { kind: string; worker: string },
           ctx: Context,
         ): Promise<{ status: string; dataHandles?: { name: string }[] }> => {
           const http = makeHttp(ctx);
           const executor = new Executor(http);
-          const path = String(args.operationId);
+          const assignment = `assignment-${args.worker}`;
+          const assigned = await ctx.readResource(assignment);
+          let operation: z.infer<typeof Operation>;
+          if (assigned) {
+            const id =
+              z.object({ operation_id: z.number().int().positive() }).parse(
+                assigned,
+              ).operation_id;
+            const completion = await ctx.readResource(`operation-${id}`);
+            if (completion) {
+              const saved = Completion.parse(completion);
+              const outcome = z.object({
+                id: z.number().int(),
+                kind: z.string(),
+                status: z.string(),
+                result: z.record(z.string(), z.unknown()).nullable(),
+                error_code: z.string().nullable(),
+              }).parse(await executor.operation(id));
+              if (
+                ["succeeded", "failed", "cancelled"].includes(outcome.status)
+              ) {
+                const expected: Record<string, unknown> = saved.result;
+                const actual = outcome.result ?? {};
+                if (
+                  outcome.id !== id || outcome.kind !== args.kind ||
+                  outcome.status !== saved.status ||
+                  outcome.error_code !== saved.error_code ||
+                  Object.keys(expected).some((key) =>
+                    JSON.stringify(actual[key]) !==
+                      JSON.stringify(expected[key])
+                  ) ||
+                  Object.keys(actual).some((key) =>
+                    !(key in expected) &&
+                    !(saved.status !== "succeeded" && key === "skipped")
+                  )
+                ) {
+                  throw new Error("Unproven saved task VM completion");
+                }
+                return { status: saved.status };
+              }
+            }
+            operation = Operation.parse(
+              await executor.post(`${id}/heartbeat`, { worker: args.worker }),
+            );
+            if (operation.id !== id) {
+              throw new Error("Wrong task VM assignment");
+            }
+          } else {
+            const claimed = await executor.post("claim", {
+              kind: args.kind,
+              worker: args.worker,
+            });
+            if (claimed === null) return { status: "idle" };
+            operation = Operation.parse(claimed);
+            await ctx.writeResource("assignment", assignment, {
+              operation_id: operation.id,
+            });
+          }
+          if (operation.kind !== args.kind) {
+            throw new Error("Wrong claimed task VM kind");
+          }
+          const path = String(operation.id);
           const resource = `operation-${path}`;
           const saved = await ctx.readResource(resource);
           if (saved) {
@@ -80,9 +166,6 @@ export function taskVms(
             });
             return { status: receipt.status };
           }
-          const operation = Operation.parse(
-            await executor.post(`${path}/heartbeat`, { worker: args.worker }),
-          );
           const runtime = operation.kind === "task_vm.prepare_runtime"
             ? RuntimeInput.parse(operation.input)
             : null;
@@ -107,8 +190,12 @@ export function taskVms(
           const cacheMount = operation.kind === "task_vm.prepare_package_cache"
             ? CacheMountInput.parse(operation.input)
             : null;
+          const cacheFill = operation.kind === "task_vm.fill_package_cache"
+            ? CacheFillInput.parse(operation.input)
+            : null;
           const invocation =
-            runtime || life || image || upcloudImage || sweep || cacheMount
+            runtime || life || image || upcloudImage || sweep || cacheMount ||
+              cacheFill
               ? null
               : invocationFor(operation.kind, operation.input);
           if (runtime && runtime.node_id !== operation.node_id) {
@@ -161,13 +248,14 @@ export function taskVms(
           try {
             let completion: z.infer<typeof Completion>;
             if (
-              runtime || life || image || upcloudImage || sweep || cacheMount
+              runtime || life || image || upcloudImage || sweep || cacheMount ||
+              cacheFill
             ) {
               const driver = new FamilyDriver(
                 operation.id,
                 args.worker,
                 (runtime ?? life ?? image ?? upcloudImage ?? sweep ??
-                  cacheMount)!
+                  cacheMount ?? cacheFill)!
                   .deadline_at,
                 ctx,
                 makeHttp(ctx),
@@ -196,7 +284,9 @@ export function taskVms(
                 try {
                   completion = {
                     status: "succeeded",
-                    result: cacheMount
+                    result: cacheFill
+                      ? await fillPackageCache(cacheFill, driver)
+                      : cacheMount
                       ? await preparePackageCache(cacheMount, driver)
                       : runtime
                       ? await prepareRuntime(runtime, driver)
@@ -330,8 +420,8 @@ export function taskVms(
                 }
               }
               const error = result.error_code ??
-                (operation.kind === "task_vm.fill_package_cache" &&
-                    (result.failed_keys?.length ?? 0) > 0
+                (operation.kind === "task_vm.fill_package_cache_batch" &&
+                    (result.failed_ids?.length ?? 0) > 0
                   ? "task_vm.package_cache_failed"
                   : null);
               completion = {

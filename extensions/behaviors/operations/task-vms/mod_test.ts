@@ -42,7 +42,9 @@ class Fixture {
     if (this.leaseLost) {
       return { status: 409, body: { error: { code: "operation.lease_lost" } } };
     }
-    let data: unknown = this.operation;
+    let data: unknown = path === `/api/v1/operations/${this.operation.id}`
+      ? { ...this.operation, result: null, error_code: null }
+      : this.operation;
     if (path.includes("/receipts/")) {
       const pending = this.receiptPendingOnce;
       this.receiptPendingOnce = false;
@@ -114,7 +116,7 @@ class Fixture {
   }
   execute(worker = "workflow-19") {
     return taskVms(() => this.http).methods.execute.execute({
-      operationId: 19,
+      kind: this.operation.kind,
       worker,
     }, this.context());
   }
@@ -161,6 +163,10 @@ for (const boundary of ["start", "run", "finish", "complete"] as const) {
     await assertRejects(() => f.execute(), Error, `Lost ${boundary} reply`);
     assertEquals((await f.execute()).status, "succeeded");
     assertEquals(f.mutations, 1);
+    assertEquals(
+      f.calls.filter((call) => call.path.endsWith("/claim")).length,
+      1,
+    );
     const runs = f.calls.filter((call) => call.path.endsWith("/run"));
     assertEquals(new Set(runs.map((call) => call.body.key)).size, 1);
     if (boundary === "complete") assertEquals(runs.length, 1);
@@ -238,7 +244,7 @@ Deno.test("an effect cannot change kind, VM identity or command fields", () => {
 for (const lostReply of [false, true]) {
   Deno.test(`cache fill keeps successful archives and fails partial results${lostReply ? " after a lost reply" : ""}`, async () => {
     const f = new Fixture();
-    f.operation.kind = "task_vm.fill_package_cache";
+    f.operation.kind = "task_vm.fill_package_cache_batch";
     f.operation.input = {
       host_node_id: 3,
       artifacts: [],
@@ -248,10 +254,10 @@ for (const lostReply of [false, true]) {
     };
     f.result = {
       ready: true,
-      hash_keys: ["verified"],
-      hash_values: [`sha256-${"a".repeat(64)}`],
-      failed_keys: ["failed-archive"],
-      failed_values: ["Archive checksum mismatch"],
+      archive_ids: ["verified"],
+      archive_digests: [`sha256-${"a".repeat(64)}`],
+      failed_ids: ["failed-archive"],
+      failure_reasons: ["Archive checksum mismatch"],
     };
     if (lostReply) {
       f.lose = "run";
@@ -282,6 +288,36 @@ Deno.test("a preservation refusal stops deletion with the Gateway error", async 
   assertEquals(
     f.calls.at(-1)!.body.error_code,
     "task_vm.workspace_not_preserved",
+  );
+  assertEquals(f.mutations, 1);
+});
+
+Deno.test("an empty placed claim makes no assignment or effect", async () => {
+  const f = new Fixture();
+  const http: Http = (_method, path) => {
+    assertEquals(path, "/api/v1/operation-executor/claim");
+    return Promise.resolve({ status: 200, body: { data: null } });
+  };
+  assertEquals(
+    await taskVms(() => http).methods.execute.execute({
+      kind: f.operation.kind,
+      worker: "empty",
+    }, f.context()),
+    { status: "idle" },
+  );
+  assertEquals(f.resources.size, 0);
+  assertEquals(f.mutations, 0);
+});
+
+Deno.test("a dispatch retry cannot adopt another Operation after losing an effect reply", async () => {
+  const f = new Fixture();
+  f.lose = "run";
+  await assertRejects(() => f.execute());
+  f.operation.id = 99;
+  await assertRejects(() => f.execute(), Error, "Wrong task VM assignment");
+  assertEquals(
+    f.calls.filter((call) => call.path.endsWith("/claim")).length,
+    1,
   );
   assertEquals(f.mutations, 1);
 });

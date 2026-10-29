@@ -1,13 +1,15 @@
 id: db23a0cf-d815-42eb-b769-4323db8133fe
 name: operation-task-vms
-description: Execute a fixed task VM effect from its admitted Operation.
+description: Claim and execute one task VM Operation on its placed worker.
+labels: { pool: migration }
+queueTimeout: 300
 autoResume: true
 inputs:
   type: object
   properties:
-    operationId: { type: integer }
+    kind: { type: string }
     worker: { type: string }
-  required: [operationId, worker]
+  required: [kind, worker]
 jobs:
   - name: task-vm
     steps:
@@ -15,8 +17,8 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-task-vms'
-          behaviorName: '${{ "operation-task-vm-" + string(inputs.operationId) }}'
+          behaviorName: operation-task-vms
           methodName: execute
           inputs:
-            operationId: '${{ inputs.operationId }}'
+            kind: '${{ inputs.kind }}'
             worker: '${{ inputs.worker }}'

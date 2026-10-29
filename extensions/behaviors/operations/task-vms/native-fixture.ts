@@ -1,10 +1,39 @@
 /** Native workflow fixture. Its file is confined to the disposable test repository. */
 export async function fixtureHttp(
-  _method: string,
+  method: string,
   path: string,
   body?: unknown,
 ) {
   const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
+  if (path === `/api/v1/operations/${state.operation.id}`) {
+    return {
+      status: 200,
+      body: {
+        data: {
+          ...state.operation,
+          result: state.completions.at(-1)?.result ?? null,
+          error_code: state.completions.at(-1)?.error_code ?? null,
+        },
+      },
+    };
+  }
+  if (path.endsWith("/claimable")) {
+    if (method !== "GET" || body !== undefined) {
+      throw new Error("Discovery must be a read");
+    }
+    return {
+      status: 200,
+      body: {
+        data: {
+          kinds: [{
+            kind: state.operation.kind,
+            claimable: state.operation.status === "succeeded" ? 0 : 1,
+            oldest_at: "2026-10-29T00:00:00Z",
+          }],
+        },
+      },
+    };
+  }
   if (path.includes("/receipts/")) {
     const pending = state.receiptPendingOnce === true;
     state.receiptPendingOnce = false;
