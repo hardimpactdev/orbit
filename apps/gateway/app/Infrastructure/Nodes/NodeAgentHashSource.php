@@ -35,6 +35,7 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
         if ($ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
             throw new ResourceOperationException('operation.secret_output_unavailable', 'The agent hash must belong to the admitted Node.', 409);
         }
+        app(NodeLocks::class)->renewHeld();
         Node::query()->findOrFail($ownerId)->forceFill(['agent_secret_hash' => $value])->save();
     }
 

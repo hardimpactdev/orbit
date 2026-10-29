@@ -8,6 +8,7 @@ use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Nodes\PrepareNodeAgentConfigurationCommand;
 use App\Domain\Nodes\PrepareNodeFootprintCommand;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -69,6 +70,9 @@ it('forces matching artifacts for owned drift and recorded failed agent pins', f
 })->with([[['role.caddy_build_drift'], null, false], [[], 'failed-pin', false], [[], 'failed-pin', true]]);
 
 it('declares cross-family children and uses null for historical orphan residue', function (): void {
+    $definitions = OperationKinds::definitions();
+    $definitions['ai_router.collector_converge'] = $definitions['route.private_dns_publish'];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
     [$node, $operation, , $command] = footprintPreparation(array_map(static fn (string $name) => new FakeFootprintArtifact($name, 'current'), ['caddy', 'private-dns', 'route-residue', 'ai-router']));
     $command->run($operation, $operation->input);
     $children = $operation->refresh()->input['_footprint']['children'];
@@ -148,3 +152,25 @@ it('refuses forged, failed and wrong installer evidence', function (string $vari
     expect(fn () => app(PrepareNodeAgentConfigurationCommand::class)->run($operation, []))->toThrow(ResourceOperationException::class)
         ->and($operation->refresh()->input['_footprint']['payloads']['agent'])->not->toHaveKey('binary_changed');
 })->with(['wrong_command', 'wrong_transport', 'failed', 'unproven', 'forged_step']);
+
+it('refuses required collector preparation when its owning child kind is unavailable', function (): void {
+    $definitions = OperationKinds::definitions();
+    unset($definitions['ai_router.collector_converge']);
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
+    [, $operation, , $command] = footprintPreparation([new FakeFootprintArtifact('ai-router', 'current')]);
+    expect($command->run($operation, $operation->input))->toBe(['error_code' => 'operation.kind_unavailable'])
+        ->and($operation->fresh()->state['child_intents'] ?? [])->toBe([])
+        ->and($operation->input)->not->toHaveKey('_footprint');
+});
+
+it('stages private DNS only in the Swamp plan for Gateway Nodes', function (): void {
+    $artifact = new FakeFootprintArtifact('private-dns', 'listener-current', applies: false);
+    [$node, $operation, $footprint, $command] = footprintPreparation([$artifact]);
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    expect($footprint->expected($node)->artifacts)->not->toHaveKey('private-dns');
+    expect($command->run($operation, $operation->input))->toBe(['prepared' => true]);
+    $snapshot = $operation->fresh()->input['_footprint'];
+    expect($snapshot['payloads'])->toHaveKey('private-dns-listener')
+        ->and($snapshot['children']['private-dns']['kind'])->toBe('route.private_dns_publish')
+        ->and($footprint->expected($node)->artifacts)->not->toHaveKey('private-dns');
+});

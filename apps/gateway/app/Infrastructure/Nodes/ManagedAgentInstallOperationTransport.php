@@ -11,7 +11,10 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** The existing pinned installer, including repair of a recorded failed pin. */
+/** The installer returns only installed/changed, never secret output.
+ * Kit H requires every transport of a producing kind to promise transient outputs;
+ * this wrapper forwards the original protected metadata and preserves that guarantee.
+ */
 final readonly class ManagedAgentInstallOperationTransport implements OperationEffectTransport, OperationSecretOutputTransport
 {
     public function __construct(private NodeOperationAgentInstaller $agents) {}

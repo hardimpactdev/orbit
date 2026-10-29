@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\OperationExecutorController;
+use App\Http\Middleware\Nodes\LockNodeAgentConfiguration;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -18,6 +19,7 @@ Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->whereNumber('operation')->where('step', '[a-z0-9_.:-]{1,128}')->name('operation:executor:receipt');
     foreach (['heartbeat', 'step', 'complete', 'run', 'children', 'wait'] as $primitive) {
         Route::post('operation-executor/{operation}/'.$primitive, [OperationExecutorController::class, $primitive])
+            ->middleware($primitive === 'run' ? [LockNodeAgentConfiguration::class] : [])
             ->whereNumber('operation')->name('operation:executor:'.$primitive);
     }
 });

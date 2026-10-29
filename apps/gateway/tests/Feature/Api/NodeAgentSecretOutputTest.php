@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Middleware\RequireNodeAgentSecret;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
@@ -90,4 +93,37 @@ it('encrypts historical Node hash rows without changing their accepted value', f
     $stored = DB::table('nodes')->where('id', $node->id)->value('agent_secret_hash');
     expect($stored)->not->toContain($hash)->and(Crypt::decryptString($stored))->toBe($hash)
         ->and($node->fresh()->agent_secret_hash)->toBe($hash);
+});
+
+it('preserves agent authentication through migration rollback and roll-forward', function (): void {
+    $node = FleetFixtures::node('rollback-hash');
+    $secret = 'disposable-rollback-secret';
+    $hash = hash('sha256', $secret);
+    $node->forceFill(['agent_secret_hash' => $hash])->save();
+    $migration = require database_path('migrations/2027_01_07_000000_encrypt_node_agent_secret_hashes.php');
+    $authorize = function () use ($node, $secret): void {
+        $request = Request::create('/api/v1/agent/status', server: ['HTTP_AUTHORIZATION' => 'Bearer '.$secret]);
+        $request->setUserResolver(fn () => $node->fresh());
+        expect(app(RequireNodeAgentSecret::class)->handle($request, fn () => response('accepted'))->getStatusCode())->toBe(200);
+    };
+    $migration->up();
+    $authorize();
+    $migration->down();
+    expect(DB::table('nodes')->where('id', $node->id)->value('agent_secret_hash'))->toBe($hash);
+    $authorize();
+    $migration->up();
+    $authorize();
+    $migration->up();
+    expect($node->fresh()->agent_secret_hash)->toBe($hash);
+});
+
+it('accepts only exact plaintext SHA-256 values from a rollback-era writer', function (): void {
+    $node = FleetFixtures::node('mixed-hash');
+    $hash = str_repeat('d', 64);
+    DB::table('nodes')->where('id', $node->id)->update(['agent_secret_hash' => $hash]);
+    expect($node->fresh()->agent_secret_hash)->toBe($hash);
+    $node->fresh()->forceFill(['agent_secret_hash' => $hash])->save();
+    expect(DB::table('nodes')->where('id', $node->id)->value('agent_secret_hash'))->not->toBe($hash);
+    DB::table('nodes')->where('id', $node->id)->update(['agent_secret_hash' => 'malformed']);
+    expect(fn () => $node->fresh()->agent_secret_hash)->toThrow(DecryptException::class);
 });

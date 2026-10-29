@@ -9,7 +9,9 @@ use App\Domain\Fleet\FleetNodeVerifier;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Operations\OperationGatewayCommand;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
@@ -58,6 +60,7 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node has a Gateway-rendered footprint.', 422);
         }
         $expected = $this->footprint->expected($node);
+        $expectedArtifacts = $expected->artifacts;
         $record = $this->footprint->recorded($node);
         $recorded = $record instanceof NodeFootprintRecord ? ($record->artifacts ?? []) : [];
         $repairs = FleetNodeVerifier::repairs($this->verification->baseline($node));
@@ -68,15 +71,21 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
         $payloads = [];
         foreach ($this->artifacts as $artifact) {
             $name = $artifact->name();
-            if (! array_key_exists($name, $expected->artifacts)) {
+            if ($name === 'private-dns' && $node->roles()->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active)->exists()) {
+                $expectedArtifacts[$name] = hash('sha256', app(AgentDelivery::class)->pin($node)."\0".$artifact->digest($node));
+            }
+            if (! array_key_exists($name, $expectedArtifacts)) {
                 continue;
             }
-            $digest = $expected->artifacts[$name];
+            $digest = $expectedArtifacts[$name];
             if (str_starts_with($digest, 'unavailable:')) {
                 return ['error_code' => 'node.footprint_failed'];
             }
             $matches = ($recorded[$name] ?? null) === $digest;
             $required = ($input['force_artifacts'] ?? false) === true || in_array($name, $repairs, true) || ! $matches;
+            if ($required && $name === 'ai-router' && app(OperationKinds::class)->definition('ai_router.collector_converge') === null) {
+                return ['error_code' => 'operation.kind_unavailable'];
+            }
             if ($required && $name === 'peer-dns' && $this->dnsInspector->inspect($node)['policy']) {
                 $required = false;
             }

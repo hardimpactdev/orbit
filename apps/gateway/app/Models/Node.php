@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\NodeAgentSecretHash;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Concerns\ValidatesPrivateDnsNamespace;
 use Illuminate\Database\Eloquent\Collection;
@@ -206,7 +207,7 @@ final class Node extends Model
             'status' => LifecycleStatus::class,
             'public_ssh_port' => 'integer',
             'settings' => 'array',
-            'agent_secret_hash' => 'encrypted',
+            'agent_secret_hash' => NodeAgentSecretHash::class,
         ];
     }
 }

@@ -15,7 +15,9 @@ use App\Models\NodeRole;
 use Illuminate\Container\Attributes\Tag;
 
 /**
- * The private-DNS listener release, units and publication code on active VPN and Gateway roles.
+ * The private-DNS listener release, its units, the dnsmasq records, and the catalog on the `vpn` Node,
+ * when that Node is not the Gateway's. The publication compares every file with the live copy and
+ * restarts the listener or dnsmasq only for a change.
  */
 final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifact
 {
@@ -35,7 +37,7 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
             static fn (NodeRole $assignment): bool => $assignment->role === $role && $assignment->status === LifecycleStatus::Active,
         );
 
-        return $node->platform === 'linux' && ($holds($node, RoleName::Vpn) || $holds($node, RoleName::Gateway));
+        return $holds($node, RoleName::Vpn) && ! $holds($node, RoleName::Gateway);
     }
 
     /**
@@ -59,7 +61,6 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
             'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
             'app/Infrastructure/AppDev/DevelopmentDnsConfigRenderer.php',
             'app/Infrastructure/AppDev/PrivateDnsListenerUnitRenderer.php',
-            'app/Infrastructure/Nodes/NodePrivateDnsListenerFootprint.php',
             ...SourceClosure::of([], array_map(
                 static fn (ContributedPrivateHostnames $records): string => $records::class,
                 array_values([...$this->contributions]),
