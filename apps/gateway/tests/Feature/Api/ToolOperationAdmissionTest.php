@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Activity;
@@ -13,7 +13,7 @@ use App\Models\Tool;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
-    if (! ToolOperationAvailability::available()) {
+    if (! OperationFamilySpec::available('tool.install')) {
         $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
     }
     $this->gateway = toolOperationNode('gateway', '10.44.0.2');

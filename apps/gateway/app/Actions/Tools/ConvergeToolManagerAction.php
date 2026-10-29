@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
-use App\Domain\Tools\ToolOperationAvailability;
 use App\Models\Node;
 use App\Models\Operation;
 use LogicException;
@@ -19,7 +19,7 @@ final readonly class ConvergeToolManagerAction
 
     public function execute(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false): Operation
     {
-        ToolOperationAvailability::assertAvailable();
+        OperationFamilySpec::assertAvailable('tool.manager_converge');
 
         $driver = $this->managers->find($manager->value);
         if ($driver === null || ! $driver->supportsNode($node)) {

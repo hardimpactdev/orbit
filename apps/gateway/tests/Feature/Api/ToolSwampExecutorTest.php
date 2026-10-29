@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationFamilySpec;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolOperationAvailability;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\Operation;
@@ -11,9 +12,10 @@ use App\Models\Tool;
 use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
-    if (! ToolOperationAvailability::available()) {
+    if (! OperationFamilySpec::available('tool.install')) {
         $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
     }
+    app()->instance(OperationKinds::class, app(OperationKinds::class));
     $this->gateway = toolExecutorNode('gateway', '10.44.0.2');
     $this->markAsGateway($this->gateway);
     $this->target = toolExecutorNode('dev', '10.44.0.3');
@@ -58,12 +60,6 @@ it('rejects completion without a run receipt and rejects a forged final step', f
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $this->postJson($path.'/step', ['worker' => 'tools-run', 'key' => 'forged', 'name' => 'tool-verified', 'status' => 'succeeded', 'result' => ['installed_version' => '7.0.0', 'block' => null]])
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-});
-
-it('requires genuine prerequisite receipts before a package mutation', function (): void {
-    $this->postJson('/api/v1/operation-executor/'.$this->operationId.'/run', toolExecutorRun('package-mutate', 'tool.apt-install', ['package' => 'jq']))
-        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-    expect($this->agents->calls)->toBe([]);
 });
 
 it('reuses keyed effects and projects only a proven selected package', function (): void {

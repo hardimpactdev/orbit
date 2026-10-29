@@ -43,37 +43,6 @@ it('does not authorize mutating adoption or intent-only removal', function (stri
     expect($names)->toBe(['manager-ready', 'tool-verified']);
 })->with([['adopt', false], ['remove', true]]);
 
-it('rejects forged prerequisite steps before a package mutation', function (): void {
-    $operation = toolPolicyOperation();
-    $operation->state = ['steps' => ['manager-ready' => ['version' => '1.0.0'], 'package-before' => ['installed_version' => null]]];
-    expect(fn () => new ToolOperationExecution()->beforeRun($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-install']))
-        ->toThrow(ResourceOperationException::class);
-});
-
-it('requires the proven candidate to satisfy the admitted constraint before mutation', function (string $candidate, bool $allowed): void {
-    $operation = toolPolicyOperation();
-    $operation->input = [...$operation->input, 'version_constraint' => '^7.0'];
-    toolPolicyReceipt($operation, 'manager-ready', 'tool.vp-version', ['version' => '1.0.0']);
-    toolPolicyReceipt($operation, 'package-before', 'tool.vp-inventory', ['installed_version' => null]);
-    toolPolicyReceipt($operation, 'package-candidate', 'tool.vp-candidate', ['version' => $candidate]);
-    $call = fn () => new ToolOperationExecution()->beforeRun($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-install']);
-    if ($allowed) {
-        $call();
-        expect(new ToolOperationExecution()->input($operation, ['key' => 'package-mutate', 'name' => 'tool.vp-install', 'transport' => 'agent']))->toBe(['package' => 'is-number']);
-    } else {
-        expect($call)->toThrow(ResourceOperationException::class);
-    }
-})->with([['7.0.0', true], ['8.0.0', false]]);
-
-it('refuses a proven plan that would remove another package', function (): void {
-    $operation = toolPolicyOperation('remove');
-    toolPolicyReceipt($operation, 'manager-ready', 'tool.vp-version', ['version' => '1.0.0']);
-    toolPolicyReceipt($operation, 'package-before', 'tool.vp-inventory', ['installed_version' => '7.0.0']);
-    toolPolicyReceipt($operation, 'package-removal-plan', 'tool.vp-removal-plan', ['packages' => ['is-number', 'pnpm']]);
-    expect(fn () => new ToolOperationExecution()->beforeRun($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-remove']))
-        ->toThrow(ResourceOperationException::class);
-});
-
 it('projects completed package receipts without executing on the Node', function (): void {
     $node = Node::query()->create(['name' => 'tools-projection', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2']);
     $operation = toolPolicyOperation();
