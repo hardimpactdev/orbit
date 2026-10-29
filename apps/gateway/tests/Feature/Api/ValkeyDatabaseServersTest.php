@@ -10,13 +10,11 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeValkeyAclAgent;
 use Tests\Support\FakeValkeyServerAdmin;
@@ -59,31 +57,6 @@ beforeEach(function (): void {
 function valkey_server_request(Node $node, array $overrides = []): array
 {
     return ['slug' => 'beast-valkey', 'node_id' => $node->id, 'driver' => 'redis', ...$overrides];
-}
-
-function valkey_acl_file(string $password): string
-{
-    return 'user default on #'.hash('sha256', $password)." ~* &* +@all\n";
-}
-
-/** @return array<string, mixed> */
-function valkey_server_runtime_config(string $port, string $volume, string $tag = '8.1'): array
-{
-    return [
-        'image' => "valkey/valkey:{$tag}",
-        'command' => ['valkey-server', '--appendonly', 'yes', '--dir', '/data', '--aclfile', '/data/users.acl'],
-        'environment' => [],
-        'ports' => [$port],
-        'volumes' => [['source' => $volume, 'target' => '/data', 'read_only' => false]],
-    ];
-}
-
-function valkey_server_assert_no_secret(TestResponse $response, string $secret): void
-{
-    $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
-
-    expect($response->getContent())->not->toContain($secret)
-        ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))->not->toContain($secret);
 }
 
 describe('database:server:create --driver=redis', function (): void {

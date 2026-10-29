@@ -14,9 +14,6 @@ use App\Models\DatabaseServer;
  */
 interface ValkeyServerAdmin
 {
-    /** Wait until `default` can log in with the admin password. */
-    public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool;
-
     /** Whether `default` logs in with the admin password now. A connection that fails is false. */
     public function acceptsAdminLogin(DatabaseServer $server): bool;
 

@@ -20,7 +20,7 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
-Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs the steps and reports proven results. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
+Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs the steps and reports proven results, including Valkey readiness, ACL writes, save failures and recovery. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
 
 Retained Instance create, clone, removal and transfer callers finish their database work synchronously until their lifecycle cutover composes database children. They use the same SQL plans, removal locks and ownership checks as the children. Successful synchronous MySQL create steps record password-free Activity receipts; removal accepts these receipts, proven child receipts or explicit operator adoption. If the live absence check fails during failed-create cleanup, Orbit retains the unproven reservation and reports the original create error. SQLite copy and seed callers keep their synchronous agent bindings.
 

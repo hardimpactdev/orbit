@@ -14,10 +14,8 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -25,12 +23,11 @@ use App\Models\Process;
 use Illuminate\Support\Sleep;
 use Predis\Client;
 use Symfony\Component\Process\Process as LocalProcess;
-use Tests\Support\FakeAgentCommandRunner;
 
 /**
  * Runs the Valkey Database server code against a real Valkey in Docker. Each test starts a disposable server as Orbit
  * does: its initial ACL is a private copy of an immutable seed checked against its records.
- * Agent writes are faked by copying the requested ACL into the private container; native Rust tests prove publication. The container runs the production image, entrypoint and command.
+ * These read and Doctor cases seed the private fixture directly; Swamp owns mutation workflow tests.
  * The server listens on a random loopback port. The tests run when ORBIT_TEST_DOCKER=1, as in CI's Gateway privileged job, and need Docker and
  * passwordless sudo. Startup and repair restarts read TCP readiness directly from the attached start process,
  * so no extra inspect/log-follow clients or retry sleep are needed. Containers and volumes are private to each case.
@@ -61,79 +58,6 @@ final class ValkeyDockerTestSeed
     }
 }
 
-/** The Node writer is tested in Rust. This fake supplies its result to the private Predis fixture. */
-function valkey_agent(string $container, string $volume): FakeAgentCommandRunner
-{
-    return new FakeAgentCommandRunner()->answer('database.write-valkey-acl', static function (array $input) use ($container, $volume): array {
-        expect($input)->toHaveKeys(['volume', 'image', 'acl'])
-            ->and($input['volume'])->toBe($volume)
-            ->and($input['image'])->toBe(DatabaseServerProcess::valkeyImage(ValkeyDockerTestSeed::TAG));
-        // docker cp can seed a stopped container too. No publication or validation implementation lives here.
-        $path = sys_get_temp_dir().'/orbit-valkey-fixture-'.bin2hex(random_bytes(6)).'.tar';
-        try {
-            $archive = new PharData($path);
-            $archive['users.acl'] = $input['acl'];
-            $archive['users.acl']->chmod(0600);
-            unset($archive);
-            new LocalProcess(['docker', 'cp', '-', $container.':/data/'])->setInput(file_get_contents($path))->mustRun();
-        } finally {
-            if (is_file($path)) {
-                unlink($path);
-            }
-        }
-
-        return [];
-    });
-}
-
-/** Restarts the server's container and reads its state; a repair needs nothing else from the Process runtime. */
-final class ValkeyDockerTestRuntime implements ProcessRuntimeManager
-{
-    private ?LocalProcess $attached = null;
-
-    public function __construct(private readonly string $container) {}
-
-    public function assertCanStart(Process $process): void {}
-
-    public function converge(Process $process): void
-    {
-        throw new LogicException('Not used.');
-    }
-
-    public function start(Process $process, bool $explicit = false): void
-    {
-        throw new LogicException('Not used.');
-    }
-
-    public function stop(Process $process): void
-    {
-        throw new LogicException('Not used.');
-    }
-
-    public function restart(Process $process): void
-    {
-        valkey_docker(['stop', $this->container]);
-        $this->attached = new LocalProcess(['docker', 'start', '--attach', $this->container]);
-        valkey_docker_ready($this->attached);
-    }
-
-    public function remove(Process $process): void
-    {
-        throw new LogicException('Not used.');
-    }
-
-    public function status(Process $process): string
-    {
-        return valkey_docker(['inspect', '--format', '{{.State.Status}}', $this->container]);
-    }
-
-    public function logs(Process $process, int $lines): string
-    {
-        throw new LogicException('Not used.');
-    }
-}
-
-/** @param list<string> $arguments */
 function valkey_docker(array $arguments): string
 {
     return trim(new LocalProcess(['docker', ...$arguments])->setTimeout(120)->mustRun()->getOutput());
@@ -187,13 +111,6 @@ function valkey_docker_ready(LocalProcess $start): void
 }
 
 /** Waits for the actual exit; Valkey without its ACL file cannot start. */
-function valkey_docker_stopped(string $container): bool
-{
-    valkey_docker(['wait', $container]);
-
-    return valkey_docker(['inspect', '--format', '{{.State.Running}}', $container]) === 'false';
-}
-
 beforeAll(function (): void {
     if (getenv('ORBIT_TEST_DOCKER') === '1') {
         ValkeyDockerTestSeed::$shared = ValkeyDockerTestSeed::prepare();
@@ -208,8 +125,6 @@ beforeEach(function (): void {
     $name = 'orbit-test-valkey-'.bin2hex(random_bytes(6));
     $this->container = $name;
     $this->volume = DatabaseServerProcess::volume($name);
-    app()->instance(AgentCommandRunner::class, valkey_agent($name, $this->volume));
-    app()->instance(ProcessRuntimeManager::class, new ValkeyDockerTestRuntime($name));
 
     $this->node = Node::query()->create([
         'name' => 'valkey-docker', 'status' => 'active', 'platform' => 'linux',
@@ -251,7 +166,7 @@ beforeEach(function (): void {
 
     $this->admin = app(ValkeyServerAdmin::class);
     $this->password = $this->server->root_password;
-    expect($this->admin->waitUntilReady($this->server, 30))->toBeTrue();
+    expect($this->admin->acceptsAdminLogin($this->server))->toBeTrue();
 });
 
 afterEach(function (): void {

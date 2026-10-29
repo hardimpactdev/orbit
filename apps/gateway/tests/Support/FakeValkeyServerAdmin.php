@@ -8,8 +8,6 @@ use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
-use Closure;
-use SensitiveParameter;
 
 /**
  * An in-memory Valkey server for tests. `$users` holds the live users by name, and `$passwords` the passwords that log
@@ -20,12 +18,6 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
 {
     /** @var list<string> */
     public array $calls = [];
-
-    /** @var list<string> */
-    public array $readyChecks = [];
-
-    /** @var list<bool> Readiness answers in order; once empty, every check succeeds. */
-    public array $readiness = [];
 
     /** @var array<string, string> */
     public array $passwords = [];
@@ -39,36 +31,10 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
 
     public int $databases = 16;
 
-    /** @var array<string, string> */
-    public array $configuration = ['dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir', 'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16'];
-
-    /** @var list<string> */
-    public array $defaultClients = [];
-
-    /** A Valkey error reply that `setUser` returns, such as an unknown command. */
-    public ?string $refuseRules = null;
-
     public bool $failCommands = false;
 
-    /** Runs after `setUser` made the user, such as a concurrent create that takes the slug. */
-    public ?Closure $afterSetUser = null;
-
-    /** A server that becomes ready has started from Orbit's ACL file: `default` logs in with the admin password. */
-    public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool
-    {
-        $this->readyChecks[] = $server->slug;
-
-        if (! (array_shift($this->readiness) ?? true)) {
-            return false;
-        }
-
-        $this->passwords["{$server->node->wireguard_ip}:{$server->port}"] = $server->root_password;
-        $this->users['default'] = $server->default_open
-            ? new ValkeyAclUser('default', 'on nopass ~* &* +@all', [])
-            : ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, $server->root_password);
-
-        return true;
-    }
+    /** @var array<string, string> */
+    public array $configuration = ['dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir', 'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16'];
 
     public function acceptsAdminLogin(DatabaseServer $server): bool
     {
@@ -98,55 +64,10 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         return isset($this->users[$username]);
     }
 
-    public function setUser(
-        DatabaseServer $server,
-        string $username,
-        #[SensitiveParameter]
-        string $password,
-        array $patterns,
-        array $allow,
-    ): string {
-        $this->command($server, "setuser {$username}");
-
-        if ($this->refuseRules !== null) {
-            throw new ResourceOperationException('database.acl_rules_invalid', "Valkey refused a key pattern or a rule: {$this->refuseRules}.", 422);
-        }
-
-        $rules = implode(' ', [
-            'on',
-            ...array_map(static fn (string $pattern): string => '~'.$pattern, $patterns),
-            'resetchannels -@all',
-            ...array_map(static fn (string $rule): string => '+'.$rule, $allow),
-            '-@admin -@dangerous -function -script',
-        ]);
-        $this->users[$username] = new ValkeyAclUser($username, $rules, [ValkeyAclUser::passwordHash($password)]);
-
-        if ($this->afterSetUser instanceof Closure) {
-            ($this->afterSetUser)();
-        }
-
-        return $rules;
-    }
-
     public function deleteUser(DatabaseServer $server, string $username): void
     {
         $this->command($server, "deluser {$username}");
         unset($this->users[$username]);
-    }
-
-    public function applyUsers(DatabaseServer $server, array $set, array $delete): void
-    {
-        foreach ($set as $user) {
-            $this->command($server, "setuser {$user->name}");
-            $this->users[$user->name] = $user;
-        }
-
-        foreach ($delete as $username) {
-            $this->command($server, "deluser {$username}");
-            unset($this->users[$username]);
-        }
-
-        $this->command($server, 'acl save');
     }
 
     public function aclUsers(DatabaseServer $server): array
@@ -154,16 +75,6 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         $this->command($server, 'acl list');
 
         return $this->users;
-    }
-
-    public function closeDefaultUser(DatabaseServer $server): void
-    {
-        $this->command($server, 'close default');
-        if ($this->defaultClients !== []) {
-            throw new ResourceOperationException('database.server_in_use', count($this->defaultClients).' clients still use default: '.implode(', ', $this->defaultClients).'.', 409);
-        }
-        $this->anonymous = false;
-        $this->users['default'] = ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, $server->root_password);
     }
 
     public function aclFile(DatabaseServer $server): ?string
