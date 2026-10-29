@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Support\Console\TerminalText;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
 use Symfony\Component\Process\Process;
@@ -38,7 +39,7 @@ it('requires affirmative consent and restores the terminal before returning', fu
             ->and($result['prompt_seen'])->toBeTrue()
             ->and($result['keys_remaining'])->toBe(0)
             ->and($result['restored'])->toBeTrue()
-            ->and($requests)->toHaveCount($confirmed ? 1 : 0);
+            ->and($requests)->toHaveCount($confirmed ? count($case['replies']) : 0);
 
         expect(preg_replace('/[\s│]/u', '', $output))
             ->toContain(str_replace(' ', '', $case['question']));
@@ -64,15 +65,17 @@ it('requires affirmative consent and restores the terminal before returning', fu
         'prompt' => 'Destroy WebSocket app [hauzer]?',
         'question' => 'Destroy WebSocket app [hauzer]? Reverb stops serving it, and its clients disconnect.',
         'endpoint' => '/api/v1/websocket-apps/hauzer',
-        'success' => 'WebSocket change applied.',
+        'success' => 'Integration succeeded.',
         'cancelled' => 'WebSocket app destruction cancelled.',
         'replies' => [[
             'class' => DestroyWebSocketAppRequest::class,
             'body' => [
-                'data' => ['id' => 2, 'name' => 'hauzer', 'app_id' => 'hauzerappid000000001', 'key' => 'hauzerappkey00000001', 'instance_ids' => []],
-                'operation' => ['id' => '11111111-1111-4111-8111-111111111111', 'epoch' => '22222222-2222-4222-8222-222222222222', 'revision' => 3, 'state' => 'applied', 'processes' => [], 'missing_node_ids' => []],
+                'data' => ['id' => 42, 'kind' => 'websocket.app_destroy', 'target_type' => 'websocket_revision', 'target_id' => 3, 'status' => 'succeeded', 'sequence' => 1],
                 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
             ],
+        ], [
+            'class' => ShowRealtimeRequest::class,
+            'body' => ['data' => []],
         ]],
     ]],
     'remove attachment' => [[

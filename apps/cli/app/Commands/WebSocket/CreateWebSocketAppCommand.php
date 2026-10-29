@@ -7,7 +7,6 @@ namespace App\Commands\WebSocket;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
-use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 
 final class CreateWebSocketAppCommand extends WebSocketAppCommand
 {
@@ -41,17 +40,6 @@ final class CreateWebSocketAppCommand extends WebSocketAppCommand
             return self::FAILURE;
         }
 
-        $app = $this->sendWithProgress(
-            $connector,
-            new CreateWebSocketAppRequest($name, $this->operationKey()),
-            WebSocketChangeResponse::class,
-            ['Create WebSocket app', 'Creating WebSocket app', 'Saved WebSocket app change'],
-        );
-
-        if (! $app instanceof WebSocketChangeResponse) {
-            return self::FAILURE;
-        }
-
-        return $this->renderChange($app);
+        return $this->integrationOperation($connector, $repository, new CreateWebSocketAppRequest($name, $this->operationKey()), 'Create WebSocket app');
     }
 }

@@ -21,7 +21,7 @@ Put an app on an Instance with [`instance:websocket:add`](/cli/instance#orbit-in
 | [`websocket:operation:show`](#orbit-websocketoperationshow) | Check application of a saved change. |
 | [`websocket:sync`](#orbit-websocketsync) | Wait for all serving processes to apply the registry. |
 
-Every command accepts `--json`. Changes return an operation ID. The Gateway sends a revision notification and returns current status without waiting for process reports. A saved change can remain pending. A later mutation that replaces its result makes it superseded. Use `websocket:operation:show` to check it or `websocket:sync` to wait. Neither command restarts Reverb.
+Every command accepts `--json`. Changes return a normal Operation ID and the CLI follows its progress. The Gateway records the registry intent and returns HTTP 202. Reverb applies it through its existing 30-second reconciliation. A saved change can remain pending. A later mutation that replaces its result makes it superseded. Use `operation:show` with the numeric Operation ID to follow it, or `websocket:sync` to wait for the current registry. Neither command restarts Reverb.
 
 ## orbit websocket:app:create
 
@@ -85,7 +85,7 @@ orbit websocket:app:rotate <name> [--force] [--operation-key=<key>] [--json]
 
 The `name` argument identifies the app. `--force` confirms rotation without prompting. `--operation-key` retries the same saved rotation. The reserved `gateway` app cannot be rotated through this command.
 
-Rotation updates the attached Instances' stored environment in the same transaction. The response lists those Instances. Run environment synchronization and reload their applications separately. An offline Instance cannot delay revocation.
+Rotation updates the attached Instances' stored environment in the same transaction. The Operation’s `input.app.instance_rollout` lists those Instances. Run environment synchronization and reload their applications separately. An offline Instance cannot delay revocation.
 
 ## orbit websocket:operation:show
 
@@ -95,11 +95,11 @@ Show whether every required Reverb process has applied a saved change. A stale o
 orbit websocket:operation:show <id> [--json]
 ```
 
-The `id` argument is the operation UUID returned by a change command.
+The `id` argument is the registry UUID in the normal Operation’s `input.registry_operation_id`. This read exposes current process reports; `operation:show` follows the numeric Operation ID.
 
 ## orbit websocket:sync
 
-Notify the serving processes and wait for confirmation without restarting them.
+Record a sync Operation and wait for confirmation without restarting the serving processes.
 
 ```bash
 orbit websocket:sync [--wait=60] [--operation-key=<key>] [--json]

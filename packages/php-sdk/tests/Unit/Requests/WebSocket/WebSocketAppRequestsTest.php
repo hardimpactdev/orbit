@@ -14,11 +14,11 @@ use Orbit\Sdk\Requests\WebSocket\RotateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ShowWebSocketOperationRequest;
 use Orbit\Sdk\Requests\WebSocket\SyncWebSocketAppsRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppAttachmentResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketApplyResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppsResponse;
-use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -99,12 +99,13 @@ describe('websocket app requests', function (): void {
         $result = $connector->send($request)->dto();
 
         expect($result)->toBeInstanceOf($responseClass)
-            ->and($result instanceof WebSocketChangeResponse ? $result->app?->toArray() : $result->toArray())->toBe([...$payload, 'request_id' => $requestId])
+            ->and(array_intersect_key($result->toArray(), $payload))->toBe($payload)
+            ->and($result->toArray()['request_id'])->toBe($requestId)
             ->and(print_r($result, true))->not->toContain($secret)
             ->and(serialize($result))->not->toContain($secret);
     })->with([
-        'create' => [new CreateWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(), WebSocketChangeResponse::class, 201],
-        'destroy' => [new DestroyWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(['instance_ids' => []]), WebSocketChangeResponse::class, 200],
+        'create' => [new CreateWebSocketAppRequest('hauzer'), websocket_operation_sdk_payload(), OperationResponse::class, 202],
+        'destroy' => [new DestroyWebSocketAppRequest('hauzer'), websocket_operation_sdk_payload(), OperationResponse::class, 202],
         'remove' => [new RemoveInstanceWebSocketAppRequest('hauzer.test', 'hauzer'), websocket_attachment_sdk_payload(['operation' => 'detach', 'key_count' => 0]), WebSocketAppAttachmentResponse::class, 200],
     ]);
 
@@ -218,11 +219,18 @@ it('preserves separate Instance rollout status in a rotation response', function
     $connector = new GatewayConnector('https://10.44.0.1', '/tmp/orbit-ca.pem');
     $request = new RotateWebSocketAppRequest('hauzer', 'rotate-once');
     $connector->withMockClient(new MockClient([RotateWebSocketAppRequest::class => MockResponse::make([
-        'data' => [...websocket_app_sdk_payload(), 'instance_rollout' => ['state' => 'configuration_stored', 'instance_ids' => [7], 'requires_env_sync' => true, 'requires_reload' => true]],
+        'data' => [...websocket_operation_sdk_payload(), 'input' => ['app' => ['instance_rollout' => ['state' => 'configuration_stored', 'instance_ids' => [7], 'requires_env_sync' => true, 'requires_reload' => true]]]],
         'operation' => websocket_apply_sdk_payload(), 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
     ], 202)]));
     $dto = $connector->send($request)->dto();
     expect($request->headers()->get('Idempotency-Key'))->toBe('rotate-once')
         ->and($request)->not->toBeInstanceOf(HasBody::class)
-        ->and($dto->instanceRolloutIds)->toBe([7])->and($dto->operation->state)->toBe('pending');
+        ->and($dto)->toBeInstanceOf(OperationResponse::class)
+        ->and($dto->input['app']['instance_rollout']['instance_ids'])->toBe([7])->and($dto->status)->toBe('queued');
 });
+
+function websocket_operation_sdk_payload(): array
+{
+    return ['id' => 42, 'kind' => 'websocket.app_create', 'target_type' => 'websocket_revision', 'target_id' => 2,
+        'status' => 'queued', 'sequence' => 1];
+}

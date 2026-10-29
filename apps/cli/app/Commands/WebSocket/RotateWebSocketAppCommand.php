@@ -7,7 +7,6 @@ namespace App\Commands\WebSocket;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\WebSocket\RotateWebSocketAppRequest;
-use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 
 final class RotateWebSocketAppCommand extends WebSocketAppCommand
 {
@@ -52,17 +51,6 @@ final class RotateWebSocketAppCommand extends WebSocketAppCommand
             return self::FAILURE;
         }
 
-        $app = $this->sendWithProgress(
-            $connector,
-            new RotateWebSocketAppRequest($name, $this->operationKey()),
-            WebSocketChangeResponse::class,
-            ['Rotate WebSocket app', 'Rotating WebSocket app', 'Saved WebSocket app rotation'],
-        );
-
-        if (! $app instanceof WebSocketChangeResponse) {
-            return self::FAILURE;
-        }
-
-        return $this->renderChange($app);
+        return $this->integrationOperation($connector, $repository, new RotateWebSocketAppRequest($name, $this->operationKey()), 'Rotate WebSocket app');
     }
 }

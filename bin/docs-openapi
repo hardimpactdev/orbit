@@ -816,8 +816,8 @@ DESCRIPTIONS = {
     'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
     'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
     'database:server:show': 'Shows one Database server with the connections of the databases on it.',
-    'websocket:app:create': 'Saves a Reverb app and requests live application without restarting Reverb. Returns 202 with an operation while confirmation is pending. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.',
-    'websocket:app:destroy': 'Removes an app and closes only its sockets with code 4001. Returns 202 until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).',
+    'websocket:app:create': 'Saves a Reverb app and requests live application without restarting Reverb. Returns HTTP 202 with a normal Operation. Swamp proves fresh process reports after periodic Reverb reconciliation. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.',
+    'websocket:app:destroy': 'Removes an app and closes only its sockets with code 4001. Returns HTTP 202 with a normal Operation. Swamp waits until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).',
     'instance:websocket:add': 'Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. Optional `public: true` publishes Pusher paths on the existing public app Route and projects its domain; `false` selects the private endpoint. Omission preserves a same-app public selection. Public attachment checks Laravel route collisions and rebuilds Caddy. Rotation preserves the selected host. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).',
     'instance:websocket:remove': 'Clears the app keys from the stored environment of the Instance and keeps its other keys. `env:sync` writes the workload file. An app that is not on the Instance returns `websocket.attachment_missing` (404).',
     'tasks:status': 'Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.',
@@ -2146,13 +2146,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             registration['required'] = ['name_converted_from']
         if is_list:
             data = {'type': 'array', 'items': data}
-        if route['name'] in ('websocket:app:create', 'websocket:app:destroy', 'websocket:app:rotate', 'websocket:sync', 'websocket:operation:show'):
-            responses['200'] = websocket_envelope(data, 'Saved operation status, including superseded results.')
-            if route['name'] != 'websocket:operation:show':
-                responses['202'] = websocket_envelope(data, 'Saved; application is pending. Follow the operation status URL.')
-                op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] in ('tasks:analyze', 'tasks:script', 'tasks:worker', 'instance:deploy:automatic'), 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Reuse the same key when retrying this change.'})
-            if route['name'] == 'websocket:app:create':
-                responses['201'] = websocket_envelope(data, 'Created and confirmed by every required process.')
+        if route['name'] == 'websocket:operation:show':
+            responses['200'] = websocket_envelope(data, 'Saved registry status, including superseded results.')
         elif route['name'] == 'conn:pairing:create':
             responses['201'] = envelope(ref('IssuedConnPairingData'), 'Pairing URL after the admitted Swamp Operation succeeds within 30 seconds. Cache-Control: no-store.')
             responses['202'] = envelope(ref('OperationData'), 'Accepted with async: true. Follow conn:operation:show, then conn:pairing:show.')

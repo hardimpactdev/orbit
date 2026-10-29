@@ -7,9 +7,9 @@ namespace App\Commands\WebSocket;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Illuminate\Support\Sleep;
-use Orbit\Sdk\Requests\WebSocket\ShowWebSocketOperationRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\WebSocket\SyncWebSocketAppsRequest;
-use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class SyncWebSocketAppsCommand extends WebSocketAppCommand
 {
@@ -42,16 +42,23 @@ final class SyncWebSocketAppsCommand extends WebSocketAppCommand
             return self::FAILURE;
         }
         $deadline = microtime(true) + $wait;
-        $change = $this->send($connector, new SyncWebSocketAppsRequest($this->operationKey()), WebSocketChangeResponse::class);
-        while ($change instanceof WebSocketChangeResponse && $change->operation->state === 'pending' && microtime(true) < $deadline) {
-            Sleep::sleep(1);
-            $change = $this->send($connector, new ShowWebSocketOperationRequest($change->operation->id), WebSocketChangeResponse::class);
+        $operation = $this->send($connector, new SyncWebSocketAppsRequest($this->operationKey()), OperationResponse::class);
+        while ($operation instanceof OperationResponse && ! $operation->terminal() && microtime(true) < $deadline) {
+            Sleep::sleep(min(1, max(0, $deadline - microtime(true))));
+            $operation = $this->send($connector, new ShowOperationRequest($operation->id), OperationResponse::class);
         }
-        if (! $change instanceof WebSocketChangeResponse) {
+        if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
         }
-        $this->renderChange($change);
+        if ($this->option('json') === true) {
+            $this->writeJson($operation->toArray());
+        } else {
+            $this->writeHumanMessage('Operation '.$operation->id.': '.$operation->status.'.');
+            if (! $operation->terminal()) {
+                $this->writeHumanMessage('Follow it with: orbit operation:show '.$operation->id);
+            }
+        }
 
-        return $change->operation->state === 'applied' ? self::SUCCESS : self::FAILURE;
+        return $operation->succeeded() ? self::SUCCESS : self::FAILURE;
     }
 }

@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
@@ -38,10 +39,10 @@ afterEach(function (): void {
 function websocket_app_cli_response(int $status = 200): MockResponse
 {
     return MockResponse::make([
-        'data' => ['id' => 2, 'name' => 'hauzer', 'app_id' => 'hauzerappid000000001', 'key' => 'hauzerappkey00000001', 'instance_ids' => []],
+        'data' => ['id' => 42, 'kind' => 'websocket.app_create', 'target_type' => 'websocket_revision', 'target_id' => 2,
+            'status' => $status === 202 ? 'queued' : 'succeeded', 'sequence' => 1],
         'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
-        'operation' => ['id' => '11111111-1111-4111-8111-111111111111', 'epoch' => '22222222-2222-4222-8222-222222222222', 'revision' => 2, 'state' => $status === 202 ? 'pending' : 'applied', 'processes' => [], 'missing_node_ids' => []],
-    ], $status);
+    ], 202);
 }
 
 function websocket_attachment_cli_response(string $operation): MockResponse
@@ -61,11 +62,11 @@ function websocket_attachment_cli_response(string $operation): MockResponse
 
 describe('websocket:app commands', function (): void {
     it('sends only the app name on create', function (): void {
-        $mockClient = MockClient::global([CreateWebSocketAppRequest::class => websocket_app_cli_response(201)]);
+        $mockClient = MockClient::global([CreateWebSocketAppRequest::class => websocket_app_cli_response(201), ShowOperationRequest::class => websocket_app_cli_response(), '*/api/v1/realtime' => MockResponse::make(['data' => []])]);
 
         $this->artisan('websocket:app:create', ['name' => 'hauzer', '--json' => true])->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())->toBe(['name' => 'hauzer']);
+        $mockClient->assertSent(fn ($request): bool => $request instanceof CreateWebSocketAppRequest && $request->body()->all() === ['name' => 'hauzer']);
     });
 
     it('refuses a name that is not a slug before sending', function (string $command, array $arguments): void {
@@ -85,7 +86,7 @@ describe('websocket:app commands', function (): void {
     ]);
 
     it('refuses a JSON destroy without --force and destroys after it', function (): void {
-        $mockClient = MockClient::global([DestroyWebSocketAppRequest::class => websocket_app_cli_response()]);
+        $mockClient = MockClient::global([DestroyWebSocketAppRequest::class => websocket_app_cli_response(), ShowOperationRequest::class => websocket_app_cli_response(), '*/api/v1/realtime' => MockResponse::make(['data' => []])]);
         $tester = new CommandTester(app(Kernel::class)->all()['websocket:app:destroy']);
 
         expect($tester->execute(['name' => 'hauzer', '--json' => true], ['interactive' => false]))->toBe(1)
@@ -95,7 +96,7 @@ describe('websocket:app commands', function (): void {
         $this->artisan('websocket:app:destroy', ['name' => 'hauzer', '--force' => true, '--json' => true])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest())->toBeInstanceOf(DestroyWebSocketAppRequest::class);
+        $mockClient->assertSent(DestroyWebSocketAppRequest::class);
     });
 });
 
@@ -200,28 +201,28 @@ describe('instance:websocket commands', function (): void {
     });
 });
 
-it('shows a saved change as pending and preserves an explicit retry key', function (): void {
-    $mock = MockClient::global([CreateWebSocketAppRequest::class => websocket_app_cli_response(202)]);
+it('follows a saved change and preserves an explicit retry key', function (): void {
+    $mock = MockClient::global([CreateWebSocketAppRequest::class => websocket_app_cli_response(202), ShowOperationRequest::class => websocket_app_cli_response(), '*/api/v1/realtime' => MockResponse::make(['data' => []])]);
     $tester = new CommandTester(app(Kernel::class)->all()['websocket:app:create']);
     expect($tester->execute(['name' => 'hauzer', '--operation-key' => 'retry-create', '--json' => true], ['interactive' => false]))->toBe(0);
     $output = json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR);
-    expect($output['operation']['state'])->toBe('pending')
-        ->and($mock->getLastRequest()?->headers()->get('Idempotency-Key'))->toBe('retry-create');
+    expect($output['status'])->toBe('succeeded');
+    $mock->assertSent(fn ($request): bool => $request instanceof CreateWebSocketAppRequest && $request->headers()->get('Idempotency-Key') === 'retry-create');
 });
 
 it('times out sync with truthful pending status and no restart request', function (): void {
     $mock = MockClient::global([SyncWebSocketAppsRequest::class => websocket_app_cli_response(202)]);
     $tester = new CommandTester(app(Kernel::class)->all()['websocket:sync']);
     expect($tester->execute(['--wait' => '0', '--json' => true], ['interactive' => false]))->toBe(1)
-        ->and(json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR)['operation']['state'])->toBe('pending')
+        ->and(json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR)['status'])->toBe('queued')
         ->and($mock->getLastRequest())->toBeInstanceOf(SyncWebSocketAppsRequest::class);
 });
 
 it('requires consent for rotation before sending its typed request', function (): void {
-    $mock = MockClient::global([RotateWebSocketAppRequest::class => websocket_app_cli_response(202)]);
+    $mock = MockClient::global([RotateWebSocketAppRequest::class => websocket_app_cli_response(), ShowOperationRequest::class => websocket_app_cli_response(), '*/api/v1/realtime' => MockResponse::make(['data' => []])]);
     $tester = new CommandTester(app(Kernel::class)->all()['websocket:app:rotate']);
     expect($tester->execute(['name' => 'hauzer', '--json' => true], ['interactive' => false]))->toBe(1)
         ->and($mock->getLastPendingRequest())->toBeNull();
-    expect($tester->execute(['name' => 'hauzer', '--force' => true, '--json' => true], ['interactive' => false]))->toBe(0)
-        ->and($mock->getLastRequest())->toBeInstanceOf(RotateWebSocketAppRequest::class);
+    expect($tester->execute(['name' => 'hauzer', '--force' => true, '--json' => true], ['interactive' => false]))->toBe(0);
+    $mock->assertSent(RotateWebSocketAppRequest::class);
 });
