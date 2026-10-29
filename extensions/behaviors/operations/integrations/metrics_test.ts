@@ -488,3 +488,87 @@ Deno.test("a Gateway cancellation refusal at the final receipt completes cancell
     false,
   );
 });
+
+Deno.test("Route Metrics reconciliation runs the captured fleet without republishing Metrics DNS or certificates", async () => {
+  const f = new FleetFixture();
+  f.operation.kind = "metrics.reconcile";
+  f.operation.input.gateway_node_id = null;
+  f.operation.input.dns_node_id = null;
+  assertEquals((await f.run()).status, "succeeded");
+  assert(f.children.has("metrics-runtime"));
+  assert(f.children.has("metrics-credentials-verified"));
+  assert(![...f.children.keys()].some((key) => key.startsWith("publication-")));
+  const receipt = f.calls.find((call) => String(call.path).endsWith("/run"));
+  assertEquals(receipt?.name, "metrics.receipt");
+  assertEquals(
+    f.calls.filter((call) => String(call.path).endsWith("/children"))
+      .every((call) =>
+        Object.keys(call).sort().join(",") === "key,path,worker"
+      ),
+    true,
+  );
+});
+
+Deno.test("a Route reconcile child yields and resumes with the same pending Metrics child", async () => {
+  const f = new FleetFixture();
+  f.operation.kind = "metrics.reconcile";
+  f.pending = "metrics-runtime";
+  assertEquals((await f.run()).status, "waiting");
+  const id = f.children.get("metrics-runtime")?.id;
+  f.children.get("metrics-runtime")!.status = "succeeded";
+  assertEquals((await f.run()).status, "succeeded");
+  assertEquals(f.children.get("metrics-runtime")?.id, id);
+  assert(![...f.children.keys()].some((key) => key.startsWith("publication-")));
+});
+
+for (
+  const error of [
+    "node.lock_lost",
+    "operation.lease_lost",
+    "operation.cancelled",
+  ]
+) {
+  Deno.test(`service mutation ${error} restores the fleet without runtime convergence`, async () => {
+    const f = new FleetFixture();
+    f.operation.kind = "metrics.reconcile";
+    f.failures.set("service-apply-2", error);
+    assertEquals(
+      (await f.run()).status,
+      error === "operation.cancelled" ? "cancelled" : "failed",
+    );
+    assert(f.children.has("service-restore-2"));
+    assert(f.children.has("service-caddy-restore-2"));
+    assert(f.children.has("node_exporter-restore-2"));
+    assert(!f.children.has("metrics-runtime"));
+  });
+  for (const key of ["service-restore-2", "service-caddy-restore-2"]) {
+    Deno.test(`local ${key} ${error} stops reconciliation and reports rollback failure`, async () => {
+      const f = new FleetFixture();
+      f.operation.kind = "metrics.reconcile";
+      f.failures.set("service-apply-2", "metrics.service_failed");
+      f.failures.set(key, error);
+      assertEquals((await f.run()).status, "failed");
+      assert(!f.children.has("metrics-runtime"));
+      const completion = f.calls.find((call) =>
+        String(call.path).endsWith("/complete")
+      );
+      assertEquals(completion?.error_code, "metrics.rollback_failed");
+    });
+  }
+}
+
+for (const key of ["service-restore-2", "service-caddy-restore-2"]) {
+  Deno.test(`an ordinary failed ${key} stays in rollback proof after a later runtime failure`, async () => {
+    const f = new FleetFixture();
+    f.operation.kind = "metrics.reconcile";
+    f.failures.set("service-apply-2", "metrics.service_failed");
+    f.failures.set(key, "metrics.restore_refused");
+    f.failures.set("metrics-runtime", "metrics.runtime_failed");
+    assertEquals((await f.run()).status, "failed");
+    const completion = f.calls.find((call) =>
+      String(call.path).endsWith("/complete")
+    );
+    assertEquals(completion?.error_code, "metrics.rollback_failed");
+    assertEquals(f.calls.filter((call) => call.key === key).length, 2);
+  });
+}

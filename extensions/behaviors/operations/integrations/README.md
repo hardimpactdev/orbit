@@ -69,3 +69,10 @@ The Vault collection program tests live beside the shipped program in Orbit.
 They cover collection reconciliation and the Orbit-CA-only, host and redirect
 boundaries. Deploy this workflow on a placed worker before merging the Vault and
 Conn cutovers.
+
+Route parents request `metrics.reconcile {}` on the active Metrics Node. The
+Gateway captures the fleet and admits that exact child once. Its placed workflow
+uses `metrics.receipt` after proven exporter, service and runtime children.
+Reconciliation keeps Metrics publication in place: it does no certificate or
+private DNS work. Retained Gateway callers keep their synchronous fleet
+implementation.

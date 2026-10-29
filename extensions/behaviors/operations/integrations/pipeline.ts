@@ -369,7 +369,7 @@ function prove(
         typeof result.fingerprint === "string"
       : result.applied === true || result.verified === true
       ? true
-      : name === "integration.receipt"
+      : ["integration.receipt", "metrics.receipt"].includes(name)
       ? result.backend !== undefined
       : name === "integration.certificate-record"
       ? result.recorded === true

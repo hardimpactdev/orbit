@@ -150,13 +150,15 @@ export async function metricsFleet(
             });
             fail(mutation);
           }
-          await restore({
+          const recovery = {
             key: `service-restore-${node.node_id}`,
             kind: "metrics.service_restore",
             node,
             source: receipt,
             input,
-          }, true);
+          };
+          rollback.push(recovery);
+          await restore(recovery, true);
           continue;
         }
         rollback.push({
@@ -208,7 +210,9 @@ export async function metricsFleet(
         );
       }
     }
-    if (!plan.remove) await publication(true);
+    if (!plan.remove && operation.kind !== "metrics.reconcile") {
+      await publication(true);
+    }
     if (plan.remove && plan.gateway_node_id === null && !plan.unreachable) {
       await child(
         "publication-abandon",
@@ -224,7 +228,7 @@ export async function metricsFleet(
         worker,
         key: "integration-receipt",
         transport: "gateway",
-        name: "integration.receipt",
+        name: "metrics.receipt",
         input: { backend },
       }),
     );
@@ -330,20 +334,22 @@ export async function metricsFleet(
       item.source.kind.split(".")[1].replace(/_snapshot$/, ""),
       item.node.node_id,
     );
-    await child(item.key, item.kind, item.node.node_id, {
+    const restored = await child(item.key, item.kind, item.node.node_id, {
       ...item.input,
       source_operation_id: item.source.id,
       source_key,
       restore_key: item.key,
     }, acceptFailure);
+    if (lockLost(restored)) fail(restored);
     if (item.kind === "metrics.service_restore") {
-      await child(
+      const caddy = await child(
         `service-caddy-restore-${item.node.node_id}`,
         "metrics.service_caddy_restore",
         item.node.node_id,
         { restore_key: item.key },
         acceptFailure,
       );
+      if (lockLost(caddy)) fail(caddy);
     }
   }
   async function publication(enable: boolean) {

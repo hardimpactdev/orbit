@@ -517,3 +517,69 @@ Deno.test("pre-start refusal preserves the pipeline and retries its same effect 
   assertEquals(runs[0].body.key, runs[1].body.key);
   assertEquals(f.children, ["clickhouse"]);
 });
+
+function metricsCaddyRestoreFixture() {
+  const f = new PipelineFixture();
+  f.operation.kind = "metrics.service_caddy_restore";
+  f.operation.input = {
+    restore_key: "service-restore-2",
+    effects: {
+      "integration-receipt": {
+        key: "integration-receipt",
+        step: "integration-receipt",
+        transport: "gateway",
+        name: "metrics.receipt",
+        input: { backend: "active" },
+        resumable: true,
+        required: true,
+      },
+    },
+    flow: [
+      {
+        type: "child",
+        key: "service-caddy-restore",
+        kind: "route.caddy_converge",
+        node_id: 2,
+        input: { reason: "metrics service rollback" },
+      },
+      { type: "run", key: "integration-receipt" },
+    ],
+  };
+  f.results.set("integration-receipt", { backend: "active" });
+  return f;
+}
+
+Deno.test("Metrics service Caddy restore waits for its Route child then completes with the Metrics receipt", async () => {
+  const f = metricsCaddyRestoreFixture();
+  f.pending = true;
+  assertEquals((await f.run()).status, "waiting");
+  assertEquals(f.mutations, 0);
+  assertEquals(f.resources.size, 0);
+  f.pending = false;
+
+  assertEquals((await f.run()).status, "succeeded");
+  assertEquals(f.children, ["service-caddy-restore", "service-caddy-restore"]);
+  const runs = f.calls.filter((call) => call.path.endsWith("/run"));
+  assertEquals(runs.map((call) => call.body), [{
+    worker: "worker-12",
+    key: "integration-receipt",
+    transport: "gateway",
+    name: "metrics.receipt",
+    input: { backend: "active" },
+  }]);
+  assertEquals(f.calls.find((call) => call.path.endsWith("/complete"))?.body, {
+    worker: "worker-12",
+    status: "succeeded",
+    result: { backend: "active" },
+    error_code: null,
+  });
+});
+
+Deno.test("Metrics service Caddy restore refuses a receipt without backend proof", async () => {
+  const f = metricsCaddyRestoreFixture();
+  f.results.set("integration-receipt", {});
+
+  await assertRejects(() => f.run(), Error, "integration.outcome_unproven");
+  assertEquals(f.calls.some((call) => call.path.endsWith("/complete")), false);
+  assertEquals(f.resources.size, 0);
+});
