@@ -87,6 +87,76 @@ final readonly class InstanceLifecycleChildren
         return true;
     }
 
+    /** @return array<string,mixed>|null */
+    public function stepOutcome(Operation $parent, string $key): ?array
+    {
+        if (! $parent->children()->where('child_key', $key)->exists()) {
+            return null;
+        }
+        $child = app(OperationChildren::class)->child($parent, $key);
+        if (! $child->status->terminal()) {
+            return null;
+        }
+
+        return app(InstanceLifecycleStepOutcome::class)->read($child);
+    }
+
+    public function rollbackSetup(Operation $parent): bool
+    {
+        return in_array($this->stepOutcome($parent, 'setup')['outcome'] ?? null, ['missing', 'failed', 'deadline'], true);
+    }
+
+    public function canRemoveFailedCreate(Operation $parent): bool
+    {
+        if ($parent->kind !== 'instance.create' || $parent->input['initial_status'] === 'active'
+            || $parent->children()->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+            return false;
+        }
+        foreach ($parent->children()->get() as $child) {
+            app(OperationChildren::class)->verify($parent, $child);
+            if ($child->kind === 'instance.run_steps' && ! in_array(app(InstanceLifecycleStepOutcome::class)->read($child)['outcome'],
+                ['succeeded', 'missing', 'failed', 'deadline'], true)) {
+                return false;
+            }
+        }
+        foreach (['source-prepare', 'source-inspect', 'source-resolve', 'source-profile', 'source-configuration'] as $key) {
+            $result = app(InstanceLifecycleExecution::class)->recordedResult($parent, $key);
+            if ($this->confirmedRefusal($result)) {
+                return true;
+            }
+        }
+        foreach (['environment-sync' => ['instance.sync_environment'], 'vp-environment' => ['instance.prepare_vp_environment'],
+            'route-converge' => ['route.converge'], 'database' => ['database.create', 'database.clone'],
+            'database-environment-sync' => ['instance.sync_environment']] as $key => $kinds) {
+            if (! $parent->children()->where('child_key', $key)->exists()) {
+                continue;
+            }
+            $child = app(OperationChildren::class)->child($parent, $key);
+            if (! in_array($child->kind, $kinds, true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The refused child has another lifecycle kind.', 409);
+            }
+            if ($child->status === OperationStatus::Failed && $this->confirmedRefusal(['error_code' => $child->error_code])) {
+                return true;
+            }
+        }
+        $teardown = $this->stepOutcome($parent, 'rollback-teardown');
+
+        return $this->rollbackSetup($parent) && in_array($teardown['outcome'] ?? null, ['succeeded', 'missing', 'failed', 'deadline'], true);
+    }
+
+    /** @param array<string,mixed> $result */
+    public function confirmedRefusal(array $result): bool
+    {
+        $code = $result['error_code'] ?? null;
+        if (isset($result['outcome']) && ! in_array($result['outcome'], ['failed', 'missing'], true)) {
+            return false;
+        }
+
+        return in_array($code, ['instance.source_step_failed', 'instance.clone_failed', 'instance.branch_resolution_failed',
+            'instance.source_identity_invalid', 'instance.branch_not_checked_out', 'app-dev.php_version_unsupported',
+            'instance.database_create_failed', 'instance.database_clone_failed', 'instance.environment_sync_failed'], true);
+    }
+
     /** @param array<string,mixed> $input
      * @return ChildIntent
      */

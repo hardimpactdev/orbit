@@ -241,6 +241,14 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
     }
 
+    public function assertStepList(Operation $operation, string $key): void
+    {
+        $child = $this->assertChild($operation, $key, 'instance.run_steps');
+        if (($child->result['outcome'] ?? null) !== 'succeeded' || ($child->result['error_code'] ?? null) !== null) {
+            throw new ResourceOperationException('operation.child_unproven', 'The lifecycle list did not prove a successful outcome.', 409);
+        }
+    }
+
     /** @return array<string, mixed> */
     public function proven(Operation $operation, string $key): array
     {
