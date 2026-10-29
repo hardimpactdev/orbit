@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
@@ -58,7 +59,7 @@ final readonly class ProductionRemovalIntent
             throw $this->conflict();
         }
         $primary = $instance->routes->reject(static fn (Route $route): bool => $route->hasWebRoot() || $route->isUnactivatedReplacement())->values();
-        if ($primary->count() > 1) {
+        if ($primary->count() > 1 || $instance->requiresRoute() && $primary->count() !== 1 && ! $detached) {
             throw $this->conflict();
         }
         $routeId = $primary->first()?->id;
@@ -69,6 +70,9 @@ final readonly class ProductionRemovalIntent
                 throw $this->conflict();
             }
             if ($route->id === $routeId) {
+                if ($route->status !== RouteStatus::Active) {
+                    throw $this->conflict();
+                }
                 $routes[] = $this->route($route, $instance->node_id);
             } else {
                 if ($route->targets()->count() !== 1) {

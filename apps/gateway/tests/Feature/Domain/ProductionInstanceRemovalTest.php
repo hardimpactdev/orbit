@@ -76,6 +76,8 @@ it('refuses a foreign home, shared account or missing dedicated PHP identity bef
         $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'type' => 'monorepo',
             'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main', 'root' => 'public']);
         $this->survivor->update(['node_id' => $this->instance->node_id, 'project_id' => $other->id, 'checkout_path' => '/home/shared-proof']);
+    } elseif ($change === 'route') {
+        $this->route->update(['status' => 'pending']);
     } elseif ($change === 'home') {
         $this->instance->update(['production_home' => '/home/someone-else']);
     } else {
@@ -84,7 +86,7 @@ it('refuses a foreign home, shared account or missing dedicated PHP identity bef
     }
     expect(fn () => ($this->admit)())->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0);
-})->with(['home', 'shared', 'php']);
+})->with(['home', 'shared', 'php', 'route']);
 
 it('detaches only the admitted target and cannot clear its checkpoint before exact stamped publication succeeds', function (): void {
     $operation = ($this->admit)();
