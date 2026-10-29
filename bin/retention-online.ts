@@ -63,6 +63,42 @@ function references(value: unknown, out = new Set<string>()): Set<string> {
   for (const item of Object.values(v)) references(item, out);
   return out;
 }
+type DirectoryEntry = { name: string; is_directory: number; stamp: string };
+async function directorySnapshot(path: string) {
+  const entries: DirectoryEntry[] = [];
+  let count = 0;
+  for await (const entry of Deno.readDir(path)) {
+    if (++count > 250_000) throw new Error("retention_directory_too_large");
+    if (entry.isSymlink) throw new Error("symlink_refused");
+    if (entry.isDirectory) {
+      entries.push({ name: entry.name, is_directory: 1, stamp: "" });
+    } else if (entry.name.endsWith(".yaml")) {
+      try {
+        const stat = await Deno.lstat(join(path, entry.name));
+        if (!stat.isFile) throw new Error("unsafe_retention_source");
+        entries.push({
+          name: entry.name,
+          is_directory: 0,
+          stamp: fingerprint(stat),
+        });
+      } catch (e) {
+        if (!(e instanceof Deno.errors.NotFound)) throw e;
+      }
+    }
+  }
+  entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(entries)),
+  );
+  return {
+    entries,
+    signature: Array.from(
+      new Uint8Array(hash),
+      (b) => b.toString(16).padStart(2, "0"),
+    ).join(""),
+  };
+}
 export async function pruneOnline(
   repo: string,
   native: OnlinePrune,
@@ -97,6 +133,9 @@ export async function pruneOnline(
   db.exec(`PRAGMA journal_mode=WAL;
  CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS dirs(path TEXT PRIMARY KEY,stamp TEXT NOT NULL DEFAULT '',cursor TEXT NOT NULL DEFAULT '',done INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS directory_fingerprints(path TEXT PRIMARY KEY,signature TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS directory_scans(path TEXT PRIMARY KEY);
+ CREATE TABLE IF NOT EXISTS directory_entries(path TEXT NOT NULL,name TEXT NOT NULL,is_directory INTEGER NOT NULL,PRIMARY KEY(path,name));
  CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,kind TEXT NOT NULL,pending INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS nodes(key TEXT PRIMARY KEY,path TEXT NOT NULL,kind TEXT NOT NULL,stamp TEXT NOT NULL DEFAULT '',value TEXT NOT NULL DEFAULT '',root INTEGER NOT NULL DEFAULT 0,ref TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',ended TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS aliases(ref TEXT NOT NULL,node TEXT NOT NULL,PRIMARY KEY(ref,node));
@@ -231,7 +270,7 @@ export async function pruneOnline(
   function begin() {
     // Parsed source cache survives generations. Reachability and candidates do not.
     db.exec(
-      "DELETE FROM pins;UPDATE nodes SET root=0 WHERE kind='data';UPDATE dirs SET done=0,cursor='';UPDATE files SET pending=1;",
+      "DELETE FROM directory_entries;DELETE FROM directory_scans;DELETE FROM pins;UPDATE nodes SET root=0 WHERE kind='data';UPDATE dirs SET done=0,cursor='';UPDATE files SET pending=1;",
     );
     for (const root of roots) {
       db.prepare("INSERT OR IGNORE INTO dirs(path) VALUES (?)").run(
@@ -260,6 +299,7 @@ export async function pruneOnline(
       const transaction = ["inventory", "directories", "files", "graph"]
         .includes(phase);
       if (transaction) db.exec("BEGIN");
+      let failed = false;
       try {
         if (phase === "inventory") {
           const rows = catalog.prepare(
@@ -311,6 +351,12 @@ export async function pruneOnline(
             stat = await Deno.lstat(dir.path);
           } catch (e) {
             if (e instanceof Deno.errors.NotFound) {
+              db.prepare("DELETE FROM directory_entries WHERE path=?").run(
+                dir.path,
+              );
+              db.prepare("DELETE FROM directory_scans WHERE path=?").run(
+                dir.path,
+              );
               db.prepare("DELETE FROM dirs WHERE path=?").run(dir.path);
               continue;
             }
@@ -319,38 +365,57 @@ export async function pruneOnline(
           if (!stat.isDirectory || await Deno.realPath(dir.path) !== dir.path) {
             throw new Error("unsafe_retention_directory");
           }
-          const current = stamp(stat);
-          if (current !== dir.stamp) {
-            dir.cursor = "";
+          // Snapshot a complete listing once. Directory writes must not rewind
+          // an in-flight cursor, or a busy run/log directory never finishes.
+          if (
+            !db.prepare("SELECT 1 FROM directory_scans WHERE path=?").get(
+              dir.path,
+            )
+          ) {
+            const snapshot = await directorySnapshot(dir.path);
+            const insert = db.prepare(
+              "INSERT INTO directory_entries VALUES (?,?,?)",
+            );
+            for (const entry of snapshot.entries) {
+              insert.run(dir.path, entry.name, entry.is_directory);
+            }
+            db.prepare(
+              "INSERT OR REPLACE INTO directory_fingerprints VALUES (?,?)",
+            ).run(dir.path, snapshot.signature);
+            db.prepare("INSERT INTO directory_scans VALUES (?)").run(dir.path);
             db.prepare("UPDATE dirs SET cursor='',stamp=? WHERE path=?").run(
-              current,
+              stamp(stat),
               dir.path,
             );
+            dir.cursor = "";
           }
-          // Upstream requires complete listings before deletion. Bound a directory's
-          // entries, sort names, then persist a lexical cursor between small batches.
-          const entries: Deno.DirEntry[] = [];
-          for await (const entry of Deno.readDir(dir.path)) {
-            if (entries.length >= 250_000) {
-              throw new Error("retention_directory_too_large");
-            }
-            entries.push(entry);
-          }
-          entries.sort((a, b) =>
-            a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-          );
-          const batch = entries.filter((e) => e.name > dir.cursor).slice(
-            0,
-            100,
-          );
+          const batch = db.prepare(
+            "SELECT name,is_directory FROM directory_entries WHERE path=? AND name>? ORDER BY name LIMIT 100",
+          ).all(dir.path, dir.cursor) as unknown as {
+            name: string;
+            is_directory: number;
+          }[];
           for (const entry of batch) {
             const path = join(dir.path, entry.name);
-            if (entry.isSymlink) throw new Error("symlink_refused");
-            if (entry.isDirectory) {
+            if (entry.is_directory) {
               db.prepare("INSERT OR IGNORE INTO dirs(path) VALUES (?)").run(
                 path,
               );
-            } else if (entry.name.endsWith(".yaml")) {
+            } else {
+              let current: Deno.FileInfo;
+              try {
+                current = await Deno.lstat(path);
+              } catch (e) {
+                if (e instanceof Deno.errors.NotFound) continue;
+                throw e;
+              }
+              if (!current.isFile || await Deno.realPath(path) !== path) {
+                throw new Error("unsafe_retention_source");
+              }
+              // A changed directory need not requeue every unchanged record.
+              const cached = db.prepare("SELECT stamp FROM nodes WHERE key=?")
+                .get(path);
+              if (cached?.stamp === fingerprint(current)) continue;
               const root = roots.find((root) =>
                 path.startsWith(join(base, root) + "/")
               )!;
@@ -371,6 +436,14 @@ export async function pruneOnline(
             Number(batch.length < 100),
             dir.path,
           );
+          if (batch.length < 100) {
+            db.prepare("DELETE FROM directory_entries WHERE path=?").run(
+              dir.path,
+            );
+            db.prepare("DELETE FROM directory_scans WHERE path=?").run(
+              dir.path,
+            );
+          }
         } else if (phase === "files") {
           const pending = db.prepare(
             "SELECT n.* FROM files f JOIN nodes n ON n.path=f.path WHERE f.pending=1 ORDER BY f.path LIMIT 1",
@@ -470,6 +543,24 @@ export async function pruneOnline(
               if (!(e instanceof Deno.errors.NotFound)) throw e;
             }
             if (current !== dir.stamp) {
+              // Log creation changes the directory stamp but introduces no
+              // reference. Compare YAML names and authoritative fingerprints;
+              // only reference changes need another graph refresh.
+              const saved = db.prepare(
+                "SELECT signature FROM directory_fingerprints WHERE path=?",
+              ).get(dir.path);
+              if (
+                current &&
+                saved?.signature ===
+                  (await directorySnapshot(dir.path)).signature
+              ) {
+                db.prepare("UPDATE dirs SET stamp=? WHERE path=?").run(
+                  current,
+                  dir.path,
+                );
+                set("validate", dir.path);
+                continue;
+              }
               db.prepare("UPDATE dirs SET done=0,cursor='' WHERE path=?").run(
                 dir.path,
               );
@@ -652,8 +743,11 @@ export async function pruneOnline(
           db.prepare("DELETE FROM trash WHERE path=?").run(item.path);
           if (removedPaths >= native.limit) break;
         } else throw new Error("invalid_retention_phase");
+      } catch (error) {
+        failed = true;
+        throw error;
       } finally {
-        if (transaction) db.exec("COMMIT");
+        if (transaction) db.exec(failed ? "ROLLBACK" : "COMMIT");
       }
     }
     return report();
