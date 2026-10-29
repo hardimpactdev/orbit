@@ -69,8 +69,10 @@ beforeEach(function (): void {
     $this->agents = (new FakeAgentCommandRunner)->answer('process.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
         ->answer('process.activate-unit', ['backup_left' => false])->answer('process.status', ['state' => 'inactive'])->answer('schedule.install', []);
     app()->instance(AgentCommandRunner::class, $this->agents);
-    config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->executor = Node::query()->create(['name' => 'separate-executor', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $this->executor->accessibleNodes()->attach($this->node);
+    config(['dependency_detection.services_node_id' => $this->executor->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->executor->wireguard_ip]);
     $parent = ['executor' => 'swamp', 'completion' => InstanceRuntimeTestParent::class, 'execution' => InstanceRuntimeTestParent::class,
         'runs' => [], 'children' => [['kind' => 'process.install_instance_definitions', 'node_from' => 'operation.node_id'], ['kind' => 'schedule.install_instance_definitions', 'node_from' => 'operation.node_id'], ['kind' => 'process.restart_instance', 'node_from' => 'operation.node_id']],
         'completion_contract' => ['children_succeeded' => ['process.install_instance_definitions', 'schedule.install_instance_definitions']], 'result_fields' => ['ready']];
@@ -121,6 +123,9 @@ it('refuses enabling an unfinished definition copy during stopped installation',
 })->with(['process', 'schedule']);
 
 it('proves the exact restarted Process ID list through child execution and HTTP completion', function (bool $empty): void {
+    if ($empty) {
+        config(['operation_executor.worker_node_ids' => [$this->node->id]]);
+    }
     $route = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id, 'domain' => 'runtime.example.test',
         'status' => 'pending', 'publication' => 'private', 'provenance' => 'explicit']);
     $route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
@@ -181,3 +186,26 @@ function runtimeExecuteLeaf(TestCase $test, Operation $operation): void
     }
     $test->postJson($path.'/complete', ['worker' => $worker, 'status' => 'succeeded', 'result' => $result])->assertOk();
 }
+
+it('refuses executor Node runtime composition before recording children or definition copies', function (string $peer, string $kind): void {
+    config($peer === 'services'
+        ? ['dependency_detection.services_node_id' => $this->node->id, 'operation_executor.worker_node_ids' => [$this->executor->id]]
+        : ['operation_executor.worker_node_ids' => [$this->node->id]]);
+    $restart = $kind === 'process.restart_instance';
+    if ($restart) {
+        Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $this->instance->id, 'name' => 'worker',
+            'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '300']], 'restart_policy' => 'never',
+            'status' => 'active', 'desired_state' => 'running', 'restart_on_deploy' => true]);
+    }
+    $this->root->update(['state' => [...($this->root->refresh()->state ?? []), 'child_intents' => [[
+        'key' => 'protected', 'kind' => $kind, 'node_id' => $this->node->id, 'input' => ['instance_id' => $this->instance->id],
+    ]]]]);
+
+    $this->postJson('/api/v1/operation-executor/'.$this->root->id.'/children', ['worker' => 'root', 'key' => 'protected'])
+        ->assertConflict()->assertJsonPath('error.code', str_starts_with($kind, 'process.') ? 'process.executor_dependency' : 'schedule.executor_dependency');
+
+    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('processes', $restart ? 1 : 0);
+    $this->assertDatabaseCount('schedules', 0);
+    expect($this->agents->calls)->toBe([]);
+})->with(['services', 'worker'])->with(['process.install_instance_definitions', 'schedule.install_instance_definitions', 'process.restart_instance']);

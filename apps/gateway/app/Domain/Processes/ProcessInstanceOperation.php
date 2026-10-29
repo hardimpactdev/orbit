@@ -50,6 +50,9 @@ final readonly class ProcessInstanceOperation implements OperationChildAdmission
                 $instance = $this->definitions->captureForClone($instance);
             }
             $plan = $this->plan($instance, $intent['kind']);
+            if ($plan !== []) {
+                app(ProcessSwampSafety::class)->assertAllowed($instance->node);
+            }
             $operation = $this->operations->execute($intent['kind'], 'instance', $id, $parent->node_id, ['instance_id' => $id], 'runtime', null);
             $operation->update(['state' => [...($operation->state ?? []), 'runtime_children' => $plan]]);
 
