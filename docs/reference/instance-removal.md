@@ -99,6 +99,8 @@ If the process is interrupted or cleanup cannot finish, `instance:destroy` accep
 
 Removal uses the same recorded steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
 
+A seeded worktree that is still `checkout_prepared` with no starting commit is also pre-activation when it retains its preparation ID and recorded seed repository and commit. Its pending or failed private Route may belong to the same cluster as the Instance Node. Removal still verifies the checkout receipt and exact single target; another cluster or target refuses.
+
 A task workspace that is still `reserved` with no starting commit is also pre-activation when its layout is `worktree`, `task_workspace_routed` is set (including `false`), and no registration request is recorded. Older reservations can lack a source preparation ID; the task workspace evidence still permits removal. Removal and group cancellation accept this interrupted state even without `failed_step` or `error_code`; `instance.remove_refused` does not apply merely because the layout changed. A reservation with neither a preparation ID nor task workspace evidence still refuses removal, even with `--force`. The ownership checks above still apply, and teardown is skipped.
 
 An unrouted task workspace is different once resolved: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.

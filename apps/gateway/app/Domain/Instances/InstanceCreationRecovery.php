@@ -16,11 +16,19 @@ final readonly class InstanceCreationRecovery
             $states[] = InstanceState::Removing;
         }
 
+        $preparedWorktree = $instance->source_layout === InstanceSourceLayout::Worktree->value
+            && $instance->source_prepare_id !== null
+            && $instance->seed_repository !== null && $instance->seed_commit !== null
+            && $instance->starting_commit === null
+            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared,
+                ...($removing ? [InstanceState::Removing] : [])], true);
+
         return $instance->placedOnAppDev()
             && in_array($instance->status, $states, true)
             && ($instance->failed_step !== null && $instance->error_code !== null
                 || ($instance->source_layout === InstanceSourceLayout::Checkout->value
                     && $instance->source_prepare_id !== null
+                    || $preparedWorktree
                     // Legacy task preparation can persist the worktree layout without a preparation ID.
                     || $instance->source_layout === InstanceSourceLayout::Worktree->value
                     && ($instance->status === InstanceState::Reserved
