@@ -141,12 +141,12 @@ final class TaskVmCommandContracts
         $kinds = [];
         $schema = static fn (string $action): array => ['type' => 'object', 'additionalProperties' => false,
             'required' => ['action', 'task_vm_id'], 'properties' => ['action' => ['const' => $action], 'task_vm_id' => ['type' => 'integer', 'minimum' => 1]]];
-        foreach (['lifecycle_intent' => 'intent', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'destroy_records' => 'forget'] as $verb => $action) {
+        foreach (['lifecycle_intent' => 'intent', 'prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
             $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
                 'runs' => [['transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'input_fields' => ['task_vm_id'],
                     'input_values' => ['action' => $action], 'input_schema' => $schema($action)]],
                 'completion_contract' => ['step' => str_replace('_', '-', $verb), 'transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'result' => ['ready' => true]],
-                'result_fields' => ['ready', 'node_id', 'error_code']];
+                'result_fields' => ['ready', 'node_id', 'enrolled', 'error_code']];
         }
         foreach (['create', 'start', 'stop', 'hard_stop', 'delete'] as $verb) {
             $inputSchema = $schema($verb);
@@ -166,11 +166,11 @@ final class TaskVmCommandContracts
             $children = [];
             foreach (['incus', 'upcloud'] as $provider) {
                 $effects = ['task_vm.lifecycle_intent', ...match ($verb) {
-                    'provision' => ['task_vm.'.$provider.'_create', 'task_vm.enroll_node', 'task_vm.prepare_runtime'],
-                    'enroll' => ['task_vm.enroll_node', 'task_vm.prepare_runtime'],
+                    'provision' => ['task_vm.'.$provider.'_create', 'task_vm.prepare_enrollment', 'task_vm.enroll_node', 'task_vm.prepare_runtime'],
+                    'enroll' => ['task_vm.prepare_enrollment', 'task_vm.enroll_node', 'task_vm.prepare_runtime'],
                     'resume' => ['task_vm.'.$provider.'_start', 'task_vm.runtime_confirm'],
                     'park' => ['task_vm.'.$provider.'_stop', 'task_vm.confirm_stopped'],
-                    default => ['task_vm.'.$provider.'_delete', 'task_vm.mark_destroying', 'task_vm.destroy_records'],
+                    default => ['task_vm.'.$provider.'_delete', 'task_vm.mark_destroying', 'task_vm.forget_workspaces', 'task_vm.destroy_records'],
                 }];
                 if ($provider === 'upcloud' && $verb === 'provision') {
                     $effects[] = 'task_vm.upcloud_start';
@@ -187,6 +187,10 @@ final class TaskVmCommandContracts
                     };
                     $children[$kind] = ['kind' => $kind, 'node_from' => $from];
                 }
+            }
+            if (in_array($verb, ['provision', 'enroll', 'destroy'], true)) {
+                $owner = $verb === 'destroy' ? 'node.remove' : 'node.add';
+                $children[$owner] = ['kind' => $owner, 'node_from' => 'intent.lifecycle_node_ids'];
             }
             if ($verb === 'destroy') {
                 $children['route.destroy'] = ['kind' => 'route.destroy', 'node_from' => 'intent.workspace_route_node_ids'];

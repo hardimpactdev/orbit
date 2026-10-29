@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -39,6 +40,13 @@ final readonly class AdmitTaskVmChildAction
             return app(StartTaskVmIncusEffectAction::class)->execute($vm, substr($kind, strlen('task_vm.incus_')));
         }
         if ($kind === 'task_vm.prepare_runtime') {
+            if (in_array($parent->kind, ['task_vm.provision', 'task_vm.enroll'], true)) {
+                $enrolled = app(OperationChildren::class)->requireSucceeded($parent, 'enroll');
+                if ($enrolled->kind !== 'task_vm.enroll_node') {
+                    throw new ResourceOperationException('operation.completion_unproven', 'Runtime preparation requires the proven enrollment projection.', 409);
+                }
+            }
+
             return app(StartTaskVmRuntimeOperationAction::class)->execute($parent->target_id) ?? throw new ResourceOperationException('operation.execution_forbidden', 'The VM no longer admits runtime preparation.', 422);
         }
         if ($kind === 'task_vm.resume') {

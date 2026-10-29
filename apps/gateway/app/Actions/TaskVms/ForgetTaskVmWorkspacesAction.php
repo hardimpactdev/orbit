@@ -56,6 +56,13 @@ final readonly class ForgetTaskVmWorkspacesAction
 
     public function executeProven(TaskVm $vm, Operation $parent): void
     {
+        $nodeId = $parent->input['guest_node_id'] ?? null;
+        if ($parent->kind !== 'task_vm.destroy' || $parent->target_type !== 'task_vm' || $parent->target_id !== $vm->id || $vm->node_id !== $nodeId) {
+            throw new TaskVmException('operation.completion_unproven', 'Workspace cleanup requires the recorded VM Node.', 409);
+        }
+        if ($nodeId === null) {
+            return;
+        }
         $routes = TaskVmInputs::workspaceRoutes($parent->input['workspace_routes'] ?? []);
         foreach ($routes as $route) {
             $proof = app(OperationChildren::class)->requireSucceeded($parent, 'workspace-route-'.$route['route_id']);

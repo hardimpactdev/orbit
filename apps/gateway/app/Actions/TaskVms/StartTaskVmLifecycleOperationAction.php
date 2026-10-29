@@ -7,6 +7,7 @@ namespace App\Actions\TaskVms;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmCapabilities;
@@ -98,7 +99,15 @@ final readonly class StartTaskVmLifecycleOperationAction
                 $vm->update(['stop_confirmed_at' => null, ...TaskVm::ForgetTopology]);
             }
 
-            return $this->start->execute($kind, 'task_vm', $vm->id, $vm->host_node_id ?? $gateway->id, $input, 'task-vm', null);
+            $operation = $this->start->execute($kind, 'task_vm', $vm->id, $vm->host_node_id ?? $gateway->id, $input, 'task-vm', null);
+            if ($verb === 'destroy' && $vm->node_id !== null && $operation->wasRecentlyCreated) {
+                app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'child_intents' => [
+                    ['key' => 'node-removal', 'kind' => 'node.remove', 'node_id' => $vm->node_id,
+                        'input' => ['caller_node_id' => $gateway->id, 'offline' => true, 'force' => true, 'deleted' => true]],
+                ]]]);
+            }
+
+            return $operation;
         });
     }
 

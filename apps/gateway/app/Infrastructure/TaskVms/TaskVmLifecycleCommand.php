@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
+use App\Actions\TaskVms\PrepareTaskVmEnrollmentAction;
 use App\Actions\TaskVms\StartTaskVmRuntimeOperationAction;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationTransport;
@@ -37,9 +38,11 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
 
         return match ($input['action'] ?? null) {
             'intent' => ['ready' => true],
+            'prepare-enrollment' => app(PrepareTaskVmEnrollmentAction::class)->execute($operation, $vm),
             'enroll' => $this->enroll($operation, $vm),
             'stopped' => $this->stopped($vm),
             'destroying' => $this->destroying($operation, $vm),
+            'forget-workspaces' => $this->forgetWorkspaces($operation, $vm),
             'forget' => $this->forget($operation, $vm),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'The VM intent primitive is not declared.', 422),
         };
@@ -48,11 +51,18 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
     /** @return array<string, mixed> */
     private function enroll(Operation $operation, TaskVm $vm): array
     {
-        $owner = $this->owner($operation, 'node-enrollment', 'node.add');
+        $parent = $this->parent($operation, $vm);
+        $this->owner($operation, 'prepare-enrollment', 'task_vm.prepare_enrollment');
+        $prepared = $parent->state['enrollment'] ?? [];
         $vm->refresh();
-        if ($owner->target_type !== 'node' || $owner->target_id !== $vm->node_id
-            || ($owner->result['enrolled'] ?? null) !== true || $vm->node?->status !== LifecycleStatus::Active) {
-            throw new ResourceOperationException('operation.completion_unproven', 'The VM has no proven owning enrollment child.', 409);
+        if (($prepared['node_id'] ?? null) !== $vm->node_id || $vm->node?->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('operation.completion_unproven', 'The reserved VM Node is not active.', 409);
+        }
+        if (($prepared['enrolled'] ?? false) !== true) {
+            $owner = $this->owner($operation, 'node-enrollment', 'node.add');
+            if ($owner->target_type !== 'node' || $owner->target_id !== $vm->node_id || ($owner->result['enrolled'] ?? null) !== true) {
+                throw new ResourceOperationException('operation.completion_unproven', 'The VM has no proven owning enrollment child.', 409);
+            }
         }
         $this->runtime->materialize($vm);
 
@@ -88,11 +98,9 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
         if ($this->provider->observe($vm) !== null) {
             throw new TaskVmException('task_vm.vm_still_present', 'The VM must be absent before its records are removed.');
         }
-        $parent = $operation->parent_operation_id === null ? null : Operation::query()->find($operation->parent_operation_id);
-        if ($parent === null || $parent->kind !== 'task_vm.destroy' || $parent->target_id !== $vm->id) {
-            throw new ResourceOperationException('operation.completion_unproven', 'Record cleanup requires its owning destruction Operation.', 409);
-        }
-        if ($vm->node_id !== null) {
+        $parent = $this->parent($operation, $vm);
+        $this->owner($operation, 'forget-workspaces', 'task_vm.forget_workspaces');
+        if ($parent->kind !== 'task_vm.destroy' || $vm->node_id !== null) {
             throw new ResourceOperationException('operation.completion_unproven', 'The owning Node removal must finish before record cleanup.', 409);
         }
         $nodeId = $parent->input['guest_node_id'] ?? null;
@@ -102,10 +110,32 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
                 throw new ResourceOperationException('operation.completion_unproven', 'The removal child names another Node.', 409);
             }
         }
-        $this->workspaces->executeProven($vm, $parent);
         $vm->update(['pi_token' => null, 'worker_stop_required' => false]);
 
         return ['ready' => true];
+    }
+
+    /** @return array{ready:bool} */
+    private function forgetWorkspaces(Operation $operation, TaskVm $vm): array
+    {
+        $parent = $this->parent($operation, $vm);
+        if ($parent->kind !== 'task_vm.destroy' || $this->provider->observe($vm) !== null) {
+            throw new ResourceOperationException('operation.completion_unproven', 'Workspace cleanup requires the absent VM and its destruction parent.', 409);
+        }
+        $this->owner($operation, 'provider-delete', 'task_vm.'.$vm->provider->value.'_delete');
+        $this->workspaces->executeProven($vm, $parent);
+
+        return ['ready' => true];
+    }
+
+    private function parent(Operation $operation, TaskVm $vm): Operation
+    {
+        $parent = Operation::query()->find($operation->parent_operation_id);
+        if ($parent === null || $parent->target_type !== 'task_vm' || $parent->target_id !== $vm->id) {
+            throw new ResourceOperationException('operation.completion_unproven', 'The VM projection requires its owning parent.', 409);
+        }
+
+        return $parent;
     }
 
     private function owner(Operation $operation, string $key, string $kind): Operation

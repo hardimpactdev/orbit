@@ -52,15 +52,22 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
         }
         $provider = ValidatedData::string($operation->input['provider'] ?? '');
         $required = match ($operation->kind) {
-            'task_vm.provision' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-create' => 'task_vm.'.$provider.'_create', ...($provider === 'upcloud' ? ['provider-start' => 'task_vm.upcloud_start'] : []), 'enroll' => 'task_vm.enroll_node', 'runtime' => 'task_vm.prepare_runtime'],
-            'task_vm.enroll' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'enroll' => 'task_vm.enroll_node', 'runtime' => 'task_vm.prepare_runtime'],
+            'task_vm.provision' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-create' => 'task_vm.'.$provider.'_create', ...($provider === 'upcloud' ? ['provider-start' => 'task_vm.upcloud_start'] : []), 'prepare-enrollment' => 'task_vm.prepare_enrollment', 'enroll' => 'task_vm.enroll_node', 'runtime' => 'task_vm.prepare_runtime'],
+            'task_vm.enroll' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'prepare-enrollment' => 'task_vm.prepare_enrollment', 'enroll' => 'task_vm.enroll_node', 'runtime' => 'task_vm.prepare_runtime'],
             'task_vm.resume' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-start' => 'task_vm.'.$provider.'_start', 'runtime-confirmed' => 'task_vm.runtime_confirm'],
             'task_vm.park' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-stop' => 'task_vm.'.$provider.'_stop', 'confirm-stopped' => 'task_vm.confirm_stopped'],
-            'task_vm.destroy' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'destroy-intent' => 'task_vm.mark_destroying', 'provider-delete' => 'task_vm.'.$provider.'_delete', 'forget-records' => 'task_vm.destroy_records', ...(($operation->input['key'] ?? null) === null ? [] : ['revoke-model-key' => 'task_vm.model_revoke'])],
+            'task_vm.destroy' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'destroy-intent' => 'task_vm.mark_destroying', 'provider-delete' => 'task_vm.'.$provider.'_delete', 'forget-workspaces' => 'task_vm.forget_workspaces', 'forget-records' => 'task_vm.destroy_records', ...(($operation->input['key'] ?? null) === null ? [] : ['revoke-model-key' => 'task_vm.model_revoke'])],
             'task_vm.prepare_runtime' => ['model-key' => 'task_vm.model_issue', 'pi-configure' => 'task_vm.configure_runtime', 'pi-process-owner' => 'process.create', 'runtime-confirmed' => 'task_vm.runtime_confirm'],
             'task_vm.upcloud_image_build' => ['delete-smoke' => 'task_vm.upcloud_image_delete_smoke'],
             default => [],
         };
+        if (in_array($operation->kind, ['task_vm.provision', 'task_vm.enroll'], true)
+            && ($operation->state['enrollment']['enrolled'] ?? false) !== true) {
+            $required['node-enrollment'] = 'node.add';
+        }
+        if ($operation->kind === 'task_vm.destroy' && ($operation->input['guest_node_id'] ?? null) !== null) {
+            $required['node-removal'] = 'node.remove';
+        }
         $proof = app(OperationChildren::class);
         if ($operation->kind === 'task_vm.destroy') {
             foreach (TaskVmInputs::workspaceRoutes($operation->input['workspace_routes'] ?? []) as $route) {
@@ -111,7 +118,7 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
         $children = array_values(array_filter($children, static fn (array $child): bool => in_array($child['kind'], $allowed, true)));
         $vm = $operation->target_type === 'task_vm' ? TaskVm::query()->find($operation->target_id) : null;
 
-        return ['intent' => ['guest_node_id' => $vm?->node_id, 'workspace_route_node_ids' => array_column(TaskVmInputs::workspaceRoutes($operation->input['workspace_routes'] ?? []), 'node_id')], 'children' => $children];
+        return ['intent' => ['guest_node_id' => $vm?->node_id, 'lifecycle_node_ids' => array_column($operation->state['child_intents'] ?? [], 'node_id'), 'workspace_route_node_ids' => array_column(TaskVmInputs::workspaceRoutes($operation->input['workspace_routes'] ?? []), 'node_id')], 'children' => $children];
     }
 
     /** @param array<string,mixed> $input
@@ -229,7 +236,7 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
                 $children[] = $this->child($key, 'task_vm.upcloud_hard_stop', ValidatedData::integer($input['gateway_node_id']), ['task_vm_id' => $vm->id, 'token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]]);
             }
         }
-        foreach (['lifecycle-intent' => 'lifecycle_intent', 'enroll' => 'enroll_node', 'confirm-stopped' => 'confirm_stopped', 'destroy-intent' => 'mark_destroying', 'forget-records' => 'destroy_records'] as $key => $verb) {
+        foreach (['lifecycle-intent' => 'lifecycle_intent', 'prepare-enrollment' => 'prepare_enrollment', 'enroll' => 'enroll_node', 'confirm-stopped' => 'confirm_stopped', 'destroy-intent' => 'mark_destroying', 'forget-workspaces' => 'forget_workspaces', 'forget-records' => 'destroy_records'] as $key => $verb) {
             $children[] = $this->child($key, 'task_vm.'.$verb, $node, ['task_vm_id' => $vm->id]);
         }
         if ($vm->node_id !== null) {
@@ -238,6 +245,12 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
                 $runtime = app(StartTaskVmRuntimeOperationAction::class)->snapshot($vm);
                 $children[] = $this->child('runtime', 'task_vm.prepare_runtime', $vm->node_id, $runtime);
                 $children[] = $this->child('runtime-confirmed', 'task_vm.runtime_confirm', $vm->node_id, ['task_vm_id' => $vm->id, 'sha256' => $runtime['sha256']]);
+            }
+        }
+        foreach ($operation->state['child_intents'] ?? [] as $intent) {
+            if (($intent['kind'] === 'node.add' && $this->known($operation, 'prepare-enrollment'))
+                || ($intent['kind'] === 'node.remove' && $this->known($operation, 'forget-workspaces'))) {
+                $children[] = $intent;
             }
         }
         $resume = [...$input, 'deadline_at' => min(ValidatedData::integer($input['deadline_at']), now()->addSeconds(540)->getTimestamp()), 'guest_node_id' => $vm->node_id];

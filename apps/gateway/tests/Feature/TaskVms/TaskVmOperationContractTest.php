@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\TaskVms\AdmitTaskVmChildAction;
 use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
 use App\Actions\TaskVms\StartTaskVmIncusEffectAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
@@ -23,6 +24,7 @@ use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -31,6 +33,7 @@ use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -347,7 +350,7 @@ it('retains workspace records until the exact owning Route child succeeds', func
     $vm->update(['group_id' => $group->id]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $vm->node_id, 'name' => 'workspace', 'task_workspace_owner_id' => $group->id,
         'branch' => 'task-work', 'checkout_path' => '/home/orbit/apps/cleanup/task-work', 'root' => 'public', 'status' => 'reserved']);
-    $parent->update(['kind' => 'task_vm.destroy', 'input' => [...$parent->input, 'workspace_routes' => [['route_id' => 321, 'node_id' => $vm->node_id, 'instance_id' => $instance->id]]]]);
+    $parent->update(['kind' => 'task_vm.destroy', 'input' => [...$parent->input, 'guest_node_id' => $vm->node_id, 'workspace_routes' => [['route_id' => 321, 'node_id' => $vm->node_id, 'instance_id' => $instance->id]]]]);
     expect(fn () => app(ForgetTaskVmWorkspacesAction::class)->executeProven($vm, $parent))
         ->toThrow(ResourceOperationException::class, 'This parent has no child with that key.');
     $this->assertDatabaseHas('instances', ['id' => $instance->id]);
@@ -368,4 +371,196 @@ it('refuses enrollment projection from an unrelated terminal Node Operation', fu
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.completion_unproven'));
     expect($vm->fresh()->node_id)->toBeNull();
     expect($owner->fresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+function taskVmEnrollmentParent(): Operation
+{
+    $parent = taskVmParkParent();
+    TaskVm::query()->whereKey($parent->target_id)->update(['state' => 'provisioning']);
+    $parent->update(['kind' => 'task_vm.enroll']);
+
+    return $parent;
+}
+
+function taskVmStampedChild(Operation $parent, string $key): Operation
+{
+    return DB::transaction(fn () => app(OperationChildren::class)->admit($parent->refresh(), ['key' => $key]))['operation'];
+}
+
+function taskVmPrepareEnrollment(Operation $parent): array
+{
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $provider = Mockery::mock(TaskVmProvider::class);
+    $provider->shouldReceive('observe')->once()->andReturn(new VmObservation(true, '192.0.2.90', $vm->image_fingerprint));
+    $provider->shouldReceive('bootstrapReady')->once()->andReturnTrue();
+    $provider->shouldReceive('sshHostFingerprint')->once()->andReturn('SHA256:'.base64_encode(str_repeat('k', 32)));
+    app()->instance(TaskVmProvider::class, $provider);
+    $effect = taskVmStampedChild($parent, 'prepare-enrollment');
+    $result = app(TaskVmLifecycleCommand::class)->run($effect, [], ['task_vm_id' => $vm->id, 'action' => 'prepare-enrollment']);
+    $effect->update(['status' => 'succeeded', 'result' => $result]);
+
+    return $result;
+}
+
+it('reserves and replays exact internal Node enrollment intent without executing a Node', function (): void {
+    $parent = taskVmEnrollmentParent();
+    $before = Node::query()->count();
+    $result = taskVmPrepareEnrollment($parent);
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    expect($result)->toBe(['ready' => true, 'node_id' => $vm->node_id, 'enrolled' => false]);
+    expect(Node::query()->count())->toBe($before + 1);
+    expect($vm->node->ssh_jump_node_id)->toBe($vm->host_node_id);
+    $intent = $parent->fresh()->state['child_intents'][0];
+    expect($intent['input']['taskVmId'])->toBe($vm->id);
+    expect($intent['input']['sshJumpNodeId'])->toBe($vm->host_node_id);
+    expect($intent['input']['roles'])->toBe(['app-dev']);
+    expect($intent['input']['expectedSshHostFingerprint'])->toBe('SHA256:'.base64_encode(str_repeat('k', 32)));
+    expect($intent['input'])->not->toHaveKey('effect_key');
+    $effect = $parent->children()->where('child_key', 'prepare-enrollment')->sole();
+    expect(app(TaskVmLifecycleCommand::class)->run($effect, [], ['task_vm_id' => $vm->id, 'action' => 'prepare-enrollment']))->toBe($result);
+    expect(Node::query()->count())->toBe($before + 1);
+    $descriptor = array_find(app(TaskVmFamilyChildren::class)->childContext($parent->fresh())['children'], static fn (array $entry): bool => $entry['key'] === 'node-enrollment');
+    expect($descriptor)->toBe($intent);
+    expect(fn () => app(OperationChildren::class)->admit($parent->fresh(), ['key' => 'node-enrollment', 'node_id' => $vm->host_node_id]))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.idempotency_conflict'));
+});
+
+it('refuses an unrelated Node with the VM name before recording a reservation', function (): void {
+    $parent = taskVmEnrollmentParent();
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.99']);
+    $provider = Mockery::mock(TaskVmProvider::class);
+    $provider->shouldReceive('observe')->once()->andReturn(new VmObservation(true, '192.0.2.90', $vm->image_fingerprint));
+    $provider->shouldReceive('bootstrapReady')->once()->andReturnTrue();
+    $provider->shouldNotReceive('sshHostFingerprint');
+    app()->instance(TaskVmProvider::class, $provider);
+    $effect = taskVmStampedChild($parent, 'prepare-enrollment');
+    expect(fn () => app(TaskVmLifecycleCommand::class)->run($effect, [], ['task_vm_id' => $vm->id, 'action' => 'prepare-enrollment']))
+        ->toThrow(fn (TaskVmException $error) => expect($error->errorCode)->toBe('task_vm.node_conflict'));
+    expect($vm->fresh()->node_id)->toBeNull();
+    expect($parent->fresh()->state)->not->toHaveKey('enrollment');
+});
+
+it('refuses runtime child admission before enrollment proof even with runtime records present', function (): void {
+    $parent = taskVmEnrollmentParent();
+    expect(fn () => app(AdmitTaskVmChildAction::class)->execute($parent, [
+        'kind' => 'task_vm.prepare_runtime', 'node_id' => $parent->node_id, 'input' => [],
+    ]))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_unproven'));
+});
+
+it('admits the reserved Node through its real owning adapter and replays the stamped child', function (): void {
+    if (app(OperationKinds::class)->definition('node.add') === null) {
+        $this->markTestSkipped('Requires the owning Node parent release.');
+    }
+    $parent = taskVmEnrollmentParent();
+    $cluster = Cluster::query()->create(['name' => 'Task development', 'tld' => 'task.test', 'state' => 'active']);
+    TaskVmSettingsBuilder::bind(['devClusterId' => $cluster->id]);
+    taskVmPrepareEnrollment($parent);
+    $child = taskVmStampedChild($parent, 'node-enrollment');
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    expect($child->kind)->toBe('node.add');
+    expect($child->target_id)->toBe($vm->node_id);
+    expect($child->node_id)->toBe($vm->node_id);
+    expect($child->state['enrollment_intent']['task_vm_id'])->toBe($vm->id);
+    expect(taskVmStampedChild($parent, 'node-enrollment')->id)->toBe($child->id);
+    expect($vm->node->status)->toBe(LifecycleStatus::Provisioning);
+});
+
+it('never forgets workspaces through a null Node identity', function (): void {
+    $parent = taskVmParkParent();
+    $parent->update(['kind' => 'task_vm.destroy']);
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $vm->update(['state' => 'destroying']);
+    $project = Project::query()->create(['name' => 'Unbound', 'slug' => 'unbound', 'repository_url' => 'https://github.com/example/unbound.git']);
+    $instance = Instance::withoutEvents(fn () => Instance::query()->create(['project_id' => $project->id, 'node_id' => $vm->host_node_id, 'name' => 'unbound', 'checkout_path' => '/home/orbit/apps/unbound/main', 'root' => 'public', 'branch' => 'main', 'status' => 'reserved']));
+    app(ForgetTaskVmWorkspacesAction::class)->executeProven($vm, $parent);
+    $this->assertModelExists($instance);
+});
+
+it('gates Node removal on workspace cleanup and preserves its recorded identity after Node deletion', function (): void {
+    $parent = taskVmParkParent();
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90']);
+    $vm->update(['state' => 'destroying', 'node_id' => $node->id]);
+    $intent = ['key' => 'node-removal', 'kind' => 'node.remove', 'node_id' => $node->id,
+        'input' => ['caller_node_id' => $parent->input['gateway_node_id'], 'offline' => true, 'force' => true, 'deleted' => true]];
+    $parent->update(['kind' => 'task_vm.destroy', 'input' => [...$parent->input, 'guest_node_id' => $node->id], 'state' => [...$parent->state, 'child_intents' => [$intent]]]);
+    expect(fn () => taskVmStampedChild($parent, 'node-removal'))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_forbidden'));
+    $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
+    $cleanup->update(['status' => 'succeeded', 'result' => ['ready' => true]]);
+    if (app(OperationKinds::class)->definition('node.remove') !== null) {
+        $removal = taskVmStampedChild($parent, 'node-removal');
+        expect($removal->node_id)->toBe($node->id);
+        expect($removal->child_admission['intent'])->toBe($intent);
+        expect(taskVmStampedChild($parent, 'node-removal')->id)->toBe($removal->id);
+    }
+    $node->delete();
+    $plan = app(TaskVmFamilyChildren::class)->childContext($parent->fresh());
+    expect($plan['intent']['lifecycle_node_ids'])->toBe([$node->id]);
+    expect(array_find($plan['children'], static fn (array $child): bool => $child['key'] === 'node-removal'))->toBe($intent);
+});
+
+it('rejects unproven boot observations before reserving a Node', function (string $refusal): void {
+    $parent = taskVmEnrollmentParent();
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $provider = Mockery::mock(TaskVmProvider::class);
+    $provider->shouldReceive('observe')->once()->andReturn(match ($refusal) {
+        'missing' => null,
+        'stopped' => new VmObservation(false, '192.0.2.90', $vm->image_fingerprint),
+        'unsettled' => new VmObservation(true, '192.0.2.90', $vm->image_fingerprint, false),
+        'address' => new VmObservation(true, null, $vm->image_fingerprint),
+        'image' => new VmObservation(true, '192.0.2.90', str_repeat('c', 64)),
+        default => new VmObservation(true, '192.0.2.90', $vm->image_fingerprint),
+    });
+    if (in_array($refusal, ['image', 'bootstrap'], true)) {
+        $provider->shouldReceive('bootstrapReady')->once()->andReturn($refusal !== 'bootstrap');
+    }
+    $provider->shouldNotReceive('sshHostFingerprint');
+    app()->instance(TaskVmProvider::class, $provider);
+    $effect = taskVmStampedChild($parent, 'prepare-enrollment');
+    expect(fn () => app(TaskVmLifecycleCommand::class)->run($effect, [], ['task_vm_id' => $vm->id, 'action' => 'prepare-enrollment']))
+        ->toThrow(fn (TaskVmException $error) => expect($error->errorCode)->toBe($refusal === 'image' ? 'task_vm.image_mismatch' : 'task_vm.not_settled'));
+    expect($vm->fresh()->node_id)->toBeNull();
+    $this->assertDatabaseMissing('nodes', ['name' => $vm->name]);
+})->with(['missing', 'stopped', 'unsettled', 'address', 'image', 'bootstrap']);
+
+it('records an already active VM Node and omits redundant Node enrollment intent', function (): void {
+    $parent = taskVmEnrollmentParent();
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'status' => 'active', 'public_ssh_host' => '192.0.2.90']);
+    $vm->update(['node_id' => $node->id]);
+    $result = taskVmPrepareEnrollment($parent);
+    expect($result['enrolled'])->toBeTrue();
+    expect($parent->fresh()->state['child_intents'])->toBe([]);
+    expect($parent->fresh()->state['enrollment']['node_id'])->toBe($node->id);
+});
+
+it('proves provider deletion and workspace cleanup before admitting owning Node removal', function (): void {
+    $parent = taskVmParkParent();
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90']);
+    $vm->update(['state' => 'destroying', 'node_id' => $node->id]);
+    $intent = ['key' => 'node-removal', 'kind' => 'node.remove', 'node_id' => $node->id,
+        'input' => ['caller_node_id' => $parent->input['gateway_node_id'], 'offline' => true, 'force' => true, 'deleted' => true]];
+    $parent->update(['kind' => 'task_vm.destroy', 'input' => [...$parent->input, 'guest_node_id' => $node->id], 'state' => [...$parent->state, 'child_intents' => [$intent]]]);
+    $project = Project::query()->create(['name' => 'Reserved cleanup', 'slug' => 'reserved-cleanup', 'repository_url' => 'https://github.com/example/cleanup.git']);
+    $instance = Instance::withoutEvents(fn () => Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'workspace', 'checkout_path' => '/home/orbit/apps/cleanup/main', 'root' => 'public', 'branch' => 'main', 'status' => 'reserved']));
+    $provider = Mockery::mock(TaskVmProvider::class);
+    $provider->shouldReceive('observe')->andReturnNull();
+    app()->instance(TaskVmProvider::class, $provider);
+    $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
+    expect(fn () => app(TaskVmLifecycleCommand::class)->run($cleanup, [], ['task_vm_id' => $vm->id, 'action' => 'forget-workspaces']))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_unproven'));
+    $this->assertModelExists($instance);
+    $deletion = taskVmStampedChild($parent, 'provider-delete');
+    $deletion->update(['status' => 'succeeded', 'result' => ['ready' => true]]);
+    $result = app(TaskVmLifecycleCommand::class)->run($cleanup, [], ['task_vm_id' => $vm->id, 'action' => 'forget-workspaces']);
+    $cleanup->update(['status' => 'succeeded', 'result' => $result]);
+    $this->assertModelMissing($instance);
+    $this->assertModelExists($node);
+    if (app(OperationKinds::class)->definition('node.remove') !== null) {
+        $removal = taskVmStampedChild($parent, 'node-removal');
+        expect($removal->child_admission['intent'])->toBe($intent);
+    }
 });
