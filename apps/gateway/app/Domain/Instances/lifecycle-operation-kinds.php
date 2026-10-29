@@ -21,6 +21,13 @@ return (static function (): array {
             $agent('instance.inspect-development-profile'), $url,
         ],
         'rename' => [$agent('instance.inspect-development-source')],
+        'clone' => [
+            $agent('instance.prepare-production-user'),
+            $agent('instance.prepare-production-source', $git),
+            $agent('instance.resolve-production-source', $git),
+            $agent('instance.inspect-production-profile'),
+            $agent('instance.grant-production-caddy-access'),
+        ],
         'register' => [
             $agent('instance.relocate-registration-source'),
             $agent('instance.laravel-registration-receipt'),
@@ -35,6 +42,7 @@ return (static function (): array {
     $children = [
         'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
         'rename' => ['route.update'],
+        'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.instance_runtime', 'schedule.instance_runtime', 'route.converge'],
         'register' => ['route.converge', 'instance.run_steps'],
         'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];

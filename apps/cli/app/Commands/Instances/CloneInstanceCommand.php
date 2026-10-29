@@ -4,21 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
-use App\Support\Console\ProgressState;
-use App\Support\GatewayFailureRenderer;
-use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
-use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
-use Orbit\Sdk\Responses\Routes\RouteResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CloneInstanceCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'instance:clone
         {candidate : Numeric candidate Instance ID}
@@ -27,6 +23,7 @@ final class CloneInstanceCommand extends GatewayCommand
         {--preview-name= : Required preview name to combine with the production Node TLD}
         {--branch= : Optional target branch; omission inherits the candidate branch}
         {--sqlite-source-path= : Optional SQLite database path on the candidate}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -76,82 +73,18 @@ HELP;
             return self::FAILURE;
         }
 
-        $progress = $this->progressDisplay('Clone Instance');
-        $progress->admit('clone', 'Clone source', 'Cloning source', 'Cloned source');
-        $progress->admit('releases', 'Read selected release', 'Loading selected release', 'Loaded selected release');
-        $instance = null;
-        try {
-            [$instance, $route] = $progress->during('clone', /**
-             * @return array{InstanceResponse, RouteResponse}
-             */ function () use ($connector, $candidateId, $nodeId, $name, $previewName): array {
-                $response = $this->sendOrThrow($connector, new CloneInstanceRequest(
-                    candidateId: $candidateId,
-                    nodeId: $nodeId,
-                    name: $name,
-                    previewName: $previewName,
-                    branch: $this->stringOption('branch'),
-                    sqliteSourcePath: $this->stringOption('sqlite-source-path'),
-                ), InstanceResponse::class);
-
-                return [$response, $this->previewRoute($response)];
-            });
-            $progress->complete('clone', ProgressState::Success);
-            $releases = $progress->during('releases', fn (): object => $this->sendOrThrow(
-                $connector, new ListInstanceReleasesRequest($instance->id), DeploymentReleasesResponse::class,
-            ));
-        } catch (GatewayApiException $exception) {
-            if ($instance instanceof InstanceResponse) {
-                $this->writeHumanMessage("Instance [{$instance->name}] (#{$instance->id}) was cloned; the selected release could not be read. Clone request ID: {$instance->requestId}");
-            }
-
-            return $this->renderGatewayFailure(
-                $exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId(),
-                details: GatewayFailureRenderer::safeDetails($exception->errorCode() ?? 'gateway.request_failed', $exception->details()),
-            );
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
+            return self::FAILURE;
         }
-        $progress->complete('releases', ProgressState::Success);
-        $progress->finish('Instance cloned.');
+        $operation = $this->send($connector, new CloneInstanceRequest(
+            candidateId: $candidateId, nodeId: $nodeId, name: $name, previewName: $previewName,
+            branch: $this->stringOption('branch'), sqliteSourcePath: $this->stringOption('sqlite-source-path'),
+            idempotencyKey: $this->stringOption('idempotency-key'),
+        ), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson([
-                'target_id' => $instance->id,
-                'configured_branch' => $instance->selectedBranch,
-                'preview_domain' => $route->domain,
-                'selected_release' => $releases->selectedRelease,
-                'warnings' => $instance->warnings,
-                'request_ids' => [
-                    'clone' => $instance->requestId,
-                    'releases' => $releases->requestId,
-                ],
-            ]);
-
-            return self::SUCCESS;
-        }
-
-        foreach ($instance->warnings as $warning) {
-            ConsoleWriter::write($this->output, $this->humanRenderer()->warning('Warning: '.$warning));
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
-            'Target ID' => $instance->id,
-            'Configured branch' => $instance->selectedBranch,
-            'Preview domain' => $route->domain,
-            'Selected release' => $releases->selectedRelease,
-            'Clone request ID' => $instance->requestId,
-            'Release request ID' => $releases->requestId,
-        ]));
-
-        return self::SUCCESS;
-    }
-
-    private function previewRoute(InstanceResponse $response): RouteResponse
-    {
-        $route = $response->route;
-
-        if ($route === null || $route->domain === '') {
-            throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
-        }
-
-        return $route;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Clone Instance', 'Instance clone')
+            : self::FAILURE;
     }
 }

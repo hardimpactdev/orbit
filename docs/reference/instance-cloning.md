@@ -2,11 +2,11 @@
 title: "Instance cloning"
 description: "How the Gateway creates a prepared production Instance from a development or production candidate, with an optional SQLite seed."
 covers:
-  - apps/gateway/app/Actions/Instances/{CloneInstanceAction,CloneInstanceEnvironmentAction,InstantiateProjectRuntimeDefinitionsAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceCloneCandidateInspector,CloneCandidateSource,ProductionCloneRouteProjector,ProductionInstanceProvisioner,ProductionInstanceSourceLifecycle}.php
+  - apps/gateway/app/Actions/Instances/{StartInstanceCloneAction,InstantiateProjectRuntimeDefinitionsAction}.php
+  - apps/gateway/app/Domain/Instances/{InstanceCloneCandidateInspector,CloneCandidateSource,ProductionCloneRouteProjector,ProductionInstanceProvisioner,ProductionInstanceSourceLifecycle,InstanceSqliteSeedIntent}.php
   - apps/gateway/app/Domain/Instances/Sqlite/**
   - apps/gateway/app/Infrastructure/*/NativeProduction*Provisioner.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceCloneCandidateInspector,RemoteInstanceSqliteSeeder,ProtectedSqliteSnapshotTransfer,RemoteProductionInstanceSourceLifecycle}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceCloneCandidateInspector,ProtectedSqliteSnapshotTransfer,RemoteProductionInstanceSourceLifecycle}.php
   - apps/gateway/app/Http/{Controllers/Api/InstanceClonesController.php,Requests/Instances/CloneInstanceRequest.php}
   - apps/cli/app/Commands/Instances/CloneInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/CloneInstanceRequest.php
@@ -14,7 +14,7 @@ covers:
 
 # Instance cloning
 
-Every production Instance starts as a clone. The Gateway copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code. Provisioning creates the production PHP runtime through the native provisioner and projects its Route through the shared native Route projector.
+Every production Instance starts as a clone. The Gateway validates the candidate and reserves the target. Swamp copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code. Provisioning composes the Route, environment, database, and runtime families as child Operations. Every Node effect uses the target Node recorded on its Operation.
 
 `instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
 
@@ -34,7 +34,7 @@ Name the candidate, the destination Node, the new Instance name, and a preview n
 orbit instance:clone <candidate> <node> <name> --preview-name=shop.com [--branch=BRANCH] [--sqlite-source-path=PATH]
 ```
 
-The CLI calls `POST /api/v1/instances/{candidate}/clone`.
+The CLI calls `POST /api/v1/instances/{candidate}/clone`. The API returns HTTP 202 with the admitted Operation. The CLI follows its steps and returns the final Operation receipt. An optional `Idempotency-Key` reuses the admission after a lost response.
 
 | Input | Meaning |
 | --- | --- |
@@ -106,6 +106,8 @@ The [Node agent](/reference/node-agent#commands) does the work on each Node as r
 The Gateway transfers the snapshot with `instance.read-sqlite-snapshot` and `instance.receive-sqlite-snapshot` through the agent runner. These account commands accept only managed snapshot paths and verify the SQLite header, exact size, and SHA-256. Binary framing bounds each snapshot to 1 TiB. Upload preserves the prepared file's inode, so the target's ownership receipt remains valid. No general file upload or `scp` path handles database contents.
 
 Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
+
+The lifecycle parent records a `database.sqlite_seed` child through the database family's preparation action. Its input and both Node placements come from the recorded clone intent. Swamp drives that child and its export and cleanup children. The Gateway attaches the database only after the exact seed child succeeds, or after an earlier clone request recorded the completed seed checkpoint.
 
 Orbit registers a SQLite connection named `<project>-<instance>` (shortened with a stable hash when it exceeds 63 characters), owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
@@ -30,6 +31,8 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
 })->with([
     'create' => [new CreateInstanceRequest(50, 9, 'proof', root: 'server/web/public', idempotencyKey: 'lifecycle-proof'),
         'instance.create', '/api/v1/instances', ['project_id' => 50, 'node_id' => 9, 'name' => 'proof', 'root' => 'server/web/public']],
+    'clone' => [new CloneInstanceRequest(501, 10, 'prod', 'preview', idempotencyKey: 'lifecycle-proof'),
+        'instance.clone', '/api/v1/instances/501/clone', ['node_id' => 10, 'name' => 'prod', 'preview_name' => 'preview']],
     'register' => [new RegisterInstanceRequest('/work/project', setup: true, idempotencyKey: 'lifecycle-proof'),
         'instance.register', '/api/v1/instances/register', ['source_path' => '/work/project', 'setup' => true]],
     'rename' => [new RenameInstanceRequest(501, 'feature', idempotencyKey: 'lifecycle-proof'),
