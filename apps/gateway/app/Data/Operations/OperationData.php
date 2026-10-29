@@ -38,6 +38,8 @@ final class OperationData extends Data
         public ?string $startedAt,
         public ?string $finishedAt,
         public ?int $pollAfterSeconds,
+        /** @var array{error_code:string}|null */
+        public ?array $assistance = null,
     ) {}
 
     public static function fromModel(Operation $operation, ?string $callerNodeName = null): self
@@ -63,6 +65,15 @@ final class OperationData extends Data
             startedAt: $operation->started_at?->format(DateTimeInterface::ATOM),
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),
             pollAfterSeconds: OperationPoll::afterSeconds($operation),
+            assistance: self::assistance($operation),
         );
     }
+    /** @return array{error_code:string}|null */
+    private static function assistance(Operation $operation): ?array
+    {
+        $code = $operation->state['executor_assistance']['error_code'] ?? null;
+        return is_string($code) && in_array($code, ['operation.child_unproven', 'operation.kind_unavailable'], true)
+            ? ['error_code' => $code] : null;
+    }
+
 }

@@ -148,7 +148,7 @@ final readonly class OperationKinds
             self::assertKeys($kind, 'children', ValidatedData::object($child), ['kind', 'node_from', 'bind']);
             if (! is_string($child['kind'] ?? null) || preg_match(self::NamePattern, $child['kind']) !== 1
                 || ! is_string($child['node_from'] ?? null)
-                || preg_match('/\Astate\.(?:steps(?:\.|$)|executor_)/D', $child['node_from']) === 1
+                || (str_starts_with($child['node_from'], 'state.') && preg_match('/\Astate\.(?:child_intents|integration_intent|route_plan|role_intent)(?:\.|$)/D', $child['node_from']) !== 1)
                 || preg_match('/\A(?:operation\.node_id|(?:input|state|intent)\.[a-zA-Z0-9_.-]+)\z/D', $child['node_from']) !== 1) {
                 throw new LogicException("Operation kind [{$kind}] needs a bound child kind and Node relation.");
             }

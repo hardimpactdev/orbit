@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Domain\Operations\OperationEffectTransport;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Operations\OperationTransportInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -25,7 +26,7 @@ final readonly class OperationAgentTransport implements OperationEffectTransport
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
-        return $this->runner->run(Node::query()->findOrFail($operation->node_id), $run['name'], $this->effectful($operation, $run) ? AgentEffectReceipts::input($run, $input) : $input);
+        return $this->runner->run((Node::query()->find($operation->node_id) ?? throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409)), $run['name'], $this->effectful($operation, $run) ? AgentEffectReceipts::input($run, $input) : $input);
     }
 
     public function effectful(Operation $operation, array $run): bool
@@ -37,7 +38,7 @@ final readonly class OperationAgentTransport implements OperationEffectTransport
 
     public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
-        $node = Node::query()->findOrFail($operation->node_id);
+        $node = (Node::query()->find($operation->node_id) ?? throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409));
         $command = $this->contract->command($run['name']);
         $owner = $command->privilege($node->platform) === 'account' ? $node->user : null;
 

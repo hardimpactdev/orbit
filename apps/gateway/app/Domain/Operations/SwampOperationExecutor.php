@@ -8,10 +8,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Models\Operation;
+use App\Models\Node;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Closure;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -39,7 +40,15 @@ final readonly class SwampOperationExecutor
         return DB::transaction(function () use ($kind, $worker, $nodeId, $operationId): ?Operation {
             $operation = Operation::query()->where('kind', $kind)->when($operationId !== null, fn ($query) => $query->whereKey($operationId))->where('status', OperationStatus::Running->value)
                 ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
-            $operation ??= $this->claimCandidates($kind, $operationId, true)->first();
+            if ($operation === null) {
+                foreach ($this->claimCandidates($kind, $operationId, true) as $candidate) {
+                    $locked = Operation::query()->whereKey($candidate->id)->lockForUpdate()->first();
+                    if ($locked !== null && $this->eligible($locked, true)) {
+                        $operation = $locked;
+                        break;
+                    }
+                }
+            }
             if ($operation === null) {
                 return null;
             }
@@ -69,15 +78,22 @@ final readonly class SwampOperationExecutor
                 continue;
             }
             $candidates = $this->claimCandidates($kind);
-            $oldest = $candidates->sortBy('created_at')->first()?->created_at;
-            $kinds[] = ['kind' => $kind, 'claimable' => $candidates->count(), 'oldest_at' => $oldest?->toISOString()];
+            $oldest = null;
+            $count = 0;
+            foreach ($candidates as $candidate) {
+                $count++;
+                if ($candidate->created_at !== null && ($oldest === null || $candidate->created_at->lessThan($oldest))) {
+                    $oldest = $candidate->created_at;
+                }
+            }
+            $kinds[] = ['kind' => $kind, 'claimable' => $count, 'oldest_at' => $oldest?->toISOString()];
         }
 
         return $kinds;
     }
 
-    /** @return Collection<int,Operation> */
-    private function claimCandidates(string $kind, ?int $operationId = null, bool $forClaim = false): Collection
+    /** @return LazyCollection<int,Operation> */
+    private function claimCandidates(string $kind, ?int $operationId = null, bool $forClaim = false): LazyCollection
     {
         return Operation::query()->where('kind', $kind)
             ->when($operationId !== null, fn ($query) => $query->whereKey($operationId))
@@ -87,8 +103,18 @@ final readonly class SwampOperationExecutor
                         $query->where('status', OperationStatus::Running->value)
                             ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
                     });
-            })->orderBy('id')->when($forClaim, fn ($query) => $query->lockForUpdate())->get()
-            ->filter(fn (Operation $candidate): bool => $candidate->status !== OperationStatus::Waiting || app(OperationChildren::class)->ready($candidate, $forClaim))->values();
+            })->orderBy('id')->cursor()
+            ->filter(fn (Operation $candidate): bool => $this->eligible($candidate, $forClaim))->values();
+    }
+
+    private function eligible(Operation $candidate, bool $flagAssistance): bool
+    {
+        return match ($candidate->status) {
+            OperationStatus::Queued => true,
+            OperationStatus::Running => $candidate->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds)) ?? false,
+            OperationStatus::Waiting => app(OperationChildren::class)->ready($candidate, $flagAssistance),
+            default => false,
+        };
     }
 
     public function heartbeat(Operation $operation, string $worker, int $nodeId): Operation
@@ -302,6 +328,7 @@ final readonly class SwampOperationExecutor
 
                 return;
             }
+            $this->assertTargetExists($operation, $data['transport']);
             try {
                 $target = $transport->receipt($operation, $run, $data['input']);
             } catch (AgentCommandRefused $exception) {
@@ -341,6 +368,13 @@ final readonly class SwampOperationExecutor
         }
 
         return ['nonce' => $identity['nonce'], 'created_at' => $identity['created_at']];
+    }
+
+    private function assertTargetExists(Operation $operation, string $transport): void
+    {
+        if ($transport !== 'gateway' && ! Node::query()->whereKey(app(OperationChildren::class)->nodeId($operation))->exists()) {
+            throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409);
+        }
     }
 
     private function effectKey(Operation $operation, string $key): string
@@ -438,6 +472,7 @@ final readonly class SwampOperationExecutor
             if (! $this->contract->cancellationAllowsRun($operation)) {
                 $result = ['error_code' => 'operation.cancelled'];
             } else {
+                $this->assertTargetExists($operation, $data['transport']);
                 $hydrated = $this->secrets->hydrate($operation, $data['key'], $data['input'], $spec['secrets'] ?? []);
                 $values = $hydrated['values'];
                 $input = $hydrated['input'];

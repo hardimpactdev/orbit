@@ -8,12 +8,17 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Illuminate\Support\Sleep;
 use InvalidArgumentException;
+use LogicException;
+use Illuminate\Support\Facades\DB;
 
 /** Bounded, sleeping reads for retained Gateway callers. Never executes or cancels work. */
 final readonly class AwaitOperation
 {
     public function execute(Operation $operation, int $timeoutSeconds = 30): Operation
     {
+        if (DB::transactionLevel() > 0) {
+            throw new LogicException('AwaitOperation must run after its admission transaction commits.');
+        }
         if ($timeoutSeconds < 1 || $timeoutSeconds > 120) {
             throw new InvalidArgumentException('An Operation wait must be between 1 and 120 seconds.');
         }

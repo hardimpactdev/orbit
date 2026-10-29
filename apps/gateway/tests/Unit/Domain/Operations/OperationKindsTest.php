@@ -67,7 +67,7 @@ it('refuses child Node relations from Swamp-written state', function (string $pa
     $definition = OperationKinds::definitions()['firewall.allow'];
     $definition['children'] = [['kind' => 'test.child', 'node_from' => $path]];
     expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
-})->with(['state.steps.inspection.node_id', 'state.executor_runs.inspect.result.node_id', 'state.executor_reentry.children.0.node_id']);
+})->with(['state.steps.inspection.node_id', 'state.executor_runs.inspect.result.node_id', 'state.executor_reentry.children.0.node_id', 'state.unknown_plan.node_id']);
 
 it('requires compensation kinds to be declared with a bounded child boundary key', function (string $case): void {
     $definition = OperationKinds::definitions()['firewall.allow'];

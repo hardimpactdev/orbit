@@ -96,7 +96,7 @@ final class OperationExecutorController extends Controller
         $tuples = is_array($wait['children'] ?? null) ? $wait['children'] : [];
 
         return [...OperationsController::withSteps($operation, null, null),
-            'node_id' => $operation->node_id,
+            'node_id' => app(OperationChildren::class)->nodeId($operation),
             'parent_operation_id' => $operation->parent_operation_id, 'child_key' => $operation->child_key,
             'worker' => $operation->worker,
             'lease_seconds' => $operation->status === OperationStatus::Waiting ? 0 : SwampOperationExecutor::LeaseSeconds,

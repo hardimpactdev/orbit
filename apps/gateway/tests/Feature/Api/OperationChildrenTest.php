@@ -52,7 +52,7 @@ final class ChildKitFamily implements OperationCompletion, OperationFamilyChildr
 
     public function cancellationBoundary(Operation $operation): ?array
     {
-        return null;
+        return $operation->input['cancellation_boundary'] ?? null;
     }
 
     public function complete(Operation $operation, OperationOutcome $outcome): void {}
@@ -228,9 +228,7 @@ it('uses the normal independent target hold for a child on another target', func
 it('refuses tampered admitted input before child run and before parent proof', function (): void {
     $child = childKitAdmit($this);
     $child->update(['input' => [...$child->input, 'removed_node_id' => 99]]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child'])->assertOk();
-    $this->postJson('/api/v1/operation-executor/'.$child->id.'/run', ['worker' => 'child', 'key' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect', 'input' => ['removed_node_id' => 99]])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child'])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
     expect($this->command->calls)->toBe(0);
     $child->update(['status' => OperationStatus::Succeeded]);
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded'])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
@@ -299,7 +297,7 @@ it('keeps a cancelled Swamp waiting parent held until its children settle', func
     expect($this->parent->refresh()->status)->toBe(OperationStatus::Waiting)
         ->and($this->parent->cancel_requested_at)->not->toBeNull()
         ->and($this->parent->lock_key)->not->toBeNull();
-    childKitFinish($this, $child, 'cancelled');
+    expect($child->refresh()->status)->toBe(OperationStatus::Cancelled);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'resume'])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'resume', 'status' => 'cancelled'])->assertOk();
 });
@@ -345,11 +343,13 @@ it('refuses a child effect after any ancestor requests cancellation', function (
     } else {
         $child = childKitAdmit($this);
     }
-    app(CancelOperationAction::class)->execute($this->parent->refresh());
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child', 'operation_id' => $child->id])->assertOk();
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($child->refresh()->cancel_requested_at)->not->toBeNull();
     $this->postJson('/api/v1/operation-executor/'.$child->id.'/run', ['worker' => 'child', 'key' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect', 'input' => ['removed_node_id' => null]])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.cancelled');
-    expect($this->command->calls)->toBe(0);
+        ->assertOk()->assertJsonPath('data.error_code', 'operation.cancelled');
+    $this->postJson('/api/v1/operation-executor/'.$child->id.'/complete', ['worker' => 'child', 'status' => 'cancelled'])->assertOk();
+    expect($child->refresh()->status)->toBe(OperationStatus::Cancelled)->and($this->command->calls)->toBe(0);
 })->with([false, true]);
 
 function childKitCompensations($test): void
@@ -495,4 +495,123 @@ it('permits descendants only inside a proven compensation branch', function (): 
     $leaf = $this->postJson('/api/v1/operation-executor/'.$id.'/children', ['worker' => 'middle', 'key' => 'apply'])->assertAccepted()->json('data.id');
     childKitFinish($this, Operation::findOrFail($leaf));
     expect($this->command->calls)->toBe(2);
+});
+
+it('cascades cancel to queued descendants and lets running descendants settle normally', function (): void {
+    $queued = childKitAdmit($this);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [$this->intent, [...$this->intent, 'key' => 'running']]]]);
+    $id = $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'running'])->assertAccepted()->json('data.id');
+    $running = Operation::findOrFail($id);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child', 'operation_id' => $id])->assertOk();
+    $run = ['worker' => 'child', 'key' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect', 'input' => ['removed_node_id' => null]];
+    $childPath = '/api/v1/operation-executor/'.$id;
+    $this->postJson($childPath.'/step', ['worker' => 'child', 'key' => 'start', 'name' => 'effect', 'status' => 'running'])->assertOk();
+    $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply', 'running']])->assertOk();
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($queued->refresh()->status)->toBe(OperationStatus::Cancelled)->and($queued->cancel_requested_at)->not->toBeNull()
+        ->and($queued->error_code)->toBe('operation.cancelled')->and($running->refresh()->cancel_requested_at)->not->toBeNull();
+    $this->postJson($childPath.'/heartbeat', ['worker' => 'child'])->assertOk()->assertJsonPath('data.cancel_requested', true);
+    $this->postJson($childPath.'/run', $run)->assertOk()->assertJsonPath('data.error_code', 'operation.cancelled');
+    $this->postJson($childPath.'/step', ['worker' => 'child', 'key' => 'stop', 'name' => 'effect', 'status' => 'failed', 'error_code' => 'operation.cancelled'])->assertOk();
+    $this->postJson($childPath.'/complete', ['worker' => 'child', 'status' => 'cancelled'])->assertOk();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'resume'])->assertOk()->assertJsonPath('data.id', $this->parent->id);
+    $this->postJson($this->path.'/complete', ['worker' => 'resume', 'status' => 'cancelled'])->assertOk();
+    expect($this->parent->refresh()->lock_key)->toBeNull()->and($this->command->calls)->toBe(0);
+});
+
+it('honors a running child own proven cancellation boundary after an ancestor cancel', function (): void {
+    $this->childSpec['execution'] = ChildKitFamily::class;
+    ($this->register)();
+    $boundary = ['key' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect', 'result' => ['backend' => 'active']];
+    $descriptors = array_map(fn (string $key): array => ['key' => $key, 'step' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect',
+        'input' => ['removed_node_id' => null], 'resumable' => false, 'required' => true], ['effect', 'after']);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'input' => [...$this->intent['input'], 'descriptors' => $descriptors, 'cancellation_boundary' => $boundary]]]]]);
+    $child = childKitAdmit($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child'])->assertOk();
+    $path = '/api/v1/operation-executor/'.$child->id;
+    $run = ['worker' => 'child', 'key' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect', 'input' => ['removed_node_id' => null]];
+    $this->postJson($path.'/run', $run)->assertOk();
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    $this->postJson($path.'/heartbeat', ['worker' => 'child'])->assertOk()->assertJsonPath('data.cancel_requested', true);
+    $this->postJson($path.'/run', [...$run, 'key' => 'after'])->assertOk()->assertJsonPath('data.backend', 'active');
+    $this->postJson($path.'/step', ['worker' => 'child', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => ['backend' => 'active']])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'child', 'status' => 'succeeded', 'result' => ['backend' => 'active']])->assertOk();
+    expect($this->command->calls)->toBe(2);
+});
+
+it('allows a cancelled intermediate transfer to restore after a grandparent cancel', function (): void {
+    $this->parentSpec['children'][0]['kind'] = 'test.middle';
+    $this->parentSpec['completion_contract']['children_succeeded'] = ['test.middle'];
+    ($this->register)();
+    $definitions = [...OperationKinds::definitions(), 'test.parent' => $this->parentSpec,
+        'test.middle' => [...$this->parentSpec, 'admission' => ChildKitAdmission::class, 'children' => [
+            ['kind' => 'test.effect', 'node_from' => 'operation.node_id'], ['kind' => 'test.restore', 'node_from' => 'operation.node_id'],
+        ], 'compensations' => ['test.restore'], 'cancellation_boundary' => 'stop-source', 'completion_contract' => ['children_succeeded' => ['test.effect']]],
+        'test.effect' => $this->childSpec, 'test.restore' => $this->childSpec];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'kind' => 'test.middle']]]]);
+    $middle = childKitAdmit($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.middle', 'worker' => 'middle'])->assertOk();
+    $middle->update(['state' => [...$middle->refresh()->state, 'child_intents' => [
+        [...$this->intent, 'key' => 'stop-source'], [...$this->intent, 'key' => 'restore', 'kind' => 'test.restore'],
+    ]]]);
+    $middlePath = '/api/v1/operation-executor/'.$middle->id;
+    $stop = $this->postJson($middlePath.'/children', ['worker' => 'middle', 'key' => 'stop-source'])->assertAccepted()->json('data.id');
+    childKitFinish($this, Operation::findOrFail($stop));
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($middle->refresh()->cancel_requested_at)->not->toBeNull();
+    $restore = $this->postJson($middlePath.'/children', ['worker' => 'middle', 'key' => 'restore'])->assertAccepted()->json('data.id');
+    childKitFinish($this, Operation::findOrFail($restore));
+    $this->postJson($middlePath.'/complete', ['worker' => 'middle', 'status' => 'cancelled'])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'cancelled'])->assertOk();
+    expect($this->parent->refresh()->lock_key)->toBeNull()->and($this->command->calls)->toBe(2);
+});
+
+it('exposes assistance safely and permits explicit cancellation when no provable child is active', function (): void {
+    $child = childKitAdmit($this);
+    $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply']])->assertOk();
+    $child->forceFill(['child_fingerprint' => str_repeat('0', 64)])->save();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'resume'])->assertOk()->assertJsonPath('data', null);
+    $state = $this->parent->refresh()->state;
+    $state['executor_assistance']['unsafe_detail'] = 'private-must-not-return';
+    $this->parent->update(['state' => $state]);
+    $this->getJson('/api/v1/operations/'.$this->parent->id)->assertOk()->assertJsonPath('data.assistance', ['error_code' => 'operation.child_unproven'])->assertDontSee('private-must-not-return');
+    $this->getJson('/api/v1/operations?kind=test.parent')->assertOk()->assertJsonPath('data.0.assistance', ['error_code' => 'operation.child_unproven'])->assertDontSee('private-must-not-return');
+    $this->call('POST', '/api/v1/operations/'.$this->parent->id.'/cancel', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}')->assertOk()->assertJsonPath('data.status', 'cancelled');
+    expect($this->parent->refresh()->lock_key)->toBeNull();
+});
+
+it('retains a flagged parent hold while a provable running child still needs to settle', function (): void {
+    $child = childKitAdmit($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child'])->assertOk();
+    $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply']])->assertOk();
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'executor_assistance' => ['error_code' => 'operation.child_unproven']]]);
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($this->parent->refresh()->status)->toBe(OperationStatus::Waiting)->and($this->parent->lock_key)->not->toBeNull();
+    childKitFinish($this, $child, 'cancelled');
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($this->parent->refresh()->status)->toBe(OperationStatus::Cancelled)->and($this->parent->lock_key)->toBeNull();
+});
+
+it('preserves stamped Node identity and target proof after the Node is deleted', function (): void {
+    $node = Node::query()->create(['name' => 'removed', 'public_ssh_host' => '192.0.2.55', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.55', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $this->parentSpec['children'][0]['node_from'] = 'input.child_node_id';
+    ($this->register)();
+    $this->parent->update(['input' => [...$this->parent->input, 'child_node_id' => $node->id],
+        'state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'node_id' => $node->id, 'input' => [...$this->intent['input'], 'target_id' => $node->id]]]]]);
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $nodeId = $node->id;
+    $node->delete();
+    expect($child->refresh()->node_id)->toBeNull()->and($child->child_admission['admitted']['node_id'])->toBe($nodeId);
+    expect(app(OperationChildren::class)->requireSucceeded($this->parent, 'apply')->id)->toBe($child->id);
+    $this->getJson($this->path.'/children')->assertOk()->assertJsonPath('data.0.node_id', $nodeId)->assertJsonPath('data.0.result.backend', 'active');
+    $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertOk()->assertJsonPath('data.id', $child->id)->assertJsonPath('data.node_id', $nodeId);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded'])->assertOk();
+});
+
+it('refuses a changed live Node foreign key while the stamped Node still exists', function (): void {
+    $child = childKitAdmit($this);
+    $child->update(['node_id' => null]);
+    expect(fn () => app(OperationChildren::class)->requireSucceeded($this->parent, 'apply'))->toThrow(ResourceOperationException::class);
 });
