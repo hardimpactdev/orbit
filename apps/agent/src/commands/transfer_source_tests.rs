@@ -365,3 +365,88 @@ fn selected_sqlite_exclusion_is_literal_in_checkouts_and_worktrees() {
         );
     }
 }
+
+#[test]
+fn captured_metadata_and_read_receipt_bind_the_complete_private_archive() {
+    let mut f = Fixture::new();
+    let (archive, _, _, _) = f.capture("checkout", None);
+    let expected = crate::command::run::hex(&Sha256::digest(fs::read(&archive).unwrap()));
+    let result = read_archive(
+        &ArchiveInput {
+            archive: archive.clone(),
+        },
+        &context(),
+        &mut vec![],
+    )
+    .unwrap();
+    assert_eq!(result.bytes, fs::metadata(&archive).unwrap().len());
+    assert_eq!(result.sha256, expected);
+    let TransferOutput::Captured {
+        bytes,
+        sha256,
+        archive: next,
+        ..
+    } = capture(&f.source, "checkout", None).unwrap()
+    else {
+        panic!("capture");
+    };
+    assert_eq!(bytes, fs::metadata(&next).unwrap().len());
+    assert_eq!(
+        sha256,
+        crate::command::run::hex(&Sha256::digest(fs::read(&next).unwrap()))
+    );
+    f.archives.push(next);
+}
+#[test]
+fn native_receiver_verifies_size_and_digest_before_creating_a_destination() {
+    let mut f = Fixture::new();
+    let (archive, head, branch, detached) = f.capture("checkout", None);
+    let bytes = fs::metadata(&archive).unwrap().len();
+    let sha256 = crate::command::run::hex(&Sha256::digest(fs::read(&archive).unwrap()));
+    for bad in ["size", "digest", "valid"] {
+        let destination = f.work.0.join(bad);
+        let input = MaterializeInput {
+            bytes: if bad == "size" { bytes + 1 } else { bytes },
+            sha256: if bad == "digest" {
+                "0".repeat(64)
+            } else {
+                sha256.clone()
+            },
+            destination: destination.clone(),
+            environment: destination.join(".env"),
+            head: head.clone(),
+            branch: branch.clone(),
+            detached,
+        };
+        let result = Materialize::run(
+            input,
+            &context().with_binary_input(File::open(&archive).unwrap()),
+        );
+        if bad == "valid" {
+            assert!(
+                matches!(result, Ok(TransferOutput::Materialized {bytes: actual, sha256: digest}) if actual==bytes && digest==sha256)
+            );
+        } else {
+            assert!(result.is_err());
+            assert!(!destination.exists());
+        }
+    }
+}
+#[test]
+fn artifact_cleanup_is_idempotent_and_preserves_the_checkout() {
+    let mut f = Fixture::new();
+    let (archive, _, _, _) = f.capture("checkout", None);
+    for _ in 0..2 {
+        transfer(&TransferInput::DiscardArchive {
+            archive: archive.clone(),
+        })
+        .unwrap();
+    }
+    assert!(!archive.exists());
+    assert!(f.source.exists());
+    assert!(transfer(&TransferInput::DiscardArchive {
+        archive: f.source.clone()
+    })
+    .is_err());
+    assert!(f.source.exists());
+}

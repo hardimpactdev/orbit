@@ -25,7 +25,7 @@ final class ProtectedInput
     private string $prefix = '';
 
     /** @param resource|null $stream */
-    private function __construct(mixed $stream)
+    private function __construct(mixed $stream, private readonly bool $ownsStream = true)
     {
         $this->stream = $stream;
     }
@@ -93,6 +93,16 @@ final class ProtectedInput
     public function carriesGitCredential(): bool
     {
         return $this->gitCredential;
+    }
+
+    /** @param resource $stream Caller retains ownership and keeps the private seekable stream open. */
+    public static function borrowedStream(mixed $stream): self
+    {
+        if (! is_resource($stream) || ! stream_get_meta_data($stream)['seekable']) {
+            throw new RuntimeException('Protected input requires an open seekable stream.');
+        }
+
+        return new self($stream, false);
     }
 
     /** Streams a caller-owned private file as it is, without a copy. */
@@ -172,7 +182,9 @@ final class ProtectedInput
             return;
         }
 
-        fclose($this->stream);
+        if ($this->ownsStream) {
+            fclose($this->stream);
+        }
         $this->stream = null;
     }
 

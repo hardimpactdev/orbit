@@ -33,10 +33,11 @@ it('stages private binary bytes on Gateway disk and removes them after materiali
         $staged = array_find($paths, static fn (string $path): bool => file_get_contents($path) === $bytes);
         expect($staged)->toBeString()->and(fileperms($staged) & 0777)->toBe(0600);
 
-        return ['bytes' => strlen($bytes)];
+        return ['bytes' => strlen($bytes), 'sha256' => hash('sha256', $bytes)];
     });
     $agents->answer('instance.materialize-transfer', function (array $input, Node $node, ?AgentBinaryOutput $output, ?AgentBinaryInput $binary) use ($bytes, $capture): array {
         expect($node->name)->toBe('staging-destination')->and($input)->toBe([
+            'bytes' => strlen($bytes), 'sha256' => hash('sha256', $bytes),
             'destination' => '/srv/apps/destination', 'head' => $capture->head, 'branch' => 'main',
             'detached' => false, 'environment' => '/srv/apps/destination/.env',
         ]);
@@ -84,7 +85,7 @@ it('maps materialization refusals to the operation step and removes the staging 
     $agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
         $output?->write('archive');
 
-        return ['bytes' => 7];
+        return ['bytes' => 7, 'sha256' => hash('sha256', 'archive')];
     })->refuse('instance.materialize-transfer', 'instance.transfer_archive_invalid');
 
     expect(fn () => new RemoteInstanceTransferSource($agents, app(AgentContract::class))
@@ -123,7 +124,7 @@ it('selects the transferred Laravel environment from Instance or Project intent'
     $agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
         $output?->write('archive');
 
-        return ['bytes' => 7];
+        return ['bytes' => 7, 'sha256' => hash('sha256', 'archive')];
     })->answer('instance.materialize-transfer', []);
 
     new RemoteInstanceTransferSource($agents, app(AgentContract::class))

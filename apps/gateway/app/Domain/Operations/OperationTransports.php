@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\OperationAgentTransport;
+use App\Infrastructure\AgentCommands\OperationArchiveRelayTransport;
 use App\Infrastructure\RemotePrograms\OperationRemoteProgramTransport;
 use LogicException;
 
@@ -31,7 +32,7 @@ final readonly class OperationTransports
     /** @return array<string, class-string<OperationTransport>> */
     public static function definitions(): array
     {
-        $transports = ['agent' => OperationAgentTransport::class, 'remote_program' => OperationRemoteProgramTransport::class, 'gateway' => OperationGatewayTransport::class];
+        $transports = ['agent' => OperationAgentTransport::class, 'remote_program' => OperationRemoteProgramTransport::class, 'gateway' => OperationGatewayTransport::class, 'archive_relay' => OperationArchiveRelayTransport::class];
         foreach (glob(__DIR__.'/../*/operation-transports.php') ?: [] as $file) {
             foreach (require $file as $key => $class) {
                 if (isset($transports[$key])) {

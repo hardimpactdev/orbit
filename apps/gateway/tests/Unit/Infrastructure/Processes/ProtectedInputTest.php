@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\Processes\ProtectedInput;
 use Tests\Support\ProcessInput;
 
@@ -65,4 +66,16 @@ it('prefixes a private open file without copying it and leaves it available for 
     } finally {
         fclose($file);
     }
+});
+
+it('borrows an unlinked private staging stream without closing its owner', function (): void {
+    $file = tmpfile();
+    $path = stream_get_meta_data($file)['uri'];
+    unlink($path);
+    fwrite($file, 'binary fixture');
+    $input = AgentBinaryInput::fromStream($file, 14);
+    expect($input->bytes)->toBe(14)->and(file_exists($path))->toBeFalse();
+    unset($input);
+    expect(is_resource($file))->toBeTrue();
+    fclose($file);
 });
