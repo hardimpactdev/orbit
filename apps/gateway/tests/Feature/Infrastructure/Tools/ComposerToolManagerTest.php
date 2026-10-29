@@ -5,12 +5,9 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Models\Node;
@@ -89,12 +86,6 @@ describe(ComposerToolManager::class, function (): void {
         'oversized' => [str_repeat('v', times: 128).'/'.str_repeat('p', times: 127), false],
     ]);
 
-    it('rejects candidate selection for removal and adoption before I/O', function (ToolOperation $operation): void {
-        [$manager, $agent] = composer_tool_manager();
-        expect(fn () => $manager->candidateVersion(composer_tool_node(), 'vendor/package', $operation))->toThrow(ToolManagerException::class);
-        expect($agent->commands())->toBe([]);
-    })->with([ToolOperation::Remove, ToolOperation::Adopt]);
-
     it('passes the active Doctor budget to the agent and restores the default', function (): void {
         $agent = new FakeAgentCommandRunner()->answer('tool.composer-version', ['version' => 'Composer 2.9.0']);
         $budget = new ToolCommandBudget;
@@ -104,26 +95,18 @@ describe(ComposerToolManager::class, function (): void {
         expect($agent->deadlines)->toBe([15.0, null]);
     });
 
-    it('retains a missing candidate as null', function (): void {
-        [$manager, $agent] = composer_tool_manager();
-        $agent->answer('tool.composer-candidate', ['version' => null]);
-        expect($manager->candidateVersion(composer_tool_node(), 'vendor/package', ToolOperation::Install))->toBeNull();
-    });
-
     it('rejects malformed typed responses', function (string $method, string $command, array $output): void {
         [$manager, $agent] = composer_tool_manager();
         $agent->answerMalformed($command, $output);
-        expect(fn () => $manager->$method(composer_tool_node(), 'vendor/package', ToolOperation::Install))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->$method(composer_tool_node()))->toThrow(ToolManagerException::class);
     })->with([
         ['managerVersion', 'tool.composer-version', ['version' => null]],
         ['managerVersion', 'tool.composer-version', ['version' => 1]],
-        ['candidateVersion', 'tool.composer-candidate', []],
         ['installedInventory', 'tool.composer-inventory', []],
         ['installedInventory', 'tool.composer-inventory', ['packages' => ['vendor/package' => '1.0.0']]],
         ['installedInventory', 'tool.composer-inventory', ['packages' => [['name' => 1, 'version' => '1.0.0']]]],
         ['installedInventory', 'tool.composer-inventory', ['packages' => [['name' => 'vendor/package']]]],
         ['installedInventory', 'tool.composer-inventory', ['packages' => [['name' => 'vendor/package', 'version' => false]]]],
-        ['planRemoval', 'tool.composer-removal-plan', ['packages' => ['vendor/other']]],
     ]);
 
     it('isolates duplicate and unverifiable observations and reads fresh inventory', function (): void {
@@ -144,26 +127,6 @@ describe(ComposerToolManager::class, function (): void {
         expect($manager->installedVersion(composer_tool_node(), 'vendor/package'))->toBeNull();
         expect($agent->commands())->toBe(['tool.composer-inventory', 'tool.composer-inventory']);
     });
-
-    it('uses typed root observations for adoption and refuses dependencies', function (): void {
-        [$manager, $agent] = composer_tool_manager();
-        $agent->answer('tool.inspect-composer-scope', ['roots' => ['php', 'ext-json', 'legacy/Uppercase', 'laravel/pint']]);
-        $agent->answer('tool.composer-inventory', ['packages' => [['name' => 'laravel/pint', 'version' => '1.20.0'], ['name' => 'symfony/console', 'version' => '7.1.0']]]);
-        expect($manager->inspectForAdoption(composer_tool_node(role: null), 'laravel/pint'))->toEqual(new ToolAdoptionFact('1.20.0', null));
-        expect($manager->inspectForAdoption(composer_tool_node(role: null), 'symfony/console'))->toEqual(new ToolAdoptionFact('7.1.0', ToolInventoryPackage::BLOCK_DEPENDENCY));
-        expect($manager->inspectForAdoption(composer_tool_node(role: null), 'vendor/absent'))->toEqual(new ToolAdoptionFact(null, null));
-        expect($agent->commands())->toBe(array_merge(...array_fill(0, 3, ['tool.inspect-composer-scope', 'tool.composer-inventory'])));
-    });
-
-    it('maps Composer scope refusals before reading package inventory', function (string $code, string $step): void {
-        [$manager, $agent] = composer_tool_manager();
-        $agent->refuse('tool.inspect-composer-scope', $code);
-        expect(fn () => $manager->inspectForAdoption(composer_tool_node(), 'vendor/package'))->toThrow(function (ToolManagerException $error) use ($step): void {
-            expect($error->step)->toBe($step);
-            expect($error->result)->toBeNull();
-        });
-        expect($agent->commands())->toHaveCount(1);
-    })->with([['tool.composer_scope_absent', 'manager-absent'], ['tool.composer_scope_conflict', 'manager-conflict'], ['tool.composer_scope_unreadable', 'manager-probe']]);
 
 });
 

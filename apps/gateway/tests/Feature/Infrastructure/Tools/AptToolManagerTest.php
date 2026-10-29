@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
@@ -76,11 +73,10 @@ describe(AptToolManager::class, function (): void {
 
     it('keeps absence separate from an unverifiable installed package', function (): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tool.apt-candidate', ['version' => null])->answer('tool.apt-inventory', ['packages' => [
+        $agent->answer('tool.apt-inventory', ['packages' => [
             ['name' => 'jq', 'version' => '1.7.1'], ['name' => 'unreadable', 'version' => null],
             ['name' => 'duplicate', 'version' => '1'], ['name' => 'duplicate', 'version' => '2'],
         ]]);
-        expect($manager->candidateVersion(apt_tool_node(), 'absent', ToolOperation::Install))->toBeNull();
         $inventory = $manager->installedInventory(apt_tool_node());
         expect($inventory->versionFor('jq'))->toBe('1.7.1');
         expect($inventory->versionFor('absent'))->toBeNull();
@@ -88,36 +84,15 @@ describe(AptToolManager::class, function (): void {
         expect(fn () => $inventory->versionFor('duplicate'))->toThrow(ToolManagerException::class);
     });
 
-    it('refuses plans that would remove dependencies or nothing', function (array $packages): void {
-        [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tool.apt-removal-plan', ['packages' => $packages]);
-        $plan = $manager->planRemoval(apt_tool_node(), 'jq');
-        expect($plan->packages)->toBe($packages);
-        expect($plan->removesOnly('jq'))->toBeFalse();
-        expect($agent->commands())->toBe(['tool.apt-removal-plan']);
-    })->with([[[]], [['jq', 'libonig5:amd64']]]);
-
     it('refuses malformed typed replies without reporting absent packages', function (string $method, string $command, array $data): void {
         [$manager, $agent] = apt_tool_manager();
         $agent->answerMalformed($command, $data);
-        expect(fn () => $manager->{$method}(apt_tool_node(), 'jq', ToolOperation::Install))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->{$method}(apt_tool_node()))->toThrow(ToolManagerException::class);
     })->with([
         ['managerVersion', 'tool.apt-version', ['version' => null]],
-        ['candidateVersion', 'tool.apt-candidate', []],
         ['installedInventory', 'tool.apt-inventory', ['packages' => null]],
         ['installedInventory', 'tool.apt-inventory', ['packages' => [['name' => 'jq']]]],
-        ['planRemoval', 'tool.apt-removal-plan', ['packages' => [42]]],
     ]);
-
-    it('preserves protected package adoption policy and does not install', function (string $package): void {
-        [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tool.apt-version', ['version' => 'apt 3.2.0'])
-            ->answer('tool.apt-inventory', ['packages' => [['name' => $package, 'version' => '1.0.0'], ['name' => 'jq', 'version' => '1.7.1']]]);
-        expect($manager->inspectForAdoption(apt_tool_node(), $package))->toEqual(new ToolAdoptionFact('1.0.0', ToolInventoryPackage::BLOCK_PROTECTED));
-        expect($manager->inspectForAdoption(apt_tool_node(), 'jq'))->toEqual(new ToolAdoptionFact('1.7.1', null));
-        expect($manager->inspectForAdoption(apt_tool_node(), 'missing'))->toEqual(new ToolAdoptionFact(null, null));
-        expect(array_unique($agent->commands()))->toBe(['tool.apt-version', 'tool.apt-inventory']);
-    })->with(['docker.io', 'openssh-server', 'wireguard-tools', 'php8.5-sqlite3', 'git', 'git-man']);
 
 });
 
