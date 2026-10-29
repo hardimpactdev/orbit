@@ -48,6 +48,7 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.effect_receipt_invalid",
     "agent.effect_sanitization_required",
     "agent.effect_unsanitized",
+    "agent.effect_expired",
 ];
 
 /// A complete result line.

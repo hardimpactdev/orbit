@@ -17,6 +17,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -105,7 +106,7 @@ final class ReceiptTestExecution implements OperationCompletion, OperationFamily
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
-        if (isset($receipt['error_code'])) {
+        if (isset($receipt['error_code']) || ($receipt['outcome'] ?? null) === 'failed') {
             return $receipt;
         }
         expect($receipt['echo'])->toBe('[REDACTED]');
@@ -147,6 +148,12 @@ final class ReceiptTestTransport implements OperationEffectTransport
 
     public ?string $connectionParameter = null;
 
+    public ?string $refusal = null;
+
+    public ?string $readRefusal = null;
+
+    public bool $programResult = false;
+
     public function schema(Operation $operation, array $run): array|bool
     {
         return ['type' => 'object', 'properties' => ['token' => ['type' => 'string'], 'auth' => ['type' => 'string']], 'required' => ['token'], 'additionalProperties' => false];
@@ -167,6 +174,12 @@ final class ReceiptTestTransport implements OperationEffectTransport
         $this->receipt['result']['data']['echo'] = $input['token'];
         $this->receipt['result'] = app(OperationSecrets::class)->redact($this->receipt['result'], $masks);
         $this->receipt['sanitized'] = true;
+        $identity = EffectReceiptMetadata::fromRun($run)->identity();
+        $this->receipt['effect_nonce'] = $identity['nonce'];
+        $this->receipt['effect_created_at'] = $identity['created_at'];
+        if ($this->refusal !== null) {
+            throw new AgentCommandRefused('test.effect', $this->refusal, 'Uncertain effect.');
+        }
         if ($this->loseReply) {
             throw new RuntimeException('uncertain transport with receipt-private-value');
         }
@@ -181,6 +194,9 @@ final class ReceiptTestTransport implements OperationEffectTransport
             $credential = app(OperationSecrets::class)->connection($operation, $run, $this->connectionParameter);
             expect($credential->value)->toBe('connection-private-key-value');
         }
+        if ($this->readRefusal !== null) {
+            throw new AgentCommandRefused('agent.effect-receipt', $this->readRefusal, 'Receipt is uncertain.');
+        }
         expect($input)->toBe($run['input']);
         expect($run['effect_key'])->toBe('op-'.$operation->id.'.effect');
         $receipt = $this->receipt;
@@ -194,6 +210,10 @@ final class ReceiptTestTransport implements OperationEffectTransport
 
     private function normalize(array $result): array
     {
+        if ($this->programResult) {
+            return $result;
+        }
+
         return ['ready' => $result['outcome'] === 'succeeded', 'echo' => $result['data']['echo'], 'undeclared' => 'private-log', 'password' => 'classification-marker'];
     }
 }
@@ -215,7 +235,7 @@ beforeEach(function (): void {
     $kind = ['executor' => 'swamp', 'execution' => ReceiptTestExecution::class, 'completion' => ReceiptTestExecution::class,
         'runs' => [['transport' => 'receipt-test', 'name' => 'test.effect', 'secrets' => ['token' => 'receipt.test'], 'resumable' => false]],
         'completion_contract' => ['step' => 'effect', 'transport' => 'receipt-test', 'name' => 'test.effect', 'result' => ['ready' => true]],
-        'result_fields' => ['ready', 'echo', 'projected', 'error_code']];
+        'result_fields' => ['ready', 'echo', 'projected', 'error_code', 'outcome', 'data.exit_code']];
     app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
     $this->run = ['worker' => 'worker', 'key' => 'effect', 'transport' => 'receipt-test', 'name' => 'test.effect',
         'input' => ['token' => ['$secret' => 'receipt.test', 'id' => $this->target->id]]];
@@ -227,7 +247,7 @@ beforeEach(function (): void {
 });
 
 it('recovers the normalized filtered receipt and applies its family projection once without another effect', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502)->assertJsonPath('error.code', 'operation.execution_failed');
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
     $response = $this->getJson($this->path.'/receipts/effect')->assertOk()
         ->assertJsonPath('data.effect_key', 'op-'.$this->operation->id.'.effect')->assertJsonPath('data.state', 'succeeded')
         ->assertJsonPath('data.exit_code', 0)->assertJsonPath('data.result', ['ready' => true, 'echo' => '[REDACTED]', 'projected' => true])
@@ -245,7 +265,7 @@ it('recovers the normalized filtered receipt and applies its family projection o
 });
 
 it('keeps running and unknown receipts unresolved and never projects or invokes an effect while reading', function (string $state): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->transport->receipt = ['state' => $state, 'exit_code' => null, 'result' => null, 'finished_at' => null];
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', $state)->assertJsonPath('data.result', null);
     expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
@@ -260,7 +280,7 @@ it('returns unknown for an admitted descriptor with no run and rejects undeclare
 });
 
 it('keeps the same public shape for failed target receipts', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->transport->receipt['state'] = 'failed';
     $this->transport->receipt['exit_code'] = 7;
     $this->transport->receipt['result']['outcome'] = 'failed';
@@ -276,7 +296,7 @@ it('refuses another executor peer and caller-selected target or worker query', f
 });
 
 it('rejects altered admitted input before reading target evidence', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $state = $this->operation->refresh()->state;
     $state['executor_runs']['effect']['input']['token']['id']++;
     $this->operation->update(['state' => $state]);
@@ -285,14 +305,14 @@ it('rejects altered admitted input before reading target evidence', function ():
 });
 
 it('rejects a mismatched target key or secret-bearing receipt metadata', function (string $field, mixed $value): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->transport->receipt[$field] = $value;
     $this->getJson($this->path.'/receipts/effect')->assertStatus(502)->assertJsonPath('error.code', 'operation.receipt_invalid');
     expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
 })->with([['effect_key', 'op-999.effect'], ['finished_at', 'receipt-private-value'], ['exit_code', 'receipt-private-value']]);
 
 it('requires an active claim to recover new evidence and permits cached reads after completion', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->travel(121)->seconds();
     $this->getJson($this->path.'/receipts/effect')->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
     expect($this->transport->reads)->toBe(0);
@@ -305,21 +325,21 @@ it('requires an active claim to recover new evidence and permits cached reads af
 
 it('does not mint another protected value when recovering an original sanitized receipt', function (): void {
     $this->source->rotates = true;
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     expect($this->source->resolves)->toBe(1);
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.result.echo', '[REDACTED]');
     expect($this->source->resolves)->toBe(1);
     expect(json_encode($this->operation->refresh()->toArray()))->not->toContain('receipt-private-value');
 });
 it('fails closed when target sanitization is unproven', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->transport->receipt['sanitized'] = false;
     $this->getJson($this->path.'/receipts/effect')->assertConflict()->assertJsonPath('error.code', 'operation.receipt_unproven');
     expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
     expect($this->source->resolves)->toBe(1);
 });
 it('rolls back the family projection and receipt together when classification refuses', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->operation->update(['input' => [...$this->operation->input, 'reject_projection' => true]]);
     $this->getJson($this->path.'/receipts/effect')->assertConflict()->assertJsonPath('error.code', 'test.projection_failed');
     expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
@@ -327,7 +347,7 @@ it('rolls back the family projection and receipt together when classification re
     expect($this->source->resolves)->toBe(1);
 });
 it('fences another configured executor peer even when it knows the worker name', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $peer = Node::query()->create(['name' => 'worker-peer', 'public_ssh_host' => '192.0.2.18', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.18', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $gateway = Node::query()->where('name', 'gateway')->sole();
     $peer->accessibleNodes()->attach($gateway);
@@ -339,7 +359,7 @@ it('fences another configured executor peer even when it knows the worker name',
 });
 
 it('does not bypass the explicit replay policy for a keyed effect after an unknown receipt', function (): void {
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $terminal = $this->transport->receipt;
     $this->transport->receipt = ['state' => 'unknown', 'sanitized' => false, 'exit_code' => null, 'result' => null, 'finished_at' => null];
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'unknown');
@@ -382,7 +402,7 @@ function receiptConnectionFixture($test): ReceiptConnectionSecret
 it('reads only an explicitly non-minting connection credential while recovering a bootstrap receipt', function (): void {
     $connection = receiptConnectionFixture($this);
     $this->source->rotates = true;
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
     $this->getJson($this->path.'/receipts/effect')->assertOk();
     expect($connection->resolves)->toBe(1)->and($connection->connections)->toBe(1)
@@ -393,7 +413,7 @@ it('reads only an explicitly non-minting connection credential while recovering 
 
 it('refuses an ordinary payload source or unlisted parameter as receipt connection authentication', function (string $parameter): void {
     $connection = receiptConnectionFixture($this);
-    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
     $this->transport->connectionParameter = $parameter;
     $this->getJson($this->path.'/receipts/effect')->assertStatus(502)->assertJsonPath('error.code', 'operation.receipt_unavailable');
     expect($this->source->resolves)->toBe(1)->and($connection->resolves)->toBe(1)->and($connection->connections)->toBe(0);
@@ -416,3 +436,76 @@ it('reuses A owner target-type and exact-input checks before connection credenti
     expect(fn () => app(OperationSecrets::class)->connection($this->operation, $this->run, 'auth'))->toThrow(ResourceOperationException::class);
     expect($connection->connections)->toBe(0)->and($connection->resolves)->toBe(0)->and($this->source->resolves)->toBe(0);
 })->with(['null owner', 'target type', 'foreign owner', 'changed input']);
+
+it('leaves infrastructure refusals unresolved and later recovers the command result once', function (string $code): void {
+    $this->transport->refusal = $code;
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
+    expect($this->operation->state)->not->toHaveKey('projections');
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    expect($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(1);
+    expect($this->operation->refresh()->state['projections'])->toBe(1);
+})->with(['agent.deadline_exceeded', 'agent.supervisor_failed', 'agent.effect_receipt_unavailable', 'agent.effect_unknown', 'agent.target_busy', 'agent.effect_conflict']);
+
+it('does not prove an effect_unknown response from an explicitly permitted re-dispatch', function (): void {
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['resumable'] = true;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    $input = $this->operation->input;
+    $input['descriptors'][0]['resumable'] = true;
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $this->transport->refusal = 'agent.effect_unknown';
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $this->transport->receipt = ['state' => 'unknown', 'sanitized' => false, 'exit_code' => null, 'result' => null, 'finished_at' => null];
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'unknown');
+    expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
+    expect($this->operation->state)->not->toHaveKey('projections');
+});
+
+it('refuses a target receipt from a numeric Operation ID reused after a database restore', function (): void {
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $original = $this->transport->receipt;
+    $oldNonce = $original['effect_nonce'];
+    $this->operation->refresh()->update(['state' => ['executor_lease_node_id' => $this->services->id]]);
+    $this->transport->refusal = 'agent.effect_conflict';
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    expect($this->operation->refresh()->state['executor_effect_identity']['nonce'])->not->toBe($oldNonce);
+    $this->transport->receipt = $original;
+    $this->getJson($this->path.'/receipts/effect')->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
+    expect($this->operation->state)->not->toHaveKey('projections');
+});
+
+it('keeps failed remote-program receipt state and exit code the same live and recovered', function (): void {
+    $this->transport->loseReply = false;
+    $this->transport->programResult = true;
+    $this->transport->receipt['state'] = 'failed';
+    $this->transport->receipt['exit_code'] = 23;
+    $this->transport->receipt['result']['outcome'] = 'failed';
+    $this->transport->receipt['result']['data']['exit_code'] = 23;
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    $live = $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'failed')->assertJsonPath('data.exit_code', 23)->json('data');
+    $state = $this->operation->refresh()->state;
+    $state['executor_runs']['effect']['result'] = null;
+    $this->operation->update(['state' => $state]);
+    $recovered = $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'failed')->assertJsonPath('data.exit_code', 23)->json('data');
+    expect($recovered['result'])->toBe($live['result']);
+    expect($this->transport->runs)->toBe(1);
+});
+
+it('leaves a target identity conflict from a receipt read uncertain', function (): void {
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $this->transport->readRefusal = 'agent.effect_conflict';
+    $this->getJson($this->path.'/receipts/effect')->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    expect($this->operation->refresh()->state['executor_runs']['effect']['result'])->toBeNull();
+    expect($this->operation->state)->not->toHaveKey('projections');
+});
+
+it('records a command-owned refusal as a proven failed result', function (): void {
+    $this->transport->refusal = 'process.restart_refused';
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'process.restart_refused');
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'failed');
+    expect($this->transport->reads)->toBe(0);
+});

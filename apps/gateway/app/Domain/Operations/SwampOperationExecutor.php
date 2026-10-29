@@ -6,19 +6,21 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Small keyed writes on the existing Operation store. Services owns execution and recovery.
  *
  * @phpstan-type StepInput array{worker: string, key: string, name: string, status: string, output?: string, result?: array<string, mixed>, error_code?: string|null}
  * @phpstan-type CompletionInput array{worker: string, status: string, result?: array<string, mixed>, error_code?: string|null}
- * @phpstan-type EffectRunInput array{worker: string, key: string, transport: string, name: string, input: array<string, mixed>, effect_key: string, effect_metadata?: EffectReceiptMetadata}
+ * @phpstan-type EffectRunInput array{worker: string, key: string, transport: string, name: string, input: array<string, mixed>, effect_key: string, effect_metadata?: EffectReceiptMetadata, effect_identity?:array{nonce:string,created_at:int}}
  * @phpstan-type RunInput array{worker: string, key: string, transport: string, name: string, input: array<string, mixed>}
  */
 final readonly class SwampOperationExecutor
@@ -273,7 +275,7 @@ final readonly class SwampOperationExecutor
             }
             $this->owned($operation, $data['worker'], $nodeId, static function (Operation $operation): void {});
             $transport = $this->transports->get($data['transport']);
-            $run = [...$data, 'effect_key' => $effectKey];
+            $run = [...$data, 'effect_key' => $effectKey, 'effect_identity' => $this->effectIdentity($operation)];
             if (! $transport instanceof OperationEffectTransport || ! $transport->effectful($operation, $run)) {
                 $result = $this->receiptBody($effectKey, null);
 
@@ -281,11 +283,19 @@ final readonly class SwampOperationExecutor
             }
             try {
                 $target = $transport->receipt($operation, $run, $data['input']);
+            } catch (AgentCommandRefused $exception) {
+                if (AgentEffectReceipts::uncertain($exception->errorCode)) {
+                    throw new ResourceOperationException('operation.execution_uncertain', 'The target has no proven command result.', 409);
+                }
+                throw new ResourceOperationException('operation.receipt_unavailable', 'The target receipt could not be read.', 502);
             } catch (\Throwable) {
                 throw new ResourceOperationException('operation.receipt_unavailable', 'The target receipt could not be read.', 502);
             }
-            $this->assertReceipt($effectKey, $target);
+            $this->assertReceipt($effectKey, $target, $this->effectIdentity($operation));
             if (in_array($target['state'], ['succeeded', 'failed'], true)) {
+                if (AgentEffectReceipts::uncertain(ValidatedData::string($target['result']['error_code'] ?? ''))) {
+                    throw new ResourceOperationException('operation.execution_uncertain', 'The target has no proven command result.', 409);
+                }
                 $this->recordResult($operation, $data, ValidatedData::object($target['result']), [], $target, $nodeId);
                 $entry = ValidatedData::object(ValidatedData::object($operation->state['executor_runs'] ?? [])[$key]);
                 $result = $this->receiptBody($effectKey, $entry);
@@ -299,6 +309,17 @@ final readonly class SwampOperationExecutor
         }
 
         return $result ?? $this->receiptBody($effectKey, null);
+    }
+
+    /** @return array{nonce:string,created_at:int} */
+    private function effectIdentity(Operation $operation): array
+    {
+        $identity = $operation->state['executor_effect_identity'] ?? null;
+        if (! is_array($identity) || ! is_string($identity['nonce'] ?? null) || ! Str::isUuid($identity['nonce']) || ! is_int($identity['created_at'] ?? null)) {
+            throw new ResourceOperationException('operation.receipt_unproven', 'The original Operation identity is unavailable.', 409);
+        }
+
+        return ['nonce' => $identity['nonce'], 'created_at' => $identity['created_at']];
     }
 
     private function effectKey(Operation $operation, string $key): string
@@ -322,13 +343,18 @@ final readonly class SwampOperationExecutor
             'result' => $result, 'finished_at' => $entry['finished_at'] ?? null];
     }
 
-    /** @param array<string, mixed> $target */
-    private function assertReceipt(string $effectKey, array $target): void
+    /** @param array<string, mixed> $target
+     * @param  array{nonce:string,created_at:int}  $identity
+     */
+    private function assertReceipt(string $effectKey, array $target, array $identity): void
     {
         $state = $target['state'] ?? null;
         $finished = $target['finished_at'] ?? null;
         $exitCode = $target['exit_code'] ?? null;
         $terminal = in_array($state, ['succeeded', 'failed'], true);
+        if ($terminal && (($target['effect_nonce'] ?? null) !== $identity['nonce'] || ($target['effect_created_at'] ?? null) !== $identity['created_at'])) {
+            throw new ResourceOperationException('operation.execution_uncertain', 'The target receipt belongs to another Operation identity.', 409);
+        }
         if ($terminal && ($target['sanitized'] ?? false) !== true) {
             throw new ResourceOperationException('operation.receipt_unproven', 'The target receipt has no proven sanitization.', 409);
         }
@@ -352,6 +378,12 @@ final readonly class SwampOperationExecutor
         $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data, $fingerprint, &$receipt, &$spec, &$references): void {
             $spec = $this->contract->authorizeRun($operation, $data);
             $references = $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
+            if (! isset($operation->state['executor_effect_identity'])) {
+                if ($operation->created_at === null) {
+                    throw new ResourceOperationException('operation.execution_uncertain', 'The Operation has no creation time.', 409);
+                }
+                $this->store->change($operation, ['state' => [...($operation->state ?? []), 'executor_effect_identity' => ['nonce' => (string) Str::uuid(), 'created_at' => $operation->created_at->getTimestamp()]]]);
+            }
             $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
             $value = $runs[$data['key']] ?? null;
             $receipt = $value === null ? null : ValidatedData::object($value);
@@ -370,7 +402,7 @@ final readonly class SwampOperationExecutor
             throw new \LogicException('An invocation requires its authorized run contract.');
         }
         $transport = $this->transports->get($data['transport']);
-        $run = [...$data, 'effect_key' => $effectKey];
+        $run = [...$data, 'effect_key' => $effectKey, 'effect_identity' => $this->effectIdentity($operation)];
         $result = null;
         $values = [];
         if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? false)) {
@@ -389,7 +421,7 @@ final readonly class SwampOperationExecutor
                 $values = $hydrated['values'];
                 $input = $hydrated['input'];
                 $this->contract->validateHydratedInput($operation, $data, $spec, $input);
-                $run = [...$data, 'effect_key' => $effectKey, 'effect_metadata' => new EffectReceiptMetadata($values)];
+                $run = [...$data, 'effect_key' => $effectKey, 'effect_metadata' => new EffectReceiptMetadata($values, $this->effectIdentity($operation))];
                 $invoke = static fn (): array => $transport->run($operation, $run, $input);
                 $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                     if ($this->contract->cancellationAllowsRun($operation)) {
@@ -405,11 +437,17 @@ final readonly class SwampOperationExecutor
                 try {
                     $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : ['error_code' => 'operation.cancelled'];
                 } catch (AgentCommandRefused $exception) {
+                    if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run) && AgentEffectReceipts::uncertain($exception->errorCode)) {
+                        throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
+                    }
                     $result = ['error_code' => $exception->errorCode];
                 } catch (ResourceOperationException $exception) {
                     throw OperationSecrets::refusal($exception);
                 } catch (\Throwable) {
                     // Do not report a transport exception carrying hydrated credentials.
+                    if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run)) {
+                        throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
+                    }
                     throw new ResourceOperationException('operation.execution_failed', 'The named invocation did not return a receipt.', 502);
                 }
             }
@@ -419,7 +457,11 @@ final readonly class SwampOperationExecutor
             $result = ValidatedData::object($this->secrets->redact($result, $values));
         }
 
-        return $this->recordResult($operation, $data, $result, $values, [], $nodeId);
+        if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run) && AgentEffectReceipts::uncertain(ValidatedData::string($result['error_code'] ?? ''))) {
+            throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
+        }
+
+        return $this->recordResult($operation, $data, $result, $values, ($run['effect_metadata'] ?? null)?->receipt() ?? [], $nodeId);
     }
 
     /** @param RunInput $data
@@ -439,6 +481,10 @@ final readonly class SwampOperationExecutor
 
                 return;
             }
+            $failed = isset($result['error_code']) || ($result['outcome'] ?? null) === 'failed';
+            $resultData = $result['data'] ?? null;
+            $resultExit = is_array($resultData) ? ($resultData['exit_code'] ?? null) : null;
+            $exitCode = $failed && is_int($resultExit) ? $resultExit : ($failed ? 1 : 0);
             $result = $this->contract->execution($operation)?->received($operation, $data, $result) ?? $result;
             $result = ValidatedData::object($this->secrets->redact($result, $values));
             $result = $this->contract->result($operation, $result, $values);
@@ -450,8 +496,8 @@ final readonly class SwampOperationExecutor
             }
             $state['executor_lease_node_id'] = $nodeId;
             $runs[$data['key']] = [...$entry, 'result' => $result,
-                'receipt_state' => $target['state'] ?? (isset($result['error_code']) ? 'failed' : 'succeeded'),
-                'exit_code' => $target['exit_code'] ?? (isset($result['error_code']) ? 1 : 0),
+                'receipt_state' => $target['state'] ?? ($failed || isset($result['error_code']) ? 'failed' : 'succeeded'),
+                'exit_code' => $target['exit_code'] ?? $exitCode,
                 'finished_at' => $target['finished_at'] ?? Carbon::now()->toISOString()];
             $state['executor_runs'] = $runs;
             $this->store->change($operation, ['state' => $state]);
