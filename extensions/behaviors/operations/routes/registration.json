@@ -1,0 +1,7 @@
+{
+  "kinds": [
+    "route.caddy_converge",
+    "route.private_dns_publish"
+  ],
+  "workflow": "operation-routes"
+}

@@ -1,0 +1,24 @@
+id: 611f677a-01ac-4d78-8677-36747ee90bd5
+name: operation-routes
+description: Claim and execute one Route kind on the same worker Node.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: { type: string }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: routes
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-routes'
+          behaviorName: "operation-routes"
+          methodName: execute
+          inputs:
+            kind: '${{ inputs.kind }}'
+            worker: '${{ inputs.worker }}'
