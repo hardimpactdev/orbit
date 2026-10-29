@@ -210,7 +210,7 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Pairing Operations
 
-Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path admits the same Swamp Operation and waits for up to 30 seconds. Success returns the existing HTTP 201 shape and consumes the encrypted one-time credential. A timeout returns HTTP 504 with `conn.pairing_pending` and `details.operation_id`; follow that Operation rather than creating a second pairing. Failed or cancelled Operations return HTTP 502 with their error code and Operation ID. 
+Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path admits the same Swamp Operation and waits for up to 30 seconds. Success returns the existing HTTP 201 shape and consumes the encrypted one-time credential. A timeout returns HTTP 504 with `conn.pairing_pending` and `details.operation_id`; follow that Operation rather than creating a second pairing. Failed or cancelled Operations return HTTP 502 with their error code and Operation ID.
 
 Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Swamp executes the fixed Conn command through the Gateway executor. The Gateway resolves the stored environment session after checking the Operation's owner. A successful pairing stores its one-time credential encrypted on the pairing record through the executor's secret-output contract. Operation receipts contain safe identifiers and a stored-secret reference only.
 
