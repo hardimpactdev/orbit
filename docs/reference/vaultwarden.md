@@ -115,9 +115,9 @@ All operations need access to the Gateway.
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/api/v1/vault` | Show the status. |
-| `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns the status. |
+| `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns an Operation (202). |
 | `POST` | `/api/v1/vault/sync` | Record a sync Operation (202). |
-| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns the status. |
+| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns an Operation (202). |
 
 | Error | Status | When |
 | --- | --- | --- |
