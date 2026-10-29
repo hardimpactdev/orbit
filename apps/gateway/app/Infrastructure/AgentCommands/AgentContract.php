@@ -20,6 +20,12 @@ final class AgentContract
     /** @var list<string> */
     private array $commonErrors = [];
 
+    /** @var list<string> */
+    private array $notStartedErrors = [];
+
+    /** @var list<string> */
+    private array $preflightErrors = [];
+
     public function __construct(private readonly string $path) {}
 
     public function command(string $name): AgentCommandSpec
@@ -33,6 +39,22 @@ final class AgentContract
         $this->commands();
 
         return $this->commonErrors;
+    }
+
+    /** @return list<string> */
+    public function notStartedErrors(): array
+    {
+        $this->commands();
+
+        return $this->notStartedErrors;
+    }
+
+    /** @return list<string> */
+    public function preflightErrors(): array
+    {
+        $this->commands();
+
+        return $this->preflightErrors;
     }
 
     /** @return list<string> */
@@ -76,6 +98,8 @@ final class AgentContract
         }
 
         $this->commonErrors = self::strings($document['common_errors'] ?? null) ?? [];
+        $this->notStartedErrors = self::strings($document['not_started_errors'] ?? null) ?? throw new LogicException('The agent contract has no pre-start error classification.');
+        $this->preflightErrors = self::strings($document['preflight_errors'] ?? null) ?? throw new LogicException('The agent contract has no preflight error classification.');
 
         return $this->commands = $commands;
     }

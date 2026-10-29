@@ -172,6 +172,7 @@ pub fn execute_stream(
             #[serde(deny_unknown_fields)]
             struct Protected {
                 redactions: Vec<String>,
+                booleans: Vec<bool>,
                 nonce: String,
                 created_at: i64,
             }
@@ -281,6 +282,7 @@ pub fn execute_stream(
     let context = match effect_metadata {
         Some(metadata) => context
             .with_effect_masks(metadata.redactions)
+            .with_effect_boolean_masks(metadata.booleans)
             .with_effect_identity(metadata.nonce, metadata.created_at),
         None => context,
     };
