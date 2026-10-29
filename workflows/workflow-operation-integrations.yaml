@@ -1,0 +1,24 @@
+id: 8e7a8caf-625c-422e-8b08-3ff8d2de4e3b
+name: operation-integrations
+description: Claim and execute an integration Operation on one placed worker.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: { type: string }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: integration
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-integrations'
+          behaviorName: operation-integrations
+          methodName: execute
+          inputs:
+            kind: '${{ inputs.kind }}'
+            worker: '${{ inputs.worker }}'
