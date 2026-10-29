@@ -46,7 +46,7 @@ final readonly class SwampOperationExecutor
             $state = [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId];
             if ($operation->status === OperationStatus::Waiting) {
                 $state['executor_reentry'] = app(OperationChildren::class)->reentry($operation);
-                unset($state['executor_wait']);
+                unset($state['executor_wait'], $state['executor_assistance']);
             }
             $this->store->change($operation, [
                 'status' => OperationStatus::Running, 'worker' => $worker,

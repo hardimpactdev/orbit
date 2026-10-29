@@ -176,6 +176,7 @@ final readonly class OperationChildren
         }
         try {
             $this->requireSucceeded($parent, $definition['cancellation_boundary']);
+
             return true;
         } catch (ResourceOperationException) {
             return false;
@@ -207,6 +208,7 @@ final readonly class OperationChildren
             }
             $operation = $parent;
         }
+
         return $leaseId;
     }
 
@@ -260,10 +262,10 @@ final readonly class OperationChildren
     /** Pure by default so discovery cannot write assistance state. */
     public function ready(Operation $parent, bool $flagAssistance = false): bool
     {
-        $record = ValidatedData::object($parent->state['executor_wait'] ?? []);
-        $wait = $record['children'] ?? null;
         try {
-            if (! is_array($wait) || $wait === []) {
+            $record = $parent->state['executor_wait'] ?? null;
+            $wait = is_array($record) ? ($record['children'] ?? null) : null;
+            if (! is_array($wait) || ! array_is_list($wait) || $wait === []) {
                 throw new ResourceOperationException('operation.child_unproven', 'The waiting child evidence is missing.', 409);
             }
             $ready = true;
@@ -280,6 +282,7 @@ final readonly class OperationChildren
                 }
                 $ready = $ready && $child->status->terminal();
             }
+
             return $ready;
         } catch (ResourceOperationException $exception) {
             if ($flagAssistance) {
@@ -288,6 +291,7 @@ final readonly class OperationChildren
                     app(OperationStore::class)->change($parent, ['state' => [...($parent->state ?? []), 'executor_assistance' => $flag]]);
                 }
             }
+
             return false;
         }
     }
@@ -303,6 +307,7 @@ final readonly class OperationChildren
             $children[] = [...$tuple, 'kind' => $child->kind, 'status' => $child->status->value, 'error_code' => $child->error_code,
                 'result' => $child->result === null ? null : $this->contract->result($child, $child->result)];
         }
+
         return [...$record, 'children' => $children];
     }
 

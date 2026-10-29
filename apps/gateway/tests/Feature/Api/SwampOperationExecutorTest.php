@@ -163,7 +163,7 @@ it('retains a named invocation identity before an uncertain transport response',
     app()->instance(AgentCommandRunner::class, $runner);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'run-1'])->assertOk();
     $input = executorRunInput($id);
-    $this->postJson("/api/v1/operation-executor/{$id}/run", $input)->assertStatus(502)->assertJsonPath('error.code', 'operation.execution_failed');
+    $this->postJson("/api/v1/operation-executor/{$id}/run", $input)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
     $this->postJson("/api/v1/operation-executor/{$id}/run", [...$input, 'input' => [...$input['input'], 'name' => 'different']])->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
 
