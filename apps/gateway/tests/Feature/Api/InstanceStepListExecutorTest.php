@@ -6,6 +6,7 @@ use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceStepListAction;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\DevelopmentDeployStep;
@@ -183,7 +184,7 @@ it('keeps a budget-cut timeout distinct from a command failed at its own timeout
         'error_code' => 'command.deadline_exceeded'])->assertOk();
 });
 
-it('adopts a target environment receipt through the deploy transport without resolving protected content again', function (): void {
+it('adopts a target environment receipt through the deploy transport without resolving protected content again', function (bool $wrongIdentity): void {
     [$instance, , $agents] = stepListExecutor($this);
     $instance->update(['provisioning_step' => 'active', 'source_is_laravel' => false]);
     $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'synthetic-rotating-environment']);
@@ -196,26 +197,36 @@ it('adopts a target environment receipt through the deploy transport without res
         'sequence' => 1, 'input' => ['instance_id' => $instance->id]]);
     $path = '/api/v1/operation-executor/'.$operation->id;
     $key = 'op-'.$operation->id.'.environment.write';
-    $agents->answer('agent.effect-receipt', ['command' => 'instance.write-environment', 'effect_key' => $key,
-        'state' => 'succeeded', 'sanitized' => true, 'exit_code' => 0,
-        'result' => ['ok' => true, 'data' => ['state' => 'changed', 'installed' => true]],
-        'result_digest' => str_repeat('a', 64), 'finished_at' => '2026-10-28T22:00:00Z']);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.sync_environment', 'worker' => 'proof'])->assertOk();
     stepListRun($this, $operation, stepListDescriptor($this, $operation, 'environment.prepare'));
     $write = stepListDescriptor($this, $operation, 'environment.write');
 
     $this->postJson($path.'/run', ['worker' => 'proof', ...array_intersect_key($write, array_flip(['key', 'transport', 'name', 'input']))])
-        ->assertStatus(502)->assertJsonPath('error.code', 'operation.execution_failed');
+        ->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
     expect($operation->refresh()->state['executor_runs']['environment.write']['result'])->toBeNull();
-    $result = $this->getJson($path.'/receipts/environment.write')->assertOk()->assertJsonPath('data.state', 'succeeded')
+    $identity = $operation->state['executor_effect_identity'];
+    $metadata = $agents->calls[0]['input'][EffectReceiptMetadata::InputKey]->envelope();
+    expect($metadata['nonce'])->toBe($identity['nonce'])->and($metadata['created_at'])->toBe($identity['created_at']);
+    $target = ['command' => 'instance.write-environment', 'effect_key' => $key,
+        'effect_nonce' => $identity['nonce'], 'effect_created_at' => $identity['created_at'],
+        'state' => 'succeeded', 'sanitized' => true, 'exit_code' => 0,
+        'result' => ['ok' => true, 'data' => ['state' => 'changed', 'installed' => true]],
+        'result_digest' => str_repeat('a', 64), 'finished_at' => '2026-10-28T22:00:00Z'];
+    if ($wrongIdentity) {
+        $agents->answer('agent.effect-receipt', [...$target, 'effect_nonce' => '00000000-0000-4000-8000-000000000000']);
+        $this->getJson($path.'/receipts/environment.write')->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+        expect($operation->refresh()->state['executor_runs']['environment.write']['result'])->toBeNull();
+    }
+    $agents->answer('agent.effect-receipt', $target);
+    $result = $this->getJson($path.'/receipts/environment.write')->assertOk()->assertJsonPath('data.state', 'succeeded')->assertJsonMissingPath('data.effect_nonce')->assertJsonMissingPath('data.effect_created_at')
         ->assertJsonPath('data.result', ['state' => 'changed', 'confirmed' => true, 'changed' => true])->json('data.result');
     $this->getJson($path.'/receipts/environment.write')->assertOk()->assertJsonPath('data.result', $result);
 
-    expect($agents->commands())->toBe(['instance.write-environment', 'agent.effect-receipt']);
+    expect($agents->commands())->toBe($wrongIdentity ? ['instance.write-environment', 'agent.effect-receipt', 'agent.effect-receipt'] : ['instance.write-environment', 'agent.effect-receipt']);
     expect($agents->calls[0]['input']['effect_key'])->toBe($key);
     expect($operation->refresh()->state['executor_runs']['environment.write']['input']['content'])->toBe(['$secret' => 'instance.environment_sync', 'id' => $instance->id]);
     expect(json_encode($operation->toArray()))->not->toContain('synthetic-rotating-environment');
-});
+})->with([false, true]);
 
 it('completes a development deployment with a proven best-effort warning without production-only children', function (): void {
     [$instance, $setup, $agents] = stepListExecutor($this);
