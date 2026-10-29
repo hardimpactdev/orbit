@@ -27,6 +27,14 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 `swamp.start-worker` starts a task VM worker through fixed systemd runtime files and protected stdin input after its workspace is ready. `swamp.stop-worker` stops that service and its children, then removes its runtime unit. Worker command errors use the `swamp.*` namespace; the Gateway reports task-operation failures as `tasks.*`. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell. [Task worker enrollment](/reference/tasks#optional-swamp-worker) owns their credential lifetime.
 
+## Package-tool account boundary
+
+`package.prepare-account` creates the fixed Linux system account `orbit-swamp-package`. It creates `/var/lib/orbit-swamp-package/jobs` under root ownership with mode 0700. Its typed input names a worker account that must already exist and must not be root. Package and worker UIDs must differ. The package account has its own primary group, no supplementary groups, `/nonexistent` as home and `/usr/sbin/nologin` as shell. UID and GID come from the Node's system-account allocator; they are returned by the command, never fixed fleet-wide.
+
+An existing account must match that complete shape. Existing workspace parents must be root-owned directories with mode 0700; symlinks, writable ancestors and an unrelated account are refused. Preparation grants no sudo, socket, worker-cache, token, datastore or vault access. Worker convergence owns its own account and credentials; this primitive never changes them.
+
+Account preparation alone does not enable package execution. Package commands remain blocked until the separate typed launcher proves the UID, filesystem, environment and process boundary on the pilot. Package jobs use private disposable work/home/tmp/cache directories, no shared package cache, and never inherit `SWAMP_HOME` or GitHub credentials. Missing isolation must never cause execution as the worker or `orbit`.
+
 ## Where it runs
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.
