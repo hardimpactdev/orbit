@@ -6,7 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Models\Operation;
 
-final readonly class OperationGatewayTransport implements OperationTransport
+final readonly class OperationGatewayTransport implements OperationSecretOutputTransport
 {
     public function __construct(private OperationGatewayCommands $commands) {}
 

@@ -29,7 +29,7 @@ final readonly class SwampOperationExecutor
 {
     public const int LeaseSeconds = 120;
 
-    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports) {}
+    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports, private OperationSecretOutputs $outputs) {}
 
     public function claim(string $kind, string $worker, int $nodeId, ?int $operationId = null): ?Operation
     {
@@ -486,6 +486,7 @@ final readonly class SwampOperationExecutor
                 $result = $this->cancelledRunResult($operation, $data['key']);
             } else {
                 $this->assertTargetExists($operation, $data['transport']);
+                $this->outputs->authorize($operation);
                 $hydrated = $this->secrets->hydrate($operation, $data['key'], $data['input'], $spec['secrets'] ?? []);
                 $values = $hydrated['values'];
                 $input = $hydrated['input'];
@@ -495,6 +496,7 @@ final readonly class SwampOperationExecutor
                 $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                     if ($this->contract->cancellationAllowsRun($operation)) {
                         app(OperationChildren::class)->assertRun($operation);
+                        $this->outputs->authorize($operation);
                         $this->contract->execution($operation)?->beforeRun($operation, $data);
                         $state = $operation->state ?? [];
                         $runs = ValidatedData::object($state['executor_runs'] ?? []);
@@ -517,10 +519,6 @@ final readonly class SwampOperationExecutor
                     throw new ResourceOperationException('operation.execution_failed', 'The named invocation did not return a receipt.', 502);
                 }
             }
-        }
-
-        if (! $transport instanceof OperationEffectTransport || ! $transport->effectful($operation, $run)) {
-            $result = ValidatedData::object($this->secrets->redact($result, $values));
         }
 
         if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run)) {
@@ -578,8 +576,14 @@ final readonly class SwampOperationExecutor
             $resultData = $result['data'] ?? null;
             $resultExit = is_array($resultData) ? ($resultData['exit_code'] ?? null) : null;
             $exitCode = $failed && is_int($resultExit) ? $resultExit : ($failed ? 1 : 0);
+            $output = $this->outputs->extract($operation, $result);
+            $values = [...$values, ...$output['values']];
+            $result = $output['result'];
+            $transport = $this->transports->get($data['transport']);
+            if (! $transport instanceof OperationEffectTransport || ! $transport->effectful($operation, [...$data, 'effect_key' => $this->effectKey($operation, $data['key'])]) || $output['values'] !== []) {
+                $result = $this->contract->redactResult($operation, $result, $values);
+            }
             $result = $this->contract->execution($operation)?->received($operation, $data, $result) ?? $result;
-            $result = ValidatedData::object($this->secrets->redact($result, $values));
             $result = $this->contract->result($operation, $result, $values);
             $state = [...$before, ...($operation->state ?? [])];
             foreach ($before as $key => $value) {
