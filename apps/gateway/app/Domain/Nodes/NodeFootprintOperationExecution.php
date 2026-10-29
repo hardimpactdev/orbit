@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -75,6 +76,9 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
     public function beforeRun(Operation $operation, array $run): void
     {
         $this->input($operation, $run);
+        if ($run['name'] === 'node.install-private-dns-listener' && ! PrivateDnsPublicationNodes::query()->whereKey($operation->node_id)->exists()) {
+            throw new ResourceOperationException('node.private_dns_owner_changed', 'Only the active VPN owner can install the private DNS listener.', 409);
+        }
         if ($run['key'] === 'footprint-result') {
             $this->evidence->derive($operation, $operation->children()->get());
         }

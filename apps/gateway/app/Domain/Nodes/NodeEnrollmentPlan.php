@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Processes\ProcessSwampSafety;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Support\ValidatedData;
@@ -60,7 +61,7 @@ final readonly class NodeEnrollmentPlan
                     $steps[] = $this->child('add-prune-'.$target->id, 'node.network_projection', $target->id,
                         ['context_node_id' => $node->id, 'phase' => 'prune']);
                 }
-                if ($target->roles()->whereIn('role', [RoleName::Vpn, RoleName::Gateway])->where('status', LifecycleStatus::Active)->exists()) {
+                if (PrivateDnsPublicationNodes::query()->whereKey($target->id)->exists()) {
                     $steps[] = $this->child('add-dns-footprint-'.$target->id, 'node.converge', $target->id,
                         ['force_artifacts' => false, 'first_visit' => false]);
                     $steps[] = $this->child('add-dns-'.$target->id, 'route.private_dns_publish', $target->id, ['reason' => 'node enrollment']);

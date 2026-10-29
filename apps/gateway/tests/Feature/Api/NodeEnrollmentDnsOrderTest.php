@@ -25,7 +25,7 @@ it('orders committed enrollment and serving listener preparation before DNS for 
     $keys = array_column($plan, 'key');
 
     expect($keys[0])->toBe('add-route-777');
-    foreach ([$vpn, $gateway] as $serving) {
+    foreach ([$vpn] as $serving) {
         $footprint = array_search('add-dns-footprint-'.$serving->id, $keys, true);
         $publication = array_search('add-dns-'.$serving->id, $keys, true);
         expect($footprint)->toBeGreaterThan(array_search('add-activate', $keys, true));
@@ -34,10 +34,12 @@ it('orders committed enrollment and serving listener preparation before DNS for 
         expect($plan[$publication])->toMatchArray(['kind' => 'route.private_dns_publish', 'node_id' => $serving->id, 'input' => ['reason' => 'node enrollment']]);
     }
     expect($keys)->not->toContain('add-dns-'.$pending->id);
+    expect($keys)->not->toContain('add-dns-'.$gateway->id);
+    expect($keys)->not->toContain('add-dns-footprint-'.$gateway->id);
     expect($source->refresh()->tld)->toBe('before.test');
 })->with(['linux', 'tld_only']);
 
-it('keeps synchronous listener scope while rendering Gateway listener plans', function (array $roles, bool $active, bool $expected): void {
+it('keeps synchronous listener scope and renders units only for active VPN owners', function (array $roles, bool $active, bool $expected): void {
     $node = FleetFixtures::node('dns-footprint-roles', $roles);
     if (! $active) {
         $node->roles()->update(['status' => LifecycleStatus::Provisioning]);
@@ -55,7 +57,7 @@ it('keeps synchronous listener scope while rendering Gateway listener plans', fu
         expect($input['socket'])->toContain($node->wireguard_ip);
     }
 })->with([
-    [[RoleName::Vpn], true, true], [[RoleName::Gateway], true, true], [[RoleName::Vpn, RoleName::Gateway], true, true],
+    [[RoleName::Vpn], true, true], [[RoleName::Gateway], true, false], [[RoleName::Vpn, RoleName::Gateway], true, true],
     [[RoleName::Gateway], false, false], [[RoleName::Vpn], false, false], [[RoleName::AppProd], true, false],
 ]);
 
@@ -88,3 +90,18 @@ it('omits executor network projections from enrollment removal and restore plans
         expect($targets)->toContain($ordinary->id);
     }
 });
+
+it('selects only active VPN owners for removal and restoration DNS children', function (bool $restore): void {
+    $source = FleetFixtures::node('dns-removal-source');
+    $vpn = FleetFixtures::node('dns-removal-vpn', [RoleName::Vpn]);
+    $gateway = FleetFixtures::node('dns-removal-gateway', [RoleName::Gateway]);
+    $pending = FleetFixtures::node('dns-removal-pending-vpn', [RoleName::Vpn]);
+    $pending->roles()->update(['status' => LifecycleStatus::Provisioning]);
+    $failed = FleetFixtures::node('dns-removal-failed-vpn', [RoleName::Vpn], status: LifecycleStatus::Failed);
+    $planner = app(NodeRemovalPlan::class);
+    $plan = $restore ? $planner->restore($source) : $planner->build($source, true);
+    $dns = array_values(array_filter($plan, static fn (array $step): bool => ($step['kind'] ?? null) === 'route.private_dns_publish'));
+
+    expect(array_column($dns, 'node_id'))->toBe([$vpn->id]);
+    expect(array_column($dns, 'node_id'))->not->toContain($gateway->id, $pending->id, $failed->id);
+})->with([false, true]);

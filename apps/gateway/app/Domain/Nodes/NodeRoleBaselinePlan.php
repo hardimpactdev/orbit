@@ -7,6 +7,7 @@ namespace App\Domain\Nodes;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
@@ -144,8 +145,7 @@ final readonly class NodeRoleBaselinePlan
     /** @param list<array<string, mixed>> $steps */
     private function dns(array &$steps, Node $node, string $reason): void
     {
-        $serving = Node::query()->where('status', LifecycleStatus::Active)
-            ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn)->where('status', LifecycleStatus::Active))->first();
+        $serving = PrivateDnsPublicationNodes::query()->first();
         if ($serving instanceof Node) {
             $steps[] = $this->child('role-private-dns', 'route.private_dns_publish', $serving, ['reason' => 'node-role:'.$node->id.':'.$reason]);
         }

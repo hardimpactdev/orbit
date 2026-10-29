@@ -708,7 +708,7 @@ For a required `php-runtime` artifact, the Gateway records one `php.configure-ru
 
 The Swamp footprint refuses a required AI-router effect with `operation.kind_unavailable` before recording child intent if `ai_router.collector_converge` is not registered.
 
-On VPN and Gateway Nodes, the Swamp footprint stages the private DNS listener release and units before publication. It restarts an active listener against its existing catalog. A fresh install stays inactive until the publication child atomically writes its first catalog and enables the socket. The footprint does not write DNS records itself. Retained synchronous fleet convergence keeps its existing private DNS scope and digests; Gateway listener staging belongs to Swamp preparation.
+On the active VPN owner, the Swamp footprint stages the private DNS listener release and units before publication. It restarts an active listener against its existing catalog. A fresh install stays inactive until the publication child atomically writes its first catalog and enables the socket. The footprint does not write DNS records itself. Retained synchronous fleet convergence keeps its existing private DNS scope and digests. A Gateway-only Node uses VPN DNS as a resolver client and receives no listener installation or publication child. A Node that holds both roles remains a DNS owner through its active VPN role.
 
 Agent configuration stores its returned hash through the encrypted Node owner store. Target receipts retain only a presence marker. A lost live reply leaves the run uncertain and cannot prove storage or completion. Use the [operator re-key command](/reference/node-agent#recover-a-lost-agent-secret-reply) to restore authentication, then cancel the uncertain Operation and start a fresh converge.
 
@@ -747,3 +747,5 @@ Only `task_vm.provision` and `task_vm.enroll` may admit enrollment children; onl
 Cross-family child enrollment uses the internal `ProvisionNodeData` field names. Removal uses exactly `{caller_node_id, offline, force, deleted}` and the recorded Node. The kit stamps and replays the enriched child admission. The `deleted` flag requires a successful, stamped provider-deletion child for that same VM. Neither child adapter accepts a different target or creates an admission-and-wait wrapper.
 
 Every hub render excludes Nodes in `Removing` state, including concurrent enrollment and retained synchronous renders. Rollback restores the prior state before restoring hub membership. Swamp enrollment, removal and restoration omit network projections on Services and configured executor workers; admission also refuses such targets if an admitted plan tries to use them.
+
+Enrollment, removal and restoration publish private DNS only on an active Node with an active VPN assignment. Gateway-only Nodes receive no DNS footprint or publication child. Role convergence uses the same owner selection. Saved footprint listener runs refuse a target without an active VPN role.

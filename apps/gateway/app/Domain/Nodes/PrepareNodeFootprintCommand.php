@@ -11,7 +11,7 @@ use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
-use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
@@ -72,7 +72,10 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
         $payloads = [];
         foreach ($this->artifacts as $artifact) {
             $name = $artifact->name();
-            if ($name === 'private-dns' && $node->roles()->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active)->exists()) {
+            if ($name === 'private-dns') {
+                if (! PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()) {
+                    continue;
+                }
                 $expectedArtifacts[$name] = hash('sha256', app(AgentDelivery::class)->pin($node)."\0".$artifact->digest($node));
             }
             if (! array_key_exists($name, $expectedArtifacts)) {
