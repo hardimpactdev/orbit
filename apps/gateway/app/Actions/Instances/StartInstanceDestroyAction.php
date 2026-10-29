@@ -23,12 +23,14 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
@@ -102,7 +104,7 @@ final readonly class StartInstanceDestroyAction
                 $members[] = [...$member->toArray(), 'run_teardown' => false,
                     'source_root' => dirname((string) $member->checkout_path, 2),
                     'user' => $account->user, 'group' => $account->group,
-                    'teardown_digest' => app(StartInstanceStepListAction::class)->configurationDigest($instance->project, LifecyclePhase::Teardown),
+                    'teardown_digest' => $this->teardownDigest($instance->project),
                     'member_id' => $member->id,
                 ];
             }
@@ -140,7 +142,7 @@ final readonly class StartInstanceDestroyAction
                 'source_root' => $this->boundaries->instanceRoot($member, $account)->value,
                 'user' => $account->user, 'group' => $account->group,
                 'run_teardown' => ! $this->failedCreation($member),
-                'teardown_digest' => app(StartInstanceStepListAction::class)->configurationDigest($member->project, LifecyclePhase::Teardown),
+                'teardown_digest' => $this->teardownDigest($member->project),
                 'worktree_inventory' => base64_encode($inventory->worktreeInventory), 'origin' => $member->project->repository_url,
                 'row_deleted_at' => null,
             ];
@@ -152,6 +154,11 @@ final readonly class StartInstanceDestroyAction
             'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
             'members' => $snapshots, 'additional_route_ids' => $additional,
         ];
+    }
+
+    private function teardownDigest(Project $project): string
+    {
+        return hash('sha256', json_encode(app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Teardown), JSON_THROW_ON_ERROR));
     }
 
     private function assertSupported(Instance $instance): void

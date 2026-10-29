@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -13,8 +15,11 @@ use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 
 it('refuses invalid stored placement or incomplete active identity before dispatch', function (array $change): void {
@@ -66,6 +71,43 @@ it('refuses dirty or unpublished inspection evidence unless force is explicit', 
     expect($removal->inspect($instance, true)->checkoutPath)->toBe($instance->checkout_path);
     expect($agents->commands())->toBe(['instance.inspect-source']);
 })->with([false, true]);
+
+it('snapshots the ordered teardown digest for fresh and resumed removal without a step-list admission dependency', function (bool $resumed, bool $empty): void {
+    [$source, $agents, $instance] = sourceInspectionFixture();
+    $instance->project->update(['type' => 'monorepo']);
+    app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
+    $accounts = Mockery::mock(ManagedUserAccountResolver::class);
+    $accounts->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+    app()->instance(ManagedUserAccountResolver::class, $accounts);
+    if (! $empty) {
+        foreach ([['second', 'echo second', 30, 1], ['first', 'echo first', 20, 0]] as [$name, $command, $timeout, $position]) {
+            ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown',
+                'name' => $name, 'command' => $command, 'timeout_seconds' => $timeout, 'position' => $position]);
+        }
+        ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'setup',
+            'name' => 'setup-only', 'command' => 'echo setup', 'timeout_seconds' => 10, 'position' => 0]);
+    }
+    if ($resumed) {
+        $removal = InstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_instance_id' => $instance->id,
+            'requested_name' => $instance->name, 'force' => true, 'inventory_digest' => str_repeat('a', 64), 'total' => 1,
+            'status' => 'removing', 'current_step' => 'source_preparation']);
+        $removal->members()->create(['instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            'position' => 0, 'name' => $instance->name, 'environment' => 'development', 'source_layout' => 'checkout',
+            'checkout_path' => $instance->checkout_path, 'source_digest' => str_repeat('a', 64), 'runtime_published' => true,
+            'repository_identity' => $instance->project->repository_identity, 'root' => 'public', 'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40), 'source_commit' => str_repeat('a', 40),
+            'common_repository_path' => $instance->checkout_path, 'source_identity' => '12:34',
+            'linked_worktree_paths' => [$instance->checkout_path]]);
+        $instance->update(['status' => InstanceState::Removing]);
+    }
+
+    $snapshot = app(StartInstanceDestroyAction::class)->snapshot($instance, true);
+
+    $expected = $empty ? '[]' : '[{"name":"first","command":"echo first","timeoutSeconds":20},{"name":"second","command":"echo second","timeoutSeconds":30}]';
+    expect($snapshot['members'][0]['teardown_digest'])->toBe(hash('sha256', $expected));
+    expect($snapshot['members'][0]['run_teardown'])->toBe(! $resumed);
+    expect($agents->commands())->toBe($resumed ? [] : ['instance.inspect-source']);
+})->with(['fresh' => [false], 'resumed' => [true]])->with(['empty list' => [true], 'ordered list' => [false]]);
 
 /** @return array{RemoteDevelopmentInstanceSourceRemoval, FakeAgentCommandRunner, Instance, SourceInspectionLock} */
 function sourceInspectionFixture(bool $worktree = false): array
