@@ -30,7 +30,7 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
         $descriptors[] = $this->descriptor(['key' => 'node-lifecycle-result', 'transport' => 'gateway', 'name' => 'node.lifecycle-result', 'input' => []]);
         $result = $this->restoreNeeded($operation) ? ['node_restore_required' => true] : [];
         if ($operation->cancel_requested_at !== null && ! $operation->children()->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()
-            && (! $this->restoreNeeded($operation) || $operation->children()->where('child_key', 'remove-restore')->exists())) {
+            && (! $this->restoreNeeded($operation) || $operation->children()->where('child_key', $this->restoreKey($operation))->exists())) {
             $result = [...$result, ...$this->cancelledResult($operation)];
         }
 
@@ -50,7 +50,7 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
             }
         }
         if ($this->restoreNeeded($operation)) {
-            $intents[] = ['key' => 'remove-restore', 'kind' => 'node.removal_restore', 'node_id' => $operation->node_id, 'input' => []];
+            $intents[] = ['key' => $this->restoreKey($operation), 'kind' => $this->restoreKind($operation), 'node_id' => $operation->node_id, 'input' => []];
         }
         foreach ($intents as $intent) {
             if (! array_any($recorded, static fn (mixed $entry): bool => is_array($entry) && OperationChildIntent::same($entry, $intent))) {
@@ -127,7 +127,7 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
             if ($proof['status'] === 'failed') {
                 if (($step['optional'] ?? false) !== true) {
                     if ($this->restoreNeeded($operation) && ! $this->restored($operation)) {
-                        return [...$this->failureBase($operation), 'error_code' => 'node.removal_rollback_failed', 'failed_step' => 'remove-restore'];
+                        return [...$this->failureBase($operation), 'error_code' => $this->restoreError($operation), 'failed_step' => $this->restoreKey($operation)];
                     }
 
                     return [...$this->failureBase($operation), 'error_code' => $proof['error_code'], 'failed_step' => $step['key']];
@@ -152,8 +152,8 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
         }
         $restored = ! $this->restoreNeeded($operation) || $this->restored($operation);
 
-        return [...$this->failureBase($operation), 'error_code' => $restored ? 'operation.cancelled' : 'node.removal_rollback_failed',
-            'failed_step' => $restored ? 'operation' : 'remove-restore'];
+        return [...$this->failureBase($operation), 'error_code' => $restored ? 'operation.cancelled' : $this->restoreError($operation),
+            'failed_step' => $restored ? 'operation' : $this->restoreKey($operation)];
     }
 
     /** @return array<string,mixed> */
@@ -164,15 +164,22 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
 
     private function restoreNeeded(Operation $operation): bool
     {
-        if ($operation->kind !== 'node.remove') {
+        if (! in_array($operation->kind, ['node.remove', 'node.add'], true)) {
             return false;
         }
-        $begin = $operation->children()->where('child_key', 'remove-begin')->first();
+        if ($operation->kind === 'node.add') {
+            $intent = ValidatedData::object($operation->state['enrollment_intent'] ?? []);
+            $prior = is_array($intent['prior_state'] ?? null) ? $intent['prior_state'] : [];
+            if (($intent['existed'] ?? false) !== true || (($prior['status'] ?? null) !== 'active' && ($operation->input['mode'] ?? null) !== 'macos')) {
+                return false;
+            }
+        }
+        $begin = $operation->children()->where('child_key', $operation->kind === 'node.add' ? 'add-begin' : 'remove-begin')->first();
         if ($begin === null || $begin->status !== OperationStatus::Succeeded) {
             return false;
         }
         $this->children->verify($operation, $begin);
-        if ($begin->kind !== 'node.removal_begin' || $begin->node_id !== $operation->node_id) {
+        if ($begin->kind !== ($operation->kind === 'node.add' ? 'node.enrollment_begin' : 'node.removal_begin') || $begin->node_id !== $operation->node_id) {
             throw $this->unproven();
         }
         if ($operation->cancel_requested_at !== null) {
@@ -189,12 +196,27 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
 
     private function restored(Operation $operation): bool
     {
-        $restore = $this->children->child($operation, 'remove-restore');
-        if ($restore->kind !== 'node.removal_restore' || $restore->node_id !== $operation->node_id || ! $restore->status->terminal()) {
+        $restore = $this->children->child($operation, $this->restoreKey($operation));
+        if ($restore->kind !== $this->restoreKind($operation) || $restore->node_id !== $operation->node_id || ! $restore->status->terminal()) {
             throw $this->unproven();
         }
 
         return $restore->status === OperationStatus::Succeeded;
+    }
+
+    private function restoreKey(Operation $operation): string
+    {
+        return $operation->kind === 'node.add' ? 'add-restore' : 'remove-restore';
+    }
+
+    private function restoreKind(Operation $operation): string
+    {
+        return $operation->kind === 'node.add' ? 'node.enrollment_restore' : 'node.removal_restore';
+    }
+
+    private function restoreError(Operation $operation): string
+    {
+        return $operation->kind === 'node.add' ? 'node.reprovision_rollback_failed' : 'node.removal_rollback_failed';
     }
 
     /** @return list<array<string,mixed>> */

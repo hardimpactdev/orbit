@@ -13,6 +13,10 @@ The Gateway validates Node changes and records their intent. Swamp runs the step
 
 The Node keeps its TLD and Cluster until all captured Route changes have proven success. Route admission independently checks generation-basis ownership, the stored tuple, normal validation, and the final selected Node. A changed target refuses and rolls back its reservation.
 
+Enrollment admission records the candidate and prior public identity, requested roles, storage intent, delivery pins and internal task VM/jump Node links. It reads no bootstrap credential and performs no remote work. A populated Node permits only an active app-dev TLD change. Mac enrollment requires one existing account and an existing tunnel address; it preserves service roles, Cluster, DNS and storage policy.
+
+`node.enrollment_begin` enters provisioning after the captured Route children succeed. An existing active Node keeps its prior persisted managed account while the candidate account is prepared. `node.enrollment_activate` requires every preceding recorded child and then publishes the candidate identity as active. A failed or cancelled existing enrollment restores its prior identity and retained peer transaction through `node.enrollment_restore`, under the same ancestor target hold. The cancelled parent dispatches no recovery effect of its own. Proven Route cutovers retain their new TLD and Cluster when restoring the other identity fields.
+
 ## Network child
 
 The internal `node.network_converge` child records its public connection and host fingerprint before admission. It prepares the peer key through pinned bootstrap SSH, publishes the hub through a child on the VPN Node, then publishes and verifies the peer. An existing peer retains its native transaction until the owning role succeeds. A proven failure restores that transaction before final completion. A missing reply requires the original target receipt; it never authorizes an unkeyed retry. 

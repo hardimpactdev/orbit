@@ -42,7 +42,7 @@ final readonly class PrepareNodeRoleCommand implements OperationGatewayCommand
         }
         $intent = ValidatedData::object($operation->state['role_intent'] ?? []);
         $assignment = NodeRole::query()->findOrFail(ValidatedData::integer($intent['assignment_id'] ?? null));
-        $node = Node::query()->findOrFail($operation->node_id);
+        $node = app(NodeEnrollmentContext::class)->node($operation);
         if (in_array($operation->kind, ['node.role_relocate', 'node.role_relocate_source', 'node.role_relocate_target'], true)) {
             return $this->relocation($operation, $input, $intent, $assignment, $node);
         }

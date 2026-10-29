@@ -20,11 +20,21 @@ final readonly class StartNodeNetworkRollbackAction
         if (($existing = $this->idempotency->replay('node.network_rollback')) !== null) {
             return $existing;
         }
-        if ($this->idempotency->parent?->id !== $parent->id || $this->idempotency->childKey !== 'role-network-rollback'
-            || $parent->kind !== 'node.role_add' || ($parent->state['role_first_managed'] ?? false) !== true) {
+        $enrollment = $parent->kind === 'node.enrollment_restore';
+        if ($this->idempotency->parent?->id !== $parent->id
+            || ($enrollment ? $this->idempotency->childKey !== 'add-network-rollback'
+                : ($this->idempotency->childKey !== 'role-network-rollback' || $parent->kind !== 'node.role_add' || ($parent->state['role_first_managed'] ?? false) !== true))) {
             throw new ResourceOperationException('operation.child_forbidden', 'Peer rollback requires its owning first-role parent.', 422);
         }
-        $network = $this->children->requireSucceeded($parent, 'role-network');
+        $owner = $parent;
+        if ($enrollment) {
+            $owner = Operation::query()->findOrFail($parent->parent_operation_id);
+            $this->children->verify($owner, $parent);
+            if ($owner->kind !== 'node.add' || $owner->node_id !== $parent->node_id) {
+                throw new ResourceOperationException('operation.child_forbidden', 'Peer rollback has no enrollment ancestor.', 422);
+            }
+        }
+        $network = $this->children->requireSucceeded($owner, $enrollment ? 'add-network' : 'role-network');
         if ($network->kind !== 'node.network_converge' || $network->node_id !== $parent->node_id || ($network->result['retained'] ?? null) !== true) {
             throw new ResourceOperationException('operation.child_forbidden', 'The peer has no proven retained transaction.', 422);
         }

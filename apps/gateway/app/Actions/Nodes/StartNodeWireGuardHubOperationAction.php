@@ -27,7 +27,7 @@ final readonly class StartNodeWireGuardHubOperationAction
         $context = $input['context_node_id'] ?? null;
         $excluded = $input['excluded_node_id'] ?? null;
         if ($this->idempotency->parent?->id !== $parent->id || $this->idempotency->childKey !== $intent['key']
-            || ! in_array($parent->kind, ['node.network_converge', 'node.add', 'node.remove', 'node.removal_restore'], true)
+            || ! in_array($parent->kind, ['node.network_converge', 'node.add', 'node.remove', 'node.removal_restore', 'node.enrollment_restore'], true)
             || ! is_int($intent['node_id']) || ! is_int($context) || $context !== $parent->node_id || ! array_key_exists('excluded_node_id', $input)
             || ($excluded !== null && $excluded !== $context)
             || ! Node::query()->whereKey($intent['node_id'])->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->exists()) {

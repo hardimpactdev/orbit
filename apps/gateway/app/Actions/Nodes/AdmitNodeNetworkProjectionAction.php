@@ -32,7 +32,7 @@ final readonly class AdmitNodeNetworkProjectionAction
         $phase = $input['phase'] ?? null;
         $expected = match ($parent->kind) {
             'node.remove' => 'prune',
-            'node.add', 'node.removal_restore' => 'expand',
+            'node.add', 'node.removal_restore', 'node.enrollment_restore' => 'expand',
             default => null,
         };
         if ($this->idempotency->parent?->id !== $parent->id || $this->idempotency->childKey !== $intent['key']

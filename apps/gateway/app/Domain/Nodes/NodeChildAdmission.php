@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Actions\Nodes\AdmitNodeBootstrapAction;
+use App\Actions\Nodes\AdmitNodeEnrollmentStageAction;
 use App\Actions\Nodes\AdmitNodeNetworkProjectionAction;
 use App\Actions\Nodes\AdmitNodeRemovalStageAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
@@ -26,6 +27,9 @@ final readonly class NodeChildAdmission implements OperationChildAdmission
 
     public function admit(Operation $parent, array $intent): Operation
     {
+        if (in_array($intent['kind'], ['node.enrollment_begin', 'node.enrollment_activate', 'node.enrollment_commit', 'node.enrollment_restore'], true)) {
+            return app(AdmitNodeEnrollmentStageAction::class)->execute($parent, $intent);
+        }
         if (in_array($intent['kind'], ['node.bootstrap_probe', 'node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect'], true)) {
             return app(AdmitNodeBootstrapAction::class)->execute($parent, $intent);
         }
