@@ -26,6 +26,8 @@ use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceLifecycleGitSecret;
+use App\Domain\Instances\InstanceLifecycleUrlSecret;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\ProductionCloneRouteProjector;
@@ -48,6 +50,7 @@ use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
+use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
@@ -129,6 +132,7 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class], OperationSecretSource::class);
         $this->app->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
         $this->app->scoped(
             InstanceEnvironmentOperationLock::class,
