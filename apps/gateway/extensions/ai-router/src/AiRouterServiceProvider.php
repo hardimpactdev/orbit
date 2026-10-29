@@ -13,7 +13,6 @@ use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
-use App\Models\DatabaseConnection;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
@@ -32,12 +31,12 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterModelKeyIssuer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
+use Orbit\Extensions\AiRouter\Infrastructure\ConfiguredAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterRuntimeLifecycle;
-use Orbit\Extensions\AiRouter\Infrastructure\ValkeyAiRouterCache;
 
 /** The ai-router extension. See [Extensions](/reference/extensions#the-extensions). */
 final class AiRouterServiceProvider extends ExtensionServiceProvider
@@ -68,14 +67,7 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
                 return $app->make(ArrayAiRouterCache::class);
             }
 
-            $slug = $app->make(AiRouterState::class)->cacheConnection();
-            $connection = is_string($slug)
-                ? DatabaseConnection::query()->where('slug', $slug)->first()
-                : null;
-
-            return $connection instanceof DatabaseConnection
-                ? new ValkeyAiRouterCache($connection)
-                : $app->make(ArrayAiRouterCache::class);
+            return new ConfiguredAiRouterCache($app->make(AiRouterState::class), $app->make(ArrayAiRouterCache::class));
         });
         $this->app->singleton(AiRouterSnapshotStore::class);
         if ($this->app->environment('testing')) {
