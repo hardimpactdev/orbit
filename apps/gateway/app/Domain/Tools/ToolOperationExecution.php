@@ -6,12 +6,11 @@ namespace App\Domain\Tools;
 
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** Family-owned binding and receipt validation. Performs no Node work. */
+/** Binds admitted commands and projects inventory. Swamp owns execution policy. */
 final readonly class ToolOperationExecution implements OperationFamilyExecution
 {
     /** @return array{descriptors: list<array{key: string, step: string, transport: string, name: string, input: array<string, mixed>, resumable: bool, required: bool}>} */
@@ -88,37 +87,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
     }
 
     /** @param array<string, mixed> $run */
-    public function beforeRun(Operation $operation, array $run): void
-    {
-        $this->input($operation, $run);
-        if ($run['key'] !== 'package-mutate') {
-            return;
-        }
-        $input = $operation->input;
-        $steps = $this->proven($operation);
-        $verb = substr($operation->kind, 5);
-        if (! isset($steps['manager-ready']['version']) || ! array_key_exists('installed_version', $steps['package-before'] ?? [])) {
-            $this->unproven();
-        }
-        $before = $steps['package-before']['installed_version'];
-        if (($verb === 'install' && $input['tool_id'] === null && $before !== null) || ($verb === 'update' && $before === null)) {
-            $this->unproven();
-        }
-        if ($verb !== 'remove' && is_string($before)) {
-            $this->verifyVersion($operation, $before);
-        }
-        if ($verb !== 'remove' && $input['version_constraint'] !== null) {
-            $candidate = $steps['package-candidate']['version'] ?? null;
-            if (! is_string($candidate)) {
-                $this->unproven();
-            }
-            $this->verifyVersion($operation, $candidate);
-        }
-        if ($verb === 'remove' && in_array($input['manager'], ['apt', 'vp', 'composer'], true)
-            && ($steps['package-removal-plan']['packages'] ?? null) !== [$input['package']]) {
-            $this->unproven();
-        }
-    }
+    public function beforeRun(Operation $operation, array $run): void {}
 
     /** @param array<string, mixed> $run
      * @param  array<string, mixed>  $receipt
@@ -135,8 +104,12 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
         $input = $operation->input;
         $managerName = ToolManagerName::from(ValidatedData::string($input['manager']));
         $manager = app(ToolManagerRegistry::class)->find($managerName->value);
+        $validatePackage = null;
+        if ($manager !== null) {
+            $validatePackage = $manager->validatePackage(...);
+        }
         try {
-            $inventory = new ToolInventoryReceipt()->parse($managerName, $receipt, $manager === null ? null : $manager->validatePackage(...));
+            $inventory = new ToolInventoryReceipt()->parse($managerName, $receipt, $validatePackage);
             $version = $inventory->versionFor(ValidatedData::string($input['package']));
         } catch (ToolManagerException) {
             return ['error_code' => 'tool.version_probe_failed'];
@@ -173,112 +146,6 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
         return null;
     }
 
-    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
-    {
-        if ($outcome->status !== OperationStatus::Succeeded) {
-            return;
-        }
-        $input = $operation->input;
-        $result = $outcome->result ?? [];
-        $steps = $this->proven($operation);
-        if (! is_string($steps['manager-ready']['version'] ?? null)) {
-            $this->unproven();
-        }
-        if (isset($input['materialize_command']) && ! isset($steps['manager-materialize'])) {
-            $this->unproven();
-        }
-        if ($operation->kind === 'tool.manager_converge') {
-            if (! is_string($result['version'] ?? null)) {
-                $this->unproven();
-            }
-
-            return;
-        }
-        if ($input['intent_only']) {
-            return;
-        }
-        if (! array_key_exists('installed_version', $result)) {
-            $this->unproven();
-        }
-        $after = $result['installed_version'];
-        if ($operation->kind !== 'tool.adopt') {
-            if (! array_key_exists('installed_version', $steps['package-before'] ?? [])) {
-                $this->unproven();
-            }
-            $before = $steps['package-before']['installed_version'];
-            $requiresMutation = match ($operation->kind) {
-                'tool.install', 'tool.remove' => $before !== null ? $operation->kind === 'tool.remove' : $operation->kind === 'tool.install',
-                default => true,
-            };
-            if ($operation->kind === 'tool.update' && ($result['outcome'] ?? null) === 'blocked_by_constraint') {
-                $candidate = $steps['package-candidate']['version'] ?? null;
-                $manager = app(ToolManagerRegistry::class)->find(ValidatedData::string($input['manager']));
-                $normalized = is_string($candidate) ? $manager?->normalizeVersion($candidate) : null;
-                $constraint = ValidatedData::nullableString($input['version_constraint']);
-                if ($normalized === null || $constraint === null || app(VersionConstraint::class)->allows($normalized, $constraint) || $after !== $before) {
-                    $this->unproven();
-                }
-                $requiresMutation = false;
-            }
-            if ($requiresMutation && ! isset($steps['package-mutate'])) {
-                $this->unproven();
-            }
-        }
-        if ($operation->kind === 'tool.remove') {
-            if ($after !== null) {
-                $this->unproven();
-            }
-
-            return;
-        }
-        if (! is_string($after) || $after === '' || strlen($after) > 255 || preg_match('/[\x00-\x1F\x7F]/', $after) === 1) {
-            $this->unproven();
-        }
-        if ($operation->kind === 'tool.adopt' && $input['manager'] === 'composer'
-            && ! in_array($input['package'], ValidatedData::stringList($steps['adoption-scope']['roots'] ?? []), true)) {
-            $this->unproven();
-        }
-        if ($operation->kind === 'tool.adopt' && ($result['block'] ?? null) !== null) {
-            $this->unproven();
-        }
-        if ($operation->kind === 'tool.install' && $input['tool_id'] === null
-            && (! array_key_exists('installed_version', $steps['package-before'] ?? []) || $steps['package-before']['installed_version'] !== null)) {
-            $this->unproven();
-        }
-        $this->verifyVersion($operation, $after);
-    }
-
-    /** @return array<string, array<string, mixed>> */
-    private function proven(Operation $operation): array
-    {
-        $results = [];
-        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
-        foreach ($this->context($operation)['descriptors'] as $descriptor) {
-            $run = $runs[$descriptor['key']] ?? null;
-            if (is_array($run) && ($run['transport'] ?? null) === $descriptor['transport'] && ($run['name'] ?? null) === $descriptor['name']
-                && is_array($run['result'] ?? null) && ! isset($run['result']['error_code'])) {
-                $results[$descriptor['key']] = ValidatedData::object($run['result']);
-            }
-        }
-
-        return $results;
-    }
-
-    private function verifyVersion(Operation $operation, string $raw): void
-    {
-        $constraint = ValidatedData::nullableString($operation->input['version_constraint']);
-        if ($constraint === null) {
-            return;
-        }
-        $manager = app(ToolManagerRegistry::class)->find(ValidatedData::string($operation->input['manager']));
-        $normalized = $manager?->normalizeVersion($raw);
-        if ($normalized === null || ! app(VersionConstraint::class)->allows($normalized, $constraint)) {
-            $this->unproven();
-        }
-    }
-
-    private function unproven(): never
-    {
-        throw new ResourceOperationException('operation.completion_unproven', 'The Tool outcome requires proven package observations.', 409);
-    }
+    /** Execution policy is checked once by the trusted Swamp workflow. */
+    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void {}
 }

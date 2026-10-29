@@ -2,16 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Tools\ToolManagerChildAdmission;
-use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolOperationCompletion;
 use App\Domain\Tools\ToolOperationExecution;
 
 return (static function (): array {
-    if (! ToolOperationAvailability::available()) {
-        return [];
-    }
-
     $kinds = [];
     foreach (['install', 'update', 'remove', 'adopt', 'manager_converge'] as $verb) {
         $commands = ['tool.apt-version', 'tool.composer-version', 'tool.vp-version', 'tool.homebrew-version'];
@@ -32,9 +28,9 @@ return (static function (): array {
                 $variant = $manager.':adoption';
             }
             $commands[] = $name;
-            $map[$variant] = ['step' => 'tool-verified', 'transport' => 'agent', 'name' => $name, 'result' => []];
+            $map[$variant] = $name;
             if ($verb === 'remove') {
-                $map[$manager.':version'] = ['step' => 'tool-verified', 'transport' => 'agent', 'name' => $version, 'result' => []];
+                $map[$manager.':version'] = $version;
             }
             if (in_array($verb, ['install', 'update', 'remove'], true)) {
                 $commands[] = $prefix.$verb;
@@ -51,20 +47,17 @@ return (static function (): array {
         if (in_array($verb, ['install', 'manager_converge'], true)) {
             $commands = [...$commands, 'tool.materialize-composer', 'tool.materialize-vp', 'tool.materialize-homebrew'];
         }
-        $runs = array_map(static fn (string $name): array => [
-            'transport' => 'agent', 'name' => $name, 'input_fields' => [], 'input_values' => [], 'secrets' => [],
-        ], array_values(array_unique($commands)));
-        $kinds['tool.'.$verb] = [
-            'executor' => 'swamp', 'completion' => ToolOperationCompletion::class,
-            'execution' => ToolOperationExecution::class, 'runs' => $runs, 'children' => [],
-            'completion_contract' => ['completion' => ['by' => 'completion_variant', 'map' => $map]],
-            'result_fields' => ['installed_version', 'block', 'version', 'outcome', 'error_code',
-                ['name' => 'packages', 'type' => 'list', 'items' => 'string', 'max' => 4096],
-                ['name' => 'roots', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
-        ];
+        $kinds['tool.'.$verb] = ['commands' => $commands, 'done_when' => $map];
     }
 
     $kinds['tool.manager_converge']['admission'] = ToolManagerChildAdmission::class;
 
-    return $kinds;
+    return OperationFamilySpec::compile([
+        'requires' => ['children', 'list_of'],
+        'completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,
+        'transport' => 'agent', 'done_step' => 'tool-verified', 'variant' => 'completion_variant',
+        'result_fields' => ['installed_version', 'block', 'version', 'outcome', 'error_code',
+            ['name' => 'packages', 'type' => 'list', 'items' => 'string', 'max' => 4096],
+            ['name' => 'roots', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
+    ], $kinds);
 })();

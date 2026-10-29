@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ReservesRolePackages;
@@ -15,7 +16,6 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
-use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
@@ -84,7 +84,7 @@ final readonly class StartToolOperationAction
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
                 $variant = $intentOnly ? 'version' : ($verb === 'adopt' && in_array($managerName, ['brew', 'brew-cask'], true) ? 'adoption' : 'inventory');
 
-                ToolOperationAvailability::assertAvailable();
+                OperationFamilySpec::assertAvailable('tool.'.$verb);
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package,

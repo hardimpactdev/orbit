@@ -32,6 +32,15 @@ Gateway package manager adapters keep package validation, version normalization 
 
 Node enrollment and role operations can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
 
+The family spec compiles its fixed command allowlist, completion variants, result
+fields, and required kit capabilities through `OperationFamilySpec`. Swamp
+consumes the admitted descriptors for names and input. It keeps one execution
+policy implementation for candidate constraints, adoption, exact removal, and
+final package state. The Gateway keeps admission, exact target and input
+bindings, native schemas, redaction, receipt identity, and intent projection.
+It does not repeat that package policy in its execution hooks. This boundary
+trusts the configured Swamp executor as part of the control plane.
+
 The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
 
 When the shared executor lacks Kit B child admission (`children`) or Kit C result schemas (`list_of`), Tools write kinds remain unregistered. Package writes and manager convergence refuse admission with `operation.kind_unavailable` (HTTP 503), without recording an Operation or running a Node command. Tool reads remain available.

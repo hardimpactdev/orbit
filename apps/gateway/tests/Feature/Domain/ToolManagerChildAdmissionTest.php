@@ -3,17 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationChildAdmission;
+use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolOperationAvailability;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
-    if (! ToolOperationAvailability::available()) {
+    if (! OperationFamilySpec::available('tool.install')) {
         $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
     }
     Queue::fake();
