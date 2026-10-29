@@ -249,6 +249,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         if (! is_array($run) || ! is_array($descriptor) || ! is_array($run['result'] ?? null)
             || isset($run['result']['error_code']) || ($run['transport'] ?? null) !== $descriptor['transport']
             || ($run['name'] ?? null) !== $descriptor['name']
+            || ($run['step'] ?? null) !== $descriptor['step'] || ($run['input'] ?? null) !== $descriptor['input']
             || ! $operation->steps()->where('name', $descriptor['step'])->where('status', 'succeeded')->exists()) {
             throw new ResourceOperationException('operation.completion_unproven', 'A proven successful lifecycle step is required.', 409);
         }
