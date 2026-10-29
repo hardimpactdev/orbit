@@ -106,6 +106,8 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
         ? { matches: true }
         : body.name === "node.install-private-dns-listener"
         ? { installed: true, changed: true }
+        : body.name === "agent.install"
+        ? { installed: true, changed: false, architecture: "x86_64" }
         : body.name === "php.install-build"
         ? { outcome: "applied" }
         : { changed: false };

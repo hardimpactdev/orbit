@@ -157,5 +157,23 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.assertEqual(state["operation"]["status"], "succeeded")
 
 
+    def test_bootstrap_installer_recovers_a_lost_reply_without_a_second_install(self):
+        self.state["operation"]["kind"] = "node.bootstrap_install"
+        self.state["operation"]["input"] = {
+            "bootstrap_host": "192.0.2.8", "bootstrap_port": 2222,
+            "bootstrap_fingerprint": "SHA256:" + "A" * 43, "bootstrap_user": "root",
+            "bootstrap_identity": {"$secret": "node.bootstrap_ssh_identity", "id": 2},
+            "agent_pin": "a" * 64, "command_input": []}
+        self.state["loseRunReplyKey"] = "agent-install"
+        self.save()
+        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.assertEqual(self.read()["runs"], 1)
+        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        state = self.read()
+        self.assertEqual(state["runs"], 1)
+        self.assertEqual(state["keys"].count("agent-install"), 1)
+        self.assertEqual(state["operation"]["status"], "succeeded")
+
+
 if __name__ == "__main__":
     unittest.main()

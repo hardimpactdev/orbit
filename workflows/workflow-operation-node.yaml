@@ -7,7 +7,7 @@ autoResume: true
 inputs:
   type: object
   properties:
-    kind: { type: string, enum: [node.prepare_php_packages, node.settings, node.converge] }
+    kind: { type: string, enum: [node.prepare_php_packages, node.settings, node.converge, node.bootstrap_probe, node.bootstrap_install] }
     worker: { type: string }
   required: [kind, worker]
 jobs:
@@ -17,7 +17,7 @@ jobs:
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-node"
-          behaviorName: '${{ {"node.prepare_php_packages": "operation-node-php-packages", "node.settings": "operation-node-settings", "node.converge": "operation-node-converge"}[inputs.kind] }}'
+          behaviorName: '${{ {"node.prepare_php_packages": "operation-node-php-packages", "node.settings": "operation-node-settings", "node.converge": "operation-node-converge", "node.bootstrap_probe": "operation-node-bootstrap-probe", "node.bootstrap_install": "operation-node-bootstrap-install"}[inputs.kind] }}'
           methodName: execute
           inputs:
             kind: "${{ inputs.kind }}"

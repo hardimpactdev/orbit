@@ -181,15 +181,17 @@ export class Fixture {
       throw new Error("Lost completion reply");
     }
     this.operation.execution_context = {
-      descriptors: [{
-        key: "footprint-agent",
-        step: "footprint-agent",
-        transport: "agent",
-        name: "agent.configure",
-        input: this.snapshot.payloads.agent ?? {},
-        required: false,
-        resumable: false,
-      }],
+      descriptors: this.operation.kind === "node.converge"
+        ? [{
+          key: "footprint-agent",
+          step: "footprint-agent",
+          transport: "agent",
+          name: "agent.configure",
+          input: this.snapshot.payloads.agent ?? {},
+          required: false,
+          resumable: false,
+        }]
+        : [],
     };
     return { status: 200, body: { data } };
   };

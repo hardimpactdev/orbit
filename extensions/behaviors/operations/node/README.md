@@ -41,7 +41,7 @@ has only a target presence marker stays uncertain. The Gateway's owner-checked
 proof or complete the original footprint.
 
 Run `python3 extensions/behaviors/operations/node/converge_native_test.py` for
-five disposable native restart and child-wait checks. The existing native Node
+six disposable native restart and child-wait checks. The existing native Node
 checks continue to cover the retained package and settings runners.
 
 For each required `php-runtime` artifact, Swamp runs `php.configure-runtime`
@@ -54,3 +54,12 @@ run and step results; the Gateway logs them.
 
 A matching artifact digest skips its effects. Recipe composition must request
 `force_artifacts: true` after installing a runtime whose module may be absent.
+
+The `node.bootstrap_probe` and `node.bootstrap_install` enrollment children use
+`bootstrap-ssh` before WireGuard exists. Swamp forwards only the
+Gateway-admitted host, port, fingerprint, login and credential reference. Probe
+precedes installer admission and pins its selected build to the proven
+architecture. The Gateway checks the observed host key and resolves the existing
+credential. Saved target receipts recover lost installer replies; an uncertain
+receipt never starts a second installation. Retained enrollment callers keep
+their synchronous path.

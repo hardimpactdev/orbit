@@ -9,6 +9,7 @@ import {
 } from "../../operation-runner/mod.ts";
 
 import { converge } from "./converge.ts";
+import { bootstrap } from "./bootstrap.ts";
 import { NodeExecution, PendingEffect } from "./execution.ts";
 
 const Result = z.preprocess(
@@ -133,6 +134,8 @@ export function node(
             "node.prepare_php_packages",
             "node.settings",
             "node.converge",
+            "node.bootstrap_probe",
+            "node.bootstrap_install",
           ]),
           worker: z.string().min(1),
         }),
@@ -182,7 +185,13 @@ export function node(
           if (!operation) return { claimed: false };
           if (
             operation.kind !== args.kind ||
-            !["node.prepare_php_packages", "node.settings", "node.converge"]
+            ![
+              "node.prepare_php_packages",
+              "node.settings",
+              "node.converge",
+              "node.bootstrap_probe",
+              "node.bootstrap_install",
+            ]
               .includes(
                 operation.kind,
               ) ||
@@ -211,7 +220,10 @@ export function node(
           if (operation.node_id === null) {
             throw new ExecutorError("operation.target_missing");
           }
-          if (operation.kind === "node.converge") {
+          if (
+            ["node.converge", "node.bootstrap_probe", "node.bootstrap_install"]
+              .includes(operation.kind)
+          ) {
             const execution = new NodeExecution(
               operation,
               executor,
@@ -219,7 +231,9 @@ export function node(
               ctx,
             );
             try {
-              const outcome = await converge(execution, ctx);
+              const outcome = operation.kind === "node.converge"
+                ? await converge(execution, ctx)
+                : await bootstrap(execution);
               if ("waiting" in outcome) {
                 return {
                   claimed: true,
