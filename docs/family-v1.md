@@ -3,10 +3,10 @@
 `orbit.family/v1` puts the Orbit contract and native Swamp workflow in one
 reviewed YAML or JSON spec. This first slice is additive and inactive. No
 current family loads these artifacts. The paired Gateway artifact loader checks
-release pins and registered names. Shared admission/completion adapters, the
-control-worker allowlist and registered typed SSH method still follow before
-adoption. The [typed SSH factory](typed-agent.md) is implemented separately and
-remains unregistered until those adapters and command contracts land.
+release pins and registered names. Adoption requires shared admission/completion
+adapters and a non-root Swamp worker on each admitted Node. Each Node runs its
+own steps and calls typed local agent primitives. There is no central SSH
+executor or control-worker enrollment.
 
 The compiler emits `workflow.yaml` and `contract.json` into a new build
 directory. It preserves the workflow ID assigned by `swamp workflow create`.
@@ -111,8 +111,10 @@ extension code.
 Control vaults belong on Node 209, under `/home/orbit/apps/orbit-swamp/default`.
 Their master keys belong under `/home/orbit/.config/swamp/vault-keys/`, outside
 the datastore, with separately held encrypted recovery copies. Do not bootstrap
-on Services. Live family exports and execution-key installs require the short
-plan to the orchestrator first. T1–T5 are approved; T6 mTLS remains deferred.
+on Services. No Node SSH keys belong on 209. Workers trust the Orbit root CA
+over WireGuard to `wss://swamp.orbit`; exact-certificate pinning is not
+required. Production worker installs, grant changes and the token issuer setup
+on 209 require the orchestrator's approval before live changes.
 
 Native references at the runtime pin:
 [workflow primitives](https://github.com/swamp-club/swamp/blob/1602a6172fe5002133a56e8b2da31e90f3fb8b04/design/primitives/workflows.md)

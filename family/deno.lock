@@ -5,8 +5,7 @@
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "jsr:@std/yaml@1.0.12": "1.0.12",
     "npm:ajv@8.17.1": "8.17.1",
-    "npm:zod@4.4.3": "4.4.3",
-    "npm:zod@4.6.7": "4.6.7"
+    "npm:zod@4.4.3": "4.4.3"
   },
   "jsr": {
     "@std/assert@1.0.19": {
@@ -46,9 +45,6 @@
     },
     "zod@4.4.3": {
       "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="
-    },
-    "zod@4.6.7": {
-      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="
     }
   }
 }
