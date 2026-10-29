@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -51,10 +52,28 @@ it('keeps the 201 API contract after a proven Swamp completion and consumes the 
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('conn.pairing_create')->and($operation->input['caller_node_id'])->toBe($this->caller->id);
     expect(ConnPairing::query()->sole()->credential)->toBeNull();
+    expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('one-time-sentinel')->not->toContain('fixture-session');
     $this->getJson('/api/v1/conn/environments/conn-wait/pairings/'.$response->json('data.pairing.id'))->assertConflict();
     Sleep::assertSleptTimes(1);
     Http::assertNothingSent();
 })->with([false, true]);
+
+it('replays a keyed synchronous request as the existing Operation without issuing or reading twice', function (): void {
+    Sleep::whenFakingSleep(function (): void {
+        $pairing = ConnPairing::query()->sole();
+        $pairing->update(['pairing_link_id' => 'fixture-link', 'credential' => 'one-time-sentinel', 'expires_at' => now()->addMinutes(5)]);
+        Operation::query()->where('target_id', $pairing->id)->update(['status' => 'succeeded', 'result' => ['pairing_id' => $pairing->id]]);
+    });
+
+    $this->withHeader('Idempotency-Key', 'conn-sync-replay');
+    $this->postJson('/api/v1/conn/environments/conn-wait/pairings')->assertCreated();
+    $operation = Operation::query()->sole();
+    $this->postJson('/api/v1/conn/environments/conn-wait/pairings')->assertAccepted()
+        ->assertJsonPath('data.id', $operation->id)->assertJsonMissingPath('data.pairing_url');
+    expect(Operation::query()->count())->toBe(1)->and(ConnPairing::query()->sole()->credential)->toBeNull();
+    Sleep::assertSleptTimes(1);
+    Http::assertNothingSent();
+});
 
 it('returns a 504 with the existing Operation ID when the bounded wait expires', function (): void {
     Sleep::whenFakingSleep(static function (): never {
