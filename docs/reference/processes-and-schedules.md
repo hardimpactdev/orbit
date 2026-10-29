@@ -22,6 +22,8 @@ Process create, update, start, stop, restart, and destroy record an Operation an
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
+Processes on the configured Swamp Services Node or executor worker Nodes cannot be mutated through Swamp. Admission and final dispatch refuse with `process.executor_dependency` (HTTP 409). This includes Instance Processes on those Nodes. The guard covers every Process there, because stopping serve or a local dependency could remove the executor needed for recovery. It uses the configured Node identities, so renaming a Process cannot bypass it. Read commands and retained synchronous PHP actions remain available. Use the synchronous control path to maintain executor Processes; do not enqueue their own recovery in Swamp.
+
 ## Owners
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.

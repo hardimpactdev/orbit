@@ -81,7 +81,10 @@ it('enforces exact lifecycle run contracts and scalar result redaction', functio
 it('reads a Process receipt before its first effect and rejects readiness without proof', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    config(['dependency_detection.services_node_id' => $this->node->id]);
+    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $executor->accessibleNodes()->attach($this->node);
+    config(['dependency_detection.services_node_id' => $executor->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $executor->wireguard_ip]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.create', 'worker' => 'process-worker'])->assertOk();
     $path = '/api/v1/operation-executor/'.$operation->id;
     $this->getJson($path.'/receipts/process-converge-container')->assertOk()->assertJsonPath('data.state', 'unknown');
