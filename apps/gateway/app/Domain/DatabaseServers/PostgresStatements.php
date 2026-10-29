@@ -215,7 +215,7 @@ final readonly class PostgresStatements
         }
 
         return "DO \$lock\$ BEGIN PERFORM pg_advisory_lock(hashtextextended('orbit.database-removal', 0)); END \$lock\$;\n"
-            .$this->fenceDatabases($databases, $owners).$this->ownershipChecks($databases, $owners)
+            .$this->fenceDatabases($databases, $owners)
             ."WITH blockers AS ({$blockers}) SELECT EXISTS (SELECT FROM blockers) AS blocked\n\\gset orbit_\n"
             ."\\if :orbit_blocked\n{$blockers};\n\\else\n{$drops}\\endif\n"
             .$this->restoreDatabaseAdmission($databases);

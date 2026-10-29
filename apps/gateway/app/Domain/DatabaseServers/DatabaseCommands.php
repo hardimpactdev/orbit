@@ -83,7 +83,7 @@ final readonly class DatabaseCommands
         $query = $statements->databasesNamed($names[0], $testPrefix);
         if ($owned !== []) {
             $query = rtrim(trim($query), ';');
-            $query = 'SELECT SCHEMA_NAME FROM ('.$query.') existing_names WHERE SCHEMA_NAME NOT IN ('.implode(', ', array_map(static fn (string $name): string => "'".$name."'", $owned)).");\n";
+            $query = 'SELECT SCHEMA_NAME FROM ('.$query.') existing_names WHERE SCHEMA_NAME NOT IN ('.implode(', ', array_map($statements->string(...), $owned)).");\n";
         }
         $commands['preflight'] = [...self::sql($server, $query, expectEmpty: true), 'read_only' => true];
         foreach ($names as $index => $name) {
@@ -94,7 +94,7 @@ final readonly class DatabaseCommands
         }
         $commands['prepare-owner'] = self::sql($server, $statements->ensureUser($username, $password), redactions: [$password]);
         $grant = $statements->grantAll($names[0], $username).($testPrefix === null ? '' : $statements->grantAllWithPrefix($testPrefix, $username));
-        $commands['database-apply'] = self::sql($server, $grant);
+        $commands['database-apply'] = [...self::sql($server, $grant), ...($testPrefix === null ? [] : ['grant_prefix' => $testPrefix])];
 
         return ['commands' => $commands, 'creates' => $creates];
     }

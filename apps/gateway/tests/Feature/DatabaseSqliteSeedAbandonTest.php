@@ -139,3 +139,26 @@ it('keeps compensation admission unavailable until the kit enforces cancellation
     expect(fn () => app(RecordDatabaseOperationAction::class)->start(new PreparedDatabaseOperation($child['kind'], 'instance', $this->instance->id, $intent->node_id, $child['input'])))
         ->toThrow(ResourceOperationException::class, 'kit execution capabilities');
 });
+
+it('refuses cleanup retryably until every recorded seed and export Operation is terminal', function (string $kind, string $status): void {
+    $child = app(PrepareDatabaseChildAction::class)->sqliteSeedAbandon($this->instance, $this->seed['input']['intent_id'], $this->rollback);
+    $seed = DatabaseExecutionIntent::recorded($this->seed['input']['intent_id']);
+    $id = $kind === 'seed' ? $seed->id : $seed->payload['commands']['database-apply']['export_intent_id'];
+    $work = Operation::query()->create(['kind' => 'database.sqlite_'.$kind, 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $kind === 'seed' ? $this->gateway->id : $this->dbNode->id, 'status' => $status, 'input' => ['intent_id' => $id]]);
+    $operation = new Operation(['kind' => $child['kind'], 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $child['node_id'], 'input' => $child['input']]);
+    $execution = app(DatabaseOperationExecution::class);
+    $run = $execution->context($operation)['descriptors'][0];
+
+    try {
+        $execution->beforeRun($operation, $run);
+        $this->fail('Cleanup must wait for seed and export work.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('sqlite.seed_busy');
+        expect($exception->status)->toBe(409);
+    }
+    expect($this->admin->statements)->toBe([]);
+    $work->update(['status' => 'cancelled', 'finished_at' => now()]);
+    $execution->beforeRun($operation, $run);
+})->with([['seed', 'queued'], ['seed', 'running'], ['seed', 'waiting'], ['export', 'queued'], ['export', 'running'], ['export', 'waiting']]);

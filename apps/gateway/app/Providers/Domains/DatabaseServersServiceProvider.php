@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
+use App\Console\Commands\DatabaseOwnershipCommand;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
@@ -32,6 +33,7 @@ final class DatabaseServersServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->commands([DatabaseOwnershipCommand::class]);
         $this->app->afterResolving(Schedule::class, static function (Schedule $schedule): void {
             $schedule->call(static fn (): int => app(PurgeDatabaseExecutionIntentsAction::class)->execute())
                 ->name('database-intents-purge')->hourly()->withoutOverlapping();

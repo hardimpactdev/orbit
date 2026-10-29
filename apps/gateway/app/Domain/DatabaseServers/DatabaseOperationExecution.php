@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
+use App\Actions\DatabaseConnections\PrepareSqliteSeedAbandonAction;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
@@ -112,6 +113,9 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
     public function beforeRun(Operation $operation, array $run): void
     {
         $this->input($operation, $run);
+        if ($operation->kind === 'database.sqlite_seed_abandon') {
+            app(PrepareSqliteSeedAbandonAction::class)->assertSettled($this->intent($operation));
+        }
         foreach ($this->intent($operation)->payload['projection']['children'] ?? [] as $child) {
             if (($child['phase'] ?? 'before') === 'before' && ! ($this->intent($operation)->payload['commands'][$run['key']]['cleanup'] ?? false)) {
                 app(OperationChildren::class)->requireSucceeded($operation, $child['key']);
@@ -163,8 +167,16 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
         $created = $this->intent($operation)->payload['projection']['database_creates'][$run['key']] ?? null;
         if ($created !== null) {
             $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($operation->input['connection_id']));
-            $proofs = array_values(array_filter($connection->creation_receipts ?? [], static fn (array $proof): bool => $proof['database'] !== $created));
+            $proofs = array_values(array_filter($connection->creation_receipts ?? [], static fn (array $proof): bool => $proof['database'] !== $created || ($proof['scope'] ?? null) === 'prefix'));
             $proofs[] = ['database' => $created, 'operation_id' => $operation->id, 'step' => $run['key'], 'username' => $connection->username, 'server_id' => $connection->database_server_id];
+            $connection->forceFill(['creation_receipts' => $proofs])->save();
+        }
+
+        if (isset($command['grant_prefix']) && in_array($operation->kind, ['database.create', 'database.clone'], true)) {
+            $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($operation->input['connection_id']));
+            $proofs = array_values(array_filter($connection->creation_receipts ?? [], static fn (array $proof): bool => ($proof['scope'] ?? null) !== 'prefix'));
+            $proofs[] = ['database' => $command['grant_prefix'], 'scope' => 'prefix', 'operation_id' => $operation->id,
+                'step' => $run['key'], 'username' => $connection->username, 'server_id' => $connection->database_server_id];
             $connection->forceFill(['creation_receipts' => $proofs])->save();
         }
 

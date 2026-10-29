@@ -125,6 +125,23 @@ final readonly class MysqlStatements
         ]);
     }
 
+    /** Read-only ownership proof for an explicit operator adoption. */
+    public function ownershipProof(string $database, string $username, ?string $prefix): string
+    {
+        $this->checkedDatabase($database);
+        $this->checkedUser($username);
+        $user = $this->string($username);
+        $db = $this->string($database);
+        $privileges = ['Select', 'Insert', 'Update', 'Delete', 'Create', 'Drop', 'References', 'Index', 'Alter',
+            'Create_tmp_table', 'Lock_tables', 'Create_view', 'Show_view', 'Create_routine', 'Alter_routine', 'Execute', 'Event', 'Trigger'];
+        $all = implode(' AND ', array_map(static fn (string $name): string => $name."_priv = 'Y'", $privileges));
+        $grant = fn (string $scope): string => "EXISTS (SELECT 1 FROM mysql.db WHERE BINARY User = BINARY {$user} AND Host = '%' AND BINARY Db = BINARY ".$this->string($scope)." AND {$all})";
+
+        return "SELECT 'owned' WHERE EXISTS (SELECT 1 FROM information_schema.SCHEMATA WHERE BINARY SCHEMA_NAME = BINARY {$db})"
+            ." AND EXISTS (SELECT 1 FROM mysql.user WHERE BINARY User = BINARY {$user} AND Host = '%')"
+            .' AND '.$grant($database).($prefix === null ? '' : ' AND '.$grant($this->likePrefix($prefix))).";\n";
+    }
+
     public function userNamed(string $username): string
     {
         return $this->lines([
@@ -209,7 +226,7 @@ final readonly class MysqlStatements
         return $username;
     }
 
-    private function string(#[SensitiveParameter] string $value): string
+    public function string(#[SensitiveParameter] string $value): string
     {
         return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
     }

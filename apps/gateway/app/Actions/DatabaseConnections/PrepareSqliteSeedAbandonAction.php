@@ -72,6 +72,21 @@ final readonly class PrepareSqliteSeedAbandonAction
         });
     }
 
+    public function assertSettled(DatabaseExecutionIntent $abandon): void
+    {
+        $seed = DatabaseExecutionIntent::recorded($abandon->payload['projection']['seed_intent_id'] ?? null);
+        $ids = [$seed->id];
+        foreach ($seed->payload['commands'] as $command) {
+            if (isset($command['export_intent_id'])) {
+                $ids[] = $command['export_intent_id'];
+            }
+        }
+        if (Operation::query()->whereIn('input->intent_id', array_values(array_unique($ids)))
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+            throw new ResourceOperationException('sqlite.seed_busy', 'The recorded seed and source export must finish before cleanup. Retry after they finish.', 409);
+        }
+    }
+
     private function assertParent(DatabaseExecutionIntent $seed, Operation $parent): void
     {
         $ancestor = $parent;
