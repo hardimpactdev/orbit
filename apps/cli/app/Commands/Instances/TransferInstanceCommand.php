@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
-use App\Support\Console\ProgressState;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class TransferInstanceCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'instance:transfer
         {instance : Numeric Instance ID}
@@ -25,6 +26,7 @@ final class TransferInstanceCommand extends GatewayCommand
         {--name= : Optional destination Instance name}
         {--sqlite-source-path= : Optional SQLite database path on the source}
         {--force : Confirm downtime and old-placement deletion}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -86,60 +88,18 @@ HELP;
             }
         }
 
-        $instance = $this->sendWithProgress(
-            $connector,
-            new TransferInstanceRequest(
-                instanceId: $instanceId,
-                nodeId: $nodeId,
-                name: $this->stringOption('name'),
-                sqliteSourcePath: $this->stringOption('sqlite-source-path'),
-            ),
-            InstanceResponse::class,
-            ['Transfer Instance', 'Transferring Instance', 'Transferred Instance'],
-            static function (InstanceResponse $response): ProgressState {
-                if ($response->transfer === null || $response->domain === null || $response->domain === '') {
-                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
-                }
-
-                return $response->transfer->cleanupCompleted ? ProgressState::Success : ProgressState::Warning;
-            },
-        );
-
-        if (! $instance instanceof InstanceResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new TransferInstanceRequest(
+            instanceId: $instanceId, nodeId: $nodeId, name: $this->stringOption('name'),
+            sqliteSourcePath: $this->stringOption('sqlite-source-path'),
+            idempotencyKey: $this->stringOption('idempotency-key'),
+        ), OperationResponse::class);
 
-        if ($instance->transfer === null || $instance->domain === null || $instance->domain === '') {
-            return $this->renderGatewayFailure(
-                'gateway.invalid_response',
-                'Gateway response is invalid.',
-                $instance->requestId,
-            );
-        }
-
-        if ($this->option('json') === true) {
-            $this->writeJson([
-                'id' => $instance->id,
-                'node_id' => $instance->nodeId,
-                'name' => $instance->name,
-                'checkout_path' => $instance->checkoutPath,
-                'domain' => $instance->domain,
-                'transfer' => $instance->transfer->toArray(),
-                'request_id' => $instance->requestId,
-            ]);
-
-            return self::SUCCESS;
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
-            'ID' => $instance->id,
-            'Destination Node' => $instance->nodeId,
-            'Destination path' => $instance->checkoutPath,
-            'Authoritative domain' => $instance->domain,
-            'Cleanup' => $instance->transfer->cleanupCompleted ? 'completed' : 'incomplete',
-            'Request ID' => $instance->requestId,
-        ]));
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Transfer Instance', 'Instance transfer')
+            : self::FAILURE;
     }
 }

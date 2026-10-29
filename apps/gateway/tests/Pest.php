@@ -32,7 +32,6 @@ use Tests\Support\TestToolchain;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
-require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
 require_once __DIR__.'/Support/TaskNodeReachability.php';
 require_once __DIR__.'/Support/TaskVmGroups.php';

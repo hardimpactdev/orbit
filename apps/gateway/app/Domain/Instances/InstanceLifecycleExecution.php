@@ -47,7 +47,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         return $child;
     }
 
-    /** @return array{descriptors: list<Descriptor>} */
+    /** @return array{descriptors: list<Descriptor>, result?: array<string, mixed>} */
     public function context(Operation $operation): array
     {
         $descriptors = match ($operation->kind) {
@@ -56,6 +56,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             'instance.clone' => ($operation->input['initial_completed'] ?? false) ? [] : $this->clone($operation),
             'instance.register' => app(RegistrationLifecycleExecution::class)->descriptors($operation),
             'instance.destroy' => app(RemovalLifecycleExecution::class)->descriptors($operation),
+            'instance.transfer', 'instance.transfer_destination' => app(TransferLifecycleExecution::class)->descriptors($operation),
             default => throw $this->forbidden(),
         };
         $descriptors[] = $this->descriptor('lifecycle-finish', 'gateway', 'instance.lifecycle-state', [
@@ -73,7 +74,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         unset($descriptor);
 
-        return ['descriptors' => $descriptors];
+        return ['descriptors' => $descriptors, ...($operation->kind === 'instance.transfer' ? ['result' => [
+            'rollback_pending' => app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation),
+        ]] : [])];
     }
 
     /** @param RunInput $run
@@ -154,6 +157,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         match ($operation->kind) {
             'instance.register' => app(RegistrationLifecycleExecution::class)->beforeRun($operation, $run),
             'instance.destroy' => app(RemovalLifecycleExecution::class)->beforeRun($operation, $run),
+            'instance.transfer', 'instance.transfer_destination' => app(TransferLifecycleExecution::class)->beforeRun($operation, $run),
             default => null,
         };
     }
@@ -216,6 +220,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         if ($operation->kind === 'instance.destroy') {
             return app(RemovalLifecycleExecution::class)->received($operation, $run, $receipt);
         }
+        if (in_array($operation->kind, ['instance.transfer', 'instance.transfer_destination'], true)) {
+            return app(TransferLifecycleExecution::class)->received($operation, $run, $receipt);
+        }
 
         return $receipt;
     }
@@ -234,8 +241,33 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
+        if ($operation->kind === 'instance.transfer' && ($outcome->result['rollback_pending'] ?? false) === true
+            && ($outcome->status !== OperationStatus::Cancelled
+                || ! app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation))) {
+            throw new ResourceOperationException('operation.completion_unproven', 'Pending recovery requires the cancelled transfer original capture intent.', 409);
+        }
         if ($operation->kind === 'instance.register' && $outcome->status !== OperationStatus::Succeeded) {
             app(RegistrationLifecycleExecution::class)->assertFailure($operation, $outcome);
+        }
+        if ($operation->kind === 'instance.transfer' && $outcome->status !== OperationStatus::Succeeded
+            && app(InstanceTransferState::class)->transfer($operation)->cutover_at === null
+            && app(InstanceLifecycleChildren::class)->succeeded($operation, 'transfer-stop-source')
+            && ($operation->cancel_requested_at !== null || app(TransferCompensation::class)->eligible($operation))) {
+            if (app(TransferLifecycleExecution::class)->capturePending($operation)) {
+                if ($outcome->status === OperationStatus::Cancelled
+                    && app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation)
+                    && ($outcome->result['rollback_pending'] ?? null) === true) {
+                    return;
+                }
+                throw new ResourceOperationException('operation.execution_uncertain', 'Read the original transfer-capture receipt before admitting compensation or ending this transfer.', 409);
+            }
+            $rollback = app(OperationChildren::class)->child($operation, 'transfer-rollback');
+            if (! $rollback->status->terminal() || $rollback->kind !== 'instance.transfer_rollback'
+                || ($rollback->status === OperationStatus::Succeeded && ($rollback->result['restored'] ?? null) !== true)
+                || ($rollback->status !== OperationStatus::Succeeded
+                    && ($outcome->status !== OperationStatus::Failed || $rollback->error_code !== $outcome->errorCode))) {
+                throw new ResourceOperationException('operation.completion_unproven', 'Settle the admitted transfer compensation before ending the stopped transfer.', 409);
+            }
         }
         if ($outcome->status === OperationStatus::Succeeded) {
             $this->assertEvidence($operation);
@@ -266,6 +298,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     {
         return match ($operation->kind) {
             'instance.create' => ['key' => 'instance-activate', 'transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'result' => ['activated' => true]],
+            'instance.transfer' => ['key' => 'transfer-cutover', 'transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'result' => ['cutover' => true]],
             default => null,
         };
     }
@@ -343,6 +376,13 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
                 app(InstanceRemovalRuntime::class)->assertRemoved($operation, $id);
                 $this->assertChild($operation, "cleanup-instance-{$id}", 'route.cleanup_instance');
             }
+        } elseif ($operation->kind === 'instance.transfer' && $input['initial_completed'] !== true) {
+            if ($input['initial_cutover'] !== true) {
+                $this->assertChild($operation, 'transfer-destination', 'instance.transfer_destination');
+            }
+            $this->assertChild($operation, 'transfer-activate-destination', 'instance.transfer_activate');
+            $this->assertChild($operation, 'transfer-retire-source', 'route.retire_source');
+            $this->assertChild($operation, 'transfer-retire-runtime', 'process.instance_runtime');
         }
     }
 

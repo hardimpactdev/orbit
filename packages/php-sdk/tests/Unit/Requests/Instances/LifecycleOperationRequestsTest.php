@@ -9,6 +9,7 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -37,6 +38,8 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
         'instance.register', '/api/v1/instances/register', ['source_path' => '/work/project', 'setup' => true]],
     'rename' => [new RenameInstanceRequest(501, 'feature', idempotencyKey: 'lifecycle-proof'),
         'instance.rename', '/api/v1/instances/501/rename', ['branch' => 'feature']],
+    'transfer' => [new TransferInstanceRequest(501, 10, name: 'proof', idempotencyKey: 'lifecycle-proof'),
+        'instance.transfer', '/api/v1/instances/501/transfer', ['node_id' => 10, 'name' => 'proof']],
     'destroy' => [new DestroyInstanceRequest(501, force: true, idempotencyKey: 'lifecycle-proof'),
         'instance.destroy', '/api/v1/instances/501', ['force' => true]],
 ]);

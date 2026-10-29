@@ -49,12 +49,9 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\StepLists\InstanceStepListSecrets;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
-use App\Domain\Instances\Transfer\InstanceTransferRuntime;
-use App\Domain\Instances\Transfer\InstanceTransferSource;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretSource;
 use App\Http\Controllers\Api\OperationExecutorController;
@@ -67,7 +64,6 @@ use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
-use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
@@ -83,8 +79,6 @@ use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
 use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
-use App\Infrastructure\Instances\RemoteInstanceSqliteSeeder;
-use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
@@ -108,9 +102,6 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
-        InstanceSqliteSeeder::class => RemoteInstanceSqliteSeeder::class,
-        InstanceTransferSource::class => RemoteInstanceTransferSource::class,
-        InstanceTransferRuntime::class => NativeInstanceTransferRuntime::class,
         InstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
         DevelopmentInstanceBranchInspector::class => RemoteDevelopmentInstanceSourceLifecycle::class,
