@@ -105,16 +105,17 @@ it('keeps compensation Gateway steps in the child and restores state only after 
     };
     expect($execute('rollback-record'))->toBe(['recorded' => true, 'seed_abandon_required' => false, 'destination_node_id' => $this->transfer->destination_node_id, 'seed_abandon_node_id' => null]);
     expect(fn () => $execute('rollback-state'))->toThrow(ResourceOperationException::class);
-    $discard = $this->executor->child($rollback, ['worker' => 'rollback-worker', 'key' => 'transfer-discard-destination'], $this->peer)['operation'];
-    expect($discard->node_id)->toBe($this->transfer->destination_node_id)->and($discard->parent_operation_id)->toBe($rollback->id);
-    $discard->update(['status' => 'succeeded', 'result' => ['lifecycle_complete' => true]]);
+    expect(fn () => $this->executor->child($rollback, ['worker' => 'rollback-worker', 'key' => 'transfer-discard-destination'], $this->peer))->toThrow(ResourceOperationException::class);
     $restore = $this->executor->child($rollback, ['worker' => 'rollback-worker', 'key' => 'transfer-restore-source'], $this->peer)['operation'];
     expect($restore->node_id)->toBe($this->transfer->source_node_id)->and($restore->lock_key)->toBeNull()
         ->and($restore->input)->toBe(['instance_id' => $this->instance->id, 'action' => 'transfer_restore']);
+    $restore->update(['status' => 'succeeded']);
+    $discard = $this->executor->child($rollback, ['worker' => 'rollback-worker', 'key' => 'transfer-discard-destination'], $this->peer)['operation'];
+    expect($discard->node_id)->toBe($this->transfer->destination_node_id)->and($discard->parent_operation_id)->toBe($rollback->id);
     expect(fn () => $execute('rollback-state'))->toThrow(ResourceOperationException::class);
     $this->assertDatabaseHas('vite_port_assignments', ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
     $this->assertDatabaseHas('ssr_port_assignments', ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
-    $restore->update(['status' => 'succeeded']);
+    $discard->update(['status' => 'succeeded', 'result' => ['lifecycle_complete' => true]]);
     expect($execute('rollback-state'))->toMatchArray(['transfer_id' => $this->transfer->id, 'restored' => true]);
     foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
         $this->assertDatabaseMissing($table, ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
@@ -181,6 +182,9 @@ it('retains the recorded SQLite attempt and blocks rollback cleanup until its se
 
     $this->executor->step($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'rollback-record.finish',
         'name' => 'rollback-record', 'status' => 'succeeded', 'result' => $result], $this->peer);
+    expect(fn () => $this->executor->child($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'transfer-abandon-sqlite'], $this->peer))->toThrow(ResourceOperationException::class);
+    $restore = $this->executor->child($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'transfer-restore-source'], $this->peer)['operation'];
+    $restore->update(['status' => 'succeeded']);
     $child = $this->executor->child($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'transfer-abandon-sqlite'], $this->peer)['operation'];
     expect($child->input['intent_id'])->toBe($abandon->id)->and($child->parent_operation_id)->toBe($rollback->id)->and($child->node_id)->toBe($result['seed_abandon_node_id']);
     $busyId = $busyIntent === 'seed' ? $intent->id : $intent->payload['commands']['prepare-target']['export_intent_id'];
@@ -197,7 +201,7 @@ it('retains the recorded SQLite attempt and blocks rollback cleanup until its se
         expect($exception->errorCode)->toBe('sqlite.seed_busy');
     });
     expect(array_column(app(TransferCompensation::class)->childContext($rollback)['children'], 'key'))
-        ->toBe(['transfer-abandon-sqlite']);
+        ->toBe(['transfer-restore-source', 'transfer-abandon-sqlite']);
     $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'node_id' => $this->transfer->source_node_id]);
 
     $inflight->update(['status' => 'failed']);

@@ -76,6 +76,7 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
         }
         if ($parent->kind !== 'instance.transfer') {
             $this->proven($parent, 'rollback-record');
+            app(InstanceLifecycleExecution::class)->assertChild($parent, 'transfer-restore-source', 'process.instance_runtime');
         }
 
         return $this->operations->execute($intent['kind'], 'instance', ValidatedData::integer($transfer->instance_id), $intent['node_id'],
@@ -146,6 +147,7 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
         if ($operation->kind === 'instance.transfer_discard') {
             $parent = Operation::query()->findOrFail($operation->parent_operation_id);
             $this->proven($parent, 'rollback-record');
+            app(InstanceLifecycleExecution::class)->assertChild($parent, 'transfer-restore-source', 'process.instance_runtime');
         } elseif (in_array($run['key'], ['rollback-state', 'compensation-proof'], true)) {
             $this->childrenProven($operation);
         }
@@ -161,6 +163,11 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
         $transfer = app(InstanceTransferState::class)->transfer($this->root($parent));
         $children = [];
         if ($parent->kind === 'instance.transfer_rollback' && $this->ready($parent, 'rollback-record')) {
+            $children[] = ['key' => 'transfer-restore-source', 'kind' => 'process.instance_runtime', 'node_id' => $transfer->source_node_id,
+                'input' => ['instance_id' => $transfer->instance_id, 'action' => 'transfer_restore']];
+            if (! app(InstanceLifecycleChildren::class)->succeeded($parent, 'transfer-restore-source')) {
+                return ['intent' => ['node_ids' => [$transfer->source_node_id, $transfer->destination_node_id]], 'children' => $children];
+            }
             $abandon = $parent->state['lifecycle_sqlite_abandon'] ?? null;
             if (is_array($abandon)) {
                 $children[] = ['key' => 'transfer-abandon-sqlite', 'kind' => 'database.sqlite_seed_abandon',
@@ -169,10 +176,6 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
             if ($abandon === null || app(InstanceLifecycleChildren::class)->succeeded($parent, 'transfer-abandon-sqlite')) {
                 $children[] = ['key' => 'transfer-discard-destination', 'kind' => 'instance.transfer_discard', 'node_id' => $transfer->destination_node_id,
                     'input' => ['instance_id' => $transfer->instance_id, 'transfer_id' => $transfer->id]];
-            }
-            if (app(InstanceLifecycleChildren::class)->succeeded($parent, 'transfer-discard-destination')) {
-                $children[] = ['key' => 'transfer-restore-source', 'kind' => 'process.instance_runtime', 'node_id' => $transfer->source_node_id,
-                    'input' => ['instance_id' => $transfer->instance_id, 'action' => 'transfer_restore']];
             }
         }
 
