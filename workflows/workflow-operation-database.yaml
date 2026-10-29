@@ -1,0 +1,22 @@
+id: 11b7c12d-2dfb-4516-a025-31cd8f1b0010
+name: operation-database
+description: Execute one admitted database Operation with Kit v2 protected inputs.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    operationId: { type: integer }
+    worker: { type: string }
+  required: [operationId, worker]
+jobs:
+  - name: database
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-database'
+          behaviorName: '${{ "operation-database-" + string(inputs.operationId) }}'
+          methodName: execute
+          inputs:
+            operationId: '${{ inputs.operationId }}'
+            worker: '${{ inputs.worker }}'
