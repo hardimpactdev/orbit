@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\VpEnvironment;
+use App\Domain\Tools\VpManagerVersion;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -108,9 +109,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         if ($run['key'] === 'vp.version') {
             $version = $receipt['version'] ?? null;
             $required = $this->environment($operation)?->vpVersion;
-            $normalized = is_string($version) ? preg_replace('/\Avp\s+/', '', trim($version)) : null;
-            if (! is_string($normalized) || preg_match('/\A\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\z/D', $normalized) !== 1
-                || $required === null || ! version_compare($normalized, $required, '>=')) {
+            if (! is_string($version) || $required === null || ! VpManagerVersion::satisfies($version, $required)) {
                 return ['error_code' => 'deployment.vp_store_failed'];
             }
         }
