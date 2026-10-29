@@ -50,9 +50,11 @@ final readonly class InstanceLifecycleAgentTransport implements OperationEffectT
         if ($node === null) {
             throw new ResourceOperationException('operation.execution_forbidden', 'A lifecycle Node effect requires its recorded Node.', 422);
         }
-        $ids = $operation->kind === 'instance.destroy'
-            ? array_column(InstanceLifecycleInput::members(app(RemovalLifecycleExecution::class)->intent($operation)), 'instance_id')
-            : [$operation->input['instance_id']];
+        $ids = $operation->kind === 'instance.register'
+            ? array_column(InstanceLifecycleInput::members($operation->input), 'instance_id')
+            : ($operation->kind === 'instance.destroy'
+                ? array_column(InstanceLifecycleInput::members(app(RemovalLifecycleExecution::class)->intent($operation)), 'instance_id')
+                : [$operation->input['instance_id']]);
 
         return $this->environment->run(ValidatedData::integerList($ids), fn (): array => $this->sources->synchronized($node, function () use ($operation, $run, $input): array {
             $peerNodeId = $operation->state['executor_lease_node_id'] ?? null;

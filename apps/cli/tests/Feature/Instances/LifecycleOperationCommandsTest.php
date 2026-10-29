@@ -7,7 +7,10 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
@@ -46,5 +49,10 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
         && $pending->body()->all() === $body && $pending->headers()->get('Idempotency-Key') === 'lifecycle-proof');
     $mock->assertSent(ShowOperationRequest::class);
 })->with([
+    'create' => ['instance:create', CreateInstanceRequest::class, ['project' => 50, 'node' => 9, 'name' => 'proof'],
+        ['project_id' => 50, 'node_id' => 9, 'name' => 'proof']],
+    'clone' => ['instance:clone', CloneInstanceRequest::class, ['candidate' => 501, 'node' => 10, 'name' => 'prod', '--preview-name' => 'preview'],
+        ['node_id' => 10, 'name' => 'prod', 'preview_name' => 'preview']],
+    'rename' => ['instance:rename', RenameInstanceRequest::class, ['instance' => 501, '--branch' => 'feature'], ['branch' => 'feature']],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
 ]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
@@ -11,18 +12,17 @@ use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
 use App\Services\Git\GitRepositoryOriginPolicy;
 use App\Support\Console\ConsoleInterrupted;
-use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\TerminalText;
 use App\Support\GatewayFailureRenderer;
 use Laravel\Prompts\ConfirmPrompt;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RegisterInstanceCommand extends GatewayCommand
 {
-    use InstanceOutput;
+    use FollowsOperations;
 
     #[\Override]
     protected $signature = 'instance:register
@@ -34,6 +34,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--domain= : Optional explicit Route domain}
         {--yes : Confirm source ownership transfer without prompting}
         {--setup : Run the Project setup steps after adoption}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -83,48 +84,20 @@ final class RegisterInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new RegisterInstanceRequest(
-                sourcePath: $facts->path,
-                includeWorktrees: $this->option('include-worktrees') === true,
-                projectId: $values['projectId'],
-                instanceName: $this->stringOption('name'),
-                root: $values['root'],
-                domain: $this->stringOption('domain'),
-                setup: $this->option('setup') === true,
-            ),
-            InstanceRegistrationResponse::class,
-            ['Register source', 'Registering source', 'Registered source'],
-        );
-
-        if (! $response instanceof InstanceRegistrationResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new RegisterInstanceRequest(
+            sourcePath: $facts->path, includeWorktrees: $this->option('include-worktrees') === true,
+            projectId: $values['projectId'], instanceName: $this->stringOption('name'), root: $values['root'],
+            domain: $this->stringOption('domain'), setup: $this->option('setup') === true,
+            idempotencyKey: $this->stringOption('idempotency-key'),
+        ), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $instance = $response->instance;
-        $this->writeNameConversion($response->nameConvertedFrom, 'registered');
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
-            'ID' => $instance->id,
-            'Status' => $instance->status,
-            'Project' => "{$response->project->slug} (#{$response->project->id})",
-            'Source layout' => $instance->sourceLayout,
-            'Managed path' => $instance->checkoutPath,
-            'Effective root' => $instance->effectiveRoot,
-            'Git state' => $instance->detached ? 'detached' : $instance->selectedBranch,
-            'Commit' => $instance->startingCommit,
-            'Route domain' => $instance->domain,
-            'Registered sources' => "{$response->completedCount}/{$response->sourceCount}",
-            'Request ID' => $response->requestId,
-        ]));
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Register Instance', 'Instance registration')
+            : self::FAILURE;
     }
 
     /**

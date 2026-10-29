@@ -2,11 +2,11 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,CreateInstanceServerDatabaseAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
-  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
+  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*,InstanceLifecycle*,RegistrationLifecycleExecution,InstanceDatabaseIntent}.php
   - apps/gateway/app/Domain/Instances/Registration/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier}.php
   - apps/gateway/{app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php},database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/{Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php,Services/Git/**}
   - apps/agent/src/commands/{registration,registration_tests}.rs
@@ -182,6 +182,8 @@ orbit instance:register
 orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
 ```
 
+The Gateway validates registration and reserves its source set and initial Routes, then returns HTTP 202 with an Operation. Swamp moves the source and configures each endpoint through Gateway-bound steps. `Idempotency-Key` replays the same admission.
+
 Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
 
 The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/projects#repository-identity), or uses `--project`. Registration never creates a Project or infers a nested web root. It inherits the configured Project root unless `--root` supplies an explicit override. When no Project owns the repository, the Gateway returns `instance.project_missing` and changes nothing. Create the Project with [`project:create`](/cli/project#orbit-projectcreate) first.
@@ -193,7 +195,7 @@ The Gateway then inspects the source on the caller's Node. It trusts none of the
 | An independent checkout whose directory name is the Project slug and whose branch is the `default_branch` | `default` |
 | Any other checkout or linked worktree | `--name`, or the directory name |
 
-A `--name` that equals the Project `default_branch` means `default`, as it does for create. Orbit converts it before it applies this table, so the table stays the only rule: a source that qualifies as `default` accepts it, and any other source gets the name `default`, as it would with `--name=default`. The response carries `name_converted_from` at the top level of `data`: the requested `--name` when Orbit converted it, otherwise null. Orbit converts only a name you pass. A directory name that equals the default branch stays as it is, because the table above decides when a source is the default one.
+A `--name` that equals the Project `default_branch` means `default`, as it does for create. Orbit converts it before it applies this table, so the table stays the only rule: a source that qualifies as `default` accepts it, and any other source gets the name `default`, as it would with `--name=default`. The final Operation result carries `name_converted_from`: the requested `--name` when Orbit converted it, otherwise null. Orbit converts only a name you pass. A directory name that equals the default branch stays as it is, because the table above decides when a source is the default one.
 
 For a source that qualifies as `default`, a `--name` other than `default` or the default branch returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
 
@@ -201,15 +203,15 @@ Orbit records the source layout as `checkout` or `worktree`. It moves the comple
 
 Source verification covers this source's `HEAD`, branch, index, working tree, and local Git configuration. It does not include other branches, tags, remote-tracking refs, or agent checkpoint refs in the shared repository. Those refs can change while registration runs or between attempts. A change to the source itself before adoption or during a move still refuses registration. An identical retry resumes when the source itself is unchanged. After adoption, the managed destination is authoritative and retries check its Git identity rather than the pre-adoption content digest.
 
-By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move. The Gateway finishes that move during registration. It does not stop and ask you to change the source yourself.
+By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move. Swamp finishes that move during registration. It does not stop and ask you to change the source yourself.
 
-Interactive registration asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. `--setup` runs the Project setup steps after adoption. Plain registration runs no setup.
+Interactive registration asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. `--setup` runs the Project setup steps after adoption. Plain registration runs no setup. A confirmed provisioning failure restores its saved Laravel configuration before the Operation fails. Cancelled or uncertain effects retain the saved receipt for recovery.
 
 ## Provision the application endpoint
 
 Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and an [SSR port](/reference/assigned-ssr-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
 
-After the source is ready, the Gateway continues in this order:
+After the source is ready, Swamp follows Gateway-admitted steps in this order:
 
 1. It inspects the source once. It records the [PHP version](/reference/php-runtime#select-the-php-version) and whether the source is Laravel. This pair is the source profile.
 2. For a Laravel source with a Route, it sets `APP_URL` to the Route URL. See [Laravel application URL](#laravel-application-url).
@@ -223,7 +225,7 @@ For an Instance with a Route, a retry after step 1 inspects the source again. If
 
 A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
 
-An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
+An identical `instance:create` for an active Instance returns a proven Operation receipt, leaves the Instance unchanged, and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
 
 Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
 

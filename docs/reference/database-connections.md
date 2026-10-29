@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Http/Requests/DatabaseConnections/**
   - apps/gateway/{app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/agent/src/commands/sqlite_query*.rs
-  - apps/gateway/app/{Actions/Instances/CloneInstanceDatabaseAction.php,Domain/Instances/DatabaseClone/**,Infrastructure/Instances/RemoteInstanceSqliteCloner.php}
+  - apps/gateway/app/Domain/Instances/DatabaseClone/**
 ---
 
 # Database connections

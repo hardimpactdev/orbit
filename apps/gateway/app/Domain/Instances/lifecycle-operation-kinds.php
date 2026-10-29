@@ -14,7 +14,25 @@ return (static function (): array {
     $url = $agent('instance.write-development-url', ['app_key' => 'instance.lifecycle_url', 'app_name' => 'instance.lifecycle_url']);
     $gateway = ['transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'resumable' => true];
     $commands = [
+        'create' => [
+            $agent('instance.prepare-development-source', $git),
+            $agent('instance.inspect-development-source'),
+            $agent('instance.resolve-development-source', $git),
+            $agent('instance.inspect-development-profile'), $url,
+        ],
         'rename' => [$agent('instance.inspect-development-source')],
+        'clone' => [
+            $agent('instance.prepare-production-user'),
+            $agent('instance.prepare-production-source', $git),
+            $agent('instance.resolve-production-source', $git),
+            $agent('instance.inspect-production-profile'),
+            $agent('instance.grant-production-caddy-access'),
+        ],
+        'register' => [
+            $agent('instance.relocate-registration-source'),
+            $agent('instance.laravel-registration-receipt'),
+            $agent('instance.inspect-development-profile'), $url,
+        ],
         'destroy' => [
             $agent('instance.prepare-source-removal'),
             $agent('instance.finalize-source-removal', $git),
@@ -22,7 +40,10 @@ return (static function (): array {
         ],
     ];
     $children = [
+        'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
         'rename' => ['route.update'],
+        'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.install_instance_definitions', 'schedule.install_instance_definitions', 'route.converge'],
+        'register' => ['route.converge', 'instance.run_steps'],
         'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];
     $kinds = [];
