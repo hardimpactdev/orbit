@@ -148,9 +148,12 @@ final readonly class RemovalLifecycleExecution
      */
     public function received(Operation $operation, array $run, array $receipt): array
     {
+        if (isset($receipt['error_code'])) {
+            return $receipt;
+        }
         if (isset($operation->input['production_home']) && $run['transport'] === 'instance_lifecycle') {
             if ($run['name'] === 'instance.remove-production-home') {
-                return ($receipt['removed'] ?? null) === true ? ['home_removed' => true] : ['error_code' => 'app-prod.source_cleanup_failed'];
+                return is_bool($receipt['removed'] ?? null) ? ['home_removed' => true] : ['error_code' => 'app-prod.source_cleanup_failed'];
             }
             if ($run['name'] === 'instance.clear-current-release') {
                 if (! array_key_exists('current', $receipt) || $receipt['current'] !== null) {

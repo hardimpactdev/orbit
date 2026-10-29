@@ -33,6 +33,15 @@ final readonly class ProductionRemovalPublicationAdmission implements OperationC
     }
 }
 
+/** Other owning families are registered here but never executed by these admission tests. */
+final readonly class ProductionRemovalFixtureAdmission implements OperationChildAdmission
+{
+    public function admit(Operation $parent, array $intent): Operation
+    {
+        throw new LogicException('This test must stop before another owning family executes.');
+    }
+}
+
 /** Exercise existing invalid rows without changing the production persistence contract. */
 function corruptProductionRemovalPlacement(Closure $change): void
 {
@@ -52,13 +61,23 @@ function corruptProductionRemovalPlacement(Closure $change): void
 }
 
 beforeEach(function (): void {
-    app()->instance(OperationKinds::class, new OperationKinds(app(), [
+    $definitions = [
         ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
         'route.caddy_converge' => ['executor' => 'swamp', 'admission' => ProductionRemovalPublicationAdmission::class,
             'runs' => [['transport' => 'gateway', 'name' => 'test.publication']],
             'completion_contract' => ['step' => 'publish', 'transport' => 'gateway', 'name' => 'test.publication', 'result' => ['ready' => true]],
             'result_fields' => ['ready', 'error_code']],
-    ]));
+    ];
+    foreach ($definitions['instance.destroy']['children'] as $child) {
+        $definition = $definitions[$child['kind']] ?? null;
+        if (! is_array($definition) || ! isset($definition['admission'])) {
+            $definitions[$child['kind']] = ['executor' => 'swamp', 'admission' => ProductionRemovalFixtureAdmission::class,
+                'runs' => [['transport' => 'gateway', 'name' => 'test.retained-owner']],
+                'completion_contract' => ['step' => 'fixture', 'transport' => 'gateway', 'name' => 'test.retained-owner', 'result' => []],
+                'result_fields' => []];
+        }
+    }
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $agents);
@@ -268,3 +287,47 @@ it('uses the effective unclustered placement when the Node belongs to an inactiv
 
     expect(($this->admit)()->input['production_routes'][0]['targets'])->toBe([$this->instance->id]);
 });
+
+it('accepts the native already-absent home receipt so removal can retry after row deletion failed', function (mixed $removed, bool $converged): void {
+    $operation = ($this->admit)();
+    $descriptor = array_find(app(InstanceLifecycleExecution::class)->context($operation)['descriptors'],
+        fn (array $entry): bool => $entry['key'] === 'removal-'.$this->instance->id.'-home-remove');
+
+    $receipt = app(RemovalLifecycleExecution::class)->received($operation, ['worker' => 'proof', ...$descriptor], ['removed' => $removed]);
+
+    expect($receipt)->toBe($converged ? ['home_removed' => true] : ['error_code' => 'app-prod.source_cleanup_failed']);
+})->with(['removed' => [true, true], 'already absent' => [false, true], 'missing proof' => [null, false], 'untyped proof' => [0, false]]);
+
+it('preserves a failed native home receipt even when it includes removed false', function (): void {
+    $operation = ($this->admit)();
+    $descriptor = array_find(app(InstanceLifecycleExecution::class)->context($operation)['descriptors'],
+        fn (array $entry): bool => $entry['key'] === 'removal-'.$this->instance->id.'-home-remove');
+    $result = ['error_code' => 'app-prod.user_in_use', 'removed' => false];
+
+    expect(app(RemovalLifecycleExecution::class)->received($operation, ['worker' => 'proof', ...$descriptor], $result))->toBe($result);
+});
+
+it('refuses a new production co-target before prepare or before withdrawal child admission', function (bool $afterPrepare): void {
+    $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
+    $operation = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']);
+    $prefix = 'removal-'.$this->instance->id;
+    if ($afterPrepare) {
+        app(ProductionRemovalIntent::class)->transition($operation, 'removal-production-prepare');
+        ($this->prove)($operation, $prefix.'-source-prepare', ['prepared' => true]);
+    }
+    $this->route->targets()->create(['instance_id' => $this->survivor->id, 'position' => 1]);
+    $member = InstanceRemoval::query()->sole()->members()->sole();
+
+    expect(fn () => $afterPrepare
+        ? DB::transaction(fn (): array => app(OperationChildren::class)->admit($operation, ['key' => 'withdraw-production-'.$this->route->id]))
+        : app(ProductionRemovalIntent::class)->transition($operation, 'removal-production-prepare'))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($operation->children()->count())->toBe(0);
+    expect($this->route->fresh()->status->value)->toBe('active');
+    expect($this->route->targets()->orderBy('position')->pluck('instance_id')->all())->toBe([$this->instance->id, $this->survivor->id]);
+    if (! $afterPrepare) {
+        expect($member->refresh()->source_prepared_at)->toBeNull();
+    }
+})->with(['before prepare' => [false], 'after prepare' => [true]]);

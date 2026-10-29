@@ -57,6 +57,10 @@ The Instance must be `active`, a development `source_resolved` workspace with no
 
 An Instance already `removing` resumes its recorded removal. An active Instance first removes its [Routes with a web root](/reference/routes#serve-several-web-roots), each like `route:destroy`; a failure there stops before the Instance changes. An active `laravel-app` or `symfony-app` Instance must then have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
+Before production Route withdrawal, the Gateway locks each admitted single-target Route and verifies its exact targets, placement, and production safety rules. It repeats this check when admitting the withdrawal child. A new co-target stops removal before any publication effect.
+
+Removing an already absent production home is successful convergence. The native command proves that the home, account, and source state are all gone, so a retry can continue to row deletion.
+
 An interrupted domain change or Project slug update can leave a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated) next to the Instance's own Route. That replacement does not count as a second Route. Once every check passes, removal abandons the change like `route:destroy` on the replacement. Then it removes the Instance with its own Route. A failure there stops before the Instance changes.
 
 The Gateway also refuses these Instances:

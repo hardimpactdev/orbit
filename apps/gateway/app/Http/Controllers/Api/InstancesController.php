@@ -112,7 +112,7 @@ final class InstancesController extends Controller
         StartInstanceDestroyAction $action,
     ): JsonResponse {
         $target = Instance::query()->findOrFail($instance);
-        if ($target->placedOnAppProd() || app(ProcessSwampSafety::class)->requiresSynchronous($target->node)) {
+        if (app(ProcessSwampSafety::class)->requiresSynchronous($target->node)) {
             return response()->json([
                 'data' => InstanceRemovalData::fromModel(app(DestroyInstanceAction::class)->execute($target, $request->force()))->toArray(),
                 'meta' => $this->meta($request),

@@ -134,7 +134,10 @@ final readonly class ProductionRemovalIntent
         }
         $member = InstanceRemovalMember::query()->where('instance_removal_id', $operation->input['removal_id'])->firstOrFail();
         if ($action === 'removal-production-prepare') {
-            $member->update(['source_prepared_at' => now()]);
+            DB::transaction(function () use ($operation, $member): void {
+                $this->validateWithdrawals($operation);
+                $member->update(['source_prepared_at' => now()]);
+            });
 
             return ['prepared' => true];
         }
@@ -206,6 +209,9 @@ final readonly class ProductionRemovalIntent
         $id = $operation->target_id;
         foreach ($this->routes($operation) as $route) {
             if (count(ValidatedData::integerList($route['targets'])) === 1 && $execution->ready($operation, "removal-{$id}-source-prepare")) {
+                if (! $operation->children()->where('child_key', 'withdraw-production-'.$route['id'])->exists()) {
+                    $this->validateWithdrawals($operation);
+                }
                 $children[] = ['key' => 'withdraw-production-'.$route['id'], 'kind' => 'route.withdraw',
                     'node_id' => ValidatedData::integer($route['node_id']), 'input' => ['route_id' => $route['id']]];
             }
@@ -218,6 +224,23 @@ final readonly class ProductionRemovalIntent
         }
 
         return $children;
+    }
+
+    private function validateWithdrawals(Operation $operation): void
+    {
+        DB::transaction(function () use ($operation): void {
+            $instance = $this->validate($operation);
+            foreach ($this->routes($operation) as $snapshot) {
+                if (count($snapshot['targets']) !== 1) {
+                    continue;
+                }
+                $route = Route::query()->lockForUpdate()->findOrFail($snapshot['id']);
+                $this->assertSafeRoute($route, $instance, removing: true);
+                if ($this->route($route, $instance->node_id) !== $snapshot) {
+                    throw $this->conflict();
+                }
+            }
+        });
     }
 
     /** @return array<string,mixed> */
