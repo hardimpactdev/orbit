@@ -88,7 +88,14 @@ final readonly class CommandActivityInputSanitizer
 
     public function sanitize(mixed $value, ?string $key = null): mixed
     {
-        if (is_string($key) && $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value)) {
+        return $this->sanitizeAt($value, $key, $key ?? '');
+    }
+
+    private function sanitizeAt(mixed $value, ?string $key, string $path): mixed
+    {
+        $publicChildKey = in_array($path, ['child_phases.*.key', 'skipped.*.key'], true)
+            && is_string($value) && preg_match('/\A[a-z][a-z0-9_.:-]*\z/D', $value) === 1;
+        if (! $publicChildKey && is_string($key) && $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value)) {
             return self::REDACTED;
         }
 
@@ -100,7 +107,7 @@ final readonly class CommandActivityInputSanitizer
             return $this->sanitizeEnvironment($value);
         }
 
-        return $this->sanitizeProperties($value);
+        return $this->propertiesAt($value, $path);
     }
 
     /**
@@ -108,6 +115,14 @@ final readonly class CommandActivityInputSanitizer
      * @return array<array-key, mixed>
      */
     public function sanitizeProperties(array $properties): array
+    {
+        return $this->propertiesAt($properties, '');
+    }
+
+    /** @param array<array-key,mixed> $properties
+     * @return array<array-key,mixed>
+     */
+    private function propertiesAt(array $properties, string $path): array
     {
         $sanitized = [];
 
@@ -118,9 +133,11 @@ final readonly class CommandActivityInputSanitizer
                 continue;
             }
 
-            $sanitized[$nestedKey] = $this->sanitize(
+            $segment = is_string($nestedKey) ? $nestedKey : '*';
+            $sanitized[$nestedKey] = $this->sanitizeAt(
                 $nestedValue,
                 is_string($nestedKey) ? $nestedKey : null,
+                $path === '' ? $segment : $path.'.'.$segment,
             );
         }
 
@@ -162,6 +179,11 @@ final readonly class CommandActivityInputSanitizer
                     replacement: 'Bearer '.self::REDACTED,
                     subject: $redacted,
                 ) ?? $this->redactionFailed();
+            $redacted = preg_replace(
+                '/\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/',
+                self::REDACTED,
+                $redacted,
+            ) ?? $this->redactionFailed();
             $keys = self::SECRET_KEY_IDENTIFIER;
             $redacted =
                 preg_replace(

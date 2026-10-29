@@ -385,4 +385,53 @@ final readonly class OperationChildren
             }
         }
     }
+
+    /** @param list<string> $kinds
+     * @param  array<string,mixed>  $result
+     */
+    public function assertSettled(Operation $parent, array $kinds, array $result, bool $requireExpected = true): void
+    {
+        $context = $this->context($parent);
+        $failed = $parent->children()->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value])->get()->map(static fn (Operation $child): int => $child->id)->all();
+        foreach ($kinds as $kind) {
+            if ($requireExpected) {
+                $expected = array_filter($context['children'], static fn (array $intent): bool => $intent['kind'] === $kind);
+                foreach ($expected as $intent) {
+                    $this->child($parent, $intent['key']);
+                }
+            }
+            $children = $parent->children()->where('kind', $kind)->get();
+            if ($requireExpected && $children->isEmpty()) {
+                throw new ResourceOperationException('operation.child_unproven', 'A required settled child kind is missing.', 409);
+            }
+            foreach ($children as $child) {
+                $this->verify($parent, $child);
+                if (! $child->status->terminal()) {
+                    throw new ResourceOperationException('operation.child_unproven', 'A required child has not settled.', 409);
+                }
+            }
+        }
+        $skips = $result['skipped'] ?? [];
+        if (! is_array($skips) || ! array_is_list($skips)) {
+            throw new ResourceOperationException('operation.child_unproven', 'The skipped child evidence is invalid.', 409);
+        }
+        $acknowledged = [];
+        foreach ($skips as $skip) {
+            if (! is_array($skip) || ! is_int($skip['child_id'] ?? null) || ! is_string($skip['reason'] ?? null)
+                || trim($skip['reason']) === '' || strlen($skip['reason']) > 500 || in_array($skip['child_id'], $acknowledged, true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The skipped child evidence is invalid.', 409);
+            }
+            $child = $parent->children()->whereKey($skip['child_id'])->first();
+            if ($child === null || ! in_array($child->status, [OperationStatus::Failed, OperationStatus::Cancelled], true)
+                || (array_key_exists('key', $skip) && $skip['key'] !== $child->child_key)
+                || (array_key_exists('kind', $skip) && $skip['kind'] !== $child->kind)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The skipped child does not match this parent failure.', 409);
+            }
+            $this->verify($parent, $child);
+            $acknowledged[] = $child->id;
+        }
+        if (array_diff($failed, $acknowledged) !== []) {
+            throw new ResourceOperationException('operation.child_unproven', 'A failed child is missing from skipped evidence.', 409);
+        }
+    }
 }

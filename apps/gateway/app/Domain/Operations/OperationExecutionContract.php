@@ -16,7 +16,7 @@ use LogicException;
  * Server-owned capabilities and evidence for one admitted kind.
  *
  * @phpstan-type RunContract array{transport: string, name: string, input_fields?: list<string>, input_values?: array<string, mixed>, bind?: array<string, string>, secrets?: array<string, string>, resumable?: bool, uncertain_error_code?: string, node_field?: string, step?: string, required?: bool, input_schema?: array<string, mixed>}
- * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array{step?: string, transport?: string, name?: string, result?: array<string, mixed>, children_succeeded?:list<string>}, result_fields: list<string>, admission?:class-string<OperationChildAdmission>, children?:list<array{kind:string,node_from:string,bind?:array<string,string>}>,compensations?:list<string>,cancellation_boundary?:string}
+ * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array<string,mixed>, result_fields: list<string|array<string,mixed>>, admission?:class-string<OperationChildAdmission>, children?:list<array{kind:string,node_from:string,bind?:array<string,string>}>,compensations?:list<string>,cancellation_boundary?:string}
  *
  * @phpstan-import-type RunInput from SwampOperationExecutor
  */
@@ -137,23 +137,25 @@ final readonly class OperationExecutionContract
     }
 
     /**
-     * Keep only declared scalar leaves. Never retain an open object or a raw program log.
+     * Keep only declared scalar leaves and bounded containers. Never retain an open object or a raw program log.
      *
      * @param  array<string, mixed>  $result
      * @param  list<string>  $knownValues
      * @return array<string, mixed>
      */
-    public function result(Operation $operation, array $result, #[\SensitiveParameter] array $knownValues = []): array
+    public function result(Operation $operation, #[\SensitiveParameter] array $result, #[\SensitiveParameter] array $knownValues = []): array
     {
-        $safe = [];
-        foreach ($this->definition($operation)['result_fields'] as $path) {
-            $value = Arr::get($result, $path);
-            if (Arr::has($result, $path) && (is_scalar($value) || $value === null)) {
-                Arr::set($safe, $path, $value);
-            }
-        }
+        $fields = $this->definition($operation)['result_fields'];
+        $safe = OperationResultFields::filter($fields, $result);
+        $safe = ValidatedData::object($this->secrets->redact($this->redactor->sanitizeProperties($safe), $knownValues));
 
-        return ValidatedData::object($this->secrets->redact($this->redactor->sanitizeProperties($safe), $knownValues));
+        return OperationResultFields::filter($fields, $safe);
+    }
+
+    /** @param array<string,mixed> $result */
+    public function assertResultWire(Operation $operation, #[\SensitiveParameter] array $result, #[\SensitiveParameter] mixed $wire): void
+    {
+        OperationResultFields::assertWireContainers($this->definition($operation)['result_fields'], $result, $wire);
     }
 
     public function text(string $text): string
@@ -175,7 +177,7 @@ final readonly class OperationExecutionContract
                 throw new ResourceOperationException('operation.completion_unproven', 'The descriptor step has no matching keyed transport receipt.', 409);
             }
         }
-        $contract = $this->definition($operation)['completion_contract'];
+        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
         if (! isset($contract['step'], $contract['transport'], $contract['name'], $contract['result']) || $name !== $contract['step']) {
             return;
         }
@@ -197,7 +199,10 @@ final readonly class OperationExecutionContract
     /** @param array<string, mixed> $result */
     public function assertCompletion(Operation $operation, array $result): void
     {
-        $contract = $this->definition($operation)['completion_contract'];
+        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+        if (isset($contract['children_settled'])) {
+            app(OperationChildren::class)->assertSettled($operation, $contract['children_settled'], $result);
+        }
         if (isset($contract['children_succeeded'])) {
             app(OperationChildren::class)->assertSucceeded($operation, $contract['children_succeeded']);
         }
@@ -211,6 +216,15 @@ final readonly class OperationExecutionContract
             throw new ResourceOperationException('operation.completion_unproven', 'A successful Node step is required.', 409);
         }
         $this->assertStep($operation, $contract['step'], $result);
+    }
+
+    /** @param array<string,mixed> $result */
+    public function assertSettledChildren(Operation $operation, array $result, bool $successful): void
+    {
+        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+        if (isset($contract['children_settled'])) {
+            app(OperationChildren::class)->assertSettled($operation, $contract['children_settled'], $result, $successful);
+        }
     }
 
     /** @param array<array-key, mixed> $left

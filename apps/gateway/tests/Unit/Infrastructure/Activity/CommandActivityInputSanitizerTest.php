@@ -292,3 +292,25 @@ it('replaces invalid process environment names while retaining valid names', fun
         ->not->toContain('private-value')
         ->not->toContain('numeric-value');
 });
+
+it('redacts standalone GitHub credentials in result strings and output', function (string $prefix): void {
+    $credential = $prefix.str_repeat('z', 40);
+    $sanitizer = new CommandActivityInputSanitizer;
+    expect($sanitizer->redactText('before '.$credential.' after'))->toBe('before [REDACTED] after')
+        ->and($sanitizer->sanitizeProperties(['warnings' => [$credential]]))->toBe(['warnings' => ['[REDACTED]']]);
+})->with(['ghp_', 'ghs_', 'gho_', 'ghu_', 'ghr_', 'github_pat_']);
+
+it('preserves only audited public child key paths while redacting their text', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+    expect($sanitizer->sanitizeProperties([
+        'child_phases' => [['stage' => 'routes', 'key' => 'route-7']],
+        'skipped' => [['key' => 'node-7', 'reason' => 'API_TOKEN=private-value']],
+        'artifacts' => [['key' => 'private-value']],
+        'key' => 'private-value',
+    ]))->toBe([
+        'child_phases' => [['stage' => 'routes', 'key' => 'route-7']],
+        'skipped' => [['key' => 'node-7', 'reason' => 'API_TOKEN=[REDACTED]']],
+        'artifacts' => [['key' => '[REDACTED]']],
+        'key' => '[REDACTED]',
+    ]);
+});

@@ -242,6 +242,7 @@ final readonly class SwampOperationExecutor
                 }
                 $children = app(OperationChildren::class);
                 $children->assertNoPending($operation);
+                $this->contract->assertSettledChildren($operation, $receipt['result'], $receipt['status'] === 'succeeded');
                 if ($operation->parent_operation_id !== null) {
                     $children->child(Operation::query()->findOrFail($operation->parent_operation_id), (string) $operation->child_key);
                 }
