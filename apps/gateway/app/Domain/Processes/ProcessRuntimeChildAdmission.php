@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
+use App\Domain\Instances\InstanceRemovalRuntime;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Shared\LifecycleStatus;
@@ -16,6 +17,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\DB;
 
 /** Admits recorded Instance runtime children or the fixed Process of a task VM. */
 final readonly class ProcessRuntimeChildAdmission implements OperationChildAdmission
@@ -24,6 +26,9 @@ final readonly class ProcessRuntimeChildAdmission implements OperationChildAdmis
 
     public function admit(Operation $parent, array $intent): Operation
     {
+        if ($parent->kind === 'instance.destroy') {
+            return $this->remove($parent, $intent);
+        }
         $id = $intent['input']['process_id'] ?? null;
         $verb = match ($parent->kind) {
             'process.install_instance_definitions', 'task_vm.prepare_runtime' => 'create',
@@ -53,6 +58,29 @@ final readonly class ProcessRuntimeChildAdmission implements OperationChildAdmis
         }
 
         return $this->admission->execute($process, $verb);
+    }
+
+    /** @param array{key:string,kind:string,node_id:int|null,input:array<string,mixed>} $intent */
+    private function remove(Operation $parent, array $intent): Operation
+    {
+        $owner = app(InstanceRemovalRuntime::class)->owner($parent, $intent);
+
+        return app(ProcessAdmissionLock::class)->run([$owner], function () use ($parent, $intent, $owner): Operation {
+            return DB::transaction(function () use ($parent, $intent, $owner): Operation {
+                $id = $intent['input']['process_id'] ?? null;
+                if (! is_int($id) || $intent['kind'] !== 'process.destroy'
+                    || ! OperationChildIntent::same($intent['input'], ['process_id' => $id])) {
+                    $this->refuse();
+                }
+                $process = Process::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+                if (! Instance::isMorphType($process->owner_type) || $process->owner_id !== $owner
+                    || $this->targets->forRemoval($process)->node->id !== $parent->node_id) {
+                    $this->refuse();
+                }
+
+                return $this->admission->execute($process, 'destroy');
+            });
+        });
     }
 
     private function assertTaskVmProcess(Operation $parent, Process $process): void

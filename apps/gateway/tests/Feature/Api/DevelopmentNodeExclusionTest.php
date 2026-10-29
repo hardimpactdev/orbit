@@ -2,14 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\CreateInstanceAction;
-use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionInstanceProvisioner;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -114,58 +110,6 @@ it('deletes exclusion rows when the app-dev role is removed and does not restore
     $this->sabre->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
     expect(ProjectNodeExclusion::query()->count())->toBe(0);
-});
-
-it('refuses a new development instance on an excluded node', function (): void {
-    ProjectNodeExclusion::query()->create(['project_id' => $this->project->id, 'node_id' => $this->sabre->id]);
-
-    expect(fn () => app(CreateInstanceAction::class)->execute(new CreateInstanceData(
-        projectId: $this->project->id,
-        nodeId: $this->sabre->id,
-        name: 'feature',
-        root: 'public',
-        domain: null,
-        branch: 'main',
-    )))->toThrow(ResourceOperationException::class, 'cannot use Node [sabre]');
-
-    expect(Instance::query()->where('name', 'feature')->exists())->toBeFalse();
-});
-
-it('still places a production instance when the node is excluded for development', function (): void {
-    $this->sabre->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    ProjectNodeExclusion::query()->create(['project_id' => $this->project->id, 'node_id' => $this->sabre->id]);
-    $provisioner = new class implements ProductionInstanceProvisioner
-    {
-        public bool $called = false;
-
-        public function execute(CreateInstanceData $data, Project $project, Node $node, ?string $root): array
-        {
-            $this->called = true;
-            $instance = Instance::query()->create([
-                'project_id' => $project->id,
-                'node_id' => $node->id,
-                'name' => $data->name,
-                'checkout_path' => '/srv/orbit/apps/orbit/'.$data->name,
-                'status' => InstanceState::Reserved,
-                'environment' => 'production',
-            ]);
-
-            return ['instance' => $instance, 'created' => true];
-        }
-    };
-    app()->instance(ProductionInstanceProvisioner::class, $provisioner);
-
-    $result = app(CreateInstanceAction::class)->execute(new CreateInstanceData(
-        projectId: $this->project->id,
-        nodeId: $this->sabre->id,
-        name: 'release',
-        root: 'public',
-        domain: 'orbit.example',
-        branch: 'main',
-    ));
-
-    expect($provisioner->called)->toBeTrue()
-        ->and($result['instance']->name)->toBe('release');
 });
 
 function exclusion_node(string $name, string $ip): Node

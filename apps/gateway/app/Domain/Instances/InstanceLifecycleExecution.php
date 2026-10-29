@@ -11,8 +11,11 @@ use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -48,7 +51,11 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     public function context(Operation $operation): array
     {
         $descriptors = match ($operation->kind) {
+            'instance.create' => $this->create($operation),
             'instance.rename' => [$this->inspect($operation, 'rename-inspect')],
+            'instance.clone' => ($operation->input['initial_completed'] ?? false) ? [] : $this->clone($operation),
+            'instance.register' => app(RegistrationLifecycleExecution::class)->descriptors($operation),
+            'instance.destroy' => app(RemovalLifecycleExecution::class)->descriptors($operation),
             default => throw $this->forbidden(),
         };
         $descriptors[] = $this->descriptor('lifecycle-finish', 'gateway', 'instance.lifecycle-state', [
@@ -91,6 +98,16 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             $bindings[$run['key']] = ['transport' => $run['transport'], 'name' => $run['name'], 'step' => $run['key'], 'input' => $expected];
             app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'lifecycle_bindings' => $bindings]]);
         }
+        if ($operation->kind === 'instance.create' && $run['key'] === 'instance-activate') {
+            $this->assertChild($operation, 'environment-sync', 'instance.sync_environment');
+            $this->assertChild($operation, 'vp-environment', 'instance.prepare_vp_environment');
+            if ($operation->input['route_id'] !== null) {
+                $this->assertChild($operation, 'route-converge', 'route.converge');
+            }
+        }
+        if ($operation->kind === 'instance.clone' && $run['key'] === 'clone-definitions') {
+            $this->assertChild($operation, 'clone-environment-sync', 'instance.sync_environment');
+        }
         if ($run['key'] === 'lifecycle-finish') {
             $this->assertEvidence($operation);
 
@@ -100,6 +117,18 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             $instance = $this->state->instance($operation);
             if ($instance->status !== InstanceState::Active || ! $instance->placedOnAppDev()) {
                 throw new ResourceOperationException('instance.rename_inactive', 'Rename requires an active development Instance.', 409);
+            }
+        }
+        if ($operation->kind === 'instance.clone' && $run['key'] === 'clone-user') {
+            $candidate = Instance::query()->findOrFail(ValidatedData::integer($operation->input['candidate_id']));
+            $current = app(InstanceCloneCandidateInspector::class)->inspect($candidate, ValidatedData::string($operation->input['branch']));
+            if ($current->commit !== $operation->input['candidate_commit']
+                || $current->basePath !== $operation->input['candidate_path']
+                || $current->node->id !== $operation->input['candidate_node_id']
+                || $current->executionUser !== $operation->input['candidate_user']
+                || $current->environment !== $operation->input['candidate_environment']
+                || $current->branch !== $operation->input['candidate_branch']) {
+                throw new ResourceOperationException('instance.clone_candidate_changed', 'The admitted candidate source changed.', 409);
             }
         }
         $prerequisites = match ($run['key']) {
@@ -122,6 +151,11 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         foreach ($prerequisites as $key) {
             $this->proven($operation, $key);
         }
+        match ($operation->kind) {
+            'instance.register' => app(RegistrationLifecycleExecution::class)->beforeRun($operation, $run),
+            'instance.destroy' => app(RemovalLifecycleExecution::class)->beforeRun($operation, $run),
+            default => null,
+        };
     }
 
     /** @param RunInput $run
@@ -163,6 +197,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         if (in_array($run['key'], ['source-resolve', 'clone-source-resolve'], true) && $run['transport'] === 'instance_lifecycle') {
             $this->state->resolved($operation, $receipt);
+            if ($operation->kind === 'instance.clone') {
+                $this->state->instance($operation)->update(['provisioning_step' => 'clone-source-resolved']);
+            }
         }
         if ($run['key'] === 'clone-caddy-access' && $run['transport'] === 'instance_lifecycle') {
             $this->state->instance($operation)->update(['provisioning_step' => 'clone-caddy-access-prepared']);
@@ -172,6 +209,12 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         if (in_array($run['key'], ['source-profile', 'clone-source-profile'], true)) {
             return $this->classifyProfile($operation, $run['transport'] === 'gateway' ? ['kind' => 'none'] : $receipt);
+        }
+        if ($operation->kind === 'instance.register') {
+            return app(RegistrationLifecycleExecution::class)->received($operation, $run, $receipt);
+        }
+        if ($operation->kind === 'instance.destroy') {
+            return app(RemovalLifecycleExecution::class)->received($operation, $run, $receipt);
         }
 
         return $receipt;
@@ -191,6 +234,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
+        if ($operation->kind === 'instance.register' && $outcome->status !== OperationStatus::Succeeded) {
+            app(RegistrationLifecycleExecution::class)->assertFailure($operation, $outcome);
+        }
         if ($outcome->status === OperationStatus::Succeeded) {
             $this->assertEvidence($operation);
             $this->proven($operation, 'lifecycle-finish');
@@ -219,6 +265,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     public function cancellationBoundary(Operation $operation): ?array
     {
         return match ($operation->kind) {
+            'instance.create' => ['key' => 'instance-activate', 'transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'result' => ['activated' => true]],
             default => null,
         };
     }
@@ -236,8 +283,64 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     private function assertChildren(Operation $operation): void
     {
         $input = $operation->input;
-        if ($operation->kind === 'instance.rename' && $input['domain'] !== null) {
+        if ($operation->kind === 'instance.create') {
+            if ($input['initial_status'] === 'active' && $input['first_setup_pending'] === false) {
+                return;
+            }
+            if ($input['initial_status'] !== 'active') {
+                $this->assertChild($operation, 'environment-sync', 'instance.sync_environment');
+                $this->assertChild($operation, 'vp-environment', 'instance.prepare_vp_environment');
+                if ($input['route_id'] !== null) {
+                    $this->assertChild($operation, 'route-converge', 'route.converge');
+                }
+            }
+            if ($input['database_server_id'] !== null || $input['database_clone_source_id'] !== null) {
+                $this->assertChild($operation, 'database', $input['database_clone_source_id'] !== null ? 'database.clone' : 'database.create');
+                $this->assertChild($operation, 'database-environment-sync', 'instance.sync_environment');
+            }
+            $this->assertStepList($operation, 'setup');
+        } elseif ($operation->kind === 'instance.rename' && $input['domain'] !== null) {
             $this->assertChild($operation, 'route-update', 'route.update');
+        } elseif ($operation->kind === 'instance.clone' && $input['initial_completed'] !== true) {
+            if ($input['sqlite_source_path'] !== null && ! app(InstanceSqliteSeedIntent::class)->retainedClone($operation)) {
+                $this->assertChild($operation, 'clone-sqlite', 'database.sqlite_seed');
+            }
+            $this->assertChild($operation, 'clone-environment-sync', 'instance.sync_environment');
+            $this->assertChild($operation, 'clone-processes', 'process.install_instance_definitions');
+            $this->assertChild($operation, 'clone-schedules', 'schedule.install_instance_definitions');
+            if ($input['route_id'] !== null) {
+                $this->assertChild($operation, 'route-converge', 'route.converge');
+            }
+        } elseif ($operation->kind === 'instance.register') {
+            foreach (InstanceLifecycleInput::members($input) as $member) {
+                if ($member['route_id'] !== null) {
+                    $this->assertChild($operation, 'route-'.ValidatedData::integer($member['instance_id']), 'route.converge');
+                }
+            }
+            if ($input['run_setup'] === true) {
+                $this->assertStepList($operation, 'setup');
+            }
+        } elseif ($operation->kind === 'instance.destroy') {
+            $intent = app(RemovalLifecycleExecution::class)->intent($operation);
+            foreach (ValidatedData::integerList($intent['additional_route_ids']) as $route) {
+                $this->assertChild($operation, "withdraw-extra-{$route}", 'route.withdraw');
+            }
+            foreach (InstanceLifecycleInput::members($intent) as $member) {
+                if (($member['row_deleted_at'] ?? null) !== null) {
+                    continue;
+                }
+                $id = ValidatedData::integer($member['instance_id']);
+                if ($member['run_teardown'] === true) {
+                    $this->assertStepList($operation, "teardown-{$id}");
+                }
+                if ($member['route_id'] !== null) {
+                    $this->assertChild($operation, "withdraw-{$id}", 'route.withdraw');
+                }
+                $this->assertChild($operation, "withdraw-instance-{$id}", 'route.withdraw_instance');
+                $this->assertChild($operation, "remove-databases-{$id}", 'database.destroy_owned');
+                app(InstanceRemovalRuntime::class)->assertRemoved($operation, $id);
+                $this->assertChild($operation, "cleanup-instance-{$id}", 'route.cleanup_instance');
+            }
         }
     }
 
@@ -273,6 +376,45 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         return is_array($entry) && is_array($entry['result'] ?? null) ? ValidatedData::object($entry['result']) : [];
     }
 
+    /** @return list<Descriptor> */
+    private function create(Operation $operation): array
+    {
+        $input = $operation->input;
+        $database = $input['database_server_id'] !== null || $input['database_clone_source_id'] !== null
+            ? [$this->descriptor('database-intent', 'gateway', 'instance.lifecycle-state', ['action' => 'database-intent', 'operation_id' => $operation->id])] : [];
+        if (($input['initial_status'] ?? null) === 'active') {
+            return [$this->inspect($operation, 'source-inspect'), ...$database];
+        }
+        $source = $this->source($operation);
+        $profile = $this->recordedResult($operation, 'source-profile');
+        $instance = $this->state->instance($operation);
+
+        return [
+            $this->descriptor('source-prepare', 'instance_lifecycle', 'instance.prepare-development-source', [
+                ...$source, 'allow_existing' => true, 'seed_commit' => $input['seed_commit'], 'network' => ! $input['task_vm'],
+                'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+            ]),
+            $this->inspect($operation, 'source-inspect'),
+            $this->descriptor('source-resolve', 'instance_lifecycle', 'instance.resolve-development-source', [
+                ...$source, 'instance_name' => $input['name'], 'default_branch' => $input['default_branch'],
+                'branch_override' => $input['branch_override'], 'seed_commit' => $input['seed_commit'], 'network' => ! $input['task_vm'],
+                'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
+                'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+            ]),
+            $instance->project->type === ProjectType::Monorepo && ! $instance->routes()->exists()
+                ? $this->descriptor('source-profile', 'gateway', 'instance.lifecycle-state', ['action' => 'configuration', 'operation_id' => $operation->id])
+                : $this->descriptor('source-profile', 'instance_lifecycle', 'instance.inspect-development-profile', [
+                    'application' => $instance->applicationDirectory(), 'owner' => $source['user'],
+                    'entry_point' => $instance->project->type->frameworkEntryPoint(),
+                ]),
+            ($profile['laravel'] ?? false) && isset($input['route_domain'])
+                ? $this->url($operation, 'source-configuration', $instance, ValidatedData::string($input['route_domain']))
+                : $this->descriptor('source-configuration', 'gateway', 'instance.lifecycle-state', ['action' => 'configuration', 'operation_id' => $operation->id]),
+            $this->descriptor('instance-activate', 'gateway', 'instance.lifecycle-state', ['action' => 'activate', 'operation_id' => $operation->id]),
+            ...$database,
+        ];
+    }
+
     /** @return Descriptor */
     private function inspect(Operation $operation, string $key): array
     {
@@ -293,6 +435,68 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             'user' => $input['user'], 'group' => $input['group'],
             'prepare_id' => $input['prepare_id'] ?? null, 'seed_repository' => $input['seed_repository'] ?? null,
         ];
+    }
+
+    /** @return list<Descriptor> */
+    private function clone(Operation $operation): array
+    {
+        $input = $operation->input;
+        $home = ['user' => $input['production_user'], 'home' => $input['production_home']];
+        $source = [...$home, 'repository' => $input['repository'], 'instance' => $input['instance_id']];
+        $git = ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']];
+        $instance = $this->state->instance($operation);
+        $root = $instance->root ?? $instance->project->root;
+        if (! is_string($root)) {
+            throw $this->forbidden();
+        }
+
+        $descriptors = [
+            $this->descriptor('clone-user', 'instance_lifecycle', 'instance.prepare-production-user', $home),
+            $this->descriptor('clone-source-prepare', 'instance_lifecycle', 'instance.prepare-production-source', [...$source, 'allow_existing' => true, 'git_read' => $git]),
+            $this->descriptor('clone-source-resolve', 'instance_lifecycle', 'instance.resolve-production-source', [...$source, 'relative_root' => $root, 'application_suffix' => ProductionApplicationPaths::suffix($root), 'branch' => $input['branch'], 'clone_target' => true, 'git_read' => $git]),
+            $this->descriptor('clone-source-profile', 'instance_lifecycle', 'instance.inspect-production-profile', [
+                'user' => $home['user'], 'relative_root' => $root, 'checkout' => $input['checkout'],
+                'application' => ApplicationDirectory::resolve(ValidatedData::string($input['checkout']), $root),
+                'entry_point' => $instance->project->type->frameworkEntryPoint(),
+            ]),
+            $this->descriptor('clone-caddy-access', 'instance_lifecycle', 'instance.grant-production-caddy-access', [...$home, 'relative_root' => $root, 'clone_target' => true]),
+            $this->descriptor('clone-environment', 'gateway', 'instance.lifecycle-state', ['action' => 'clone-environment', 'operation_id' => $operation->id]),
+            ...($input['sqlite_source_path'] === null ? [] : [
+                $this->descriptor('clone-sqlite-intent', 'gateway', 'instance.lifecycle-state', ['action' => 'clone-sqlite-intent', 'operation_id' => $operation->id]),
+                $this->descriptor('clone-sqlite-attach', 'gateway', 'instance.lifecycle-state', ['action' => 'clone-sqlite-attach', 'operation_id' => $operation->id]),
+            ]),
+            $this->descriptor('clone-definitions', 'gateway', 'instance.lifecycle-state', ['action' => 'clone-definitions', 'operation_id' => $operation->id]),
+        ];
+        $checkpoints = [
+            'clone-user' => 'clone-user-prepared', 'clone-source-prepare' => 'clone-source-prepared',
+            'clone-source-resolve' => 'clone-source-resolved', 'clone-source-profile' => 'clone-source-classified',
+            'clone-caddy-access' => 'clone-caddy-access-prepared', 'clone-environment' => 'clone-environment-synchronized',
+            'clone-definitions' => 'clone-definitions-instantiated',
+        ];
+        $order = ['clone-reserved', 'clone-user-prepared', 'clone-source-prepared', 'clone-source-resolved',
+            'clone-source-classified', 'clone-caddy-access-prepared', 'clone-environment-synchronized',
+            'clone-sqlite-prepared', 'clone-sqlite-attached', 'clone-definitions-instantiated',
+            'clone-runtime-prepared', 'clone-certificate-prepared', 'clone-firewall-prepared',
+            'clone-workload-caddy-published', 'clone-router-certificate-prepared', 'clone-route-firewall-prepared',
+            'clone-workload-verified', 'clone-router-caddy-published', 'clone-dns-published', 'active'];
+        $initial = array_search($input['initial_provisioning_step'], $order, true);
+        if ($initial === false) {
+            throw $this->forbidden();
+        }
+        if ($initial >= 4 && ! is_bool($input['source_is_laravel'])) {
+            throw new ResourceOperationException('app-prod.source_evidence_changed', 'The retained clone has incomplete source profile evidence.', 409);
+        }
+        foreach ($descriptors as &$descriptor) {
+            $checkpoint = array_search($checkpoints[$descriptor['key']] ?? null, $order, true);
+            if ($checkpoint !== false && $initial >= $checkpoint) {
+                $descriptor = $this->descriptor($descriptor['key'], 'gateway', 'instance.lifecycle-state',
+                    ['action' => 'clone-checkpoint', 'operation_id' => $operation->id]);
+            }
+        }
+        unset($descriptor);
+
+        return $descriptors;
+
     }
 
     /** @return Descriptor */
