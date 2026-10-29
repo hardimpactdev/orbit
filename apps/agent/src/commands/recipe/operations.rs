@@ -282,6 +282,12 @@ pub fn apply(
         ownership::pin(files, &input.git(), "git")?;
         ownership::pin(files, &input.incus(), "incus")?;
         stage = "tools";
+        super::browser::install(
+            host,
+            files,
+            input,
+            downloads.get(super::browser::NAME).map(PathBuf::as_path),
+        )?;
         if js {
             javascript::install(host, files, input, &downloads, &work.0, account, deadline)?;
         }

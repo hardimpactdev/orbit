@@ -21,7 +21,7 @@ final readonly class RecipeLoader
     {
         $catalog = array_fill_keys([
             'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
-            'acl', 'attr', 'composer', 'containerd', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
+            'acl', 'apparmor', 'attr', 'composer', 'containerd', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev', 'logrotate',
             'dnsmasq-base', 'btrfs-progs', 'nftables',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
@@ -29,7 +29,7 @@ final readonly class RecipeLoader
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
         ], 'ubuntu');
-        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'swamp', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'libgd3', 'php-common'] as $name) {
+        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'chrome-headless-shell', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'swamp', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
@@ -145,8 +145,8 @@ final readonly class RecipeLoader
             $rawArtifacts = $this->object($pin->artifacts, "tools.{$name}.artifacts");
             $keys = array_keys(get_object_vars($rawArtifacts));
             $this->require($keys !== [] && array_diff($keys, $architectures) === [], "tools.{$name}.artifacts: unsupported or missing architectures.");
-            if (in_array($name, $phpPackages, true)) {
-                $this->require($keys === ['amd64'], "tools.{$name}.artifacts: PHP supports amd64 only.");
+            if (in_array($name, $phpPackages, true) || $name === 'chrome-headless-shell') {
+                $this->require($keys === ['amd64'], "tools.{$name}.artifacts: ".($name === 'chrome-headless-shell' ? 'Chrome' : 'PHP').' supports amd64 only.');
             } elseif ($source !== 'internal') {
                 $this->require(array_diff($architectures, $keys) === [], "tools.{$name}.artifacts: every declared architecture needs a pin.");
             }
@@ -166,6 +166,12 @@ final readonly class RecipeLoader
                 $length = $algorithm === 'sha256' ? 64 : 128;
                 $this->require(preg_match('/^[a-f0-9]{'.$length.'}$/D', $digest) === 1, "{$field}.{$algorithm}: expected {$length} lowercase hexadecimal characters.");
                 $location = $this->text($artifact->{$locationKey}, "{$field}.{$locationKey}");
+                if ($name === 'chrome-headless-shell') {
+                    $this->require(preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\z/D', $version) === 1
+                        && $algorithm === 'sha256' && $artifactVersion === null
+                        && $location === "https://storage.googleapis.com/chrome-for-testing-public/{$version}/linux64/chrome-headless-shell-linux64.zip",
+                        "{$field}: expected the exact official Chrome headless-shell version, URL and SHA-256 pin.");
+                }
                 if ($source === 'internal') {
                     $this->require(preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D', $location) === 1, "{$field}.filename: expected a simple filename, not a path.");
                 } else {

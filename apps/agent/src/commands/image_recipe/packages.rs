@@ -113,6 +113,7 @@ pub fn install(
     ownership::pin(files, &recipe.git(), "git")?;
     ownership::pin(files, &recipe.incus(), "incus")?;
     drop(policy);
+    recipe::browser::converge(&mut host, files, recipe)?;
     if let Some(php) = &input.php {
         php_build::operations::apply(&mut host, files, php, deadline)
             .map_err(|e| Failure::new("php", serde_json::to_string(&e.data).unwrap()))?;

@@ -155,7 +155,9 @@ pub fn inspect(
     };
     let mut versions = Versions::new();
     for (name, pin) in tools {
-        let version = if name == "swamp" {
+        let version = if name == super::browser::NAME {
+            super::browser::installed(files, pin)?
+        } else if name == "swamp" {
             super::swamp::installed(files, pin)
         } else if pin.source == Source::Ubuntu || pin.deb() {
             installed
