@@ -30,6 +30,7 @@ use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
@@ -67,6 +68,7 @@ final class NodesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(NodeOperationAgentInstaller::class, NativeAgentCommandRunner::class);
+        $this->app->tag(NodeBootstrapSshIdentitySource::class, OperationSecretSource::class);
         $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
         $this->app->singleton(
             NodeLocks::class,

@@ -53,4 +53,4 @@ if (OperationKinds::supports('children') && OperationKinds::supports('children_s
     $nodeKinds['node.converge'] = require __DIR__.'/node-converge-kind.php';
 }
 
-return $nodeKinds;
+return [...$nodeKinds, ...require __DIR__.'/node-bootstrap-kinds.php'];
