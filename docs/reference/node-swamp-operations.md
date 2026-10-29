@@ -17,7 +17,9 @@ First-role failure uses `node.network_rollback {}` as a compensation child under
 
 Removal admission takes the Node target hold and records the source roles, Route IDs, prior lifecycle state and each serving Node's child intent. It keeps the departing Node's Route associations while cleanup runs. A protected Node or active Route refuses removal. Offline removal requires an actual unreachable verdict and explicit consent; a reachable Node keeps its role guard.
 
-Offline role children finish before the parent marks the Node removing. Each residue child receives exactly `{removed_node_id: <departing Node ID>}` and targets its own serving Node. Final deletion waits for those children and the network publication proofs. Cleanup of residue whose source Route no longer exists uses null through `node.converge`.
+Offline role children finish before the parent marks the Node removing. Each residue child receives exactly `{removed_node_id: <departing Node ID>}` and targets its own serving Node. Final deletion waits for those children and the network publication proofs. Cleanup of residue with a missing source Route uses null through `node.converge`.
+
+`node.network_projection {context_node_id, phase}` records one serving Node's public network policy. The expand phase adds Router LAN allowances before membership publication; the prune phase removes stale allowances after withdrawal. Managed peers repair their DNS selection from the public policy. The child reads no VPN private key and keeps its payload snapshot through retries.
 
 ## Footprint children
 
@@ -50,7 +52,7 @@ After a lost remote reply, Swamp reads `GET /operation-executor/{operation}/rece
 
 New Node removals pass the departing Node's integer ID as `removed_node_id`. They never use the serving Node's ID as a marker. A null value is reserved for orphaned residue after source deletion whose source relation was deleted.
 
-Removal admission runs the existing guards before changing intent. In particular, an attached Route still refuses removal with the existing Route guard. For admitted cleanup, capture Route IDs, target associations, and each serving Node's required `route_id`, `domain`, and `steps` before any deletion or role shedding can erase them. Mark the Node `removing`, then admit one cleanup child per serving Node. The child has the departing Node ID in its input and the serving Node ID in `Operation.node_id`.
+Removal admission runs the existing guards before changing intent. An active Route still refuses removal. For offline cleanup, the parent captures each nonactive Route row and preserves its source associations. Offline role children finish before the membership child marks the Node `removing`. Each serving cleanup child receives the departing Node ID and captures its own residue rows, including `route_id`, `domain`, and `steps`, before it runs effects. Its `Operation.node_id` is the serving Node.
 
 Keep the departing Node's Route associations until every required cleanup child succeeds. A failed or unfinished cleanup keeps those associations for recovery. Finalization may delete the associations and Node only after the Gateway verifies the child receipts. Lane 8 derives its narrow command payloads from this stored intent; the child never accepts caller-selected domains, Route IDs, or steps.
 

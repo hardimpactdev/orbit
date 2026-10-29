@@ -15,7 +15,6 @@ use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Projects\ProjectResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
@@ -171,7 +170,6 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         NodeAccessResponse::class => ['fromGatewayData'],
         NodeResponse::class => ['fromGatewayData'],
         RemovedNodeAccessResponse::class => ['fromGatewayData'],
-        RemovedNodeResponse::class => ['fromGatewayData'],
         ProcessResponse::class => ['fromGatewayData'],
         ScheduleCompletionResponse::class => ['fromRequestId'],
         ScheduleLogsResponse::class => ['fromGatewayData'],

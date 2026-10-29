@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
@@ -134,93 +133,6 @@ it('requires force only after an existing node is resolved', function (): void {
         ->toHaveCount(1);
 });
 
-it('sends node removal to the active gateway as json', function (): void {
-    $mockClient = MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-    $expected = json_encode(removed_node_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this
-        ->artisan('node:remove', ['node' => '2', '--force' => true, '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
-
-    $request = $mockClient->getLastRequest();
-
-    expect($request)
-        ->toBeInstanceOf(RemoveNodeRequest::class)
-        ->and($request?->getMethod())
-        ->toBe(Method::DELETE)
-        ->and($mockClient->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/nodes/2')
-        ->and($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['force' => true, 'offline' => false])
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(2);
-});
-
-it('sends the offline claim and returns the full degraded json payload', function (): void {
-    $mockClient = MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload(id: 3, name: 'app-prod')),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_degraded_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-    $expected = json_encode(removed_node_degraded_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this
-        ->artisan('node:remove', ['node' => '3', '--offline' => true, '--force' => true, '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['force' => true, 'offline' => true]);
-});
-
-it('shows deterministic human output for node removal', function (): void {
-    MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:remove', ['node' => '2', '--force' => true])
-        ->expectsOutput('Node [app-dev] removed.')
-        ->doesntExpectOutputToContain('Left on the node:')
-        ->doesntExpectOutputToContain('  - ')
-        ->expectsOutput('Request ID: '.remove_node_request_id())
-        ->assertExitCode(0);
-});
-
-it('shows the degradation advisory for an offline node removal', function (): void {
-    MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload(id: 3, name: 'app-prod')),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_degraded_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-
-    expect(Artisan::call('node:remove', ['node' => '3', '--offline' => true, '--force' => true]))->toBe(0);
-    $output = preg_replace('/\s+/', '', Artisan::output());
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Node [app-prod] removed.'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Warning: Node [app-prod] was unreachable. Orbit removed only the state it owns.'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Roles shed:'));
-    expect($output)->toContain(preg_replace('/\s+/', '', '  app-prod'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Left on the node:'));
-    expect($output)->toContain(preg_replace('/\s+/', '', '  Caddy site configuration and certificates for the app-prod role'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Request ID: '.remove_node_request_id()));
-});
-
 it('rejects an invalid node id before making an API request', function (string $nodeId): void {
     $mockClient = MockClient::global();
 
@@ -299,57 +211,6 @@ function missing_node_error_json(): array
             'message' => 'Resource not found.',
             'request_id' => remove_node_request_id(),
         ],
-    ];
-}
-
-function removed_node_payload(): array
-{
-    return [
-        'id' => 2,
-        'name' => 'app-dev',
-        'removed' => true,
-    ];
-}
-
-/** @return array<string, mixed> */
-function removed_node_expected_json(): array
-{
-    return [
-        ...removed_node_payload(),
-        'wireguard_peer_removed' => false,
-        'dns_records_removed' => false,
-        'degradation' => null,
-        'roles_shed' => [],
-        'retained_on_node' => [],
-        'follow_up' => null,
-        'request_id' => remove_node_request_id(),
-    ];
-}
-
-/** @return array<string, mixed> */
-function removed_node_degraded_payload(): array
-{
-    return [
-        'id' => 3,
-        'name' => 'app-prod',
-        'removed' => true,
-        'wireguard_peer_removed' => true,
-        'dns_records_removed' => true,
-        'degradation' => 'unreachable',
-        'roles_shed' => ['app-prod'],
-        'retained_on_node' => [
-            'Caddy site configuration and certificates for the app-prod role',
-        ],
-        'follow_up' => 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.',
-    ];
-}
-
-/** @return array<string, mixed> */
-function removed_node_degraded_expected_json(): array
-{
-    return [
-        ...removed_node_degraded_payload(),
-        'request_id' => remove_node_request_id(),
     ];
 }
 

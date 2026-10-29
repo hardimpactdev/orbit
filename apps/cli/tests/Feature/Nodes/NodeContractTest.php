@@ -58,7 +58,7 @@ describe('node contract', function () use ($addArguments): void {
         run_contract('nodes/node-add/created', 'node:add', [...$addArguments, '--json' => true], 'nodes/node-add/created.json', 0);
     });
 
-    it('renders an enrolled mac and its removal', function (): void {
+    it('renders an enrolled mac', function (): void {
         $arguments = [
             'name' => 'mini',
             'host' => '192.0.2.40',
@@ -71,9 +71,6 @@ describe('node contract', function () use ($addArguments): void {
         run_contract('nodes/node-add/macos-enrolled', 'node:add', $arguments, 'nodes/node-add/macos-enrolled.human.txt', 0);
         run_contract('nodes/node-add/macos-enrolled', 'node:add', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json', 0);
 
-        $removal = ['node' => '2', '--force' => true];
-        run_contract(['nodes/node-show/default', 'nodes/node-remove/macos-removed'], 'node:remove', $removal, 'nodes/node-remove/macos-removed.human.txt', 0);
-        run_contract(['nodes/node-show/default', 'nodes/node-remove/macos-removed'], 'node:remove', [...$removal, '--json' => true], 'nodes/node-remove/macos-removed.json', 0);
     });
 
     it('renders macOS enrollment refusals', function (): void {

@@ -17,7 +17,6 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
-use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Tests\Support\FakeMacAdmissionAgentRunner;
 use Tests\Support\FakeNodeAgentRuntime;
 
@@ -122,15 +121,6 @@ it('records an enrolled mac and its removal', function (): void {
 
     record_fixture($created, 'nodes/node-add/macos-enrolled', AddNodeRequest::class, 'POST /api/v1/nodes');
 
-    Node::query()->findOrFail(2)->update(['wireguard_public_key' => 'MINI_KEY']);
-
-    $removed = $this->deleteJson('/api/v1/nodes/2', ['offline' => false])->assertOk()
-        ->assertJsonPath('data.removed', true)
-        ->assertJsonPath('data.wireguard_peer_removed', true)
-        ->assertJsonPath('data.retained_on_node', ['user', 'package-managers', 'host-wireguard'])
-        ->assertJsonPath('data.follow_up', null);
-
-    record_fixture($removed, 'nodes/node-remove/macos-removed', RemoveNodeRequest::class, 'DELETE /api/v1/nodes/{node}');
 });
 
 it('rejects mac enrollment that omits the account, mixes accounts, or requests a role', function (): void {

@@ -10,10 +10,15 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Models\DatabaseServer;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Schedule;
 use Tests\Support\Fleet\FleetFixtures;
+use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
     app()->instance(OperationKinds::class, new OperationKinds(app(), ['node.remove' => [
@@ -118,3 +123,36 @@ it('leaves state intact when another Operation holds the Node', function (): voi
     $this->assertDatabaseHas('nodes', ['id' => $node->id, 'status' => 'active']);
     expect(Operation::query()->count())->toBe(1);
 });
+
+it('preserves resource guards before any removal admission or offline probe', function (string $resource, string $error): void {
+    $caller = FleetFixtures::node('remove-guard-caller');
+    $node = FleetFixtures::node('remove-guard-source');
+    $probe = Mockery::mock(NodeReachabilityProbe::class);
+    $probe->shouldNotReceive('degradation');
+    app()->instance(NodeReachabilityProbe::class, $probe);
+    match ($resource) {
+        'self' => $node = $caller,
+        'instance' => $node->instances()->create(['project_id' => Project::query()->create(['slug' => 'guard', 'name' => 'Guard', 'repository_url' => 'https://github.com/example/guard.git'])->id,
+            'name' => 'dev', 'checkout_path' => '/srv/orbit/apps/guard/dev', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40), 'status' => 'active']),
+        'database' => DatabaseServer::query()->create(['slug' => 'guard-db', 'node_id' => $node->id, 'tag' => '8', 'port' => 3306, 'root_password' => 'fixture-only', 'status' => 'active']),
+        'schedule' => Schedule::query()->create(['target_type' => Node::class, 'target_id' => $node->id, 'host_node_id' => $node->id,
+            'name' => 'guard', 'calendar' => 'daily', 'command' => 'true', 'timeout_seconds' => 3600, 'desired_timer_state' => 'enabled', 'status' => 'active']),
+        'host' => app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => [TaskVmSettingsBuilder::host($node->id)]])),
+        'role' => $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']),
+        'firewall' => $node->firewallRules()->create(['name' => 'https', 'action' => 'allow', 'source' => 'any', 'protocol' => 'tcp', 'port' => '443', 'status' => 'active']),
+        'process' => $node->processes()->create(['name' => 'guard', 'runtime' => 'docker', 'working_directory' => '/app', 'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+            'restart_policy' => 'unless-stopped', 'desired_state' => 'stopped', 'status' => 'active']),
+        'route' => Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $node->id, 'domain' => 'guard.test',
+            'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending'])->update(['status' => 'active']),
+    };
+
+    expect(fn () => app(AdmitNodeRemovalOperationAction::class)->execute($node, $caller))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe($error));
+
+    expect(Operation::query()->count())->toBe(0);
+    $this->assertDatabaseHas('nodes', ['id' => $node->id, 'status' => 'active']);
+})->with([
+    ['self', 'node.self_removal_forbidden'], ['instance', 'node.has_instances'], ['database', 'node.has_database_servers'],
+    ['schedule', 'schedule.target_in_use'], ['host', 'node.task_vm_host_configured'], ['role', 'node.has_roles'],
+    ['firewall', 'node.has_firewall_rules'], ['process', 'node.has_processes'], ['route', 'route.reconciliation_required'],
+]);

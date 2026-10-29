@@ -6,6 +6,7 @@ use App\Domain\Nodes\NodeLifecycleOperationExecution;
 use App\Domain\Nodes\NodeRemovalOperationCompletion;
 use App\Domain\Nodes\NodeRemovalPolicy;
 use App\Domain\Operations\OperationChildIntent;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -75,6 +76,18 @@ it('deletes the captured nonactive Route and Node only after serving cleanup pro
     $this->assertModelMissing($node);
     $this->assertModelMissing($route);
     expect($result['removed'])->toBeTrue();
+});
+
+it('preserves stamped child proof after successful Node deletion', function (): void {
+    [$operation, $node] = removalProofOperation();
+    removalProofChild($operation, 'remove-begin');
+    removalProofChild($operation, 'remove-residue');
+    $node->update(['status' => 'removing']);
+    $result = app(NodeLifecycleOperationExecution::class)->result($operation);
+    DB::transaction(fn () => app(NodeRemovalOperationCompletion::class)->complete($operation, OperationOutcome::succeeded($result)));
+    $operation->update(['status' => 'succeeded', 'result' => $result]);
+
+    expect(app(OperationChildren::class)->requireSucceeded($operation->fresh(), 'remove-begin')->result)->toBe([]);
 });
 
 it('refuses a newly attached Route before deleting the Node', function (): void {

@@ -8,8 +8,10 @@ use App\Domain\Nodes\NodeBootstrapOperationCompletion;
 use App\Domain\Nodes\NodeChildAdmission;
 use App\Domain\Nodes\NodeFootprintOperationCompletion;
 use App\Domain\Nodes\NodeFootprintOperationExecution;
+use App\Domain\Nodes\NodeLifecycleOperationExecution;
 use App\Domain\Nodes\NodeNetworkOperationExecution;
 use App\Domain\Nodes\NodePhpPackagesOperationCompletion;
+use App\Domain\Nodes\NodeRemovalOperationCompletion;
 use App\Domain\Nodes\NodeRoleOperationCompletion;
 use App\Domain\Nodes\NodeRoleOperationExecution;
 use App\Domain\Nodes\NodeRoleRelocationSourceCompletion;
@@ -136,6 +138,55 @@ $nodeKinds = [
         'result_fields' => ['error_code'],
     ],
 ];
+
+$nodeLifecycleDefinition = [
+    'executor' => 'swamp', 'admission' => NodeChildAdmission::class, 'execution' => NodeLifecycleOperationExecution::class,
+    'completion' => NodeWireGuardOperationCompletion::class,
+    'runs' => [
+        ...array_map(static fn (string $name): array => ['transport' => 'gateway', 'name' => $name, 'input_values' => [], 'resumable' => true],
+            ['node.lifecycle-result']),
+        ...array_map(static fn (string $name): array => ['transport' => 'agent', 'name' => $name],
+            ['firewall.router-lan', 'wireguard.repair-peer-dns']),
+    ],
+    'completion_contract' => ['step' => 'node-lifecycle-result', 'transport' => 'gateway', 'name' => 'node.lifecycle-result', 'result' => ['node_plan_proven' => true]],
+    'result_fields' => ['node_plan_proven', 'projected', 'matches', 'changed', 'outcome', 'error_code', 'failed_step'],
+];
+$nodeKinds['node.network_projection'] = $nodeLifecycleDefinition;
+$nodeKinds['node.removal_begin'] = [...$nodeLifecycleDefinition,
+    'runs' => [
+        ['transport' => 'gateway', 'name' => 'node.begin-removal', 'input_values' => [], 'resumable' => true],
+        ['transport' => 'gateway', 'name' => 'node.lifecycle-result', 'input_values' => [], 'resumable' => true],
+    ],
+    'result_fields' => ['node_plan_proven', 'removing', 'error_code', 'failed_step'],
+];
+$nodeKinds['node.removal_restore'] = [...$nodeLifecycleDefinition,
+    'runs' => [
+        ['transport' => 'gateway', 'name' => 'node.restore-removal-state', 'input_values' => [], 'resumable' => true],
+        ['transport' => 'gateway', 'name' => 'node.lifecycle-result', 'input_values' => [], 'resumable' => true],
+    ],
+    'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'],
+        ['node.network_projection', 'node.wireguard_hub_converge', 'route.private_dns_publish', 'route.caddy_converge', 'metrics.reconcile']),
+    'result_fields' => ['node_plan_proven', 'restoring', 'restored', 'error_code', 'failed_step'],
+];
+$nodeKinds['node.remove'] = [...$nodeLifecycleDefinition,
+    'completion' => NodeRemovalOperationCompletion::class,
+    'runs' => [
+        ['transport' => 'gateway', 'name' => 'node.lifecycle-result', 'input_values' => [], 'resumable' => true],
+        ['transport' => 'agent', 'name' => 'agent.remove', 'input_values' => []],
+        ['transport' => 'agent', 'name' => 'firewall.rules'],
+    ],
+    'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'],
+        ['node.role_remove', 'node.removal_begin', 'node.removal_restore', 'node.network_projection', 'node.wireguard_hub_converge',
+            'route.offline_residue_clean', 'route.private_dns_publish', 'route.caddy_converge', 'metrics.reconcile']),
+    'compensations' => ['node.removal_restore'], 'cancellation_boundary' => 'remove-begin',
+    'result_fields' => ['node_plan_proven', 'node_restore_required', 'id', 'name', 'removed', 'wireguard_peer_removed', 'dns_records_removed',
+        'degradation', 'follow_up', 'matches', 'error_code', 'failed_step',
+        ['name' => 'roles_shed', 'type' => 'list', 'items' => 'string', 'max' => 32],
+        ['name' => 'retained_on_node', 'type' => 'list', 'items' => 'string', 'max' => 128]],
+];
+if (! OperationKinds::supports('list_of') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('compensations')) {
+    unset($nodeKinds['node.remove']);
+}
 
 $nodeKinds['node.network_converge'] = [
     'executor' => 'swamp', 'admission' => NodeChildAdmission::class,

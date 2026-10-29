@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
-use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RemoveNodeCommand extends NodeCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'node:remove
         {node : Numeric node ID}
         {--force : Skip the destructive confirmation prompt}
         {--offline : Shed roles and remove a node Orbit cannot reach}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -55,35 +57,20 @@ final class RemoveNodeCommand extends NodeCommand
             $connector,
             // confirmed() only returns true after --force or an interactive "yes",
             // either of which is the consent the Gateway requires, so force is always true here.
-            new RemoveNodeRequest($nodeId, force: true, offline: $this->option('offline') === true),
-            RemovedNodeResponse::class,
-            ['Remove Node', 'Removing Node', 'Removed Node'],
-            static fn (object $response): ProgressState => NodeOutput::mutationState($response, removing: true),
+            new RemoveNodeRequest($nodeId, force: true, offline: $this->option('offline') === true,
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null),
+            OperationResponse::class,
+            ['Start Node removal', 'Starting Node removal', 'Started Node removal'],
         );
 
-        if (! $node instanceof RemovedNodeResponse) {
+        if (! $node instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($node->toArray());
+        $profile = $this->activeGatewayProfile($repository);
 
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("Node [{$node->name}] removed.");
-        ConsoleWriter::write($this->output, NodeOutput::degradationAdvisory(
-            $this->humanRenderer(),
-            $this->consoleMode(),
-            $node->name,
-            $node->degradation,
-            $node->rolesShed,
-            $node->retainedOnNode,
-            $node->followUp,
-        ));
-        $this->writeHumanMessage("Request ID: {$node->requestId}");
-
-        return self::SUCCESS;
+        return $profile === null ? self::FAILURE
+            : $this->followOperation($connector, $profile, $node, 'Remove Node', 'Node removal');
     }
 
     private function confirmed(NodeResponse $node): bool

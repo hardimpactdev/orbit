@@ -253,7 +253,7 @@ Doctor checks lifecycle, SSH reachability, platform, architecture, tunnel identi
 
 Removing a macOS Node deletes the registry row and the hub peer. It does not delete the user, uninstall Homebrew or Vite+, or edit the host tunnel. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `user`, `package-managers`, and `host-wireguard`. A failed hub or registry step uses the normal removal rollback: the Node returns to its previous status, and a removed peer is restored when that rollback succeeds. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
 
-JSON and the human `node:remove` output both report that list, so the operator can see the account, package managers, and host tunnel that remain.
+The removal Operation result reports that list, so the operator can see the account, package managers, and host tunnel that remain.
 
 ## Nodes without roles
 
@@ -563,30 +563,33 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 | `node.task_vm_host_configured` | The Node has `settings.task_vms`. [Retire the host](/reference/compute-drivers#add-a-task-vm-host) first, so the other hosts stop accepting its key. |
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
-| `node.provisioning_busy` | Another lifecycle operation holds the Node name. |
+| `operation.target_busy` | Another Operation holds the Node target. |
+
+Removal returns HTTP 202 with `node.remove`. The CLI follows that Operation. The Gateway retains the Node and its Route associations until Swamp proves every required child. Other mutations on the same Node receive `operation.target_busy` while removal holds its target.
 
 Online removal runs these steps in order.
 
-| Step | Result | Code when it fails |
-| --- | --- | --- |
-| `grafana-access-revocation` | The Gateway revokes the Node's Grafana access. | `node.grafana_access_revocation_failed` |
-| `metrics-exporters` | The Gateway retires the Node's exporter state and reconciles the fleet. | `node.metrics_reconcile_failed` |
-| Node agent | The Gateway stops and disables `orbit-agent.service` and deletes the unit, `/usr/local/bin/orbit-agent`, and `/etc/orbit/agent`. A failure only logs a warning. | none |
-| `firewall-recovery` | The Gateway restores `orbit:public-ssh-recovery` over WireGuard. It skips this step for a Node without a WireGuard peer. | `node.firewall_recovery_failed` |
-| `wireguard-projection` | The Gateway removes the WireGuard peer. | `node.wireguard_projection_failed` |
-| `router-lan-ingress` | The Gateway removes the Node's Router LAN access in its Cluster. | `router.lan_ingress_failed` |
-| `dns-projection` | The Gateway converges private DNS. | `node.dns_projection_failed` |
-| `persistence` | The Gateway deletes the Node record. | `node.persistence_failed` |
+| Step | Result |
+| --- | --- |
+| Membership state | A same-target child marks the Node `removing`. |
+| Metrics | Caddy revokes Grafana streams, then the Metrics child retires exporter selection. Task VM removal skips this pass. |
+| Node agent | Swamp removes the Linux agent. A proven refusal becomes a follow-up; an uncertain reply requires its target receipt. |
+| Public SSH | Swamp restores public SSH while the WireGuard peer remains available. Nodes without a peer and macOS skip this step. |
+| WireGuard | A child on the VPN Node removes the departing peer from the hub projection. |
+| Serving Nodes | Each serving Node prunes Router LAN access, repairs peer DNS selection, cleans Route residue, and publishes private DNS where its role requires it. |
+| Finalization | The Gateway rechecks the captured resources and Route rows, then deletes the Node. |
 
-A failed step returns the Node record to the status it had, restores the Metrics selection, and restores the WireGuard peer when the Gateway removed it. So a `failed` Node stays `failed`. When a rollback itself fails, the Gateway returns `node.removal_rollback_failed` with the step `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback`.
+After a proven required-step refusal or cancellation following membership withdrawal, a `node.removal_restore` child restores the prior lifecycle status, hub peer, network publication and Metrics selection. The cancelled parent performs no further effect. A prior `failed` status stays `failed`. A failed restoration reports `node.removal_rollback_failed` and preserves the Node and Route evidence. A missing effect reply keeps its result unproven until the original target receipt is recovered.
 
 ### Offline removal
 
-Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every guard above, but the removal still skips `firewall-recovery`. So omit `--offline` for a Node that is up. A reachable Linux removal returns an empty `retained_on_node`. The Gateway still removes the Node agent, and public SSH stays as it was because firewall recovery did not run.
+Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every ordinary guard and uses the online removal plan, including public SSH restoration.
 
 The Node of a task VM is the exception: `DestroyTaskVm` deletes the VM first and removes the Node without a probe, and without a Metrics pass, because a task VM Node never hosts an exporter. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-For a Node that does not answer, the API needs `force`, or the Gateway refuses with `node.confirmation_required`. The CLI sends it after `--force` or a yes at the prompt. The guards for Instances, Routes, Schedules, protected Nodes, and firewall rules still apply. The Gateway then removes every role on its own side, deletes the Node's Process records, removes the WireGuard peer, and deletes the record. It changes nothing on the machine. Caddy sites, checkouts, containers, Process units, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, and public SSH stays closed.
+For a Node that does not answer, the API needs `force`, or the Gateway refuses with `node.confirmation_required`. The CLI sends it after `--force` or a yes at the prompt. The guards for Instances, active Routes, Schedules, protected Nodes, and firewall rules still apply. Nonactive Route source associations remain until the serving cleanup children succeed.
+
+The Gateway then removes every role on its own side, deletes the Node's Process records, removes the WireGuard peer, and deletes the record. It changes nothing on the machine. Caddy sites, checkouts, containers, Process units, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, and public SSH stays closed.
 
 `retained_on_node` lists the Node agent, the Metrics exporter, and each shed role's leftovers. `follow_up` says those leftovers stay until you clear them. macOS does not use that list. [macOS removal](#removal) always reports `user`, `package-managers`, and `host-wireguard`.
 
