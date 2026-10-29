@@ -1,6 +1,7 @@
 {
   "kinds": [
-    "instance.rename"
+    "instance.rename",
+    "instance.destroy"
   ],
   "workflow": "operation-instance-lifecycle"
 }

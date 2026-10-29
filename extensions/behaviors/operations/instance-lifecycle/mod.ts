@@ -11,7 +11,7 @@ import { ErrorCode } from "./contract.ts";
 import { lifecycle } from "./lifecycle.ts";
 import { LifecycleSession } from "./session.ts";
 
-const Kinds = z.enum(["instance.rename"]);
+const Kinds = z.enum(["instance.rename", "instance.destroy"]);
 const Assignment = z.object({ operation_id: z.number().int().positive() });
 
 const Completion = z.object({
