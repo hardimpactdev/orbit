@@ -5,6 +5,7 @@ import type { FamilyEffects } from "./runtime.ts";
 
 const runtime = {
   task_vm_id: 5,
+  process_id: 27,
   node_id: 12,
   user: "orbit",
   origin: "http://10.44.0.3:8317",
@@ -70,7 +71,7 @@ class Effects implements FamilyEffects {
       this.calls.push({ key, kind, node, input });
       this.receipts.set(
         key,
-        kind === "task_vm.enroll_node"
+        ["task_vm.enroll_node", "task_vm.prepare_enrollment"].includes(kind)
           ? { ready: true, node_id: 12 }
           : { ready: true },
       );
@@ -100,12 +101,14 @@ Deno.test("provision creates, waits for cloud-init, enrolls and prepares the run
   assertEquals(effects.calls.map((entry) => entry.key), [
     "lifecycle-intent",
     "provider-create",
+    "prepare-enrollment",
+    "node-enrollment",
     "enroll",
     "runtime",
   ]);
   assertEquals(effects.waits, 1);
   assertEquals(effects.calls[0].node, 3);
-  assertEquals(effects.calls[3].node, 12);
+  assertEquals(effects.calls[5].node, 12);
 });
 
 Deno.test("enrollment of an existing VM never calls create again", async () => {
@@ -113,6 +116,8 @@ Deno.test("enrollment of an existing VM never calls create again", async () => {
   await lifecycle("task_vm.enroll", intent(), effects);
   assertEquals(effects.calls.map((entry) => entry.key), [
     "lifecycle-intent",
+    "prepare-enrollment",
+    "node-enrollment",
     "enroll",
     "runtime",
   ]);
@@ -200,6 +205,8 @@ Deno.test("destruction waits for preservation or confirmed VM loss before deleti
     "destroy-intent",
     "revoke-model-key",
     "provider-delete",
+    "forget-workspaces",
+    "node-removal",
     "forget-records",
   ]);
   assertEquals(effects.waits, 1);
@@ -315,6 +322,8 @@ Deno.test("UpCloud provisioning starts an adopted allocation and waits through t
     "lifecycle-intent",
     "provider-create",
     "provider-start",
+    "prepare-enrollment",
+    "node-enrollment",
     "enroll",
     "runtime",
   ]);
@@ -360,4 +369,75 @@ Deno.test("a refused workspace Route removal retains the VM’s Node and workspa
     effects.calls.some((call) => call.key === "forget-records"),
     false,
   );
+});
+
+Deno.test("an already active reserved Node skips enrollment and prepares runtime", async () => {
+  const effects = new Effects();
+  effects.receipts.set("prepare-enrollment", {
+    ready: true,
+    node_id: 12,
+    enrolled: true,
+  });
+  await lifecycle("task_vm.enroll", intent(), effects);
+  assertEquals(effects.calls.map((call) => call.key), [
+    "lifecycle-intent",
+    "enroll",
+    "runtime",
+  ]);
+});
+
+Deno.test("an uncertain Node enrollment preserves the reservation and defers runtime until replay", async () => {
+  const effects = new Effects();
+  const original = effects.child.bind(effects);
+  let lostReply = true;
+  effects.child = async (key, kind, node, input) => {
+    const result = await original(key, kind, node, input);
+    if (key === "node-enrollment" && lostReply) {
+      lostReply = false;
+      throw new ExecutorError("operation.outcome_unknown");
+    }
+    return result;
+  };
+  await assertRejects(
+    () => lifecycle("task_vm.enroll", intent(), effects),
+    ExecutorError,
+    "operation.outcome_unknown",
+  );
+  assertEquals(effects.calls.some((call) => call.key === "runtime"), false);
+  await lifecycle("task_vm.enroll", intent(), effects);
+  assertEquals(
+    effects.calls.filter((call) => call.key === "node-enrollment").length,
+    1,
+  );
+  assertEquals(
+    effects.calls.find((call) => call.key === "node-enrollment")?.node,
+    12,
+  );
+  assertEquals(effects.calls.at(-1)?.key, "runtime");
+});
+
+Deno.test("workspace cleanup precedes Node removal and a removal refusal keeps final records", async () => {
+  const effects = new Effects();
+  effects.failures.add("node-removal");
+  await assertRejects(() => lifecycle("task_vm.destroy", intent(), effects));
+  assertEquals(effects.calls.at(-1)?.key, "forget-workspaces");
+  assertEquals(
+    effects.calls.some((call) => call.key === "forget-records"),
+    false,
+  );
+});
+
+Deno.test("a VM without a recorded guest Node omits Node removal", async () => {
+  const effects = new Effects();
+  await lifecycle(
+    "task_vm.destroy",
+    { ...intent(), guest_node_id: null },
+    effects,
+  );
+  assertEquals(
+    effects.calls.some((call) => call.key === "node-removal"),
+    false,
+  );
+  assertEquals(effects.calls.at(-2)?.key, "forget-workspaces");
+  assertEquals(effects.calls.at(-1)?.key, "forget-records");
 });

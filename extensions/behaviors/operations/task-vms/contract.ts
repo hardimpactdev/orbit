@@ -124,13 +124,6 @@ const runtimeEffects: Record<
     action: "upload",
     proof: "ready",
   },
-  "task_vm.pi_process": {
-    name: "task_vm.runtime",
-    transport: "task_vm_runtime",
-    fields: ["task_vm_id"],
-    action: "process",
-    proof: "ready",
-  },
   "task_vm.runtime_confirm": {
     name: "task_vm.runtime",
     transport: "task_vm_runtime",
@@ -185,9 +178,11 @@ for (const verb of ["create", "start", "stop", "hard_stop", "delete"]) {
 for (
   const [verb, action] of Object.entries({
     lifecycle_intent: "intent",
+    prepare_enrollment: "prepare-enrollment",
     enroll_node: "enroll",
     confirm_stopped: "stopped",
     mark_destroying: "destroying",
+    forget_workspaces: "forget-workspaces",
     destroy_records: "forget",
   })
 ) {

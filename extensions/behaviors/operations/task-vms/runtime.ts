@@ -6,6 +6,7 @@ export const SecretReference = z.object({
 }).strict();
 export const RuntimeInput = z.object({
   task_vm_id: z.number().int().positive(),
+  process_id: z.number().int().positive(),
   node_id: z.number().int().positive(),
   user: z.string().min(1),
   origin: z.string().url(),
@@ -79,8 +80,8 @@ export async function prepareRuntime(
       token: input.token,
     },
   );
-  await effects.child("pi-process", "task_vm.pi_process", input.node_id, {
-    task_vm_id: input.task_vm_id,
+  await effects.child("pi-process-owner", "process.create", input.node_id, {
+    process_id: input.process_id,
   });
   for (;;) {
     const runtime = await effects.read("runtime");

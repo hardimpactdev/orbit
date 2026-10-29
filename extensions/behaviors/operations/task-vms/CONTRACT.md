@@ -41,6 +41,13 @@ removal children. Workspace Routes use the owning `route.destroy` admission with
 the admitted route, Instance and Node identities. Record cleanup performs only
 DB projection after that exact child proof. Runtime preparation proves model-key
 configuration, pinned Pi configuration, the normal Pi Process and readiness.
+Runtime intent includes the Gateway-recorded fixed Pi Process ID. After Pi
+configuration, Swamp admits `pi-process-owner` as the owning `process.create`
+child with only `{process_id}`. A failed or uncertain Process child prevents
+runtime readiness. Current Pi artifacts need no upload or install children;
+completion still requires model-key, configuration, Process and readiness proof.
+The obsolete `task_vm.pi_process` Gateway effect is not registered.
+
 Parking proves stopped power. Cache preparation proves host initialization and
 its read-only mount before seeding the admitted Project inventory. Destruction
 retains unpublished work until preservation or confirmed VM loss permits
@@ -109,3 +116,18 @@ cancellation, native phase resume, artifact reuse and sweep behavior.
 disposable repository, then resumes a failed family in another Swamp process.
 Live verification follows the paired deployment on the orchestrator's designated
 harmless dev target.
+
+Provisioning and enrollment first run `task_vm.prepare_enrollment`. The Gateway
+reserves the VM Node and records its exact `node-enrollment` / `node.add` child
+with internal ProvisionNodeData fields, including taskVmId and sshJumpNodeId.
+Swamp requests the recorded key and waits for its owning enrollment receipt
+before runtime preparation. A Gateway-recorded already active Node skips that
+child. Replays reuse the reservation. Both owning Node releases must be deployed
+before enabling these admissions; retained callers stay synchronous.
+
+Destruction proves provider absence and Route removals, then runs
+`task_vm.forget_workspaces` while the VM still has its recorded Node. Only that
+proof unlocks the stored `node-removal` / `node.remove` descriptor. Final VM
+cleanup requires owning Node removal proof. The descriptor preserves the
+original Node ID after foreign keys are cleared. A VM with no recorded Node
+never queries or deletes unrelated workspace records with a null Node.

@@ -144,6 +144,17 @@ export async function lifecycle(
       ) throw new ExecutorError("task_vm.bootstrap_timeout");
       await effects.wait();
     }
+    const prepared = await effects.child(
+      "prepare-enrollment",
+      "task_vm.prepare_enrollment",
+      node,
+      { task_vm_id: input.task_vm_id },
+    );
+    const reserved = z.number().int().positive().parse(prepared.node_id);
+    if (prepared.enrolled !== true) {
+      // Gateway stores the exact ProvisionNodeData; the child API submits only this key.
+      await effects.child("node-enrollment", "node.add", reserved, {});
+    }
     const enrolled = await effects.child(
       "enroll",
       "task_vm.enroll_node",
@@ -274,6 +285,12 @@ export async function lifecycle(
       route.node_id,
       { route_id: route.route_id, offline: true },
     );
+  }
+  await effects.child("forget-workspaces", "task_vm.forget_workspaces", node, {
+    task_vm_id: input.task_vm_id,
+  });
+  if (input.guest_node_id !== null) {
+    await effects.child("node-removal", "node.remove", input.guest_node_id, {});
   }
   await effects.child("forget-records", "task_vm.destroy_records", node, {
     task_vm_id: input.task_vm_id,

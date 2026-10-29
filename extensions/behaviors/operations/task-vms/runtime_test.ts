@@ -8,6 +8,7 @@ import { type FamilyEffects, prepareRuntime, RuntimeInput } from "./runtime.ts";
 const input = () =>
   RuntimeInput.parse({
     task_vm_id: 5,
+    process_id: 27,
     node_id: 12,
     user: "orbit",
     origin: "http://10.44.0.3:8317",
@@ -67,10 +68,16 @@ Deno.test("runtime prepares its owned key, configuration and Process without upl
   assertEquals(effects.children.map((entry) => entry.key), [
     "model-key",
     "pi-configure",
-    "pi-process",
+    "pi-process-owner",
     "runtime-confirmed",
   ]);
   assertEquals(effects.children.every((entry) => entry.node === 12), true);
+  assertEquals(effects.children[2], {
+    key: "pi-process-owner",
+    kind: "process.create",
+    node: 12,
+    input: { process_id: 27 },
+  });
   assertEquals(effects.children[1].input.model_key, {
     $secret: "task_vm.model_key",
     id: 5,
@@ -87,7 +94,7 @@ Deno.test("an absent Pi artifact is uploaded and installed at its admitted pin b
     "pi-upload",
     "pi-install",
     "pi-configure",
-    "pi-process",
+    "pi-process-owner",
     "runtime-confirmed",
   ]);
   assertEquals(effects.children[2].input.sha256, "a".repeat(64));
@@ -103,7 +110,7 @@ Deno.test("a refused model key or configuration creates no Process", async () =>
       "task_vm.runtime_failed",
     );
     assertEquals(
-      effects.children.some((entry) => entry.key === "pi-process"),
+      effects.children.some((entry) => entry.key === "pi-process-owner"),
       false,
     );
   }
@@ -114,7 +121,7 @@ Deno.test("runtime restart after uncertain child completion reuses every earlier
     const lose of [
       "model-key",
       "pi-configure",
-      "pi-process",
+      "pi-process-owner",
       "runtime-confirmed",
     ]
   ) {
@@ -139,5 +146,19 @@ Deno.test("runtime refuses a credential reference owned by another VM or a liter
   );
   assertThrows(() =>
     RuntimeInput.parse({ ...value, model_key: "literal-secret" })
+  );
+});
+
+Deno.test("a refused owning Process prevents runtime readiness", async () => {
+  const effects = new Effects();
+  effects.refuse = "pi-process-owner";
+  await assertRejects(
+    () => prepareRuntime(input(), effects),
+    Error,
+    "task_vm.runtime_failed",
+  );
+  assertEquals(
+    effects.children.some((entry) => entry.key === "runtime-confirmed"),
+    false,
   );
 });
