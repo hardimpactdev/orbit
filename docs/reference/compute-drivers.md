@@ -1146,7 +1146,9 @@ A cross-reference from another issue or PR is not a modification and does not bl
 
 Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
 
-Swamp requests retire, refresh and merge Operations for each candidate. The Gateway performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
+Swamp requests retire, refresh and merge Operations for each candidate.
+
+The Gateway checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
 
 Successful evidence verification records the head SHA. Retries reuse that result until the head changes, avoiding repeated index downloads after a refused merge. Required checks and the live PR target, author, head, and draft state are still checked before each merge attempt.
 

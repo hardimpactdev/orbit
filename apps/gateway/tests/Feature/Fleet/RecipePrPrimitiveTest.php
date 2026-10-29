@@ -140,3 +140,29 @@ it('refuses another App owner a changed recipe action a Node override and unlist
     $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', $run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
     Http::assertNothingSent();
 })->with(['owner', 'action', 'target', 'command', 'transport']);
+
+it('retires a stale nightly before checks or merge even on a merge tick', function (string $stale): void {
+    $evidence = recipePrMergeEvidence();
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
+    $overrides = [$base.'/issues/99/comments' => Http::response(['id' => 1])];
+    if ($stale === 'newer-open') {
+        $newer = $evidence['pr'];
+        $newer['number'] = 100;
+        $newer['html_url'] = 'https://github.com/hardimpactdev/orbit/pull/100';
+        $newer['head']['ref'] = 'nightly/recipe-'.(new DateTimeImmutable(substr($newer['head']['ref'], -8)))->modify('+1 day')->format('Ymd');
+        $overrides[$base.'/pulls?*'] = Http::response([$evidence['pr'], $newer]);
+        $overrides[$base.'/pulls/100'] = Http::response($newer);
+    } else {
+        $evidence['main_content'] = $evidence['after'];
+    }
+    $evidence['runs'] = [];
+    $overrides[$base.'/pulls/99'] = static fn (Request $request) => $request->method() === 'PATCH'
+        ? Http::response(['state' => 'closed'], $stale === 'retirement-failed' ? 503 : 200)
+        : Http::response($evidence['pr']);
+    recipePrMergeHttp($evidence, $overrides);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute(99, 'ghs_nightly_merge', str_repeat('b', 40));
+
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'PATCH' && $request['state'] === 'closed');
+    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/check-runs') || str_ends_with($request->url(), '/merge'));
+})->with(['main-reached', 'newer-open', 'retirement-failed']);

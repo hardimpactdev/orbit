@@ -31,6 +31,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
         private GitHubAppStore $store,
         private RecipeMaintenanceAlerts $alerts,
         private NightlyRecipeContents $contents,
+        private RetireNightlyRecipePullRequestsAction $retire,
         private RecipeArtifactsBump $artifacts,
         private RecipeLoader $loader,
     ) {}
@@ -62,7 +63,11 @@ final readonly class MergeNightlyRecipePullRequestsAction
         if ($pulls === []) {
             return;
         }
+        if (! array_any($pulls, static fn (GitHubListedPullRequest $pull): bool => $pull->number === $number && $pull->headSha === $expectedHead)) {
+            return;
+        }
         try {
+            $pulls = $this->retire->execute($http, $repository, $pulls, $author, $this->contents->read($http, 'main'), $number);
             $pulls = array_values(array_filter($pulls, static fn (GitHubListedPullRequest $pull): bool => $pull->number === $number && $pull->headSha === $expectedHead));
         } catch (Throwable) {
             Cache::put($scope.':retry', true, $retrySeconds);
