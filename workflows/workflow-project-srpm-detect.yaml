@@ -1,5 +1,7 @@
 id: f71697b1-b93f-4ee0-a536-e263063c5366
 name: '@nckrtl/project-srpm/detect'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: srpm detect through its private project extension.
 trigger:
   schedule: 10 5 * * *
@@ -9,9 +11,9 @@ jobs:
   - name: detect
     task:
       type: model_method
-      modelType: "@nckrtl/dependency-scanner"
-      modelName: dependency-scanner
-      methodName: scan
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-detect-25
+      methodName: project_scan
       inputs:
         projectId: 25
         runId: '${{ run.id }}'

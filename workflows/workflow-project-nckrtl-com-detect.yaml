@@ -1,5 +1,7 @@
 id: 4813f832-ac91-47af-8504-d8a521ed93e7
 name: "@nckrtl/project-nckrtl-com/detect"
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: nckrtl.com detect through its private project extension.
 trigger:
   schedule: 0 3 * * *
@@ -9,9 +11,9 @@ jobs:
   - name: detect
     task:
       type: model_method
-      modelType: "@nckrtl/dependency-scanner"
-      modelName: dependency-scanner
-      methodName: scan
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-detect-20
+      methodName: project_scan
       inputs:
         projectId: 20
         runId: '${{ run.id }}'

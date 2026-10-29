@@ -1,5 +1,7 @@
 id: c2dbcbb0-dad0-4dc2-a45a-fb999fdfc07f
 name: '@nckrtl/project-launch-starter-kit/routine'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: launch-starter-kit routine through its private project extension.
 trigger:
   schedule: 10 2 * * 1
@@ -9,8 +11,9 @@ jobs:
   - name: routine
     task:
       type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-30
+      methodName: project_routine
       inputs:
         projectId: 30
         mode: routine

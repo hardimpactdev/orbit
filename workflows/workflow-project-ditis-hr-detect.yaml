@@ -1,5 +1,7 @@
 id: 65c7fe47-9034-41e2-9691-3c9216e93f18
 name: '@nckrtl/project-ditis-hr/detect'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: ditis-hr detect through its private project extension.
 trigger:
   schedule: 30 5 * * *
@@ -9,9 +11,9 @@ jobs:
   - name: detect
     task:
       type: model_method
-      modelType: "@nckrtl/dependency-scanner"
-      modelName: dependency-scanner
-      methodName: scan
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-detect-13
+      methodName: project_scan
       inputs:
         projectId: 13
         runId: '${{ run.id }}'

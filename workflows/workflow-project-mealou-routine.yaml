@@ -1,5 +1,7 @@
 id: bcdc0730-0c55-4896-804e-ee55f78b3f3f
 name: '@nckrtl/project-mealou/routine'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: mealou routine through its private project extension.
 trigger:
   schedule: 0 5 * * 1
@@ -9,8 +11,9 @@ jobs:
   - name: routine
     task:
       type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-19
+      methodName: project_routine
       inputs:
         projectId: 19
         mode: routine

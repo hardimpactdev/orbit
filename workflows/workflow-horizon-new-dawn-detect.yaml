@@ -1,5 +1,7 @@
 id: 379393e1-64e7-444b-9d58-3870e28485f4
 name: "@nckrtl/project-horizon-new-dawn-detect"
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: Detect horizon-new-dawn (Project 57) parity on an enrolled group worker and create backlog tasks for Nick. No schedule or live task start.
 inputs:
   properties:
@@ -9,6 +11,7 @@ inputs:
   required: [group, worker, cwd]
 jobs:
   - name: verify
+    labels: {}
     steps:
       - name: enrolled
         task:
@@ -19,6 +22,7 @@ jobs:
             group: '${{ inputs.group }}'
             worker: '${{ inputs.worker }}'
   - name: detect
+    labels: {}
     target: '${{ inputs.worker }}'
     queueTimeout: 120
     dependsOn:
@@ -34,6 +38,7 @@ jobs:
           inputs:
             cwd: '${{ inputs.cwd }}'
   - name: tasks
+    labels: {}
     dependsOn:
       - job: detect
         condition: { type: succeeded }

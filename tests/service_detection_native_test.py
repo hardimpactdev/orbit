@@ -15,6 +15,7 @@ import unittest
 import urllib.request
 
 REPO = Path(__file__).resolve().parents[1]
+CLI = os.environ.get("SWAMP_BIN", "swamp")
 RPC = """
 const [url, input] = Deno.args;
 const request = JSON.parse(input);
@@ -40,6 +41,18 @@ class ServiceDetectionNativeTest(unittest.TestCase):
             batch.write_text(source[:a] + "export async function releases(_c: {package:string}) { return [{version:'2.0.0',publishedAt:'2020-01-01T00:00:00Z'}]; }\n" + source[b:])
             bins = root / "bin"
             bins.mkdir()
+            # Only this isolated fixture replaces the adapter's fixed deployment paths.
+            adapter = root / "extensions/behaviors/native_host_method.ts"
+            source = adapter.read_text().replace('"/home/orbit/apps/orbit-swamp/default"', json.dumps(str(root)))
+            source = source.replace('const HOME = "/home/orbit"', 'const HOME = ' + json.dumps(str(root / "home")))
+            source = source.replace('executable: `${HOME}/.local/bin/swamp`', 'executable: ' + json.dumps(shutil.which(CLI) or CLI))
+            source = source.replace('PATH: `${runtime.home}/.local/bin:/usr/local/bin:/usr/bin:/bin`',
+                                    'PATH: ' + json.dumps(str(bins) + ":" + os.environ["PATH"]))
+            source = source.replace('SWAMP_CONFIG_DIR: `${runtime.home}/.config/swamp`',
+                                    'SWAMP_CONFIG_DIR: ' + json.dumps(os.environ.get("SWAMP_CONFIG_DIR", "/home/nckrtl/.config/swamp")))
+            source = source.replace('SWAMP_API_KEY_FILE: `${runtime.home}/.config/swamp/api-key`',
+                                    'SWAMP_API_KEY_FILE: ' + json.dumps(str(Path.home() / ".config/swamp/api-key")))
+            adapter.write_text(source)
             trace = root / "commands.jsonl"
             hold = root / "hold-scanner"
             leak_git = root / "leak-git"
@@ -49,6 +62,7 @@ class ServiceDetectionNativeTest(unittest.TestCase):
                 script = bins / manager
                 script.write_text("#!/usr/bin/env python3\nimport json,pathlib,sys,os,time\n"
                                   + f"with open({str(trace)!r},'a') as f:f.write(json.dumps({{'manager':{manager!r},'args':sys.argv[1:],'cwd':str(pathlib.Path.cwd()),'files':sorted(p.name for p in pathlib.Path.cwd().iterdir()),'registry':os.environ.get('npm_config_registry'),'git':os.environ.get('npm_config_git')}})+'\\n')\n"
+                                  + "assert not any(k in os.environ for k in ['GH_TOKEN','GITHUB_TOKEN','ORBIT_GIT_TOKEN'])\n"
                                   + f"while pathlib.Path({str(hold)!r}).exists():time.sleep(0.02)\n"
                                   + "if json.loads(pathlib.Path('composer.json').read_text()).get('require',{}).get('fixture/pkg')=='fail-scan':sys.exit(23)\n"
                                   + ("""
@@ -98,6 +112,7 @@ else:sys.exit(64)
                 env.pop(key, None)
 
             def execute(*args, expected=0):
+                if args[0] == "swamp": args = (CLI, *args[1:])
                 result = subprocess.run(args, cwd=root, env=env, capture_output=True, text=True, timeout=90)
                 self.assertEqual(result.returncode, expected, result.stdout[-5000:] + result.stderr[-2000:])
                 return result.stdout
@@ -168,7 +183,8 @@ else:sys.exit(64)
                 port = sock.getsockname()[1]
             url = f"ws://127.0.0.1:{port}"
             with (root / "serve.log").open("w") as log:
-                serve = subprocess.Popen(["swamp", "serve", "--port", str(port), "--host", "127.0.0.1"], cwd=root, env=env, stdout=log, stderr=log)
+                serve = subprocess.Popen([CLI, "serve", "--port", str(port), "--host", "127.0.0.1"], cwd=root, env=env, stdout=log, stderr=log)
+                worker = None
                 try:
                     for _ in range(100):
                         try:
@@ -179,6 +195,14 @@ else:sys.exit(64)
                             time.sleep(0.1)
                     else:
                         self.fail("isolated serve did not start")
+
+                    token = json.loads(execute("swamp", "worker", "token", "create", "scan209", "--duration", "10m", "--server", url, "--json"))["token"]
+                    enrollment = root / "enrollment"
+                    enrollment.write_text(token)
+                    enrollment.chmod(0o600)
+                    worker = subprocess.Popen([CLI, "worker", "connect", url, "--token-file", str(enrollment),
+                                               "--cache-dir", str(root / "worker-cache"), "--label", "pool=migration", "--label", "node=209"],
+                                              cwd=root, env=env, stdout=log, stderr=log)
 
                     def rpc(name, version=None, model="orbit-gateway"):
                         payload = {"modelIdOrName": model, "dataName": name, "includeContent": True}
@@ -251,7 +275,7 @@ else:sys.exit(64)
                     run_output = run()
                     failed = json.loads(rpc(name)["payload"]["data"]["content"])
                     self.assertEqual(failed["sources"][0]["last_attempt"]["error_code"], "source_acquisition_failed")
-                    diagnostics = json.loads(rpc("scan-diagnostics",model="dependency-scanner")["payload"]["data"]["content"])
+                    diagnostics = json.loads(rpc("scan-diagnostics",model="dependency-scanner-20")["payload"]["data"]["content"])
                     self.assertEqual(diagnostics["project_id"],20)
                     self.assertEqual(diagnostics["run_id"],failed["last_attempt"]["run_id"])
                     self.assertIn({"stage":"git","code":"git_auth_failed","exit_status":1},diagnostics["failures"])
@@ -273,7 +297,7 @@ else:sys.exit(64)
                         execute("swamp", "workflow", "trigger", "set", "maintenance-projects", "--schedule", "* * * * * *", "--server", url, "--json")
                         self.assertTrue(token_entered.wait(10), "minute workflow must resolve its shipped reader and request a token")
                         time.sleep(2.1)
-                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health",timeout=2) as response:
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health",timeout=2) as response:
                             health = json.load(response)
                         scheduled = next(item for item in health["scheduling"]["schedules"] if item["workflowName"] == "maintenance-projects")
                         self.assertEqual(scheduled["queued"],0,"cron fires must skip the running token reader, not pile up")
@@ -293,6 +317,9 @@ else:sys.exit(64)
                     self.assertTrue(all(".npmrc" not in c["files"] and "bunfig.toml" not in c["files"] and "internal.txt" not in c["files"] for c in calls))
                     self.assertFalse((work / "node_modules").exists())
                 finally:
+                    if worker is not None:
+                        worker.terminate()
+                        worker.wait(timeout=20)
                     serve.terminate()
                     serve.wait(timeout=20)
                     gateway.shutdown()

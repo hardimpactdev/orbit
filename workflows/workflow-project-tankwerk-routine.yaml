@@ -1,5 +1,7 @@
 id: 442d08dc-f770-4ac6-a958-7cf896d32d51
 name: '@nckrtl/project-tankwerk/routine'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: tankwerk routine through its private project extension.
 trigger:
   schedule: 20 4 * * 1
@@ -9,8 +11,9 @@ jobs:
   - name: routine
     task:
       type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-26
+      methodName: project_routine
       inputs:
         projectId: 26
         mode: routine

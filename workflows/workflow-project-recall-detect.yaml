@@ -1,5 +1,7 @@
 id: 9e9a216b-b53e-46ff-b0ef-a0eba114edc4
 name: '@nckrtl/project-recall/detect'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: recall detect through its private project extension.
 trigger:
   schedule: 50 3 * * *
@@ -9,9 +11,9 @@ jobs:
   - name: detect
     task:
       type: model_method
-      modelType: "@nckrtl/dependency-scanner"
-      modelName: dependency-scanner
-      methodName: scan
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-detect-49
+      methodName: project_scan
       inputs:
         projectId: 49
         runId: '${{ run.id }}'

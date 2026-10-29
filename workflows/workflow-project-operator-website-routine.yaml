@@ -1,5 +1,7 @@
 id: 4fc30500-d174-4274-bb69-2c9f47d7c842
 name: '@nckrtl/project-operator-website/routine'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: operator-website routine through its private project extension.
 trigger:
   schedule: 20 3 * * 1
@@ -9,8 +11,9 @@ jobs:
   - name: routine
     task:
       type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-47
+      methodName: project_routine
       inputs:
         projectId: 47
         mode: routine

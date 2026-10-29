@@ -1,5 +1,7 @@
 id: 00e7b9ff-4117-499d-9b7d-a482ecd3f6b7
 name: dependency-upgrade
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: >-
   Historical host-scratch plan, not task-VM adoption: scan the inventory, compare it
   with Packagist and npm, assert the plan is sound, and stop for approval when
@@ -19,8 +21,9 @@ jobs:
         description: Gateway inventory, with the scratch checkout where it is stale
         task:
           type: model_method
-          modelIdOrName: orbit-deps
-          methodName: scan
+          modelType: "@nckrtl/native-host-method"
+          modelName: native-upgrade-scan
+          methodName: upgrade_scan
         dependsOn: []
         weight: 0
         allowFailure: false
@@ -28,8 +31,9 @@ jobs:
         description: dependency-planner records the upgrade-plan
         task:
           type: model_method
-          modelIdOrName: orbit-deps
-          methodName: plan
+          modelType: "@nckrtl/native-host-method"
+          modelName: native-upgrade-plan
+          methodName: upgrade_plan
         dependsOn:
           - step: scan
             condition:
@@ -37,6 +41,7 @@ jobs:
         weight: 0
         allowFailure: false
       - name: plan-matches-scan
+        labels: {}
         task:
           type: assert
           expr: >-
@@ -51,6 +56,7 @@ jobs:
         weight: 0
         allowFailure: false
       - name: every-subtask-has-packages
+        labels: {}
         task:
           type: assert
           expr: >-
@@ -64,6 +70,7 @@ jobs:
         weight: 0
         allowFailure: false
       - name: registries-answered
+        labels: {}
         task:
           type: assert
           expr: >-
@@ -81,6 +88,7 @@ jobs:
     dependsOn: []
     weight: 0
   - name: approve
+    labels: {}
     description: Approval gate when the plan has a major upgrade (stub)
     dependsOn:
       - job: plan

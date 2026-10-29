@@ -1,5 +1,7 @@
 id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: Admit scheduled work and reconcile findings and completed group receipts.
 trigger:
   schedule: '40 * * * * *'
@@ -8,13 +10,14 @@ jobs:
     steps:
       - name: work
         task:
-          type: behavior
-          behavior: orbit-gateway
+          type: model_method
+          modelType: "@nckrtl/native-host-method"
+          modelName: native-project-work
           methodName: project_work
       - name: dependency-prs
         dependsOn: [{ step: work, condition: { type: succeeded } }]
         task:
           type: model_method
-          modelType: "@nckrtl/dependency-scanner"
-          modelName: dependency-pr-reader
-          methodName: refresh
+          modelType: "@nckrtl/native-host-method"
+          modelName: native-dependency-prs
+          methodName: dependency_prs

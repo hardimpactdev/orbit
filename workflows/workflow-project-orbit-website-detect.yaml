@@ -1,5 +1,7 @@
 id: a6fb9302-e40b-4ffb-b919-be578d124aa0
 name: '@nckrtl/project-orbit-website/detect'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: orbit-website detect through its private project extension.
 trigger:
   schedule: 40 3 * * *
@@ -9,9 +11,9 @@ jobs:
   - name: detect
     task:
       type: model_method
-      modelType: "@nckrtl/dependency-scanner"
-      modelName: dependency-scanner
-      methodName: scan
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-detect-33
+      methodName: project_scan
       inputs:
         projectId: 33
         runId: '${{ run.id }}'

@@ -1,5 +1,7 @@
 id: 3d737825-ce09-46b4-9df7-4491d2b06482
 name: '@nckrtl/project-ai-cli-proxy/routine'
+labels: { pool: migration, node: "209" }
+queueTimeout: 300
 description: ai-cli-proxy routine through its private project extension.
 trigger:
   schedule: 0 3 * * 1
@@ -9,8 +11,9 @@ jobs:
   - name: routine
     task:
       type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-51
+      methodName: project_routine
       inputs:
         projectId: 51
         mode: routine
