@@ -45,18 +45,23 @@ return (static function (): array {
         'database_server.destroy' => [$remove, $serverAbsent],
         'database_server.close' => [$valkey],
         'database.create' => [$sql, $valkey],
-        'database.destroy' => [$sql, $valkey],
+        'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
         'database_user.create' => [$sql],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],
         'database.sqlite_export' => [$sqliteCopy, $seedSource],
         'database.sqlite_cleanup' => [$sqliteCopy, $seedSource],
         'database.sqlite_seed' => [$seedTarget, $relay],
+        'database.sqlite_seed_abandon' => [$seedTarget],
         'database.write' => [$sqlite, $pdo],
     ] as $kind => $runs) {
+        if ($kind === 'database.sqlite_seed_abandon' && ! OperationKinds::supports('compensations')) {
+            continue;
+        }
         $kinds[$kind] = ['executor' => 'swamp', 'execution' => DatabaseOperationExecution::class,
             'completion' => DatabaseOperationCompletion::class, 'runs' => $runs,
             'children' => match ($kind) {
+                'database.sqlite_seed_abandon' => [['kind' => 'database.sqlite_cleanup', 'node_from' => 'intent.node_ids']],
                 'database.destroy_owned' => [['kind' => 'database.destroy', 'node_from' => 'intent.node_ids']],
                 'database.clone', 'database.sqlite_seed' => [['kind' => 'database.sqlite_export', 'node_from' => 'intent.node_ids'], ['kind' => 'database.sqlite_cleanup', 'node_from' => 'intent.node_ids']],
                 default => [],

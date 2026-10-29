@@ -18,6 +18,15 @@ final readonly class DatabaseChildAdmission implements OperationChildAdmission
     public function admit(Operation $parent, array $intent): Operation
     {
         $record = DatabaseExecutionIntent::recorded($intent['input']['intent_id'] ?? null);
+        if ($record->parent_operation_id !== null) {
+            $ancestor = $parent;
+            while ($ancestor->id !== $record->parent_operation_id) {
+                if ($ancestor->parent_operation_id === null) {
+                    throw new ResourceOperationException('operation.child_forbidden', 'The database intent belongs to another parent.', 409);
+                }
+                $ancestor = Operation::query()->findOrFail($ancestor->parent_operation_id);
+            }
+        }
         $admission = $record->payload['admission'] ?? [];
         $input = [...($admission['input'] ?? []), 'intent_id' => $record->id];
         if (($admission['kind'] ?? null) !== $intent['kind'] || $record->node_id !== $intent['node_id']

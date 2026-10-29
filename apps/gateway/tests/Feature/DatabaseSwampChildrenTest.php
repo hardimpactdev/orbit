@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
+require_once __DIR__.'/../Support/DatabaseCreationProofs.php';
 
 uses(ServerDatabaseFixtures::class);
 beforeEach(fn () => $this->prepareServerDatabaseFixtures());
@@ -33,7 +34,7 @@ function databaseChildSource(Instance $target): Instance
 }
 
 it('prepares an Instance-targeted create with protected intent and no execution', function (): void {
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->create($this->instance, $this->server));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->create($this->instance, $this->server, databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
     $operation = new Operation(['kind' => $child['kind'], 'target_type' => 'instance', 'target_id' => $this->instance->id,
         'node_id' => $child['node_id'], 'input' => $child['input']]);
@@ -46,7 +47,7 @@ it('prepares an Instance-targeted create with protected intent and no execution'
     expect(json_encode($child))->not->toContain(SERVER_DATABASE_ROOT_SECRET, 'CREATE DATABASE', 'password', 'parent_operation_id');
     expect(DatabaseConnection::query()->sole()->owner_instance_id)->toBe($this->instance->id);
     expect(DatabaseConnectionTarget::query()->count())->toBe(0);
-    expect(Operation::query()->count())->toBe(0);
+    expect(Operation::query()->where('kind', '!=', 'instance.create')->count())->toBe(0);
     expect($this->admin->sql())->not->toContain('CREATE ', 'DROP ', 'GRANT ');
 });
 
@@ -56,14 +57,14 @@ it('prepares a MySQL clone that resets the target before copying', function (): 
         'database' => 'source_database', 'username' => 'source_user', 'password' => 'synthetic-source-secret']);
     DatabaseConnectionTarget::query()->create(['instance_id' => $source->id, 'prefix' => 'DB', 'database_connection_id' => $connection->id]);
 
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source, databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
     $commands = $intent->payload['commands'];
 
     expect($child['kind'])->toBe('database.clone');
     expect($intent->target_type)->toBe('instance');
     expect($intent->target_id)->toBe($this->instance->id);
-    expect($commands['prepare-database']['input']['sql'])->toContain('DROP DATABASE IF EXISTS', 'CREATE DATABASE');
+    expect($commands['create-database-0']['input']['sql'])->toContain('CREATE DATABASE')->not->toContain('DROP DATABASE');
     expect($commands['database-apply']['input'])->toMatchArray(['operation' => 'copy', 'source' => 'source_database']);
     expect($commands['database-apply']['resumable'])->toBeFalse();
     expect($this->admin->sql())->not->toContain('CREATE ', 'DROP ', 'GRANT ');
@@ -78,7 +79,7 @@ it('prepares SQLite clone paths and keeps source children bound to the target In
         'path' => $source->checkout_path.'/database/database.sqlite']);
     DatabaseConnectionTarget::query()->create(['instance_id' => $source->id, 'prefix' => 'DB', 'database_connection_id' => $connection->id]);
 
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source, databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
 
     expect($child['node_id'])->toBe($this->instance->node_id);
@@ -100,12 +101,13 @@ it('prepares SQLite clone paths and keeps source children bound to the target In
 it('preflights only owned connections and retains all records until proven removal', function (): void {
     $owned = DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'owned_database', 'username' => 'shared_user', 'owner_instance_id' => $this->instance->id]);
+    databaseCreatedProof($owned);
     $foreign = DatabaseConnection::query()->create(['slug' => 'foreign', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'foreign_database', 'username' => 'shared_user']);
     $local = DatabaseConnection::query()->create(['slug' => 'local', 'driver' => 'sqlite', 'node_id' => $this->instance->node_id,
         'path' => $this->instance->checkout_path.'/database.sqlite', 'owner_instance_id' => $this->instance->id]);
 
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->destroyOwned($this->instance));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->destroyOwned($this->instance, databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
     $nested = $intent->payload['projection']['children'][0];
     $drop = DatabaseExecutionIntent::query()->findOrFail($nested['input']['intent_id']);
@@ -123,7 +125,7 @@ it('preflights only owned connections and retains all records until proven remov
 });
 
 it('proves empty owned removal without requiring a fabricated database child', function (): void {
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->destroyOwned($this->instance));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->destroyOwned($this->instance, databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
 
     expect($intent->payload['projection']['children'])->toBe([]);
@@ -133,14 +135,14 @@ it('proves empty owned removal without requiring a fabricated database child', f
 it('prepares development transfer SQLite seed with distinct placements for one Instance', function (): void {
     $source = new SqliteSeedPlacement($this->instance->id, 'development', $this->instance->checkout_path, 'orbit', $this->dbNode, 'parent-1');
     $target = new SqliteSeedPlacement($this->instance->id, 'development', '/srv/orbit/dlf/moved', 'orbit', $this->gateway, 'parent-1');
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->sqliteSeed($source, $target, $source->basePath.'/database.sqlite'));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->sqliteSeed($source, $target, $source->basePath.'/database.sqlite', databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
 
     expect($child['kind'])->toBe('database.sqlite_seed');
     expect($child['node_id'])->toBe($target->node->id);
     expect($intent->target_id)->toBe($this->instance->id);
     expect($intent->payload['projection']['children'])->toHaveCount(2);
-    expect(Operation::query()->count())->toBe(0);
+    expect(Operation::query()->where('kind', '!=', 'instance.create')->count())->toBe(0);
 });
 
 it('rejects a SQLite clone outside the source checkout without recording intent', function (): void {
@@ -148,7 +150,7 @@ it('rejects a SQLite clone outside the source checkout without recording intent'
     $connection = DatabaseConnection::query()->create(['slug' => 'source', 'driver' => 'sqlite', 'node_id' => $source->node_id, 'path' => '/etc/foreign.sqlite']);
     DatabaseConnectionTarget::query()->create(['instance_id' => $source->id, 'prefix' => 'DB', 'database_connection_id' => $connection->id]);
 
-    expect(fn () => DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source)))
+    expect(fn () => DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source, databasePreparationParent($this->instance))))
         ->toThrow(ResourceOperationException::class);
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
@@ -161,11 +163,11 @@ it('refuses to reset a clone whose enum checkpoint is already complete', functio
         'path' => $driver === 'sqlite' ? $source->checkout_path.'/database.sqlite' : null,
         'username' => $driver === 'mysql' ? 'source_user' : null]);
     DatabaseConnectionTarget::query()->create(['instance_id' => $source->id, 'prefix' => 'DB', 'database_connection_id' => $connection->id]);
-    DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source));
+    DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source, databasePreparationParent($this->instance)));
     DatabaseConnection::query()->where('owner_instance_id', $this->instance->id)->sole()->update(['clone_step' => 'complete']);
     $intents = DatabaseExecutionIntent::query()->count();
 
-    expect(fn () => DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source)))
+    expect(fn () => DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source, databasePreparationParent($this->instance))))
         ->toThrow(ResourceOperationException::class);
     expect(DatabaseExecutionIntent::query()->count())->toBe($intents);
 })->with(['mysql', 'sqlite']);
@@ -175,14 +177,16 @@ it('admits stored removal children on their recorded Node under the owning Insta
         $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
     }
     $this->instance->update(['node_id' => $this->gateway->id]);
-    DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
+    $owned = DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'owned', 'username' => 'owned_user', 'owner_instance_id' => $this->instance->id]);
-    $descriptor = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->destroyOwned($this->instance));
+    databaseCreatedProof($owned);
+    $descriptor = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->destroyOwned($this->instance, databasePreparationParent($this->instance)));
     $intent = DatabaseExecutionIntent::recorded($descriptor['input']['intent_id']);
     app(RecordDatabaseOperationAction::class)->start(new PreparedDatabaseOperation(
         $descriptor['kind'], $intent->target_type, $intent->target_id, $intent->node_id, $descriptor['input']));
     $executor = app(SwampOperationExecutor::class);
     $parent = $executor->claim('database.destroy_owned', 'parent', $this->gateway->id);
+    DatabaseExecutionIntent::query()->update(['parent_operation_id' => $parent->id]);
     $key = $intent->payload['projection']['children'][0]['key'];
     $child = $executor->child($parent, ['worker' => 'parent', 'key' => $key], $this->gateway->id)['operation'];
 

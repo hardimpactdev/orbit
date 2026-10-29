@@ -7,6 +7,7 @@ namespace App\Actions\DatabaseConnections;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
+use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
@@ -37,6 +38,7 @@ final readonly class DropServerDatabaseAction
         private PostgresTestDatabases $postgresTests,
         private DatabaseRemovalLock $removalLock,
         private RecordDatabaseOperationAction $operations,
+        private DatabaseOwnership $ownership,
     ) {}
 
     public function execute(DatabaseConnection $connection): Operation
@@ -75,9 +77,17 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
-            $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => []];
+            $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => [], 'owners' => [], 'by_connection' => []];
             $groups[$server->id]['connections'][] = $connection->id;
-            $groups[$server->id]['databases'] = [...$groups[$server->id]['databases'], ...$this->databases($connection, $server)];
+            $names = $this->databases($connection, $server);
+            if ($server->driver === DatabaseDriver::Mysql) {
+                $this->ownership->assertMysqlNames($connection, $names);
+            }
+            $groups[$server->id]['by_connection'][$connection->id] = $names;
+            foreach ($names as $name) {
+                $groups[$server->id]['owners'][$name] = $connection->username ?? '';
+            }
+            $groups[$server->id]['databases'] = [...$groups[$server->id]['databases'], ...$names];
             $groups[$server->id]['users'] = [...$groups[$server->id]['users'], ...$this->unsharedUsers($connection, $server, $ids)];
         }
         foreach ($groups as $group) {
@@ -94,9 +104,10 @@ final readonly class DropServerDatabaseAction
                 $command = DatabaseCommands::valkey($server, 'remove', ['usernames' => array_values(array_diff($users, ['default', '']))], 'absent');
             } else {
                 $sql = $server->driver === DatabaseDriver::Pgsql
-                    ? (new PostgresStatements)->dropFencedDatabases($databases, $users)
+                    ? (new PostgresStatements)->dropFencedDatabases($databases, $users, $group['owners'])
                     : implode('', array_map($this->statements->dropDatabase(...), $databases)).implode('', array_map($this->statements->dropUser(...), $users));
                 $command = DatabaseCommands::sql($server, $sql, 'absent', expectEmpty: true, refusal: 'database.in_use');
+                $command['transport'] = 'database_removal';
             }
             $command['finish_after_effect'] = true;
             $commands = ['database-apply' => $command];
@@ -105,7 +116,7 @@ final readonly class DropServerDatabaseAction
             }
             $operations[] = $this->operations->prepare('database.destroy', 'database_server', $server->id, $server->node_id,
                 ['owner_instance_id' => $ownerInstanceId, 'connection_id' => $group['connections'][0], 'connection_ids' => $group['connections'], 'driver' => $server->driver->value],
-                $commands, ['delete_connections' => $group['connections'], 'drop_users' => $users]);
+                $commands, ['delete_connections' => $group['connections'], 'drop_users' => $users, 'drop_databases' => $group['by_connection']]);
         }
 
         return $operations;

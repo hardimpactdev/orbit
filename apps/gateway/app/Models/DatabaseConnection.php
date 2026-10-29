@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @property list<array{database:string,operation_id:int,step:string,username:string,server_id:int,scope?:'prefix'}>|null $creation_receipts
+ * @property array{actor:string,reason:string,verified_at:string,databases:list<string>,prefix:?string,username:string,server_id:int,node_id:int,digest:string}|null $ownership_adoption
  * @property int $id
  * @property string $slug
  * @property DatabaseDriver $driver
@@ -60,6 +62,8 @@ final class DatabaseConnection extends Model
     #[\Override]
     protected $hidden = [
         'password',
+        'creation_receipts',
+        'ownership_adoption',
     ];
 
     public function getRouteKeyName(): string
@@ -113,7 +117,7 @@ final class DatabaseConnection extends Model
             'test_processes' => 'integer',
             'database_server_id' => 'integer',
             'owner_instance_id' => 'integer',
-            'password' => 'encrypted',
+            'ownership_adoption' => 'array', 'creation_receipts' => 'array', 'password' => 'encrypted',
         ];
     }
 }

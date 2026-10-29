@@ -29,8 +29,9 @@ final readonly class RecordDatabaseOperationAction
 
     public function start(PreparedDatabaseOperation $prepared): Operation
     {
-        if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Database execution requires child Operations and effect receipts.', 503);
+        if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')
+            || ($prepared->kind === 'database.sqlite_seed_abandon' && ! OperationKinds::supports('compensations'))) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This database kind requires its kit execution capabilities.', 503);
         }
 
         return $this->operations->execute($prepared->kind, $prepared->targetType, $prepared->targetId, $prepared->nodeId,
