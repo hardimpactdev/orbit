@@ -37,6 +37,7 @@ return (static function (): array {
             $agent('instance.prepare-source-removal'),
             $agent('instance.finalize-source-removal', $git),
             $agent('instance.clean-removal-receipt'),
+            $agent('instance.clear-current-release'), $agent('instance.remove-production-home'),
         ],
     ];
     $children = [
@@ -44,7 +45,7 @@ return (static function (): array {
         'rename' => ['route.update'],
         'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.install_instance_definitions', 'schedule.install_instance_definitions', 'route.converge'],
         'register' => ['route.converge', 'instance.run_steps'],
-        'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
+        'destroy' => ['route.caddy_converge', 'instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];
     $kinds = [];
     foreach ($commands as $verb => $runs) {
@@ -63,7 +64,7 @@ return (static function (): array {
                 'error_code', 'outcome', 'failed_step', 'lifecycle_complete', 'instance_id', 'project_id', 'name', 'status', 'branch',
                 'commit', 'created', 'name_converted_from', 'source_verified', 'php_version', 'laravel',
                 'captured', 'cleaned', 'database_required', 'seed_required', 'attached', 'written', 'activated', 'environment_copied', 'definitions_captured', 'prepared', 'relocated',
-                'inspected', 'revalidated', 'accepted', 'removal_id', 'route_cleared', 'finalized', 'receipt', 'deleted',
+                'inspected', 'revalidated', 'accepted', 'removal_id', 'route_cleared', 'finalized', 'receipt', 'deleted', 'home_removed', 'detached',
                 'total', 'completed', 'remaining', 'cutover', 'transfer_id',
                 ...($verb === 'rename' ? [] : [
                     ['name' => 'instance_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],

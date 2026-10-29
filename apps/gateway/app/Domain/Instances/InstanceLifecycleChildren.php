@@ -168,10 +168,12 @@ final readonly class InstanceLifecycleChildren
                 $children[] = $this->steps($parent, "teardown-{$id}", $id, 'teardown', $member['teardown_digest']);
             }
             if ($this->ready($parent, "removal-{$id}-source-prepare")) {
-                if ($member['route_id'] !== null) {
-                    $children[] = $this->child($parent, "withdraw-{$id}", 'route.withdraw', ['route_id' => $member['route_id']]);
+                if ($member['route_id'] !== null && $member['environment'] !== 'production' && ($member['route_cleared_at'] ?? null) === null) {
+                    $children[] = $this->child($parent, "withdraw-{$id}", 'route.withdraw', ['route_id' => $member['route_id']], ValidatedData::integer($member['route_node_id']));
                 }
-                $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
+                if ($member['environment'] !== 'production') {
+                    $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
+                }
             }
             if ($this->ready($parent, "removal-{$id}-database-intent")
                 && app(InstanceRemovalRuntime::class)->succeeded($parent, $id)
@@ -187,11 +189,12 @@ final readonly class InstanceLifecycleChildren
         }
         if ($this->ready($parent, 'removal-revalidate')) {
             foreach (ValidatedData::integerList($input['additional_route_ids']) as $route) {
-                $children[] = $this->child($parent, "withdraw-extra-{$route}", 'route.withdraw', ['route_id' => $route]);
+                $projection = array_find(InstanceLifecycleInput::members(['members' => $input['additional_routes']]), static fn (array $entry): bool => $entry['route_id'] === $route);
+                $children[] = $this->child($parent, "withdraw-extra-{$route}", 'route.withdraw', ['route_id' => $route], ValidatedData::integer($projection['node_id'] ?? null));
             }
         }
 
-        return $children;
+        return [...$children, ...app(ProductionRemovalIntent::class)->children($parent)];
     }
 
     public function succeeded(Operation $parent, string $key): bool

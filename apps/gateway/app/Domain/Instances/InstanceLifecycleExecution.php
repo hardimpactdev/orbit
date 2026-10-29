@@ -333,10 +333,12 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
                 if ($member['run_teardown'] === true) {
                     $this->assertStepList($operation, "teardown-{$id}");
                 }
-                if ($member['route_id'] !== null) {
-                    $this->assertChild($operation, "withdraw-{$id}", 'route.withdraw');
+                if ($member['environment'] !== 'production') {
+                    if ($member['route_id'] !== null && ($member['route_cleared_at'] ?? null) === null) {
+                        $this->assertChild($operation, "withdraw-{$id}", 'route.withdraw');
+                    }
+                    $this->assertChild($operation, "withdraw-instance-{$id}", 'route.withdraw_instance');
                 }
-                $this->assertChild($operation, "withdraw-instance-{$id}", 'route.withdraw_instance');
                 $this->assertChild($operation, "remove-databases-{$id}", 'database.destroy_owned');
                 app(InstanceRemovalRuntime::class)->assertRemoved($operation, $id);
                 $this->assertChild($operation, "cleanup-instance-{$id}", 'route.cleanup_instance');

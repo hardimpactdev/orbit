@@ -208,41 +208,12 @@ it('refuses to inspect a recorded checkout outside the home or its releases befo
     expect($agents->calls)->toBe([]);
 });
 
-it('leaves legacy flat production layouts outside release validation and cleanup', function (): void {
+it('leaves legacy flat production layouts outside release validation', function (): void {
     [$layout, $agents, $instance] = production_home_lifecycle();
     $instance->update(['checkout_path' => '/home/orbit-app-216']);
 
     $layout->validateCurrent($instance->refresh());
-    $layout->clearCurrent($instance);
 
-    expect($agents->calls)->toBe([]);
-});
-
-it('validates and clears the selection and removes the home of the recorded identity', function (): void {
-    [$layout, $agents, $instance] = production_home_lifecycle(fn (FakeAgentCommandRunner $agents) => $agents
-        ->answer('instance.validate-release-layout', ['current' => 'initial'])
-        ->answer('instance.clear-current-release', ['current' => null])
-        ->refuse('instance.remove-production-home', 'instance.release_invalid', ['check' => 'no process of the account runs']));
-
-    $layout->validateCurrent($instance);
-    $layout->clearCurrent($instance);
-
-    expect(fn () => $layout->remove($instance))
-        ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->step)->toBe('production-source-cleanup')
-            ->and($exception->errorCode)->toBe('app-prod.source_cleanup_failed'));
-    expect($agents->calls[0]['input'])->toBe([
-        'repository' => 'https://example.test/release-home.git', 'user' => 'orbit-app-216', 'home' => '/home/orbit-app-216',
-        'instance' => $instance->id, 'relative_root' => 'public', 'application_suffix' => '',
-    ])
-        ->and($agents->calls[2]['input'])->toBe(['repository' => 'https://example.test/release-home.git', 'user' => 'orbit-app-216', 'home' => '/home/orbit-app-216', 'instance' => $instance->id]);
-});
-
-it('refuses to remove a home that is not the Project production account', function (): void {
-    [$layout, $agents, $instance] = production_home_lifecycle();
-    $instance->update(['production_user' => 'orbit-app-999', 'production_home' => '/home/orbit-app-999']);
-
-    expect(fn () => $layout->remove($instance->refresh()))
-        ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-prod.identity_missing'));
     expect($agents->calls)->toBe([]);
 });
 

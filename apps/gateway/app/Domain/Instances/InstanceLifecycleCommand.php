@@ -29,7 +29,7 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             'required' => ['action', 'operation_id'], 'properties' => [
                 'action' => ['type' => 'string', 'enum' => [
                     'configuration', 'clone-checkpoint', 'activate', 'finish', 'clone-environment', 'clone-sqlite-intent', 'clone-sqlite-attach', 'clone-definitions', 'registration-activate',
-                    'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete',
+                    'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach', 'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete',
                     'transfer-cutover', 'transfer-finish', 'transfer-sqlite-intent', 'database-intent',
                 ]],
                 'operation_id' => ['type' => 'integer', 'minimum' => 1],
@@ -55,7 +55,7 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             'clone-sqlite-attach' => app(InstanceSqliteSeedIntent::class)->attachClone($operation),
             'clone-definitions' => $this->captureDefinitions($operation),
             'registration-activate' => $this->registrationActivate($operation, ValidatedData::integer($input['instance_id'])),
-            'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
+            'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach', 'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
             'database-intent' => app(InstanceDatabaseIntent::class)->record($operation),
             'finish' => $this->finish($operation),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown lifecycle state transition.', 422),
