@@ -80,6 +80,34 @@ class ToolsNativeTest(unittest.TestCase):
                 self.state["operation"]["id"] += 1
                 self.state[boundary] = False
 
+    def test_deployed_workflow_reconciles_open_1190_without_reinstall(self):
+        operation = self.state["operation"]
+        operation.update(id=1190, node_id=17, status="running",
+                         steps=[{"name": "manager-ready", "status": "succeeded"},
+                                {"name": "package-before", "status": "succeeded"},
+                                {"name": "package-mutate", "status": "running"}],
+                         step_results={"manager-ready": {"version": "apt 3.2.0"},
+                                       "package-before": {"installed_version": None, "block": None}})
+        operation["input"].update(node_id=17, manager="apt", package="gh")
+        self.state.update(installed="2.46.0-4", mutations=1, receipts={"package-mutate": {}},
+                          worker="previous-dispatch", leaseExpired=True)
+        (self.repo / "native-tools.json").write_text(json.dumps(self.state))
+        for workflow in ("operation-runner", "operation-dispatch", "operation-tools"):
+            self.call("workflow", "validate", workflow)
+
+        self.call("workflow", "run", "operation-runner")
+
+        state = json.loads((self.repo / "native-tools.json").read_text())
+        self.assertEqual(state["operation"]["id"], 1190)
+        self.assertEqual(state["operation"]["status"], "succeeded")
+        self.assertEqual(state["mutations"], 1)
+        self.assertEqual(len(state["completions"]), 1)
+        self.assertEqual(state["completions"][0]["result"]["installed_version"], "2.46.0-4")
+        self.assertEqual([c["body"]["key"] for c in state["calls"] if c["path"].endswith("/run")], ["tool-verified"])
+        self.assertTrue(any(c["method"] == "GET" and c["path"].endswith("/1190/receipts/package-mutate") for c in state["calls"]))
+        self.assertEqual(state["operation"]["steps"][-2:], [
+            {"name": "package-mutate", "status": "succeeded"}, {"name": "tool-verified", "status": "succeeded"}])
+
 
 if __name__ == "__main__":
     unittest.main()

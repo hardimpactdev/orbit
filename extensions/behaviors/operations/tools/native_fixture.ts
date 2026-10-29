@@ -23,7 +23,10 @@ export const fixtureHttp: Http = async (method, path, raw) => {
     data = {
       kinds: [{
         kind: state.operation.kind,
-        claimable: state.operation.status === "queued" ? 1 : 0,
+        claimable: state.operation.status === "queued" ||
+            state.operation.status === "running" && state.leaseExpired
+          ? 1
+          : 0,
         oldest_at: "2026-10-29T00:00:00Z",
       }],
     };
@@ -32,12 +35,14 @@ export const fixtureHttp: Http = async (method, path, raw) => {
   if (path.endsWith("/claim")) {
     data = body.kind === state.operation.kind &&
         (state.operation.status === "queued" ||
-          state.operation.status === "running" && state.worker === body.worker)
+          state.operation.status === "running" &&
+            (state.worker === body.worker || state.leaseExpired))
       ? state.operation
       : null;
     if (data) {
       state.worker = body.worker;
       state.operation.status = "running";
+      state.leaseExpired = false;
     }
     if (state.loseAdmission) {
       state.loseAdmission = false;
@@ -47,6 +52,22 @@ export const fixtureHttp: Http = async (method, path, raw) => {
   if (path.endsWith("/step") && state.loseBeforeEffect) {
     state.loseBeforeEffect = false;
     lose = true;
+  }
+  if (path.includes("/receipts/")) {
+    const key = decodeURIComponent(path.split("/receipts/")[1]);
+    const receipt = state.receipts[key];
+    const terminal = receipt !== undefined;
+    data = {
+      effect_key: `op-${state.operation.id}.${key}`,
+      state: terminal
+        ? (receipt.error_code ? "failed" : "succeeded")
+        : "unknown",
+      exit_code: terminal ? (receipt.error_code ? 1 : 0) : null,
+      result: terminal
+        ? (Object.keys(receipt).length === 0 ? [] : receipt)
+        : null,
+      finished_at: terminal ? "2026-10-29T06:46:20Z" : null,
+    };
   }
   if (path.endsWith("/run")) {
     const key = String(body.key);
@@ -67,7 +88,9 @@ export const fixtureHttp: Http = async (method, path, raw) => {
       }
       state.receipts[key] = receipt;
     }
-    data = state.receipts[key];
+    data = Object.keys(state.receipts[key]).length === 0
+      ? []
+      : state.receipts[key];
     if (key === "package-mutate" && state.loseRun) {
       state.loseRun = false;
       lose = true;
@@ -81,7 +104,8 @@ export const fixtureHttp: Http = async (method, path, raw) => {
     if (step) step.status = body.status;
     else state.operation.steps.push({ name, status: body.status });
     if (body.status === "succeeded") {
-      state.operation.step_results[name] = body.result;
+      state.operation.step_results[name] =
+        Object.keys(body.result as object).length === 0 ? [] : body.result;
     }
   }
   if (path.endsWith("/complete")) {

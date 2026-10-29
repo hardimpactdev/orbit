@@ -3,6 +3,7 @@ import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import {
   type Context,
   Executor,
+  ExecutorError,
   Globals,
   Operation,
 } from "../../operation-runner/mod.ts";
@@ -13,6 +14,7 @@ import {
   Input,
   normalizeVersion,
   packageInput,
+  ReceiptResult,
   refusalCode,
   type Result,
   safeVersion,
@@ -31,7 +33,7 @@ export function tools(
 ) {
   return {
     type: "@nckrtl/operation-tools",
-    version: "2026.10.29.1",
+    version: "2026.10.29.2",
     globalArguments: Globals,
     resources: {
       assignment: {
@@ -88,11 +90,7 @@ export function tools(
                 id: z.number().int(),
                 kind: z.string(),
                 status: z.string(),
-                result: z.preprocess(
-                  (value) =>
-                    Array.isArray(value) && value.length === 0 ? {} : value,
-                  z.record(z.string(), z.unknown()).nullable(),
-                ),
+                result: ReceiptResult.nullable(),
                 error_code: z.string().nullable(),
               }).parse(await executor.operation(id));
               if (
@@ -199,7 +197,7 @@ export function tools(
             checkLease();
             const recorded = operation.step_results[step];
             if (recorded) {
-              return z.record(z.string(), z.unknown()).parse(recorded);
+              return ReceiptResult.parse(recorded);
             }
             const intent = {
               worker: args.worker,
@@ -215,7 +213,7 @@ export function tools(
               activeStep = step;
               throw new ToolRefusal(
                 stored.error_code,
-                stored.result as Result ?? {},
+                ReceiptResult.parse(stored.result ?? {}),
               );
             }
             await ctx.writeResource("effect", intentResource, { intent });
@@ -227,7 +225,26 @@ export function tools(
               status: "running",
               output: `${name}\n`,
             });
-            const result = z.record(z.string(), z.unknown()).parse(
+            let result: Result | undefined;
+            if (
+              stored || operation.steps.some((saved) => saved.name === step)
+            ) {
+              const receipt = await executor.receipt(operation.id, step);
+              if (receipt.effect_key !== `op-${path}.${step}`) {
+                throw new ExecutorError("operation.outcome_unknown");
+              }
+              if (receipt.state === "running") {
+                throw new ExecutorError("operation.effect_running");
+              }
+              if (receipt.state === "succeeded" || receipt.state === "failed") {
+                if (
+                  receipt.result === null ||
+                  receipt.state === "failed" && !receipt.result.error_code
+                ) throw new ExecutorError("operation.outcome_unknown");
+                result = ReceiptResult.parse(receipt.result);
+              }
+            }
+            result ??= ReceiptResult.parse(
               await executor.post(`${path}/run`, intent),
             );
             checkLease();

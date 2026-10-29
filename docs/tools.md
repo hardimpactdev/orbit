@@ -35,6 +35,22 @@ posting it. A lost reply reuses its key. A lost lease stops the worker.
 Cancellation before a new effect closes the Operation; a proven effect is
 recorded before completion.
 
+The Gateway may encode an empty command result as `[]`. Tools treats only that
+empty array as an empty result record, including saved step and completion
+receipts. Non-empty arrays remain invalid. A resumed successful package mutation
+uses its existing receipt before checking inventory and projecting Tool intent.
+For an unfinished step with recorded intent, the workflow reads its original
+keyed receipt first. A terminal receipt finishes that step without invoking its
+command again. A running receipt leaves the Operation open. Only an unknown
+receipt permits the original keyed command to be sent again.
+
+Deploy the empty-result recovery fix to orbit-swamp on Services first. It uses
+the already deployed Gateway receipt API and needs no Gateway update. Ordinary
+discovery then reclaims expired open Tool Operations, including 1190, and reads
+the successful package receipt before inventory verification and completion.
+Keep the original Operation, receipts and managed package; no manual completion,
+new install, adoption or access change is part of recovery.
+
 The Gateway's tools manifest restricts commands and exact admitted inputs.
 Completion requires matching successful agent run and step receipts. Inventory
 retains only declared scalar leaves, with secret redaction. The Gateway projects

@@ -4,7 +4,13 @@ import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016
 import { type Context, Operation } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { tools } from "./mod.ts";
-import { allows, Input, normalizeVersion } from "./contract.ts";
+import {
+  allows,
+  Completion,
+  Input,
+  normalizeVersion,
+  ReceiptResult,
+} from "./contract.ts";
 
 class Fixture {
   operation = Operation.parse({
@@ -55,6 +61,9 @@ class Fixture {
   leaseLost = false;
   cancelAtRun = false;
   refuse: string | null = null;
+  emptyResultsAsArrays = true;
+  mutationResultOverride: unknown = undefined;
+  receiptStateOverride: "running" | "unknown" | undefined;
   http: Http = async (method, path, raw) => {
     const body = (raw ?? {}) as Record<string, unknown>;
     this.calls.push({ method, peer: this.peer, path, body });
@@ -74,6 +83,27 @@ class Fixture {
               ? []
               : this.terminalResult,
             error_code: this.terminalError,
+          },
+        },
+      };
+    }
+    if (path.includes("/receipts/")) {
+      const key = decodeURIComponent(path.split("/receipts/")[1]);
+      const result = this.receipts.get(key);
+      const state = this.receiptStateOverride ??
+        (result ? (result.error_code ? "failed" : "succeeded") : "unknown");
+      const terminal = state === "succeeded" || state === "failed";
+      return {
+        status: 200,
+        body: {
+          data: {
+            effect_key: `op-${this.operation.id}.${key}`,
+            state,
+            exit_code: terminal ? (state === "failed" ? 1 : 0) : null,
+            result: terminal
+              ? (result && Object.keys(result).length === 0 ? [] : result)
+              : null,
+            finished_at: terminal ? "2026-10-29T06:46:20Z" : null,
           },
         },
       };
@@ -129,6 +159,15 @@ class Fixture {
         this.receipts.set(key, receipt);
       }
       data = this.receipts.get(key);
+      if (
+        this.emptyResultsAsArrays && data &&
+        Object.keys(data as Record<string, unknown>).length === 0
+      ) data = [];
+      if (
+        key === "package-mutate" && this.mutationResultOverride !== undefined
+      ) {
+        data = this.mutationResultOverride;
+      }
       if (this.loseRun && key === "package-mutate") {
         this.loseRun = false;
         throw new Error("Lost Node reply");
@@ -387,8 +426,155 @@ Deno.test("lost Node reply resumes the same effect key and recorded receipts", a
     f.calls.filter((c) =>
       c.path.endsWith("/run") && c.body.key === "package-mutate"
     ).map((c) => c.body.key),
-    ["package-mutate", "package-mutate"],
+    ["package-mutate"],
   );
+  assertEquals(
+    f.calls.some((c) => c.path.endsWith("/11/receipts/package-mutate")),
+    true,
+  );
+});
+Deno.test("empty PHP effect results finish the mutation and verify installed inventory", async () => {
+  const f = new Fixture();
+  Object.assign(f.operation.input, { manager: "apt", package: "gh" });
+  f.candidate = "2.46.0-4";
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.mutations, 1);
+  assertEquals(f.complete().result, {
+    installed_version: "2.46.0-4",
+    block: null,
+  });
+  const finished = f.calls.find((c) =>
+    c.path.endsWith("/step") && c.body.key === "package-mutate:finish"
+  )!;
+  assertEquals(finished.body.result, {});
+  assertEquals(finished.body.status, "succeeded");
+});
+Deno.test("reconciliation resumes an empty saved mutation receipt without running the installer", async () => {
+  const f = new Fixture();
+  Object.assign(f.operation.input, { manager: "apt", package: "gh" });
+  f.installed = "2.46.0-4";
+  f.operation.step_results = {
+    "manager-ready": { version: "apt 3.2.0" },
+    "package-before": { installed_version: null, block: null },
+    "package-mutate": [],
+  };
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.mutations, 0);
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.key),
+    ["tool-verified"],
+  );
+  assertEquals(f.complete().result, {
+    installed_version: "2.46.0-4",
+    block: null,
+  });
+});
+Deno.test("a fresh dispatch settles open Operation 1190 from its successful empty mutation receipt", async () => {
+  const f = new Fixture();
+  Object.assign(f.operation, {
+    id: 1190,
+    node_id: 17,
+    status: "running",
+    steps: [
+      { name: "manager-ready", status: "succeeded" },
+      { name: "package-before", status: "succeeded" },
+      { name: "package-mutate", status: "running" },
+    ],
+    step_results: {
+      "manager-ready": { version: "apt 3.2.0" },
+      "package-before": { installed_version: null, block: null },
+    },
+  });
+  Object.assign(f.operation.input, {
+    node_id: 17,
+    manager: "apt",
+    package: "gh",
+  });
+  f.installed = "2.46.0-4";
+  f.mutations = 1;
+  f.receipts.set("package-mutate", {});
+  f.leasePeer = 13;
+  f.leaseWorker = "old-worker";
+  f.leaseExpired = true;
+
+  assertEquals((await f.execute("recovery-dispatch")).status, "succeeded");
+  assertEquals(f.mutations, 1);
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.key),
+    ["tool-verified"],
+  );
+  assertEquals(
+    f.calls.find((c) => c.path.endsWith("/receipts/package-mutate"))?.method,
+    "GET",
+  );
+  assertEquals(
+    f.calls.some((c) =>
+      c.path === "/api/v1/operation-executor/1190/step" &&
+      c.body.key === "package-mutate:finish"
+    ),
+    true,
+  );
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/complete")).map((c) => c.path),
+    ["/api/v1/operation-executor/1190/complete"],
+  );
+  assertEquals(f.complete().result, {
+    installed_version: "2.46.0-4",
+    block: null,
+  });
+});
+Deno.test("a running receipt leaves the original Operation open without replaying the effect", async () => {
+  const f = new Fixture();
+  f.loseRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost Node reply");
+  f.receiptStateOverride = "running";
+  await assertRejects(() => f.execute(), Error, "operation.effect_running");
+  assertEquals(
+    f.calls.filter((c) =>
+      c.path.endsWith("/run") && c.body.key === "package-mutate"
+    ).length,
+    1,
+  );
+  assertEquals(f.calls.some((c) => c.path.endsWith("/complete")), false);
+});
+Deno.test("an unknown receipt retries only the original keyed effect", async () => {
+  const f = new Fixture();
+  f.loseAssignment = true;
+  await assertRejects(() => f.execute(), Error, "Lost assignment write reply");
+  f.operation.steps = [{ name: "manager-ready", status: "running" }];
+  f.receiptStateOverride = "unknown";
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(
+    f.calls.find((c) => c.path.endsWith("/receipts/manager-ready"))?.method,
+    "GET",
+  );
+  assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, 1);
+  assertEquals(f.mutations, 1);
+});
+Deno.test("non-empty arrays are rejected as command results without falsely completing", async () => {
+  for (const invalid of [["gh"], [{ installed_version: "2.46.0-4" }]]) {
+    const f = new Fixture();
+    f.mutationResultOverride = invalid;
+    await assertRejects(() => f.execute(), Error, "expected record");
+    assertEquals(f.calls.some((c) => c.path.endsWith("/complete")), false);
+    assertEquals(f.mutations, 1);
+    assertEquals(
+      f.calls.some((c) => c.body.key === "package-mutate:finish"),
+      false,
+    );
+  }
+});
+Deno.test("empty record normalization preserves nested lists and rejects non-record results", () => {
+  assertEquals(ReceiptResult.parse([]), {});
+  assertEquals(ReceiptResult.parse({ packages: ["gh"] }), { packages: ["gh"] });
+  assertEquals(
+    Completion.parse({ status: "cancelled", result: [], error_code: null })
+      .result,
+    {},
+  );
+  for (const invalid of [["gh"], [{ version: "2.46.0" }], null, "stdout"]) {
+    assertEquals(ReceiptResult.safeParse(invalid).success, false);
+  }
 });
 Deno.test("the placed worker claims and records its assignment before effects", async () => {
   const f = new Fixture();

@@ -23,9 +23,14 @@ export const Input = z.object({
 });
 export type ToolInput = z.infer<typeof Input>;
 export type Result = Record<string, unknown>;
+// PHP encodes an empty result map as []; non-empty arrays are never records.
+export const ReceiptResult = z.preprocess(
+  (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+  z.record(z.string(), z.unknown()),
+);
 export const Completion = z.object({
   status: z.enum(["succeeded", "failed", "cancelled"]),
-  result: z.record(z.string(), z.unknown()),
+  result: ReceiptResult,
   error_code: z.string().regex(/^[a-z0-9_.-]+$/).nullable(),
 });
 export const commands = {
