@@ -102,7 +102,10 @@ final class SchedulesController extends Controller
         string $schedule,
         DestroyScheduleAction $action,
     ): JsonResponse {
-        return $this->operationResponse($request, $action->admit(Schedule::query()->findOrFail($schedule), caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
+        $record = Schedule::query()->findOrFail($schedule);
+        $request->route()?->setParameter('schedule', $record);
+
+        return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]

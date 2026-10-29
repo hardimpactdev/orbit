@@ -74,7 +74,7 @@ Every endpoint is under `/api/v1/schedules` and needs an access grant to the Nod
 
 Create takes `target_type`, `target_id`, `name`, `calendar`, and `command`, and optionally `timeout_seconds` and `start`. `start` defaults to `true`. A Node target refuses `start: false` with `schedule.state_invalid`. An Instance target can install with its timer disabled. Run, enable, and destroy take an empty body. The Gateway refuses unknown, duplicate, or wrongly typed members with 422 before it changes anything.
 
-Each operation except Complete records one Activity entry. The entry names the Schedule and its target. It never holds the command, calendar, journal lines, paths, users, or unit text.
+Each Schedule API request except Complete records one operator Activity entry. The entry names the Schedule and its target, including a destroy request that admits an Operation. It never holds the command, calendar, journal lines, paths, users, or unit text. Executor requests have their own worker audit entries.
 
 ## Execution context
 
