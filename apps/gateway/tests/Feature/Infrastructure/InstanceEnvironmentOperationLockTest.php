@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Routes\RouteEnvironmentOperationLock;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -94,8 +95,14 @@ describe(NativeInstanceEnvironmentOperationLock::class, function (): void {
         $nextScope = app(InstanceEnvironmentOperationLock::class);
 
         expect($first)
-            ->toBeInstanceOf(NativeInstanceEnvironmentOperationLock::class)
+            ->toBeInstanceOf(RouteEnvironmentOperationLock::class)
             ->toBe($sameScope)
             ->not->toBe($nextScope);
+
+        $wrapped = new ReflectionProperty(RouteEnvironmentOperationLock::class, 'locks');
+        expect($wrapped->getValue($first))
+            ->toBeInstanceOf(NativeInstanceEnvironmentOperationLock::class)
+            ->toBe($wrapped->getValue($sameScope))
+            ->not->toBe($wrapped->getValue($nextScope));
     });
 });

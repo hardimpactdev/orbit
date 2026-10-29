@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicProcessRouteIngress;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -19,6 +20,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Tool;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
@@ -518,6 +520,30 @@ final readonly class ServingNodeResolver
     private function routeOwning(Request $request): array
     {
         $route = $request->route('route');
+        $id = $this->positiveInteger($route);
+        if ($id !== null) {
+            $route = Route::query()->find($id);
+            if (! $route instanceof Route) {
+                $start = $request->route() instanceof \Illuminate\Routing\Route
+                    ? StartsOperation::forRoute($request->route()) : null;
+                $key = $request->header('Idempotency-Key');
+                $receipt = $start !== null && is_string($key)
+                    ? Operation::query()->where('kind', $start->kind)->where('target_type', 'route')
+                        ->where('target_id', $id)->where('idempotency_key', $key)->first() : null;
+                if (! $receipt instanceof Operation) {
+                    throw (new ModelNotFoundException)->setModel(Route::class, [$id]);
+                }
+                $request->attributes->set('orbit.route_public_process', ($receipt->input['public_process'] ?? false) === true);
+                $ids = ValidatedData::integerList($receipt->input['access_node_ids'] ?? ($receipt->node_id === null ? [] : [$receipt->node_id]));
+                $nodes = Node::query()->whereIn('id', $ids)->get();
+                if ($nodes->isEmpty() || $nodes->count() !== count($ids)) {
+                    return $this->gateway();
+                }
+
+                return array_values($nodes->all());
+            }
+            $request->attributes->set('orbit.route_public_process', $route->isCustomProxy() && $route->cluster_id !== null);
+        }
 
         if ($route instanceof Route) {
             if ($route->isCustomProxy() && $route->cluster_id !== null) {

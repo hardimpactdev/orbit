@@ -25,7 +25,7 @@ final readonly class ClearRouteTargetAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route): Route
+    public function execute(Route $route, bool $projectMetrics = true): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -48,13 +48,15 @@ final readonly class ClearRouteTargetAction
             fn (): Route => $this->executeOwned($route, $expectedTargetIds),
         );
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+        DB::afterCommit(fn () => ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteUpdated,
             $result->id,
             RouteData::fromModel($result)->toArray(),
-        );
+        ));
 
-        $this->metrics?->reconcile();
+        if ($projectMetrics) {
+            $this->metrics?->reconcile();
+        }
 
         return $result;
     }

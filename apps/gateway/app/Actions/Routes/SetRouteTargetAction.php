@@ -41,7 +41,8 @@ final readonly class SetRouteTargetAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route, int $instanceId): Route
+    /** Admission defers source access and Metrics to its recorded children. */
+    public function execute(Route $route, int $instanceId, bool $grantSourceAccess = true): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -65,17 +66,19 @@ final readonly class SetRouteTargetAction
         [$result, $accessFailure] = $this->environmentOperations->run(
             [...$expectedTargetIds, $instanceId],
             fn (): array => $this->projections->run(
-                fn (): array => $this->executeOwned($route, $instanceId, $expectedTargetIds),
+                fn (): array => $this->executeOwned($route, $instanceId, $expectedTargetIds, $grantSourceAccess),
             ),
         );
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+        DB::afterCommit(fn () => ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteUpdated,
             $result->id,
             RouteData::fromModel($result)->toArray(),
-        );
+        ));
 
-        $this->metrics?->reconcile();
+        if ($grantSourceAccess) {
+            $this->metrics?->reconcile();
+        }
 
         if ($accessFailure instanceof Throwable) {
             throw $accessFailure;
@@ -88,7 +91,7 @@ final readonly class SetRouteTargetAction
      * @param  list<int>  $expectedTargetIds
      * @return array{Route, ?Throwable}
      */
-    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): array
+    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds, bool $grantSourceAccess): array
     {
         try {
             $updated = DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
@@ -205,6 +208,10 @@ final readonly class SetRouteTargetAction
                 status: 409,
                 previous: $exception,
             );
+        }
+
+        if (! $grantSourceAccess) {
+            return [$updated, null];
         }
 
         try {

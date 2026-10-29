@@ -4,12 +4,54 @@ declare(strict_types=1);
 
 namespace App\Commands\Routes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
+use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleWriter;
+use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 abstract class RouteCommand extends GatewayCommand
 {
+    use FollowsOperations {
+        writeOperationSummary as private writeBaseOperationSummary;
+    }
+
+    protected function startRouteOperation(GatewayConfigRepository $repository, GatewayConnector $connector, GatewayRequest $request, string $title): int
+    {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
+            return self::FAILURE;
+        }
+        $key = $this->stringOption('idempotency-key');
+        if (is_string($key)) {
+            $request->headers()->add('Idempotency-Key', $key);
+        }
+        $operation = $this->send($connector, $request, OperationResponse::class);
+
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, $title, 'Route')
+            : self::FAILURE;
+    }
+
+    private function writeOperationSummary(OperationResponse $operation): void
+    {
+        $this->writeBaseOperationSummary($operation);
+        $retained = $operation->result['retained_on_nodes'] ?? [];
+        if ($operation->kind !== 'route.destroy' || ! is_array($retained) || $retained === []) {
+            return;
+        }
+        $this->writeHumanMessage('Left on Nodes the Gateway could not reach:');
+        foreach ($retained as $node) {
+            if (is_array($node) && is_string($node['node'] ?? null) && is_array($node['steps'] ?? null)) {
+                $this->writeHumanMessage($node['node'].': '.implode(', ', $node['steps']));
+            }
+        }
+        $this->writeHumanMessage('Run orbit node:converge NODE once the Node answers to remove them.');
+    }
+
     protected function routeId(): ?int
     {
         return $this->positiveId('route', 'Route', 'route.id_invalid');

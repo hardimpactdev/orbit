@@ -7,7 +7,6 @@ namespace App\Commands\Routes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
-use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 final class SetRouteTargetCommand extends RouteCommand
 {
@@ -18,6 +17,7 @@ final class SetRouteTargetCommand extends RouteCommand
         {--targets=* : Additional ordered Instance IDs in the complete target set}
         {--reassign=* : Detached Instance ID:destination Route ID}
         {--remove=* : Detached Instance ID authorized for removal}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -80,10 +80,6 @@ final class SetRouteTargetCommand extends RouteCommand
             ? new SetRouteTargetRequest($routeId, $targetId)
             : new SetRouteTargetRequest($routeId, targetIds: [$targetId, ...$additional], dispositions: $dispositions);
 
-        $route = $this->sendWithProgress($connector, $request, RouteResponse::class, ['Set Route targets', 'Setting Route targets', 'Set Route targets']);
-
-        return $route instanceof RouteResponse
-            ? $this->renderRoute($route)
-            : self::FAILURE;
+        return $this->startRouteOperation($repository, $connector, $request, 'Set Route targets');
     }
 }

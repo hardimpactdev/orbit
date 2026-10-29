@@ -46,8 +46,12 @@ use App\Models\Route;
 use Illuminate\Support\Collection;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\RouteSwampGatewayFixture;
+
+require_once __DIR__.'/../../Support/CompletesRouteOperations.php';
 
 beforeEach(function (): void {
+    \Tests\Support\completesRouteOperations();
     $gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -76,6 +80,7 @@ beforeEach(function (): void {
         }
     };
     app()->instance(RouteApplicationUrlWriter::class, $this->urls);
+    $this->routeSwamp = new RouteSwampGatewayFixture($this);
 });
 
 describe('route web root', function (): void {
@@ -104,17 +109,16 @@ describe('route web root', function (): void {
     it('creates a Route with a web root next to the Instance Route and lists both on the Instance', function (): void {
         $own = web_root_route($this->instance, 'acme.web.test');
         $projector = Mockery::mock(DevelopmentRouteProjector::class);
-        $projector->shouldReceive('converge')->once();
         app()->instance(DevelopmentRouteProjector::class, $projector);
         $payload = ['instance_id' => $this->instance->id, 'domain' => 'docs.acme.web.test', 'web_root' => 'apps/docs/public'];
 
         $created = $this->postJson('/api/v1/routes', $payload)
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.web_root', 'apps/docs/public')
             ->assertJsonPath('data.status', 'active')
             ->assertJsonPath('data.target.instance_id', $this->instance->id);
 
-        expect($this->urls->writes)->toBe([['apps/docs', 'https://docs.acme.web.test']]);
+        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('instance.sync_environment');
         $this->getJson("/api/v1/instances/{$this->instance->id}")
             ->assertOk()
             ->assertJsonPath('data.route.id', $own->id)
@@ -122,7 +126,7 @@ describe('route web root', function (): void {
             ->assertJsonPath('data.routes.0.web_root', null)
             ->assertJsonPath('data.routes.1.id', $created->json('data.id'))
             ->assertJsonPath('data.routes.1.web_root', 'apps/docs/public');
-        $this->postJson('/api/v1/routes', $payload)->assertOk()->assertJsonPath('data.id', $created->json('data.id'));
+        $this->postJson('/api/v1/routes', $payload)->completeRoute()->assertOk()->assertJsonPath('data.id', $created->json('data.id'));
         $this->postJson('/api/v1/routes', [...$payload, 'web_root' => 'apps/admin/public'])
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.retry_conflict');
@@ -188,11 +192,10 @@ describe('route web root', function (): void {
         $first = web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
         $second = web_root_route($this->instance, 'docs-two.acme.web.test', 'apps/docs/public');
 
-        $this->deleteJson("/api/v1/routes/{$first->id}")->assertOk();
-        expect($this->urls->writes)->toBe([['apps/docs', 'https://docs-two.acme.web.test']])
-            ->and($removal->events)->toContain('php');
+        $this->deleteJson("/api/v1/routes/{$first->id}")->completeRoute()->assertOk();
+        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('instance.sync_environment', 'route.shared_php_withdraw');
 
-        $this->deleteJson("/api/v1/routes/{$second->id}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$second->id}")->completeRoute()->assertOk();
         $pools = new DevelopmentPhpFpmConfigRenderer()->render(web_root_sites($this->node)->values(), new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
         expect(Route::query()->pluck('id')->all())->toBe([$own->id])
             ->and($this->instance->refresh()->status)->toBe(InstanceState::Active)
@@ -205,13 +208,12 @@ describe('route web root', function (): void {
         $own = web_root_route($this->instance, 'acme.web.test');
         $docs = web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
         $projector = Mockery::mock(DevelopmentRouteProjector::class);
-        $projector->shouldReceive('converge')->once();
         app()->instance(DevelopmentRouteProjector::class, $projector);
 
         $this->patchJson("/api/v1/routes/{$docs->id}", ['web_root' => 'apps/admin/public'])
-            ->assertOk()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.web_root', 'apps/admin/public');
-        expect($this->urls->writes)->toBe([['apps/admin', 'https://docs.acme.web.test']]);
+        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('instance.sync_environment', 'route.workload_prepare');
 
         $this->patchJson("/api/v1/routes/{$docs->id}", ['web_root' => null])
             ->assertConflict()
@@ -300,13 +302,12 @@ describe('route web root', function (): void {
         web_root_route($instance, 'acme.example.com');
 
         $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => 'apps/docs/public'])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.web_root', 'apps/docs/public')
             ->assertJsonPath('data.status', 'active');
 
-        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'firewall', 'workload-caddy', 'router-certificate', 'route-firewall', 'verify-workload', 'router-caddy', 'dns'])
-            ->and($events->locks)->toBe([[$instance->id]])
-            ->and($this->urls->writes)->toBe([['apps/docs', 'https://docs.example.com']]);
+        expect($events->all)->toBe(['check'])
+            ->and(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('instance.prepare_served_web_roots', 'instance.sync_environment', 'instance.prepare_php_runtime', 'route.caddy_converge');
     });
 
     it('changes the web root of a production Route and keeps the Instance Route', function (): void {
@@ -315,11 +316,9 @@ describe('route web root', function (): void {
         $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
 
         $this->patchJson("/api/v1/routes/{$docs->id}", ['web_root' => 'apps/admin/public'])
-            ->assertOk()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.web_root', 'apps/admin/public');
-        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'workload-caddy'])
-            ->and($events->locks)->toBe([[$instance->id]])
-            ->and($this->urls->writes)->toBe([['apps/admin', 'https://docs.example.com']]);
+        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('instance.prepare_served_web_roots', 'instance.sync_environment', 'instance.prepare_php_runtime', 'route.caddy_converge');
 
         $this->patchJson("/api/v1/routes/{$own->id}", ['web_root' => 'apps/docs/public'])
             ->assertConflict()
@@ -364,23 +363,24 @@ describe('route web root', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.web_root_unsafe');
         $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'alias.example.com', 'web_root' => 'apps/site/public'])
-            ->assertCreated();
+            ->completeRoute()->assertOk();
         expect(RouteWebRoot::servedApplications($instance->refresh()))->toBe([]);
     });
 
     it('marks a production web-root Route failed and withdraws its pool when activation fails', function (): void {
         [$instance, $events] = web_root_production($this->project);
         web_root_route($instance, 'acme.example.com');
-        $events->failAt = 'runtime';
+        $this->routeSwamp->foreign->failures['production-runtime.instance-'.$instance->id] = 1;
 
         $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => 'apps/docs/public'])
-            ->assertStatus(502);
+            ->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed');
         $docs = Route::query()->where('domain', 'docs.example.com')->sole();
 
-        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'withdraw-pool'])
+        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('instance.prepare_php_runtime')
             ->and($docs->status->value)->toBe('failed')
             ->and($docs->sites_published)->toBeFalse()
-            ->and($docs->error_code)->toBe('app-prod.injected_failure')
+            ->and($docs->error_code)->toBe('fixture.child_failed')
+            ->and($docs->failed_step)->toBe('production-runtime')
             ->and(RouteWebRoot::servedApplications($instance))->toBe([])
             ->and(RouteWebRoot::servedApplications($instance, $docs))->toHaveCount(1)
             ->and(web_root_production_deploy_served($instance))->toBe([])
@@ -725,3 +725,18 @@ function web_root_sites(Node $node): Collection
 {
     return new DevelopmentSiteRepository()->forNode($node)->keyBy('domain');
 }
+
+it('keeps the restored active Route valid after a failed production web-root update', function (): void {
+    [$instance] = web_root_production($this->project);
+    web_root_route($instance, 'acme.example.com');
+    $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+    $this->routeSwamp->foreign->failures['production-runtime.instance-'.$instance->id] = 1;
+    $failed = $this->routeSwamp->finish($this->patchJson('/api/v1/routes/'.$docs->id, ['web_root' => 'apps/admin/public']));
+    expect($failed->status->value)->toBe('failed')->and($failed->error_code)->toBe('fixture.child_failed')
+        ->and($docs->refresh()->web_root)->toBe('apps/docs/public')
+        ->and($docs->status->value)->toBe('active')->and($docs->failed_step)->toBeNull()->and($docs->error_code)->toBeNull()
+        ->and($failed->state['route_branch'])->toBe('rollback_web_root')
+        ->and($failed->state['route_failure_stage'])->toBe('production-runtime')
+        ->and($failed->state['route_completed_stages']['rollback-production-runtime'])->toBeTrue()
+        ->and($failed->state['route_completed_stages']['rollback-workload-caddy'])->toBeTrue();
+});

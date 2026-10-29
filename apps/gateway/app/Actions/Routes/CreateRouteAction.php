@@ -98,6 +98,30 @@ final readonly class CreateRouteAction
             : $operation();
     }
 
+    /** @return array{route: Route, created: bool} */
+    public function reserveForRouteCreate(CreateRouteData $data): array
+    {
+        if ($data->isCustomProxy()) {
+            return $this->withProcessLease($data, fn (): array => $this->run($data, reserveOnly: true));
+        }
+        if ($data->instanceId === null || $data->projectId !== null || $data->nodeId !== null || $data->clusterId !== null) {
+            throw new ResourceOperationException('route.scope_required', 'An app Route requires an Instance and no explicit Project or scope.');
+        }
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail($data->instanceId);
+        $webRoot = RouteWebRoot::normalize($data->webRoot);
+        if ($instance->placedOnAppProd() && $webRoot !== null) {
+            RouteWebRoot::assertProductionLayout($instance, $webRoot);
+            ($this->productionWebRoots ?? app(ProductionWebRootManager::class))->assertServable($instance, $webRoot);
+        }
+        $result = $this->run(new CreateRouteData(domain: $data->domain, publication: $data->publication,
+            projectId: $instance->project_id, instanceId: $instance->id, webRoot: $data->webRoot), activating: true, reserveOnly: true);
+        if (! $result['created'] && ! in_array($result['route']->status, [RouteStatus::Active, RouteStatus::Activating], true)) {
+            throw new ResourceOperationException('route.activation_unsupported', 'The existing Route is not active.', 409);
+        }
+
+        return $result;
+    }
+
     /**
      * @param  Closure(): array{route: Route, created: bool}  $operation
      * @return array{route: Route, created: bool}
@@ -234,13 +258,13 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
-    private function run(CreateRouteData $data, bool $activating = false): array
+    private function run(CreateRouteData $data, bool $activating = false, bool $reserveOnly = false): array
     {
         $domain = RouteDomain::validate($data->domain);
         $this->reservedHostnames->assertAvailable($domain);
 
         $result = $data->isCustomProxy()
-            ? $this->persistCustomProxy($data, $domain)
+            ? $this->persistCustomProxy($data, $domain, $reserveOnly)
             : $this->persistExplicit($data, $domain, $activating);
 
         if ($result['created']) {
@@ -250,7 +274,7 @@ final readonly class CreateRouteAction
                 RouteData::fromModel($result['route'])->toArray(),
             );
 
-            if ($result['route']->publication === RoutePublication::Public) {
+            if (! $reserveOnly && $result['route']->publication === RoutePublication::Public) {
                 $this->metrics?->reconcile();
             }
         }
@@ -332,10 +356,10 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
-    private function persistCustomProxy(CreateRouteData $data, string $domain): array
+    private function persistCustomProxy(CreateRouteData $data, string $domain, bool $reserveOnly = false): array
     {
         if ($data->publication === RoutePublication::Public) {
-            return $this->persistPublicProcess($data, $domain);
+            return $this->persistPublicProcess($data, $domain, $reserveOnly);
         }
 
         if ($data->nodeId === null || $data->projectId !== null || $data->instanceId !== null || $data->clusterId !== null) {
@@ -430,6 +454,12 @@ final readonly class CreateRouteAction
             throw $this->conflictFromCreateFailure($domain, null, $exception);
         }
 
+        if ($reserveOnly) {
+            $route->update(['status' => RouteStatus::Activating]);
+
+            return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => true];
+        }
+
         try {
             $this->customProxies->converge($route);
             $route->update(['status' => RouteStatus::Active]);
@@ -451,7 +481,7 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
-    private function persistPublicProcess(CreateRouteData $data, string $domain): array
+    private function persistPublicProcess(CreateRouteData $data, string $domain, bool $reserveOnly = false): array
     {
         if ($data->clusterId !== null || $data->nodeId !== null || $data->processId === null
             || $data->upstream !== null || $data->projectId !== null || $data->instanceId !== null || $data->webRoot !== null) {
@@ -497,6 +527,9 @@ final readonly class CreateRouteAction
             } catch (QueryException $exception) {
                 throw $this->conflictFromCreateFailure($domain, null, $exception);
             }
+        }
+        if ($reserveOnly) {
+            return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => $created];
         }
         $route->publishSites();
         $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);

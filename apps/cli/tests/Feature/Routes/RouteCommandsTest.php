@@ -22,6 +22,8 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
 
+require_once __DIR__.'/../../Support/RouteOperationMocks.php';
+
 beforeEach(function (): void {
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-route-'.Str::uuid();
@@ -39,7 +41,7 @@ afterEach(function (): void {
 });
 
 it('uses the instance argument to create a Route for Instance 12 at shop.test', function (): void {
-    $mock = MockClient::global([CreateRouteRequest::class => route_mock_response(201)]);
+    $mock = route_operation_mock([CreateRouteRequest::class => route_mock_response(201)]);
 
     $this->artisan('route:create', [
         'instance' => '12',
@@ -47,7 +49,7 @@ it('uses the instance argument to create a Route for Instance 12 at shop.test', 
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'shop.test',
         'publication' => 'private',
         'instance_id' => 12,
@@ -55,7 +57,7 @@ it('uses the instance argument to create a Route for Instance 12 at shop.test', 
 });
 
 it('creates an app Route for an Instance while transporting publication intent', function (): void {
-    $mock = MockClient::global([CreateRouteRequest::class => route_mock_response(201)]);
+    $mock = route_operation_mock([CreateRouteRequest::class => route_mock_response(201)]);
 
     $this->artisan('route:create', [
         'instance' => '7',
@@ -64,7 +66,7 @@ it('creates an app Route for an Instance while transporting publication intent',
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'Odd_Value',
         'publication' => 'future-policy',
         'instance_id' => 7,
@@ -72,12 +74,12 @@ it('creates an app Route for an Instance while transporting publication intent',
 
     $this->artisan('route:create', ['instance' => '8', 'domain' => 'node.test'])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toHaveKey('instance_id', 8)
+    expect(route_last_mutation($mock)?->body()->all())->toHaveKey('instance_id', 8)
         ->not->toHaveKey('node_id');
 });
 
 it('creates a custom proxy Route from a node name and upstream', function (): void {
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         ListNodesRequest::class => MockResponse::make([
             'data' => [route_cli_node_payload()],
             'meta' => ['request_id' => route_request_id()],
@@ -95,7 +97,7 @@ it('creates a custom proxy Route from a node name and upstream', function (): vo
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'executor.orbit',
         'publication' => 'private',
         'node_id' => 4,
@@ -104,7 +106,7 @@ it('creates a custom proxy Route from a node name and upstream', function (): vo
 });
 
 it('creates a custom proxy Route from a numeric node and Process name', function (): void {
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         ListProcessesRequest::class => MockResponse::make([
             'data' => [route_cli_process_payload()],
             'meta' => ['request_id' => route_request_id()],
@@ -122,7 +124,7 @@ it('creates a custom proxy Route from a numeric node and Process name', function
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'executor.orbit',
         'publication' => 'private',
         'node_id' => 4,
@@ -131,7 +133,7 @@ it('creates a custom proxy Route from a numeric node and Process name', function
 });
 
 it('resolves a numeric Process ID without listing Processes', function (): void {
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         CreateRouteRequest::class => MockResponse::make([
             'data' => [...custom_proxy_route_payload(), 'process_id' => 12],
             'meta' => ['request_id' => route_request_id()],
@@ -144,9 +146,9 @@ it('resolves a numeric Process ID without listing Processes', function (): void 
         '--process' => '12',
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest())
+    expect(route_last_mutation($mock))
         ->toBeInstanceOf(CreateRouteRequest::class)
-        ->and($mock->getLastRequest()?->body()->all())
+        ->and(route_last_mutation($mock)?->body()->all())
         ->toBe([
             'domain' => 'executor.orbit',
             'publication' => 'private',
@@ -156,7 +158,7 @@ it('resolves a numeric Process ID without listing Processes', function (): void 
 });
 
 it('rejects custom proxy create shapes before transport', function (array $arguments, string $code): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
 
     $this
         ->artisan('route:create', $arguments)
@@ -209,7 +211,7 @@ it('renders custom proxy kind and upstream instead of App targets', function ():
     $original = getenv('COLUMNS');
     putenv('COLUMNS=200');
     $payload = custom_proxy_route_payload();
-    MockClient::global([
+    route_operation_mock([
         ListRoutesRequest::class => MockResponse::make([
             'data' => [$payload],
             'meta' => ['request_id' => route_request_id()],
@@ -236,7 +238,7 @@ it('renders custom proxy kind and upstream instead of App targets', function ():
 });
 
 it('transports explicit private and public publication intents unchanged', function (string $publication): void {
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         CreateRouteRequest::class => route_mock_response(201),
         UpdateRouteRequest::class => route_mock_response(),
     ]);
@@ -248,7 +250,7 @@ it('transports explicit private and public publication intents unchanged', funct
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'app.test',
         'publication' => $publication,
         'instance_id' => 3,
@@ -256,14 +258,14 @@ it('transports explicit private and public publication intents unchanged', funct
 
     $this->artisan('route:update', ['route' => '11', '--publication' => $publication])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe(['publication' => $publication]);
+    expect(route_last_mutation($mock)?->body()->all())->toBe(['publication' => $publication]);
 })->with(['private', 'public']);
 
 it('refuses a missing publication value before transport', function (
     string $command,
     array $arguments,
 ): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
 
     $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
     $output = trim(Artisan::output());
@@ -293,7 +295,7 @@ it('refuses a missing publication value before transport', function (
 ]);
 
 it('refuses the reported shell shape of a bare --publication flag', function (string $command): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
 
     $exitCode = Artisan::call($command);
     $output = trim(Artisan::output());
@@ -308,7 +310,7 @@ it('refuses the reported shell shape of a bare --publication flag', function (st
 ]);
 
 it('rejects impossible create shapes before transport', function (array $arguments, string $code): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
 
     $this
         ->artisan('route:create', $arguments)
@@ -357,7 +359,7 @@ it('renders only the first invalid input as one JSON document', function (
     string $code,
     string $message,
 ): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
 
     $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
     $output = trim(Artisan::output());
@@ -393,7 +395,7 @@ it('renders only the first invalid input as one JSON document', function (
 
 it('transports a combined domain and publication update and renders publication', function (): void {
     $payload = [...route_payload(), 'publication' => 'public', 'domain' => 'final.example.test'];
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         UpdateRouteRequest::class => MockResponse::make([
             'data' => $payload,
             'meta' => ['request_id' => route_request_id()],
@@ -411,7 +413,7 @@ it('transports a combined domain and publication update and renders publication'
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'final.example.test',
         'publication' => 'public',
     ]);
@@ -423,7 +425,7 @@ it('transports a combined domain and publication update and renders publication'
 });
 
 it('lists, shows, updates, targets, clears, and removes through exact requests', function (): void {
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         ListRoutesRequest::class => MockResponse::make([
             'data' => [route_payload()],
             'meta' => ['request_id' => route_request_id()],
@@ -438,9 +440,9 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
     $this->artisan('route:list', ['--json' => true])->assertExitCode(0);
     $this->artisan('route:show', ['route' => '11'])->assertExitCode(0);
     $this->artisan('route:update', ['route' => '11', '--domain' => 'next.test'])->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['domain' => 'next.test']);
+    expect(route_last_mutation($mock)?->body()->all())->toBe(['domain' => 'next.test']);
     $this->artisan('route:target:set', ['route' => '11', 'target' => '8'])->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['instance_id' => 8]);
+    expect(route_last_mutation($mock)?->body()->all())->toBe(['instance_id' => 8]);
     $this->artisan('route:target:set', [
         'route' => '11',
         'target' => '8',
@@ -448,7 +450,7 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
         '--reassign' => ['10:4'],
         '--remove' => ['11'],
     ])->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'targets' => [8, 9],
         'dispositions' => [
             ['instance_id' => 10, 'route_id' => 4],
@@ -463,7 +465,7 @@ it('removes a Route offline and names what it left on each Node', function (): v
     $payload = [...route_payload(), 'retained_on_nodes' => [
         ['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall']],
     ]];
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         DestroyRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),
     ]);
 
@@ -472,17 +474,17 @@ it('removes a Route offline and names what it left on each Node', function (): v
         ->expectsOutputToContain('beast: caddy, php, firewall')
         ->expectsOutputToContain('Run orbit node:converge NODE once the Node answers to remove them.')
         ->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['offline' => true]);
+    expect(route_last_mutation($mock)?->body()->all())->toBe(['offline' => true]);
 
     expect(Artisan::call('route:destroy', ['route' => '11', '--yes' => true, '--json' => true]))->toBe(0);
     $json = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-    expect($mock->getLastRequest()?->body()->all())->toBe([])
-        ->and($json['retained_on_nodes'])->toBe([['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall']]])
-        ->and($json['id'])->toBe(11);
+    expect(route_last_mutation($mock)?->body()->all())->toBe([])
+        ->and($json['result']['retained_on_nodes'])->toBe([['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall']]])
+        ->and($json['result']['route_id'])->toBe(11);
 });
 
 it('rejects the removed hostname argument and option', function (string $command, array $arguments, string $message): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);
 
     expect($tester->execute($arguments, ['interactive' => false]))->toBe(1);
@@ -508,7 +510,7 @@ it('rejects the removed hostname argument and option', function (string $command
 ]);
 
 it('rejects app route create scope options before transport', function (string $option, string $code): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
     $tester = new CommandTester(app(Kernel::class)->all()['route:create']);
 
     expect($tester->execute([
@@ -523,7 +525,7 @@ it('rejects app route create scope options before transport', function (string $
 })->with([['--target', 'input.invalid'], ['--cluster', 'input.invalid'], ['--ingress', 'route.scope_conflict']]);
 
 it('rejects an empty update and invalid IDs before transport', function (): void {
-    $mock = MockClient::global();
+    $mock = route_operation_mock();
     $this
         ->artisan('route:update', ['route' => '11', '--json' => true])
         ->expectsOutputToContain('route.update_required')
@@ -538,11 +540,11 @@ it('rejects an empty update and invalid IDs before transport', function (): void
 describe('route web root', function (): void {
     it('creates a Route with a web root and shows it', function (): void {
         $payload = [...route_payload(), 'web_root' => 'apps/docs/public'];
-        $mock = MockClient::global([CreateRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]], 201)]);
+        $mock = route_operation_mock([CreateRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]], 201)]);
 
         expect(Artisan::call('route:create', ['instance' => '7', 'domain' => 'docs.app.test', '--web-root' => 'apps/docs/public']))->toBe(0)
-            ->and(Artisan::output())->toContain('Web root')->toContain('apps/docs/public')
-            ->and($mock->getLastRequest()?->body()->all())->toBe([
+            ->and(Artisan::output())->toContain('Operation')
+            ->and(route_last_mutation($mock)?->body()->all())->toBe([
                 'domain' => 'docs.app.test',
                 'publication' => 'private',
                 'instance_id' => 7,
@@ -553,13 +555,13 @@ describe('route web root', function (): void {
     });
 
     it('sets and clears a web root through route update', function (): void {
-        $mock = MockClient::global([UpdateRouteRequest::class => route_mock_response()]);
+        $mock = route_operation_mock([UpdateRouteRequest::class => route_mock_response()]);
 
         $this->artisan('route:update', ['route' => '11', '--web-root' => 'apps/admin/public', '--json' => true])->assertExitCode(0);
-        expect($mock->getLastRequest()?->body()->all())->toBe(['web_root' => 'apps/admin/public']);
+        expect(route_last_mutation($mock)?->body()->all())->toBe(['web_root' => 'apps/admin/public']);
 
         $this->artisan('route:update', ['route' => '11', '--web-root' => '', '--json' => true])->assertExitCode(0);
-        expect($mock->getLastRequest()?->body()->all())->toBe(['web_root' => null]);
+        expect(route_last_mutation($mock)?->body()->all())->toBe(['web_root' => null]);
     });
 });
 
@@ -674,7 +676,7 @@ it('resolves destructive subjects but refuses automation without independent con
     string $running,
     bool $json,
 ): void {
-    $mock = MockClient::global([ShowRouteRequest::class => route_mock_response()]);
+    $mock = route_operation_mock([ShowRouteRequest::class => route_mock_response()]);
     $arguments = ['route' => '3', '--no-interaction' => true];
 
     if ($json) {
@@ -685,7 +687,7 @@ it('resolves destructive subjects but refuses automation without independent con
     $output = Artisan::output();
     expect($output)->toContain('Supply --yes to confirm this operation.')
         ->not->toContain($running, "\e[");
-    expect($mock->getLastRequest())->toBeInstanceOf(ShowRouteRequest::class)
+    expect(route_last_mutation($mock))->toBeInstanceOf(ShowRouteRequest::class)
         ->and($mock->getRecordedResponses())->toHaveCount(1);
 
     if ($json) {
@@ -707,7 +709,7 @@ it('preserves lookup failures before destructive consent without sending a mutat
     string $running,
     bool $json,
 ): void {
-    $mock = MockClient::global([
+    $mock = route_operation_mock([
         ShowRouteRequest::class => MockResponse::make([
             'error' => ['code' => 'http.404', 'message' => 'Resource not found.', 'details' => []],
         ], 404),
@@ -722,7 +724,7 @@ it('preserves lookup failures before destructive consent without sending a mutat
     $output = Artisan::output();
     expect($output)->toContain('Resource not found.')
         ->not->toContain('Supply --yes', $running, "\e[");
-    expect($mock->getLastRequest())->toBeInstanceOf(ShowRouteRequest::class)
+    expect(route_last_mutation($mock))->toBeInstanceOf(ShowRouteRequest::class)
         ->and($mock->getRecordedResponses())->toHaveCount(1);
 
     if ($json) {
@@ -736,7 +738,7 @@ it('preserves lookup failures before destructive consent without sending a mutat
 ])->with([false, true]);
 
 it('renders an explicit empty list and preserves the empty machine collection', function (bool $json): void {
-    MockClient::global([
+    route_operation_mock([
         ListRoutesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => route_request_id()]]),
     ]);
 
@@ -761,7 +763,7 @@ it('keeps every ordered target in human list and detail output at narrow widths'
         ['id' => 13, 'instance_id' => 934, 'position' => 1],
         ['id' => 14, 'instance_id' => 856, 'position' => 2],
     ]];
-    MockClient::global([
+    route_operation_mock([
         ShowRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),
         ListRoutesRequest::class => MockResponse::make(['data' => [$payload], 'meta' => ['request_id' => route_request_id()]]),
     ]);
@@ -794,7 +796,7 @@ it('renders Route replacement and failed-step metadata without claiming publicat
         'error_code' => 'route.ingress_failed',
         'status' => 'failed',
     ];
-    MockClient::global([
+    route_operation_mock([
         ShowRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),
     ]);
 
@@ -807,7 +809,7 @@ it('renders Route replacement and failed-step metadata without claiming publicat
 });
 
 it('creates a public Process hostname with explicit Ingress and numeric Process ID', function (?string $ingress): void {
-    $mock = MockClient::global([CreateRouteRequest::class => MockResponse::make([
+    $mock = route_operation_mock([CreateRouteRequest::class => MockResponse::make([
         'data' => [...custom_proxy_route_payload(), 'domain' => 'sync.example.com', 'node_id' => null, 'cluster_id' => 9, 'process_id' => 267, 'publication' => 'public'],
         'meta' => ['request_id' => route_request_id()],
     ], 201)]);
@@ -816,7 +818,7 @@ it('creates a public Process hostname with explicit Ingress and numeric Process 
         $arguments['--ingress'] = $ingress;
     }
     $this->artisan('route:create', $arguments)->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe([
+    expect(route_last_mutation($mock)?->body()->all())->toBe([
         'domain' => 'sync.example.com', 'publication' => 'public', ...($ingress !== null ? ['ingress_node_id' => 4] : []), 'process_id' => 267,
     ]);
 })->with([null, '4']);

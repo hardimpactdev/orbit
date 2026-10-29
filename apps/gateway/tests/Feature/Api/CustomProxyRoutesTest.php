@@ -45,6 +45,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
@@ -52,10 +53,12 @@ use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeCustomProxyRouteProjector;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
+use Tests\Support\RouteSwampGatewayFixture;
 use Tests\TestCase;
 
 function customProxyAppRouteFixture(Project $project, Node $node, string $domain, Instance $target): Route
@@ -74,7 +77,10 @@ function customProxyAppRouteFixture(Project $project, Node $node, string $domain
     return $route;
 }
 
+require_once __DIR__.'/../../Support/CompletesRouteOperations.php';
+
 beforeEach(function (): void {
+    \Tests\Support\completesRouteOperations();
     $this->projector = new FakeCustomProxyRouteProjector;
     $this->removal = new FakeRouteRemovalProjector;
     app()->instance(CustomProxyRouteProjector::class, $this->projector);
@@ -88,6 +94,7 @@ beforeEach(function (): void {
     ]);
     $this->markAsGateway($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
+    $this->routeSwamp = new RouteSwampGatewayFixture($this);
 
     $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
@@ -114,7 +121,7 @@ describe('custom proxy Route create', function (): void {
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.kind', 'custom_proxy')
             ->assertJsonPath('data.project_id', null)
             ->assertJsonPath('data.node_id', $this->node->id)
@@ -135,8 +142,8 @@ describe('custom proxy Route create', function (): void {
             ->toBe('http://127.0.0.1:4788')
             ->and(RouteTarget::query()->where('route_id', $routeId)->count())
             ->toBe(0)
-            ->and($this->projector->routeIds)
-            ->toBe([$routeId]);
+            ->and(array_column(array_filter($this->routeSwamp->foreign->calls, static fn ($call): bool => $call['kind'] === 'route.caddy_converge'), 'node_id'))
+            ->toBe([$this->node->id]);
     })->with([
         'executor.orbit',
         'grafana.internal',
@@ -156,7 +163,7 @@ describe('custom proxy Route create', function (): void {
                 'node_id' => $this->node->id,
                 'process_id' => $process->id,
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.kind', 'custom_proxy')
             ->assertJsonPath('data.process_id', $process->id)
             ->assertJsonPath('data.upstream', 'http://127.0.0.1:4788');
@@ -232,7 +239,7 @@ describe('custom proxy Route refusals', function (): void {
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated();
+            ->completeRoute()->assertOk();
 
         $this
             ->postJson('/api/v1/routes', [
@@ -240,7 +247,7 @@ describe('custom proxy Route refusals', function (): void {
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertOk()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.id', $first->json('data.id'));
 
         expect(Route::query()->count())->toBe(1);
@@ -253,7 +260,7 @@ describe('custom proxy Route refusals', function (): void {
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated();
+            ->completeRoute()->assertOk();
 
         $this
             ->postJson('/api/v1/routes', [
@@ -276,12 +283,12 @@ describe('custom proxy Route list, show, destroy, and App mutations', function (
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated();
+            ->completeRoute()->assertOk();
         $routeId = $created->json('data.id');
 
         $this
             ->getJson('/api/v1/routes')
-            ->assertOk()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.0.id', $routeId)
             ->assertJsonPath('data.0.kind', 'custom_proxy')
             ->assertJsonPath('data.0.upstream', 'http://127.0.0.1:4788')
@@ -289,7 +296,7 @@ describe('custom proxy Route list, show, destroy, and App mutations', function (
 
         $this
             ->getJson("/api/v1/routes/{$routeId}")
-            ->assertOk()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.kind', 'custom_proxy')
             ->assertJsonPath('data.upstream', 'http://127.0.0.1:4788')
             ->assertJsonPath('data.process_id', null);
@@ -297,16 +304,15 @@ describe('custom proxy Route list, show, destroy, and App mutations', function (
 
     it('destroys a custom proxy without touching a Project Route', function (): void {
         $appRoute = customProxyAppRouteFixture($this->orbitApp, $this->node, 'app.example.test', $this->target)->id;
-        $proxyRoute = $this
-            ->postJson('/api/v1/routes', [
-                'domain' => 'executor.orbit',
-                'node_id' => $this->node->id,
-                'upstream' => 'http://127.0.0.1:4788',
-            ])
-            ->assertCreated()
+        $proxyRoute = custom_proxy_seed($this, [
+            'domain' => 'executor.orbit',
+            'node_id' => $this->node->id,
+            'upstream' => 'http://127.0.0.1:4788',
+        ])
+            ->completeRoute()->assertOk()
             ->json('data.id');
 
-        $this->deleteJson("/api/v1/routes/{$proxyRoute}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$proxyRoute}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($proxyRoute)->exists())
             ->toBeFalse()
@@ -325,7 +331,7 @@ describe('custom proxy Route list, show, destroy, and App mutations', function (
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->json('data.id');
 
         $this
@@ -357,7 +363,7 @@ describe('custom proxy ownership guards', function (): void {
                 'node_id' => $this->node->id,
                 'process_id' => $process->id,
             ])
-            ->assertCreated();
+            ->completeRoute()->assertOk();
 
         $runtime = Mockery::mock(ProcessRuntimeManager::class);
         $runtime->shouldNotReceive('remove');
@@ -377,7 +383,7 @@ describe('custom proxy ownership guards', function (): void {
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated();
+            ->completeRoute()->assertOk();
 
         expect(fn () => app(RouteRemovalGuard::class)->assertNodeRemovable($this->node))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -410,7 +416,7 @@ describe('custom proxy AppDev sites', function (): void {
                 'node_id' => $this->node->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->json('data.id');
 
         $sites = new DevelopmentSiteRepository;
@@ -487,7 +493,7 @@ describe('public Process hostnames', function (): void {
         $edge = new FakePublicRouteEdgeProjector;
         app()->instance(PublicRouteEdgeProjector::class, $edge);
         $body = public_process_body($this->node);
-        $created = $this->postJson('/api/v1/routes', $body)->assertCreated()
+        $created = $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()
             ->assertJsonPath('data.kind', 'custom_proxy')->assertJsonPath('data.node_id', null)
             ->assertJsonPath('data.cluster_id', Node::query()->findOrFail($body['ingress_node_id'])->cluster_id)->assertJsonPath('data.process_id', $body['process_id'])
             ->assertJsonPath('data.status', 'active')->assertJsonPath('data.replacement_step', 'ingress-firewall');
@@ -503,20 +509,26 @@ describe('public Process hostnames', function (): void {
         $block = new DevelopmentCaddyConfigRenderer()->render(collect([$site]));
         expect($block)->toContain('tls force_automate', 'reverse_proxy 10.44.0.7:8095', 'flush_interval -1', 'read_timeout 1h')
             ->not->toContain('tls_insecure_skip_verify', 'header_up Host');
-        expect($edge->calls)->toBe(['ingress-certificate', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
-        $this->postJson('/api/v1/routes', $body)->assertOk()->assertJsonPath('data.id', $route->id);
-        expect($edge->calls)->toHaveCount(4);
+        $effects = count($this->routeSwamp->foreign->calls);
+        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('route.public_verify', 'route.public_firewall');
+        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id);
+        expect($this->routeSwamp->foreign->calls)->toHaveCount($effects);
     });
 
     it('resumes a failed public activation without creating a second Route', function (string $failure): void {
-        $edge = new FakePublicRouteEdgeProjector;
-        $edge->failures[$failure] = 1;
-        app()->instance(PublicRouteEdgeProjector::class, $edge);
         $body = public_process_body($this->node);
-        $this->postJson('/api/v1/routes', $body)->assertServerError();
+        $this->routeSwamp->foreign->observe = function (Operation $child) use ($failure): void {
+            $stage = $child->parent?->state['route_active_stage'] ?? null;
+            if ($stage === $failure) {
+                $this->routeSwamp->foreign->failures[$child->child_key] = 1;
+                $this->routeSwamp->foreign->observe = null;
+            }
+        };
+        $failed = $this->routeSwamp->finish($this->postJson('/api/v1/routes', $body));
+        expect($failed->status->value)->toBe('failed');
         $route = Route::query()->where('domain', $body['domain'])->sole();
         expect($route->status->value)->toBe('activating')->and($route->failed_step)->toBe($failure);
-        $this->postJson('/api/v1/routes', $body)->assertOk()->assertJsonPath('data.id', $route->id)
+        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id)
             ->assertJsonPath('data.status', 'active')->assertJsonPath('data.failed_step', null)
             ->assertJsonPath('data.replacement_step', 'ingress-firewall');
         expect(Route::query()->count())->toBe(1);
@@ -537,7 +549,7 @@ describe('public Process hostnames', function (): void {
     it('refuses Process and workload Node removal while the public Route exists', function (): void {
         app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
         $body = public_process_body($this->node);
-        $this->postJson('/api/v1/routes', $body)->assertCreated();
+        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk();
         $process = Process::query()->findOrFail($body['process_id']);
         $runtime = Mockery::mock(ProcessRuntimeManager::class);
         $runtime->shouldNotReceive('remove');
@@ -549,8 +561,8 @@ describe('public Process hostnames', function (): void {
     it('destroys a live public Process Route while retaining its Process', function (): void {
         app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
         $body = public_process_body($this->node);
-        $id = $this->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
-        $this->deleteJson('/api/v1/routes/'.$id)->assertOk();
+        $id = custom_proxy_seed($this, $body)->completeRoute()->assertOk()->json('data.id');
+        $this->deleteJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();
         expect(Route::query()->whereKey($id)->exists())->toBeFalse()
             ->and(RouteCustomProxy::query()->where('process_id', $body['process_id'])->exists())->toBeFalse()
             ->and(Process::query()->whereKey($body['process_id'])->exists())->toBeTrue();
@@ -568,19 +580,19 @@ it('requires access to the public edge and the separate Process Node', function 
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->postJson('/api/v1/routes', $body)->assertForbidden();
     expect(Route::query()->count())->toBe(0);
     NodeAccess::query()->create(['consumer_node_id' => $caller->id, 'serving_node_id' => $this->node->id]);
-    $id = $this->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
-    $this->getJson('/api/v1/routes/'.$id)->assertOk();
+    $id = custom_proxy_seed($this, $body)->completeRoute()->assertOk()->json('data.id');
+    $this->getJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();
     NodeAccess::query()->where('serving_node_id', $this->node->id)->delete();
     $this->deleteJson('/api/v1/routes/'.$id)->assertForbidden();
     expect(Route::query()->whereKey($id)->exists())->toBeTrue();
     NodeAccess::query()->create(['consumer_node_id' => $caller->id, 'serving_node_id' => $this->node->id]);
-    $this->deleteJson('/api/v1/routes/'.$id)->assertOk();
+    $this->deleteJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();
 });
 
 it('reports public Process Route drift on the Ingress and leaves the service Node out of Route inspection', function (): void {
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
-    $id = $this->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
+    $id = $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->json('data.id');
     $inspector = Mockery::mock(CustomProxyRouteInspector::class);
     $inspector->shouldReceive('inspect')->once()->andReturn(new CustomProxyRouteObservation(true, false, true, false, false));
     app()->instance(CustomProxyRouteInspector::class, $inspector);
@@ -601,17 +613,18 @@ it('reports public Process Route drift on the Ingress and leaves the service Nod
 it('keeps the Ingress ports open while any public Route remains and closes them after the last one leaves', function (): void {
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
-    $first = $this->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
-    $second = $this->postJson('/api/v1/routes', [...$body, 'domain' => 'sync.other.example.com'])->assertCreated()->json('data.id');
+    $first = custom_proxy_seed($this, $body)->completeRoute()->assertOk()->json('data.id');
+    $second = custom_proxy_seed($this, [...$body, 'domain' => 'sync.other.example.com'])->completeRoute()->assertOk()->json('data.id');
     $ingress = Node::query()->where('name', 'public-ingress')->sole();
     $catalog = new NodeFirewallRuleCatalog;
     expect($catalog->forRole($ingress, RoleName::Ingress))->toHaveCount(2);
-    $this->deleteJson('/api/v1/routes/'.$first)->assertOk();
+    $this->deleteJson('/api/v1/routes/'.$first)->completeRoute()->assertOk();
     expect($catalog->forRole($ingress->fresh(), RoleName::Ingress))->toHaveCount(2);
-    $this->removal->failures['firewall'] = 1;
-    $this->deleteJson('/api/v1/routes/'.$second)->assertUnprocessable();
+    $this->routeSwamp->foreign->failures['firewall.node-'.$ingress->id] = 1;
+    $failed = $this->routeSwamp->finish($this->deleteJson('/api/v1/routes/'.$second));
+    expect($failed->status->value)->toBe('failed');
     expect(Route::query()->findOrFail($second)->failed_step)->toBe('firewall');
-    $this->deleteJson('/api/v1/routes/'.$second)->assertOk();
+    $this->deleteJson('/api/v1/routes/'.$second)->completeRoute()->assertOk();
     expect($catalog->forRole($ingress->fresh(), RoleName::Ingress))->toBeEmpty();
     expect($catalog->desiredBaseline($this->node)[1]->shape->comment ?? $catalog->desiredBaseline($this->node)[0]->shape->comment)->toBe('orbit:wireguard-members');
 });
@@ -619,7 +632,7 @@ it('keeps the Ingress ports open while any public Route remains and closes them 
 it('refuses an owned domain and conflicting public Process intent with 409', function (): void {
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
-    $this->postJson('/api/v1/routes', $body)->assertCreated();
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk();
     $other = custom_proxy_process($this->node, 'other-sync', [$this->node->wireguard_ip.':8096:80/tcp']);
     $this->postJson('/api/v1/routes', [...$body, 'process_id' => $other->id])->assertConflict()->assertJsonPath('error.code', 'route.retry_conflict');
     customProxyAppRouteFixture($this->orbitApp, $this->node, 'owned.example.com', $this->target);
@@ -637,30 +650,30 @@ it('replays an Ingress build after a public handler checkpoint whose build may n
     $edge = new FakePublicRouteEdgeProjector;
     app()->instance(PublicRouteEdgeProjector::class, $edge);
     $body = public_process_body($this->node);
-    $id = $this->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
+    $id = custom_proxy_seed($this, $body)->completeRoute()->assertOk()->json('data.id');
     Route::query()->whereKey($id)->update(['status' => 'activating', 'replacement_step' => 'public-activated']);
     $edge->calls = [];
-    $this->postJson('/api/v1/routes', $body)->assertOk()->assertJsonPath('data.status', 'active');
-    expect($edge->calls)->toBe(['public-activated', 'ingress-firewall']);
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'active');
+    expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('route.caddy_converge', 'route.public_firewall');
 });
 
 it('preserves private Routes across the persistence upgrade and refuses a downgrade with public intent', function (): void {
     $private = ['domain' => 'private.example.test', 'node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:4788'];
-    $id = $this->postJson('/api/v1/routes', $private)->assertCreated()->json('data.id');
+    $id = $this->postJson('/api/v1/routes', $private)->completeRoute()->assertOk()->json('data.id');
     $migration = require database_path('migrations/2027_01_01_000000_allow_public_process_routes.php');
     $migration->down();
     $migration->up();
-    $this->postJson('/api/v1/routes', $private)->assertOk()->assertJsonPath('data.id', $id);
+    $this->postJson('/api/v1/routes', $private)->completeRoute()->assertOk()->assertJsonPath('data.id', $id);
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
-    $this->postJson('/api/v1/routes', $body)->assertCreated();
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk();
     expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Remove public Process Routes before rolling back.');
 });
 
 it('keeps the public site buildable when its Process or workload Node becomes unhealthy', function (): void {
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
-    $this->postJson('/api/v1/routes', $body)->assertCreated();
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk();
     $process = Process::query()->findOrFail($body['process_id']);
     $process->update(['status' => 'failed', 'failed_step' => 'start', 'error_code' => 'process.start_failed']);
     $this->node->update(['status' => 'failed']);
@@ -676,7 +689,7 @@ it('defaults to the Process Cluster Ingress without moving the Process Node or r
     NodeRole::query()->where('role', RoleName::Router)->delete();
     Cluster::query()->findOrFail($ingress->cluster_id)->update(['state' => 'inactive']);
     unset($body['ingress_node_id']);
-    $this->postJson('/api/v1/routes', $body)->assertCreated()->assertJsonPath('data.cluster_id', $ingress->cluster_id)
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.cluster_id', $ingress->cluster_id)
         ->assertJsonPath('data.replacement_step', 'ingress-firewall');
     expect($this->node->fresh()->cluster_id)->toBe($ingress->cluster_id);
 });
@@ -688,7 +701,7 @@ it('defaults an unclustered Process to the single Ingress serving public app Rou
     $appRoute = customProxyAppRouteFixture($this->orbitApp, $this->node, 'mealou.app', $this->target);
     $appRoute->update(['node_id' => null, 'cluster_id' => $ingress->cluster_id, 'publication' => 'public', 'status' => 'active', 'replacement_step' => 'ingress-firewall']);
     unset($body['ingress_node_id']);
-    $this->postJson('/api/v1/routes', $body)->assertCreated()->assertJsonPath('data.cluster_id', $ingress->cluster_id);
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.cluster_id', $ingress->cluster_id);
     expect($this->node->fresh()->cluster_id)->toBeNull();
 });
 
@@ -713,7 +726,7 @@ it('refuses missing and ambiguous default public app Ingresses and permits expli
     $second = customProxyAppRouteFixture($this->orbitApp, $this->node, 'hauzer.app', $secondTarget);
     $second->update(['node_id' => null, 'cluster_id' => $cluster->id, 'publication' => 'public', 'status' => 'active', 'replacement_step' => 'ingress-firewall']);
     $this->postJson('/api/v1/routes', $body)->assertConflict()->assertJsonPath('error.code', 'route.ingress_ambiguous');
-    $this->postJson('/api/v1/routes', [...$body, 'ingress_node_id' => $other->id])->assertCreated()->assertJsonPath('data.cluster_id', $cluster->id);
+    $this->postJson('/api/v1/routes', [...$body, 'ingress_node_id' => $other->id])->completeRoute()->assertOk()->assertJsonPath('data.cluster_id', $cluster->id);
 });
 
 it('refuses a missing LAN listener before storing intent and leaves private service sites unchanged', function (): void {
@@ -723,12 +736,12 @@ it('refuses a missing LAN listener before storing intent and leaves private serv
     $ingress->update(['lan_ip' => '10.0.0.4']);
     $this->node->update(['lan_ip' => '10.0.0.6']);
     foreach (['vault.orbit', 'recall.orbit', 'executor.orbit', 'ai-router.orbit'] as $domain) {
-        $this->postJson('/api/v1/routes', ['domain' => $domain, 'node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:8080'])->assertCreated();
+        $this->postJson('/api/v1/routes', ['domain' => $domain, 'node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:8080'])->completeRoute()->assertOk();
     }
     $before = new DevelopmentSiteRepository()->forNode($this->node);
     $this->postJson('/api/v1/routes', $body)->assertConflict()->assertJsonPath('error.code', 'route.upstream_unresolved');
     Process::query()->findOrFail($body['process_id'])->update(['runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp', '10.0.0.6:8095:8080/tcp']]]);
-    $this->postJson('/api/v1/routes', $body)->assertCreated();
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk();
     expect(new DevelopmentSiteRepository()->forNode($ingress)->sole()->localHttpUpstream)->toBe('10.0.0.6:8095')
         ->and(new DevelopmentSiteRepository()->forNode($this->node))->toEqual($before)
         ->and($this->node->fresh()->cluster_id)->toBeNull();
@@ -749,24 +762,25 @@ it('refuses an explicit Node without an active Ingress role', function (string $
 it('lists a public Process Route only with access to both Ingress and Process', function (): void {
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
-    $id = $this->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
+    $id = $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->json('data.id');
     $ingress = Node::query()->findOrFail($body['ingress_node_id']);
     $unrelated = custom_proxy_node('unrelated-list-member', '10.44.0.91');
     $unrelated->update(['cluster_id' => $ingress->cluster_id]);
     $caller = custom_proxy_node('list-operator', '10.44.0.90');
     NodeAccess::query()->create(['consumer_node_id' => $caller->id, 'serving_node_id' => $unrelated->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
-    $this->getJson('/api/v1/routes')->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/routes')->completeRoute()->assertOk()->assertJsonCount(0, 'data');
     NodeAccess::query()->create(['consumer_node_id' => $caller->id, 'serving_node_id' => $ingress->id]);
-    $this->getJson('/api/v1/routes')->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/routes')->completeRoute()->assertOk()->assertJsonCount(0, 'data');
     NodeAccess::query()->create(['consumer_node_id' => $caller->id, 'serving_node_id' => $this->node->id]);
-    $this->getJson('/api/v1/routes')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $id);
+    $this->getJson('/api/v1/routes')->completeRoute()->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $id);
     NodeAccess::query()->where('consumer_node_id', $caller->id)->where('serving_node_id', $ingress->id)->delete();
-    $this->getJson('/api/v1/routes')->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/routes')->completeRoute()->assertOk()->assertJsonCount(0, 'data');
 });
 
 describe('Process updates with targeting Routes', function (): void {
     beforeEach(function (): void {
+        \Tests\Support\completesRouteOperations();
         $this->runtime = new ProcessesApiFakeRuntimeManager;
         app()->instance(ProcessRuntimeManager::class, $this->runtime);
         $this->edge = new FakePublicRouteEdgeProjector;
@@ -888,7 +902,7 @@ describe('Process updates with targeting Routes', function (): void {
             $owner->release();
         }
 
-        $this->postJson('/api/v1/routes', $body)->assertCreated()->assertJsonPath('data.status', 'active');
+        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'active');
     })->with(['private', 'public'])->with([2.0, 60.0]);
 
     it('keeps the Route active after a listener-preserving update', function (string $scope, string $change): void {
@@ -908,7 +922,7 @@ describe('Process updates with targeting Routes', function (): void {
         $siteNode = $scope === 'private' ? $this->node : Node::query()->where('name', 'public-ingress')->sole();
         $sites = new DevelopmentSiteRepository()->forNode($siteNode);
 
-        $this->patchJson('/api/v1/processes/'.$process->id, $patch)->assertOk()
+        $this->patchJson('/api/v1/processes/'.$process->id, $patch)->completeRoute()->assertOk()
             ->assertJsonPath('data.id', $process->id)->assertJsonPath('data.status', 'active');
 
         expect($process->refresh()->runtime_config)->toBe($config)
@@ -924,13 +938,13 @@ describe('Process updates with targeting Routes', function (): void {
         $this->postJson('/mcp', [
             'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
             'params' => ['name' => 'process-update', 'arguments' => ['process' => $process->id, 'image' => 'powersync:new']],
-        ])->assertOk()->assertJsonPath('result.isError', false);
+        ])->completeRoute()->assertOk()->assertJsonPath('result.isError', false);
         expect($process->refresh()->runtime_config['image'])->toBe('powersync:new');
 
         $response = $this->postJson('/mcp', [
             'jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call',
             'params' => ['name' => 'process-update', 'arguments' => ['process' => $process->id, 'ports' => []]],
-        ])->assertOk()->assertJsonPath('result.isError', true);
+        ])->completeRoute()->assertOk()->assertJsonPath('result.isError', true);
         $error = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
         expect($error['error']['code'])->toBe('process.route_upstream_changed')
             ->and($error['error']['details']['route_id'])->toBe($route->id)
@@ -940,7 +954,7 @@ describe('Process updates with targeting Routes', function (): void {
 
     it('keeps listener reachability visible to Doctor after an update', function (string $scope, bool $reachable): void {
         [$process, $route] = process_update_route_fixture($this, $scope);
-        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'powersync:new'])->assertOk();
+        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'powersync:new'])->completeRoute()->assertOk();
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldReceive('inspect')->once()->withArgs(fn (RouteCustomProxy $proxy): bool => $proxy->route_id === $route->id)
             ->andReturn(new CustomProxyRouteObservation(true, true, true, $reachable, true));
@@ -1003,7 +1017,7 @@ function process_update_route_fixture(TestCase $test, string $scope): array
             $process->update(['runtime_config' => [...$process->runtime_config, 'ports' => [$address.':8095:8080/tcp']]]);
         }
     }
-    $id = $test->postJson('/api/v1/routes', $body)->assertCreated()->json('data.id');
+    $id = $test->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->json('data.id');
 
     return [$process, Route::query()->findOrFail($id)->load('customProxy'), $address];
 }
@@ -1016,7 +1030,7 @@ function process_route_race_fixture(TestCase $test, string $publication): array
     $process = Process::query()->findOrFail($public['process_id']);
     $process->update(['runtime_config' => [...$process->runtime_config, 'ports' => ['10.44.0.7:8095:8080/tcp', '127.0.0.1:8095:8080/tcp']]]);
     $private = ['domain' => 'private-sync.orbit', 'node_id' => $node->id, 'process_id' => $process->id];
-    $test->postJson('/api/v1/routes', $publication === 'private' ? $public : $private)->assertCreated();
+    $test->postJson('/api/v1/routes', $publication === 'private' ? $public : $private)->completeRoute()->assertOk();
     $data = new CreateRouteData(
         domain: $publication === 'private' ? $private['domain'] : $public['domain'],
         publication: RoutePublication::from($publication),
@@ -1042,4 +1056,19 @@ function process_route_ports_update(Process $process, array $ports): UpdateProce
         workingDirectory: '/app',
         environment: [], ports: $ports, volumes: [], restartPolicy: 'unless-stopped', start: false,
     ), ['ports']);
+}
+
+/** A stored serving Route is the precondition of removal and access tests. */
+function custom_proxy_seed(TestCase $test, array $body): TestResponse
+{
+    $result = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+        domain: $body['domain'], publication: RoutePublication::from($body['publication'] ?? 'private'),
+        nodeId: $body['node_id'] ?? null, upstream: $body['upstream'] ?? null,
+        processId: $body['process_id'] ?? null, ingressNodeId: $body['ingress_node_id'] ?? null,
+    ));
+    $route = $result['route'];
+    $route->publishSites();
+    $route->update(['status' => 'active', 'replacement_step' => $route->publication === RoutePublication::Public ? 'ingress-firewall' : null]);
+
+    return $test->getJson('/api/v1/routes/'.$route->id)->assertOk();
 }

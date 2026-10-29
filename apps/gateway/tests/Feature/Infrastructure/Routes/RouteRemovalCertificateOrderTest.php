@@ -32,6 +32,7 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -60,6 +61,7 @@ use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
@@ -69,7 +71,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\RouteFixtureDnsTransport;
 use Tests\Support\RouteProjectionAgentAnswers;
+use Tests\Support\RouteSwampGatewayFixture;
 
 /*
  * ADR 0141: removal saves the state change, builds, and only then removes the certificate. Caddy
@@ -79,7 +83,10 @@ use Tests\Support\RouteProjectionAgentAnswers;
  * certificate, as `caddy validate` does.
  */
 
+require_once __DIR__.'/../../../Support/CompletesRouteOperations.php';
+
 beforeEach(function (): void {
+    \Tests\Support\completesRouteOperations();
     $this->gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -95,6 +102,13 @@ beforeEach(function (): void {
     $this->php = new CertificateOrderPhpFpm;
     certificate_order_bind_projectors($this->nodes, $this->dnsRuns, $this->php);
     $this->beast = certificate_order_node('beast', 7, RoleName::AppDev);
+    $this->routeSwamp = new RouteSwampGatewayFixture($this, nativeChildren: true);
+    app()->instance(RouteFixtureDnsTransport::class, new RouteFixtureDnsTransport(function (): void {
+        if ($this->dnsRuns->failNext) {
+            $this->dnsRuns->failNext = false;
+            throw new ResourceOperationException('private_dns.publish_failed', 'Injected DNS failure.', 502);
+        }
+    }));
 });
 
 afterEach(function (): void {
@@ -109,13 +123,13 @@ describe('Route removal certificate order', function (): void {
                 'node_id' => $this->beast->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->assertJsonPath('data.status', 'active')
             ->json('data.id');
 
         expect($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeTrue();
 
-        $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$routeId}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($routeId)->exists())->toBeFalse()
             ->and($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeFalse()
@@ -134,14 +148,14 @@ describe('Route removal certificate order', function (): void {
                 'node_id' => $this->beast->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertStatus(502);
+            ->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed');
         $route = Route::query()->where('domain', 'collector.lab.orbit')->sole();
 
         expect($route->status)->toBe(RouteStatus::Failed)
-            ->and($route->sites_published)->toBeFalse()
+            ->and($route->sites_published)->toBeTrue()
             ->and($this->nodes->names('10.44.0.7', "route-{$route->id}"))->toBeTrue();
 
-        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$route->id}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($this->nodes->names('10.44.0.7', "route-{$route->id}"))->toBeFalse()
@@ -174,7 +188,7 @@ describe('Route removal certificate order', function (): void {
 
         expect($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue();
 
-        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$route->id}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
@@ -192,7 +206,7 @@ describe('Route removal certificate order', function (): void {
         expect($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
             ->and(certificate_order_php_sites($this->beast))->toBe(['task-342.acme.test']);
 
-        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$route->id}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
@@ -215,7 +229,7 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue()
             ->and(certificate_order_php_sites($worker))->toBe(['task-342.acme.test']);
 
-        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$route->id}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
@@ -241,8 +255,8 @@ describe('Route removal certificate order', function (): void {
                 'Route removal could not change node [beast], which is unreachable or not active. Retry with --offline to remove the Route and leave that Node unchanged until its next converge.',
             );
 
-        expect($route->refresh()->status)->toBe(RouteStatus::Failed)
-            ->and($route->failed_step)->toBe('targeted:caddy')
+        expect($route->refresh()->status)->toBe(RouteStatus::Pending)
+            ->and($route->failed_step)->toBeNull()
             ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
     });
@@ -257,10 +271,10 @@ describe('Route removal certificate order', function (): void {
         $this->nodes->down = ['10.44.0.30'];
 
         $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])
-            ->assertOk()
-            ->assertJsonPath('data.id', $route->id)
-            ->assertJsonPath('data.retained_on_nodes', [
-                ['node_id' => $worker->id, 'node' => 'worker', 'steps' => ['caddy', 'php', 'firewall']],
+            ->completeRoute()->assertOk()
+            ->assertJsonPath('data.result.route_id', $route->id)
+            ->assertJsonPath('data.result.retained_on_nodes', [
+                ['node_id' => $worker->id, 'node' => 'worker', 'steps' => ['php', 'firewall', 'caddy']],
             ]);
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
@@ -288,7 +302,7 @@ describe('Route removal certificate order', function (): void {
     it('skips a failed residue cleanup without failing the converge and retries it next time', function (): void {
         [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
         $this->nodes->down = ['10.44.0.7'];
-        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->assertOk();
+        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->completeRoute()->assertOk();
         $footprint = new NodeFootprint(app(AgentDelivery::class), [app(RouteResidueFootprintArtifact::class)]);
         // The Node answers the probe, but its Caddy publish still fails.
         $this->nodes->down = [];
@@ -316,11 +330,11 @@ describe('Route removal certificate order', function (): void {
                 'node_id' => $this->beast->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->json('data.id');
         $this->nodes->failCaddy = '10.44.0.7';
 
-        $this->deleteJson("/api/v1/routes/{$routeId}")->assertStatus(502);
+        $this->deleteJson("/api/v1/routes/{$routeId}")->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed');
 
         $route = Route::query()->findOrFail($routeId);
         expect($route->status)->toBe(RouteStatus::Failed)
@@ -330,7 +344,7 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
 
         $this->nodes->failCaddy = null;
-        $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
+        $this->deleteJson("/api/v1/routes/{$routeId}")->completeRoute()->assertOk();
 
         expect(Route::query()->whereKey($routeId)->exists())->toBeFalse()
             ->and($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeFalse()
@@ -346,7 +360,7 @@ describe('Route removal certificate order', function (): void {
                 'node_id' => $this->beast->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->json('data.id');
         // The incident state: removal clears the publication record, but the stored sites keep
         // rendering the Route, so its build leaves the site in place.
@@ -358,24 +372,21 @@ describe('Route removal certificate order', function (): void {
             END
             SQL);
 
-        $this->deleteJson("/api/v1/routes/{$routeId}")
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'app-dev.certificate_in_use')
-            ->assertJsonPath(
-                'error.message',
-                "Certificate [route-{$routeId}] is still named by the stored Caddy site [collector.lab.orbit] on node [beast].",
-            );
+        $admitted = $this->deleteJson("/api/v1/routes/{$routeId}")->assertAccepted();
+        expect(fn () => $this->routeSwamp->finish($admitted))->toThrow(RuntimeException::class, 'app-dev.certificate_in_use');
 
         $route = Route::query()->findOrFail($routeId);
-        expect($route->status)->toBe(RouteStatus::Failed)
-            ->and($route->failed_step)->toBe('certificates')
-            ->and($route->error_code)->toBe('app-dev.certificate_in_use')
+        expect($route->status)->toBe(RouteStatus::Retiring)
+            ->and($route->failed_step)->toBeNull()
             ->and($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeTrue()
             ->and($this->nodes->hasCertificate('10.44.0.7', "route-{$routeId}"))->toBeTrue()
             ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
 
         DB::unprepared('DROP TRIGGER certificate_order_stale_site');
-        $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
+        $route->update(['sites_published' => false]);
+        certificate_order_caddy()->converge($this->beast);
+        $this->travel(121)->seconds();
+        $this->routeSwamp->run(Operation::query()->findOrFail($admitted->json('data.id')));
 
         expect(Route::query()->whereKey($routeId)->exists())->toBeFalse()
             ->and($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeFalse()
@@ -391,7 +402,7 @@ describe('Route removal certificate order', function (): void {
                 'node_id' => $this->beast->id,
                 'upstream' => 'http://127.0.0.1:4788',
             ])
-            ->assertCreated()
+            ->completeRoute()->assertOk()
             ->json('data.id');
         $route = Route::query()->findOrFail($routeId);
 
@@ -432,7 +443,7 @@ function certificate_order_bind_projectors(
     CertificateOrderDnsRunner $dnsRuns,
     CertificateOrderPhpFpm $php,
 ): void {
-    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
+    $verificationAgents = new FakeAgentCommandRunner()
         ->answer('route.verify-certificate', [])
         ->answer('route.verify-http', static function (array $input, Node $node) use ($nodes): array {
             $nodes->forwarding[] = [$node->wireguard_ip, $input['address'], (string) $input['port']];
@@ -441,7 +452,7 @@ function certificate_order_bind_projectors(
             }
 
             return [];
-        }));
+        });
     $liveFirewall = new FakeAgentCommandRunner()->answer('firewall.inspect', static function (array $input, Node $node) use ($nodes): array {
         $host = $node->wireguard_ip;
         $nodes->firewallReads[] = $host;
@@ -457,7 +468,42 @@ function certificate_order_bind_projectors(
     });
     app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($liveFirewall, app(AgentContract::class)));
     $sites = new DevelopmentSiteRepository;
-    $nodeAgents = $nodes->answer(new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]));
+    $nodeAgents = $nodes->answer($verificationAgents->answer('caddy.order-after-vpn', ['changed' => false]));
+    $nodeAgents->answer('php.converge-shared-pools', static function (array $input, Node $node) use ($php): array {
+        $php->converge($node);
+
+        return ['changed' => true, 'missing_pools' => []];
+    })->answer('firewall.route-lan', static function (array $input, Node $node) use ($nodes): array {
+        $host = $node->wireguard_ip;
+        $comment = 'orbit:route-'.$input['route_id'].'-lan';
+        if (in_array($comment, $nodes->lanRules[$host] ?? [], true)) {
+            $nodes->firewallRemovals[] = $host.':'.$comment;
+            $nodes->lanRules[$host] = array_values(array_diff($nodes->lanRules[$host], [$comment]));
+        }
+
+        return ['matches' => true];
+    })->answer('firewall.rules', ['matches' => true]);
+    $nodeAgents->answer('agent.effect-receipt', static fn (array $input): array => ['command' => $input['command'], 'effect_key' => $input['effect_key'], 'state' => 'unknown', 'sanitized' => false, 'effect_nonce' => null, 'effect_created_at' => null, 'result_digest' => null, 'exit_code' => null, 'result' => null, 'finished_at' => null]);
+    app()->instance(AgentCommandRunner::class, $nodeAgents);
+    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+    {
+        public function sign(string $hostname, string $certificateRequest): string
+        {
+            return "-----BEGIN CERTIFICATE-----\nfixture leaf\n-----END CERTIFICATE-----\n";
+        }
+
+        public function rootCertificate(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\nfixture root\n-----END CERTIFICATE-----\n";
+        }
+    });
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
     $caddy = new RemoteAppDevCaddyManager(RouteProjectionAgentAnswers::builds($nodeAgents), $nodeAgents);
     $certificates = new RemoteAppDevCertificateManager(
         $nodeAgents,
@@ -637,7 +683,7 @@ final class CertificateOrderNodes
             ->answer('certificate.request-leaf', function (array $input, Node $node): array {
                 return $this->hasCertificate($this->reach($node, 'certificate.request-leaf'), $input['scope'])
                     ? ['state' => 'current']
-                    : ['state' => 'request', 'request' => RouteProjectionAgentAnswers::CERTIFICATE_REQUEST];
+                    : ['state' => 'request', 'request' => "-----BEGIN CERTIFICATE REQUEST-----\nfixture\n-----END CERTIFICATE REQUEST-----\n"];
             })
             ->answer('certificate.publish-leaf', function (array $input, Node $node): array {
                 $this->issue($this->reach($node, 'certificate.publish-leaf'), $input['scope']);
@@ -772,7 +818,7 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         $allowed = $this->nodes->firewallShapes['10.44.0.7'];
         // The Database listener's rule does not permit this Process port.
         $this->nodes->firewallShapes['10.44.0.7'] = [certificate_order_firewall_shape('orbit:rule-123', '5434', '10.0.0.4', protocol: 'tcp')];
-        $this->postJson('/api/v1/routes', $body)->assertServerError()->assertJsonPath('error.code', 'route.upstream_firewall_mismatch');
+        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'route.upstream_firewall_mismatch');
         $failed = Route::query()->where('domain', 'sync.example.com')->sole();
         expect($failed->failed_step)->toBe('public-edge-verified');
         $observation = app(NativeCustomProxyRouteInspector::class)->inspect($failed->customProxy);
@@ -785,29 +831,28 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         $this->nodes->firewallShapes['10.44.0.7'] = $allowed;
     }
     $response = $this->postJson('/api/v1/routes', $body);
-    $blocked ? $response->assertOk() : $response->assertCreated();
+    $response = $response->completeRoute()->assertOk();
     $id = $response->json('data.id');
     // A failed verification also reconciles the Ingress during rollback.
-    expect($creationFirewall->commands)->toBe($blocked ? ['converge:ingress', 'converge:ingress'] : ['converge:ingress']);
+    expect(array_column($this->routeSwamp->agents->calls, 'command'))->toContain('firewall.rules');
     expect($this->nodes->forwarding)->toBe([['10.44.0.4', $lan ? '10.0.0.6' : '10.44.0.7', '8095']]);
     expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue();
-    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
-    $firewall->shouldReceive('converge')->once()->withArgs(fn (Node $node, RoleName $role, string $user): bool => $node->id === $ingress->id && $role === RoleName::Ingress && $user === 'orbit');
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class)->shouldIgnoreMissing();
     app()->instance(NodeRoleFirewallManager::class, $firewall);
     $route = Route::query()->findOrFail($id);
     $acting = app(RouteRemovalProjector::class)->nodes($route);
     expect(array_map(fn ($target) => $target->node->id, $acting))->toBe([$ingress->id]);
     if ($offline) {
         $this->nodes->down = ['10.44.0.4'];
-        $this->deleteJson('/api/v1/routes/'.$id, ['offline' => true])->assertOk()
-            ->assertJsonPath('data.retained_on_nodes.0.node_id', $ingress->id);
+        $this->deleteJson('/api/v1/routes/'.$id, ['offline' => true])->completeRoute()->assertOk()
+            ->assertJsonPath('data.result.retained_on_nodes.0.node_id', $ingress->id);
         expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue()
             ->and(RouteRemovalResidue::query()->exists())->toBeTrue();
         $this->nodes->down = [];
         app(RouteResidueFootprintArtifact::class)->apply($ingress);
         expect(RouteRemovalResidue::query()->exists())->toBeFalse();
     } else {
-        $this->deleteJson('/api/v1/routes/'.$id)->assertOk();
+        $this->deleteJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();
     }
     expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeFalse()
         ->and($this->nodes->removedWhileNamed)->toBeEmpty()
@@ -823,12 +868,12 @@ it('retains a public Process activation when its HTTP listener is unreachable an
     app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
     $body = ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'];
     $this->nodes->failHttp = true;
-    $this->postJson('/api/v1/routes', $body)->assertServerError()->assertJsonPath('error.code', 'route.upstream_unreachable');
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'route.http_unreachable');
     $route = Route::query()->where('domain', 'sync.example.com')->sole();
     expect($route->failed_step)->toBe('public-edge-verified')
         ->and($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeFalse();
     $this->nodes->failHttp = false;
-    $this->postJson('/api/v1/routes', $body)->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
+    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
 });
 
 it('limits native public Process Doctor firewall reads to selected authorized Nodes', function (): void {
@@ -840,7 +885,7 @@ it('limits native public Process Doctor firewall reads to selected authorized No
     app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
     app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
     $routeId = $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])
-        ->assertCreated()->json('data.id');
+        ->completeRoute()->assertOk()->json('data.id');
     $caller = certificate_order_node('limited-caller', 90, RoleName::AppDev);
     $caller->accessibleNodes()->attach($ingress->id);
     $inspector = Mockery::mock(NodeStateInspector::class);
@@ -883,7 +928,7 @@ it('checks public Process Route DNS through Orbit instead of the Ingress system 
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
     app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
-    $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])->assertCreated();
+    $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])->completeRoute()->assertOk();
     $edge = Mockery::mock(PublicRouteEdgeInspector::class);
     $edge->shouldReceive('inspect')->once()->andReturn(new PublicRouteEdgeObservation(true, true, true, true));
     app()->instance(PublicRouteEdgeInspector::class, $edge);

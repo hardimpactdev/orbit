@@ -16,6 +16,8 @@ covers:
 
 A Route is a domain that reaches an Instance or a Node service. This page explains the Route record, domain selection, private and public traffic, and the changes that Orbit coordinates or refuses. [`route`](/cli/route) lists the commands.
 
+The Gateway validates Route changes and records intent as an Operation. Swamp executes the Route lifecycle through the shared Operation executor primitives. Each Node effect is a child Operation bound to its own Node. Successful completion requires the recorded child receipts. The Gateway retains Route state, input validation, ownership checks, certificate signing, and read APIs.
+
 A Route has one of three kinds. The kind never changes.
 
 | Kind | Owner | Serves |
@@ -704,7 +706,46 @@ A Process can run on a service Node outside any Cluster. Selecting an Ingress in
 
 LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.
 
+Route and certificate dispatch takes a kind and worker identity. The placed family invocation claims and executes on the same worker Node. Before its first effect, it saves the claimed Operation ID. A retry keeps that ID and verifies a saved terminal result through the Gateway. An empty claim ends the invocation. A lost lease ends the attempt; a later dispatch may reclaim expired work.
 
-### Node publication Operations
+Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and renders the whole Caddyfile from Gateway state. A changed render, listener address set or Caddy serving role refuses before publication. A failed Caddy child includes `stage: render|validate` only when its Gateway render receipt or target validation receipt proves that stage. Completion checks the stage against that recorded failure, including after receipt recovery. Other failures supply no stage that permits first-Node baseline degradation. The Node build lock covers the fresh check and dispatch, so an older render cannot replace a newer serving configuration.
 
-`route.caddy_converge` and `route.private_dns_publish` take `{reason}` and use the Operation Node. The Gateway renders and records an exact configuration; Swamp publishes it. A changed render, listener address set or Caddy serving role refuses before publication. Caddy returns `stage: render|validate` only with matching saved refusal evidence. An active VPN or Gateway role is required for DNS publication. DNS validates and atomically publishes its catalog before starting an installed inactive listener. Existing DNS stays open during publication and recovery.
+Instance removal calls `route.withdraw_instance` with `{instance_id}` before it removes source files. This converges shared PHP-FPM pools even when the Instance has no Route. After source removal, `route.cleanup_instance` withdraws Caddy before removing the unused Instance certificate and runtime. A certificate still named by a stored site stays on the Node.
+
+`route.offline_residue_clean` takes `{removed_node_id: int|null}` on the serving Node. A Node ID scopes cleanup through the removed Node's preserved Route associations. `null` selects retained residue whose Route row is absent. Successful cleanup removes only the captured residue rows that have not changed during execution. Its `removed` result is a redacted list of artifact names.
+
+### Route child contracts
+
+Route publication records child intent from stored Route targets and Node placement. Development workload preparation uses `route.workload_prepare` with `{route_id, instance_id}` on the workload Node. The Gateway binds checkout roots, inspects the shared PHP pools, selects packages from that inspection, and requires pool publication proof. A changed stored-site render refuses before a Node effect.
+
+Production publication uses the Instance family's `instance.prepare_php_runtime` with `{instance_id}` on the production Node. A pending Route with a web root supplies its application pool through the owning Route relation. Environment changes use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. URL-only work uses the child key `synchronize-web-root-urls.<instance_id>`.
+
+The Gateway captures `target_instance_ids`, `previous_target_instance_ids`, and `removed_instance_ids` at admission. The plan retains every admitted placement in `placements` and removed target snapshots in `detached_instances`, with `instance_id`, `node_id`, and `checkout_path` captured before association changes. A target disposition retains its previous ownership proof after associations change. Recovery preserves these snapshots after a removed Instance disappears. A replacement also records `candidate_route_id`. Secret environment values remain Gateway references.
+
+Analytics publication uses `route.analytics_publish` with `{route_id}`. Host relocation uses `route.analytics_host_prepare` and `route.analytics_host_withdraw`, also with `{route_id}`. These Operations use the stored serving Node. Host preparation issues the private Router leaf before the site is published. Public Ingress keeps Caddy automatic HTTPS. `route.analytics_remove` withdraws the stored edge and tracking Route.
+
+A `node.add` parent may update a generated Route domain with exactly `{route_id, domain}` when that Route records the parent Node as its generation basis. The tuple `{route_id, domain, node_id}` must match `state.enrollment_intent.route_changes`. The child Node follows normal Route admission: the first workload Node from target Instances ordered by Instance ID, then the Route Node, stored Router, or custom-proxy Node. The generation basis does not override current placement. The Node family retains the original TLD and Cluster until these children succeed.
+
+A child `route.destroy` request uses `{route_id, offline: false}`. The shared child admission boundary calls `AdmitRouteOperationAction::destroy` when the parent requests the child. This runs the Route guards and captures its intent before the child becomes runnable. An AI takeover requests destruction after its collector health proof.
+
+`route.private_dns_publish` requires an active VPN or Gateway role and uses the listener release and socket unit installed by Node convergence. It validates and replaces the catalog before enabling and starting an inactive socket. Publication requires the loaded catalog digest and a DNS reply. Before rollout, verify that each serving listener release writes catalog confirmation; a missing listener must first be installed by Node convergence. Node enrollment and Cluster changes commit their stored placement before starting DNS publication. A failed first publication restores the previous data and inactive socket state. An existing socket stays open during publication and recovery.
+
+Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
+
+Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
+
+Admission prepares the complete forward and rollback plan in its state transaction. Every child must be registered and declared before the transaction commits. A missing child or shared capability returns `operation.kind_unavailable` with no reserved Route, replacement, role or runnable Operation. Retained Instance rename callers keep the synchronous Route update executor; HTTP and CLI Route updates admit Operations.
+
+A single target binding grants development source access when the Route is not active. It preserves the Route's lifecycle and publication state and leaves the next Caddy build to its owning operation.
+
+A target pool prepares workload certificates under temporary scopes before it changes associations. Gateway-recorded preparation selects those private sites for Caddy. The old associations stay authoritative during preparation. After association commit, environment synchronization and live certificate publication finish before Router publication and authorized Instance removal. A refusal before commit withdraws prepared Caddy sites before removing their certificates. A committed change recovers forward from the saved database proof. A retry keeps that proof until its own database phase commits. Failed Operations preserve the Route phase and error code for the next request. A completed rollback cannot be reported as successful publication.
+
+Cluster Router parents use `node.role_converge` with `{assignment_id}` for the recorded candidate and `node.role_remove` with `{role: router, purge_data: false, offline: false}` for obsolete assignments. The Node family proves those effects. The Cluster parent keeps the candidate provisioning until certificate, workload and Caddy preparation succeed.
+
+It commits the new Router before publishing private DNS from that stored selection. A DNS failure after this commit recovers forward. A failed restoration before commit keeps the candidate serving until DNS restoration and the cache wait are proven. The old Router keeps serving until Swamp waits for the DNS grace period and the Gateway confirms it elapsed. Assignment rows are deleted only after their removal children succeed. A fully withdrawn candidate repeats preparation before it serves again.
+
+An initial production web-root activation that fails withdraws DNS and Caddy before its pool and certificate cleanup. Removal also updates the URL of the next Route serving that application directory. A late Metrics failure stays on its Operation and leaves the completed Route state intact.
+
+Web-root updates record the new root at an explicit phase. Their Instance children read that stored root. A failed update restores the old root before starting separate rollback children. The restored Route stays active, and its Operation records the failure; the URL-only rollback key is `synchronize-web-root-urls.rollback.<instance_id>`. Route updates request `metrics.reconcile` with an empty input only when one active Metrics assignment has an active serving Node. The Metrics family captures its reconciliation intent when that child is requested.
+
+Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.

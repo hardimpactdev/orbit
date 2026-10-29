@@ -2,992 +2,395 @@
 
 declare(strict_types=1);
 
-use App\Actions\Clusters\ClearClusterRouterAction;
-use App\Actions\Clusters\SetClusterRouterAction;
-use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterRouterOperationLock;
-use App\Domain\Instances\InstanceState;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ClusterRouterReplacementStep;
-use App\Domain\Routes\RouteProvenance;
-use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
-use Tests\Support\FakeClusterRouterReplacementProjector;
+use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
-    $this->baselines = new class implements RoleBaselineConverger
-    {
-        /** @var list<string> */
-        public array $calls = [];
-
-        public bool $failConverge = false;
-
-        public bool $failRemove = false;
-
-        public ?int $failRemoveNodeId = null;
-
-        public ?Closure $observe = null;
-
-        public function converge(Node $node, NodeRole $assignment): void
-        {
-            ($this->observe ?? static function (): void {})();
-            $this->calls[] = "converge:{$node->id}";
-
-            if ($this->failConverge) {
-                throw new RuntimeException('convergence failed');
-            }
-        }
-
-        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
-        {
-            ($this->observe ?? static function (): void {})();
-            $this->calls[] = "remove:{$node->id}";
-
-            if ($this->failRemove || $this->failRemoveNodeId === $node->id) {
-                throw new RuntimeException('removal failed');
-            }
-        }
-
-        public function removeUnreachable(Node $node, NodeRole $assignment): void
-        {
-            $this->calls[] = "removeUnreachable:{$node->id}";
-        }
-    };
-    app()->instance(RoleBaselineConverger::class, $this->baselines);
-    $this->replacements = cluster_router_replacement_projector();
     $this->gateway = $this->markAsGateway(cluster_router_api_node('gateway-router-peer', '10.44.0.1'));
     $this->cluster = Cluster::query()->create(['name' => 'development']);
     $this->first = cluster_router_api_node('first-router', '10.44.0.2', $this->cluster);
     $this->second = cluster_router_api_node('second-router', '10.44.0.3', $this->cluster);
-    $this->first
-        ->roles()
-        ->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
+    $this->first->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $this->swamp = new RouteSwampGatewayFixture($this);
 });
 
-it('reconciles Router DNS selection before a new Router assignment becomes authoritative', function (): void {
-    $dns = cluster_router_dns_reconciler();
-    $dns->onExpand = function (): void {
-        expect($this->cluster->routerAssignment()->exists())->toBeFalse();
+it('publishes Router DNS only after the new assignment becomes authoritative', function (): void {
+    $this->swamp->foreign->observe = function (Operation $child): void {
+        if ($child->kind === 'route.private_dns_publish') {
+            expect($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id);
+        }
     };
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")
-        ->assertOk();
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->first->id)
-        ->and(array_column($dns->events, 'phase'))
-        ->toBe(['expand', 'prune'])
-        ->and($dns->events[0]['clusterOverrides'][$this->cluster->id]['router_node_id'])
-        ->toBe($this->first->id);
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($op->result['cluster_id'])->toBe($this->cluster->id);
 });
 
-it('keeps the previous Router when DNS selection expansion fails', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    $dns = cluster_router_dns_reconciler();
-    $dns->events = [];
-    $dns->expandFailure = new RuntimeConvergenceException(
-        step: 'private-dns',
-        errorCode: 'app-dev.dns_config_failed',
-        message: 'DNS selection failed.',
-    );
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertServerError();
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->first->id)
-        ->and(NodeRole::query()->where('role', RoleName::Router)->where('node_id', $this->second->id)->exists())
-        ->toBeFalse()
-        ->and(array_column($dns->events, 'phase'))
-        ->toBe(['expand']);
+it('keeps both Routers serving when DNS fails after cutover and recovers forward', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    $this->swamp->foreign->failures['dns-publication.node-'.$this->gateway->id] = 1;
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('failed')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->second->id)
+        ->and(NodeRole::query()->where('role', RoleName::Router)->count())->toBe(2);
+    $retry = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($retry->status->value)->toBe('succeeded')->and(NodeRole::query()->where('role', RoleName::Router)->count())->toBe(1);
 });
 
 it('sets a Router beside an existing database role', function (): void {
-    $this->second->roles()->create([
-        'role' => RoleName::Database,
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router.id', $this->second->id);
-
-    expect($this->second->refresh()->roles->pluck('role')->map->value->sort()->values()->all())
-        ->toBe(['database', 'router'])
-        ->and($this->baselines->calls)
-        ->toBe(["converge:{$this->second->id}"]);
+    $this->second->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($this->second->fresh()->roles->pluck('role')->map->value->sort()->values()->all())->toBe(['database', 'router']);
 });
 
 it('sets a Router beside an application role and rejects generic Router mutation', function (): void {
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router.id', $this->first->id)
-        ->assertJsonPath('data.router.name', 'first-router');
-
-    expect(
-        $this
-            ->first->refresh()
-            ->roles->pluck('role')
-            ->map->value->all(),
-    )
-        ->toBe(['app-dev', 'router']);
-
-    $this
-        ->postJson("/api/v1/nodes/{$this->second->id}/roles", ['role' => 'router'])
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed');
-
-    $this
-        ->deleteJson("/api/v1/nodes/{$this->first->id}/roles/router", ['force' => true])
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed');
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id);
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($this->first->fresh()->roles->pluck('role')->map->value->sort()->values()->all())->toBe(['app-dev', 'router']);
+    $this->postJson("/api/v1/nodes/{$this->first->id}/roles", ['role' => 'router'])->assertUnprocessable();
 });
 
 it('atomically replaces the Router and preserves exactly one assignment', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router.id', $this->second->id);
-
-    expect(NodeRole::query()->where('role', RoleName::Router)->count())
-        ->toBe(1)
-        ->and($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id);
+    cluster_router_activate($this->cluster, $this->first);
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->second->id)
+        ->and(NodeRole::query()->where('role', RoleName::Router)->count())->toBe(1);
 });
 
 it('returns 409 before Router validation or mutation while the Cluster owner is busy', function (): void {
-    $outside = cluster_router_api_node('busy-outside', '10.44.0.4');
-    $candidate = $this->first
-        ->roles()
-        ->create([
-            'cluster_id' => $this->cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Provisioning,
-        ]);
     app()->instance(ClusterRouterOperationLock::class, new class implements ClusterRouterOperationLock
     {
         public function run(int $clusterId, Closure $operation): mixed
         {
-            throw new ResourceOperationException(
-                errorCode: 'cluster.router_busy',
-                message: 'Another Cluster Router operation is active. Retry the request.',
-                status: 409,
-            );
+            throw new ResourceOperationException('cluster.router_busy', 'Another Router operation is active.', 409);
         }
     });
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_busy');
-    $this
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_busy');
-
-    expect($candidate->fresh()->status)
-        ->toBe(LifecycleStatus::Provisioning)
-        ->and($this->baselines->calls)
-        ->toBeEmpty();
-
-    app()->instance(ClusterRouterOperationLock::class, new ClusterRouterApiOperationLock);
-    $requestId = (string) Str::uuid();
-    $this
-        ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertOk();
-
-    expect($candidate->fresh())
-        ->toBeNull()
-        ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
-        ->toBe('cluster:router:unset');
+    $outside = cluster_router_api_node('outside', '10.44.0.4');
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")->assertConflict()->assertJsonPath('error.code', 'cluster.router_busy');
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])->assertConflict()->assertJsonPath('error.code', 'cluster.router_busy');
+    expect(Operation::query()->count())->toBe(0);
 });
 
 it('reloads Router assignments after waiting before a replacement', function (): void {
-    $owner = new ClusterRouterApiOperationLock(function (): void {
-        $this->first
-            ->roles()
-            ->create([
-                'cluster_id' => $this->cluster->id,
-                'role' => RoleName::Router,
-                'status' => LifecycleStatus::Active,
-            ]);
-    });
-    app()->instance(ClusterRouterOperationLock::class, $owner);
-
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id)
-        ->and($this->baselines->calls)
-        ->toBe([
-            "converge:{$this->second->id}",
-            "remove:{$this->first->id}",
-        ]);
+    app()->instance(ClusterRouterOperationLock::class, new ClusterRouterApiOperationLock(fn () => cluster_router_activate($this->cluster, $this->first)));
+    $admitted = $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")->assertAccepted();
+    expect(Operation::query()->findOrFail($admitted->json('data.id'))->state['route_plan']['old_role_ids'])->toBe([$this->cluster->routerAssignment()->sole()->id]);
 });
 
 it('reloads the requested Node after waiting and rejects stale membership', function (): void {
-    $owner = new ClusterRouterApiOperationLock(function (): void {
-        $this->second->update(['cluster_id' => null]);
-    });
-    app()->instance(ClusterRouterOperationLock::class, $owner);
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_node_invalid');
-
-    expect($this->second->roles()->where('role', RoleName::Router)->exists())
-        ->toBeFalse()
-        ->and($this->baselines->calls)
-        ->toBeEmpty();
+    app()->instance(ClusterRouterOperationLock::class, new ClusterRouterApiOperationLock(fn () => $this->second->update(['cluster_id' => null])));
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")->assertConflict()->assertJsonPath('error.code', 'cluster.router_node_invalid');
+    expect(Operation::query()->count())->toBe(0);
 });
 
-it('runs Router mutation and removal guards against state created while waiting', function (): void {
-    $owner = new ClusterRouterApiOperationLock(function (): void {
-        $project = Project::query()->create([
-            'name' => 'Acme',
-            'slug' => 'acme',
-            'repository_url' => 'https://example.test/acme.git',
-            'default_branch' => 'main',
-            'root' => 'public',
-        ]);
-        $this->first
-            ->roles()
-            ->create([
-                'cluster_id' => $this->cluster->id,
-                'role' => RoleName::Router,
-                'status' => LifecycleStatus::Active,
-            ]);
-        $target = Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $this->first->id,
-            'name' => 'default',
-            'checkout_path' => '/srv/acme/default',
-        ]);
-        $route = Route::query()->create([
-            'project_id' => $project->id,
-            'cluster_id' => $this->cluster->id,
-            'domain' => 'acme.example.test',
-            'provenance' => RouteProvenance::Explicit,
-            'publication' => RoutePublication::Private,
-        ]);
-        $route->targets()->create(['instance_id' => $target->id, 'position' => 0]);
-        $route->update(['status' => RouteStatus::Active]);
-        $target->update(['status' => InstanceState::Active]);
-    });
-    app()->instance(ClusterRouterOperationLock::class, $owner);
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router.id', $this->second->id);
-    $this
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id)
-        ->and($this->baselines->calls)
-        ->toBe([
-            "converge:{$this->second->id}",
-            "remove:{$this->first->id}",
-        ])
-        ->and($this->replacements->events)
-        ->toContain('router-certificate')
-        ->toContain('dns-publication')
-        ->toContain('cleanup');
+it('runs Router removal guards against Route state created while waiting', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    app()->instance(ClusterRouterOperationLock::class, new ClusterRouterApiOperationLock(fn () => cluster_router_owned_route($this->cluster, $this->first)));
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])->assertConflict()->assertJsonPath('error.code', 'route.reconciliation_required');
+    expect(Operation::query()->count())->toBe(0)->and($this->cluster->routerAssignment()->exists())->toBeTrue();
 });
 
-it('holds Router ownership through baseline work outside database transactions', function (): void {
-    $owner = new ClusterRouterApiOperationLock;
-    app()->instance(ClusterRouterOperationLock::class, $owner);
-    $transactionLevel = DB::transactionLevel();
-    $this->baselines->observe = static function () use ($owner, $transactionLevel): void {
-        expect($owner->active)
-            ->toBeTrue()
-            ->and(DB::transactionLevel())
-            ->toBe($transactionLevel);
-    };
-
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-    app(ClearClusterRouterAction::class)->execute($this->cluster);
-
-    expect($owner->clusterIds)
-        ->toBe([$this->cluster->id, $this->cluster->id])
-        ->and($this->baselines->calls)
-        ->toBe([
-            "converge:{$this->first->id}",
-            "remove:{$this->first->id}",
-        ]);
+it('holds the parent target until baseline proof and refuses a competing Router set', function (): void {
+    $first = $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertAccepted();
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")->assertConflict();
+    expect(NodeRole::query()->where('node_id', $this->first->id)->where('role', RoleName::Router)->sole()->status)->toBe(LifecycleStatus::Provisioning);
+    $op = $this->swamp->finish($first);
+    expect($op->status->value)->toBe('succeeded');
 });
 
 it('removes every obsolete Router after several replacement convergence failures', function (): void {
-    $third = cluster_router_api_node('third-router', '10.44.0.4', $this->cluster);
-    $current = cluster_router_api_node('current-router', '10.44.0.5', $this->cluster);
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-    $this->baselines->failConverge = true;
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->second))
-        ->toThrow(RuntimeException::class, 'convergence failed');
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $third))
-        ->toThrow(RuntimeException::class, 'convergence failed');
-
-    $this->baselines->failConverge = false;
-    app(SetClusterRouterAction::class)->execute($this->cluster, $current);
-
-    expect(NodeRole::query()->where('role', RoleName::Router)->sole()->node_id)
-        ->toBe($current->id)
-        ->and($this->baselines->calls)
-        ->toBe([
-            "converge:{$this->first->id}",
-            "converge:{$this->second->id}",
-            "converge:{$third->id}",
-            "converge:{$current->id}",
-            "remove:{$this->first->id}",
-        ]);
+    cluster_router_activate($this->cluster, $this->first);
+    $third = cluster_router_api_node('third', '10.44.0.4', $this->cluster);
+    $third->roles()->create(['role' => RoleName::Router, 'cluster_id' => $this->cluster->id, 'status' => LifecycleStatus::Failed]);
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and(NodeRole::query()->where('role', RoleName::Router)->pluck('node_id')->all())->toBe([$this->second->id]);
 });
 
-it('rolls back a failed initial Router convergence and retries an identical set', function (): void {
-    $this->baselines->failConverge = true;
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
-        ->toThrow(RuntimeException::class, 'convergence failed');
-
-    expect($this->first->roles()->where('role', RoleName::Router)->exists())
-        ->toBeFalse()
-        ->and($this->cluster->routerAssignment()->exists())
-        ->toBeFalse();
-
-    $this->baselines->failConverge = false;
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->first->id)
-        ->and($this->baselines->calls)
-        ->toBe([
-            "converge:{$this->first->id}",
-            "converge:{$this->first->id}",
-        ]);
+it('retains a failed initial Router convergence for an identical retry', function (): void {
+    $this->swamp->foreign->failures['baseline.router'] = 1;
+    $failed = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}"));
+    expect($failed->status->value)->toBe('failed')->and($this->cluster->routerAssignment()->exists())->toBeFalse();
+    $retry = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}"));
+    expect($retry->status->value)->toBe('succeeded')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id);
 });
 
-it('keeps the active Router when replacement convergence fails', function (): void {
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-    $this->baselines->failConverge = true;
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->second))
-        ->toThrow(RuntimeException::class, 'convergence failed');
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->first->id)
-        ->and($this->second->roles()->where('role', RoleName::Router)->exists())
-        ->toBeFalse();
+it('keeps the active Router when replacement baseline proof fails', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    $this->swamp->foreign->failures['baseline.router'] = 1;
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('failed')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id);
 });
 
 it('retains failed old Router cleanup with the replacement active and resumes it', function (): void {
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-    $this->baselines->failRemove = true;
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->second))
-        ->toThrow(RuntimeException::class, 'removal failed');
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id)
-        ->and($this->first->roles()->where('role', RoleName::Router)->sole()->failed_step)
-        ->toBe('remove:baseline');
-
-    $this->baselines->failRemove = false;
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
-
-    expect(NodeRole::query()->where('role', RoleName::Router)->sole()->node_id)->toBe($this->second->id);
+    $old = cluster_router_activate($this->cluster, $this->first);
+    $this->swamp->foreign->failures['remove-old-baseline.router-'.$old->id] = 1;
+    $failed = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($failed->status->value)->toBe('failed')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->second->id)->and($old->fresh()->status)->toBe(LifecycleStatus::Removing);
+    $retry = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($retry->status->value)->toBe('succeeded')->and($old->fresh())->toBeNull();
 });
 
-it('preserves cleanup progress and finishes the remainder on an identical set', function (): void {
-    $unprocessed = cluster_router_api_node('unprocessed-router', '10.44.0.4', $this->cluster);
-    $current = cluster_router_api_node('current-router', '10.44.0.5', $this->cluster);
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-    $failed = $this->second
-        ->roles()
-        ->create([
-            'cluster_id' => $this->cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Failed,
-            'failed_step' => 'remove:baseline',
-            'error_code' => 'test.failed',
-        ]);
-    $retained = $unprocessed
-        ->roles()
-        ->create([
-            'cluster_id' => $this->cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Failed,
-            'failed_step' => 'converge:baseline',
-            'error_code' => 'test.unprocessed',
-        ]);
-    $this->baselines->failRemoveNodeId = $this->second->id;
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $current))
-        ->toThrow(RuntimeException::class, 'removal failed');
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($current->id)
-        ->and($this->first->roles()->where('role', RoleName::Router)->exists())
-        ->toBeFalse()
-        ->and($failed->refresh()->status)
-        ->toBe(LifecycleStatus::Failed)
-        ->and($failed->failed_step)
-        ->toBe('remove:baseline')
-        ->and($failed->error_code)
-        ->toBe('node_role.operation_failed')
-        ->and($retained->refresh()->failed_step)
-        ->toBe('converge:baseline')
-        ->and($retained->error_code)
-        ->toBe('test.unprocessed');
-
-    $this->baselines->failRemoveNodeId = null;
-    app(SetClusterRouterAction::class)->execute($this->cluster, $current);
-
-    expect(NodeRole::query()->where('role', RoleName::Router)->sole()->node_id)
-        ->toBe($current->id)
-        ->and($this->baselines->calls)
-        ->toBe([
-            "converge:{$this->first->id}",
-            "converge:{$current->id}",
-            "remove:{$this->first->id}",
-            "remove:{$this->second->id}",
-            "remove:{$this->second->id}",
-            "removeUnreachable:{$unprocessed->id}",
-        ]);
-
-    $this
-        ->deleteJson(
-            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
-            ['force' => true],
-        )
-        ->assertOk();
-
-    expect($this->first->refresh()->cluster_id)->toBeNull();
+it('preserves proved child identity across parent re-entry without repeating baseline work', function (): void {
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}"));
+    $baseline = $op->children()->where('kind', 'node.role_converge')->sole();
+    expect($baseline->child_key)->toBe('baseline.router')->and($baseline->attempts)->toBe(1)->and($baseline->status->value)->toBe('succeeded')
+        ->and(count(array_filter($this->swamp->foreign->calls, fn ($call) => $call['kind'] === 'node.role_converge')))->toBe(1);
 });
 
 it('retains failed Router clear cleanup and removes every retained assignment on retry', function (): void {
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
-    $active = $this->cluster->routerAssignment()->sole();
-    $this->second
-        ->roles()
-        ->create([
-            'cluster_id' => $this->cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Failed,
-            'failed_step' => 'remove:baseline',
-            'error_code' => 'test.failure',
-        ]);
-    $this->baselines->failRemove = true;
-
-    expect(fn () => app(ClearClusterRouterAction::class)->execute($this->cluster))
-        ->toThrow(RuntimeException::class, 'removal failed');
-    expect($active->refresh()->status)->toBe(LifecycleStatus::Active);
-
-    $this->baselines->failRemove = false;
-    app(ClearClusterRouterAction::class)->execute($this->cluster);
-
-    expect(NodeRole::query()->where('role', RoleName::Router)->exists())->toBeFalse();
+    $old = cluster_router_activate($this->cluster, $this->first);
+    $this->swamp->foreign->failures['remove-old-baseline.router-'.$old->id] = 1;
+    $failed = $this->swamp->finish($this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true]));
+    expect($failed->status->value)->toBe('failed')->and($old->fresh()->status)->toBe(LifecycleStatus::Removing);
+    $retry = $this->swamp->finish($this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true]));
+    expect($retry->status->value)->toBe('succeeded')->and($old->fresh())->toBeNull();
 });
 
-it('lets cluster show and detach succeed after a failed initial Router set', function (): void {
-    $this->baselines->failConverge = true;
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
-        ->toThrow(RuntimeException::class, 'convergence failed');
-
-    $this
-        ->getJson("/api/v1/clusters/{$this->cluster->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    $this
-        ->deleteJson(
-            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
-            ['force' => true],
-        )
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    expect($this->first->refresh()->cluster_id)
-        ->toBeNull()
-        ->and($this->first->roles()->where('role', RoleName::Router)->exists())
-        ->toBeFalse();
+it('lets cluster show succeed after a failed initial Router set', function (): void {
+    $this->swamp->foreign->failures['baseline.router'] = 1;
+    $failed = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}"));
+    expect($failed->status->value)->toBe('failed');
+    $this->getJson("/api/v1/clusters/{$this->cluster->id}")->assertOk()->assertJsonPath('data.router', null);
 });
 
-it('clears a leftover never-activated Router without live baseline removal', function (): void {
-    $this->baselines->failRemove = true;
-    $this->first
-        ->roles()
-        ->create([
-            'cluster_id' => $this->cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Failed,
-            'failed_step' => 'converge:baseline',
-            'error_code' => 'node.managed_user_unavailable',
-        ]);
-
-    $this
-        ->getJson("/api/v1/clusters/{$this->cluster->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    $this
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    expect(NodeRole::query()->where('role', RoleName::Router)->exists())
-        ->toBeFalse()
-        ->and($this->baselines->calls)
-        ->toBe(["removeUnreachable:{$this->first->id}"]);
+it('clears a leftover never-activated Router through a narrow removal child', function (): void {
+    $role = $this->first->roles()->create(['role' => RoleName::Router, 'cluster_id' => $this->cluster->id, 'status' => LifecycleStatus::Failed]);
+    $op = $this->swamp->finish($this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true]));
+    expect($op->status->value)->toBe('succeeded')->and($role->fresh())->toBeNull()
+        ->and(array_column($this->swamp->foreign->calls, 'kind'))->toContain('node.role_remove');
 });
 
 it('detaches a member that only has a leftover never-activated Router assignment', function (): void {
-    $this->first
-        ->roles()
-        ->create([
-            'cluster_id' => $this->cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Failed,
-            'failed_step' => 'converge:baseline',
-            'error_code' => 'node_role.convergence_failed',
-        ]);
-
-    $this
-        ->getJson("/api/v1/clusters/{$this->cluster->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    $this
-        ->deleteJson(
-            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
-            ['force' => true],
-        )
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    expect($this->first->refresh()->cluster_id)
-        ->toBeNull()
-        ->and($this->first->roles()->where('role', RoleName::Router)->exists())
-        ->toBeFalse()
-        ->and($this->baselines->calls)
-        ->toBe([]);
+    $this->second->roles()->create(['role' => RoleName::Router, 'cluster_id' => $this->cluster->id, 'status' => LifecycleStatus::Failed]);
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/nodes/{$this->second->id}", ['force' => true])->assertOk();
+    expect($this->second->fresh()->cluster_id)->toBeNull();
 });
 
-it('still forbids detaching an active Cluster Router or a failed live removal', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-
-    $this
-        ->deleteJson(
-            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
-            ['force' => true],
-        )
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_detach_forbidden');
-
-    $this->first->roles()->where('role', RoleName::Router)->update([
-        'status' => LifecycleStatus::Failed,
-        'failed_step' => 'remove:baseline',
-        'error_code' => 'node_role.remove_failed',
-    ]);
-
-    $this
-        ->deleteJson(
-            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
-            ['force' => true],
-        )
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_detach_forbidden');
-
-    expect($this->first->refresh()->cluster_id)->toBe($this->cluster->id);
-});
+it('still forbids detaching an active Cluster Router or a failed live removal', function (string $status): void {
+    $role = cluster_router_activate($this->cluster, $this->second);
+    if ($status !== 'active') {
+        $role->update(['status' => $status, 'failed_step' => 'old-router-cleanup']);
+    }
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/nodes/{$this->second->id}", ['force' => true])->assertConflict();
+    expect($this->second->fresh()->cluster_id)->toBe($this->cluster->id);
+})->with(['active', 'removing']);
 
 it('does not publish DNS selection for a refused Router assignment', function (): void {
-    $outside = cluster_router_api_node('outside-dns', '10.44.0.8');
-    $dns = cluster_router_dns_reconciler();
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_node_invalid');
-
-    expect($dns->events)
-        ->toBeEmpty()
-        ->and($this->cluster->routerAssignment()->exists())
-        ->toBeFalse();
-});
-
-it('requires an active member Node for Router assignment', function (): void {
     $outside = cluster_router_api_node('outside', '10.44.0.4');
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_node_invalid');
-
-    $this->second->update(['status' => LifecycleStatus::Failed]);
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_node_invalid');
-
-    expect($this->cluster->routerAssignment()->exists())->toBeFalse();
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")->assertConflict();
+    expect($this->swamp->foreign->calls)->toBe([])->and(Operation::query()->count())->toBe(0);
 });
 
-it('refuses to clear or detach an active TLD-bearing Cluster Router until the Cluster is inactive', function (): void {
-    $this->cluster->update(['tld' => 'beast']);
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    $this->patchJson("/api/v1/clusters/{$this->cluster->id}", ['state' => 'active'])->assertOk();
+it('requires an active member Node for Router assignment', function (string $status): void {
+    $this->second->update(['status' => $status]);
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")->assertConflict()->assertJsonPath('error.code', 'cluster.router_node_invalid');
+    expect(Operation::query()->count())->toBe(0);
+})->with(['failed', 'provisioning', 'removing']);
 
-    $this
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.active_router_required');
-
-    $this
-        ->deleteJson(
-            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
-            ['force' => true],
-        )
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'cluster.router_detach_forbidden');
-
-    $this->patchJson("/api/v1/clusters/{$this->cluster->id}", ['state' => 'inactive'])->assertOk();
-
-    $this
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertOk()
-        ->assertJsonPath('data.router', null);
-
-    expect($this->cluster->routerAssignment()->exists())->toBeFalse();
+it('refuses to clear an active TLD-bearing Cluster Router until the Cluster is inactive', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    $this->cluster->update(['tld' => 'private.test', 'state' => 'active']);
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])->assertConflict()->assertJsonPath('error.code', 'cluster.active_router_required');
+    expect($this->cluster->routerAssignment()->exists())->toBeTrue();
 });
 
 it('clears an optional Router while a TLD-less Cluster remains active', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    $this->patchJson("/api/v1/clusters/{$this->cluster->id}", ['state' => 'active'])->assertOk();
-
-    $this
-        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
-        ->assertOk()
-        ->assertJsonPath('data.state', 'active')
-        ->assertJsonPath('data.tld', null)
-        ->assertJsonPath('data.router', null);
-
-    expect($this->cluster->refresh()->state->value)
-        ->toBe('active')
-        ->and($this->cluster->routerAssignment()->exists())
-        ->toBeFalse();
+    $role = cluster_router_activate($this->cluster, $this->first);
+    $this->cluster->update(['state' => 'active']);
+    $op = $this->swamp->finish($this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true]));
+    expect($op->status->value)->toBe('succeeded')->and($role->fresh())->toBeNull()->and($this->cluster->fresh()->state->value)->toBe('active');
 });
 
-it('prepares and publishes Cluster Route projections before a replacement assignment is authoritative', function (): void {
-    [$route, $target] = cluster_router_owned_route($this->cluster, $this->first);
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    $this->replacements->events = [];
-    $this->replacements->placements = [];
-    $this->replacements->onPrepare = function () use ($route, $target): void {
-        expect($this->cluster->routerAssignment()->sole()->node_id)
-            ->toBe($this->first->id)
-            ->and($route->refresh()->only(['id', 'domain', 'cluster_id', 'node_id']))
-            ->toBe([
-                'id' => $route->id,
-                'domain' => 'acme.example.test',
-                'cluster_id' => $this->cluster->id,
-                'node_id' => null,
-            ])
-            ->and($target->refresh()->node_id)
-            ->toBe($this->first->id);
-    };
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertOk()
-        ->assertJsonPath('data.router.id', $this->second->id);
-
-    expect($route->refresh()->only(['id', 'domain', 'cluster_id', 'node_id', 'status']))
-        ->toBe([
-            'id' => $route->id,
-            'domain' => 'acme.example.test',
-            'cluster_id' => $this->cluster->id,
-            'node_id' => null,
-            'status' => RouteStatus::Active,
-        ])
-        ->and($target->refresh()->only(['id', 'node_id', 'status']))
-        ->toBe([
-            'id' => $target->id,
-            'node_id' => $this->first->id,
-            'status' => InstanceState::Active,
-        ])
-        ->and($this->replacements->events)
-        ->toBe([
-            'router-certificate',
-            'firewall-policy',
-            'workload-verify',
-            'router-caddy',
-            'dns-publication',
-            'cleanup',
-        ])
-        ->and($this->replacements->placements[0]['router_id'])
-        ->toBe($this->second->id);
-});
-
-it('composes a colocated replacement Caddy site without a self-proxy hop', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    [$route] = cluster_router_owned_route($this->cluster, $this->second);
-    $this->second->update(['lan_ip' => '10.10.0.3']);
-    // The stored candidate row serves the Cluster's Router sites from `router-caddy`.
-    NodeRole::query()->updateOrCreate(
-        ['node_id' => $this->second->id, 'role' => RoleName::Router],
-        [
-            'cluster_id' => $this->cluster->id,
-            'status' => LifecycleStatus::Provisioning,
-            'failed_step' => ClusterRouterReplacementStep::WorkloadVerified->value,
-            'error_code' => null,
-        ],
-    );
-    $sites = new DevelopmentSiteRepository()->forNode($this->second);
-    $rendered = new DevelopmentCaddyConfigRenderer()->render($sites);
-
-    expect($sites->contains(fn ($site): bool => $site->isProxy() && $site->domain === $route->domain))
-        ->toBeFalse()
-        ->and($rendered)
-        ->not->toContain('reverse_proxy https://10.10.0.3')
-        ->not->toContain('reverse_proxy https://127.0.0.1')
-        ->not->toContain("reverse_proxy https://{$this->second->wireguard_ip}");
-});
-
-it('uses a local next hop when replacement colocates Router and workload roles', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    [$route] = cluster_router_owned_route($this->cluster, $this->second);
-
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
-
-    expect($this->replacements->events)
-        ->toContain('router-caddy:local-next-hop')
-        ->not->toContain('router-caddy')
-        ->and($route->refresh()->domain)
-        ->toBe('acme.example.test');
-});
-
-it('restores the old Router when replacement publication fails and retries the same candidate', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+it('prepares Cluster Route children before a replacement becomes authoritative', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
     [$route] = cluster_router_owned_route($this->cluster, $this->first);
-    $this->replacements->failures = ['dns-publication' => 1];
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertServerError();
-
-    $candidate = NodeRole::query()
-        ->where('role', RoleName::Router)
-        ->where('node_id', $this->second->id)
-        ->sole();
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->first->id)
-        ->and($candidate->status)
-        ->toBe(LifecycleStatus::Failed)
-        ->and($candidate->failed_step)
-        ->toBe('dns-publication')
-        ->and($candidate->error_code)
-        ->toBe('route.test_dns-publication')
-        ->and($this->replacements->events)
-        ->toContain('restore')
-        ->and($route->refresh()->domain)
-        ->toBe('acme.example.test');
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
-        });
-
-    $this->replacements->failures = [];
-    $this->replacements->events = [];
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id)
-        ->and($this->replacements->events)
-        ->toBe([
-            'router-certificate',
-            'firewall-policy',
-            'workload-verify',
-            'router-caddy',
-            'dns-publication',
-            'cleanup',
-        ]);
+    $this->swamp->foreign->observe = function (Operation $child): void {
+        if (in_array($child->kind, ['certificate.converge', 'route.workload_verify', 'route.caddy_converge'], true) && str_starts_with($child->child_key, 'router-')) {
+            expect($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id);
+        }
+    };
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($route->fresh()->status->value)->toBe('active');
 });
 
-it('keeps the replacement assignment when cleanup fails and refuses a conflicting transition', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+it('composes a colocated replacement without a self-proxy child', function (): void {
+    cluster_router_activate($this->cluster, $this->second);
+    [$route] = cluster_router_owned_route($this->cluster, $this->first);
+    $admitted = $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertAccepted();
+    $plan = Operation::query()->findOrFail($admitted->json('data.id'))->state['route_plan'];
+    expect($plan['stages']['workload-verify'] ?? [])->toBe([])->and($plan['stages']['router-certificate'] ?? [])->toBe([])
+        ->and($plan['route_ids'])->toBe([$route->id]);
+});
+
+it('uses the recorded workload Node for LAN policy when Router and application roles coexist', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    [$route, $instance] = cluster_router_owned_route($this->cluster, $this->first);
+    $admitted = $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")->assertAccepted();
+    $plan = Operation::query()->findOrFail($admitted->json('data.id'))->state['route_plan'];
+    expect($plan['stages']['firewall-policy'][0]['node_id'])->toBe($instance->node_id)
+        ->and($plan['stages']['firewall-policy'][0]['input'])->toBe(['route_id' => $route->id, 'instance_id' => $instance->id, 'router_node_id' => $this->second->id]);
+});
+
+it('restores the old Router when candidate Caddy publication fails', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
     cluster_router_owned_route($this->cluster, $this->first);
-    $this->replacements->failures = ['cleanup' => 1];
-
-    $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
-        ->assertServerError();
-
-    $candidate = NodeRole::query()
-        ->where('role', RoleName::Router)
-        ->where('node_id', $this->second->id)
-        ->sole();
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id)
-        ->and($candidate->status)
-        ->toBe(LifecycleStatus::Active)
-        ->and($candidate->failed_step)
-        ->toBe('cleanup');
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
-        });
+    $this->swamp->foreign->failures['router-caddy.node-'.$this->second->id] = 1;
+    $failed = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($failed->status->value)->toBe('failed')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id)
+        ->and(array_column($this->swamp->foreign->calls, 'kind'))->toContain('route.private_dns_publish', 'certificate.remove');
 });
 
-it('replaces a Router when the application returns HTTP 500 and leaves Route lifecycle unchanged', function (): void {
-    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
-    [$route, $target] = cluster_router_owned_route($this->cluster, $this->first);
-    $this->replacements->applicationHttpStatus = 500;
-
-    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
-
-    expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->second->id)
-        ->and($route->refresh()->status)
-        ->toBe(RouteStatus::Active)
-        ->and($target->refresh()->status)
-        ->toBe(InstanceState::Active)
-        ->and($this->replacements->events)
-        ->toContain('workload-verify');
+it('keeps the replacement when cleanup fails and refuses a conflicting transition', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    $candidate = $this->second->roles()->create(['role' => RoleName::Router, 'cluster_id' => $this->cluster->id, 'status' => LifecycleStatus::Failed, 'failed_step' => ClusterRouterReplacementStep::RouterCaddy->value]);
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertConflict()->assertJsonPath('error.code', 'cluster.router_transition_conflict');
+    expect($candidate->fresh()->status)->toBe(LifecycleStatus::Failed);
 });
 
-function cluster_router_replacement_projector(): FakeClusterRouterReplacementProjector
+it('replaces a Router without probing application HTTP health or changing Route lifecycle', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    [$route] = cluster_router_owned_route($this->cluster, $this->first);
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($route->fresh()->status->value)->toBe('active')
+        ->and(array_column($this->swamp->foreign->calls, 'kind'))->not->toContain('route.public_verify');
+});
+
+function cluster_router_activate(Cluster $cluster, Node $node): NodeRole
 {
-    $projector = new FakeClusterRouterReplacementProjector;
-    app()->instance(ClusterRouterReplacementProjector::class, $projector);
-
-    return $projector;
+    return $node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
 }
 
-/**
- * @return array{0: Route, 1: Instance}
- */
 function cluster_router_owned_route(Cluster $cluster, Node $workload): array
 {
-    if (! $workload->roles()->where('role', RoleName::AppDev->value)->exists()) {
-        $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    }
-
-    $project = Project::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme-'.Str::random(6),
-        'repository_url' => 'https://example.test/acme.git',
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-    $target = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $workload->id,
-        'name' => 'default',
-        'checkout_path' => '/srv/acme/default',
-        'status' => InstanceState::Active,
-    ]);
-    $route = Route::query()->create([
-        'project_id' => $project->id,
-        'cluster_id' => $cluster->id,
-        'domain' => 'acme.example.test',
-        'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Pending,
-    ]);
+    $project = Project::query()->create(['name' => 'Router app', 'slug' => 'router-app', 'repository_url' => 'https://example.test/router.git', 'root' => 'public']);
+    $target = Instance::query()->create(['project_id' => $project->id, 'node_id' => $workload->id, 'name' => 'default', 'checkout_path' => '/srv/router/default', 'status' => 'active', 'source_is_laravel' => false]);
+    $route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $cluster->id, 'domain' => 'router.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $target->id, 'position' => 0]);
-    $route->update(['status' => RouteStatus::Active]);
+    $route->update(['status' => 'active', 'sites_published' => true]);
 
-    return [$route->refresh(), $target];
-}
-
-function cluster_router_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
-{
-    $dns = app(ClusterRouterDnsSelectionReconciler::class);
-    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
-
-    return $dns;
+    return [$route->fresh(), $target];
 }
 
 function cluster_router_api_node(string $name, string $wireguardIp, ?Cluster $cluster = null): Node
 {
-    return Node::query()->create([
-        'cluster_id' => $cluster?->id,
-        'name' => $name,
-        'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.'.str_replace('10.44.0.', '', $wireguardIp),
-        'wireguard_ip' => $wireguardIp,
-    ]);
+    return Node::query()->create(['cluster_id' => $cluster?->id, 'name' => $name, 'status' => 'active', 'public_ssh_host' => '192.0.2.'.substr($wireguardIp, strrpos($wireguardIp, '.') + 1), 'wireguard_ip' => $wireguardIp, 'platform' => 'linux', 'user' => 'orbit']);
 }
 
 final class ClusterRouterApiOperationLock implements ClusterRouterOperationLock
 {
-    /** @var list<int> */
-    public array $clusterIds = [];
-
-    public bool $active = false;
-
     private bool $prepared = false;
 
-    public function __construct(
-        private readonly ?Closure $before = null,
-    ) {}
+    public function __construct(private readonly ?Closure $before = null) {}
 
     public function run(int $clusterId, Closure $operation): mixed
     {
-        $this->clusterIds[] = $clusterId;
-
         if (! $this->prepared) {
             ($this->before ?? static function (): void {})();
             $this->prepared = true;
         }
 
-        $this->active = true;
-
-        try {
-            return $operation();
-        } finally {
-            $this->active = false;
-        }
+        return $operation();
     }
 }
+
+it('keeps the candidate Router serving when its restore cannot move private DNS back', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    [$route] = cluster_router_owned_route($this->cluster, $this->first);
+    $this->swamp->foreign->failures['router-caddy.node-'.$this->second->id] = 1;
+    $this->swamp->foreign->failures['restore-dns.node-'.$this->gateway->id] = 1;
+    $failed = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    $candidate = $this->second->roles()->where('role', RoleName::Router)->sole();
+    expect($failed->status->value)->toBe('failed')->and($candidate->status)->toBe(LifecycleStatus::Provisioning)
+        ->and(ClusterRouterTransition::candidateServes($candidate))->toBeTrue()
+        ->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id)
+        ->and($failed->state['route_completed_stages']['withdraw-candidate-sites'] ?? false)->toBeFalse();
+    $retry = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($retry->status->value)->toBe('succeeded')->and($route->refresh()->status->value)->toBe('active');
+});
+
+it('keeps Router database cutover failure resumable without publishing uncommitted DNS', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    cluster_router_owned_route($this->cluster, $this->first);
+    DB::statement("CREATE TRIGGER router_cutover_refused BEFORE UPDATE OF status ON node_roles WHEN NEW.node_id = {$this->second->id} AND NEW.status = 'active' BEGIN SELECT RAISE(ABORT, 'Injected cutover refusal'); END");
+    $admitted = $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")->assertAccepted();
+    expect(fn () => $this->swamp->finish($admitted))->toThrow(RuntimeException::class, 'operation.execution_failed');
+    $op = Operation::query()->findOrFail($admitted->json('data.id'));
+    expect($op->status->terminal())->toBeFalse()->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id)
+        ->and($op->children()->where('kind', 'route.private_dns_publish')->exists())->toBeFalse();
+    DB::statement('DROP TRIGGER router_cutover_refused');
+    $this->travel(121)->seconds();
+    $this->swamp->run($op);
+    expect($op->refresh()->status->value)->toBe('succeeded')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->second->id);
+});
+
+it('stores which Routers serve the Router sites before each build and cleanup', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    $workload = cluster_router_api_node('independent-workload', '10.44.0.4', $this->cluster);
+    $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    [$route] = cluster_router_owned_route($this->cluster, $workload);
+    $observed = [];
+    $this->swamp->foreign->observe = function (Operation $child) use ($route, &$observed): void {
+        if ($child->kind !== 'route.caddy_converge') {
+            return;
+        }
+        $sites = new DevelopmentSiteRepository;
+        $observed[$child->child_key] = [
+            $sites->forNode($this->first->refresh())->pluck('domain')->contains($route->domain),
+            $sites->forNode($this->second->refresh())->pluck('domain')->contains($route->domain),
+        ];
+    };
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($observed['router-caddy.node-'.$this->second->id])->toBe([true, true])
+        ->and($observed['withdraw-old-sites.node-'.$this->first->id])->toBe([false, true]);
+});
+
+it('publishes private DNS before a Router replacement withdraws either Router', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    cluster_router_owned_route($this->cluster, $this->first);
+    $events = [];
+    $this->swamp->foreign->observe = function (Operation $child) use (&$events): void {
+        $events[] = $child->child_key;
+    };
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')
+        ->and(array_search('dns-publication.node-'.$this->gateway->id, $events, true))->toBeLessThan(array_search('withdraw-old-sites.node-'.$this->first->id, $events, true))
+        ->and($op->state['route_completed_stages']['await-old-dns-expiry'])->toBeTrue();
+});
+
+it('does not return reconciliation_required after Router replacement and still refuses Router removal', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    [$route] = cluster_router_owned_route($this->cluster, $this->first);
+    $before = $route->fresh(['targets'])->toArray();
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($op->status->value)->toBe('succeeded')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->second->id)
+        ->and($route->fresh(['targets'])->toArray())->toBe($before);
+    $this->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])->assertConflict()->assertJsonPath('error.code', 'route.reconciliation_required');
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
+it('prepares a rolled-back Router candidate before it renders sites again', function (): void {
+    cluster_router_activate($this->cluster, $this->first);
+    cluster_router_owned_route($this->cluster, $this->first);
+    $candidate = $this->second->roles()->create(['role' => RoleName::Router, 'cluster_id' => $this->cluster->id,
+        'status' => LifecycleStatus::Failed, 'failed_step' => 'rollback:dns-publication', 'error_code' => 'fixture.child_failed']);
+    $observed = false;
+    $this->swamp->foreign->observe = static function (Operation $child) use ($candidate, &$observed): void {
+        if ($child->kind === 'node.role_converge') {
+            $observed = true;
+            expect(ClusterRouterTransition::candidateServes($candidate->refresh()))->toBeFalse();
+        }
+    };
+    $op = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
+    expect($observed)->toBeTrue()->and($op->status->value)->toBe('succeeded');
+});
