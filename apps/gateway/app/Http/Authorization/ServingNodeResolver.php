@@ -325,7 +325,9 @@ final readonly class ServingNodeResolver
             } elseif ($request->route()?->getName() === 'process:destroy') {
                 $receipt = Operation::query()->where('kind', 'process.destroy')->where('idempotency_key', $request->header('Idempotency-Key'))->first();
                 $recordedId = $receipt?->input['process_id'] ?? null;
-                if ($receipt !== null && is_int($recordedId) && (string) $recordedId === $process) {
+                $caller = $this->caller($request)[0] ?? null;
+                if ($receipt !== null && $caller instanceof Node && $receipt->callerNodeId() === $caller->id
+                    && is_int($recordedId) && (string) $recordedId === $process) {
                     return [Node::query()->findOrFail($receipt->node_id)];
                 }
             }
@@ -434,7 +436,9 @@ final readonly class ServingNodeResolver
             } elseif ($request->route()?->getName() === 'schedule:destroy') {
                 $receipt = Operation::query()->where('kind', 'schedule.destroy')->where('idempotency_key', $request->header('Idempotency-Key'))->first();
                 $recordedId = $receipt?->input['id'] ?? null;
-                if ($receipt !== null && is_string($recordedId) && $recordedId === $schedule) {
+                $caller = $this->caller($request)[0] ?? null;
+                if ($receipt !== null && $caller instanceof Node && $receipt->callerNodeId() === $caller->id
+                    && is_string($recordedId) && $recordedId === $schedule) {
                     return [Node::query()->findOrFail($receipt->node_id)];
                 }
             }

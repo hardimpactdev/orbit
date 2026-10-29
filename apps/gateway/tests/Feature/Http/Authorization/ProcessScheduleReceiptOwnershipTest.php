@@ -14,8 +14,9 @@ it('resolves deleted runtime targets only through a correctly typed matching rec
         'user' => 'orbit', 'public_ssh_host' => '192.0.2.18']);
     Operation::query()->create(['kind' => $family.'.destroy', 'target_type' => $family === 'process' ? 'process' : 'node_schedules',
         'target_id' => $family === 'process' ? 42 : $node->id, 'node_id' => $node->id, 'status' => 'succeeded',
-        'idempotency_key' => 'deleted-runtime', 'input' => [$field => $recordedId]]);
+        'idempotency_key' => 'deleted-runtime', 'input' => [$field => $recordedId, 'caller_node_id' => $node->id]]);
     $request = Request::create('/'.$family.'/'.$selector, 'DELETE');
+    $request->setUserResolver(static fn (): Node => $node);
     $request->headers->set('Idempotency-Key', 'deleted-runtime');
     $route = (new Route(['DELETE'], '/'.$family.'/{'.$family.'}', static fn (): null => null))->name($family.':destroy');
     $route->bind($request);
@@ -33,3 +34,20 @@ it('resolves deleted runtime targets only through a correctly typed matching rec
     'Schedule wrong UUID' => ['schedule', 'id', '830fd68c-948b-4e46-a215-229c7f510246', '4be31ead-330f-45a4-993f-d12cd927fbb0', false],
     'Schedule malformed ID' => ['schedule', 'id', '830fd68c-948b-4e46-a215-229c7f510246', ['830fd68c-948b-4e46-a215-229c7f510246'], false],
 ]);
+
+it('does not resolve a deleted runtime through another callers idempotency key', function (string $family, bool $anonymous): void {
+    $owner = Node::query()->create(['name' => 'receipt-owner', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.18']);
+    $caller = Node::query()->create(['name' => 'other-caller', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.19']);
+    $selector = $family === 'process' ? '42' : '830fd68c-948b-4e46-a215-229c7f510246';
+    Operation::query()->create(['kind' => $family.'.destroy', 'target_type' => $family === 'process' ? 'process' : 'node_schedules',
+        'target_id' => $family === 'process' ? 42 : $owner->id, 'node_id' => $owner->id, 'status' => 'succeeded', 'idempotency_key' => 'another-callers-key',
+        'input' => ['caller_node_id' => $owner->id, ...($family === 'process' ? ['process_id' => 42] : ['id' => $selector])]]);
+    $request = Request::create('/'.$family.'/'.$selector, 'DELETE');
+    $request->setUserResolver(static fn (): ?Node => $anonymous ? null : $caller);
+    $request->headers->set('Idempotency-Key', 'another-callers-key');
+    $route = (new Route(['DELETE'], '/'.$family.'/{'.$family.'}', static fn (): null => null))->name($family.':destroy');
+    $route->bind($request);
+    $request->setRouteResolver(static fn (): Route => $route);
+
+    expect(app(ServingNodeResolver::class)->resolve($request, $family === 'process' ? ServingNode::ProcessOwning : ServingNode::ScheduleOwning))->toBe([]);
+})->with(['process', 'schedule'])->with([false, true]);

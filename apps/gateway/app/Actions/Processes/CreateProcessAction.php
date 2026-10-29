@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Data\Processes\AddProcessData;
-use App\Domain\Operations\AwaitOperation;
-use App\Domain\Operations\OperationStatus;
+use App\Data\Processes\ProcessData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeLease;
@@ -34,30 +36,23 @@ final readonly class CreateProcessAction
 
     private ProcessSpecification $specifications;
 
+    private RecordEventBroadcaster $broadcaster;
+
     public function __construct(
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
         private ProcessAdmissionLock $admissions,
         ?ProcessRuntimeLease $lease = null,
         ?ProcessSpecification $specifications = null,
+        ?RecordEventBroadcaster $broadcaster = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
         $this->specifications = $specifications ?? new ProcessSpecification;
+        $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
     }
 
     /** @return array{process: Process, created: bool} */
     public function execute(#[SensitiveParameter] AddProcessData $data): array
-    {
-        $operation = $this->admit($data);
-        $operation = app(AwaitOperation::class)->execute($operation);
-        if ($operation->status !== OperationStatus::Succeeded) {
-            throw new ResourceOperationException($operation->error_code ?? 'operation.failed', 'The runtime Operation did not succeed.', 409);
-        }
-
-        return ['process' => Process::query()->whereKey($operation->input['process_id'])->firstOrFail(), 'created' => $operation->input['created'] === true];
-    }
-
-    public function admit(#[SensitiveParameter] AddProcessData $data, ?Node $caller = null, ?string $requestId = null): Operation
     {
         if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
             throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
@@ -65,18 +60,64 @@ final readonly class CreateProcessAction
         $this->targets->resolve($data->targetType, $data->targetId);
         $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
-        return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(function () use ($data, $caller, $requestId): Operation {
-            $admission = $this->reserveAdmission($data);
+        return $this->admissions->run(
+            $ownerIds,
+            fn (): array => $this->executeOwned($data),
+        );
+    }
 
-            return $this->lease->run($admission['process'], function (Process $fresh) use ($admission, $caller, $requestId): Operation {
-                if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
-                    throw new ResourceOperationException('process.name_taken', "Process [{$fresh->name}] already exists with different configuration.", 409);
-                }
-                $fresh->fill($admission['attributes'])->save();
+    /** @return array{process: Process, created: bool} */
+    private function executeOwned(#[SensitiveParameter] AddProcessData $data): array
+    {
+        $admission = DB::transaction(fn (): array => $this->reserveAdmission($data));
 
-                return app(ProcessOperationAdmission::class)->execute($fresh, 'create', $admission['created'], caller: $caller, requestId: $requestId);
-            });
-        }));
+        return $this->lease->run($admission['process'], function (Process $fresh) use ($admission): array {
+            if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
+                throw new ResourceOperationException(
+                    errorCode: 'process.name_taken',
+                    message: "Process [{$fresh->name}] already exists with different configuration.",
+                    status: 409,
+                );
+            }
+
+            $fresh->fill([
+                ...$admission['attributes'],
+                'desired_state' => $fresh->desired_state,
+                'status' => LifecycleStatus::Provisioning,
+                'failed_step' => null,
+                'error_code' => null,
+            ])->save();
+
+            try {
+                $this->runtime->converge($fresh);
+            } catch (ProcessOperationException $exception) {
+                $fresh->update([
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => $exception->step,
+                    'error_code' => $exception->errorCode,
+                ]);
+
+                throw $exception;
+            }
+
+            $fresh->update([
+                'status' => LifecycleStatus::Active,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+
+            $fresh = $fresh->refresh();
+
+            if ($admission['created']) {
+                $this->broadcaster->broadcast(
+                    RecordEventType::ProcessCreated,
+                    $fresh->id,
+                    ProcessData::fromModel($fresh, $this->runtime->status($fresh))->toArray(),
+                );
+            }
+
+            return ['process' => $fresh, 'created' => $admission['created']];
+        });
     }
 
     /**
@@ -179,5 +220,27 @@ final readonly class CreateProcessAction
                 status: 409,
             );
         }
+    }
+
+    public function admit(#[SensitiveParameter] AddProcessData $data, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
+            throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
+        }
+        $this->targets->resolve($data->targetType, $data->targetId);
+        $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
+
+        return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(function () use ($data, $caller, $requestId): Operation {
+            $admission = $this->reserveAdmission($data);
+
+            return $this->lease->run($admission['process'], function (Process $fresh) use ($admission, $caller, $requestId): Operation {
+                if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
+                    throw new ResourceOperationException('process.name_taken', "Process [{$fresh->name}] already exists with different configuration.", 409);
+                }
+                $fresh->fill($admission['attributes'])->save();
+
+                return app(ProcessOperationAdmission::class)->execute($fresh, 'create', $admission['created'], caller: $caller, requestId: $requestId);
+            });
+        }));
     }
 }
