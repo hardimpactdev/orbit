@@ -4,24 +4,30 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
+use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
+use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Instance;
+use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -49,30 +55,44 @@ final readonly class CreateServerDatabaseAction
         private DatabaseServerAdmin $admin,
         private MysqlNames $names,
         private MysqlStatements $statements,
-        private AttachDatabaseConnectionAction $attach,
         private RecordEventBroadcaster $broadcaster,
         private ValkeyServerAdmin $valkey,
         private PostgresTestDatabases $postgresTests,
         private RepairPostgresTestDatabasesAction $repairTests,
+        private RecordDatabaseOperationAction $operations,
+        private RetryDatabaseCreateAction $retries,
     ) {}
 
-    public function execute(CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
+    public function execute(CreateServerDatabaseData $data, ?string $createdBy): Operation
+    {
+        return DB::transaction(fn (): Operation => $this->operations->start($this->prepare($data, $createdBy)));
+    }
+
+    public function prepare(CreateServerDatabaseData $data, ?string $createdBy): PreparedDatabaseOperation
     {
         $server = $this->server($data->server);
+        $this->assertActive($server);
+        if (($retry = $this->retries->prepare($data)) !== null) {
+            $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($retry->input['connection_id']));
+            $this->assertNamesFree($server, $connection->database ?? '', $connection->test_database,
+                ['username' => $connection->username ?? '', 'password' => $connection->password ?? '', 'new' => false], $connection->test_processes, $connection->id);
+
+            return $retry;
+        }
 
         if ($data->testProcesses !== null && ($server->driver !== DatabaseDriver::Pgsql || $data->instanceId === null)) {
             throw new ResourceOperationException('validation.failed', 'Test processes require a PostgreSQL server and an Instance.', 422);
         }
 
         if ($server->driver === DatabaseDriver::Redis && $data->instanceId === null) {
-            return ValkeyAclLock::run($server, fn (): DatabaseConnection => $this->createAclUser($server->refresh(), $data, $createdBy));
+            return ValkeyAclLock::run($server, fn (): PreparedDatabaseOperation => $this->createAclUser($server->refresh(), $data, $createdBy));
         }
 
         $instance = $data->instanceId === null
             ? null
             : Instance::query()->with('project')->findOrFail($data->instanceId);
 
-        return $this->createOnServer(
+        return $this->retries->record($this->prepareOnServer(
             server: $server,
             slug: $data->slug,
             database: $server->driver === DatabaseDriver::Pgsql ? $this->postgresName($data->slug) : $this->names->database($data->slug),
@@ -80,11 +100,21 @@ final readonly class CreateServerDatabaseAction
             createdBy: $createdBy,
             locale: $data->locale,
             testProcesses: $data->testProcesses,
-        );
+        ), $data);
     }
 
     /** Create one database on the server and record its connection. */
-    public function createOnServer(
+    public function createOnServer(DatabaseServer $server, string $slug, string $database, ?Instance $instance, ?string $createdBy, ?string $locale = null, ?int $testProcesses = null): Operation
+    {
+        return $this->operations->start($this->prepareOnServer($server, $slug, $database, $instance, $createdBy, $locale, $testProcesses));
+    }
+
+    public function provisionEmpty(DatabaseConnection $connection): Operation
+    {
+        return $this->operations->start($this->prepareEmpty($connection));
+    }
+
+    public function prepareOnServer(
         DatabaseServer $server,
         string $slug,
         string $database,
@@ -92,7 +122,7 @@ final readonly class CreateServerDatabaseAction
         ?string $createdBy,
         ?string $locale = null,
         ?int $testProcesses = null,
-    ): DatabaseConnection {
+    ): PreparedDatabaseOperation {
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
         if ($server->driver === DatabaseDriver::Pgsql && $instance !== null) {
@@ -113,7 +143,7 @@ final readonly class CreateServerDatabaseAction
                 && $existing->test_database === $this->names->testDatabase($database)
                 && $existing->test_processes === $testProcesses
                 && $existing->locale === $locale) {
-                return $this->repairTests->execute($server, $existing);
+                return $this->repairTests->prepare($server, $existing);
             }
 
             throw $this->slugConflict($slug);
@@ -126,33 +156,29 @@ final readonly class CreateServerDatabaseAction
             throw new ResourceOperationException('validation.failed', 'A locale requires a PostgreSQL server.', 422);
         }
         $statements = $this->statements->forDriver($server->driver);
-        $createDatabase = $statements instanceof PostgresStatements
-            ? $statements->createDatabase($database, $locale)
-            : $statements->createDatabase($database);
+        $createDatabase = DatabaseCommands::createSqlDatabase($server, $database, $credentials['username'], $locale);
 
         $this->assertNamesFree($server, $database, $testDatabase, $credentials, $testProcesses);
 
-        $sql = $statements->ensureUser($credentials['username'], $credentials['password'])
+        $guard = '';
+        if ($statements instanceof PostgresStatements) {
+            foreach ([$database, ...($testDatabase !== null && $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [])] as $name) {
+                $guard .= $statements->assertDatabaseOwner($name, $credentials['username']);
+            }
+        }
+        $sql = $guard.$statements->ensureUser($credentials['username'], $credentials['password'])
             .$createDatabase
             .$statements->grantAll($database, $credentials['username']);
 
         if ($testDatabase !== null) {
             if ($statements instanceof PostgresStatements && $testProcesses !== null) {
                 foreach ($this->postgresTests->names($testDatabase, $testProcesses) as $name) {
-                    $sql .= $statements->createDatabase($name, $locale).$statements->grantAll($name, $credentials['username']);
+                    $sql .= DatabaseCommands::createSqlDatabase($server, $name, $credentials['username'], $locale).$statements->grantAll($name, $credentials['username']);
                 }
             } else {
-                $sql .= $statements->createDatabase($testDatabase)
+                $sql .= DatabaseCommands::createSqlDatabase($server, $testDatabase, $credentials['username'], null)
                     .$this->statements->grantAllWithPrefix($testDatabase, $credentials['username']);
             }
-        }
-
-        try {
-            $this->admin->execute($server, $sql);
-        } catch (ResourceOperationException $exception) {
-            $this->undo($server, $database, $testDatabase, $credentials, $testProcesses);
-
-            throw $exception;
         }
 
         try {
@@ -194,22 +220,13 @@ final readonly class CreateServerDatabaseAction
                 return $connection;
             });
         } catch (UniqueConstraintViolationException) {
-            $this->undo($server, $database, $testDatabase, $credentials, $testProcesses);
-
             throw $this->slugConflict($slug);
         }
 
-        $this->broadcaster->broadcast(
-            RecordEventType::DatabaseCreated,
-            $connection->id,
-            DatabaseConnectionData::fromModel($connection)->toArray(),
-        );
-
-        if ($instance instanceof Instance) {
-            $this->attach->execute($instance, $connection, self::ATTACH_PREFIX, replace: true);
-        }
-
-        return $connection;
+        return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
+            ['connection_id' => $connection->id, 'driver' => $server->driver->value],
+            ['database-apply' => DatabaseCommands::sql($server, $sql, redactions: [$credentials['password']])],
+            ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]);
     }
 
     /**
@@ -232,7 +249,12 @@ final readonly class CreateServerDatabaseAction
             throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
         }
 
-        if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
+        $existing = DatabaseConnection::query()->where('slug', $slug)->first();
+        if ($existing !== null) {
+            if ($existing->owner_instance_id === $instance->id && $existing->database_server_id === $server->id
+                && $existing->database === $database && $existing->clone_step !== null && $existing->clone_step !== DatabaseCloneStep::Complete) {
+                return $existing;
+            }
             throw $this->slugConflict($slug);
         }
 
@@ -294,32 +316,25 @@ final readonly class CreateServerDatabaseAction
      * Make the recorded user, an empty database, and an empty test database on the server. Any
      * database already there is dropped first, so a retry never trusts a partial copy.
      */
-    public function provisionEmpty(DatabaseConnection $connection): void
+    public function prepareEmpty(DatabaseConnection $connection): PreparedDatabaseOperation
     {
         $server = $connection->server;
-
-        if (
-            ! $server instanceof DatabaseServer
-            || ! is_string($connection->database)
-            || ! is_string($connection->test_database)
-            || ! is_string($connection->username)
-            || ! is_string($connection->password)
-        ) {
-            throw new ResourceOperationException('database.server_required', "Database connection [{$connection->slug}] is not on a Database server.", 422);
+        if (! $server instanceof DatabaseServer || $connection->database === null || $connection->username === null || $connection->password === null) {
+            throw new ResourceOperationException('database.server_required', 'The connection needs a Database server.', 422);
+        }
+        $statements = $this->statements->forDriver($server->driver);
+        $sql = $statements->dropDatabase($connection->database)
+            .$statements->ensureUser($connection->username, $connection->password)
+            .DatabaseCommands::createSqlDatabase($server, $connection->database, $connection->username, $connection->locale)
+            .$statements->grantAll($connection->database, $connection->username);
+        if ($connection->test_database !== null) {
+            $sql .= $statements->dropDatabase($connection->test_database)
+                .DatabaseCommands::createSqlDatabase($server, $connection->test_database, $connection->username, null)
+                .$this->statements->grantAllWithPrefix($connection->test_database, $connection->username);
         }
 
-        $this->assertActive($server);
-
-        $this->admin->execute(
-            $server,
-            $this->statements->forDriver($server->driver)->ensureUser($connection->username, $connection->password)
-                .$this->statements->forDriver($server->driver)->dropDatabase($connection->database)
-                .$this->statements->forDriver($server->driver)->dropDatabase($connection->test_database)
-                .$this->statements->forDriver($server->driver)->createDatabase($connection->database)
-                .$this->statements->forDriver($server->driver)->grantAll($connection->database, $connection->username)
-                .$this->statements->forDriver($server->driver)->createDatabase($connection->test_database)
-                .$this->statements->grantAllWithPrefix($connection->test_database, $connection->username),
-        );
+        return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
+            ['connection_id' => $connection->id, 'driver' => $server->driver->value], ['database-apply' => DatabaseCommands::sql($server, $sql, redactions: [$connection->password])]);
     }
 
     /**
@@ -344,7 +359,7 @@ final readonly class CreateServerDatabaseAction
      * channels, and the final deny of `@admin` and `@dangerous`. A create that fails removes the
      * user and records nothing.
      */
-    private function createAclUser(DatabaseServer $server, CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
+    private function createAclUser(DatabaseServer $server, CreateServerDatabaseData $data, ?string $createdBy): PreparedDatabaseOperation
     {
         $this->assertActive($server);
         if ($data->database !== null && $data->database >= $this->valkey->databaseCount($server)) {
@@ -367,13 +382,9 @@ final readonly class CreateServerDatabaseAction
 
         $password = Str::random(self::PASSWORD_LENGTH);
 
-        try {
-            $rules = $this->valkey->setUser($server, $slug, $password, $data->patterns, $data->allow);
-        } catch (ResourceOperationException $exception) {
-            $this->undoAclUser($server, $slug);
-
-            throw $exception;
-        }
+        $rules = implode(' ', ['on', ...array_map(static fn (string $pattern): string => '~'.$pattern, $data->patterns),
+            'resetchannels', '-@all', ...array_map(static fn (string $rule): string => '+'.$rule, $data->allow),
+            '-@admin', '-@dangerous', '-function', '-script']);
 
         try {
             $connection = DB::transaction(function () use ($slug, $server, $data, $password, $rules, $createdBy): DatabaseConnection {
@@ -402,18 +413,14 @@ final readonly class CreateServerDatabaseAction
                 return $connection;
             });
         } catch (Throwable $exception) {
-            $this->undoAclUser($server, $slug);
-
             throw $exception instanceof UniqueConstraintViolationException ? $this->slugConflict($slug) : $exception;
         }
 
-        $this->broadcaster->broadcast(
-            RecordEventType::DatabaseCreated,
-            $connection->id,
-            DatabaseConnectionData::fromModel($connection)->toArray(),
-        );
-
-        return $connection;
+        return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
+            ['connection_id' => $connection->id, 'driver' => 'redis'],
+            ['database-apply' => DatabaseCommands::valkey($server, 'create', ['username' => $slug,
+                'hash' => hash('sha256', $password), 'patterns' => $data->patterns, 'allow' => $data->allow])],
+            ['created_connection' => $connection->id]);
     }
 
     private function server(string $slug): DatabaseServer
@@ -499,11 +506,15 @@ final readonly class CreateServerDatabaseAction
         #[SensitiveParameter]
         array $credentials,
         ?int $testProcesses = null,
+        ?int $retryConnectionId = null,
     ): void {
         $connections = DatabaseConnection::query()->where('database_server_id', $server->id)->get();
         $planned = [$database, ...($testDatabase !== null && $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [])];
 
         foreach ($connections as $connection) {
+            if ($connection->id === $retryConnectionId) {
+                continue;
+            }
             if ($server->driver === DatabaseDriver::Pgsql) {
                 $recorded = [$connection->database, ...($connection->test_database !== null && $connection->test_processes !== null ? $this->postgresTests->names($connection->test_database, $connection->test_processes) : [])];
                 if (array_intersect($planned, $recorded) !== []) {
@@ -524,7 +535,7 @@ final readonly class CreateServerDatabaseAction
 
         $statements = $this->statements->forDriver($server->driver);
         $query = $statements instanceof PostgresStatements
-            ? $statements->databasesIn($planned)
+            ? ($retryConnectionId === null ? $statements->databasesIn($planned) : $statements->databasesNotOwnedBy($planned, $credentials['username']))
             : $statements->databasesNamed($database, $testDatabase);
         if ($this->admin->execute($server, $query) !== []) {
             throw $this->nameConflict($server, $database);
@@ -546,49 +557,6 @@ final readonly class CreateServerDatabaseAction
 
         if ($recorded || $this->admin->execute($server, $this->statements->forDriver($server->driver)->userNamed($username)) !== []) {
             throw $this->nameConflict($server, $username);
-        }
-    }
-
-    /**
-     * Remove what a failed create may have left behind. A failure here keeps the original error.
-     *
-     * @param  array{username: string, password: string, new: bool}  $credentials
-     */
-    private function undo(
-        DatabaseServer $server,
-        string $database,
-        ?string $testDatabase,
-        #[SensitiveParameter]
-        array $credentials,
-        ?int $testProcesses = null,
-    ): void {
-        $sql = $this->statements->forDriver($server->driver)->dropDatabase($database);
-
-        if ($testDatabase !== null) {
-            $tests = $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [$testDatabase];
-            foreach ($tests as $name) {
-                $sql .= $this->statements->forDriver($server->driver)->dropDatabase($name);
-            }
-        }
-
-        if ($credentials['new']) {
-            $sql .= $this->statements->forDriver($server->driver)->dropUser($credentials['username']);
-        }
-
-        try {
-            $this->admin->execute($server, $sql);
-        } catch (Throwable) {
-            // The create already failed; its error is the one to report.
-        }
-    }
-
-    /** Remove the ACL user that a failed create may have left. A failure here keeps the original error. */
-    private function undoAclUser(DatabaseServer $server, string $username): void
-    {
-        try {
-            $this->valkey->deleteUser($server, $username);
-        } catch (Throwable) {
-            // The create already failed; its error is the one to report.
         }
     }
 
