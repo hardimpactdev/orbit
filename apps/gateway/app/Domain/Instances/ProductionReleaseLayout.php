@@ -9,4 +9,6 @@ use App\Models\Instance;
 interface ProductionReleaseLayout
 {
     public function validateCurrent(Instance $instance): void;
+
+    public function clearCurrent(Instance $instance): void;
 }

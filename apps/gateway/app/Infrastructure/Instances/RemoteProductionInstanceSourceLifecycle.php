@@ -121,6 +121,25 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
         }
     }
 
+    public function clearCurrent(Instance $instance): void
+    {
+        if ($instance->usesProductionReleaseLayout()) {
+            $instance->loadMissing(['project', 'node']);
+            $this->run($instance, 'instance.clear-current-release', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
+        }
+    }
+
+    public function remove(Instance $instance): void
+    {
+        $instance->loadMissing(['project', 'node']);
+        [$user, $home] = $this->identity($instance);
+        if ($user !== "orbit-app-{$instance->project_id}" || $home !== "/home/{$user}") {
+            throw $this->failure('production-source-cleanup', 'app-prod.identity_missing');
+        }
+
+        $this->run($instance, 'instance.remove-production-home', $this->home($instance), 'production-source-cleanup', 'app-prod.source_cleanup_failed');
+    }
+
     /**
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>

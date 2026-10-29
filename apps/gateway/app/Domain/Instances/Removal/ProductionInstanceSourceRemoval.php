@@ -11,5 +11,11 @@ interface ProductionInstanceSourceRemoval
 {
     public function inventory(Instance $instance): InstanceSourceInventory;
 
+    public function prepare(InstanceRemovalMember $member): void;
+
     public function revalidate(InstanceRemovalMember $member): void;
+
+    public function finalize(InstanceRemovalMember $member): string;
+
+    public function cleanup(InstanceRemovalMember $member): void;
 }

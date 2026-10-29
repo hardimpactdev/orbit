@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\Instances\ProductionInstanceSourceLifecycle;
+use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,6 +14,11 @@ use App\Models\InstanceRemovalMember;
 
 final readonly class RecordedProductionInstanceSourceRemoval implements ProductionInstanceSourceRemoval
 {
+    public function __construct(
+        private ProductionReleaseLayout $releaseLayout,
+        private ProductionInstanceSourceLifecycle $source,
+    ) {}
+
     public function inventory(Instance $instance): InstanceSourceInventory
     {
         $instance->loadMissing('project');
@@ -55,9 +62,37 @@ final readonly class RecordedProductionInstanceSourceRemoval implements Producti
         );
     }
 
+    public function prepare(InstanceRemovalMember $member): void
+    {
+        $this->assertRecorded($member);
+    }
+
     public function revalidate(InstanceRemovalMember $member): void
     {
         $this->assertRecorded($member);
+    }
+
+    public function finalize(InstanceRemovalMember $member): string
+    {
+        $this->assertRecorded($member);
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail($member->instance_id);
+        $this->releaseLayout->clearCurrent($instance);
+
+        return hash('sha256', "production-retained\0{$member->source_digest}");
+    }
+
+    public function cleanup(InstanceRemovalMember $member): void
+    {
+        $this->assertRecorded($member);
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail($member->instance_id);
+
+        if (Instance::query()->where('node_id', $instance->node_id)
+            ->where('production_user', $instance->production_user)
+            ->whereKeyNot($instance->id)->exists()) {
+            throw new ResourceOperationException('app-prod.user_in_use', 'Another Instance on the Node uses this production account.', 409);
+        }
+
+        $this->source->remove($instance);
     }
 
     private function assertRecorded(InstanceRemovalMember $member): void
