@@ -154,7 +154,7 @@ final readonly class AdmitRouteOperationAction
 
         return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
-            $updated = app(ClearRouteTargetAction::class)->execute($route);
+            $updated = app(ClearRouteTargetAction::class)->execute($route, projectMetrics: false);
 
             return $this->start('route.target_unset', $updated, ['mode' => 'state_only', 'previous_target_instance_ids' => $previous], $caller, $requestId);
         });

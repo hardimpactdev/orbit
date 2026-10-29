@@ -25,7 +25,7 @@ final readonly class ClearRouteTargetAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route): Route
+    public function execute(Route $route, bool $projectMetrics = true): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -54,7 +54,9 @@ final readonly class ClearRouteTargetAction
             RouteData::fromModel($result)->toArray(),
         );
 
-        $this->metrics?->reconcile();
+        if ($projectMetrics) {
+            $this->metrics?->reconcile();
+        }
 
         return $result;
     }

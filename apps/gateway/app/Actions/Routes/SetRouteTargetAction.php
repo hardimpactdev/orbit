@@ -41,6 +41,7 @@ final readonly class SetRouteTargetAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
+    /** Admission defers source access and Metrics to its recorded children. */
     public function execute(Route $route, int $instanceId, bool $grantSourceAccess = true): Route
     {
         if (! $route->isApp()) {
@@ -75,7 +76,9 @@ final readonly class SetRouteTargetAction
             RouteData::fromModel($result)->toArray(),
         );
 
-        $this->metrics?->reconcile();
+        if ($grantSourceAccess) {
+            $this->metrics?->reconcile();
+        }
 
         if ($accessFailure instanceof Throwable) {
             throw $accessFailure;

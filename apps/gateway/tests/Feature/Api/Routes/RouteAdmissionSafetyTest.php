@@ -8,6 +8,7 @@ use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\ProductionWebRootManager;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Routes\RouteEnvironmentOperationLock;
@@ -24,6 +25,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\RouteForeignChildKinds;
 use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
@@ -154,3 +156,18 @@ it('takes the existing Instance environment lock before storing Route mutation i
     expect($this->route->refresh()->replaced_by_route_id)->toBeNull()->and(Operation::query()->count())->toBe(0)
         ->and($this->agents->calls)->toBe([]);
 });
+
+it('records the target Metrics child without calling the retained PHP reconciler at admission', function (string $mode): void {
+    RouteForeignChildKinds::register();
+    $this->node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $this->route->update(['status' => 'pending', 'sites_published' => false]);
+    $this->instance->update(['status' => 'reserved']);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldNotReceive('reconcile');
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+    $admission = app(AdmitRouteOperationAction::class);
+    $operation = $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route);
+    expect($operation->status->value)->toBe('queued')
+        ->and($operation->state['route_plan']['stages']['metrics-reconciled'][0]['kind'])->toBe('metrics.reconcile')
+        ->and($operation->children()->exists())->toBeFalse()->and($this->agents->calls)->toBe([]);
+})->with(['set', 'unset']);

@@ -92,10 +92,10 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
         if ($route === null) {
             return;
         }
-        if (($operation->state['route_active_stage'] ?? null) === 'metrics-reconciled' || ($plan['mode'] ?? null) === 'target_binding') {
+        if (($operation->state['route_active_stage'] ?? null) === 'metrics-reconciled' || in_array($plan['mode'] ?? null, ['target_binding', 'state_only', 'web_root'], true)) {
             return;
         }
-        $stage = ValidatedData::string($operation->state['route_active_stage'] ?? 'preparation');
+        $stage = ValidatedData::string($operation->state['route_active_stage'] ?? $operation->state['route_failure_stage'] ?? 'preparation');
         $attributes = ['failed_step' => ($plan['mode'] ?? null) === 'withdraw' && ($plan['targeted'] ?? false) ? 'targeted:'.$stage : $stage,
             'error_code' => $outcome->errorCode ?? 'route.child_failed'];
         if (($plan['mode'] ?? null) === 'converge' && in_array($route->status, [RouteStatus::Pending, RouteStatus::Activating], true)) {

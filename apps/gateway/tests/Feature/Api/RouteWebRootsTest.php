@@ -380,6 +380,7 @@ describe('route web root', function (): void {
             ->and($docs->status->value)->toBe('failed')
             ->and($docs->sites_published)->toBeFalse()
             ->and($docs->error_code)->toBe('fixture.child_failed')
+            ->and($docs->failed_step)->toBe('production-runtime')
             ->and(RouteWebRoot::servedApplications($instance))->toBe([])
             ->and(RouteWebRoot::servedApplications($instance, $docs))->toHaveCount(1)
             ->and(web_root_production_deploy_served($instance))->toBe([])
@@ -724,3 +725,18 @@ function web_root_sites(Node $node): Collection
 {
     return new DevelopmentSiteRepository()->forNode($node)->keyBy('domain');
 }
+
+it('keeps the restored active Route valid after a failed production web-root update', function (): void {
+    [$instance] = web_root_production($this->project);
+    web_root_route($instance, 'acme.example.com');
+    $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+    $this->routeSwamp->foreign->failures['production-runtime.instance-'.$instance->id] = 1;
+    $failed = $this->routeSwamp->finish($this->patchJson('/api/v1/routes/'.$docs->id, ['web_root' => 'apps/admin/public']));
+    expect($failed->status->value)->toBe('failed')->and($failed->error_code)->toBe('fixture.child_failed')
+        ->and($docs->refresh()->web_root)->toBe('apps/docs/public')
+        ->and($docs->status->value)->toBe('active')->and($docs->failed_step)->toBeNull()->and($docs->error_code)->toBeNull()
+        ->and($failed->state['route_branch'])->toBe('rollback_web_root')
+        ->and($failed->state['route_failure_stage'])->toBe('production-runtime')
+        ->and($failed->state['route_completed_stages']['rollback-production-runtime'])->toBeTrue()
+        ->and($failed->state['route_completed_stages']['rollback-workload-caddy'])->toBeTrue();
+});

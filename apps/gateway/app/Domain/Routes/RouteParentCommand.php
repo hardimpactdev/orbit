@@ -312,7 +312,7 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
         if ($plan['mode'] === 'converge' && ($plan['production'] ?? false) && ($plan['web_root'] ?? false) && $failed) {
             Route::query()->whereKey($plan['route_id'])->update(['status' => RouteStatus::Failed, 'sites_published' => false,
                 'failed_step' => $active, 'error_code' => $failureCode]);
-            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_initial', 'route_failure_code' => $failureCode]]);
+            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_initial', 'route_failure_code' => $failureCode, 'route_failure_stage' => $active]]);
 
             return;
         }
@@ -324,23 +324,23 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
             if (($completed['database-committed'] ?? false) === true) {
                 throw new ResourceOperationException('operation.completion_unproven', 'A committed target-set change recovers forward.', 409);
             }
-            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_targets', 'route_failure_code' => $failureCode]]);
+            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_targets', 'route_failure_code' => $failureCode, 'route_failure_stage' => $active]]);
 
             return;
         }
         if ($plan['mode'] === 'web_root') {
-            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_web_root', 'route_failure_code' => $failureCode]]);
+            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_web_root', 'route_failure_code' => $failureCode, 'route_failure_stage' => $active]]);
 
             return;
         }
         if ($plan['mode'] === 'publication') {
             Route::query()->whereKey($plan['route_id'])->update(['replacement_step' => RouteReplacementStep::PublicEdgeVerified]);
-            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_publication', 'route_failure_code' => $failureCode]]);
+            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_publication', 'route_failure_code' => $failureCode, 'route_failure_stage' => $active]]);
 
             return;
         }
         $candidate = Route::query()->findOrFail(ValidatedData::integer($plan['candidate_route_id']));
         $candidate->update($cutover ? ['replacement_step' => RouteReplacementStep::DatabaseCutover] : ['status' => RouteStatus::Failed, 'sites_published' => false, 'failed_step' => $active ?? 'withdrawal', 'error_code' => $failureCode]);
-        $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => $cutover ? 'rollback_public_edge' : 'rollback', 'route_failure_code' => $failureCode]]);
+        $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => $cutover ? 'rollback_public_edge' : 'rollback', 'route_failure_code' => $failureCode, 'route_failure_stage' => $active]]);
     }
 }
