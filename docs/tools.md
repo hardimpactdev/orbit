@@ -20,6 +20,16 @@ verifies absence. Protected prerequisites cannot be adopted or removed. Scan
 stays in Orbit and reads Homebrew and Vite+ inventory without materializing
 managers or recording discovered packages as managed Tools.
 
+Package candidate, adoption, removal-plan and command-failure execution tests
+live in this workflow family. They cover APT and Composer refusals, native
+Homebrew formula/cask adoption facts, fixed macOS inputs and the original
+package observation after a failed mutation. Composer adoption reads root
+membership and installed inventory: an absent package reports
+`tool.package_absent`, and an installed dependency reports
+`tool.adoption_unsupported`. Neither selects a candidate or changes a package.
+Gateway adapters retain admission policy and read-only probes. Gateway command
+activity records admission; the verified completion projects managed Tool state.
+
 Services discovers claimable kinds without claiming an Operation. The Tools
 workflow takes `{kind, worker}` and runs in the migration worker pool. That
 placed worker claims the kind and records its first Operation ID in a durable

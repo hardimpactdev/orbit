@@ -303,20 +303,14 @@ export function tools(
             } else if (input.intent_only) {
               final = await run("tool-verified", command.version, {});
             } else if (verb === "adopt") {
+              let composerRoots: unknown;
               if (input.manager === "composer") {
                 const scope = await run(
                   "adoption-scope",
                   "tool.inspect-composer-scope",
                   {},
                 );
-                if (
-                  !Array.isArray(scope.roots) ||
-                  !scope.roots.includes(input.package)
-                ) {
-                  throw new ToolRefusal("tool.adoption_unsupported", {
-                    block: "dependency",
-                  });
-                }
+                composerRoots = scope.roots;
               }
               final = await run(
                 "tool-verified",
@@ -325,6 +319,15 @@ export function tools(
               );
               if (final.installed_version === null && final.block === null) {
                 throw new ToolRefusal("tool.package_absent");
+              }
+              if (
+                input.manager === "composer" &&
+                (!Array.isArray(composerRoots) ||
+                  !composerRoots.includes(input.package))
+              ) {
+                throw new ToolRefusal("tool.adoption_unsupported", {
+                  block: "dependency",
+                });
               }
               if (final.block !== null) {
                 throw new ToolRefusal("tool.adoption_unsupported", {

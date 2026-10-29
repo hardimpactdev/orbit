@@ -53,14 +53,18 @@ class Fixture {
   terminalError: string | null = null;
   installed: string | null = null;
   candidate = "7.0.0";
+  candidateReply: unknown = undefined;
   block: string | null = null;
   plan = ["is-number"];
+  composerRoots: string[] = [];
+  scopeRefusal: string | null = null;
   mutations = 0;
   loseRun = false;
   loseCompletion = false;
   leaseLost = false;
   cancelAtRun = false;
   refuse: string | null = null;
+  refuseStep: string | null = null;
   emptyResultsAsArrays = true;
   mutationResultOverride: unknown = undefined;
   receiptStateOverride: "running" | "unknown" | undefined;
@@ -142,12 +146,23 @@ class Fixture {
         const name = String(body.name);
         let receipt: Record<string, unknown> = {};
         if (this.cancelAtRun) receipt = { error_code: "operation.cancelled" };
-        else if (this.refuse) receipt = { error_code: this.refuse };
-        else if ((name.endsWith("-inventory") || name.endsWith("-adoption"))) {
+        else if (this.refuse && (!this.refuseStep || this.refuseStep === key)) {
+          receipt = { error_code: this.refuse };
+        } else if (name === "tool.inspect-composer-scope") {
+          receipt = this.scopeRefusal
+            ? { error_code: this.scopeRefusal }
+            : { roots: this.composerRoots };
+        } else if (
+          (name.endsWith("-inventory") || name.endsWith("-adoption"))
+        ) {
           receipt = { installed_version: this.installed, block: this.block };
         } else if (name.endsWith("-version")) receipt = { version: "1.0.0" };
         else if (name.endsWith("-candidate")) {
-          receipt = { version: this.candidate };
+          receipt = {
+            version: this.candidateReply === undefined
+              ? this.candidate
+              : this.candidateReply,
+          };
         } else if (name.endsWith("-removal-plan")) {
           receipt = { packages: this.plan };
         } else if (key === "package-mutate") {
@@ -359,11 +374,177 @@ Deno.test("adoption records only an accepted live package and never materializes
     );
   }
 });
+Deno.test("Homebrew formula and cask adoption preserve native policy facts and fixed macOS input", async () => {
+  for (const manager of ["brew", "brew-cask"]) {
+    for (
+      const block of [
+        null,
+        "protected",
+        "dependency",
+        "unsupported_source",
+        "unsupported_artifact",
+        "bottle_unavailable",
+        "version_unreadable",
+        "authorization_required",
+      ]
+    ) {
+      const f = new Fixture();
+      f.operation.kind = "tool.adopt";
+      Object.assign(f.operation.input, {
+        manager,
+        platform: "macos",
+        architecture: "arm64",
+        package: "font-hack",
+      });
+      f.installed = "3.003";
+      f.block = block;
+
+      assertEquals(
+        (await f.execute()).status,
+        block === null ? "succeeded" : "failed",
+      );
+      assertEquals(f.mutations, 0);
+      const runs = f.calls.filter((c) => c.path.endsWith("/run"));
+      assertEquals(runs.map((c) => c.body.name), [
+        "tool.homebrew-version",
+        manager === "brew"
+          ? "tool.homebrew-formula-adoption"
+          : "tool.homebrew-cask-adoption",
+      ]);
+      assertEquals(runs[1].body.input, {
+        package: "font-hack",
+        architecture: "arm64",
+      });
+      assertEquals(
+        f.complete().error_code,
+        block === null ? null : "tool.adoption_unsupported",
+      );
+    }
+  }
+});
 Deno.test("absent adoption fails without creating a host effect", async () => {
   const f = new Fixture();
   f.operation.kind = "tool.adopt";
   assertEquals((await f.execute()).status, "failed");
   assertEquals(f.complete().error_code, "tool.package_absent");
+});
+Deno.test("Composer adoption reads roots and inventory without selecting candidates or mutating packages", async () => {
+  for (
+    const [pkg, version, code] of [
+      ["laravel/pint", "1.20.0", null],
+      ["symfony/console", "7.1.0", "tool.adoption_unsupported"],
+      ["vendor/absent", null, "tool.package_absent"],
+    ] as const
+  ) {
+    const f = new Fixture();
+    f.operation.kind = "tool.adopt";
+    Object.assign(f.operation.input, { manager: "composer", package: pkg });
+    f.composerRoots = ["php", "ext-json", "legacy/Uppercase", "laravel/pint"];
+    f.installed = version;
+
+    assertEquals(
+      (await f.execute()).status,
+      code === null ? "succeeded" : "failed",
+    );
+    assertEquals(f.complete().error_code, code);
+    assertEquals(f.mutations, 0);
+    assertEquals(
+      f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.name),
+      [
+        "tool.composer-version",
+        "tool.inspect-composer-scope",
+        "tool.composer-inventory",
+      ],
+    );
+  }
+});
+Deno.test("Composer scope refusals stop adoption before inventory and package effects", async () => {
+  for (
+    const code of [
+      "tool.composer_scope_absent",
+      "tool.composer_scope_conflict",
+      "tool.composer_scope_unreadable",
+    ]
+  ) {
+    const f = new Fixture();
+    f.operation.kind = "tool.adopt";
+    Object.assign(f.operation.input, {
+      manager: "composer",
+      package: "vendor/package",
+    });
+    f.scopeRefusal = code;
+
+    assertEquals((await f.execute()).status, "failed");
+    assertEquals(
+      f.complete().error_code,
+      code.endsWith("unreadable")
+        ? "tool.version_probe_failed"
+        : "tool.manager_unavailable",
+    );
+    assertEquals(f.mutations, 0);
+    assertEquals(
+      f.calls.some((c) => c.body.name === "tool.composer-inventory"),
+      false,
+    );
+  }
+});
+Deno.test("APT and Composer reject unavailable or malformed candidates before installation", async () => {
+  for (const manager of ["apt", "composer"]) {
+    for (const version of [null, "", "not-semver", 42]) {
+      const f = new Fixture();
+      Object.assign(f.operation.input, {
+        manager,
+        version_constraint: "^7.0",
+        constraint_intervals: [{
+          start: "7.0.0.0-dev",
+          start_operator: ">=",
+          end: "8.0.0.0-dev",
+          end_operator: "<",
+        }],
+      });
+      f.candidateReply = version;
+
+      assertEquals((await f.execute()).status, "failed");
+      assertEquals(
+        f.complete().error_code,
+        version === "not-semver"
+          ? "tool.candidate_version_unparseable"
+          : "tool.candidate_version_unavailable",
+      );
+      assertEquals(f.mutations, 0);
+      assertEquals(
+        f.calls.find((c) =>
+          c.body.key === "package-candidate" && c.path.endsWith("/run")
+        )?.body.input,
+        manager === "composer"
+          ? { package: "is-number", operation: "install" }
+          : { package: "is-number" },
+      );
+    }
+  }
+});
+Deno.test("APT and Composer removal uses only an exact single-package plan and never selects a candidate", async () => {
+  for (const manager of ["apt", "composer"]) {
+    for (const plan of [[], ["is-number", "dependency"], ["is-number"]]) {
+      const f = new Fixture();
+      f.operation.kind = "tool.remove";
+      f.operation.input.manager = manager;
+      f.installed = "7.0.0";
+      f.plan = plan;
+
+      assertEquals(
+        (await f.execute()).status,
+        plan.length === 1 ? "succeeded" : "failed",
+      );
+      assertEquals(f.mutations, plan.length === 1 ? 1 : 0);
+      assertEquals(
+        f.calls.some((c) =>
+          c.path.endsWith("/run") && String(c.body.name).endsWith("-candidate")
+        ),
+        false,
+      );
+    }
+  }
 });
 Deno.test("update refuses an absent managed package", async () => {
   const f = new Fixture();
@@ -736,6 +917,32 @@ Deno.test("a command refusal retains its stable error code", async () => {
   f.refuse = "tool.vp_scope_conflict";
   assertEquals((await f.execute()).status, "failed");
   assertEquals(f.complete().error_code, "tool.manager_unavailable");
+});
+Deno.test("package failures complete as failed with the original managed package observation", async () => {
+  for (const verb of ["install", "update", "remove"]) {
+    const f = new Fixture();
+    f.operation.kind = `tool.${verb}`;
+    if (verb !== "install") {
+      f.operation.input.tool_id = 8;
+      f.installed = "7.0.0";
+    }
+    f.refuseStep = "package-mutate";
+    f.refuse = "tool.vp_operation_failed";
+
+    assertEquals((await f.execute()).status, "failed");
+    assertEquals(f.complete().error_code, `tool.${verb}_failed`);
+    assertEquals(f.operation.step_results["package-before"], {
+      installed_version: verb === "install" ? null : "7.0.0",
+      block: null,
+    });
+    assertEquals(f.mutations, 0);
+    assertEquals(
+      f.calls.some((c) =>
+        c.body.key === "tool-verified" && c.path.endsWith("/run")
+      ),
+      false,
+    );
+  }
 });
 Deno.test("normalization preserves package-manager distinctions", () => {
   assertEquals(normalizeVersion("1:1.25.0-2ubuntu4", "apt"), "1.25.0");
