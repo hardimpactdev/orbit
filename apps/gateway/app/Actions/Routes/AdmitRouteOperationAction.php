@@ -9,7 +9,7 @@ use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
@@ -200,7 +200,7 @@ final readonly class AdmitRouteOperationAction
         }
         $nodes = array_values(array_unique(array_filter([...$workloads, $nodeId, $route->cluster?->routerAssignment?->node_id,
             $route->cluster?->ingressAssignment?->node_id,
-            ...Node::query()->whereHas('roles', static fn ($q) => $q->whereIn('role', [RoleName::Vpn, RoleName::Gateway]))->pluck('id')->all()], is_int(...))));
+            ...PrivateDnsPublicationNodes::query()->pluck('id')->all()], is_int(...))));
 
         $accessNodes = [$nodeId];
         if ($route->isCustomProxy() && $route->cluster_id !== null) {

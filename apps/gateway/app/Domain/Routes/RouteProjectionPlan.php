@@ -596,8 +596,7 @@ final readonly class RouteProjectionPlan
     /** @param array<string, array<string, array<string, mixed>>> $stages */
     private function dns(array &$stages, string $stage, int $routeId): void
     {
-        $nodes = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn (Builder $query): Builder => $query
-            ->whereIn('role', [RoleName::Vpn, RoleName::Gateway])->where('status', LifecycleStatus::Active))->orderBy('id')->get();
+        $nodes = PrivateDnsPublicationNodes::query()->get();
         foreach ($nodes as $node) {
             $this->child($stages, $stage, 'route.private_dns_publish', $node->id, ['reason' => "Route {$routeId} {$stage}"], "node-{$node->id}");
         }

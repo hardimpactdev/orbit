@@ -10,6 +10,7 @@ use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -47,6 +48,7 @@ use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RouteForeignChildKinds;
+use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
     bind_task_node_reachability();
@@ -565,4 +567,64 @@ it('commits Router selection before publishing private DNS and refuses rollback 
     expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'restore-dns']))->toThrow(ResourceOperationException::class, 'recovers forward');
     expect(app(ClusterRouterParentExecution::class)->sequence($operation))->toContain('database', 'dns-publication')
         ->and($this->agents->calls)->toBe([]);
+});
+
+it('publishes forward withdrawal and replacement rollback DNS on the VPN owner instead of the separate Gateway', function (string $mode): void {
+    $vpn = Node::query()->create(['name' => 'vpn-owner', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $gateway = Node::query()->create(['name' => 'gateway-client', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $planner = app(RouteProjectionPlan::class);
+    if ($mode === 'replacement') {
+        $candidate = Route::query()->create(['project_id' => $this->route->project_id, 'node_id' => $this->node->id,
+            'domain' => 'replacement.private.test', 'provenance' => 'explicit', 'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending, 'replacement_step' => RouteReplacementStep::Reserved, 'replaces_route_id' => $this->route->id]);
+        $candidate->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+        $this->route->update(['replaced_by_route_id' => $candidate->id]);
+        $plan = $planner->replacement($this->operation, $this->route, $candidate);
+    } else {
+        $plan = $mode === 'withdraw' ? $planner->withdraw($this->operation, $this->route)
+            : $planner->converge($this->operation, $this->route, $this->instance);
+    }
+    $dns = collect($plan['stages'])->flatMap(fn (array $children): array => $children)
+        ->filter(fn (array $child): bool => $child['kind'] === 'route.private_dns_publish');
+    expect($dns)->not->toBeEmpty()
+        ->and($dns->pluck('node_id')->unique()->values()->all())->toBe([$vpn->id])
+        ->and($this->agents->calls)->toBe([]);
+    if ($mode === 'replacement') {
+        expect($plan['stages']['dns-published'][0]['node_id'])->toBe($vpn->id)
+            ->and($plan['stages']['rollback-dns'][0]['node_id'])->toBe($vpn->id);
+    }
+})->with(['converge', 'withdraw', 'replacement']);
+
+it('publishes once when the VPN and Gateway share their Node', function (): void {
+    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $plan = app(RouteProjectionPlan::class)->converge($this->operation, $this->route, $this->instance);
+    expect($plan['stages']['dns-published'])->toHaveCount(1)
+        ->and($plan['stages']['dns-published'][0]['node_id'])->toBe($this->node->id);
+});
+
+it('recovers authoritative environment ownership by completing failed replacement withdrawal through Swamp', function (): void {
+    $this->route->update(['status' => RouteStatus::Active]);
+    $this->instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active']);
+    $vpn = Node::query()->create(['name' => 'recovery-vpn', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $gateway = Node::query()->create(['name' => 'recovery-gateway', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $candidate = app(RouteMutationState::class)->reserve($this->route, 'failed.private.test');
+    $candidate->update(['status' => RouteStatus::Failed, 'failed_step' => 'rollback-dns', 'error_code' => 'private_dns.listener_not_ready']);
+    $contexts = app(InstanceEnvironmentContextResolver::class);
+    expect(fn () => $contexts->resolve($this->instance->fresh(), true))->toThrow(ResourceOperationException::class);
+    $fixture = new RouteSwampGatewayFixture($this);
+    $operation = app(AdmitRouteOperationAction::class)->destroy($candidate);
+    expect($operation->state['route_plan']['mode'])->toBe('withdraw_replacement');
+    $fixture->run($operation);
+
+    expect($operation->fresh()->status->value)->toBe('succeeded')
+        ->and($candidate->fresh())->toBeNull()
+        ->and($this->route->fresh()->status)->toBe(RouteStatus::Active)
+        ->and($this->route->fresh()->replaced_by_route_id)->toBeNull()
+        ->and($contexts->resolve($this->instance->fresh(), true)->routeId)->toBe($this->route->id)
+        ->and($operation->children()->where('kind', 'route.private_dns_publish')->pluck('node_id')->all())->toBe([$vpn->id]);
 });

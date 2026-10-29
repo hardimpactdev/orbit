@@ -274,7 +274,7 @@ it('prepares private DNS only for an active serving role', function (RoleName $r
     $this->node->roles()->create(['role' => $role, 'status' => $status]);
     ($this->claimOperation)('route.private_dns_publish', 'node_route_projection', $this->node->id, ['reason' => 'dev proof']);
     $response = $this->postJson($this->path.'/run', [...$this->prepare, 'name' => 'route.private-dns-prepare']);
-    if ($status === LifecycleStatus::Active) {
+    if ($role === RoleName::Vpn && $status === LifecycleStatus::Active) {
         $response->assertOk()->assertJsonPath('data.prepared', true);
     } else {
         $response->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
