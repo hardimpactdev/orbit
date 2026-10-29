@@ -279,7 +279,9 @@ Deno.test("detection cannot reuse a routine stage key with another maintenance m
     schema: 2,
     routine: true,
     dependencyProject: Object.fromEntries(
-      Object.entries(original).filter(([key]) => key !== "exceptions"),
+      Object.entries(original).filter(([key]) =>
+        !["exceptions", "dependencyAutoMerge"].includes(key)
+      ),
     ),
   });
   assert(inputIdentity({ ...args, detection: true }) !== identity);

@@ -1,0 +1,22 @@
+id: 92c89a8c-6487-42f5-a70e-d67be3921b28
+name: operation-dependency-merge
+description: Execute a disabled-by-default app dependency squash admission through the Gateway.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    operationId: { type: integer }
+    worker: { type: string }
+  required: [operationId, worker]
+jobs:
+  - name: merge
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-dependency-merge'
+          behaviorName: '${{ "operation-dependency-merge-" + string(inputs.operationId) }}'
+          methodName: execute
+          inputs:
+            operationId: '${{ inputs.operationId }}'
+            worker: '${{ inputs.worker }}'

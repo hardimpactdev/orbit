@@ -20,7 +20,7 @@ Use native Swamp steps, durable waits/resources and unchanged official `@swamp/s
 4. Verify rollback completion/selection and smoke the restored release; unavailable evidence follows the same hold/alert/backoff rule. After a verified pass, explicitly resume `auto_deploy`; verify the pause cleared and block remains. If rollback cancelled a queued auto deploy, manually redeploy the pinned restored SHA, smoke, then resume, as existing recovery requires. Normal automatic starts retain their API contract.
 5. After a verified test failure, regardless of recovery success, create one default-agent Orbit repair task per failed deployment with SHA/releases, source PR, CI/smoke output, recovery receipts and migration constraint. Require a regression test and missing smoke coverage. Its PR follows CI → deploy → smoke → rollback/repair until passing. After proof, enabled policy may squash-merge repairs with verified task lineage.
 
-Non-dependency merges use the same failure loop. Only dependencies and linked repairs gain automatic merge authority. Newer green commits may deploy and must pass smoke.
+Non-dependency merges use the same failure loop. Dependency batches, including agent-repaired batches, use the same automatic merge gates. A constraint or locked top-level breaking semver change (major for 1.x and above, minor for 0.x, patch for 0.0.x) requires hand-testing: keep its PR open and development Instance active. Unrelated repair and feature PRs use the ordinary path. Newer green commits may deploy and must pass smoke.
 
 **Store blocks in `auto_deploy_state.blocked`.** A keyed failure record persists the deployed SHA block before rollback, even if recovery fails or selection changes. Read `auto_deploy.blocked`. Resume never clears blocks. A repaired SHA passing smoke resolves the incident; the bad SHA stays blocked permanently. No unblock or database edits.
 
@@ -34,7 +34,7 @@ Pair contracts with Orbit: smoke dispatch/results; failure blocks, guarded rollb
 
 ## Slices and proof
 
-This design covers all slices; request DESIGN again only for changed shape, contract or trust boundary. Keep PRs under about 800 lines excluding generated files, fixtures and lockfiles. Split larger slices; never trim tests. Stop after each slice. Auto-merge stays off until slice 6.
+This design covers all slices; request DESIGN again only for changed shape, contract or trust boundary. Keep PRs under about 800 lines excluding generated files, fixtures and lockfiles. Split larger slices; never trim tests. Stop after each slice. Slice 6 ships with auto-merge off for every Project; enabling follows the live proof as a separate change.
 
 | Order | PR scope and acceptance |
 | --- | --- |
@@ -45,9 +45,9 @@ This design covers all slices; request DESIGN again only for changed shape, cont
 | 3b | Orbit + Swamp pair: conditional recovery/resume, deploy-writer hold and persisted backoff/assistance/alerts for unavailable smoke; test late results, queued cancellation, operator pauses and restart recovery. |
 | 4 | Orbit + Swamp pair: idempotent default-agent repair creation and existing task-factory routing; repeated failure produces a new incident, restart produces no duplicate task. |
 | 5 | nckrtl.com acceptance/evidence: successful smoke, then **ask Nick and receive yes before the deliberately broken production deploy**. Record failure, rollback, block, restored smoke, resume, repair PR, repair deployment and passing smoke. Prove non-dependency failure too. |
-| 6 | Orbit + Swamp pair: app-only squash admission with fresh exact-head required CI checks plus the named `Production smoke / smoke` check (even where GitHub cannot require it), default-branch and task lineage guards. Enable for nckrtl.com only after row 5; test package exclusion, pending/failed CI and changed PR heads. |
+| 6 | Orbit + Swamp pair: app-only squash admission with fresh exact-head required CI checks plus the named `Production smoke / smoke` check (even where GitHub cannot require it), default-branch and Services-created task lineage guards. Require the policy's exact smoke workflow and complete dependency-only changed-file evidence, unchanged manifest instructions, unchanged dependency names, registry-only constraints and registry-attested package identities bound to the manifest graph; refuse breaking semver changes while retaining their live development Instance; mint the squash token without Workflows write. Recheck the private merge switch before an unproven invocation. Ship disabled for every Project. Use the conversion-kit Gateway transport and Project-bound secret references for the squash effect. Enable nckrtl.com only in a separate change after row 5; test package exclusion, pending/failed CI and changed PR heads. |
 
-Run affected tests with at most four workers; full suites run in CI. Use official Swamp native recovery tests and Gateway contract tests. No production experiment is authorized here.
+Run affected tests with at most four workers; CI runs builds and static checks. Use official Swamp native recovery tests and Gateway contract tests. No production experiment is authorized here.
 
 [deploy]: https://github.com/hardimpactdev/orbit/blob/main/docs/reference/deployments.md#swamp-policy-contracts
 [cutover]: https://github.com/hardimpactdev/orbit-swamp/pull/48

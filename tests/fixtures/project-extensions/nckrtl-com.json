@@ -22,5 +22,6 @@
   "exceptions": {
     "schema": 1,
     "exceptions": []
-  }
+  },
+  "dependencyAutoMerge": false
 }

@@ -1,3 +1,6 @@
+import { batchReviewWait } from "./operations/dependency-merge/review.ts";
+import { MergeConfiguration, mergeConfigurationMethod } from "./operations/dependency-merge/configuration.ts";
+import { Admission as DependencyMergeAdmission, admitBatchMerge } from "./operations/dependency-merge/admission.ts";
 import { pruneDependencyResults, type RetentionContext } from "./_lib/dependency_retention.ts";
 import { parkForReview } from "./_lib/review_capacity.ts";
 import { AdmissionSchema, reconcileAdmissions, reserveMaintenance, orderProjects, type Admission, type AdmissionIntent } from "./_lib/project_admission.ts";
@@ -88,6 +91,8 @@ export const behavior = {
   version: "2026.10.28.6",
   globalArguments: GlobalArgsSchema,
   resources: {
+    dependencyMergeConfiguration: {description:"Fresh private dependency merge switch",schema:MergeConfiguration,lifetime:"infinite",garbageCollection:1},
+    dependencyMergeAdmission: {description:"Disabled-by-default exact-head merge admission",schema:DependencyMergeAdmission,lifetime:"infinite",garbageCollection:10},
     dependencyRefreshInput:{description:"Bounded credential-free PR refresh configuration",schema:z.object({runId:z.string(),rows:z.array(z.object({project:DependencyProjectSchema,index:IndexSchema})),http:z.object({gatewayUrl:z.string(),caFile:z.string(),timeoutSeconds:z.number()})}),lifetime:"infinite",garbageCollection:2},
     dependencyScanInput: {description:"Scan configuration handoff",schema:z.object({runId:z.string(),project:DependencyProjectsSchema.element,http:z.object({gatewayUrl:z.string(),caFile:z.string(),timeoutSeconds:z.number()})}),lifetime:"infinite",garbageCollection:1},
     // Index history is seven days; reports are pruned only by retained-index reachability.
@@ -144,6 +149,7 @@ export const behavior = {
     },
   },
   methods: {
+    dependency_merge_configuration: mergeConfigurationMethod,
     prepare_dependency_refresh: {
       outputLifetime: "7d",
       description:"Select due PR observations without holding the model lock during network access",
@@ -166,6 +172,8 @@ export const behavior = {
         const index=indexes.find(i=>i.publication_id===args.expectedPublicationId);
         if(!index)return {dataHandles:[]};
         await reconcileDependencyIndex(index,context,args.evidence);
+        const project=(await projectConfigurations(context.globalArgs.dependencyProjects,context.globalArgs.projectExtensions,context,args.projectId))[0];
+        if(project)await admitBatchMerge(project,args.evidence.pr,context,curlHttp(context.globalArgs));
         return {dataHandles:[]};
       },
     },
@@ -452,14 +460,17 @@ async function executeStage(args: StageArgs, context: StageContext) {
   const job = await runStage(args, {
     ...(args.routine ? {
       reserveCapacity: async () => (await reserve(context, await intent())).admitted,
-      reviewWait: async (job: Job) => {
-        const input = await intent();
-        const rows = await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${input.key}`)}`, "attributes");
-        if (!rows[0]) throw new Error("Review parking requires an admission receipt");
-        const result = await parkForReview(job.key, AdmissionSchema.parse(rows[0]), { http, save: async a => { await context.writeResource("admission", `admission-${a.key}`, a); } });
-        if (args.stage === "merged") return { ...job, lastError: job.lastError ?? result.reason ?? null };
-        return result.ready ? job : { ...job, state: "running" as const, evidence: null, lastError: result.reason ?? null };
-      },
+      reviewWait: async (job: Job) => batchReviewWait(job, {
+        targets: () => context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`package-${job.workItem}`)}`, "attributes"),
+        park: async () => {
+          const input = await intent();
+          const rows = await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${input.key}`)}`, "attributes");
+          if (!rows[0]) throw new Error("Review parking requires an admission receipt");
+          const result = await parkForReview(job.key, AdmissionSchema.parse(rows[0]), { http, save: async a => { await context.writeResource("admission", `admission-${a.key}`, a); } });
+          if (args.stage === "merged") return { ...job, lastError: job.lastError ?? result.reason ?? null };
+          return result.ready ? job : { ...job, state: "running" as const, evidence: null, lastError: result.reason ?? null };
+        },
+      }),
     } : {}),
     maintenance: (input, group, request) => runMaintenance(input, group, input.detection && input.stage === "script" ? { ...request, mode: "detect" } : request, context, http),
     revokeWorker: (group) => revokeEndedWorker(group, workerControl(context, http)),

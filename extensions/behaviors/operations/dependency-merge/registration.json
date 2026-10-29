@@ -1,0 +1,4 @@
+{
+  "kinds": ["tasks.dependency_merge"],
+  "workflow": "operation-dependency-merge"
+}

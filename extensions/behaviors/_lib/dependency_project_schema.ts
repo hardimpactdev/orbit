@@ -28,6 +28,7 @@ export const ProductionSmokeSchema = z.object({
 export const DependencyProjectSchema = z.object({
   exceptions: ExceptionsSchema.default(emptyExceptions),
   productionSmoke: ProductionSmokeSchema.optional(),
+  dependencyAutoMerge: z.boolean().default(false),
   projectId: z.number().int().positive(),
   repository: z.string().min(1),
   worker: z.object({

@@ -37,6 +37,7 @@ for (const source of sources) {
     const config: DependencyProject = readProjectConfiguration(
       getWrittenResources()[0].data,
     );
+    assertEquals(config.dependencyAutoMerge, false);
     assertEquals(behavior.type, `@nckrtl/project-${source.slug}`);
     assertEquals("script" in config, false);
     assertEquals(config.projectId, source.project.id);
