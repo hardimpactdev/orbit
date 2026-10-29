@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
 final readonly class ConnOperationCompletion implements OperationCompletion
@@ -24,6 +25,13 @@ final readonly class ConnOperationCompletion implements OperationCompletion
             if ($pairing->credential === null || $pairing->pairing_link_id !== ($outcome->result['pairing_link_id'] ?? null)) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The issued pairing credential has not been stored.', 409);
             }
+
+            return;
+        }
+        if ($operation->kind === 'conn.gateway_sessions_revoke') {
+            ConnEnvironment::query()->whereKey($operation->target_id)
+                ->where('cleanup_version', $operation->input['cleanup_version'])
+                ->update(['cleanup_completed_version' => $operation->input['cleanup_version']]);
 
             return;
         }

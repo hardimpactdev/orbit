@@ -208,6 +208,12 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 `PUT` stays for clients that only know workspaces. It replaces just the sections it sends, so such a client cannot erase the appearance or device settings that a newer client wrote.
 
+## Session cleanup
+
+Swamp revokes each device session and pairing link with its own stable effect key. The Gateway reads the server's session list, limits it to the admitted owner, and validates each individual effect and the final receipt. Successful completion marks only the admitted pairings revoked.
+
+Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels. A registration during cleanup leaves its newer revision pending for the next check. Cleanup failures leave the revision pending and do not discard the new session.
+
 ## Pairing Operations
 
 Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path admits the same Swamp Operation and waits for up to 30 seconds. Success returns the existing HTTP 201 shape and consumes the encrypted one-time credential. A timeout returns HTTP 504 with `conn.pairing_pending` and `details.operation_id`; follow that Operation rather than creating a second pairing. Failed or cancelled Operations return HTTP 502 with their error code and Operation ID.
@@ -218,12 +224,10 @@ For async creation, after the Operation succeeds, the calling Node reads `GET /a
 
 When a request repeats the same `Idempotency-Key`, it returns HTTP 202 with the existing Operation, including when the original request used synchronous creation. It never returns the consumed pairing credential again.
 
-Async pairing creation is unavailable with `operation.kind_unavailable` until the executor enforces secret outputs. The family declares `credential` as a secret stored through `conn.pairing.credential`. Its owner check binds the pairing, calling Node and environment, and refuses a revoked pairing or a conflicting credential.
+The family declares `credential` as a secret stored through `conn.pairing.credential`. Its owner check binds the pairing, calling Node and environment, and refuses a revoked pairing or a conflicting credential.
 
 The producer is the Gateway-local `conn.pairing-issue` command. Kit H replaces its transient credential with `{"$secret":"conn.pairing.credential","id":<pairing id>}` before a run receipt, step or completion is stored. The encrypted owner write and run receipt commit together. A retry reads that reference and does not mint or store another credential. The existing profile and registration reads remain local Gateway behavior.
 
-Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`. These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority. Re-registration keeps synchronous cleanup of older Gateway sessions, so repeated registrations cannot drop an intermediate session while cleanup is pending.
+Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`. These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority.
 
-Merge this cutover only after the paired orbit-swamp integration workflow runs on a placed worker. The synchronous pairing reply stays bound until both the Conn app and the relink script support the opt-in Operation flow.
-
-An Operation that remains unclaimed for five minutes reports `assistance.error_code: conn.executor_unclaimed` on its owner-checked Conn Operation read. The Gateway checks pairing creation and revocation every minute while Conn is enabled. The scheduled `orbit:conn-operations-check` command reports only affected Operation IDs and exits with failure, so a missing integration worker is visible even if the device stops polling. A worker claim or terminal outcome clears the computed alert. The check does not execute or cancel the pairing effect.
+An Operation that remains unclaimed for five minutes reports `assistance.error_code: conn.executor_unclaimed` on its owner-checked Conn Operation read. The Gateway checks pairing creation, revocation and registration cleanup every minute while Conn is enabled. The scheduled `orbit:conn-operations-check` command reports only affected Operation IDs and exits with failure, so a missing integration worker is visible even if the device stops polling. A worker claim or terminal outcome clears the computed alert. The check does not execute or cancel the pairing effect.
