@@ -45,6 +45,7 @@ final class ConnEnvironment extends Model
     ];
 
     /** @var array<string, int> */
+    #[\Override]
     protected $attributes = ['cleanup_version' => 0, 'cleanup_completed_version' => 0];
 
     /** @var list<string> */
