@@ -246,6 +246,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             && app(InstanceTransferState::class)->transfer($operation)->cutover_at === null
             && app(InstanceLifecycleChildren::class)->succeeded($operation, 'transfer-stop-source')
             && ($operation->cancel_requested_at !== null || app(TransferCompensation::class)->eligible($operation))) {
+            if (app(TransferLifecycleExecution::class)->capturePending($operation)) {
+                throw new ResourceOperationException('operation.execution_uncertain', 'Read the original transfer-capture receipt before admitting compensation or ending this transfer.', 409);
+            }
             $rollback = app(OperationChildren::class)->child($operation, 'transfer-rollback');
             if (! $rollback->status->terminal() || $rollback->kind !== 'instance.transfer_rollback'
                 || ($rollback->status === OperationStatus::Succeeded && ($rollback->result['restored'] ?? null) !== true)

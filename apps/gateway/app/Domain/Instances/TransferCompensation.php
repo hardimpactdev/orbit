@@ -38,7 +38,7 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
         $transfer = app(InstanceTransferState::class)->transfer($root);
         $runs = ValidatedData::object($root->state['executor_runs'] ?? []);
         $capture = $runs['transfer-capture'] ?? null;
-        if ($transfer->cutover_at !== null || is_array($capture) && ($capture['started'] ?? false) === true && ($capture['result'] ?? null) === null) {
+        if ($transfer->cutover_at !== null || app(TransferLifecycleExecution::class)->capturePending($root)) {
             return false;
         }
         $destination = $root->children()->where('child_key', 'transfer-destination')->first();
@@ -202,7 +202,11 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
                 $transfer->update(['status' => InstanceTransferStatus::Failed, 'recovery_evidence' => [...($transfer->recovery_evidence ?? []), 'rollback_pending' => true]]);
             });
 
-            return ['recorded' => true, 'seed_abandon_required' => is_array($operation->state['lifecycle_sqlite_abandon'] ?? null)];
+            $abandon = $operation->state['lifecycle_sqlite_abandon'] ?? null;
+
+            return ['recorded' => true, 'seed_abandon_required' => is_array($abandon),
+                'destination_node_id' => $transfer->destination_node_id,
+                'seed_abandon_node_id' => is_array($abandon) ? $abandon['node_id'] : null];
         }
         if ($input['action'] === 'restore' && $operation->kind === 'instance.transfer_rollback') {
             $this->childrenProven($operation);

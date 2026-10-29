@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Instances\InstanceLifecycleCompletion;
+use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceSqliteSeedIntent;
 use App\Domain\Instances\TransferCompensation;
 use App\Domain\Nodes\RoleName;
@@ -12,6 +13,7 @@ use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -19,6 +21,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 
 final readonly class CompensationProcessAdmission implements OperationChildAdmission
 {
@@ -85,6 +88,11 @@ it('keeps compensation Gateway steps in the child and restores state only after 
     $this->instance->environmentValues()->create(['env_key' => 'IMPORTED_KEY', 'env_value' => 'synthetic-import']);
     $this->instance->environmentValues()->create(['env_key' => 'RETAINED_KEY', 'env_value' => 'synthetic-retained']);
     $this->transfer->update(['imported_environment_keys' => ['IMPORTED_KEY']]);
+    foreach ([$this->transfer->source_node_id, $this->transfer->destination_node_id] as $nodeId) {
+        foreach (['vite_port_assignments' => 5173, 'ssr_port_assignments' => 13719] as $table => $port) {
+            DB::table($table)->insert(['instance_id' => $this->instance->id, 'node_id' => $nodeId, 'port' => $port]);
+        }
+    }
     $execute = function (string $key) use ($rollback): array {
         $descriptor = array_find(app(TransferCompensation::class)->context($rollback->refresh())['descriptors'], static fn (array $descriptor): bool => $descriptor['key'] === $key);
         $result = $this->executor->run($rollback, ['worker' => 'rollback-worker', 'key' => $key,
@@ -93,7 +101,7 @@ it('keeps compensation Gateway steps in the child and restores state only after 
 
         return $result;
     };
-    expect($execute('rollback-record'))->toBe(['recorded' => true, 'seed_abandon_required' => false]);
+    expect($execute('rollback-record'))->toBe(['recorded' => true, 'seed_abandon_required' => false, 'destination_node_id' => $this->transfer->destination_node_id, 'seed_abandon_node_id' => null]);
     expect(fn () => $execute('rollback-state'))->toThrow(ResourceOperationException::class);
     $discard = $this->executor->child($rollback, ['worker' => 'rollback-worker', 'key' => 'transfer-discard-destination'], $this->peer)['operation'];
     expect($discard->node_id)->toBe($this->transfer->destination_node_id)->and($discard->parent_operation_id)->toBe($rollback->id);
@@ -102,8 +110,14 @@ it('keeps compensation Gateway steps in the child and restores state only after 
     expect($restore->node_id)->toBe($this->transfer->source_node_id)->and($restore->lock_key)->toBeNull()
         ->and($restore->input)->toBe(['instance_id' => $this->instance->id, 'action' => 'transfer_restore']);
     expect(fn () => $execute('rollback-state'))->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseHas('vite_port_assignments', ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
+    $this->assertDatabaseHas('ssr_port_assignments', ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
     $restore->update(['status' => 'succeeded']);
     expect($execute('rollback-state'))->toMatchArray(['transfer_id' => $this->transfer->id, 'restored' => true]);
+    foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
+        $this->assertDatabaseMissing($table, ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
+        $this->assertDatabaseHas($table, ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->source_node_id]);
+    }
     $result = $execute('compensation-proof');
     $this->executor->complete($rollback, ['worker' => 'rollback-worker', 'status' => 'succeeded', 'result' => $result], $this->peer);
     $this->executor->complete($this->root, ['worker' => 'parent-worker', 'status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []], $this->peer);
@@ -153,7 +167,7 @@ it('retains the recorded SQLite attempt and blocks rollback cleanup until its se
     $result = $this->executor->run($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'rollback-record',
         'transport' => 'gateway', 'name' => 'instance.transfer-compensation', 'input' => ['action' => 'record']], $this->peer);
 
-    expect($result)->toBe(['recorded' => true, 'seed_abandon_required' => true]);
+    expect($result)->toBe(['recorded' => true, 'seed_abandon_required' => true, 'destination_node_id' => $this->transfer->destination_node_id, 'seed_abandon_node_id' => $this->transfer->destination_node_id]);
     $abandon = DatabaseExecutionIntent::recorded($rollback->refresh()->state['lifecycle_sqlite_abandon']['input']['intent_id']);
     expect($abandon->parent_operation_id)->toBe($rollback->id);
     expect($abandon->payload['projection']['seed_intent_id'])->toBe($intent->id);
@@ -166,7 +180,7 @@ it('retains the recorded SQLite attempt and blocks rollback cleanup until its se
     $this->executor->step($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'rollback-record.finish',
         'name' => 'rollback-record', 'status' => 'succeeded', 'result' => $result], $this->peer);
     $child = $this->executor->child($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'transfer-abandon-sqlite'], $this->peer)['operation'];
-    expect($child->input['intent_id'])->toBe($abandon->id)->and($child->parent_operation_id)->toBe($rollback->id);
+    expect($child->input['intent_id'])->toBe($abandon->id)->and($child->parent_operation_id)->toBe($rollback->id)->and($child->node_id)->toBe($result['seed_abandon_node_id']);
     $busyId = $busyIntent === 'seed' ? $intent->id : $intent->payload['commands']['prepare-target']['export_intent_id'];
     $busyRecord = DatabaseExecutionIntent::recorded($busyId);
     $inflight = Operation::query()->create(['kind' => $busyIntent === 'seed' ? 'database.sqlite_seed' : 'database.sqlite_export',
@@ -188,3 +202,38 @@ it('retains the recorded SQLite attempt and blocks rollback cleanup until its se
     $execution->beforeRun($child, $run);
     expect($child->refresh()->state['executor_runs'] ?? [])->toBe([]);
 })->with(['seed' => ['seed'], 'source export' => ['export']]);
+it('recovers an uncertain capture receipt after cancellation before admitting source restoration', function (): void {
+    $this->stop->update(['status' => 'succeeded']);
+    $execution = app(InstanceLifecycleExecution::class);
+    $descriptor = array_find($execution->context($this->root)['descriptors'], static fn (array $entry): bool => $entry['key'] === 'transfer-capture');
+    $run = ['worker' => 'parent-worker', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']];
+    $this->executor->step($this->root, ['worker' => 'parent-worker', 'key' => 'capture:start', 'name' => 'transfer-capture', 'status' => 'running'], $this->peer);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name): bool => $node->id === $this->transfer->source_node_id && $name === 'instance.transfer-source')
+        ->andThrow(new RuntimeException('Lost capture reply'));
+    app()->instance(AgentCommandRunner::class, $runner);
+    expect(fn () => $this->executor->run($this->root, $run, $this->peer))->toThrow(ResourceOperationException::class);
+    $this->root->refresh()->update(['cancel_requested_at' => now()]);
+    expect($this->root->state['executor_runs']['transfer-capture']['started'])->toBeTrue()
+        ->and($this->root->state['executor_runs']['transfer-capture']['result'])->toBeNull();
+    expect(app(TransferCompensation::class)->eligible($this->root))->toBeFalse();
+    expect(fn () => $this->executor->complete($this->root, ['worker' => 'parent-worker', 'status' => 'cancelled', 'result' => []], $this->peer))
+        ->toThrow(ResourceOperationException::class);
+    $identity = $this->root->state['executor_effect_identity'];
+    $capture = ['head' => str_repeat('a', 40), 'branch' => 'proof', 'detached' => false,
+        'archive' => '/tmp/orbit-transfer-proof-0123456789abcdef.tar', 'common' => null, 'refs' => ['refs/heads/proof']];
+    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name, array $input): bool => $node->id === $this->transfer->source_node_id
+        && $name === 'agent.effect-receipt' && $input === ['command' => 'instance.transfer-source', 'effect_key' => 'op-'.$this->root->id.'.transfer-capture', 'owner' => 'orbit'])
+        ->andReturn(['effect_key' => 'op-'.$this->root->id.'.transfer-capture', 'state' => 'succeeded',
+            'result' => ['ok' => true, 'data' => $capture], 'sanitized' => true, 'effect_nonce' => $identity['nonce'],
+            'effect_created_at' => $identity['created_at'], 'exit_code' => 0, 'finished_at' => '2026-10-29T10:00:00Z']);
+    $receipt = $this->executor->receipt($this->root, 'transfer-capture', $this->peer);
+    expect($receipt['result'])->toEqual(['captured' => true, 'commit' => str_repeat('a', 40), 'branch' => 'proof'])
+        ->and($this->root->refresh()->state['lifecycle_transfer_capture'])->toBe($capture);
+    expect($this->root->state['executor_runs']['transfer-capture']['result'])->toBe($receipt['result']);
+    $this->executor->step($this->root, ['worker' => 'parent-worker', 'key' => 'capture:finish', 'name' => 'transfer-capture',
+        'status' => 'succeeded', 'result' => $receipt['result']], $this->peer);
+    $rollback = $this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-rollback'], $this->peer)['operation'];
+    expect($rollback->kind)->toBe('instance.transfer_rollback')->and($rollback->node_id)->toBe($this->transfer->source_node_id);
+    expect($this->executor->receipt($this->root, 'transfer-capture', $this->peer))->toBe($receipt);
+});

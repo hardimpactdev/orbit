@@ -43,7 +43,6 @@ return (static function (): array {
             $agent('instance.clear-current-release'), $agent('instance.remove-production-home'),
         ],
         'transfer' => [$agent('instance.transfer-source', [], false)],
-        'transfer_destination' => [$agent('instance.transfer-source', [], false)],
     ];
     $children = [
         'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
@@ -52,7 +51,6 @@ return (static function (): array {
         'register' => ['route.converge', 'instance.run_steps'],
         'destroy' => ['route.caddy_converge', 'instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
         'transfer' => ['process.instance_runtime', 'instance.transfer_destination', 'instance.transfer_activate', 'instance.transfer_rollback', 'route.retire_source'],
-        'transfer_destination' => ['instance.sync_environment', 'database.sqlite_seed'],
     ];
     $kinds = [];
     foreach ($commands as $verb => $runs) {
@@ -102,7 +100,7 @@ return (static function (): array {
             ] : [],
             'completion_contract' => ['step' => 'compensation-proof', 'transport' => 'gateway',
                 'name' => 'instance.transfer-compensation', 'result' => ['lifecycle_complete' => true]],
-            'result_fields' => ['recorded', 'seed_abandon_required', 'restored', 'discarded', 'lifecycle_complete', 'transfer_id', 'error_code']];
+            'result_fields' => ['recorded', 'seed_abandon_required', 'destination_node_id', 'seed_abandon_node_id', 'restored', 'discarded', 'lifecycle_complete', 'transfer_id', 'error_code']];
     }
 
     return $kinds;

@@ -48,6 +48,13 @@ final readonly class TransferLifecycleExecution
             'route_id' => $transfer->destination_route_id, 'transfer_action' => $action];
     }
 
+    public function capturePending(Operation $operation): bool
+    {
+        $capture = ValidatedData::object($operation->state['executor_runs'] ?? [])['transfer-capture'] ?? null;
+
+        return is_array($capture) && ($capture['started'] ?? false) === true && ($capture['result'] ?? null) === null;
+    }
+
     /** @return list<Descriptor> */
     public function descriptors(Operation $operation): array
     {

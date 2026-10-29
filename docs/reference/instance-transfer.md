@@ -23,7 +23,7 @@ orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PA
 
 The CLI calls `POST /api/v1/instances/{instance}/transfer`. The Gateway validates and records immutable transfer intent, then returns HTTP 202 with an Operation. Swamp executes the transfer through keyed effects and one-Node child Operations. The CLI follows its steps and returns the final Operation receipt. An optional `Idempotency-Key` reuses admission after a lost response.
 
-Transfer admission requires the shared `archive_relay` capability. Until its protected binary relay is available, the Gateway returns `operation.kind_unavailable` before reserving a transfer or pausing the source.
+Transfer admission requires the shared `archive_relay` capability. Until its protected binary relay and the destination and activation handlers are available, the Gateway returns `operation.kind_unavailable` before reserving a transfer or pausing the source.
 
 | Input | Meaning |
 | --- | --- |
@@ -93,6 +93,8 @@ A public Route with a web root cannot change Cluster, because transfer does not 
 
 ## Failure and retry
 
+An unconfirmed failure before cutover recovers by retrying forward, or by retrying the same Operation to recover its receipt and then cancelling. Orbit keeps both copies until the original effects have definite receipts. Successful rollback releases the destination Vite and SSR ports and keeps the source allocations.
+
 Cutover is the moment the destination becomes authoritative.
 
 - A failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
@@ -102,7 +104,7 @@ Cutover is the moment the destination becomes authoritative.
 
 Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. An identical retry finishes that rollback before pausing and capturing the source again; it never resumes the old forward checkpoint. The Gateway clears the marker and resets the checkpoint in one write only after rollback finishes. Recovery uses the same Instance and Node locks as transfer. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
 
-After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent, abandons any recorded SQLite seed through `database.sqlite_seed_abandon`, discards the destination, restores the source runtime, and projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start.
+After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent, abandons any recorded SQLite seed through `database.sqlite_seed_abandon`, discards the destination, restores the source runtime, and projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start. The source capture is nonresumable. After a lost reply, Swamp reads the original keyed agent receipt, even after cancellation. The Gateway projects its raw capture metadata and saves its safe result before compensation is eligible. It does not capture again. A pending receipt keeps the parent running until the result is definite.
 
 After capture, a Gateway step records the SQLite seed on the transfer parent before destination admission. The attempt identity comes from that Operation. The database owner retains the seed and its source intents while the parent is pending. Destination setup uses that exact descriptor. Rollback passes its recorded intent ID and its live compensation Operation to the database owner; it cannot select another attempt or cleanup path.
 
