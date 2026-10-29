@@ -134,6 +134,8 @@ An `apt` install, update, or remove returns `tool.install_failed`, `tool.update_
 
 ## Project environments in the Vite+ store
 
+Swamp executes Project environment installation and pruning for the Instances family. The Gateway Tools adapter keeps the read probes that Doctor needs.
+
 Before a JavaScript deploy step, Orbit reads the release's manifest, lockfile, and Node version files as data without running Project code. The lockfile selects the exact vite-plus release, including catalog, workspace, npm aliases, and prereleases. Node must have an exact pin in `.node-version`, `.nvmrc`, or `engines.node`, in that order. The pin must also satisfy Project and locked vite-plus engine constraints. Ranges and moving tags cannot silently change the deployed runtime.
 
 An npm or pnpm lockfile selects the package-manager family. An exact `packageManager` pin (or exact package-manager engine or lockfile metadata) supplies its version and must agree with that family. Missing or ambiguous locked requirements fail before build. Registry metadata is read only to install missing content, using the Project's `.npmrc` registry and credentials.

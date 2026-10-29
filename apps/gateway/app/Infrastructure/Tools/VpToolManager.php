@@ -104,25 +104,11 @@ final readonly class VpToolManager implements ToolManager
         return $this->version($node, 'tool.vp-version', [], 'manager-version');
     }
 
-    /** vp itself is recipe-owned; deploy prerequisites only inspect it. */
-    public function ensureVersion(Node $node, string $required): void
-    {
-        if (! $this->versionSatisfies($this->managerVersion($node), $required)) {
-            throw new ToolManagerException('manager-version', 'Update the machine recipe: vp is older than the locked Project version.');
-        }
-    }
-
     public function versionSatisfies(string $observed, string $required): bool
     {
         $normalized = $this->versions->normalize(preg_replace('/\\Avp\\s+/', '', trim($observed)) ?? '');
 
         return $normalized !== null && version_compare($normalized, $required, '>=');
-    }
-
-    /** Read-only inspection; no registry requests, commands, locks, or store writes. */
-    public function environmentInstalled(Node $node, VpEnvironment $environment): bool
-    {
-        return $this->environmentsInstalled($node, [$environment])[0];
     }
 
     /** @param list<VpEnvironment> $environments
@@ -138,17 +124,6 @@ final readonly class VpToolManager implements ToolManager
         }
 
         return array_map(fn (bool $present, int $index): bool => $present && $environments[$index]->store === $store, $installed, array_keys($installed));
-    }
-
-    public function installEnvironment(Node $node, VpEnvironment $environment, string $npmrc = ''): void
-    {
-        $this->storeCommand($node, 'tool.install-vp-environment', ['environment' => $environment->input(), 'npmrc' => $npmrc]);
-    }
-
-    /** @param list<array<string, mixed>> $references */
-    public function pruneEnvironments(Node $node, string $store, array $references): void
-    {
-        $this->storeCommand($node, 'tool.prune-vp-store', ['store' => $store, 'references' => array_map(fn (array $reference): array => VpEnvironment::fromArray($reference)->input(), $references)]);
     }
 
     /** @param array<string, mixed> $input

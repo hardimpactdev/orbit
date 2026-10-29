@@ -130,24 +130,22 @@ describe(VpToolManager::class, function (): void {
 
     it('admits older project locks with a newer recipe manager without upgrading', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tool.vp-version', ['version' => 'vp v1.4.0']);
 
-        $manager->ensureVersion(vp_tool_node(), '1.2.0');
-        $manager->ensureVersion(vp_tool_node(), '1.2.9');
-        $manager->ensureVersion(vp_tool_node(), '1.4.0');
-        expect(fn () => $manager->ensureVersion(vp_tool_node(), '1.4.1'))->toThrow(ToolManagerException::class);
-
-        expect($agent->commands())->toBe(['tool.vp-version', 'tool.vp-version', 'tool.vp-version', 'tool.vp-version']);
+        expect($manager->versionSatisfies('vp v1.4.0', '1.2.0'))->toBeTrue();
+        expect($manager->versionSatisfies('vp v1.4.0', '1.2.9'))->toBeTrue();
+        expect($manager->versionSatisfies('vp v1.4.0', '1.4.0'))->toBeTrue();
+        expect($manager->versionSatisfies('vp v1.4.0', '1.4.1'))->toBeFalse();
+        expect($agent->commands())->toBe([]);
     });
 
     it('gates project requirements against the observed recipe manager without upgrading', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tool.vp-version', ['version' => 'vp v0.3.3']);
-        $manager->ensureVersion(vp_tool_node(), '0.3.3');
-        expect(fn () => $manager->ensureVersion(vp_tool_node(), '0.4.0'))->toThrow(ToolManagerException::class);
+
+        expect($manager->versionSatisfies('vp v0.3.3', '0.3.3'))->toBeTrue();
+        expect($manager->versionSatisfies('vp v0.3.3', '0.4.0'))->toBeFalse();
         expect($manager->normalizeVersion('v1.2.3'))->toBe('1.2.3');
         expect($manager->normalizeVersion('latest'))->toBeNull();
-        expect($agent->commands())->toBe(['tool.vp-version', 'tool.vp-version']);
+        expect($agent->commands())->toBe([]);
     });
 });
 
