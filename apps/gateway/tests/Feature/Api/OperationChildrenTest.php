@@ -539,7 +539,7 @@ it('honors a running child own proven cancellation boundary after an ancestor ca
     expect($this->command->calls)->toBe(2);
 });
 
-it('allows a cancelled intermediate transfer to restore after a grandparent cancel', function (): void {
+it('allows a cancelled intermediate transfer to restore after a grandparent cancel', function (bool $middleFirst): void {
     $this->parentSpec['children'][0]['kind'] = 'test.middle';
     $this->parentSpec['completion_contract']['children_succeeded'] = ['test.middle'];
     ($this->register)();
@@ -558,14 +558,16 @@ it('allows a cancelled intermediate transfer to restore after a grandparent canc
     $middlePath = '/api/v1/operation-executor/'.$middle->id;
     $stop = $this->postJson($middlePath.'/children', ['worker' => 'middle', 'key' => 'stop-source'])->assertAccepted()->json('data.id');
     childKitFinish($this, Operation::findOrFail($stop));
-    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    app(CancelOperationAction::class)->execute($middleFirst ? $middle->refresh() : $this->parent->refresh());
     expect($middle->refresh()->cancel_requested_at)->not->toBeNull();
     $restore = $this->postJson($middlePath.'/children', ['worker' => 'middle', 'key' => 'restore'])->assertAccepted()->json('data.id');
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect(Operation::findOrFail($restore)->cancel_requested_at)->toBeNull();
     childKitFinish($this, Operation::findOrFail($restore));
     $this->postJson($middlePath.'/complete', ['worker' => 'middle', 'status' => 'cancelled'])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'cancelled'])->assertOk();
     expect($this->parent->refresh()->lock_key)->toBeNull()->and($this->command->calls)->toBe(2);
-});
+})->with([false, true]);
 
 it('exposes assistance safely and permits explicit cancellation when no provable child is active', function (): void {
     $child = childKitAdmit($this);
@@ -659,3 +661,44 @@ it('lets an enclosing parent prove its completed Node removal child after deleti
     expect(app(OperationChildren::class)->requireSucceeded($this->parent, 'apply')->id)->toBe($middle->id);
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded'])->assertOk();
 });
+
+it('preserves newly admitted compensations across repeated ancestor cancellation', function (bool $running, bool $direct): void {
+    childKitCompensations($this);
+    childKitFinish($this, childKitAdmit($this));
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    $id = $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'restore'])->assertAccepted()->json('data.id');
+    $restore = Operation::findOrFail($id);
+    if ($running) {
+        $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.restore', 'worker' => 'child', 'operation_id' => $id])->assertOk();
+    }
+
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($restore->refresh()->cancel_requested_at)->toBeNull();
+    expect($restore->status)->toBe($running ? OperationStatus::Running : OperationStatus::Queued);
+    if ($direct) {
+        app(CancelOperationAction::class)->execute($restore);
+        expect($restore->refresh()->cancel_requested_at)->not->toBeNull();
+        if ($running) {
+            childKitFinish($this, $restore, 'cancelled');
+        }
+        expect($restore->refresh()->status)->toBe(OperationStatus::Cancelled);
+    } else {
+        childKitFinish($this, $restore);
+        expect($restore->refresh()->status)->toBe(OperationStatus::Succeeded);
+    }
+})->with([false, true])->with([false, true]);
+
+it('settles unprovable active descendants when abandoning a flagged waiting parent', function (string $status): void {
+    $child = childKitAdmit($this);
+    $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply']])->assertOk();
+    $child->forceFill(['status' => $status, 'attempts' => 1, 'lock_key' => 'orphan-hold', 'child_fingerprint' => str_repeat('0', 64)])->save();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'resume'])->assertOk()->assertJsonPath('data', null);
+
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+
+    expect($this->parent->refresh()->status)->toBe(OperationStatus::Cancelled);
+    expect($child->refresh()->status)->toBe(OperationStatus::Cancelled);
+    expect($child->lock_key)->toBeNull();
+    expect($child->error_code)->toBe('operation.child_unproven');
+    expect($child->state['executor_assistance']['error_code'])->toBe('operation.child_unproven');
+})->with(['running', 'waiting']);

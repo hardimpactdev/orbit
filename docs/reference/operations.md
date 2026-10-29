@@ -449,7 +449,11 @@ An invalid waiting child makes that parent unavailable for claim, without stoppi
 
 ### Resolve cancellation and missing targets
 
-Operation show and list expose a safe `assistance` value: null, or `{error_code}` for an invalid waiting child or unavailable child kind. Internal state and arbitrary details stay private. An explicit cancel may end a flagged waiting parent and release its target once no stamped nonterminal child can still be proven. A proven running child keeps the hold until it settles. Cancel cascades to every nonterminal descendant; queued children that have not started end immediately.
+Operation show and list expose a safe `assistance` value: null, or `{error_code}` for an invalid waiting child or unavailable child kind. Internal state and arbitrary details stay private. An explicit cancel may end a flagged waiting parent and release its target once no stamped nonterminal child can still be proven. A proven running child keeps the hold until it settles.
+
+The first cancel cascades to nonterminal descendants; queued children that have not started end immediately. A repeated ancestor cancel skips a subtree already marked for cancellation, so newly admitted compensations can finish. A direct cancel of a compensation still cancels that child.
+
+The cascade commits before PHP waiting-step stop hooks run. A started effect without a saved result stays uncertain after cancellation and must be resolved through its target receipt. When explicit cancellation abandons a flagged parent, unprovable descendants end cancelled with `operation.child_unproven` assistance and release their own holds.
 
 Admission records the original Node ID, target type and target ID independently of the live Node foreign key. Child admission proof retains these immutable values after Node deletion. Child receipts and terminal executor context keep the original Node identity. Completion replies, lost-reply replays and cached effect receipt reads do not hydrate sources. New transport effects on a deleted Node fail with `operation.target_missing` before hydration or dispatch. Clearing a live Node foreign key while that admitted Node still exists refuses proof.
 

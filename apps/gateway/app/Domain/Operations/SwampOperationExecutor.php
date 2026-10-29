@@ -469,6 +469,9 @@ final readonly class SwampOperationExecutor
         $run = [...$data, 'effect_key' => $effectKey, 'effect_identity' => $this->effectIdentity($operation)];
         $result = null;
         $values = [];
+        if ($receipt !== null && ($receipt['started'] ?? false) === true && ! $this->contract->cancellationAllowsRun($operation)) {
+            $this->cancelledRunResult($operation, $data['key']);
+        }
         if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? false)) {
             return ['error_code' => $spec['uncertain_error_code'] ?? 'operation.execution_uncertain'];
         } else {
@@ -479,7 +482,7 @@ final readonly class SwampOperationExecutor
                 }
             });
             if (! $this->contract->cancellationAllowsRun($operation)) {
-                $result = ['error_code' => 'operation.cancelled'];
+                $result = $this->cancelledRunResult($operation, $data['key']);
             } else {
                 $this->assertTargetExists($operation, $data['transport']);
                 $hydrated = $this->secrets->hydrate($operation, $data['key'], $data['input'], $spec['secrets'] ?? []);
@@ -500,7 +503,7 @@ final readonly class SwampOperationExecutor
                     }
                 });
                 try {
-                    $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : ['error_code' => 'operation.cancelled'];
+                    $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : $this->cancelledRunResult($operation, $data['key']);
                 } catch (AgentCommandRefused $exception) {
                     $result = ['error_code' => $exception->errorCode];
                 } catch (ResourceOperationException $exception) {
@@ -539,6 +542,18 @@ final readonly class SwampOperationExecutor
         }
 
         return $this->recordResult($operation, $data, $result, $values, ($run['effect_metadata'] ?? null)?->receipt() ?? [], $nodeId);
+    }
+
+    /** @return array{error_code:string} */
+    private function cancelledRunResult(Operation $operation, string $key): array
+    {
+        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+        $entry = ValidatedData::object($runs[$key] ?? []);
+        if (($entry['started'] ?? false) === true) {
+            throw new ResourceOperationException('operation.execution_uncertain', 'The started effect requires its target receipt.', 409);
+        }
+
+        return ['error_code' => 'operation.cancelled'];
     }
 
     /** @param RunInput $data

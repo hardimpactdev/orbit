@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationCompletion;
@@ -609,3 +610,24 @@ it('refuses a nulled root target before completion projects or releases its hold
     expect($this->operation->refresh()->status)->toBe(OperationStatus::Running)->and($this->operation->lock_key)->not->toBeNull()
         ->and($this->operation->state)->toBe($state)->and($this->operation->result)->toBeNull();
 });
+
+it('recovers a started effect after cancellation without synthesizing a final cancel receipt', function (bool $resumable): void {
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['resumable'] = $resumable;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    $input = $this->operation->input;
+    $input['descriptors'][0]['resumable'] = $resumable;
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    app(CancelOperationAction::class)->execute($this->operation->refresh());
+
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+
+    expect($this->operation->refresh()->state['executor_runs']['effect']['started'])->toBeTrue();
+    expect($this->operation->state['executor_runs']['effect']['result'])->toBeNull();
+    expect($this->operation->state['projections'] ?? 0)->toBe(0);
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    expect($this->transport->runs)->toBe(1);
+    expect($this->source->resolves)->toBe(1);
+    expect($this->operation->refresh()->state['projections'])->toBe(1);
+})->with([false, true]);
