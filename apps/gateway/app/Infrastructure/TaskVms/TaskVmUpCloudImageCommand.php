@@ -10,6 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmCommandContracts;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmUpCloud;
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
@@ -29,7 +30,7 @@ final readonly class TaskVmUpCloudImageCommand implements OperationEffectTranspo
 
     public function __construct(private TaskVmUpCloudImageRead $reads, private UpCloudApi $api, private UpCloudGuest $guest,
         private SshKeyProvider $keys, private TaskVmCloudInit $cloudInit, private GuestAgentCommandRunner $agents,
-        private RecipeLoader $recipes, private RecipeImageInput $inputs, private PiArtifactDelivery $artifacts) {}
+        private RecipeLoader $recipes, private RecipeImageInput $inputs, private PiArtifactDelivery $artifacts, private AgentContract $contract) {}
 
     /** @param array<string,mixed> $run
      * @param  array<string,mixed>  $input
@@ -178,7 +179,9 @@ final readonly class TaskVmUpCloudImageCommand implements OperationEffectTranspo
     {
         $input = ValidatedData::object($run['input']);
 
-        return ($input['action'] ?? null) === 'guest' && ! in_array($input['command'] ?? null, ['guest.cloud-init', 'agent.install-guest', 'pi.upload-guest'], true);
+        $command = $input['command'] ?? null;
+
+        return ($input['action'] ?? null) === 'guest' && is_string($command) && ! in_array($command, TaskVmCommandContracts::SpecialGuestCommands, true) && $this->contract->command($command)->mutates;
     }
 
     /** @param array<string,mixed> $run
