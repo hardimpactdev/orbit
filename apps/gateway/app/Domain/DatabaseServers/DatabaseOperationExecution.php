@@ -117,7 +117,16 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
                 app(OperationChildren::class)->requireSucceeded($operation, $child['key']);
             }
         }
+        $command = $this->intent($operation)->payload['commands'][$run['key']] ?? [];
+        if (isset($command['reset_database'])) {
+            app(DatabaseOwnership::class)->assertMysqlNames(DatabaseConnection::query()->findOrFail(ValidatedData::integer($operation->input['connection_id'])), [$command['reset_database']]);
+        }
         if ($operation->kind === 'database.destroy') {
+            if (($operation->input['driver'] ?? null) === 'mysql') {
+                foreach ($this->intent($operation)->payload['projection']['drop_databases'] ?? [] as $id => $names) {
+                    app(DatabaseOwnership::class)->assertMysqlNames(DatabaseConnection::query()->findOrFail($id), $names);
+                }
+            }
             app(DropServerDatabaseAction::class)->assertUsersStillUnshared($operation, $this->intent($operation));
             foreach (ValidatedData::integerList($operation->input['connection_ids'] ?? [$operation->input['connection_id']]) as $id) {
                 $connection = DatabaseConnection::query()->findOrFail($id);
@@ -149,6 +158,14 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
             ? array_values(array_filter(preg_split('/\R/', $receipt['output']) ?: [], static fn (string $line): bool => $line !== '')) : [];
         if (($command['expect_empty'] ?? false) && $rows !== []) {
             return ['error_code' => $command['refusal'] ?? 'database.name_conflict'];
+        }
+
+        $created = $this->intent($operation)->payload['projection']['database_creates'][$run['key']] ?? null;
+        if ($created !== null) {
+            $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($operation->input['connection_id']));
+            $proofs = array_values(array_filter($connection->creation_receipts ?? [], static fn (array $proof): bool => $proof['database'] !== $created));
+            $proofs[] = ['database' => $created, 'operation_id' => $operation->id, 'step' => $run['key'], 'username' => $connection->username, 'server_id' => $connection->database_server_id];
+            $connection->forceFill(['creation_receipts' => $proofs])->save();
         }
 
         $result = ['backend' => $receipt['backend'] ?? $command['backend'] ?? 'active', ...array_intersect_key($receipt, array_flip(['row_count', 'truncated', 'bytes', 'sha256', 'mode', 'incoming', 'state'])), ...$data];

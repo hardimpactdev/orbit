@@ -26,3 +26,21 @@ it('refuses a restored foreign database before changing its owner or PUBLIC acce
         expect($psql("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'managed';"))->toBe('reserved_owner');
     });
 });
+
+it('preserves a restored foreign database and its admission when fenced removal or grants are attempted on PG18', function (): void {
+    postgres_statements_server(function (Closure $psql): void {
+        $sql = new PostgresStatements;
+        $psql('CREATE ROLE reserved_owner; CREATE ROLE foreign_owner; CREATE DATABASE restored OWNER foreign_owner;');
+        $before = $psql("SELECT datdba::text || '|' || datallowconn::text || '|' || COALESCE(datacl::text, 'null') FROM pg_database WHERE datname = 'restored';");
+
+        expect(fn () => $psql($sql->dropFencedDatabases(['restored'], [], ['restored' => 'reserved_owner'])))
+            ->toThrow(ProcessFailedException::class, 'database.name_conflict');
+        expect(fn () => $psql($sql->grantAll('restored', 'reserved_owner')))
+            ->toThrow(ProcessFailedException::class, 'database.name_conflict');
+
+        expect($psql("SELECT datdba::text || '|' || datallowconn::text || '|' || COALESCE(datacl::text, 'null') FROM pg_database WHERE datname = 'restored';"))->toBe($before);
+        $psql('CREATE DATABASE owned OWNER reserved_owner;');
+        $psql($sql->dropFencedDatabases(['owned'], [], ['owned' => 'reserved_owner']));
+        expect($psql("SELECT count(*) FROM pg_database WHERE datname = 'owned';"))->toBe('0');
+    });
+});

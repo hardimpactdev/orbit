@@ -21,6 +21,12 @@ final readonly class PurgeDatabaseExecutionIntentsAction
             if ($intent->created_at?->gte($cutoff)) {
                 $retained[$intent->id] = true;
             }
+            if ($intent->parent_operation_id !== null) {
+                $parent = Operation::query()->find($intent->parent_operation_id);
+                if ($parent === null || ! $parent->status->terminal() || $parent->finished_at === null || $parent->finished_at->gte($cutoff)) {
+                    $retained[$intent->id] = true;
+                }
+            }
             foreach (Operation::query()->where('input->intent_id', $intent->id)->cursor() as $operation) {
                 while ($operation !== null) {
                     if (! $operation->status->terminal() || $operation->finished_at === null || $operation->finished_at->gte($cutoff)) {

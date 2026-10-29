@@ -26,6 +26,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
+require_once __DIR__.'/../Support/DatabaseCreationProofs.php';
 uses(ServerDatabaseFixtures::class);
 
 /** Records a failed attempt without bypassing the unavailable executor through a test-only kit. */
@@ -46,7 +47,7 @@ it('loads other families and refuses database execution with 503 until kit B and
     $this->postJson('/api/v1/database-connections', ['slug' => 'throwaway', 'server' => $this->server->slug])
         ->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.kind_unavailable');
 
-    expect(Operation::query()->count())->toBe(0);
+    expect(Operation::query()->where('kind', '!=', 'instance.create')->count())->toBe(0);
     expect(DatabaseConnection::query()->count())->toBe(0);
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
     expect($this->admin->sql())->not->toContain('CREATE ', 'GRANT ');
@@ -82,7 +83,7 @@ it('rechecks names and retains reserved credentials on an empty retry target', f
 
     expect($retry->input)->toBe($prepared->input);
     expect($this->admin->sql())->toContain('information_schema.SCHEMATA');
-    expect(DatabaseExecutionIntent::recorded($prepared->input['intent_id'])->payload['commands']['database-apply']['input']['sql'])
+    expect(DatabaseExecutionIntent::recorded($prepared->input['intent_id'])->payload['commands']['create-database-0']['input']['sql'])
         ->toContain('CREATE DATABASE `throwaway`;')->not->toContain('CREATE DATABASE IF NOT EXISTS');
 });
 
@@ -90,6 +91,7 @@ it('refuses a planned MySQL login that becomes shared before execution', functio
     $this->prepareServerDatabaseFixtures();
     $connection = DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'owned', 'username' => 'a_user']);
+    databaseCreatedProof($connection);
     $prepared = app(DropServerDatabaseAction::class)->prepareMany([$connection])[0];
     $operation = new Operation(['kind' => $prepared->kind, 'target_type' => $prepared->targetType,
         'target_id' => $prepared->targetId, 'node_id' => $prepared->nodeId, 'input' => $prepared->input]);
@@ -117,7 +119,7 @@ it('rejects a MySQL clone back into its source connection before preparing a res
         'owner_instance_id' => $this->instance->id, 'clone_step' => 'recorded']);
     DatabaseConnectionTarget::query()->create(['database_connection_id' => $connection->id, 'instance_id' => $this->instance->id, 'prefix' => 'DB']);
 
-    expect(fn () => DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $this->instance)))
+    expect(fn () => DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $this->instance, databasePreparationParent($this->instance))))
         ->toThrow(ResourceOperationException::class);
 
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
@@ -133,16 +135,16 @@ it('checks the snapshot Operation target before looking up Instances or transfer
 
 it('refuses a child whose Node or input differs from the protected admission snapshot', function (): void {
     $this->prepareServerDatabaseFixtures();
-    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->create($this->instance, $this->server));
+    $child = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->create($this->instance, $this->server, databasePreparationParent($this->instance)));
     $adapter = app(DatabaseChildAdmission::class);
-    $parent = new Operation(['target_type' => 'instance', 'target_id' => $this->instance->id]);
+    $parent = databasePreparationParent($this->instance);
     $foreign = $child;
     $foreign['node_id']++;
     expect(fn () => $adapter->admit($parent, $foreign))->toThrow(ResourceOperationException::class, 'recorded database intent');
     $foreign = $child;
     $foreign['input']['owner_instance_id']++;
     expect(fn () => $adapter->admit($parent, $foreign))->toThrow(ResourceOperationException::class, 'recorded database intent');
-    expect(Operation::query()->count())->toBe(0);
+    expect(Operation::query()->where('kind', '!=', 'instance.create')->count())->toBe(0);
 });
 
 it('rejects a secret reference on a different target type even when numeric identities match', function (): void {

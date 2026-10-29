@@ -45,7 +45,7 @@ return (static function (): array {
         'database_server.destroy' => [$remove, $serverAbsent],
         'database_server.close' => [$valkey],
         'database.create' => [$sql, $valkey],
-        'database.destroy' => [$sql, $valkey],
+        'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
         'database_user.create' => [$sql],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],

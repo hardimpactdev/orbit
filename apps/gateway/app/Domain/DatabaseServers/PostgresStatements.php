@@ -57,7 +57,7 @@ final readonly class PostgresStatements
         $db = $this->identifier($database);
         $user = $this->identifier($username);
 
-        return "ALTER DATABASE {$db} OWNER TO {$user};\nREVOKE ALL ON DATABASE {$db} FROM PUBLIC;\n"
+        return $this->assertDatabaseOwner($database, $username)."ALTER DATABASE {$db} OWNER TO {$user};\nREVOKE ALL ON DATABASE {$db} FROM PUBLIC;\n"
             .$this->connect($database)."REVOKE CREATE ON SCHEMA public FROM PUBLIC;\n"
             ."GRANT ALL ON SCHEMA public TO {$user};\n\\connect postgres\n";
     }
@@ -115,16 +115,20 @@ final readonly class PostgresStatements
 
     /** Journal and close admission together, preserving the first snapshot across retries.
      * @param  list<string>  $databases
+     * @param  array<string,string>  $owners
      */
-    public function fenceDatabases(array $databases): string
+    public function fenceDatabases(array $databases, array $owners): string
     {
         foreach ($databases as $database) {
             $this->identifier($database);
         }
         $names = implode(', ', array_map($this->literal(...), $databases)) ?: 'NULL';
 
+        $ownership = $this->ownershipChecks($databases, $owners);
+
         return <<<SQL
             BEGIN;
+            {$ownership}
             DO \$lock\$ BEGIN PERFORM pg_advisory_xact_lock(hashtextextended('orbit.database-removal', 0)); END \$lock\$;
             CREATE SCHEMA IF NOT EXISTS orbit_admin;
             REVOKE ALL ON SCHEMA orbit_admin FROM PUBLIC;
@@ -197,8 +201,9 @@ final readonly class PostgresStatements
     /** Hold a session lock and admission fence through the final check and every drop.
      * @param  list<string>  $databases
      * @param  list<string>  $users
+     * @param  array<string,string>  $owners
      */
-    public function dropFencedDatabases(array $databases, array $users): string
+    public function dropFencedDatabases(array $databases, array $users, array $owners): string
     {
         $blockers = rtrim(trim($this->removalBlockers($databases, $users)), ';');
         $drops = '';
@@ -210,10 +215,26 @@ final readonly class PostgresStatements
         }
 
         return "DO \$lock\$ BEGIN PERFORM pg_advisory_lock(hashtextextended('orbit.database-removal', 0)); END \$lock\$;\n"
-            .$this->fenceDatabases($databases)
+            .$this->fenceDatabases($databases, $owners).$this->ownershipChecks($databases, $owners)
             ."WITH blockers AS ({$blockers}) SELECT EXISTS (SELECT FROM blockers) AS blocked\n\\gset orbit_\n"
             ."\\if :orbit_blocked\n{$blockers};\n\\else\n{$drops}\\endif\n"
             .$this->restoreDatabaseAdmission($databases);
+    }
+
+    /** @param list<string> $databases
+     * @param  array<string,string>  $owners
+     */
+    private function ownershipChecks(array $databases, array $owners): string
+    {
+        $sql = '';
+        foreach ($databases as $name) {
+            if (! isset($owners[$name])) {
+                throw new ResourceOperationException('database.ownership_unproven', 'The recorded database owner is missing.', 409);
+            }
+            $sql .= $this->assertDatabaseOwner($name, $owners[$name]);
+        }
+
+        return $sql;
     }
 
     public function dropDatabase(string $database): string

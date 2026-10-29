@@ -11,6 +11,8 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
+use App\Domain\DatabaseServers\DatabaseOwnership;
+use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
@@ -61,6 +63,8 @@ final readonly class CreateServerDatabaseAction
         private RepairPostgresTestDatabasesAction $repairTests,
         private RecordDatabaseOperationAction $operations,
         private RetryDatabaseCreateAction $retries,
+        private DatabaseRemovalLock $lock,
+        private DatabaseOwnership $ownership,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): Operation
@@ -114,7 +118,12 @@ final readonly class CreateServerDatabaseAction
         return $this->operations->start($this->prepareEmpty($connection));
     }
 
-    public function prepareOnServer(
+    public function prepareOnServer(DatabaseServer $server, string $slug, string $database, ?Instance $instance, ?string $createdBy, ?string $locale = null, ?int $testProcesses = null): PreparedDatabaseOperation
+    {
+        return $this->lock->run([$server->id], fn (): PreparedDatabaseOperation => $this->prepareOnServerLocked($server, $slug, $database, $instance, $createdBy, $locale, $testProcesses));
+    }
+
+    private function prepareOnServerLocked(
         DatabaseServer $server,
         string $slug,
         string $database,
@@ -223,10 +232,15 @@ final readonly class CreateServerDatabaseAction
             throw $this->slugConflict($slug);
         }
 
+        $plan = $server->driver === DatabaseDriver::Mysql
+            ? DatabaseCommands::mysqlCreate($server, [$database, ...($testDatabase === null ? [] : [$testDatabase])], $credentials['username'], $credentials['password'], testPrefix: $testDatabase)
+            : ['commands' => ['preflight' => [...DatabaseCommands::sql($server, (new PostgresStatements)->databasesNotOwnedBy(
+                [$database, ...($testDatabase !== null && $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [])], $credentials['username']), expectEmpty: true), 'read_only' => true],
+                'database-apply' => DatabaseCommands::sql($server, $sql, redactions: [$credentials['password']])], 'creates' => []];
+
         return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
-            ['connection_id' => $connection->id, 'driver' => $server->driver->value],
-            ['database-apply' => DatabaseCommands::sql($server, $sql, redactions: [$credentials['password']])],
-            ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]);
+            ['connection_id' => $connection->id, 'driver' => $server->driver->value], $plan['commands'],
+            ['created_connection' => $connection->id, 'attach_instance' => $instance?->id, 'database_creates' => $plan['creates']]);
     }
 
     /**
@@ -235,7 +249,14 @@ final readonly class CreateServerDatabaseAction
      *
      * @param  array<string, mixed>  $attributes
      */
-    public function reserve(
+    /** @param array<string,mixed> $attributes */
+    public function reserve(DatabaseServer $server, string $slug, string $database, Instance $instance, ?string $createdBy, array $attributes = []): DatabaseConnection
+    {
+        return $this->lock->run([$server->id], fn (): DatabaseConnection => $this->reserveLocked($server, $slug, $database, $instance, $createdBy, $attributes));
+    }
+
+    /** @param array<string,mixed> $attributes */
+    private function reserveLocked(
         DatabaseServer $server,
         string $slug,
         string $database,
@@ -253,6 +274,10 @@ final readonly class CreateServerDatabaseAction
         if ($existing !== null) {
             if ($existing->owner_instance_id === $instance->id && $existing->database_server_id === $server->id
                 && $existing->database === $database && $existing->clone_step !== null && $existing->clone_step !== DatabaseCloneStep::Complete) {
+                $this->assertNamesFree($server, $database, $existing->test_database,
+                    ['username' => $existing->username ?? '', 'password' => $existing->password ?? '', 'new' => false], null,
+                    $existing->id, $this->ownership->mysqlNames($existing));
+
                 return $existing;
             }
             throw $this->slugConflict($slug);
@@ -322,19 +347,14 @@ final readonly class CreateServerDatabaseAction
         if (! $server instanceof DatabaseServer || $connection->database === null || $connection->username === null || $connection->password === null) {
             throw new ResourceOperationException('database.server_required', 'The connection needs a Database server.', 422);
         }
-        $statements = $this->statements->forDriver($server->driver);
-        $sql = $statements->dropDatabase($connection->database)
-            .$statements->ensureUser($connection->username, $connection->password)
-            .DatabaseCommands::createSqlDatabase($server, $connection->database, $connection->username, $connection->locale)
-            .$statements->grantAll($connection->database, $connection->username);
-        if ($connection->test_database !== null) {
-            $sql .= $statements->dropDatabase($connection->test_database)
-                .DatabaseCommands::createSqlDatabase($server, $connection->test_database, $connection->username, null)
-                .$this->statements->grantAllWithPrefix($connection->test_database, $connection->username);
+        if ($server->driver !== DatabaseDriver::Mysql) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Clone reset requires a managed MySQL database.', 422);
         }
+        $plan = DatabaseCommands::mysqlCreate($server, [$connection->database, ...($connection->test_database === null ? [] : [$connection->test_database])],
+            $connection->username, $connection->password, $this->ownership->mysqlNames($connection), $connection->test_database);
 
         return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
-            ['connection_id' => $connection->id, 'driver' => $server->driver->value], ['database-apply' => DatabaseCommands::sql($server, $sql, redactions: [$connection->password])]);
+            ['connection_id' => $connection->id, 'driver' => $server->driver->value], $plan['commands'], ['database_creates' => $plan['creates']]);
     }
 
     /**
@@ -498,7 +518,9 @@ final readonly class CreateServerDatabaseAction
         ];
     }
 
-    /** @param array{username: string, password: string, new: bool} $credentials */
+    /** @param array{username: string, password: string, new: bool} $credentials
+     * @param  list<string>  $allowedDatabases
+     */
     private function assertNamesFree(
         DatabaseServer $server,
         string $database,
@@ -507,6 +529,7 @@ final readonly class CreateServerDatabaseAction
         array $credentials,
         ?int $testProcesses = null,
         ?int $retryConnectionId = null,
+        array $allowedDatabases = [],
     ): void {
         $connections = DatabaseConnection::query()->where('database_server_id', $server->id)->get();
         $planned = [$database, ...($testDatabase !== null && $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [])];
@@ -537,7 +560,7 @@ final readonly class CreateServerDatabaseAction
         $query = $statements instanceof PostgresStatements
             ? ($retryConnectionId === null ? $statements->databasesIn($planned) : $statements->databasesNotOwnedBy($planned, $credentials['username']))
             : $statements->databasesNamed($database, $testDatabase);
-        if ($this->admin->execute($server, $query) !== []) {
+        if (array_diff($this->admin->execute($server, $query), $allowedDatabases) !== []) {
             throw $this->nameConflict($server, $database);
         }
 

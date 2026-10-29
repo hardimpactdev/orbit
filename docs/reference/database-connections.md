@@ -28,10 +28,10 @@ The database family owns `PrepareDatabaseChildAction` in `apps/gateway/app/Actio
 
 | Gateway admission signature | Child kind | Execution Node |
 | --- | --- | --- |
-| `create(Instance $target, DatabaseServer $server): array` | `database.create` | The explicit server's Node. |
-| `clone(Instance $target, Instance $source): array` | `database.clone` | The source MySQL server's Node, or the target SQLite Instance's Node. |
-| `destroyOwned(Instance $target): array` | `database.destroy_owned` | The Instance's Node; managed drops run as children on their servers. |
-| `sqliteSeed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): array` | `database.sqlite_seed` | The seed target's Node. |
+| `create(Instance $target, DatabaseServer $server, Operation $parent): array` | `database.create` | The explicit server's Node. |
+| `clone(Instance $target, Instance $source, Operation $parent): array` | `database.clone` | The source MySQL server's Node, or the target SQLite Instance's Node. |
+| `destroyOwned(Instance $target, Operation $parent): array` | `database.destroy_owned` | The Instance's Node; managed drops run as children on their servers. |
+| `sqliteSeed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath, Operation $parent): array` | `database.sqlite_seed` | The seed target's Node. |
 
 Every lifecycle database child requires `target_type: instance` and `target_id` equal to its owning Instance, including nested source export and cleanup children. A multi-Instance destroy prepares one descriptor per member; child admission must preserve each descriptor's recorded target. Its execution Node can differ. Public database commands keep their own database resource target. The generated `input` includes `intent_id` and `owner_instance_id`; callers preserve the complete input instead of constructing it from Instance IDs. Passwords and rendered SQL remain encrypted Gateway intent. Kit v2 records `parent_operation_id` and `child_key` through its children endpoint; neither is a caller input field.
 
@@ -45,9 +45,11 @@ Kind contracts, including runs, child Node relations, completion proof, and reda
 
 Database execution requires the kit's children and receipt capabilities. Until both are available, admission returns `operation.kind_unavailable`; the Gateway still loads other families and serves database reads. Child admission uses the recorded database intent's kind, target, Node and exact input. Swamp supplies only its key.
 
-A failed create can reuse its reserved credentials for 24 hours. Every retry repeats the name check. PostgreSQL permits existing names only when the reserved role owns them and repeats that guard in SQL before grants. MySQL uses strict `CREATE DATABASE`, so an existing database refuses creation, including a partially completed create without a successful receipt. Recovery of the same Operation uses its keyed receipt. Removal rechecks planned users before dispatch and refuses if another connection has begun sharing one.
+A failed create can reuse its reserved credentials for 24 hours. Every retry repeats the name check. PostgreSQL permits existing names only when the reserved role owns them and repeats that guard in SQL before grants. MySQL uses strict `CREATE DATABASE`, so an existing database refuses creation, including a partially completed create without a successful receipt. Recovery of the same Operation uses its keyed receipt. 
 
-The Gateway deletes protected execution intents after their Operations and ancestors finish and the 24-hour retry window closes. Operation records and redacted receipts remain available. A retry after that window must resolve the reserved connection explicitly; it cannot recover expired credential SQL.
+Removal checks PostgreSQL ownership inside its admission fence before every drop. MySQL removal and clone reset require a durable successful create receipt for each database name; a reserved row alone is insufficient. MySQL create records each database in a separate keyed step before credentials and grants. A preflight name refusal with no started effect forgets the reserved connection. Removal holds the database lock across its final login check and Node dispatch, and connection reservations take that same lock.
+
+Every lifecycle preparation records the parent Operation on the intent before the child is admitted. The Gateway retains pending intent while that parent is active. The Gateway deletes protected execution intents after their Operations and ancestors finish and the 24-hour retry window closes. Operation records and redacted receipts remain available. A retry after that window must resolve the reserved connection explicitly; it cannot recover expired credential SQL.
 
 ## Drivers and fields
 
