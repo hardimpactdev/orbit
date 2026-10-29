@@ -7,7 +7,7 @@ namespace App\Commands\Schedules;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 abstract class ScheduleItemCommand extends ScheduleUuidCommand
 {
@@ -27,20 +27,13 @@ abstract class ScheduleItemCommand extends ScheduleUuidCommand
             return self::FAILURE;
         }
 
-        $schedule = $this->sendWithProgress(
-            $connector,
-            $this->request($scheduleId),
-            ScheduleResponse::class,
-            $this->progressLabels(),
-        );
+        $schedule = $this->send($connector, $this->request($scheduleId), OperationResponse::class);
 
-        if (! $schedule instanceof ScheduleResponse) {
+        if (! $schedule instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        $this->renderSchedule($schedule);
-
-        return self::SUCCESS;
+        return $this->finishOperation($connector, $repository, $schedule, $this->progressLabels()[0]);
     }
 
     abstract protected function request(string $scheduleId): GatewayRequest;

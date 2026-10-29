@@ -10,15 +10,18 @@ use App\Actions\Schedules\DestroyScheduleAction;
 use App\Actions\Schedules\ListSchedulesAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
+use App\Data\Operations\OperationData;
 use App\Data\Schedules\ScheduleData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Schedules\EmptyScheduleQueryRequest;
 use App\Http\Requests\Schedules\EmptyScheduleRequest;
 use App\Http\Requests\Schedules\ScheduleLogsRequest;
 use App\Http\Requests\Schedules\StoreScheduleRequest;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Schedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,21 +42,13 @@ final class SchedulesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
+    #[StartsOperation('schedule.create')]
     public function store(
         #[SensitiveParameter]
         StoreScheduleRequest $request,
         CreateScheduleAction $action,
     ): JsonResponse {
-        $result = $action->execute($request->payload());
-        $this->rememberForActivity($request, $result['schedule']);
-
-        return response()->json(
-            [
-                'data' => ScheduleData::fromModel($result['schedule'])->toArray(),
-                'meta' => $this->meta($request),
-            ],
-            $result['created'] ? 201 : 200,
-        );
+        return $this->operationResponse($request, $action->admit($request->payload(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
@@ -66,13 +61,14 @@ final class SchedulesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
+    #[StartsOperation('schedule.run')]
     public function run(
         EmptyScheduleRequest $request,
         #[SensitiveParameter]
         Schedule $schedule,
         RunScheduleAction $action,
     ): JsonResponse {
-        return $this->scheduleResponse($request, $action->execute($schedule));
+        return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
@@ -99,23 +95,25 @@ final class SchedulesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
+    #[StartsOperation('schedule.destroy')]
     public function destroy(
         EmptyScheduleRequest $request,
         #[SensitiveParameter]
-        Schedule $schedule,
+        string $schedule,
         DestroyScheduleAction $action,
     ): JsonResponse {
-        return $this->scheduleResponse($request, $action->execute($schedule));
+        return $this->operationResponse($request, $action->admit(Schedule::query()->findOrFail($schedule), caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }
 
     #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
+    #[StartsOperation('schedule.enable')]
     public function activate(
         EmptyScheduleRequest $request,
         #[SensitiveParameter]
         Schedule $schedule,
         ActivateScheduleAction $action,
     ): JsonResponse {
-        return $this->scheduleResponse($request, $action->execute($schedule));
+        return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     private function scheduleResponse(Request $request, #[SensitiveParameter] Schedule $schedule): JsonResponse
@@ -131,6 +129,18 @@ final class SchedulesController extends Controller
     private function rememberForActivity(Request $request, #[SensitiveParameter] Schedule $schedule): void
     {
         $request->attributes->set('orbit.schedule_activity', $schedule);
+    }
+
+    private function operationResponse(Request $request, Operation $operation): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    private function caller(Request $request): ?Node
+    {
+        $caller = $request->user();
+
+        return $caller instanceof Node ? $caller : null;
     }
 
     /** @return array{request_id: string} */

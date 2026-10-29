@@ -4,12 +4,25 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
+use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleWriter;
+use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 
 abstract class ScheduleCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
+    protected function finishOperation(GatewayConnector $connector, GatewayConfigRepository $repository, OperationResponse $operation, string $title): int
+    {
+        $profile = $this->activeGatewayProfile($repository);
+
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $operation, $title, 'Schedule');
+    }
+
     protected function renderSchedule(ScheduleResponse $schedule): void
     {
         if ($this->option('json') === true) {
