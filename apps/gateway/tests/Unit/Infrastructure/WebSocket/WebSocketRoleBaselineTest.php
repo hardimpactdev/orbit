@@ -207,7 +207,7 @@ it('touches only the Gateway-side publication and credentials when the node is u
 
     $runtimes = collect(['default', 'second'])->map(fn (string $slot): WebSocketRuntime => WebSocketRuntime::query()->create([
         'id' => (string) Str::uuid(), 'node_id' => $node->id, 'slot' => $slot,
-        'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+        'registry_token' => 'registry-test',
     ]));
 
     $baseline->removeUnreachable($node, $assignment);
@@ -345,7 +345,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
     {
         $this->record('credentials:ensure');
 
-        return new WebSocketServerCredentials('base64:'.base64_encode('key'), 'test-process', 'test-registry-token', 'test-notification-token');
+        return new WebSocketServerCredentials('base64:'.base64_encode('key'), 'test-process', 'test-registry-token');
     }
 
     public function current(): ?WebSocketCredentials

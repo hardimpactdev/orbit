@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\WebSocket;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppAttachmentResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppResponse;
@@ -12,6 +13,8 @@ use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 
 abstract class WebSocketAppCommand extends GatewayCommand
 {
+    use FollowsIntegrationOperations;
+
     public const string NAME_PATTERN = '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D';
 
     protected function instanceSelector(): ?string

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\WebSocket;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Support\GatewayRequestId;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -35,8 +35,8 @@ final class RotateWebSocketAppRequest extends GatewayRequest
         return '/api/v1/websocket-apps/'.rawurlencode($this->name).'/rotate';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): WebSocketChangeResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return WebSocketChangeResponse::fromGatewayData($this->unwrapData($response), $response->json('operation'), $this->successRequestId($response));
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 }

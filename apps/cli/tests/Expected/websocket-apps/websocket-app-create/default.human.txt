@@ -1,25 +1,11 @@
-Creating WebSocket app...
+Waiting for a worker...
 
 ┌  Create WebSocket app
 │
-├  ● Saved WebSocket app change
+├  ● Start on a worker
+│    Operation 1.
 │
-└  Saved WebSocket app change.
+└  Integration succeeded.
 
-
-┌  WebSocket change saved; runtime application is pending.
-│
-├  App                hauzer
-│
-├  Operation ID       33333333-3333-4333-8333-333333333333
-│
-├  Desired revision   2
-│
-├  State              pending
-│
-├  Instance rollout   —
-│
-├  Next step          orbit websocket:sync
-│
-└  Request ID         0198e15c-bf97-7c23-8f1f-61b8fe67a844
-
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

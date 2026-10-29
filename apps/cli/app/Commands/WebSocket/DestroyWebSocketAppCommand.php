@@ -7,7 +7,6 @@ namespace App\Commands\WebSocket;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
-use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 
 final class DestroyWebSocketAppCommand extends WebSocketAppCommand
 {
@@ -52,17 +51,6 @@ final class DestroyWebSocketAppCommand extends WebSocketAppCommand
             return self::FAILURE;
         }
 
-        $app = $this->sendWithProgress(
-            $connector,
-            new DestroyWebSocketAppRequest($name, $this->operationKey()),
-            WebSocketChangeResponse::class,
-            ['Destroy WebSocket app', 'Destroying WebSocket app', 'Saved WebSocket app removal'],
-        );
-
-        if (! $app instanceof WebSocketChangeResponse) {
-            return self::FAILURE;
-        }
-
-        return $this->renderChange($app);
+        return $this->integrationOperation($connector, $repository, new DestroyWebSocketAppRequest($name, $this->operationKey()), 'Destroy WebSocket app');
     }
 }

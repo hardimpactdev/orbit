@@ -983,7 +983,7 @@ it('releases every runtime on a confirmed dead websocket Node and completes pend
     foreach (['default', 'second'] as $slot) {
         WebSocketRuntime::query()->create([
             'id' => (string) Str::uuid(), 'node_id' => $target->id, 'slot' => $slot,
-            'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+            'registry_token' => 'registry-test',
         ]);
     }
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
@@ -995,7 +995,7 @@ it('releases every runtime on a confirmed dead websocket Node and completes pend
     $survivor = remove_node_record(name: 'serving-reverb', wireguardIp: '10.44.0.4');
     $serving = WebSocketRuntime::query()->create([
         'id' => (string) Str::uuid(), 'node_id' => $survivor->id,
-        'registry_token' => 'survivor-registry', 'notification_token' => 'survivor-notify',
+        'registry_token' => 'survivor-registry',
         'epoch' => $operation->epoch, 'applied_revision' => $operation->revision,
         'reported_at' => now(), 'state' => 'serving',
     ]);
@@ -1023,7 +1023,7 @@ it('keeps runtime membership unless offline abandonment is confirmed and the Nod
     }
     $runtime = WebSocketRuntime::query()->create([
         'id' => (string) Str::uuid(), 'node_id' => $target->id,
-        'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+        'registry_token' => 'registry-test',
     ]);
 
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
