@@ -23,7 +23,7 @@ use App\Models\Operation;
 /** Called in lifecycle admission's transaction. Returns Kit v2 child intent, without Node effects. */
 final readonly class PrepareDatabaseChildAction
 {
-    public function __construct(private CreateServerDatabaseAction $databases, private DropServerDatabaseAction $drops, private RecordDatabaseOperationAction $records, private MysqlNames $names) {}
+    public function __construct(private CreateServerDatabaseAction $databases, private DropServerDatabaseAction $drops, private RecordDatabaseOperationAction $records, private MysqlNames $names, private PrepareSqliteSeedAbandonAction $seedAbandon) {}
 
     /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
     public function create(Instance $target, DatabaseServer $server, Operation $parent): array
@@ -156,6 +156,8 @@ final readonly class PrepareDatabaseChildAction
         $safeUser = static fn (string $user): bool => preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) === 1;
         if ($source->instanceId < 1 || $target->instanceId < 1 || ($source->instanceId === $target->instanceId && ! $transfer)
             || ! in_array($source->environment, ['development', 'production'], true) || ($target->environment !== 'production' && ! $transfer)
+            || ($transfer && ($target->operationId === null || trim($target->operationId) === '' || strlen($target->operationId) > 200
+                || ($source->operationId !== null && $source->operationId !== $target->operationId)))
             || ! $safePath($source->basePath) || ! $safePath($target->basePath) || ! $safePath($sourcePath)
             || ! str_starts_with($sourcePath, $source->basePath.'/') || ! $safeUser($source->executionUser) || ! $safeUser($target->executionUser)
             || ($target->environment === 'production' && $target->basePath !== '/home/'.$target->executionUser)
@@ -193,7 +195,14 @@ final readonly class PrepareDatabaseChildAction
 
         return $this->records->prepare('database.sqlite_seed', 'instance', $target->instanceId, $target->node->id,
             ['owner_instance_id' => $target->instanceId, 'source_instance_id' => $source->instanceId, 'source_node_id' => $source->node->id, 'driver' => 'seed'], $commands,
-            ['children' => [[...$export->child(), 'phase' => 'before'], [...$cleanup->child(), 'phase' => 'after']]])->child($parent);
+            ['children' => [[...$export->child(), 'phase' => 'before'], [...$cleanup->child(), 'phase' => 'after']],
+                ...($transfer ? ['seed_attempt' => ['id' => $target->operationId, 'operation' => $identity, 'source_cleanup_intent_id' => $cleanup->input['intent_id']]] : [])])->child($parent);
+    }
+
+    /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
+    public function sqliteSeedAbandon(Instance $target, int $seedIntentId, Operation $parent): array
+    {
+        return $this->seedAbandon->execute($target, $seedIntentId, $parent);
     }
 
     private function owned(PreparedDatabaseOperation $prepared, Instance $target): PreparedDatabaseOperation

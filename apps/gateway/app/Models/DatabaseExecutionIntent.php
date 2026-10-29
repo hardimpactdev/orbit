@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * @phpstan-type Child array{key:string,kind:string,node_id:int,input:array<string,mixed>,phase?:'before'|'after'}
- * @phpstan-type Command array{name:string,input:array<string,mixed>,transport?:string,protected?:list<string>,backend?:string,expect_empty?:bool,refusal?:string,redactions?:list<string>,resumable?:bool,finish_after_effect?:bool,cleanup?:bool,export_intent_id?:int,incoming_step?:string,read_only?:bool,reset_database?:string}
- * @phpstan-type Projection array{database_creates?:array<string,string>,drop_databases?:array<int,list<string>>,children?:list<Child>,created_connection?:int,attach_instance?:int|null,clone?:bool,drop_users?:list<string>,delete_connections?:list<int>,delete_server?:bool,process_id?:int|null,upsert_user?:array{database_connection_id:int,username:string,password:string,privileges:string,replication:bool,created_by:string|null},server?:array<string,mixed>,process?:array<string,mixed>,adopted_connection?:string|null}
+ * @phpstan-type Command array{name:string,input:array<string,mixed>,transport?:string,protected?:list<string>,backend?:string,expect_empty?:bool,refusal?:string,redactions?:list<string>,resumable?:bool,finish_after_effect?:bool,cleanup?:bool,export_intent_id?:int,incoming_step?:string,read_only?:bool,reset_database?:string,expect_state?:string}
+ * @phpstan-type Projection array{seed_attempt?:array{id:string,operation:string,source_cleanup_intent_id:int},seed_intent_id?:int,abandon_intent_id?:int,database_creates?:array<string,string>,drop_databases?:array<int,list<string>>,children?:list<Child>,created_connection?:int,attach_instance?:int|null,clone?:bool,drop_users?:list<string>,delete_connections?:list<int>,delete_server?:bool,process_id?:int|null,upsert_user?:array{database_connection_id:int,username:string,password:string,privileges:string,replication:bool,created_by:string|null},server?:array<string,mixed>,process?:array<string,mixed>,adopted_connection?:string|null}
  * Private, immutable command input. Operation owns all execution state and receipts.
  *
  * @property int|null $parent_operation_id

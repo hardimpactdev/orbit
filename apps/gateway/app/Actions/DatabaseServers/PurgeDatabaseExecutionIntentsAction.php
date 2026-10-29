@@ -18,6 +18,12 @@ final readonly class PurgeDatabaseExecutionIntentsAction
         $children = [];
         foreach (DatabaseExecutionIntent::query()->cursor() as $intent) {
             $children[$intent->id] = array_map(static fn (array $child): int => ValidatedData::integer($child['input']['intent_id']), $intent->payload['projection']['children'] ?? []);
+            if (isset($intent->payload['projection']['abandon_intent_id'])) {
+                $children[$intent->id][] = $intent->payload['projection']['abandon_intent_id'];
+            }
+            if (isset($intent->payload['projection']['seed_intent_id'])) {
+                $children[$intent->id][] = $intent->payload['projection']['seed_intent_id'];
+            }
             if ($intent->created_at?->gte($cutoff)) {
                 $retained[$intent->id] = true;
             }

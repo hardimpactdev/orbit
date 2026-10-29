@@ -169,6 +169,9 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
         }
 
         $result = ['backend' => $receipt['backend'] ?? $command['backend'] ?? 'active', ...array_intersect_key($receipt, array_flip(['row_count', 'truncated', 'bytes', 'sha256', 'mode', 'incoming', 'state'])), ...$data];
+        if (isset($command['expect_state']) && ($result['state'] ?? null) !== $command['expect_state']) {
+            return ['error_code' => 'sqlite.seed_cleanup_unproven'];
+        }
         if ($operation->kind === 'database.sqlite_export' && (! is_int($result['bytes'] ?? null) || $result['bytes'] < 16
             || ! is_string($result['sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $result['sha256']) !== 1)) {
             return ['error_code' => 'database.snapshot_unproven'];
