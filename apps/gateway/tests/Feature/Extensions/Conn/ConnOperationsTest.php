@@ -52,7 +52,7 @@ it('stores one encrypted output and preserves its exact reference through replay
     expect(DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential'))->toBe($encrypted);
     $this->postJson($this->path.'/step', ['worker' => 'conn-h', 'key' => 'pairing-create.done', 'name' => 'pairing-create', 'status' => 'succeeded', 'result' => $result])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('conn-one-time-sentinel', 'fixture-admin-session');
+    expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('conn-one-time-sentinel')->not->toContain('fixture-admin-session');
     expect(json_encode($this->operation->steps()->get()->toArray()))->not->toContain('conn-one-time-sentinel');
     Http::assertSentCount(1);
 
@@ -83,7 +83,7 @@ it('refuses a changed run or raw submitted credential and requires proven step c
         }
     }
     expect($this->operation->steps()->where('status', 'succeeded')->count())->toBe(0);
-    expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('raw-secret', 'conn-one-time-sentinel');
+    expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('raw-secret')->not->toContain('conn-one-time-sentinel');
 });
 
 it('refuses a changed output owner before calling the pairing server', function (): void {
