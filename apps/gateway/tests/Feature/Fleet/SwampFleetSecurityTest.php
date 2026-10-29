@@ -16,6 +16,7 @@ use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\RecipeOperationCompletion;
 use App\Domain\Fleet\RolloutOperationCompletion;
+use App\Domain\Nodes\NodeConvergeChildAdmission;
 use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationChildIntent;
@@ -64,6 +65,14 @@ it('detects a complete installed set without a manual enable flag', function ():
     InstalledFleetPrimitives::simulate();
     app(FleetVisitPrerequisites::class)->assertAvailable();
     expect(true)->toBeTrue();
+});
+
+it('accepts the merged Node converge kind and installed kit without presence fixtures', function (): void {
+    InstalledFleetPrimitives::requireSupportedKit();
+    $kind = app(OperationKinds::class)->definition('node.converge');
+    expect($kind)->toBeArray()->toHaveKey('admission', NodeConvergeChildAdmission::class);
+
+    app(FleetVisitPrerequisites::class)->assertAvailable();
 });
 
 it('checks the Gateway clock and current Node roles on every recipe and rollout invocation', function (string $kind): void {
