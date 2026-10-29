@@ -452,3 +452,52 @@ it('rejects a fabricated failed lifecycle completion without run or child eviden
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     expect($this->instance->refresh()->branch)->toBe('old');
 });
+
+final readonly class LifecycleListFixture implements OperationChildAdmission, OperationCompletion, OperationGatewayCommand
+{
+    public function admit(Operation $parent, array $intent): Operation
+    {
+        return app(StartOperationAction::class)->execute('instance.run_steps', 'instance', $parent->target_id,
+            $intent['node_id'], $intent['input'], 'test', null);
+    }
+
+    public function schema(): array
+    {
+        return ['type' => 'object', 'additionalProperties' => false, 'required' => ['instance_id'],
+            'properties' => ['instance_id' => ['type' => 'integer']]];
+    }
+
+    public function run(Operation $operation, #[SensitiveParameter] array $input): array
+    {
+        return ['outcome' => 'failed', 'error_code' => null];
+    }
+
+    public function complete(Operation $operation, OperationOutcome $outcome): void {}
+}
+
+it('requires a successful typed list outcome in addition to a succeeded child Operation', function (): void {
+    $input = [...$this->operation->input, 'run_setup' => true, 'setup_digest' => str_repeat('a', 64),
+        'members' => [['instance_id' => $this->instance->id, 'completed' => true, 'route_id' => null,
+            'original_path' => $this->instance->checkout_path, 'checkout' => $this->instance->checkout_path, 'relocation_state' => 'relocated']]];
+    $this->operation->update(['kind' => 'instance.register', 'input' => $input]);
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [
+        ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
+        'instance.run_steps' => ['executor' => 'swamp', 'completion' => LifecycleListFixture::class, 'admission' => LifecycleListFixture::class,
+            'runs' => [['transport' => 'gateway', 'name' => 'test.incoherent-list', 'input_fields' => ['instance_id'], 'resumable' => true]],
+            'completion_contract' => ['step' => 'list', 'transport' => 'gateway', 'name' => 'test.incoherent-list', 'result' => ['outcome' => 'failed']],
+            'result_fields' => ['outcome', 'error_code']],
+    ]));
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands([
+        'test.incoherent-list' => LifecycleListFixture::class,
+    ]));
+    $id = $this->postJson($this->path.'/children', ['worker' => 'proof-worker', 'key' => 'setup'])->assertAccepted()->json('data.id');
+    expect($this->operation->refresh()->lock_key)->not->toBeNull()->and(Operation::query()->findOrFail($id)->lock_key)->toBeNull();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.run_steps', 'worker' => 'list-child', 'operation_id' => $id])->assertOk();
+    $child = '/api/v1/operation-executor/'.$id;
+    $result = $this->postJson($child.'/run', ['worker' => 'list-child', 'key' => 'list', 'transport' => 'gateway', 'name' => 'test.incoherent-list',
+        'input' => ['instance_id' => $this->instance->id]])->assertOk()->json('data');
+    $this->postJson($child.'/step', ['worker' => 'list-child', 'key' => 'done', 'name' => 'list', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($child.'/complete', ['worker' => 'list-child', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect(fn () => app(InstanceLifecycleExecution::class)->assertStepList($this->operation, 'setup'))
+        ->toThrow(ResourceOperationException::class, 'The lifecycle list did not prove a successful outcome.');
+});
