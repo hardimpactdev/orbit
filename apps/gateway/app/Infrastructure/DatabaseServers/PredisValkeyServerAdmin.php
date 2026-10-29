@@ -12,7 +12,6 @@ use App\Models\DatabaseServer;
 use Closure;
 use Illuminate\Support\Sleep;
 use Predis\Client;
-use SensitiveParameter;
 use Throwable;
 
 /**
@@ -98,140 +97,9 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         );
     }
 
-    public function setUser(
-        DatabaseServer $server,
-        string $username,
-        #[SensitiveParameter]
-        string $password,
-        array $patterns,
-        array $allow,
-    ): string {
-        return $this->connected($server, true, function (Client $client) use ($server, $username, $password, $patterns, $allow): string {
-            $reply = $this->send($server, $client, [
-                'ACL', 'SETUSER', $username,
-                'reset', 'on', '#'.ValkeyAclUser::passwordHash($password), 'resetchannels',
-                ...array_map(static fn (string $pattern): string => '~'.$pattern, $patterns),
-                '-@all',
-                ...array_map(static fn (string $rule): string => '+'.$rule, $allow),
-                '-@admin', '-@dangerous', '-function', '-script',
-            ], $error);
-
-            if ($error === true) {
-                throw new ResourceOperationException(
-                    errorCode: 'database.acl_rules_invalid',
-                    message: 'Valkey refused a key pattern or a rule: '.self::masked(is_string($reply) ? $reply : '').'.',
-                    status: 422,
-                );
-            }
-
-            try {
-                $this->command($server, $client, ['ACL', 'SAVE']);
-            } catch (ResourceOperationException $exception) {
-                try {
-                    $client->executeRaw(['ACL', 'DELUSER', $username]);
-                } catch (Throwable) {
-                    // The save failure is the error to report; the user stays only until Valkey restarts.
-                }
-
-                throw $exception;
-            }
-
-            return ($this->users($server, $client)[$username] ?? throw $this->failed($server))->rules;
-        });
-    }
-
-    public function deleteUser(DatabaseServer $server, string $username): void
-    {
-        $this->connected($server, true, function (Client $client) use ($server, $username): void {
-            $previous = $this->users($server, $client)[$username] ?? null;
-            $this->command($server, $client, ['ACL', 'DELUSER', $username]);
-            try {
-                $this->command($server, $client, ['ACL', 'SAVE']);
-            } catch (ResourceOperationException $exception) {
-                if ($previous instanceof ValkeyAclUser) {
-                    try {
-                        $this->command($server, $client, self::setUserArguments($previous));
-                        $this->command($server, $client, ['ACL', 'SAVE']);
-                    } catch (ResourceOperationException) {
-                        // The record remains available for retry and Doctor reports any live drift.
-                    }
-                }
-                throw $exception;
-            }
-        });
-    }
-
-    public function applyUsers(DatabaseServer $server, array $set, array $delete): void
-    {
-        $this->connected($server, true, function (Client $client) use ($server, $set, $delete): void {
-            foreach ($set as $user) {
-                $this->command($server, $client, self::setUserArguments($user));
-            }
-
-            foreach ($delete as $username) {
-                $this->command($server, $client, ['ACL', 'DELUSER', $username]);
-            }
-
-            $this->command($server, $client, ['ACL', 'SAVE']);
-        });
-    }
-
     public function aclUsers(DatabaseServer $server): array
     {
         return $this->connected($server, true, fn (Client $client): array => $this->users($server, $client));
-    }
-
-    public function closeDefaultUser(DatabaseServer $server): void
-    {
-        $this->connected($server, true, function (Client $client) use ($server): void {
-            $default = $this->users($server, $client)['default'] ?? throw $this->failed($server);
-            if (! $default->hasOnlyPassword($server->root_password)) {
-                $ownId = $this->command($server, $client, ['CLIENT', 'ID']);
-                if (! is_int($ownId) && ! is_string($ownId)) {
-                    throw $this->failed($server);
-                }
-                $ownId = (string) $ownId;
-                $listing = $this->command($server, $client, ['CLIENT', 'LIST', 'USER', 'default']);
-                if (! is_string($listing)) {
-                    throw $this->failed($server);
-                }
-                $addresses = [];
-                foreach (explode("\n", trim($listing)) as $line) {
-                    $fields = [];
-                    foreach (explode(' ', $line) as $field) {
-                        $pair = explode('=', $field, 2);
-                        if (count($pair) === 2) {
-                            $fields[$pair[0]] = $pair[1];
-                        }
-                    }
-                    if (($fields['id'] ?? $ownId) !== $ownId) {
-                        $address = $fields['addr'] ?? 'unknown';
-                        $addresses[] = preg_match('/\A[0-9a-fA-F:.\[\]]+\z/', $address) === 1 ? $address : 'unknown';
-                    }
-                }
-                if ($addresses !== []) {
-                    throw new ResourceOperationException('database.server_in_use', count($addresses).' clients still use default: '.implode(', ', $addresses).'.', 409);
-                }
-
-                $this->command($server, $client, ['ACL', 'SETUSER', 'default', 'resetpass', '#'.ValkeyAclUser::passwordHash($server->root_password)]);
-            }
-            try {
-                $this->command($server, $client, ['ACL', 'SAVE']);
-            } catch (ResourceOperationException $exception) {
-                // Restore the previous password state on this still-authenticated connection.
-                try {
-                    $this->command($server, $client, ['ACL', 'SETUSER', 'default', 'resetpass',
-                        ...(in_array('nopass', explode(' ', $default->rules), true) ? ['nopass'] : array_map(static fn (string $hash): string => '#'.$hash, $default->passwordHashes)),
-                    ]);
-                    $this->command($server, $client, ['ACL', 'SAVE']);
-                } catch (ResourceOperationException) {
-                    // Keep the server marked open so the next call checks and persists its live state.
-                }
-                throw $exception;
-            }
-
-            $this->command($server, $client, ['CLIENT', 'KILL', 'USER', 'default', 'SKIPME', 'yes']);
-        });
     }
 
     public function aclFile(DatabaseServer $server): ?string
@@ -253,20 +121,6 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
 
             return ! ($error === true && is_string($reply) && str_starts_with($reply, 'NOAUTH'));
         });
-    }
-
-    /**
-     * `ACL SETUSER` that makes the live user exactly this one: its rules and its password hashes.
-     *
-     * @return list<string>
-     */
-    private static function setUserArguments(ValkeyAclUser $user): array
-    {
-        return [
-            'ACL', 'SETUSER', $user->name, 'reset',
-            ...explode(' ', $user->rules),
-            ...array_map(static fn (string $hash): string => '#'.$hash, $user->passwordHashes),
-        ];
     }
 
     /** @return array<string, ValkeyAclUser> */
@@ -359,12 +213,6 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         ], [
             'connections' => new DeadlineValkeyConnectionFactory($this->deadline),
         ]);
-    }
-
-    /** Valkey's message with every 64-character hex string masked, so no password hash reaches a response. */
-    private static function masked(string $message): string
-    {
-        return rtrim((string) preg_replace('/[0-9A-Fa-f]{64}/', '[REDACTED]', $message), '.');
     }
 
     private function failed(DatabaseServer $server): ResourceOperationException
