@@ -234,7 +234,7 @@ PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary f
 
 The macOS job only runs the binary, so it needs no PHP. In October 2026 `shivammathur/setup-php` could not install PHP 8.5 on `macos-26`. That one failed job blocked every CLI release, and the fleet rollout waited for a Linux binary that was never published. Now the Mac needs nothing that a hosted runner does not already have. The release still waits for the macOS run, so it never publishes a macOS binary that does not start.
 
-The repository is public, so hosted macOS and Linux arm64 runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network.
+The repository is public, so hosted macOS and Linux arm64 runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network. The agent's macOS CI job is different: it runs on mini when `ORBIT_MINI_RUNNER` is `true` ([macOS agent runner](/reference/implementation-loop#macos-agent-runner-on-mini)).
 
 ### Linux arm64
 

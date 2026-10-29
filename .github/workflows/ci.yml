@@ -188,7 +188,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.build == 'true'
     name: Build macOS agent
-    runs-on: macos-15
+    # Fork pull requests always use a hosted runner.
+    runs-on: ${{ vars.ORBIT_MINI_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "mini"]') || 'macos-15' }}
     defaults:
       run:
         working-directory: apps/agent
@@ -199,14 +200,24 @@ jobs:
         persist-credentials: false
         ref: ${{ github.sha }}
         fetch-depth: 0
+        clean: ${{ runner.environment == 'github-hosted' }}
     - name: Install Rust toolchain
+      if: runner.environment == 'github-hosted'
       uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
       with:
         targets: aarch64-apple-darwin,x86_64-apple-darwin
     - name: Restore Rust caches
+      if: runner.environment == 'github-hosted'
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       with:
         workspaces: apps/agent
+    - name: Verify the runner's Rust targets
+      if: runner.environment != 'github-hosted'
+      run: |
+        installed=$(rustup target list --installed)
+        for target in aarch64-apple-darwin x86_64-apple-darwin; do
+          grep -qx "$target" <<<"$installed" || { echo "::error::Run 'rustup target add $target' on this runner while it is idle."; exit 1; }
+        done
     - name: Build the macOS delivery
       run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --target aarch64-apple-darwin --target x86_64-apple-darwin
     - name: Upload the macOS delivery
