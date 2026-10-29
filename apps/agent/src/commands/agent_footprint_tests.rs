@@ -80,6 +80,21 @@ fn input(secret_hash: Option<String>) -> ConfigureInput {
     }
 }
 
+#[test]
+fn worker_opt_in_uses_the_existing_configuration_without_changing_the_command_shape() {
+    assert_eq!(
+        worker_node("gateway_url = 'https://gateway.orbit'\n").unwrap(),
+        None
+    );
+    assert_eq!(
+        worker_node("gateway_url = 'https://gateway.orbit'\nswamp_worker_node_id = 71\n").unwrap(),
+        Some(71)
+    );
+    for value in ["0", "-1", "'71'", "[]"] {
+        assert!(worker_node(&format!("swamp_worker_node_id = {value}\n")).is_err());
+    }
+}
+
 fn hash(secret: &str) -> String {
     format!("{:x}", Sha256::digest(secret.as_bytes()))
 }

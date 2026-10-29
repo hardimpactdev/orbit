@@ -16,6 +16,24 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
+### Per-Node Swamp worker
+
+The persistent Node worker is opt-in through the operator-owned `swamp_workers.nodes` rollout list. The list ships empty. Node converge carries the selected Node ID in its `agent.configure` input. The root agent installs Swamp `20261028.205235.0-sha.1602a617` from its fixed release URL and verifies SHA-256 before publishing a separate binary at `/opt/orbit/swamp-worker/swamp`. This does not replace the task-VM worker or recipe binary.
+
+Linux uses the dedicated non-root `orbit-swamp-worker` account, with no login, supplementary groups or sudo rule. Its private home, work directory and persistent machine cache live under `/var/lib/orbit-node-worker`. Package tools use the separate `orbit-swamp-package` account and isolation owned by the package launcher. Worker installation does not enable package execution. The first rollout is one non-production Linux Node; macOS worker installation remains disabled until its account and sandbox implementation is proved.
+
+A root timer checks credential lifetime each minute. Its short fixed service authenticates to the Gateway with the existing Node agent secret and WireGuard peer identity. The Gateway accepts no target, token name or arguments and couriers only that Node's credential pair from the issuer on Node 209. The response is not cached or recorded as command activity or Operation state. Native Swamp diagnostics never reach the caller.
+
+Only the issuer's root agent can read `/etc/orbit/swamp-issuer/operator.token` (0600, parent 0700). The `nodes.json` allowlist belongs to root and restricts issuance separately from Gateway rollout. The issuer uses the native operator principal, fixed Swamp methods and audited `orbit-node-access` vault. It creates no grants. Tokens have four-hour lifetimes: one-machine enrollment `orbit-node-<id>` and an access token for `worker:orbit-node-<id>`.
+
+At two hours, renewal drains the worker through Swamp's native first-SIGTERM handler. It waits for the worker to exit before revoking/reminting; it never kills an active step. Credential files are replaced atomically, readable only by root, and passed through systemd `LoadCredential`; machine cache survives rotation. A failed courier retries next minute, with no other-Node or Gateway execution fallback.
+
+Workers connect outbound over WireGuard to `wss://swamp.orbit` and its HTTPS data plane. They trust the public Orbit root CA with normal hostname validation. Exact-certificate pinning is not required. The serve deployment must keep `--dispatch-env-allow=,`; family adoption must select the exact Node target with no fallback and dispatch only declared Node-specific vault references. This installation slice registers no family consumer. Before each family adopts it, prove that its longest step drains within the remaining credential lifetime; native Swamp still disconnects at expiry.
+
+Agent removal disables renewal, drains the worker and erases its credentials before removing agent trust. It preserves the private machine cache for repair.
+
+The issuer and rollout remain inactive until operator setup. Production worker installs, grant changes and issuer setup on 209 require the orchestrator's approval. Native access policy must restrict enrollment/access-token mint and revoke to the operator, including calls through native model methods. Prove denied mint/revoke from a task dispatch before activation. The first pilot reports account/custody, reconnect/expiry and idle RAM/CPU/disk measurements before Tools cutover.
+
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.

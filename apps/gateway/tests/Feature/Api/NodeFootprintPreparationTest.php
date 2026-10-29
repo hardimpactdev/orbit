@@ -45,6 +45,15 @@ function footprintPreparation(array $artifacts, array $issues = [], bool $force 
     return [$node, $operation, $footprint, $command];
 }
 
+it('freezes worker installation only for the operator-selected Node', function (bool $enabled): void {
+    [$node, $operation, , $command] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    config(['swamp_workers.nodes' => $enabled ? [$node->id] : []]);
+    $command->run($operation, $operation->input);
+
+    $configuration = $operation->refresh()->input['_footprint']['payloads']['agent']['configuration'];
+    expect(str_contains($configuration, 'swamp_worker_node_id = '.$node->id))->toBe($enabled);
+})->with([true, false]);
+
 it('prepares a matching footprint without any Node effect', function (): void {
     $agent = new FakeFootprintArtifact('agent', 'current');
     [$node, $operation, $footprint, $command] = footprintPreparation([$agent]);

@@ -20,6 +20,7 @@ describe('MCP tool manifest', function (): void {
         'agent:realtime:auth',
         'agent:workspaces',
         'agent:log-streams',
+        'agent:swamp-worker',
         'websocket:registry:snapshot',
         'websocket:runtime:boot',
         'websocket:runtime:report',

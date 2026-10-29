@@ -61,6 +61,7 @@ pub const HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(
 pub struct Config {
     pub gateway_url: String,
     pub gateway_address: IpAddr,
+    pub swamp_worker_node_id: Option<u64>,
 }
 impl Config {
     pub fn load() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {

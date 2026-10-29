@@ -10,6 +10,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 
 /**
@@ -46,6 +47,7 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
             'certificate' => hash('sha256', $this->certificates->rootCertificate()),
             'user' => $node->user,
             'settings' => $node->settings,
+            'worker_node_id' => app(NodeWorkerRollout::class)->allows($node) ? $node->id : null,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 

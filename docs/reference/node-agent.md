@@ -35,6 +35,9 @@ An existing account must match that complete shape. Existing workspace parents m
 
 Account preparation alone does not enable package execution. Package commands remain blocked until the separate typed launcher proves the UID, filesystem, environment and process boundary on the pilot. Package jobs use private disposable work/home/tmp/cache directories, no shared package cache, and never inherit `SWAMP_HOME` or GitHub credentials. Missing isolation must never cause execution as the worker or `orbit`.
 
+Persistent Node workers use the separate [per-Node worker lifecycle](/reference/node-provisioning#per-node-swamp-worker). `swamp.issue-node-worker` runs as root on the Linux issuer and is reserved for the operator; it accepts only an allowlisted Node ID and returns a protected credential pair. It performs no family action and must never be invoked as a keyed Operation effect. Its setup remains inactive until operator approval.
+
+
 ## Where it runs
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.

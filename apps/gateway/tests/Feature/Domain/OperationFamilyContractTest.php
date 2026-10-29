@@ -29,7 +29,7 @@ it('exports the pinned agent and registered Gateway commands with closed hook na
 it('loads the actual Swamp compiler artifact only at its reviewed release pin', function (): void {
     $contract = app(OperationFamilyContract::class)->load(
         base_path('tests/Fixtures/Operations/family-contract.json'),
-        'a13bac0016250ea5e31cf4888aa3098c926d65176bc7f4efe8e69b0568f02ed7',
+        'c6836a8252307a66fc649f81651bae9ff6f2572d7feac491aae26f69712d5093',
     );
 
     expect($contract['kind'])->toBe('example.manage')

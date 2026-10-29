@@ -241,13 +241,33 @@ impl Command for ConfigureAgent {
     }
 
     fn run(input: ConfigureInput, context: &Context) -> Result<Configured, FootprintError> {
-        configure(
+        let worker_node_id = worker_node(&input.configuration)?;
+        let configured = configure(
             &Files::system(),
             &mut Native,
             &input,
             lock::answer_by(context.deadline()).min(Instant::now() + UPDATE_WAIT),
-        )
+        )?;
+        if let Some(node_id) = worker_node_id {
+            super::node_worker::configure_native(node_id, context)
+                .map_err(|_| failed("node-worker"))?;
+        }
+        Ok(configured)
     }
+}
+
+fn worker_node(configuration: &str) -> Result<Option<u64>, FootprintError> {
+    let value: toml::Value =
+        toml::from_str(configuration).map_err(|_| failed("node-worker-identity"))?;
+    value
+        .get("swamp_worker_node_id")
+        .map(|id| {
+            id.as_integer()
+                .filter(|v| *v > 0)
+                .and_then(|v| u64::try_from(v).ok())
+                .ok_or_else(|| failed("node-worker-identity"))
+        })
+        .transpose()
 }
 
 pub struct RemoveAgent;
@@ -268,6 +288,7 @@ impl Command for RemoveAgent {
     }
 
     fn run(_: RemoveInput, context: &Context) -> Result<Removed, FootprintError> {
+        super::node_worker::remove_native(context).map_err(|_| failed("node-worker-stop"))?;
         remove(
             &Files::system(),
             &mut Native,

@@ -252,6 +252,7 @@ fn registry() -> &'static Registry {
         registry.service::<crate::commands::task_topology::Worker>();
         registry.service::<crate::commands::plausible::Plausible>();
         orbit_documents_agent::register(&mut registry);
+        registry.service::<crate::commands::node_worker::renewal::Service>();
         orbit_ai_router_agent::register(&mut registry);
         registry
     })

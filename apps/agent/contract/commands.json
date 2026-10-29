@@ -2105,6 +2105,20 @@
       ]
     },
     {
+      "name": "swamp.issue-node-worker",
+      "summary": "Issue one allowlisted Node's short-lived worker credentials using the operator credential.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "swamp.node_worker_failed",
+        "swamp.node_worker_invalid"
+      ]
+    },
+    {
       "name": "swamp.stop-worker",
       "summary": "Stop a task worker and remove its runtime unit and startup credential.",
       "mutates": true,

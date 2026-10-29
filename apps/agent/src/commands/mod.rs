@@ -69,6 +69,7 @@ mod metrics_runtime;
 mod node_bootstrap;
 mod node_dns_listener;
 mod node_identity;
+pub mod node_worker;
 pub mod os_release;
 mod package_cache;
 mod package_sandbox;
@@ -241,6 +242,7 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_artifact::Inspect>(),
         entry::<pi_runtime::Configure>(),
         entry::<swamp_worker::Start>(),
+        entry::<node_worker::issuer::Issue>(),
         entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),
         entry::<gateway_web::PrepareDirectory>(),
