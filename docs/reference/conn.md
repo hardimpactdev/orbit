@@ -212,7 +212,9 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 Swamp revokes each device session and pairing link with its own stable effect key. The Gateway reads the server's session list, limits it to the admitted owner, and validates each individual effect and the final receipt. Successful completion marks only the admitted pairings revoked.
 
-Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels. A registration during cleanup leaves its newer revision pending for the next check. The list and registration replies expose the non-secret `cleanup_version`. Admission uses a stable key for that environment and revision. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. Cleanup never discards the current admin session.
+Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels.
+
+ A registration during cleanup leaves its newer revision pending for the next check. The list and registration replies expose the non-secret `cleanup_version`. Admission uses a stable key for that environment and revision. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. Cleanup never discards the current admin session.
 
 ## Pairing Operations
 
