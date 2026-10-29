@@ -22,6 +22,8 @@ Removal on a Swamp executor Node stays synchronous through `DestroyInstanceActio
 
 Swamp removal records an Operation before effects. Retained Gateway callers keep the synchronous `DestroyInstanceAction` and its removal receipt until their owning cutover composes removal as a child. They do not admit an Operation and wait under the caller's lease.
 
+Cancellation is refused with `operation.cancel_refused` once the Gateway accepts removal, including when the acceptance reply is lost. The accepted removal must finish or resume. A single-target production Route may remain `retiring` after its withdrawal succeeds. Detach and retry accept that state only with the exact successful withdrawal child recorded for the same removal; an unrelated or unfinished withdrawal cannot authorize it.
+
 Runtime cleanup uses the successful Gateway inventory receipt, with integer Process IDs and Schedule UUIDs. Swamp admits one recorded `process.destroy` or `schedule.destroy` child per record. The owning adapters accept only the lifecycle parent's recorded Instance and Node. Empty inventories need no child. Every recorded child must succeed and both owned runtime sets must be empty before database or home removal; a later record cannot be silently omitted.
 
 When a Route changes its targets, it admits removal as `instance.destroy` with `{instance_id, force:true}`. The Instance admission checks the parent's stored removed set and placement, completed publication stages, and proven Gateway commit receipts. It can then remove the deliberately detached Instance without requiring its old Route association. The request cannot supply a detached flag or select another Instance or Node.

@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteProvenance;
@@ -136,12 +137,16 @@ final readonly class ProductionRemovalIntent
         if ($action === 'removal-production-prepare') {
             DB::transaction(function () use ($operation, $member): void {
                 $this->validateWithdrawals($operation);
-                $member->update(['source_prepared_at' => now()]);
+                if ($member->source_prepared_at === null) {
+                    $member->update(['source_prepared_at' => now()]);
+                }
             });
 
             return ['prepared' => true];
         }
-        $member->update(['source_finalized_at' => now(), 'finalization_receipt' => hash('sha256', "production-retained\0{$member->source_digest}")]);
+        if ($member->source_finalized_at === null) {
+            $member->update(['source_finalized_at' => now(), 'finalization_receipt' => hash('sha256', "production-retained\0{$member->source_digest}")]);
+        }
 
         return ['finalized' => true];
     }
@@ -235,7 +240,7 @@ final readonly class ProductionRemovalIntent
                     continue;
                 }
                 $route = Route::query()->lockForUpdate()->findOrFail($snapshot['id']);
-                $this->assertSafeRoute($route, $instance, removing: true);
+                $this->assertSafeRoute($route, $instance, removing: true, withdrawn: $this->withdrawn($operation, $snapshot, $route));
                 if ($this->route($route, $instance->node_id) !== $snapshot) {
                     throw $this->conflict();
                 }
@@ -254,7 +259,8 @@ final readonly class ProductionRemovalIntent
                 $expected = ValidatedData::integerList($snapshot['targets']);
                 $detached = ($operation->state['production_routes_detached'] ?? $operation->input['production_detached'] ?? false) === true;
                 $remaining = array_values(array_diff($expected, [$instance->id]));
-                $this->assertSafeRoute($route, $instance, removing: true, detached: $detached && count($expected) > 1);
+                $this->assertSafeRoute($route, $instance, removing: true, detached: $detached && count($expected) > 1,
+                    withdrawn: $this->withdrawn($operation, $snapshot, $route));
                 $current = $this->route($route, $instance->node_id);
                 if ($current['node_id'] !== $snapshot['node_id'] || $current['nodes'] !== $snapshot['nodes']) {
                     throw $this->conflict();
@@ -306,10 +312,10 @@ final readonly class ProductionRemovalIntent
     }
 
     /** Re-read the owning rows under detach's transaction, including every co-target's placement. */
-    private function assertSafeRoute(Route $route, Instance $requested, bool $removing = false, bool $detached = false): void
+    private function assertSafeRoute(Route $route, Instance $requested, bool $removing = false, bool $detached = false, bool $withdrawn = false): void
     {
         $targets = $route->targets()->orderBy('position')->orderBy('id')->lockForUpdate()->get();
-        if ($route->status !== RouteStatus::Active || $route->project_id !== $requested->project_id || $targets->isEmpty()
+        if (($route->status !== RouteStatus::Active && ! ($withdrawn && $route->status === RouteStatus::Retiring)) || $route->project_id !== $requested->project_id || $targets->isEmpty()
             || ! $detached && ! $targets->contains('instance_id', $requested->id)) {
             throw $this->conflict();
         }
@@ -342,6 +348,32 @@ final readonly class ProductionRemovalIntent
             }
             $nodes[$node->id] = true;
         }
+    }
+
+    /** @param ProductionRoute $snapshot */
+    private function withdrawn(Operation $operation, array $snapshot, Route $route): bool
+    {
+        if ($route->status !== RouteStatus::Retiring || count($snapshot['targets']) !== 1) {
+            return false;
+        }
+        $key = 'withdraw-production-'.$route->id;
+        $attempts = Operation::query()->where('kind', 'instance.destroy')->where('target_type', $operation->target_type)
+            ->where('target_id', $operation->target_id)->where('node_id', $operation->node_id)
+            ->where('input->removal_id', $operation->input['removal_id'])->where('id', '<=', $operation->id)->latest('id')->get();
+        foreach ($attempts as $attempt) {
+            if (! in_array($snapshot, $this->routes($attempt), true)
+                || ! $attempt->children()->where('child_key', $key)->where('status', 'succeeded')->exists()) {
+                continue;
+            }
+            $child = app(OperationChildren::class)->requireSucceeded($attempt, $key);
+            if ($child->kind !== 'route.withdraw' || $child->target_type !== 'route' || $child->target_id !== $route->id
+                || $child->node_id !== $snapshot['node_id'] || ($child->input['route_id'] ?? null) !== $route->id) {
+                throw $this->conflict();
+            }
+
+            return true;
+        }
+        throw $this->conflict();
     }
 
     /** @return ProductionRoute */

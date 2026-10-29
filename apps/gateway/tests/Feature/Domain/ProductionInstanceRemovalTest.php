@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceRemovalState;
@@ -11,7 +12,10 @@ use App\Domain\Instances\RemovalLifecycleExecution;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Cluster;
@@ -22,6 +26,8 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\RouteSwampGatewayFixture;
 
 /** Test the lifecycle boundary through real stamped children without executing Route publication. */
 final readonly class ProductionRemovalPublicationAdmission implements OperationChildAdmission
@@ -123,6 +129,52 @@ it('records production source, shared targets and every publication Node without
         ->and($this->instance->fresh()->status->value)->toBe('active')
         ->and(InstanceRemoval::query()->count())->toBe(0);
 });
+
+it('refuses cancellation after accepted removal even when its acceptance reply was lost', function (bool $receiptSaved): void {
+    $operation = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']);
+    if ($receiptSaved) {
+        ($this->prove)($operation, 'removal-accept', ['accepted' => true, 'removal_id' => $operation->input['removal_id']]);
+    }
+    $before = $operation->fresh()->getAttributes();
+
+    expect(fn () => app(CancelOperationAction::class)->execute($operation))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.cancel_refused'));
+
+    expect($operation->fresh()->getAttributes())->toBe($before);
+    expect($this->instance->fresh()->status->value)->toBe('removing');
+})->with([true, false]);
+
+it('permits cancellation before acceptance and refuses a later acceptance dispatch', function (): void {
+    $operation = ($this->admit)();
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect(fn () => app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']))
+        ->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseCount('instance_removals', 0);
+    expect($this->instance->fresh()->status->value)->toBe('active');
+});
+
+it('refuses a Retiring Route without its own successful stamped withdrawal', function (string $proof): void {
+    bind_task_node_reachability();
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
+    $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
+    $operation = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']);
+    app(ProductionRemovalIntent::class)->transition($operation, 'removal-production-prepare');
+    ($this->prove)($operation, 'removal-'.$this->instance->id.'-source-prepare', ['prepared' => true]);
+    if ($proof !== 'absent') {
+        $child = app(OperationChildren::class)->admit($operation, ['key' => 'withdraw-production-'.$this->route->id])['operation'];
+        $child->update(['status' => $proof === 'failed' ? 'failed' : 'succeeded']);
+        if ($proof === 'unbound') {
+            $child->forceFill(['child_fingerprint' => str_repeat('f', 64)])->save();
+        }
+    }
+    $this->route->update(['status' => 'retiring']);
+
+    expect(fn () => app(ProductionRemovalIntent::class)->detach($operation))->toThrow(ResourceOperationException::class);
+    expect($this->route->targets()->sole()->instance_id)->toBe($this->instance->id);
+})->with(['absent', 'failed', 'unbound']);
 
 it('refuses a foreign home, shared account or missing dedicated PHP identity before admission', function (string $change): void {
     if ($change === 'shared') {
@@ -331,3 +383,95 @@ it('refuses a new production co-target before prepare or before withdrawal child
         expect($member->refresh()->source_prepared_at)->toBeNull();
     }
 })->with(['before prepare' => [false], 'after prepare' => [true]]);
+
+it('finishes single-target production removal through the real withdrawal workflow', function (): void {
+    $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
+    $gateway = Node::query()->create(['name' => 'removal-gateway', 'platform' => 'linux', 'status' => 'active', 'public_ssh_host' => '192.0.2.250', 'wireguard_ip' => '10.254.254.250']);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $definition = app(OperationKinds::class)->definition('instance.destroy');
+    $fixture = new RouteSwampGatewayFixture($this);
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'instance.destroy' => $definition]));
+    foreach ([OperationExecutors::class, OperationExecutionContract::class, OperationChildren::class, SwampOperationExecutor::class] as $class) {
+        app()->forgetInstance($class);
+    }
+    $fixture->agents->answer('instance.clear-current-release', ['current' => null]);
+    $fixture->agents->answer('instance.remove-production-home', ['removed' => true]);
+    $peer = $this->instance->node_id;
+    config(['operation_executor.worker_node_ids' => [...config('operation_executor.worker_node_ids'), $peer]]);
+    $executor = app(SwampOperationExecutor::class);
+    $root = ($this->admit)();
+    $root = $executor->claim('instance.destroy', 'removal-proof', $peer, $root->id);
+    $run = function (string $key) use (&$root, $executor, $peer): array {
+        $descriptor = array_find(app(InstanceLifecycleExecution::class)->context($root->refresh())['descriptors'],
+            static fn (array $entry): bool => $entry['key'] === $key);
+        $result = $executor->run($root, ['worker' => 'removal-proof', ...$descriptor], $peer);
+        expect($result)->not->toHaveKey('error_code');
+        $executor->step($root, ['worker' => 'removal-proof', 'key' => $key.'.finish', 'name' => $key, 'status' => 'succeeded', 'result' => $result], $peer);
+
+        return $result;
+    };
+    $child = function (string $key) use (&$root, $executor, $fixture, $peer): void {
+        $operation = $executor->child($root, ['worker' => 'removal-proof', 'key' => $key], $peer)['operation'];
+        $executor->wait($root, 'removal-proof', [$key], $peer);
+        if ($operation->kind === 'database.destroy_owned') {
+            $operation = $executor->claim($operation->kind, 'database-proof', $peer, $operation->id);
+            foreach (app(OperationExecutionContract::class)->execution($operation)->context($operation)['descriptors'] as $descriptor) {
+                $result = $executor->run($operation, ['worker' => 'database-proof', ...$descriptor], $peer);
+                $executor->step($operation, ['worker' => 'database-proof', 'key' => $descriptor['key'].'.finish',
+                    'name' => $descriptor['step'], 'status' => 'succeeded', 'result' => $result], $peer);
+            }
+            $executor->complete($operation, ['worker' => 'database-proof', 'status' => 'succeeded', 'result' => $result], $peer);
+        } else {
+            $fixture->run($operation);
+        }
+        expect($operation->refresh()->status->value)->toBe('succeeded');
+        $root = $executor->claim('instance.destroy', 'removal-proof', $peer, $root->id);
+    };
+    $prefix = 'removal-'.$this->instance->id;
+    foreach (['removal-inspect', 'removal-revalidate', 'removal-accept', $prefix.'-source-prepare'] as $key) {
+        $run($key);
+    }
+    $child('withdraw-production-'.$this->route->id);
+    expect($this->route->fresh()->status->value)->toBe('retiring');
+    foreach ([$prefix.'-route-detach', $prefix.'-route-clear', $prefix.'-source-finalize', $prefix.'-runtime-intent'] as $key) {
+        $run($key);
+    }
+    $child('cleanup-instance-'.$this->instance->id);
+    $run($prefix.'-database-intent');
+    $child('remove-databases-'.$this->instance->id);
+    $run($prefix.'-home-remove');
+    $run($prefix.'-row-delete');
+    $result = $run('lifecycle-finish');
+    $executor->complete($root, ['worker' => 'removal-proof', 'status' => 'succeeded', 'result' => $result], $peer);
+
+    $this->assertDatabaseMissing('instances', ['id' => $this->instance->id]);
+    $this->assertDatabaseMissing('routes', ['id' => $this->route->id]);
+    expect($root->refresh()->status->value)->toBe('succeeded');
+    expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
+});
+
+it('resumes a Retiring Route using the same removal proven withdrawal and preserves its preparation checkpoint', function (): void {
+    bind_task_node_reachability();
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
+    $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
+    $operation = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']);
+    app(ProductionRemovalIntent::class)->transition($operation, 'removal-production-prepare');
+    ($this->prove)($operation, 'removal-'.$this->instance->id.'-source-prepare', ['prepared' => true]);
+    $withdrawal = app(OperationChildren::class)->admit($operation, ['key' => 'withdraw-production-'.$this->route->id])['operation'];
+    $withdrawal->update(['status' => 'succeeded']);
+    $this->route->update(['status' => 'retiring']);
+    $member = InstanceRemoval::query()->sole()->members()->sole();
+    $preparedAt = $member->source_prepared_at;
+    $operation->update(['status' => 'failed', 'lock_key' => null]);
+    $this->travel(10)->seconds();
+
+    $retry = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($retry, ['action' => 'removal-accept']);
+    expect(app(ProductionRemovalIntent::class)->transition($retry, 'removal-production-prepare'))->toBe(['prepared' => true]);
+    expect(app(ProductionRemovalIntent::class)->detach($retry))->toBe(['detached' => true]);
+
+    expect($member->refresh()->source_prepared_at->equalTo($preparedAt))->toBeTrue();
+    expect($this->route->fresh()->status->value)->toBe('retiring');
+    expect($this->route->targets()->sole()->instance_id)->toBe($this->instance->id);
+});

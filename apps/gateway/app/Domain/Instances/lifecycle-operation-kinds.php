@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\InstanceDestroyCancelGuard;
 use App\Domain\Instances\InstanceLifecycleChildAdmission;
 use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceLifecycleExecution;
@@ -77,6 +78,8 @@ return (static function (): array {
             ],
         ];
     }
+
+    $kinds['instance.destroy']['cancel_guard'] = InstanceDestroyCancelGuard::class;
 
     return $kinds;
 })();

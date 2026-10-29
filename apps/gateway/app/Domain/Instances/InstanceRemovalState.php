@@ -87,6 +87,10 @@ final readonly class InstanceRemovalState
         $ids = ValidatedData::integerList(array_column(InstanceLifecycleInput::members($intent), 'instance_id'));
         app(ProcessAdmissionLock::class)->run($ids, function () use ($operation, $intent, $ids): void {
             DB::transaction(function () use ($operation, $intent, $ids): void {
+                $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+                if ($current->cancel_requested_at !== null) {
+                    throw new ResourceOperationException('operation.cancelled', 'Removal was cancelled before acceptance.', 409);
+                }
                 foreach (ValidatedData::integerList($intent['additional_route_ids']) as $routeId) {
                     app(InstanceLifecycleExecution::class)->assertChild($operation, "withdraw-extra-{$routeId}", 'route.withdraw');
                     $route = Route::query()->lockForUpdate()->find($routeId);
