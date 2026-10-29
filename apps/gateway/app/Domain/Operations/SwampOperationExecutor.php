@@ -10,6 +10,7 @@ use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -35,14 +36,7 @@ final readonly class SwampOperationExecutor
         return DB::transaction(function () use ($kind, $worker, $nodeId): ?Operation {
             $operation = Operation::query()->where('kind', $kind)->where('status', OperationStatus::Running->value)
                 ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
-            $operation ??= Operation::query()->where('kind', $kind)
-                ->where(function ($query): void {
-                    $query->where('status', OperationStatus::Queued->value)
-                        ->orWhere(function ($query): void {
-                            $query->where('status', OperationStatus::Running->value)
-                                ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
-                        });
-                })->orderBy('id')->first();
+            $operation ??= $this->claimCandidates($kind)->orderBy('id')->first();
             if ($operation === null) {
                 return null;
             }
@@ -56,6 +50,36 @@ final readonly class SwampOperationExecutor
 
             return $operation;
         });
+    }
+
+    /** @return list<array{kind:string,claimable:int,oldest_at:string|null}> */
+    public function claimable(): array
+    {
+        $kinds = [];
+        foreach (OperationKinds::names() as $kind) {
+            if (! $this->executors->swamp($kind)) {
+                continue;
+            }
+            $summary = $this->claimCandidates($kind)->selectRaw('COUNT(*) AS candidate_count, MIN(created_at) AS oldest_at')->firstOrFail();
+            $oldest = $summary->getRawOriginal('oldest_at');
+            $kinds[] = ['kind' => $kind, 'claimable' => ValidatedData::integer($summary->getRawOriginal('candidate_count')),
+                'oldest_at' => $oldest === null ? null : Carbon::parse(ValidatedData::string($oldest))->toISOString()];
+        }
+
+        return $kinds;
+    }
+
+    /** @return Builder<Operation> */
+    private function claimCandidates(string $kind): Builder
+    {
+        return Operation::query()->where('kind', $kind)
+            ->where(function ($query): void {
+                $query->where('status', OperationStatus::Queued->value)
+                    ->orWhere(function ($query): void {
+                        $query->where('status', OperationStatus::Running->value)
+                            ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
+                    });
+            });
     }
 
     public function heartbeat(Operation $operation, string $worker, int $nodeId): Operation
