@@ -7,17 +7,26 @@ use App\Data\Instances\CloneInstanceData;
 use App\Domain\Instances\CloneCandidateSource;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceLifecycleCommand;
+use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationChildIntent;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Processes\ProcessInstanceOperation;
+use App\Domain\Schedules\ScheduleInstanceOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Domain\WebSocket\WebSocketAppIssuer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
+use App\Models\Schedule;
 use App\Models\WebSocketAppTarget;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
@@ -113,5 +122,44 @@ it('copies only stored clone environment values and preserves later edits on ret
     $target->environmentValues()->where('env_key', 'APP_NAME')->sole()->update(['env_value' => 'Retained edit']);
     $command->run($operation, ['action' => 'clone-environment', 'operation_id' => $operation->id]);
     expect($target->environmentValues()->where('env_key', 'APP_NAME')->sole()->env_value)->toBe('Retained edit');
+    Queue::assertNothingPushed();
+});
+
+it('admits the shipped definition children with stopped Process copies and disabled Schedule UUIDs', function (): void {
+    $project = $this->candidate->project;
+    $project->processDefinitions()->create(['name' => 'queue', 'environments' => ['production'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/php', 'artisan', 'queue:work']]]);
+    $project->scheduleDefinitions()->create(['name' => 'scheduler', 'environments' => ['production'],
+        'spec' => ['calendar' => 'minutely', 'command' => '/usr/bin/php artisan schedule:run', 'timeout_seconds' => 60]]);
+    config(['dependency_detection.services_node_id' => $this->dev->id]);
+    $parent = app(StartInstanceCloneAction::class)->execute($this->candidate, $this->data);
+    $parent->update(['status' => 'running']);
+    $target = Instance::query()->findOrFail($parent->target_id);
+    $target->update(['status' => InstanceState::SourceResolved, 'source_is_laravel' => false]);
+    $result = app(InstanceLifecycleCommand::class)->run($parent, ['action' => 'clone-definitions', 'operation_id' => $parent->id]);
+    $descriptor = app(InstanceLifecycleExecution::class)->descriptor('clone-definitions', 'gateway', 'instance.lifecycle-state',
+        ['action' => 'clone-definitions', 'operation_id' => $parent->id]);
+    $parent->update(['state' => ['lifecycle_bindings' => ['clone-definitions' => $descriptor],
+        'executor_runs' => ['clone-definitions' => [...$descriptor, 'result' => $result]]]]);
+    $parent->steps()->create(['name' => 'clone-definitions', 'position' => 0, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
+    $intent = ['key' => 'clone-environment-sync', 'kind' => 'instance.sync_environment', 'node_id' => $parent->node_id, 'input' => ['instance_id' => $target->id]];
+    $stamp = ['intent' => $intent, 'admitted' => ['parent_operation_id' => $parent->id, 'key' => $intent['key'], 'kind' => $intent['kind'],
+        'node_id' => $parent->node_id, 'target_type' => 'instance', 'target_id' => $target->id, 'input' => $intent['input'], 'run_constraints' => []]];
+    $environment = Operation::query()->create(['kind' => $intent['kind'], 'node_id' => $parent->node_id, 'target_type' => 'instance',
+        'target_id' => $target->id, 'input' => $intent['input'], 'status' => 'succeeded']);
+    $environment->forceFill(['parent_operation_id' => $parent->id, 'child_key' => $intent['key'], 'child_admission' => $stamp,
+        'child_fingerprint' => OperationChildIntent::fingerprint($stamp)])->save();
+    foreach (['clone-processes' => ProcessInstanceOperation::class, 'clone-schedules' => ScheduleInstanceOperation::class] as $key => $execution) {
+        $child = DB::transaction(fn (): Operation => app(OperationChildren::class)->admit($parent, ['key' => $key])['operation']);
+        expect($child->input)->toBe(['instance_id' => $target->id])->and($child->node_id)->toBe($this->prod->id)
+            ->and($child->lock_key)->toBeNull();
+        $plan = app($execution)->childContext($child)['children'];
+        expect($plan)->toHaveCount(1);
+        expect($plan[0]['kind'])->toBe($key === 'clone-processes' ? 'process.create' : 'schedule.create');
+    }
+    $process = Process::query()->where('owner_id', $target->id)->sole();
+    $schedule = Schedule::query()->where('target_id', $target->id)->sole();
+    expect($result['process_ids'])->toBe([$process->id])->and($result['schedule_ids'])->toBe([$schedule->id])
+        ->and($process->desired_state->value)->toBe('stopped')->and($schedule->desired_timer_state->value)->toBe('disabled');
     Queue::assertNothingPushed();
 });

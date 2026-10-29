@@ -16,6 +16,8 @@ covers:
 
 Every production Instance starts as a clone. The Gateway validates the candidate and reserves the target. Swamp copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code. Provisioning composes the Route, environment, database, and runtime families as child Operations. Every Node effect uses the target Node recorded on its Operation.
 
+Runtime installation uses the shipped `process.install_instance_definitions` and `schedule.install_instance_definitions` children, each with only `{instance_id}`. The Gateway captures the Project's definitions once. Each child records its per-record creation plan; Process copies stay stopped and Schedule copies stay disabled until a later deployment starts them.
+
 `instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
 
 ## Prepare the Node
