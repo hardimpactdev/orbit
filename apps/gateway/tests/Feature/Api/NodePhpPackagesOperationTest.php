@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-use App\Actions\Nodes\StartNodePhpPackagesAction;
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentSchemas;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Models\Node;
 use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Sleep;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\PhpBuildAnswers;
@@ -58,19 +58,42 @@ final class PhpPackagesParent implements OperationCompletion, OperationFamilyChi
 }
 
 beforeEach(function (): void {
+    if (! OperationKinds::supports('list_of')) {
+        $this->markTestSkipped('Bounded warning lists require Kit C.');
+    }
     $gateway = $this->markAsGateway(FleetFixtures::node('gateway', [RoleName::Gateway]));
     $services = FleetFixtures::node('services');
     $services->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $services->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
+    $spec = ['executor' => 'swamp', 'completion' => PhpPackagesParent::class, 'execution' => PhpPackagesParent::class, 'runs' => [],
+        'children' => [['kind' => 'node.prepare_php_packages', 'node_from' => 'operation.node_id']],
+        'completion_contract' => ['children_succeeded' => ['node.prepare_php_packages']], 'result_fields' => []];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'instance.deploy' => $spec, 'instance.rollback' => $spec]));
 });
+
+function phpPackagesAdmit($test, Node $node, array $versions = ['8.5'], string $kind = 'instance.deploy'): TestResponse
+{
+    $parent = app(StartOperationAction::class)->execute($kind, 'node', $node->id, $node->id, [], 'test', null);
+    $parent->update(['state' => ['child_intents' => [['key' => 'packages', 'kind' => 'node.prepare_php_packages', 'node_id' => $node->id, 'input' => ['versions' => $versions, 'profile' => 'app-prod']]]]]);
+    $test->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent'])->assertOk();
+
+    return $test->postJson("/api/v1/operation-executor/{$parent->id}/children", ['worker' => 'parent', 'key' => 'packages']);
+}
+
+function phpPackagesChild($test, Node $node, string $kind = 'instance.deploy'): Operation
+{
+    $id = phpPackagesAdmit($test, $node, kind: $kind)->assertAccepted()->json('data.id');
+
+    return Operation::findOrFail($id);
+}
 
 it('captures the package-only recipe at admission without executing it', function (bool $development): void {
     $node = FleetFixtures::node('packages', $development ? [RoleName::AppProd, RoleName::AppDev] : [RoleName::AppProd]);
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);
 
-    $operation = app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']);
+    $operation = phpPackagesChild($this, $node);
 
     $snapshot = $operation->input['_php_packages'];
     $recipe = new RecipeLoader()->load();
@@ -89,22 +112,19 @@ it('captures the package-only recipe at admission without executing it', functio
 it('refuses invalid selections before reserving the Node', function (array $versions): void {
     $node = FleetFixtures::node('invalid-packages');
 
-    expect(fn () => app(StartNodePhpPackagesAction::class)->execute($node, $versions))->toThrow(ResourceOperationException::class);
-    $this->assertDatabaseCount('operations', 0);
+    phpPackagesAdmit($this, $node, $versions)->assertUnprocessable()->assertJsonPath('error.code', 'node.php_packages_invalid');
+    expect(Operation::query()->where('kind', 'node.prepare_php_packages')->count())->toBe(0);
 })->with([[[]], [['8.5', '8.5']], [['8.5; command']], [['one' => '8.5']], [array_map(fn ($i) => '8.'.$i, range(0, 8))]]);
 
-it('refuses unsupported versions and unmanaged Nodes without admitting work', function (): void {
+it('refuses unsupported versions without admitting a package child', function (): void {
     $node = FleetFixtures::node('unsupported-packages');
-    expect(fn () => app(StartNodePhpPackagesAction::class)->execute($node, ['99.1']))
-        ->toThrow(fn (RuntimeConvergenceException $error) => expect($error->errorCode)->toBe('app-prod.php_package_source_unavailable'));
-    $node->update(['platform' => 'macos']);
-    expect(fn () => app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']))->toThrow(ResourceOperationException::class);
-    $this->assertDatabaseCount('operations', 0);
+    phpPackagesAdmit($this, $node, ['99.1'])->assertJsonPath('error.code', 'app-prod.php_package_source_unavailable');
+    expect(Operation::query()->where('kind', 'node.prepare_php_packages')->count())->toBe(0);
 });
 
 it('binds the serving Node and every installer policy field to admitted intent', function (string $field, mixed $value): void {
     $node = FleetFixtures::node('bound-packages', [RoleName::AppProd]);
-    $operation = app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']);
+    $operation = phpPackagesChild($this, $node);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
     $input = [...$operation->input['_php_packages'], $field => $value];
 
@@ -114,83 +134,110 @@ it('binds the serving Node and every installer policy field to admitted intent',
 
 it('requires proven installer success and replays redacted completion without another effect', function (string $outcome): void {
     $node = FleetFixtures::node('proven-packages', [RoleName::AppProd]);
-    $operation = app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']);
+    $operation = phpPackagesChild($this, $node);
     $node->roles()->create(['role' => RoleName::AppDev]);
     $agents = new FakeAgentCommandRunner;
     $agents->answer('php.install-build', PhpBuildAnswers::result($outcome));
     app()->instance(AgentCommandRunner::class, $agents);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
     $path = "/api/v1/operation-executor/{$operation->id}";
-    $complete = ['worker' => 'packages', 'status' => 'succeeded', 'result' => ['outcome' => $outcome]];
+    $complete = ['worker' => 'packages', 'status' => 'succeeded', 'result' => ['outcome' => $outcome, 'stale_masters' => [], 'deferred' => []]];
     $this->postJson($path.'/complete', $complete)->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $run = ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']];
 
-    $this->postJson($path.'/run', $run)->assertOk()->assertJsonPath('data', ['outcome' => $outcome]);
-    $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'succeeded', 'result' => ['outcome' => $outcome]])->assertOk();
+    $this->postJson($path.'/run', $run)->assertOk()->assertJsonPath('data', ['outcome' => $outcome, 'stale_masters' => [], 'deferred' => []]);
+    $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'succeeded', 'result' => ['outcome' => $outcome, 'stale_masters' => [], 'deferred' => []]])->assertOk();
     $this->postJson($path.'/complete', $complete)->assertOk()->assertJsonPath('data.status', 'succeeded');
     $this->postJson($path.'/complete', $complete)->assertOk();
     expect($agents->calls)->toHaveCount(1)->and($agents->calls[0]['node'])->toBe($node->name)
         ->and($agents->calls[0]['input']['pcov'])->toBeFalse()->and($agents->calls[0]['input']['fpm'])->toBe('none');
-    expect($operation->refresh()->result)->toBe(['outcome' => $outcome]);
+    expect($operation->refresh()->result)->toBe(['outcome' => $outcome, 'stale_masters' => [], 'deferred' => []]);
 })->with(['current', 'applied']);
 
-it('admits the exact stored child once under its parent hold', function (): void {
+it('admits and replays a deploy or rollback child under its parent hold', function (string $kind): void {
     $node = FleetFixtures::node('child-packages', [RoleName::AppProd]);
-    $spec = ['executor' => 'swamp', 'completion' => PhpPackagesParent::class, 'execution' => PhpPackagesParent::class, 'runs' => [],
-        'children' => [['kind' => 'node.prepare_php_packages', 'node_from' => 'operation.node_id']],
-        'completion_contract' => ['children_succeeded' => ['node.prepare_php_packages']], 'result_fields' => []];
-    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.packages_parent' => $spec]));
-    $parent = app(StartOperationAction::class)->execute('test.packages_parent', 'node', $node->id, $node->id, [], 'test', null);
-    $parent->update(['state' => ['child_intents' => [['key' => 'packages', 'kind' => 'node.prepare_php_packages', 'node_id' => $node->id, 'input' => ['versions' => ['8.5'], 'profile' => 'app-prod']]]]]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent'])->assertOk();
-    $path = "/api/v1/operation-executor/{$parent->id}/children";
-
-    $id = $this->postJson($path, ['worker' => 'parent', 'key' => 'packages'])->assertAccepted()->json('data.id');
-    $this->postJson($path, ['worker' => 'parent', 'key' => 'packages'])->assertOk()->assertJsonPath('data.id', $id);
+    $child = phpPackagesChild($this, $node, $kind);
+    $path = "/api/v1/operation-executor/{$child->parent_operation_id}/children";
+    $this->postJson($path, ['worker' => 'parent', 'key' => 'packages'])->assertOk()->assertJsonPath('data.id', $child->id);
     $this->postJson($path, ['worker' => 'parent', 'key' => 'packages', 'input' => ['versions' => ['8.4']]])->assertConflict();
-    $child = Operation::findOrFail($id);
-    expect($child->parent_operation_id)->toBe($parent->id)->and($child->node_id)->toBe($node->id)
-        ->and($child->lock_key)->toBeNull()->and($parent->refresh()->lock_key)->not->toBeNull();
-    expect($child->input['_php_packages']['fpm'])->toBe('none');
-});
+    expect($child->node_id)->toBe($node->id)->and($child->lock_key)->toBeNull()
+        ->and(Operation::findOrFail($child->parent_operation_id)->lock_key)->not->toBeNull();
+})->with(['instance.deploy', 'instance.rollback']);
 
 it('refuses a proven response that did not apply or confirm the packages', function (): void {
     $node = FleetFixtures::node('unproven-packages', [RoleName::AppProd]);
-    $operation = app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']);
+    $operation = phpPackagesChild($this, $node);
     $agents = new FakeAgentCommandRunner;
-    $agents->answerMalformed('php.install-build', ['outcome' => 'planned']);
+    $agents->answerMalformed('php.install-build', ['outcome' => 'planned', 'data' => []]);
     app()->instance(AgentCommandRunner::class, $agents);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
     $path = "/api/v1/operation-executor/{$operation->id}";
     $this->postJson($path.'/run', ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']])->assertOk();
-    $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'succeeded', 'result' => ['outcome' => 'planned']])->assertOk();
+    $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'succeeded', 'result' => ['outcome' => 'planned', 'stale_masters' => [], 'deferred' => []]])->assertOk();
 
-    $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'succeeded', 'result' => ['outcome' => 'planned']])
+    $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'succeeded', 'result' => ['outcome' => 'planned', 'stale_masters' => [], 'deferred' => []]])
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     expect($operation->refresh()->result)->toBeNull()->and($operation->lock_key)->not->toBeNull();
 });
 
-it('retained callers await Swamp and refuse failed or cancelled prerequisites', function (string $status, ?string $code): void {
-    $node = FleetFixtures::node('awaited-packages', [RoleName::AppProd]);
+it('admits a managed production Node marked failed', function (): void {
+    $node = FleetFixtures::node('failed-packages', [RoleName::AppProd], status: LifecycleStatus::Failed);
+    expect(phpPackagesChild($this, $node)->node_id)->toBe($node->id);
+});
+
+it('refuses expired admissions or changed recipe revisions before any remote call', function (string $case): void {
+    $node = FleetFixtures::node('stale-packages', [RoleName::AppProd]);
+    $operation = phpPackagesChild($this, $node);
+    if ($case === 'deadline') {
+        $this->travel(121)->seconds();
+    } else {
+        $recipe = new RecipeLoader()->load();
+        $changed = new MachineRecipe(...[...get_object_vars($recipe), 'canonicalJson' => $recipe->canonicalJson.' ']);
+        app()->instance(RemotePhpPackageManager::class, new RemotePhpPackageManager(recipe: $changed));
+    }
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);
-    while (DB::transactionLevel() > 0) {
-        DB::commit();
-    }
-    Sleep::fake();
-    Sleep::whenFakingSleep(function () use ($status, $code): void {
-        Operation::query()->sole()->update(['status' => $status, 'error_code' => $code, 'result' => ['outcome' => 'current']]);
-    });
-    $call = fn () => app(RemotePhpPackageManager::class)->installPackagesOnlyForAppProd($node, collect(['8.5']));
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk()->assertJsonPath('data.id', $operation->id);
+    $path = "/api/v1/operation-executor/{$operation->id}";
 
-    try {
-        if ($status === 'succeeded') {
-            $call();
-        } else {
-            expect($call)->toThrow(fn (RuntimeConvergenceException $error) => expect($error->errorCode)->toBe($code ?? 'operation.cancelled'));
-        }
-    } finally {
-        Sleep::fake(false);
-    }
-    expect($agents->calls)->toBe([])->and(Operation::query()->sole()->kind)->toBe('node.prepare_php_packages');
-})->with([['succeeded', null], ['failed', 'app-prod.php_package_source_unavailable'], ['cancelled', null]]);
+    $this->postJson($path.'/run', ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']])
+        ->assertConflict()->assertJsonPath('error.code', 'app-prod.php_package_source_unavailable');
+    $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'failed', 'result' => ['error_code' => 'app-prod.php_package_source_unavailable'], 'error_code' => 'app-prod.php_package_source_unavailable'])
+        ->assertOk()->assertJsonPath('data.status', 'failed');
+    expect($agents->calls)->toBe([]);
+})->with(['deadline', 'revision']);
+
+it('retains and logs only bounded master warning lists', function (): void {
+    $node = FleetFixtures::node('warn-packages', [RoleName::AppProd]);
+    $operation = phpPackagesChild($this, $node);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('php.install-build', PhpBuildAnswers::result('applied', ['stale_masters' => ['orbit-fpm-a.service'], 'deferred' => ['orbit-fpm-b.service']]));
+    app()->instance(AgentCommandRunner::class, $agents);
+    Log::spy();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
+    $path = "/api/v1/operation-executor/{$operation->id}";
+
+    $result = $this->postJson($path.'/run', ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']])
+        ->assertOk()->assertJsonPath('data.stale_masters', ['orbit-fpm-a.service'])->assertJsonPath('data.deferred', ['orbit-fpm-b.service'])->json('data');
+    $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($operation->refresh()->result)->toBe($result)->not->toHaveKey('data');
+    Log::shouldHaveReceived('warning')->twice();
+});
+
+it('fails malformed installer data and releases the composed parent after refusal', function (mixed $data): void {
+    $node = FleetFixtures::node('bad-data-packages', [RoleName::AppProd]);
+    $operation = phpPackagesChild($this, $node);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answerMalformed('php.install-build', ['outcome' => 'current', 'data' => $data]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
+    $path = "/api/v1/operation-executor/{$operation->id}";
+    $result = $this->postJson($path.'/run', ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']])
+        ->assertOk()->assertJsonPath('data.error_code', 'app-prod.php_install_failed')->json('data');
+    $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'failed', 'result' => $result, 'error_code' => 'app-prod.php_install_failed'])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'failed', 'result' => $result, 'error_code' => 'app-prod.php_install_failed'])->assertOk();
+    $this->postJson("/api/v1/operation-executor/{$operation->parent_operation_id}/complete", ['worker' => 'parent', 'status' => 'failed', 'error_code' => 'app-prod.php_install_failed'])->assertOk();
+    expect($operation->refresh()->status->value)->toBe('failed')
+        ->and(Operation::findOrFail($operation->parent_operation_id)->lock_key)->toBeNull();
+})->with([null, 'not-an-array', ['stale_masters' => 'not-a-list'], ['deferred' => ['bad' => 'map']]]);

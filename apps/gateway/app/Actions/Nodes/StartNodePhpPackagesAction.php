@@ -6,6 +6,9 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Node;
@@ -14,13 +17,21 @@ use App\Support\ValidatedData;
 
 final readonly class StartNodePhpPackagesAction
 {
-    public function __construct(private StartOperationAction $operations, private ManagedNodeEligibility $eligibility, private RemotePhpPackageManager $packages) {}
+    public function __construct(private StartOperationAction $operations, private ManagedNodeEligibility $eligibility, private RemotePhpPackageManager $packages, private OperationIdempotency $identity) {}
 
     /** @param array<array-key, mixed> $versions Version selection from a recorded parent intent. */
     public function execute(Node $node, array $versions): Operation
     {
-        if (! $this->eligibility->allows($node)) {
-            throw new ResourceOperationException('node.php_packages_unsupported', 'PHP package preparation requires an active managed Linux Node.', 422);
+        if (! OperationKinds::supports('list_of')) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'PHP package children require enforced list results.', 409);
+        }
+        if ($this->identity->parent === null || ! in_array($this->identity->parent->kind, ['instance.deploy', 'instance.rollback'], true)
+            || $this->identity->parent->node_id !== $node->id || $this->identity->kind !== 'node.prepare_php_packages') {
+            throw new ResourceOperationException('operation.child_forbidden', 'PHP package preparation requires the deploy or rollback child admission.', 422);
+        }
+        if ($node->platform !== 'linux' || ! $this->eligibility->isManagedForObservation($node)
+            || ! in_array($node->status, [LifecycleStatus::Active, LifecycleStatus::Failed], true)) {
+            throw new ResourceOperationException('app-prod.php_package_source_unavailable', 'PHP package preparation requires a managed Linux Node.', 422);
         }
         if (! array_is_list($versions) || $versions === [] || count($versions) > 8
             || array_any($versions, static fn ($version): bool => ! is_string($version) || preg_match('/\A[0-9]+\.[0-9]+\z/D', $version) !== 1)
@@ -29,6 +40,7 @@ final readonly class StartNodePhpPackagesAction
         }
 
         return $this->operations->execute('node.prepare_php_packages', 'node', $node->id, $node->id,
-            ['versions' => $versions, 'profile' => 'app-prod', '_php_packages' => $this->packages->packagesOnlyInputForAppProd($node->load('roles'), ValidatedData::stringList($versions))], 'system', null);
+            ['versions' => $versions, 'profile' => 'app-prod', '_php_packages' => $this->packages->packagesOnlyInputForAppProd($node->load('roles'), ValidatedData::stringList($versions)),
+                '_php_packages_revision' => $this->packages->packagesOnlyRecipeRevision(), '_php_packages_deadline' => now()->addSeconds(120)->getTimestamp()], 'system', null);
     }
 }

@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
-use App\Actions\Nodes\StartNodePhpPackagesAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
-use App\Domain\Operations\AwaitOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -100,14 +97,12 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        $operation = app(StartNodePhpPackagesAction::class)->execute($node, array_values(array_unique($versions->all())));
-        $operation = app(AwaitOperation::class)->execute($operation);
-        if ($operation->status !== OperationStatus::Succeeded) {
-            $error = $operation->error_code ?? ($operation->status === OperationStatus::Cancelled ? 'operation.cancelled' : 'app-prod.php_install_failed');
-            $contract = self::APP_PROD_FAILURE_CONTRACT;
-            throw new RuntimeConvergenceException($error === $contract['source_error'] ? $contract['source_step'] : $contract['install_step'],
-                $error, "PHP package preparation did not succeed; follow Operation [{$operation->id}].");
-        }
+        $this->runInstaller($node, array_values($versions->all()), self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none', opentelemetry: $this->opentelemetry($node));
+    }
+
+    public function packagesOnlyRecipeRevision(): string
+    {
+        return hash('sha256', ($this->recipe ?? new RecipeLoader()->load())->canonicalJson);
     }
 
     /**
