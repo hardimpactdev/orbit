@@ -191,6 +191,14 @@ A failed attempt clears the previous success marker before mutation: the Node ma
 
 This synchronous operation also runs inside [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance). Maintenance selects and orders Nodes; this operation applies and verifies one Node. [Gateway fleet rollout](/reference/gateway-recovery#recipe-convergence) updates Orbit itself separately.
 
+### Sandboxed headless Chrome on production Nodes
+
+The `app-prod` recipe includes the Chromium libraries, AppArmor, and Google's digest-pinned Chrome for Testing headless shell on amd64. Other profiles do not receive this browser. The executable is `/opt/orbit/chrome-headless-shell/<version>/chrome-headless-shell-linux64/chrome-headless-shell`. The versioned runtime, all its resources, and its ancestors belong to root and are not group- or world-writable. Convergence refuses symlinks or unsafe ownership instead of adopting an application account's browser cache.
+
+The recipe publishes `/etc/apparmor.d/orbit-chrome-headless-shell` with one `userns` exception attached to that exact executable. It validates the policy and loads only that profile with `apparmor_parser`; it does not restart AppArmor, change a global sysctl, grant an exception to a writable browser, or disable Chromium's sandbox. Each applying convergence reloads the profile, including when the runtime is already installed. A failed load fails convergence and restores the previous policy. Older root-owned runtimes remain on disk, but only the selected executable receives the current exception.
+
+An application selects this executable through its own browser configuration. For a renderer using `OG_IMAGE_CHROME_PATH`, store the exact versioned path with `env:update`, then apply it with `env:sync`. The recipe does not change Instance environments. Coordinate future pin upgrades with those stored paths: keeping the old runtime does not keep its namespace exception after the one profile moves to the new executable. Verify a real image render before accepting a new browser pin; a successful `--version` alone does not exercise the sandbox. Unsupported architectures refuse before installation.
+
 ## macOS Nodes
 
 A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, a working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address before it succeeds. The Gateway resolves the host name. An SSH alias on the caller's machine is not a fleet address.

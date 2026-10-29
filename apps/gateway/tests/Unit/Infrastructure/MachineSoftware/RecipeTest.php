@@ -316,7 +316,7 @@ describe('machine recipe structure and identity', function (): void {
             'operator' => $common,
             'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
             'vpn' => [...$common, 'dnsmasq', 'openssl', ...$php85],
-            'app-prod' => [...$production, ...$php85],
+            'app-prod' => [...$production, ...TaskVmCloudInit::ChromiumLibraries, 'apparmor', 'chrome-headless-shell', ...$php85],
             'app-dev' => $development,
             'base' => $base,
             'ci-runner' => [...$common, ...RecipeLoader::IncusPackages, 'acl', 'attr', 'git', 'unzip', ...$php85],
@@ -331,7 +331,7 @@ describe('machine recipe structure and identity', function (): void {
             expect($recipe->tools[$package]->source)->toBe('ubuntu')
                 ->and($recipe->tools[$package]->package)->toBe($package);
             foreach (array_keys($recipe->profiles) as $role) {
-                if ($role !== 'base' && ! ($role === RoleName::CiRunner->value && $package === 'incus')) {
+                if ($role !== 'base' && ! ($role === RoleName::AppProd->value && in_array($package, TaskVmCloudInit::ChromiumLibraries, true)) && ! ($role === RoleName::CiRunner->value && $package === 'incus')) {
                     expect($recipe->profile($role))->not->toContain($package);
                 }
             }
@@ -863,4 +863,25 @@ it('maps machine architectures to recipe architectures in one place and refuses 
         ->and(MachineRecipe::architecture(null))->toBeNull();
     expect(fn () => NodeRecipeProgram::architecture(new Node(['architecture' => null])))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.recipe_architecture'));
+});
+
+it('selects a pinned root-owned headless browser only for app-prod and rejects unsafe browser pins', function (): void {
+    $loader = new RecipeLoader;
+    $recipe = $loader->source();
+    expect($recipe->profile('app-prod', 'amd64'))->toContain('chrome-headless-shell', 'apparmor');
+    foreach (array_diff(array_keys($recipe->profiles), ['app-prod']) as $profile) {
+        expect($recipe->profile($profile))->not->toContain('chrome-headless-shell');
+    }
+    $document = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
+    foreach (['url', 'version', 'digest', 'architecture'] as $mutation) {
+        $changed = $document;
+        $pin = &$changed['tools']['chrome-headless-shell'];
+        match ($mutation) {
+            'url' => $pin['artifacts']['amd64']['url'] = 'https://other.test/chrome.zip',
+            'version' => $pin['version'] = '150.0.1.2/../../escape',
+            'digest' => $pin['artifacts']['amd64']['sha256'] = 'invalid',
+            'architecture' => $pin['artifacts']['arm64'] = $pin['artifacts']['amd64'],
+        };
+        expect(fn () => $loader->decode(json_encode($changed, JSON_THROW_ON_ERROR)))->toThrow(InvalidArgumentException::class);
+    }
 });

@@ -106,6 +106,10 @@ impl Input {
             return Err(invalid());
         }
         for (name, pin) in &self.tools {
+            if name == super::browser::NAME && !super::browser::valid(pin, self.architecture.name())
+            {
+                return Err(invalid());
+            }
             if !valid_package(name) || !valid_version(&pin.version) {
                 return Err(invalid());
             }

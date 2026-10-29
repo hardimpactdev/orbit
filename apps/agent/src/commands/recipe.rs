@@ -2,6 +2,7 @@
 pub mod apt;
 pub mod artifacts;
 pub mod assessment;
+pub mod browser;
 pub(crate) mod interruption;
 pub mod javascript;
 mod native;
