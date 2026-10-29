@@ -480,8 +480,8 @@ it('never forgets workspaces through a null Node identity', function (): void {
 it('gates Node removal on workspace cleanup and preserves its recorded identity after Node deletion', function (): void {
     $parent = taskVmParkParent();
     $vm = TaskVm::query()->findOrFail($parent->target_id);
-    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90']);
-    $vm->update(['state' => 'destroying', 'node_id' => $node->id]);
+    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90', 'wireguard_ip' => $vm->wireguard_ip]);
+    $vm->update(['state' => 'destroying', 'node_id' => $node->id, 'address' => $node->public_ssh_host]);
     $intent = ['key' => 'node-removal', 'kind' => 'node.remove', 'node_id' => $node->id,
         'input' => ['caller_node_id' => $parent->input['gateway_node_id'], 'offline' => true, 'force' => true, 'deleted' => true]];
     $parent->update(['kind' => 'task_vm.destroy', 'input' => [...$parent->input, 'guest_node_id' => $node->id], 'state' => [...$parent->state, 'child_intents' => [$intent]]]);
@@ -490,6 +490,10 @@ it('gates Node removal on workspace cleanup and preserves its recorded identity 
     $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
     $cleanup->update(['status' => 'succeeded', 'result' => ['ready' => true]]);
     if (app(OperationKinds::class)->definition('node.remove') !== null) {
+        expect(fn () => taskVmStampedChild($parent, 'node-removal'))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_unproven'));
+        $deletion = taskVmStampedChild($parent, 'provider-delete');
+        $deletion->update(['status' => 'succeeded', 'result' => ['ready' => true]]);
         $removal = taskVmStampedChild($parent, 'node-removal');
         expect($removal->node_id)->toBe($node->id);
         expect($removal->child_admission['intent'])->toBe($intent);
@@ -539,8 +543,8 @@ it('records an already active VM Node and omits redundant Node enrollment intent
 it('proves provider deletion and workspace cleanup before admitting owning Node removal', function (): void {
     $parent = taskVmParkParent();
     $vm = TaskVm::query()->findOrFail($parent->target_id);
-    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90']);
-    $vm->update(['state' => 'destroying', 'node_id' => $node->id]);
+    $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90', 'wireguard_ip' => $vm->wireguard_ip]);
+    $vm->update(['state' => 'destroying', 'node_id' => $node->id, 'address' => $node->public_ssh_host]);
     $intent = ['key' => 'node-removal', 'kind' => 'node.remove', 'node_id' => $node->id,
         'input' => ['caller_node_id' => $parent->input['gateway_node_id'], 'offline' => true, 'force' => true, 'deleted' => true]];
     $parent->update(['kind' => 'task_vm.destroy', 'input' => [...$parent->input, 'guest_node_id' => $node->id], 'state' => [...$parent->state, 'child_intents' => [$intent]]]);
