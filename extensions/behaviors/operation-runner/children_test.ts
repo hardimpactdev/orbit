@@ -230,3 +230,77 @@ Deno.test("typed family claim isolates unavailable or unproven work and preserve
     "operation.executor_forbidden",
   );
 });
+
+Deno.test("richer terminal results survive claim child reads and effect receipts unchanged", async () => {
+  const result = {
+    process_ids: [7, 2],
+    warnings: ["[REDACTED]"],
+    retained_on_nodes: [{
+      node_id: 7,
+      node: "old-node",
+      steps: ["caddy", "dns"],
+    }],
+    child_phases: [{ stage: "routes", key: "route-7" }],
+    artifacts: [{
+      name: "caddy",
+      changed: false,
+      reason: null,
+      status: "unchanged",
+    }],
+  };
+  const executor = new Executor((method, path) => {
+    if (method === "GET" && path.endsWith("/children")) {
+      return Promise.resolve({
+        status: 200,
+        body: {
+          data: [{
+            id: 2,
+            key: "apply",
+            kind: "test.child",
+            node_id: null,
+            status: "succeeded",
+            error_code: null,
+            result,
+          }],
+        },
+      });
+    }
+    if (method === "GET") {
+      return Promise.resolve({
+        status: 200,
+        body: {
+          data: {
+            effect_key: "op-2.apply",
+            state: "succeeded",
+            exit_code: 0,
+            result,
+            finished_at: "2026-10-29T12:00:00Z",
+          },
+        },
+      });
+    }
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: {
+          ...operation(2, "succeeded"),
+          result,
+          step_results: { effect: result },
+          execution_context: { descriptors: [], result },
+        },
+      },
+    });
+  });
+  const claimed = await executor.claim("test.child", "worker", 2);
+  assertEquals(claimed?.result, result);
+  assertEquals(claimed?.step_results.effect, result);
+  assertEquals(claimed?.execution_context.result, result);
+  assertEquals((await executor.child(1, "parent", "apply")).result, result);
+  assertEquals((await executor.children(1))[0].result, result);
+  assertEquals((await executor.receipt(2, "apply")).result, result);
+});
+
+Deno.test("terminal Operation preserves null and converts an empty PHP result map", () => {
+  assertEquals(Operation.parse({ ...operation(2), result: null }).result, null);
+  assertEquals(Operation.parse({ ...operation(2), result: [] }).result, {});
+});

@@ -20,7 +20,7 @@ Every family must declare these rules in its Gateway `operation-kinds.php`. Clie
 - `runs` is a closed list of `transport` and `name` pairs. Each entry declares `input_fields` copied from admitted Operation input, `input_values` for fixed values, and `node_field` when the command input includes the target Node. The Gateway checks the real agent input JSON Schema, rejects unknown fields, and requires exact equality with these bindings. RemotePrograms must declare an explicit `input_schema` in the entry. No run is allowed without a contract.
 - The Gateway takes the transport target from `Operation.node_id`. The run body must omit `node_id`; a caller-supplied target, unlisted command, invalid schema or changed intent receives `operation.execution_forbidden`. A Node ID inside typed command input must equal the Operation target. Do not authorize a broad command whose fixed input can execute unrelated work.
 - `completion_contract` names the required `step`, `transport`, `name` and successful `result`. A successful step must match a Gateway-recorded successful run receipt. A successful completion must match that step and receipt. Bare completion, a forged step and the wrong backend receive `operation.completion_unproven`. A completion hook projects intent only after this generic check. Firewall requires `ufw-converge` with `backend: active`, or `ufw-remove` with `backend: absent`.
-- `result_fields` is a closed list of scalar leaf paths, using dots for nested fields. Include `error_code` for command refusals and `operation.cancelled`. The Gateway drops every undeclared field and object, and applies its existing secret redactor to retained values, step output and error codes before persistence or return. Never allow a container, raw stdout, environment or credential field. Tokens must never reach Operation state, steps, results or responses. Test secrets in run results, step output and completion payloads.
+- `result_fields` is a closed list of scalar leaf paths or bounded typed lists, using dots for nested paths. Include `error_code` for command refusals and `operation.cancelled`. The Gateway drops undeclared top-level fields and rejects invalid typed lists, and applies its existing secret redactor to retained values, step output and error codes before persistence or return. Never allow an unbounded container, raw stdout, environment or credential field. Tokens must never reach Operation state, steps, results or responses. Test secrets in run results, step output and completion payloads.
 
 Tests must reject another Node, an unlisted agent command and RemoteProgram, malformed input, changed admitted intent, missing Services identity, missing or forged completion evidence, and secret-bearing receipts. Verify allow, deny and remove with proven receipts and keyed retries.
 
@@ -51,7 +51,7 @@ Requests use JSON under `/api/v1/operation-executor`. The caller must be the act
 | POST `claim` | `kind`, `worker`; optional `operation_id` | One Operation with its input, Node ID, steps, step results, worker and 120-second lease; null if no work is available. |
 | POST `{operation}/heartbeat` | `worker` | Current Operation; renews its lease. |
 | POST `{operation}/step` | `worker`, `key`, `name`, `status`; optional `output`, `result`, `error_code` | Appends output to the named step and records its status under the existing Operation sequence. Status is running, succeeded or failed. Failed requires an error_code matching `^[a-z0-9_.-]+$`. |
-| POST `{operation}/run` | `worker`, `key`, `transport`, `name`, `input` | Only the kind’s declared, redacted scalar result fields from the named agent command or RemoteProgram. Use a registered transport: built-ins are agent, remote_program and gateway. The stored Operation supplies the Node; a Gateway command may have a null Node. Named-command and request deadlines apply. |
+| POST `{operation}/run` | `worker`, `key`, `transport`, `name`, `input` | Only the kind’s declared, redacted result fields from the named agent command or RemoteProgram. Use a registered transport: built-ins are agent, remote_program and gateway. The stored Operation supplies the Node; a Gateway command may have a null Node. Named-command and request deadlines apply. |
 | POST `{operation}/children` | `worker`, prepared `key` | Same stamped child; owning admission once. |
 | GET `{operation}/children` | None | Bounded receipts for that parent’s children. |
 | POST `{operation}/wait` | `worker`, child `keys` | Releases worker; keeps target hold. |
@@ -149,12 +149,12 @@ A transport that wraps the native agent also implements optional `OperationTrans
 Protected sources resolve once per invocation hydration. Step, completion, claim and heartbeat processing never re-resolves a source for redaction and never mints an unused token. Run redaction values exist only in request memory. Swamp receives already-redacted receipts and must reuse those safe values in later payloads; ordinary secret-pattern redaction still applies to steps and completion. Record deletion or a minting-service outage must not prevent failure completion. Transport schemas must be explicit restrictive schemas; `schema() === true` is refused. Schema and wire-conversion failures return only the fixed execution refusal, including invalid UTF-8 and type errors.
 
 
-The kind loader refuses unsupported kind, run and completion-contract keys. Do not declare planned guarantees: `children` and `children_succeeded` use the B checks below. `children_settled` remains invalid until its checks ship. A declaration must fail during loading when the shared kit cannot enforce it.
+The kind loader refuses unsupported kind, run and completion-contract keys. Do not declare planned guarantees: `children` and `children_succeeded` use the B checks below. `children_settled` uses the C checks below. A declaration must fail during loading when the shared kit cannot enforce it.
 
 
 An uncertain refusal leaves the started run’s result unset and never calls the family projection hook. Only a proven original receipt may fill that slot. Typed agent tokens and scalar protected values contribute redaction strings. Boolean flags, null, empty strings, empty arrays, empty plain objects and `GitReadEnvironment::none()` hydrate without inferred masks, preserving their native types. True does not add a mask for the digit `1`. This permits public Git reads, empty npmrc or rendered environment content and empty redaction lists. Command schemas still decide which type is valid. Unknown opaque objects and nonempty protected content without masks remain refused. Sources must provide individual masks for opaque structured values. Transport schemas must also be non-empty; `[]` and `{}` do not supply a validation contract.
 
-Use `OperationKinds::supports($capability)` before registering a kind that needs an optional kit guarantee. Names are `children` (including `children_succeeded`), `children_settled`, `list_of`, `receipts` and `secret_outputs`. This slice enables `children`, `receipts` and `compensations`. The others and unknown names return false. Return `operation.kind_unavailable` at admission while a required capability is absent. Do not register a weaker guarantee.
+Use `OperationKinds::supports($capability)` before registering a kind that needs an optional kit guarantee. Names are `children` (including `children_succeeded`), `children_settled`, `list_of`, `receipts` and `secret_outputs`. This slice enables `children`, `children_settled`, `list_of`, `receipts` and `compensations`. `secret_outputs` and unknown names return false. Return `operation.kind_unavailable` at admission while a required capability is absent. Do not register a weaker guarantee.
 
 ## Child Operations and durable waits
 
@@ -231,3 +231,47 @@ Show and list expose `assistance: null|{error_code}` for flagged waiting parents
 Admission snapshots each original Node ID and target independently of the live Node foreign key. A deleted Node does not erase successful child proof, terminal context, completion replies or cached effect receipts. Those reads do not hydrate secrets. A new effect on a deleted target returns `operation.target_missing` before hydration or dispatch. Nulling the foreign key while the original admitted Node still exists refuses proof. Custom family context must retain completed descriptors from admitted data; it must not require the removed live Node for terminal reads.
 
 A run result with `not_started: true` is a proven pre-effect refusal from the compiled command contract. The Gateway leaves `started:false` and `result:null`; the same key can retry without enabling replay of an uncertain effect. After any prior uncertainty, a later pre-start refusal cannot reset the original intent. Preserve the existing effect metadata forwarding helpers and internal receipt identity fields. Do not interpret every target lock or transport exception as proof that nothing ran.
+
+## Kit C: bounded results and completion variants
+
+Gate registrations that require rich lists with `OperationKinds::supports("list_of")`. The Gateway validates declarations while loading every family. A result mismatch returns `operation.result_invalid` before storing a partial keyed receipt or projecting DB state. Swamp forwards safe Gateway receipts; it never coerces list item types or rebuilds them from a map.
+
+A scalar list declaration is `{name, type: "list", items: "string"|"integer"|"boolean", max: N}`. Values require actual strings, integers or booleans; numeric strings are not integers. Lists use JSON arrays; empty objects and objects with numeric keys are refused. Order stays unchanged. Every explicit bound is from 1 through 4096.
+
+An object list is `{name, list_of: {field: rule}, max?: N}`. The default outer bound is 4096. Every entry requires exactly the declared fields; unknown and missing fields refuse. Rules are `string`, `int`, `bool` or `enum(applied,unchanged,skipped)`, optionally ending in `|null`. A field may instead declare one bounded scalar list using the scalar-list shape above. Further nested objects and containers are refused. Keyed maps are never lists.
+
+For example:
+
+```php
+'result_fields' => [
+    'backend', 'error_code',
+    ['name' => 'process_ids', 'type' => 'list', 'items' => 'integer', 'max' => 4096],
+    ['name' => 'retained_on_nodes', 'max' => 128, 'list_of' => [
+        'node_id' => 'int', 'node' => 'string',
+        'steps' => ['type' => 'list', 'items' => 'string', 'max' => 32],
+    ]],
+    ['name' => 'child_phases', 'list_of' => ['stage' => 'string', 'key' => 'string']],
+],
+```
+
+All values still pass through the existing redactor and original hydration masks. Only `child_phases[].key` and `skipped[].key` have an audited public child-identity meaning; other secret-named fields remain masked. Text redaction and known-secret masks also apply to those public identifiers. A list that no longer matches its declared types after redaction is refused, never stored with unredacted values.
+
+Keep the root `completion` as the DB projection class. To select a proof per admitted manager or variant, declare:
+
+```php
+'completion_contract' => ['completion' => [
+    'by' => 'configuration.manager',
+    'map' => [
+        'apt' => ['step' => 'tool-verified', 'transport' => 'agent',
+            'name' => 'tool.apt-inventory', 'result' => []],
+    ],
+]],
+```
+
+`by` is a path relative to immutable Operation input, without an `input.` prefix. The Gateway validates every mapped proof at load. Missing or unlisted runtime variants refuse with `operation.completion_unproven`. Swamp cannot choose the variant in the run or completion body. The selected command still needs its normal allowlist and a proven successful step.
+
+Gate `children_settled` with its matching capability. Its completion contract names declared child kinds that must settle. On success, all required prepared children must have been admitted. Every admitted child must be terminal before the parent ends. Every failed or cancelled child of this parent must appear once in `result.skipped` with `{child_id, reason}`. Declare that list with `list_of`; `reason` must be nonempty and at most 500 bytes. If declared, `key` and `kind` must match the stamped child. Foreign, duplicated, successful, running or unacknowledged failures refuse. On failed or cancelled completion the Gateway derives skipped from its stamped children; send an empty or omitted list. Only successful completion requires an exact echo of failed child IDs and nonempty reasons. The Gateway stamps any declared key and kind from the child row, ignoring caller metadata.
+
+Optional stages should use a mandatory final Gateway proof and family `assertCompletion` that calls `OperationChildren::requireSucceeded` for the exact stored plan keys. Do not list every optional kind as an unconditional `children_succeeded` requirement.
+
+Result list strings are limited to 1024 bytes and the full encoded result to 256 KiB. Declarations are limited to 65,536 total list items after expanding nested bounds. A children_settled kind must declare skipped with child_id:int, reason:string and optional key:string/kind:string; its max must cover its child kinds. Child admission enforces the count and byte budget before effects, preserving room for derived failure receipts. Executor routes preserve empty strings and exact bytes by bypassing TrimStrings and ConvertEmptyStringsToNull.

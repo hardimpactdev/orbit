@@ -26,6 +26,10 @@ export const Operation = z.object({
     z.object({ key: z.string(), id: z.number().int().positive() }),
   ).default([]),
   status: z.string(),
+  result: z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.record(z.string(), z.unknown()).nullable(),
+  ).optional(),
   cancel_requested: z.boolean(),
   steps: z.array(z.object({ name: z.string(), status: z.string() })).default(
     [],
