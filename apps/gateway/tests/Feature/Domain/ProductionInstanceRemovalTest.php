@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceRemovalState;
 use App\Domain\Instances\ProductionRemovalIntent;
 use App\Domain\Instances\RemovalLifecycleExecution;
+use App\Domain\Operations\OperationChildAdmission;
+use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,9 +23,41 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
+/** Test the lifecycle boundary through real stamped children without executing Route publication. */
+final readonly class ProductionRemovalPublicationAdmission implements OperationChildAdmission
+{
+    public function admit(Operation $parent, array $intent): Operation
+    {
+        return app(StartOperationAction::class)->execute('route.caddy_converge', 'node', $intent['node_id'],
+            $intent['node_id'], $intent['input'], null, null);
+    }
+}
+
+/** Exercise existing invalid rows without changing the production persistence contract. */
+function corruptProductionRemovalPlacement(Closure $change): void
+{
+    $names = ['routes_contract_update', 'production_route_target_nodes_update', 'production_route_target_roles_update',
+        'instances_production_placement_update', 'production_route_target_instances_update', 'route_targets_contract_update', 'route_targets_contract_insert', 'route_targets_active_update'];
+    $triggers = DB::table('sqlite_master')->where('type', 'trigger')->whereIn('name', $names)->get();
+    foreach ($triggers as $trigger) {
+        DB::statement('DROP TRIGGER '.$trigger->name);
+    }
+    try {
+        $change();
+    } finally {
+        foreach ($triggers as $trigger) {
+            DB::statement($trigger->sql);
+        }
+    }
+}
+
 beforeEach(function (): void {
     app()->instance(OperationKinds::class, new OperationKinds(app(), [
         ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
+        'route.caddy_converge' => ['executor' => 'swamp', 'admission' => ProductionRemovalPublicationAdmission::class,
+            'runs' => [['transport' => 'gateway', 'name' => 'test.publication']],
+            'completion_contract' => ['step' => 'publish', 'transport' => 'gateway', 'name' => 'test.publication', 'result' => ['ready' => true]],
+            'result_fields' => ['ready', 'error_code']],
     ]));
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');
@@ -148,4 +183,80 @@ it('binds home and current commands and refuses premature home deletion or unpro
     ($this->prove)($operation, $prefix.'-route-detach', ['detached' => true]);
     app(ProductionRemovalIntent::class)->clear($operation, InstanceRemoval::query()->firstOrFail()->members()->firstOrFail());
     expect(app(RemovalLifecycleExecution::class)->received($operation, ['worker' => 'proof', ...$current], ['current' => null]))->toBe(['finalized' => true]);
+});
+
+it('refuses unsafe production Route state at admission and again before locked detach', function (string $change, bool $afterAdmission): void {
+    $operation = $afterAdmission ? ($this->admit)() : null;
+    corruptProductionRemovalPlacement(fn () => match ($change) {
+        'implicit' => DB::table('routes')->where('id', $this->route->id)->update(['provenance' => 'generated']),
+        'inactive-instance' => DB::table('instances')->where('id', $this->survivor->id)->update(['status' => 'reserved']),
+        'inactive-node' => DB::table('nodes')->where('id', $this->nodes[1]->id)->update(['status' => 'failed']),
+        'inactive-role' => $this->nodes[1]->roles()->update(['status' => 'failed']),
+        'other-cluster' => DB::table('nodes')->where('id', $this->nodes[1]->id)->update(['cluster_id' => null]),
+        'duplicate-node' => DB::table('instances')->where('id', $this->survivor->id)->update(['node_id' => $this->instance->node_id, 'production_user' => 'co-target-proof',
+            'production_home' => '/home/co-target-proof', 'checkout_path' => '/home/co-target-proof/releases/initial']),
+        'noncontiguous' => $this->route->targets()->where('instance_id', $this->survivor->id)->update(['position' => 3]),
+    });
+    expect(fn () => $operation === null ? ($this->admit)() : app(ProductionRemovalIntent::class)->detach($operation))
+        ->toThrow(ResourceOperationException::class);
+    expect($this->route->targets()->where('instance_id', $this->instance->id)->exists())->toBeTrue();
+})->with(['implicit', 'inactive-instance', 'inactive-node', 'inactive-role', 'other-cluster', 'duplicate-node', 'noncontiguous'])->with([false, true]);
+
+it('allows only a private single-target production Route on its active unclustered Node', function (string $change, bool $afterAdmission): void {
+    $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
+    DB::table('nodes')->where('id', $this->nodes[0]->id)->update(['cluster_id' => null]);
+    DB::table('routes')->where('id', $this->route->id)->update(['cluster_id' => null, 'node_id' => $this->nodes[0]->id, 'publication' => 'private']);
+    $operation = $afterAdmission ? ($this->admit)() : null;
+    corruptProductionRemovalPlacement(fn () => match ($change) {
+        'public' => DB::table('routes')->where('id', $this->route->id)->update(['publication' => 'public']),
+        'wrong-node' => DB::table('routes')->where('id', $this->route->id)->update(['node_id' => $this->nodes[1]->id]),
+        'inactive-node' => DB::table('nodes')->where('id', $this->nodes[0]->id)->update(['status' => 'failed']),
+        'inactive-role' => $this->nodes[0]->roles()->update(['status' => 'failed']),
+        'multiple-targets' => $this->route->targets()->create(['instance_id' => $this->survivor->id, 'position' => 1]),
+    });
+    expect(fn () => $operation === null ? ($this->admit)() : app(ProductionRemovalIntent::class)->detach($operation))
+        ->toThrow(ResourceOperationException::class);
+    expect($this->route->targets()->where('instance_id', $this->instance->id)->exists())->toBeTrue();
+})->with(['public', 'wrong-node', 'inactive-node', 'inactive-role', 'multiple-targets'])->with([false, true]);
+
+it('retains a shared Route detach checkpoint across repeated interrupted removals', function (): void {
+    $operation = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']);
+    app(ProductionRemovalIntent::class)->transition($operation, 'removal-production-prepare');
+    app(ProductionRemovalIntent::class)->detach($operation);
+    $operation->update(['status' => 'failed', 'lock_key' => null]);
+    $retry = ($this->admit)();
+    expect($retry->input['production_detached'])->toBeTrue();
+    $retry->update(['status' => 'failed', 'lock_key' => null]);
+    $second = ($this->admit)();
+    expect($second->input['production_detached'])->toBeTrue();
+    expect(app(ProductionRemovalIntent::class)->detach($second))->toBe(['detached' => true]);
+});
+
+it('requires the successful owned database child after runtime cleanup before removing the production home', function (): void {
+    $this->route->targets()->delete();
+    $this->route->delete();
+    $operation = ($this->admit)();
+    app(InstanceRemovalState::class)->transition($operation, ['action' => 'removal-accept']);
+    $prefix = 'removal-'.$this->instance->id;
+    ($this->prove)($operation, 'removal-accept', ['accepted' => true]);
+    ($this->prove)($operation, $prefix.'-runtime-intent', ['process_ids' => [], 'schedule_ids' => []]);
+    $child = function (string $key, string $kind) use ($operation): void {
+        $input = ['instance_id' => $this->instance->id];
+        $row = Operation::query()->create(['kind' => $kind, 'target_type' => 'instance', 'target_id' => $this->instance->id,
+            'node_id' => $operation->node_id, 'status' => 'succeeded', 'input' => $input]);
+        $snapshot = ['intent' => ['key' => $key, 'kind' => $kind, 'node_id' => $operation->node_id, 'input' => $input],
+            'admitted' => ['parent_operation_id' => $operation->id, 'key' => $key, 'kind' => $kind, 'node_id' => $operation->node_id,
+                'target_type' => 'instance', 'target_id' => $this->instance->id, 'input' => $input, 'run_constraints' => []]];
+        $row->forceFill(['parent_operation_id' => $operation->id, 'child_key' => $key, 'child_admission' => $snapshot,
+            'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    };
+    foreach (['remove-processes-' => 'process.instance_runtime', 'remove-schedules-' => 'schedule.instance_runtime', 'cleanup-instance-' => 'route.cleanup_instance'] as $key => $kind) {
+        $child($key.$this->instance->id, $kind);
+    }
+    $home = array_find(app(InstanceLifecycleExecution::class)->context($operation)['descriptors'], fn (array $entry): bool => $entry['key'] === $prefix.'-home-remove');
+    expect(fn () => app(RemovalLifecycleExecution::class)->beforeRun($operation, ['worker' => 'proof', ...$home]))->toThrow(ResourceOperationException::class);
+    $child('remove-databases-'.$this->instance->id, 'database.destroy_owned');
+    app(RemovalLifecycleExecution::class)->beforeRun($operation, ['worker' => 'proof', ...$home]);
+    expect($operation->children()->count())->toBe(4);
 });

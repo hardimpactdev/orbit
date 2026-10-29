@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
@@ -50,7 +55,7 @@ final readonly class ProductionRemovalIntent
             }
             $input['additional_route_ids'] = [];
             $input['additional_routes'] = [];
-            $input['production_detached'] = ($previous->state['production_routes_detached'] ?? false) === true;
+            $input['production_detached'] = ($previous->state['production_routes_detached'] ?? $previous->input['production_detached'] ?? false) === true;
 
             return $input;
         }
@@ -70,9 +75,7 @@ final readonly class ProductionRemovalIntent
                 throw $this->conflict();
             }
             if ($route->id === $routeId) {
-                if ($route->status !== RouteStatus::Active) {
-                    throw $this->conflict();
-                }
+                $this->assertSafeRoute($route, $instance);
                 $routes[] = $this->route($route, $instance->node_id);
             } else {
                 if ($route->targets()->count() !== 1) {
@@ -228,6 +231,7 @@ final readonly class ProductionRemovalIntent
                 $expected = ValidatedData::integerList($snapshot['targets']);
                 $detached = ($operation->state['production_routes_detached'] ?? $operation->input['production_detached'] ?? false) === true;
                 $remaining = array_values(array_diff($expected, [$instance->id]));
+                $this->assertSafeRoute($route, $instance, removing: true, detached: $detached && count($expected) > 1);
                 $current = $this->route($route, $instance->node_id);
                 if ($current['node_id'] !== $snapshot['node_id'] || $current['nodes'] !== $snapshot['nodes']) {
                     throw $this->conflict();
@@ -276,6 +280,45 @@ final readonly class ProductionRemovalIntent
         }
         $retained = array_any($this->routes($operation), static fn (array $route): bool => count($route['targets']) > 1);
         $member->update(['route_cleared_at' => now(), 'route_outcome' => $member->route_id === null ? 'none' : ($retained ? 'retained' : 'deleted')]);
+    }
+
+    /** Re-read the owning rows under detach's transaction, including every co-target's placement. */
+    private function assertSafeRoute(Route $route, Instance $requested, bool $removing = false, bool $detached = false): void
+    {
+        $targets = $route->targets()->orderBy('position')->orderBy('id')->lockForUpdate()->get();
+        if ($route->status !== RouteStatus::Active || $route->project_id !== $requested->project_id || $targets->isEmpty()
+            || ! $detached && ! $targets->contains('instance_id', $requested->id)) {
+            throw $this->conflict();
+        }
+        if ($route->cluster_id === null && ($route->publication !== RoutePublication::Private
+            || $route->node_id !== $requested->node_id || $targets->count() !== 1
+            || $targets->sole()->instance_id !== $requested->id)) {
+            throw $this->conflict();
+        }
+        if ($route->cluster_id !== null && $route->provenance !== RouteProvenance::Explicit) {
+            throw $this->conflict();
+        }
+        $nodes = [];
+        foreach ($targets as $position => $target) {
+            $instance = $target->instance()->lockForUpdate()->firstOrFail();
+            $node = $instance->node()->lockForUpdate()->firstOrFail();
+            $roles = $node->roles()->lockForUpdate()->get();
+            $node->setRelation('roles', $roles);
+            if ($target->position !== $position || $instance->project_id !== $route->project_id || ! $instance->placedOnAppProd()
+                || ($instance->status !== InstanceState::Active && ! ($removing && $instance->id === $requested->id && $instance->status === InstanceState::Removing))
+                || $node->status !== LifecycleStatus::Active || $node->cluster_id !== $route->cluster_id
+                || ! $roles->contains(static fn ($role): bool => $role->role === RoleName::AppProd && $role->status === LifecycleStatus::Active)
+                || isset($nodes[$node->id])) {
+                throw $this->conflict();
+            }
+            if ($route->cluster_id === null) {
+                $placement = app(RouteStateResolver::class)->forNode($node);
+                if ($placement->nodeId !== $node->id || $placement->clusterId !== null) {
+                    throw $this->conflict();
+                }
+            }
+            $nodes[$node->id] = true;
+        }
     }
 
     /** @return ProductionRoute */
