@@ -294,7 +294,7 @@ it('refuses cancel after committed cutover before changing the parent or its act
             'transport' => 'gateway', 'name' => 'instance.lifecycle-state',
             'input' => ['action' => 'transfer-cutover', 'operation_id' => $this->root->id],
             'result' => ['cutover' => true, 'transfer_id' => $this->transfer->id]]]]]);
-        $this->root->steps()->create(['position' => 1, 'name' => 'transfer-cutover', 'status' => 'succeeded', 'sequence' => 1]);
+        $this->root->steps()->create(['position' => 1, 'name' => 'transfer-cutover', 'status' => 'succeeded', 'resumable' => true, 'sequence' => 1]);
     }
     $activation = $this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-activate-destination'], $this->peer)['operation'];
     $parentBefore = $this->root->refresh()->getAttributes();
