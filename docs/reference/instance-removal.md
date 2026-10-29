@@ -2,7 +2,7 @@
 title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
-  - apps/gateway/app/Actions/{Instances/{DestroyInstanceAction,StartInstanceDestroyAction,AwaitInstanceRemovalAction},DatabaseConnections/DropOwnedDatabasesAction}.php
+  - apps/gateway/app/Actions/{Instances/{DestroyInstanceAction,StartInstanceDestroyAction},DatabaseConnections/DropOwnedDatabasesAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,Removal/**}
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/agent/{src/commands/{instances,instances_tests,source}.rs,contract/fixtures/repository-identity.json}
@@ -14,9 +14,13 @@ covers:
 
 # Instance removal
 
+Development removal returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
+
+Production removal stays synchronous until its own Swamp cutover. That cutover follows the deployment and step-list, Process and Schedule, and Route child registrations.
+
 `instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
 
-Swamp removal records an Operation before effects. Retained Gateway callers admit through the owning Instance action, commit admission, then await that exact Operation through `AwaitOperation`. They return the removal receipt only after the Operation succeeds and its result matches the admitted Instance and completed removal. A failure, cancellation, incomplete result, or timeout stops dependent cleanup. A caller timeout leaves the Operation running.
+Swamp removal records an Operation before effects. Retained Gateway callers keep the synchronous `DestroyInstanceAction` and its removal receipt until their owning cutover composes removal as a child. They do not admit an Operation and wait under the caller's lease.
 
 When a Route changes its targets, it admits removal as `instance.destroy` with `{instance_id, force:true}`. The Instance admission checks the parent's stored removed set and placement, completed publication stages, and proven Gateway commit receipts. It can then remove the deliberately detached Instance without requiring its old Route association. The request cannot supply a detached flag or select another Instance or Node.
 
@@ -26,7 +30,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 
 The CLI asks for default-No consent that names the Instance. `--yes` confirms without a prompt and is required for JSON and noninteractive calls. `--force` never gives consent.
 
-The API returns HTTP 202 with the admitted `instance.destroy` Operation. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
+For development removal, the API returns HTTP 202 with the admitted `instance.destroy` Operation. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
 
 ## Normal and forced removal
 

@@ -113,6 +113,20 @@ it('validates strict force input before inspecting source', function (): void {
     expect(Operation::query()->count())->toBe(0);
 });
 
+it('returns 503 without inspecting source or recording removal when an owning child is unavailable', function (): void {
+    $definitions = [...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php')];
+    unset($definitions['instance.run_steps']);
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
+    $this->source->shouldNotReceive('inspect');
+
+    $this->deleteJson($this->path, ['force' => true])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+
+    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('instance_removals', 0);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'status' => 'active']);
+    Queue::assertNothingPushed();
+});
+
 it('admits a registered worktree set only with force and records worktrees before the checkout', function (bool $force): void {
     $worktree = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
         'name' => 'linked', 'status' => InstanceState::Active, 'checkout_path' => '/srv/apps/removal-proof/linked',

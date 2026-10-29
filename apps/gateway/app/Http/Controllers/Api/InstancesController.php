@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\CreateInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
@@ -13,6 +14,7 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Instances\InstanceRegistrationData;
+use App\Data\Instances\InstanceRemovalData;
 use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -123,7 +125,14 @@ final class InstancesController extends Controller
         int $instance,
         StartInstanceDestroyAction $action,
     ): JsonResponse {
-        $operation = $action->execute(Instance::query()->findOrFail($instance), $request->force(),
+        $target = Instance::query()->findOrFail($instance);
+        if (! $target->placedOnAppDev()) {
+            return response()->json([
+                'data' => InstanceRemovalData::fromModel(app(DestroyInstanceAction::class)->execute($target, $request->force()))->toArray(),
+                'meta' => $this->meta($request),
+            ]);
+        }
+        $operation = $action->execute($target, $request->force(),
             $this->caller($request), $request->attributes->getString('orbit.request_id'));
 
         return response()->json([
