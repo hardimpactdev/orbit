@@ -789,7 +789,7 @@ it('stamps mixed-case child metadata only on completion and ignores caller key a
     $child = Operation::findOrFail($id);
     childKitFinish($this, $child, 'failed');
     $result = ['skipped' => [['child_id' => $id, 'reason' => 'Node unavailable', 'key' => 'invented', 'kind' => 'invented.kind']]];
-    expect(app(OperationExecutionContract::class)->result($this->parent, $result)['skipped'][0]['key'])->toBe('[REDACTED]');
+    expect(app(OperationExecutionContract::class)->result($this->parent, $result)['skipped'][0]['key'])->toBe('invented');
 
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => $result])->assertOk()
         ->assertJsonPath('data.result.skipped.0.key', 'Caddy-7')->assertJsonPath('data.result.skipped.0.kind', 'test.effect');

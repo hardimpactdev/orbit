@@ -178,6 +178,48 @@ it('encrypts outputs once and keeps only references through hook, step, context 
         ->and(OperationKinds::supports('secret_outputs'))->toBeTrue();
 });
 
+it('preserves boolean completion proof when a protected value contains the digit one', function (): void {
+    $this->command->value = '1';
+    $this->command->result = ['backend' => 'issued', 'credential' => '1', 'projected' => true, 'unchanged' => false, 'echo' => '1'];
+    $this->definition['result_fields'] = [...$this->definition['result_fields'], 'projected', 'unchanged'];
+    $this->definition['completion_contract']['result']['projected'] = true;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.secret_output' => $this->definition]));
+
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()
+        ->assertJsonPath('data.projected', true)->assertJsonPath('data.unchanged', false)
+        ->assertJsonPath('data.credential', $this->reference)->assertJsonPath('data.echo', '[REDACTED]')->json('data');
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data', $result);
+    $this->getJson($this->path.'/receipts/issue')->assertOk()->assertJsonPath('data.result.projected', true);
+    $this->postJson($this->path.'/step', ['worker' => 'outputs', 'key' => 'issue.done', 'name' => 'issue', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($this->operation->fresh()->result['projected'])->toBeTrue()
+        ->and($this->family->received['projected'])->toBeTrue()
+        ->and($this->command->calls)->toBe(1)->and($this->store->calls)->toBe(1);
+});
+
+it('uses declared output sensitivity while preserving public environment and key fields', function (): void {
+    $public = ['environment' => ['php' => '8.5'], 'key' => 'public-child', 'token' => 'public-label',
+        'credentials' => [['key' => 'public-entry', 'environment' => 'development']]];
+    $this->definition['result_fields'] = [...$this->definition['result_fields'], 'environment.php', 'key', 'token',
+        ['name' => 'credentials', 'max' => 2, 'list_of' => ['key' => 'string', 'environment' => 'string']]];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.secret_output' => $this->definition]));
+    $this->command->result = [...$public, 'backend' => 'issued', 'credential' => $this->command->value,
+        'echo' => 'echo:'.$this->command->value, 'error_code' => null, 'unknown' => 'discard-me'];
+
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.environment.php', '8.5')
+        ->assertJsonPath('data.key', 'public-child')->assertJsonPath('data.token', 'public-label')
+        ->assertJsonPath('data.credentials', $public['credentials'])->assertJsonPath('data.credential', $this->reference)
+        ->assertJsonPath('data.echo', 'echo:[REDACTED]')->assertJsonMissingPath('data.unknown')->json('data');
+    expect($this->family->received['environment'])->toBe($public['environment'])
+        ->and($this->family->received['credential'])->toBe($this->reference);
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($this->path.'/step', ['worker' => 'outputs', 'key' => 'issue.done', 'name' => 'issue', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'outputs'])->assertOk()->assertJsonPath('data.execution_context.result.environment.php', '8.5');
+    $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($this->operation->fresh()->result)->toBe($result)
+        ->and(json_encode([$this->operation->fresh()->getAttributes(), $this->operation->steps()->get()->toArray()]))->not->toContain($this->command->value, 'discard-me');
+});
+
 it('refuses unavailable output owners and stores before invoking the command', function (string $case): void {
     if ($case === 'missing') {
         $this->store->missingOwner = true;
