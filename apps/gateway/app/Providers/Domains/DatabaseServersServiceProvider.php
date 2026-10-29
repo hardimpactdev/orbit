@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
+use App\Console\Commands\DatabaseOwnershipCommand;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
@@ -17,6 +19,7 @@ use App\Domain\Processes\ProcessRemovalGuard;
 use App\Infrastructure\DatabaseServers\NativeDatabaseRemovalLock;
 use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -27,6 +30,15 @@ final class DatabaseServersServiceProvider extends ServiceProvider
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ValkeyServerAdmin::class => PredisValkeyServerAdmin::class,
     ];
+
+    public function boot(): void
+    {
+        $this->commands([DatabaseOwnershipCommand::class]);
+        $this->app->afterResolving(Schedule::class, static function (Schedule $schedule): void {
+            $schedule->call(static fn (): int => app(PurgeDatabaseExecutionIntentsAction::class)->execute())
+                ->name('database-intents-purge')->hourly()->withoutOverlapping();
+        });
+    }
 
     public function register(): void
     {

@@ -18,14 +18,15 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
+use App\Models\Operation;
 
 /** Called in lifecycle admission's transaction. Returns Kit v2 child intent, without Node effects. */
 final readonly class PrepareDatabaseChildAction
 {
-    public function __construct(private CreateServerDatabaseAction $databases, private DropServerDatabaseAction $drops, private RecordDatabaseOperationAction $records, private MysqlNames $names) {}
+    public function __construct(private CreateServerDatabaseAction $databases, private DropServerDatabaseAction $drops, private RecordDatabaseOperationAction $records, private MysqlNames $names, private PrepareSqliteSeedAbandonAction $seedAbandon) {}
 
     /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
-    public function create(Instance $target, DatabaseServer $server): array
+    public function create(Instance $target, DatabaseServer $server, Operation $parent): array
     {
         $server = $this->databases->activeServer($server->slug);
         $prepared = $this->databases->prepare(new CreateServerDatabaseData(
@@ -35,11 +36,11 @@ final readonly class PrepareDatabaseChildAction
         $owned = $this->owned($prepared, $target);
 
         return (new PreparedDatabaseOperation($owned->kind, $owned->targetType, $owned->targetId, $owned->nodeId,
-            [...$owned->input, 'server_id' => $server->id]))->child();
+            [...$owned->input, 'server_id' => $server->id]))->child($parent);
     }
 
     /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
-    public function clone(Instance $target, Instance $source): array
+    public function clone(Instance $target, Instance $source, Operation $parent): array
     {
         if ($source->project_id !== $target->project_id) {
             throw new ResourceOperationException('instance.database_clone_unsupported', 'The source must belong to the same Project.', 422);
@@ -50,6 +51,7 @@ final readonly class PrepareDatabaseChildAction
             throw new ResourceOperationException('instance.database_clone_unsupported', 'The source has no default database attachment.', 422);
         }
         $children = [];
+        $creates = [];
         if ($sourceConnection->driver === DatabaseDriver::Mysql && $sourceConnection->server !== null) {
             $server = $sourceConnection->server;
             $connection = $this->databases->reserve($server, $this->slug($target), $this->names->database($this->slug($target)), $target, null, ['clone_step' => 'recorded']);
@@ -59,6 +61,7 @@ final readonly class PrepareDatabaseChildAction
             $prepared = $this->databases->prepareEmpty($connection);
             $intent = DatabaseExecutionIntent::recorded($prepared->input['intent_id']);
             $commands = $intent->payload['commands'];
+            $creates = $intent->payload['projection']['database_creates'] ?? [];
             $intent->delete();
             $commands['prepare-database'] = $commands['database-apply'];
             unset($commands['database-apply']);
@@ -112,13 +115,13 @@ final readonly class PrepareDatabaseChildAction
             ['owner_instance_id' => $target->id, 'source_instance_id' => $source->id, 'source_node_id' => $source->node_id,
                 'connection_id' => $connection->id, 'driver' => $sourceConnection->driver->value,
                 'variant' => $sourceConnection->driver === DatabaseDriver::Mysql ? 'mysql' : ($children === [] ? 'sqlite_local' : 'sqlite_remote')], $commands,
-            ['created_connection' => $connection->id, 'attach_instance' => $target->id, 'clone' => true, 'children' => $children]);
+            ['created_connection' => $connection->id, 'attach_instance' => $target->id, 'clone' => true, 'children' => $children, 'database_creates' => $creates]);
 
-        return $prepared->child();
+        return $prepared->child($parent);
     }
 
     /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
-    public function destroyOwned(Instance $target): array
+    public function destroyOwned(Instance $target, Operation $parent): array
     {
         $connections = DatabaseConnection::query()->with(['server', 'users'])->where('owner_instance_id', $target->id)->orderBy('id')->get();
         $managed = array_values($connections->filter(static fn (DatabaseConnection $connection): bool => $connection->server !== null)->all());
@@ -139,13 +142,13 @@ final readonly class PrepareDatabaseChildAction
 
         return $this->records->prepare('database.destroy_owned', 'instance', $target->id, $target->node_id,
             ['owner_instance_id' => $target->id, 'connection_ids' => $connections->modelKeys(), 'database_node_ids' => array_values(array_unique(array_column($children, 'node_id')))],
-            $commands, ['delete_connections' => $localIds, 'children' => $children])->child();
+            $commands, ['delete_connections' => $localIds, 'children' => $children])->child($parent);
     }
 
     /** Production clone or development transfer. Placements are the parent's recorded, validated intent.
      * @return array{key: string, kind: string, node_id: int, input: array<string, mixed>}
      */
-    public function sqliteSeed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): array
+    public function sqliteSeed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath, Operation $parent): array
     {
         $transfer = $source->instanceId === $target->instanceId && $source->environment === 'development'
             && $target->environment === 'development' && $source->node->id !== $target->node->id;
@@ -153,6 +156,8 @@ final readonly class PrepareDatabaseChildAction
         $safeUser = static fn (string $user): bool => preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) === 1;
         if ($source->instanceId < 1 || $target->instanceId < 1 || ($source->instanceId === $target->instanceId && ! $transfer)
             || ! in_array($source->environment, ['development', 'production'], true) || ($target->environment !== 'production' && ! $transfer)
+            || ($transfer && ($target->operationId === null || trim($target->operationId) === '' || strlen($target->operationId) > 200
+                || ($source->operationId !== null && $source->operationId !== $target->operationId)))
             || ! $safePath($source->basePath) || ! $safePath($target->basePath) || ! $safePath($sourcePath)
             || ! str_starts_with($sourcePath, $source->basePath.'/') || ! $safeUser($source->executionUser) || ! $safeUser($target->executionUser)
             || ($target->environment === 'production' && $target->basePath !== '/home/'.$target->executionUser)
@@ -190,7 +195,14 @@ final readonly class PrepareDatabaseChildAction
 
         return $this->records->prepare('database.sqlite_seed', 'instance', $target->instanceId, $target->node->id,
             ['owner_instance_id' => $target->instanceId, 'source_instance_id' => $source->instanceId, 'source_node_id' => $source->node->id, 'driver' => 'seed'], $commands,
-            ['children' => [[...$export->child(), 'phase' => 'before'], [...$cleanup->child(), 'phase' => 'after']]])->child();
+            ['children' => [[...$export->child(), 'phase' => 'before'], [...$cleanup->child(), 'phase' => 'after']],
+                ...($transfer ? ['seed_attempt' => ['id' => $target->operationId, 'operation' => $identity, 'source_cleanup_intent_id' => $cleanup->input['intent_id']]] : [])])->child($parent);
+    }
+
+    /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
+    public function sqliteSeedAbandon(Instance $target, int $seedIntentId, Operation $parent): array
+    {
+        return $this->seedAbandon->execute($target, $seedIntentId, $parent);
     }
 
     private function owned(PreparedDatabaseOperation $prepared, Instance $target): PreparedDatabaseOperation
