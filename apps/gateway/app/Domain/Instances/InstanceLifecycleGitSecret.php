@@ -62,7 +62,7 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
         }
         if ($parameter !== 'git_read' || $id !== $this->ownerId($operation)
             || $project->repository_identity !== ($operation->input['repository_identity'] ?? null)
-            || $identity !== $project->repository_identity || ! is_string($project->repository_url)
+            || $identity !== $project->repository_identity
             || ! in_array($operation->kind, ['instance.create', 'instance.clone', 'instance.destroy', 'instance.clone_candidate', 'instance.transfer_destination'], true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Git reference is not owned by this lifecycle intent.', 422);
         }
