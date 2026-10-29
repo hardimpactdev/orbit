@@ -1,0 +1,24 @@
+id: 957148f7-6f7a-4f69-923c-636e1289b34d
+name: operation-processes-schedules
+description: Claim and execute Process and Schedule runtime work on its placed worker.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: { type: string }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: processes-schedules
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-processes-schedules"
+          behaviorName: '${{ "operation-processes-schedules-" + {"process.create":"process-create","process.destroy":"process-destroy","process.update":"process-update","process.start":"process-start","process.stop":"process-stop","process.restart":"process-restart","schedule.create":"schedule-create","schedule.destroy":"schedule-destroy","schedule.enable":"schedule-enable","schedule.run":"schedule-run","process.install_instance_definitions":"process-install-instance-definitions","schedule.install_instance_definitions":"schedule-install-instance-definitions","process.restart_instance":"process-restart-instance"}[inputs.kind] }}'
+          methodName: execute
+          inputs:
+            kind: "${{ inputs.kind }}"
+            worker: "${{ inputs.worker }}"
