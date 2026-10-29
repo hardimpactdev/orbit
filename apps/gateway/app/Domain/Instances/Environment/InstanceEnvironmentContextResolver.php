@@ -248,6 +248,25 @@ final readonly class InstanceEnvironmentContextResolver
         );
     }
 
+    /** The child admission owns the Route relation, including an already detached target. */
+    public function resolveForBoundRoute(Instance $instance, ?Route $route, InstanceEnvironmentRouteDomain $domain): InstanceEnvironmentContext
+    {
+        $node = Node::query()->findOrFail($instance->node_id);
+        $environment = $instance->placementEnvironment();
+        if ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active'
+            || ! is_bool($instance->source_is_laravel) || ! in_array($environment, ['development', 'production'], true)
+            || $node->status !== LifecycleStatus::Active
+            || ($route !== null && ($route->project_id !== $instance->project_id || $route->hasWebRoot()))) {
+            $this->conflict();
+        }
+        [$path, $user] = $this->placement($instance, $node);
+
+        return new InstanceEnvironmentContext(instanceId: $instance->id, projectId: $instance->project_id,
+            nodeId: $node->id, environment: $environment, path: $path, executionUser: $user,
+            laravel: $instance->source_is_laravel, routeId: $route?->id, routeDomain: $route?->domain,
+            nodeStatus: $node->status->value, node: $node, routeDomainSource: $domain);
+    }
+
     /** @return array{string, string} */
     private function placement(Instance $instance, Node $node): array
     {

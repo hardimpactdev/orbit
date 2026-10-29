@@ -17,6 +17,7 @@ use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
+use App\Domain\Instances\Environment\EnvironmentSyncSecrets;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
@@ -52,6 +53,8 @@ use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
 use App\Domain\Operations\OperationSecretSource;
+use App\Http\Controllers\Api\OperationExecutorController;
+use App\Http\Middleware\Instances\SerializeInstanceEnvironment;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
@@ -86,6 +89,7 @@ use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Processes\CommandDeadline;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -136,7 +140,7 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class], OperationSecretSource::class);
+        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
@@ -154,5 +158,16 @@ final class InstancesServiceProvider extends ServiceProvider
             DevelopmentInstanceSourceFinalizer::class,
             static fn (): DevelopmentInstanceSourceFinalizer => app(RemoteDevelopmentInstanceSourceRemoval::class),
         );
+    }
+
+    public function boot(): void
+    {
+        $this->app->booted(function (): void {
+            foreach ($this->app->make(Router::class)->getRoutes()->getRoutes() as $route) {
+                if ($route->getActionName() === OperationExecutorController::class.'@run') {
+                    $route->middleware(SerializeInstanceEnvironment::class);
+                }
+            }
+        });
     }
 }
