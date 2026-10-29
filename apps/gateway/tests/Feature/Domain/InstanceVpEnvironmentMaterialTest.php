@@ -92,8 +92,12 @@ it('admits the VP manager from a proven project plan without assuming an image s
     Queue::assertNothingPushed();
 });
 
-it('preserves public runtime pins through executor plan redaction and scope discovery', function (): void {
-    [$vp, $parent, $instance, $agents] = instanceVpMaterialFixture();
+it('preserves public runtime pins through the complete executor flow', function (bool $installed): void {
+    [$vp, $parent, $instance, $agents, $configuration] = instanceVpMaterialFixture();
+    $configuration['.node-version'] = '24.22.1';
+    $configuration['package']['engines']['node'] = '24.22.1';
+    $configuration['locks']['package-lock.json'] = '{"lockfileVersion":3,"packages":{"node_modules/vite-plus":{"version":"1.4.0"}}}';
+    $agents->answer('tool.read-vp-project', $configuration);
     $parent->update(['started_at' => now()]);
     $instance->node->update(['architecture' => 'x86_64']);
     $vp->fill(['status' => 'queued', 'sequence' => 1]);
@@ -110,6 +114,7 @@ it('preserves public runtime pins through executor plan redaction and scope disc
     $run = function (string $key) use ($executor, $execution, $vp, $instance): array {
         $descriptor = array_find($execution->context($vp->refresh())['descriptors'], fn (array $entry): bool => $entry['key'] === $key);
         $result = $executor->run($vp, ['worker' => 'vp-worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))], $instance->node_id);
+        expect($result)->not->toHaveKey('error_code');
         $executor->step($vp, ['worker' => 'vp-worker', 'key' => $key.':finish', 'name' => $descriptor['step'],
             'status' => 'succeeded', 'result' => $result], $instance->node_id);
 
@@ -118,24 +123,28 @@ it('preserves public runtime pins through executor plan redaction and scope disc
 
     $plan = $run('vp.plan');
     $manager = DB::transaction(fn (): Operation => app(OperationChildren::class)->admit($vp->refresh(), ['key' => 'vp_manager'])['operation']);
-    $manager->update(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['version' => '0.3.3']]);
+    $manager->update(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['version' => '1.4.0']]);
     $run('child.vp_manager');
     $run('vp.scope');
 
-    expect($plan['requirements'])->toMatchArray(['vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager_version' => '11.12.0']);
-    expect($vp->refresh()->state['vp_environment'])->toMatchArray(['store' => '/opt/orbit/vite-plus', 'vp_version' => '0.3.3', 'status' => 'checking']);
-    expect($instance->refresh()->getAttribute('vp_environment'))->toMatchArray(['store' => '/opt/orbit/vite-plus', 'node_version' => '24.22.0', 'status' => 'checking']);
+    expect($plan['requirements'])->toMatchArray(['vp_version' => '1.4.0', 'node_version' => '24.22.1', 'package_manager_version' => '11.12.0']);
+    expect($vp->refresh()->state['vp_environment'])->toMatchArray(['store' => '/opt/orbit/vite-plus', 'vp_version' => '1.4.0', 'status' => 'checking']);
+    expect($instance->refresh()->getAttribute('vp_environment'))->toMatchArray(['store' => '/opt/orbit/vite-plus', 'node_version' => '24.22.1', 'status' => 'checking']);
     expect(json_encode([$vp->toArray(), $plan]))->not->toContain('synthetic-registry-token', '[REDACTED]');
-    $agents->answer('tool.vp-version', ['version' => '0.3.3']);
-    $agents->answer('tool.inspect-vp-store', ['installed' => [false]]);
+    $agents->answer('tool.vp-version', ['version' => 'vp v1.4.0']);
+    $agents->answer('tool.inspect-vp-store', ['installed' => [$installed]]);
     $agents->answer('tool.install-vp-environment', ['verified' => ['node' => 'verified', 'npm' => 'verified']]);
     $agents->answer('tool.prune-vp-store', ['removed' => []]);
     $run('vp.version');
     $run('vp.inspect');
-    $run('vp.install');
+    if (! $installed) {
+        $run('vp.install');
+    }
     $agents->answer('tool.inspect-vp-store', ['installed' => [true]]);
     $run('vp.verify');
-    $run('vp.prune');
+    if (! $installed) {
+        $run('vp.prune');
+    }
     $receipt = $run('vp.receipt');
     $executor->complete($vp, ['worker' => 'vp-worker', 'status' => 'succeeded', 'result' => $receipt], $instance->node_id);
 
@@ -143,8 +152,28 @@ it('preserves public runtime pins through executor plan redaction and scope disc
     expect($instance->refresh()->getAttribute('vp_environment')['status'])->toBe('active');
     expect(json_encode($vp->toArray()))->not->toContain('synthetic-registry-token');
     expect(array_column($agents->calls, 'command'))->toBe(['tool.read-vp-project', 'tool.inspect-vp-scope', 'tool.vp-version',
-        'tool.inspect-vp-store', 'tool.read-vp-project', 'tool.install-vp-environment', 'tool.inspect-vp-store', 'tool.prune-vp-store']);
-});
+        'tool.inspect-vp-store', ...($installed ? [] : ['tool.read-vp-project', 'tool.install-vp-environment']),
+        'tool.inspect-vp-store', ...($installed ? [] : ['tool.prune-vp-store'])]);
+})->with(['existing store, as on Instance 757' => true, 'missing store' => false]);
+
+it('uses the observed VP manager version to enforce the project minimum', function (string $observed, bool $satisfied): void {
+    [$vp] = instanceVpMaterialFixture();
+    $vp->state = ['vp_environment' => new VpEnvironment('/opt/orbit/vite-plus', '1.4.0', '24.22.1', 'npm', '11.12.0')->record('checking')];
+    $receipt = ['version' => $observed];
+
+    $result = app(InstanceVpEnvironmentExecution::class)->received($vp, ['key' => 'vp.version'], $receipt);
+
+    expect($result)->toBe($satisfied ? $receipt : ['error_code' => 'deployment.vp_store_failed']);
+})->with([
+    'live Node 4 CLI output' => ['vp v1.4.0', true],
+    'manager prefix' => ['vp 1.4.0', true],
+    'plain version' => ['1.4.0', true],
+    'newer manager' => ['vp v1.4.1', true],
+    'older manager' => ['vp v1.3.9', false],
+    'prerelease below minimum' => ['vp v1.4.0-beta.1', false],
+    'moving selector' => ['vp latest', false],
+    'extra output' => ['vp v1.4.0 trailing', false],
+]);
 
 it('refuses moving Project runtime requirements before any install', function (): void {
     [$child, , , $agents, $configuration] = instanceVpMaterialFixture();

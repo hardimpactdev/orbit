@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\VpEnvironment;
+use App\Domain\Tools\VpManagerVersion;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -106,9 +107,7 @@ final readonly class VpToolManager implements ToolManager
 
     public function versionSatisfies(string $observed, string $required): bool
     {
-        $normalized = $this->versions->normalize(preg_replace('/\\Avp\\s+/', '', trim($observed)) ?? '');
-
-        return $normalized !== null && version_compare($normalized, $required, '>=');
+        return VpManagerVersion::satisfies($observed, $required);
     }
 
     /** @param list<VpEnvironment> $environments
