@@ -277,3 +277,7 @@ A window the provider did not return is unknown. Showing it as zero use would te
 - [`extension`](/cli/extension)
 - [Database role](/reference/database-role)
 - [Private DNS](/reference/private-dns)
+
+## Cache configuration
+
+The Gateway selects the configured shared cache on its first cache operation. Constructing AI router handlers for the Operation registry reads no Settings or Database connections. The selected cache remains the same for that service instance.
