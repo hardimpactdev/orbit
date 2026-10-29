@@ -51,7 +51,8 @@ it('reports optional capabilities unavailable until their enforcement ships', fu
 
 it('reports enforced child and target receipt capabilities', function (): void {
     expect(OperationKinds::supports('children'))->toBeTrue()
-        ->and(OperationKinds::supports('receipts'))->toBeTrue();
+        ->and(OperationKinds::supports('receipts'))->toBeTrue()
+        ->and(OperationKinds::supports('compensations'))->toBeTrue();
 });
 
 it('rejects a child-only completion contract that proves no child', function (): void {
@@ -60,3 +61,23 @@ it('rejects a child-only completion contract that proves no child', function ():
     expect(fn () => new OperationKinds(new Container, ['test.empty' => $definition]))
         ->toThrow(LogicException::class, 'complete enforced completion proof');
 });
+
+
+it('refuses child Node relations from Swamp-written state', function (string $path): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['children'] = [['kind' => 'test.child', 'node_from' => $path]];
+    expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
+})->with(['state.steps.inspection.node_id', 'state.executor_runs.inspect.result.node_id', 'state.executor_reentry.children.0.node_id']);
+
+it('requires compensation kinds to be declared with a bounded child boundary key', function (string $case): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['children'] = [['kind' => 'test.child', 'node_from' => 'operation.node_id']];
+    $definition['compensations'] = ['test.child'];
+    $definition['cancellation_boundary'] = 'stop-source';
+    match ($case) {
+        'kind' => $definition['compensations'] = ['test.foreign'],
+        'empty' => $definition['compensations'] = [],
+        'boundary' => $definition['cancellation_boundary'] = '',
+    };
+    expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
+})->with(['kind', 'empty', 'boundary']);

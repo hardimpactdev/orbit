@@ -298,6 +298,7 @@ final readonly class OperationChildren
         $record = ValidatedData::object($parent->state['executor_wait'] ?? []);
         $children = [];
         foreach (is_array($record['children'] ?? null) ? $record['children'] : [] as $tuple) {
+            $tuple = ValidatedData::object($tuple);
             $child = $this->child($parent, ValidatedData::string($tuple['key']));
             $children[] = [...$tuple, 'kind' => $child->kind, 'status' => $child->status->value, 'error_code' => $child->error_code,
                 'result' => $child->result === null ? null : $this->contract->result($child, $child->result)];
