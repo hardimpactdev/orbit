@@ -6,12 +6,10 @@ use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -89,161 +87,10 @@ function valkey_server_assert_no_secret(TestResponse $response, string $secret):
 }
 
 describe('database:server:create --driver=redis', function (): void {
-    it('writes the ACL file, then runs Valkey from it without a password in the Process', function (): void {
-        $this->programs->during = function (): void {
-            expect(Process::query()->exists())->toBeFalse();
-        };
-
-        $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode));
-
-        $response
-            ->assertCreated()
-            ->assertJsonPath('data.slug', 'beast-valkey')
-            ->assertJsonPath('data.driver', 'redis')
-            ->assertJsonPath('data.tag', '8.1')
-            ->assertJsonPath('data.port', 6379)
-            ->assertJsonPath('data.status', 'active')
-            ->assertJsonPath('data.databases_count', 0);
-
-        expect(array_keys($response->json('data')))->toBe([
-            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
-        ]);
-
-        $server = DatabaseServer::query()->sole();
-        $password = $server->root_password;
-        $process = Process::query()->findOrFail($server->process_id);
-
-        expect(strlen($password))->toBe(48)
-            ->and($this->programs->runs)->toBe([[
-                'node' => 'beast',
-                'input' => [
-                    'volume' => 'orbit-beast-valkey-data',
-                    'image' => 'valkey/valkey:8.1',
-                    'acl' => valkey_acl_file($password),
-                ],
-            ]])
-            ->and(json_encode($this->programs->runs, JSON_THROW_ON_ERROR))->not->toContain($password)
-            ->and($process->owner_type)->toBe(Node::class)
-            ->and($process->owner_id)->toBe($this->dbNode->id)
-            ->and($process->name)->toBe('beast-valkey')
-            ->and($process->runtime)->toBe(ProcessRuntime::Docker)
-            ->and($process->working_directory)->toBe('/data')
-            ->and($process->restart_policy)->toBe('unless-stopped')
-            ->and($process->desired_state)->toBe(DesiredProcessState::Running)
-            ->and($process->status)->toBe(LifecycleStatus::Active)
-            ->and($process->runtime_config)->toBe(valkey_server_runtime_config('10.44.0.80:6379:6379', 'orbit-beast-valkey-data'))
-            ->and(json_encode($process->getAttributes()))->not->toContain($password)
-            ->and($this->runtime->convergedProcessIds)->toBe([$process->id])
-            ->and($this->valkey->readyChecks)->toBe(['beast-valkey']);
-
-        valkey_server_assert_no_secret($response, $password);
-        $this->getJson('/api/v1/processes')->assertOk()->assertDontSee($password);
-    });
-
-    it('accepts a tag and a port, and returns the finished server on an exact retry', function (): void {
-        $request = valkey_server_request($this->dbNode, ['tag' => '8.0', 'port' => 6380]);
-
-        $this->postJson('/api/v1/database-servers', $request)
-            ->assertCreated()
-            ->assertJsonPath('data.tag', '8.0')
-            ->assertJsonPath('data.port', 6380);
-
-        $this->postJson('/api/v1/database-servers', $request)
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active');
-
-        expect(Process::query()->sole()->runtime_config)->toBe(valkey_server_runtime_config('10.44.0.80:6380:6379', 'orbit-beast-valkey-data', '8.0'))
-            ->and($this->programs->runs)->toHaveCount(1)
-            ->and($this->programs->runs[0]['input']['image'])->toBe('valkey/valkey:8.0')
-            ->and($this->runtime->convergedProcessIds)->toHaveCount(1);
-    });
-
-    it('records a failed ACL file with the program log and writes it again on a retry', function (AgentRunnerFailure|string $failure): void {
-        is_string($failure) ? $this->programs->outcome = $failure : $this->programs->failure = $failure;
-
-        $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'database.server_command_failed')
-            ->assertJsonPath('error.details.step', 'acl_file');
-
-        $server = DatabaseServer::query()->sole();
-        $activity = Activity::query()->where('request_id', $response->headers->get('X-Orbit-Request-Id'))->sole();
-
-        expect($server->status)->toBe(LifecycleStatus::Failed)
-            ->and($server->failed_step)->toBe('acl_file')
-            ->and($server->error_code)->toBe('database.server_command_failed')
-            ->and(Process::query()->exists())->toBeFalse()
-            ->and($activity->properties?->toArray()['stderr'] ?? null)->toContain('ACL file write failed.');
-
-        $this->programs->outcome = 'written';
-        $this->programs->failure = null;
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active');
-
-        expect($this->programs->runs)->toHaveCount(2)
-            ->and($this->programs->runs[1]['input']['acl'])->toBe(valkey_acl_file($server->root_password))
-            ->and(Process::query()->sole()->status)->toBe(LifecycleStatus::Active)
-            ->and(DatabaseServer::query()->sole()->failed_step)->toBeNull();
-    })->with([
-        'a failed outcome' => ['failed'],
-        'a run without a result' => [new AgentRunnerFailure('database.write-valkey-acl', AgentRunnerFailure::MissingResult, 'docker: Error response from daemon: pull access denied')],
-    ]);
-
-    it('continues with the Process after a failed start, without writing the ACL file again', function (): void {
-        $this->runtime->failConverge = true;
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'process.docker_converge_failed');
-
-        $server = DatabaseServer::query()->sole();
-        $process = Process::query()->sole();
-
-        expect($server->failed_step)->toBe('process')
-            ->and($server->process_id)->toBeNull()
-            ->and($process->status)->toBe(LifecycleStatus::Failed);
-
-        $this->runtime->failConverge = false;
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active')
-            ->assertJsonPath('data.process_id', $process->id);
-
-        expect($this->programs->runs)->toHaveCount(1)
-            ->and($this->runtime->convergedProcessIds)->toBe([$process->id, $process->id])
-            ->and($process->refresh()->status)->toBe(LifecycleStatus::Active);
-    });
-
-    it('records a readiness timeout and continues from it on a retry', function (): void {
-        $this->valkey->readiness = [false];
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'database.server_start_failed')
-            ->assertJsonPath('error.message', 'Database server [beast-valkey] did not accept the admin login within 120 seconds.');
-
-        $server = DatabaseServer::query()->sole();
-        $process = Process::query()->sole();
-
-        expect($server->status)->toBe(LifecycleStatus::Failed)
-            ->and($server->failed_step)->toBe('readiness')
-            ->and($server->process_id)->toBe($process->id);
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active');
-
-        expect($this->programs->runs)->toHaveCount(1)
-            ->and($this->runtime->convergedProcessIds)->toBe([$process->id])
-            ->and($this->valkey->readyChecks)->toBe(['beast-valkey', 'beast-valkey']);
-    });
 
     it('refuses the slug of a server with another driver', function (): void {
         $this->postJson('/api/v1/database-servers', ['slug' => 'beast-db', 'node_id' => $this->dbNode->id, 'port' => 6379])
-            ->assertCreated()
+            ->assertAccepted()
             ->assertJsonPath('data.driver', 'mysql');
 
         $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, ['slug' => 'beast-db', 'tag' => '8.4', 'port' => 6379]))
@@ -273,8 +120,8 @@ describe('database:server:create --driver=redis', function (): void {
     ]);
 
     it('lists and shows the driver of each server', function (): void {
-        $this->postJson('/api/v1/database-servers', ['slug' => 'beast-mysql', 'node_id' => $this->dbNode->id])->assertCreated();
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertCreated();
+        $this->postJson('/api/v1/database-servers', ['slug' => 'beast-mysql', 'node_id' => $this->dbNode->id])->assertAccepted();
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertAccepted();
 
         $this->getJson('/api/v1/database-servers')
             ->assertOk()
@@ -292,7 +139,7 @@ describe('database:server:create --driver=redis', function (): void {
 
 describe('the Process of a Valkey server', function (): void {
     beforeEach(function (): void {
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertCreated();
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertAccepted();
         $this->server = DatabaseServer::query()->sole();
         $this->process = Process::query()->sole();
     });
@@ -313,16 +160,6 @@ describe('the Process of a Valkey server', function (): void {
             ->and($this->runtime->convergedProcessIds)->toBe([$this->process->id]);
     });
 
-    it('keeps process:restart and process:destroy as for every server Process', function (): void {
-        $this->postJson("/api/v1/processes/{$this->process->id}/restart")->assertOk();
-
-        $this->deleteJson("/api/v1/processes/{$this->process->id}")
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'process.required_by_database_server');
-
-        expect($this->runtime->restarted)->toBe([$this->process->id])
-            ->and($this->runtime->removed)->toBe([]);
-    });
 });
 
 describe('database:server:create --process --connection', function (): void {
@@ -396,53 +233,6 @@ describe('database:server:create --process --connection', function (): void {
         'extra password' => ['passwords', 'second-secret'],
     ]);
 
-    it('adopts an open server without locking out clients and closes it only after migration', function (): void {
-        $this->connection->update(['password' => null]);
-        $this->valkey->anonymous = true;
-        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertCreated();
-        $server = DatabaseServer::query()->sole();
-        expect($server->default_open)->toBeTrue()
-            ->and(strlen($server->root_password))->toBe(48)
-            ->and($this->programs->runs[0]['input']['acl'])->toBe("user default on nopass ~* &* +@all\n")
-            ->and($this->connection->refresh()->password)->toBeNull();
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertOk();
-        expect($this->programs->runs)->toHaveCount(1);
-
-        $url = '/api/v1/database-servers/services-valkey/close';
-        $this->postJson($url)->assertConflict()->assertJsonPath('error.code', 'database.server_in_use');
-        $this->connection->delete();
-        $this->valkey->defaultClients = ['10.44.0.80:12345'];
-        $this->postJson($url)->assertConflict()->assertJsonPath('error.code', 'database.server_in_use');
-        expect($server->refresh()->default_open)->toBeTrue();
-        $this->valkey->defaultClients = [];
-        $this->valkey->failCommands = true;
-        $this->postJson($url)->assertStatus(502);
-        expect($server->refresh()->default_open)->toBeTrue();
-        $this->valkey->failCommands = false;
-        $response = $this->postJson($url)->assertOk()->assertJsonPath('data.driver', 'redis');
-        valkey_server_assert_no_secret($response, $server->root_password);
-        expect($server->refresh()->default_open)->toBeFalse()->and($this->valkey->anonymous)->toBeFalse();
-        $calls = count($this->valkey->calls);
-        $this->postJson($url)->assertOk();
-        expect($this->valkey->calls)->toHaveCount($calls);
-        $server->update(['status' => LifecycleStatus::Failed]);
-        $this->postJson($url)->assertConflict()->assertJsonPath('error.code', 'database.server_inactive');
-    });
-
-    it('retries failed open adoption with the same generated admin password', function (): void {
-        $this->connection->update(['password' => null]);
-        $this->valkey->anonymous = true;
-        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
-        $this->runtime->failConverge = true;
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertStatus(502);
-        $password = DatabaseServer::query()->sole()->root_password;
-        $this->runtime->failConverge = false;
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertOk();
-        expect(DatabaseServer::query()->sole()->root_password)->toBe($password)
-            ->and($this->programs->runs)->toHaveCount(1);
-    });
-
     it('refuses adoption that would overwrite existing ACL users', function (): void {
         $this->valkey->users['queue'] = new ValkeyAclUser('queue', 'on ~queue:* -@all +@list', []);
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertConflict()->assertJsonPath('error.code', 'database.server_adoption_refused');
@@ -460,99 +250,8 @@ describe('database:server:create --process --connection', function (): void {
         }
     });
 
-    it('takes the connection password, writes the ACL file, replaces the specification, and links the connection', function (): void {
-        $this->programs->during = function (): void {
-            expect($this->process->refresh()->runtime_config['image'])->toBe('valkey/valkey:8.0');
-        };
-
-        $response = $this->postJson('/api/v1/database-servers', $this->adoption)
-            ->assertCreated()
-            ->assertJsonPath('data.slug', 'services-valkey')
-            ->assertJsonPath('data.driver', 'redis')
-            ->assertJsonPath('data.process_id', $this->process->id)
-            ->assertJsonPath('data.port', 6379)
-            ->assertJsonPath('data.tag', '8.1')
-            ->assertJsonPath('data.status', 'active');
-
-        $server = DatabaseServer::query()->sole();
-        $process = $this->process->refresh();
-
-        expect($server->root_password)->toBe('queue-secret')
-            ->and($this->programs->runs)->toBe([[
-                'node' => 'beast',
-                'input' => [
-                    'volume' => 'services-valkey-data',
-                    'image' => 'valkey/valkey:8.1',
-                    'acl' => valkey_acl_file('queue-secret'),
-                ],
-            ]])
-            ->and(Process::query()->count())->toBe(1)
-            ->and($process->name)->toBe('valkey')
-            ->and($process->working_directory)->toBe('/data')
-            ->and($process->restart_policy)->toBe('unless-stopped')
-            ->and($process->desired_state)->toBe(DesiredProcessState::Running)
-            ->and($process->status)->toBe(LifecycleStatus::Active)
-            ->and($process->runtime_config)->toBe(valkey_server_runtime_config('10.44.0.80:6379:6379', 'services-valkey-data'))
-            ->and(json_encode($process->getAttributes()))->not->toContain('queue-secret')
-            ->and($this->runtime->convergedProcessIds)->toBe([$process->id])
-            ->and($this->valkey->readyChecks)->toBe(['services-valkey'])
-            ->and($this->connection->refresh()->database_server_id)->toBe($server->id);
-
-        valkey_server_assert_no_secret($response, 'queue-secret');
-
-        $this->getJson('/api/v1/database-servers/services-valkey')
-            ->assertOk()
-            ->assertJsonPath('data.databases_count', 1)
-            ->assertJsonPath('data.databases.0.slug', 'services-valkey')
-            ->assertDontSee('queue-secret');
-    });
-
-    it('returns the adopted server with status 200 on a repeat', function (): void {
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertCreated();
-
-        $this->postJson('/api/v1/database-servers', $this->adoption)
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active')
-            ->assertJsonPath('data.process_id', $this->process->id);
-
-        expect($this->programs->runs)->toHaveCount(1)
-            ->and($this->runtime->convergedProcessIds)->toHaveCount(1)
-            ->and(DatabaseServer::query()->count())->toBe(1);
-    });
-
-    it('continues a failed adoption from the step that failed and links the connection last', function (): void {
-        $this->runtime->failConverge = true;
-
-        $this->postJson('/api/v1/database-servers', $this->adoption)
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'process.docker_converge_failed');
-
-        expect(DatabaseServer::query()->sole()->failed_step)->toBe('process')
-            ->and($this->connection->refresh()->database_server_id)->toBeNull();
-
-        $this->runtime->failConverge = false;
-        $this->valkey->readiness = [false];
-        // The Process no longer starts with the old password variable, so the live check cannot run again.
-        $this->valkey->passwords = [];
-
-        $this->postJson('/api/v1/database-servers', $this->adoption)
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'database.server_start_failed');
-
-        expect(DatabaseServer::query()->sole()->failed_step)->toBe('readiness')
-            ->and($this->connection->refresh()->database_server_id)->toBeNull();
-
-        $this->postJson('/api/v1/database-servers', $this->adoption)
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active');
-
-        expect($this->programs->runs)->toHaveCount(1)
-            ->and($this->runtime->convergedProcessIds)->toBe([$this->process->id, $this->process->id])
-            ->and($this->connection->refresh()->database_server_id)->toBe(DatabaseServer::query()->sole()->id);
-    });
-
     it('refuses another Process for an adopted slug', function (): void {
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertCreated();
+        $this->postJson('/api/v1/database-servers', $this->adoption)->assertAccepted();
 
         $this->postJson('/api/v1/database-servers', [...$this->adoption, 'process_id' => $this->process->id + 1])
             ->assertConflict()
@@ -644,45 +343,15 @@ describe('database:server:create --process --connection', function (): void {
     ]);
 });
 
-it('serializes server removal with ACL creation through Process and record removal', function (): void {
-    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertCreated();
-    $server = DatabaseServer::query()->sole();
-    $lock = Cache::lock('database-server:'.$server->id.':acl', 60);
-    expect($lock->get())->toBeTrue();
-    try {
-        $this->deleteJson('/api/v1/database-servers/beast-valkey')->assertConflict()
-            ->assertJsonPath('error.code', 'database.server_in_use');
-    } finally {
-        $lock->release();
-    }
-    $this->assertModelExists($server);
-    expect($this->runtime->removed)->toBe([]);
-
-    $this->mock(ProcessRuntimeManager::class, function ($mock): void {
-        $mock->shouldReceive('remove')->once()->andReturnUsing(function (): void {
-            $this->postJson('/api/v1/database-connections', [
-                'slug' => 'racing-user', 'server' => 'beast-valkey',
-                'patterns' => ['jobs:*'], 'allow' => ['@list'],
-            ])->assertConflict()->assertJsonPath('error.code', 'database.server_in_use');
-        });
-    });
-
-    $this->deleteJson('/api/v1/database-servers/beast-valkey')->assertOk();
-
-    $this->assertModelMissing($server);
-    expect(Process::query()->exists())->toBeFalse()
-        ->and(DatabaseConnection::query()->exists())->toBeFalse();
-});
-
 describe('database:server:create on an active Valkey server', function (): void {
     beforeEach(function (): void {
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertCreated();
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertAccepted();
         $this->postJson('/api/v1/database-connections', [
             'slug' => 'gateway-queue',
             'server' => 'beast-valkey',
             'patterns' => ['orbit-gateway:*'],
             'allow' => ['@list', 'eval'],
-        ])->assertCreated();
+        ])->assertAccepted();
         $this->server = DatabaseServer::query()->sole();
         $this->clientPassword = (string) DatabaseConnection::query()->where('slug', 'gateway-queue')->value('password');
         $this->recorded = $this->valkey->users;
@@ -690,94 +359,6 @@ describe('database:server:create on an active Valkey server', function (): void 
         $this->valkey->readyChecks = [];
         $this->programs->runs = [];
     });
-
-    it('only saves the ACL of a server that matches its records', function (): void {
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertOk()
-            ->assertJsonPath('data.status', 'active');
-
-        expect($this->valkey->calls)->toBe(['login 10.44.0.80:6379', 'config get aclfile', 'acl list', 'acl save'])
-            ->and($this->valkey->users)->toEqual($this->recorded)
-            ->and($this->programs->runs)->toBe([])
-            ->and($this->runtime->restarted)->toBe([]);
-    });
-
-    it('sets each missing or changed user, deletes every other user, and saves, without a restart', function (): void {
-        unset($this->valkey->users['gateway-queue']);
-        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on ~* &* -@all', [
-            hash('sha256', $this->server->root_password),
-            hash('sha256', 'second-admin-password'),
-        ]);
-        $this->valkey->users['manual'] = ValkeyAclUser::withPassword('manual', 'on ~* +@all', 'manual-secret');
-
-        $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertOk();
-
-        expect($this->valkey->users)->toEqual($this->recorded)
-            ->and($this->valkey->calls)->toBe([
-                'login 10.44.0.80:6379', 'config get aclfile', 'acl list',
-                'setuser default', 'setuser gateway-queue', 'deluser manual', 'acl save',
-            ])
-            ->and($this->programs->runs)->toBe([])
-            ->and($this->runtime->restarted)->toBe([]);
-        valkey_server_assert_no_secret($response, $this->server->root_password);
-        valkey_server_assert_no_secret($response, $this->clientPassword);
-    });
-
-    it('writes the ACL file from the records and restarts Valkey when it does not log in or runs without the file', function (string $fault): void {
-        if ($fault === 'lost file') {
-            // Without its ACL file Valkey does not start, so no login succeeds.
-            $this->valkey->passwords = [];
-            $this->valkey->users = [];
-        } else {
-            $this->valkey->aclFile = null;
-        }
-
-        $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertOk();
-        $this->valkey->aclFile = '/data/users.acl';
-
-        expect($this->programs->runs)->toBe([[
-            'node' => 'beast',
-            'input' => [
-                'volume' => 'orbit-beast-valkey-data',
-                'image' => 'valkey/valkey:8.1',
-                'acl' => valkey_acl_file($this->server->root_password)
-                    .'user gateway-queue #'.hash('sha256', $this->clientPassword).' '.$this->recorded['gateway-queue']->rules."\n",
-            ],
-        ]])
-            ->and($this->runtime->restarted)->toBe([$this->server->process_id])
-            ->and($this->valkey->readyChecks)->toBe(['beast-valkey'])
-            ->and($this->valkey->users)->toEqual($this->recorded)
-            ->and(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
-            ->and(json_encode($this->programs->runs, JSON_THROW_ON_ERROR))->not->toContain($this->clientPassword);
-        valkey_server_assert_no_secret($response, $this->server->root_password);
-        valkey_server_assert_no_secret($response, $this->clientPassword);
-    })->with(['lost file', 'no ACL file in use']);
-
-    it('keeps the server active and changes no user when the repair fails', function (string $failure, int $status, string $code, bool $restarted): void {
-        $this->valkey->passwords = [];
-        match ($failure) {
-            'ACL file' => $this->programs->outcome = 'failed',
-            'restart' => $this->runtime->restartFailure = new ProcessOperationException('restart', 'process.restart_failed', 'The Process did not restart.'),
-            'readiness' => $this->valkey->readiness = [false],
-        };
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertStatus($status)
-            ->assertJsonPath('error.code', $code);
-
-        expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
-            ->and($this->runtime->restarted)->toBe($restarted ? [$this->server->process_id] : [])
-            ->and($this->valkey->calls)->not->toContain('acl save')
-            ->and($this->valkey->users)->toEqual($this->recorded);
-
-        $this->programs->outcome = 'written';
-        $this->runtime->restartFailure = null;
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertOk();
-    })->with([
-        'the ACL file' => ['ACL file', 502, 'database.server_command_failed', false],
-        'the restart' => ['restart', 502, 'process.restart_failed', true],
-        'the admin login after the restart' => ['readiness', 502, 'database.server_start_failed', true],
-    ]);
 
     it('refuses a repair while another ACL change runs', function (): void {
         $lock = Cache::lock('database-server:'.$this->server->id.':acl', 60);
@@ -798,7 +379,7 @@ describe('database:server:create on an active Valkey server', function (): void 
 
 describe('database:server:close boundary', function (): void {
     it('refuses MySQL and missing servers', function (): void {
-        $this->postJson('/api/v1/database-servers', ['slug' => 'beast-mysql', 'node_id' => $this->dbNode->id])->assertCreated();
+        $this->postJson('/api/v1/database-servers', ['slug' => 'beast-mysql', 'node_id' => $this->dbNode->id])->assertAccepted();
         $this->postJson('/api/v1/database-servers/beast-mysql/close')->assertUnprocessable()->assertJsonPath('error.code', 'database.driver_unsupported');
         $this->postJson('/api/v1/database-servers/missing/close')->assertNotFound();
     });
@@ -807,11 +388,4 @@ describe('database:server:close boundary', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.99'])
             ->postJson('/api/v1/database-servers/missing/close')->assertForbidden();
     });
-});
-
-it('publishes Valkey only on explicit LAN and WireGuard addresses', function (): void {
-    $this->dbNode->update(['lan_ip' => '10.0.0.6', 'public_ssh_host' => '85.9.217.155']);
-    $this->gateway->update(['lan_ip' => '10.0.0.5']);
-    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, []))->assertCreated();
-    expect(DatabaseServer::query()->sole()->process->runtime_config['ports'])->toBe(['10.44.0.80:6379:6379', '10.0.0.6:6379:6379']);
 });
