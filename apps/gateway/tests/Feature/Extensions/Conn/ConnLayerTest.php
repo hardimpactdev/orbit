@@ -660,8 +660,9 @@ describe('environment registration', function (): void {
     it('replaces the encrypted session and records every registration for Swamp cleanup', function (): void {
         conn_layer_fake_server();
         conn_layer_environment(['label' => 'old label', 'admin_session' => 'old-session']);
-        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.cleanup_pending', true);
-        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.cleanup_pending', true);
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.cleanup_pending', true)->assertJsonPath('data.cleanup_version', 1);
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.cleanup_pending', true)->assertJsonPath('data.cleanup_version', 2);
+        $this->getJson('/api/v1/conn/environments')->assertOk()->assertJsonPath('data.0.cleanup_version', 2);
         expect(ConnEnvironment::query()->count())->toBe(1)
             ->and(ConnEnvironment::query()->sole()->admin_session)->toBe('admin-session-token')
             ->and(ConnEnvironment::query()->sole()->cleanup_version)->toBe(2);

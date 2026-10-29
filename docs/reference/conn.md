@@ -212,7 +212,7 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 Swamp revokes each device session and pairing link with its own stable effect key. The Gateway reads the server's session list, limits it to the admitted owner, and validates each individual effect and the final receipt. Successful completion marks only the admitted pairings revoked.
 
-Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels. A registration during cleanup leaves its newer revision pending for the next check. Cleanup failures leave the revision pending and do not discard the new session.
+Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels. A registration during cleanup leaves its newer revision pending for the next check. The list and registration replies expose the non-secret `cleanup_version`. Admission uses a stable key for that environment and revision. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. Cleanup never discards the current admin session.
 
 ## Pairing Operations
 
@@ -232,4 +232,4 @@ Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations
 
 An Operation that remains unclaimed for five minutes reports `assistance.error_code: conn.executor_unclaimed` on its owner-checked Conn Operation read. The Gateway checks pairing creation, revocation and registration cleanup every minute while Conn is enabled. The scheduled `orbit:conn-operations-check` command reports only affected Operation IDs and exits with failure, so a missing integration worker is visible even if the device stops polling. A worker claim or terminal outcome clears the computed alert. The check does not execute or cancel the pairing effect.
 
-A failed session-list read ends the revocation Operation with its safe `conn.*` error code before any revoke call. An invalid JSON response is `conn.response_invalid`; it never proves an empty session list or successful cleanup. The registration revision stays pending for a later maintenance attempt.
+A failed session-list read ends the revocation Operation with its safe `conn.*` error code before any revoke call. An invalid JSON response is `conn.response_invalid`; it never proves an empty session list or successful cleanup. The registration revision stays pending until a new registration or an explicit operator cleanup retry.
