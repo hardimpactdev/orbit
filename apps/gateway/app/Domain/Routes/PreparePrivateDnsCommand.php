@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationGatewayCommand;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -29,9 +26,8 @@ final readonly class PreparePrivateDnsCommand implements OperationGatewayCommand
         if ($operation->kind !== 'route.private_dns_publish') {
             throw new ResourceOperationException('operation.execution_forbidden', 'A private DNS publication Operation is required.', 422);
         }
-        $node = Node::query()->with('roles')->findOrFail($operation->node_id);
-        if (! $node->roles->contains(static fn ($role): bool => $role->status === LifecycleStatus::Active && in_array($role->role, [RoleName::Vpn, RoleName::Gateway], true))) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The Operation Node must have an active private DNS role.', 422);
+        if (! PrivateDnsPublicationNodes::query()->whereKey($operation->node_id)->exists()) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The Operation Node must hold the active VPN role that serves private DNS.', 422);
         }
         $operation->refresh();
         $stored = $operation->state['private_dns_plan'] ?? null;

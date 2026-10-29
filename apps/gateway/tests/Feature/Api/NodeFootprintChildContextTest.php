@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\NodeFootprintOperationExecution;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
@@ -154,3 +155,22 @@ it('keeps deferred PHP masters in sanitized results and logs their warning', fun
     expect(app(OperationExecutionContract::class)->result($operation, [...$receipt, 'unlisted' => 'private']))->toBe($receipt);
     Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context['node_id'] === $operation->node_id && $context['masters'] === $receipt['deferred']);
 });
+
+it('refuses a saved listener run on a Gateway resolver client before any Node effect', function (string $roleStatus): void {
+    $operation = footprintContextOperation(['private-dns'], ['private-dns' => ['kind' => 'route.private_dns_publish', 'input' => ['reason' => 'footprint']]],
+        ['private-dns-listener' => ['release_id' => 'staged']]);
+    $node = Node::query()->findOrFail($operation->node_id);
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    if ($roleStatus !== 'absent') {
+        $node->roles()->create(['role' => RoleName::Vpn, 'status' => $roleStatus]);
+    }
+    $execution = app(NodeFootprintOperationExecution::class);
+    $descriptor = array_find($execution->context($operation)['descriptors'], static fn (array $run): bool => $run['name'] === 'node.install-private-dns-listener');
+    if ($roleStatus === 'active') {
+        $execution->beforeRun($operation, $descriptor);
+        expect($operation->fresh()->state['executor_runs'] ?? [])->toBe([]);
+    } else {
+        expect(fn () => $execution->beforeRun($operation, $descriptor))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.private_dns_owner_changed'));
+    }
+})->with(['absent', 'provisioning', 'active']);
