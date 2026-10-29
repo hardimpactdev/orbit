@@ -790,3 +790,63 @@ it('refuses child admission beyond its declared skipped receipt capacity', funct
     app(CancelOperationAction::class)->execute($this->parent->refresh());
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'cancelled', 'result' => ['skipped' => []]])->assertOk()->assertJsonPath('data.result.skipped.0.child_id', $child->id);
 });
+
+it('allows a listed optional child kind with no recorded intent', function (): void {
+    childKitSettled($this);
+    $this->parentSpec['children'][] = ['kind' => 'test.restore', 'node_from' => 'operation.node_id'];
+    $this->parentSpec['completion_contract']['children_settled'][] = 'test.restore';
+    ($this->register)();
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => []]])->assertOk();
+    expect($this->parent->refresh()->lock_key)->toBeNull()->and($this->parent->children()->count())->toBe(1);
+});
+
+it('allows a wholly absent optional child plan', function (): void {
+    childKitSettled($this);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => []]]);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => []]])->assertOk();
+});
+
+it('requires a terminal child for every recorded intent even when its kind already has a child', function (): void {
+    childKitSettled($this);
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [$this->intent, [...$this->intent, 'key' => 'second']]]]);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => []]])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+    expect($this->parent->refresh()->lock_key)->not->toBeNull();
+});
+
+it('refuses a recorded intent whose kind is outside the settled allowlist', function (): void {
+    childKitSettled($this);
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [$this->intent, [...$this->intent, 'key' => 'restore', 'kind' => 'test.restore']]]]);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => []]])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+});
+
+it('refuses unlisted admitted children even after they leave the current intent list', function (string $status): void {
+    childKitSettled($this);
+    $this->parentSpec['children'][] = ['kind' => 'test.restore', 'node_from' => 'operation.node_id'];
+    ($this->register)();
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'key' => 'restore', 'kind' => 'test.restore']]]]);
+    $id = $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'restore'])->assertAccepted()->json('data.id');
+    childKitFinish($this, Operation::findOrFail($id), $status);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [$this->intent]]]);
+    $skips = $status === 'succeeded' ? [] : [['child_id' => $id, 'reason' => 'unavailable']];
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => $skips]])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+})->with(['succeeded', 'failed', 'cancelled']);
+
+it('refuses a settled child whose admitted intent differs from the recorded plan', function (): void {
+    childKitSettled($this);
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'input' => [...$this->intent['input'], 'removed_node_id' => 999]]]]]);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => []]])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+});

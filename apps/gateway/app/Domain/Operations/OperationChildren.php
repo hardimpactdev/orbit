@@ -394,26 +394,28 @@ final readonly class OperationChildren
     public function assertSettled(Operation $parent, array $kinds, array $result, bool $requireExpected = true): array
     {
         $expectedChildren = $requireExpected ? $this->context($parent)['children'] : [];
-        $failedChildren = $parent->children()->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value])->orderBy('id')->get();
-        $failed = $failedChildren->map(static fn (Operation $child): int => $child->id)->all();
-        foreach ($kinds as $kind) {
-            if ($requireExpected) {
-                $expected = array_filter($expectedChildren, static fn (array $intent): bool => $intent['kind'] === $kind);
-                foreach ($expected as $intent) {
-                    $this->child($parent, $intent['key']);
-                }
+        foreach ($expectedChildren as $intent) {
+            if (! in_array($intent['kind'], $kinds, true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'A recorded child kind is not allowed by the settled contract.', 409);
             }
-            $children = $parent->children()->where('kind', $kind)->get();
-            if ($requireExpected && $children->isEmpty()) {
-                throw new ResourceOperationException('operation.child_unproven', 'A required settled child kind is missing.', 409);
-            }
-            foreach ($children as $child) {
-                $this->verify($parent, $child);
-                if (! $child->status->terminal()) {
-                    throw new ResourceOperationException('operation.child_unproven', 'A required child has not settled.', 409);
-                }
+            $child = $this->child($parent, $intent['key']);
+            $admittedIntent = $child->child_admission['intent'] ?? null;
+            if (! is_array($admittedIntent) || ! OperationChildIntent::same($intent, $admittedIntent)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The child does not match its recorded intent.', 409);
             }
         }
+        $children = $parent->children()->orderBy('id')->get();
+        foreach ($children as $child) {
+            if (! in_array($child->kind, $kinds, true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'An admitted child kind is not allowed by the settled contract.', 409);
+            }
+            $this->verify($parent, $child);
+            if (! $child->status->terminal()) {
+                throw new ResourceOperationException('operation.child_unproven', 'A required child has not settled.', 409);
+            }
+        }
+        $failedChildren = $children->filter(static fn (Operation $child): bool => in_array($child->status, [OperationStatus::Failed, OperationStatus::Cancelled], true))->values();
+        $failed = $failedChildren->map(static fn (Operation $child): int => $child->id)->all();
         $skips = $requireExpected ? ($result['skipped'] ?? []) : $failedChildren->map(static fn (Operation $child): array => ['child_id' => $child->id, 'reason' => $child->status->value])->all();
         if (! is_array($skips) || ! array_is_list($skips)) {
             throw new ResourceOperationException('operation.child_unproven', 'The skipped child evidence is invalid.', 409);
