@@ -253,6 +253,7 @@ it('refuses tampered admitted input before child run and before parent proof', f
 
 it('durably yields the parent worker and resumes only after the exact child settles', function (string $status): void {
     $child = childKitAdmit($this);
+    $this->parent->update(['attempts' => 5]);
     $wait = ['worker' => 'parent', 'keys' => ['apply']];
     $this->postJson($this->path.'/wait', $wait)->assertOk()->assertJsonPath('data.status', 'waiting')->assertJsonPath('data.worker', null)->assertJsonPath('data.lease_seconds', 0)->assertJsonPath('data.waiting_for.0.id', $child->id);
     $this->postJson($this->path.'/wait', $wait)->assertOk();
@@ -262,6 +263,7 @@ it('durably yields the parent worker and resumes only after the exact child sett
     childKitFinish($this, $child, $status);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'new-parent'])->assertOk()->assertJsonPath('data.id', $this->parent->id);
     $this->postJson($this->path.'/wait', $wait)->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
+    expect($this->parent->refresh()->attempts)->toBe(5);
     expect($this->parent->refresh()->state['executor_reentry']['children'][0]['id'])->toBe($child->id)
         ->and($this->parent->state['executor_reentry']['children'][0]['status'])->toBe($status)
         ->and($this->parent->state['executor_reentry']['children'][0]['result'])->toBe($child->refresh()->result);
