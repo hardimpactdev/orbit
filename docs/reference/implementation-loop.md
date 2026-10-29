@@ -114,6 +114,16 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server, web and agent test jobs do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
 
+### Runner policy during the Swamp migration
+
+Orbit CI runs builds and static checks only during the Swamp migration. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+
+Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Feature development normally runs on Beast, with UpCloud for overflow.
+
+Public repositories use GitHub-hosted runners, with self-hosted runners available when configured. Private repositories use self-hosted runners.
+
+The operator registers runners. The Orbit GitHub App keeps `administration: read`; runner registration adds no App permission or Gateway-held registration credential. Linux runner jobs run without host sudo inside their containers. Increase capacity when measured queueing requires it.
+
 ### Self-hosted Gateway runner
 
 The fast CI gate uses hosted runners. It needs no Gateway test system packages, privileged test setup or local Swamp credentials.
