@@ -44,16 +44,31 @@ final readonly class OperationStore
         }
 
         $lockKey = self::lockKey($targetType, $targetId);
+        $parent = $this->idempotency->parent;
+        if ($parent !== null) {
+            if ($this->idempotency->childIntent === null || $kind !== $this->idempotency->childIntent['kind'] || $nodeId !== $this->idempotency->childIntent['node_id']) {
+                throw new ResourceOperationException('operation.child_forbidden', 'The owning admission changed the bound kind or Node.', 422);
+            }
+            $holder = Operation::query()->where('lock_key', $lockKey)->lockForUpdate()->first();
+            $ancestor = $parent;
+            while ($holder !== null && $ancestor !== null) {
+                if ($holder->id === $ancestor->id && ! $ancestor->status->terminal()) {
+                    $lockKey = null;
+                    break;
+                }
+                $ancestor = $ancestor->parent_operation_id === null ? null : Operation::query()->find($ancestor->parent_operation_id);
+            }
+        }
         $superseded = null;
 
         try {
             $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $lockKey, $input, $triggeredBy, $requestId, $supersedes, &$superseded): Operation {
-                $holder = $supersedes === [] ? null : Operation::query()->where('lock_key', $lockKey)->whereIn('kind', $supersedes)->first();
+                $holder = $lockKey === null || $supersedes === [] ? null : Operation::query()->where('lock_key', $lockKey)->whereIn('kind', $supersedes)->first();
                 $now = Carbon::now();
                 $superseded = $holder instanceof Operation
                     && $this->cancelUnstarted($holder, $now, ['error_code' => 'operation.superseded', 'cancel_requested_at' => $now]) ? $holder : null;
 
-                return Operation::query()->create([
+                $created = Operation::query()->create([
                     'kind' => $kind,
                     'idempotency_key' => $this->idempotency->key,
                     'idempotency_fingerprint' => $this->idempotency->fingerprint,
@@ -62,12 +77,18 @@ final readonly class OperationStore
                     'node_id' => $nodeId,
                     'lock_key' => $lockKey,
                     'input' => $input,
+                    'state' => ['executor_target' => ['node_id' => $nodeId, 'target_type' => $targetType, 'target_id' => $targetId]],
                     'status' => OperationStatus::Queued,
                     'sequence' => 1,
                     'attempts' => 0,
                     'triggered_by' => $triggeredBy,
                     'request_id' => $requestId,
                 ]);
+                if ($this->idempotency->parent !== null) {
+                    $created->forceFill(['parent_operation_id' => $this->idempotency->parent->id, 'child_key' => $this->idempotency->childKey, 'run_constraints' => $this->idempotency->parent->run_constraints ?? []])->save();
+                }
+
+                return $created;
             });
         } catch (UniqueConstraintViolationException $exception) {
             if (($existing = $this->idempotency->replay($kind)) !== null) {

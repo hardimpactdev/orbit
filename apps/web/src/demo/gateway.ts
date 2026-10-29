@@ -1167,6 +1167,7 @@ export function createDemoGateway() {
             error_code: null,
             result: null,
             cancel_requested: false,
+            assistance: null,
             attempts: 0,
             triggered_by: "demo",
             caller_node_id: null,

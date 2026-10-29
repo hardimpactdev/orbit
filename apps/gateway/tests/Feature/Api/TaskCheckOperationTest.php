@@ -7,6 +7,7 @@ use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckException;
@@ -21,9 +22,13 @@ use App\Domain\Tasks\TaskPullRequestCheckOutput;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
+use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -38,33 +43,103 @@ use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\AgentThread;
+use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\GitRemoteRedirect;
+use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\StreamingLocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
 beforeEach(function (): void {
     enable_operation_queue();
-    tick_bind_defaults();
+    test_bind_snapshot_driver();
+    app()->instance(TaskVmProvider::class, new RecordingTaskVmProvider);
+    app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
+    app()->instance(TaskWorkspaceStateReader::class, new readonly class implements TaskWorkspaceStateReader
+    {
+        public function headCommit(Instance $instance): ?string
+        {
+            return null;
+        }
+
+        public function currentBranch(Instance $instance): ?string
+        {
+            return null;
+        }
+    });
     app(TaskExtensionState::class)->enable();
     $this->travelTo(now()->startOfSecond());
 });
 
+function check_operation_fixture_group(): Task
+{
+    $project = Project::query()->create([
+        'name' => 'tick-app',
+        'slug' => 'tick-app',
+        'repository_url' => 'git@example.test:tick.git',
+        'default_branch' => 'main',
+        'task_check' => 'composer check',
+        'root' => 'public',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'tick-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.212',
+        'wireguard_ip' => '10.44.0.212',
+    ]);
+    $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => $project->id,
+        'title' => 'Tick routing',
+        'brief' => 'Observe, classify, and execute.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-21',
+        'checkout_path' => '/srv/orbit/apps/tick-app/task-21',
+        'starting_commit' => str_repeat('a', 40),
+        'branch' => 'task-21',
+        'status' => 'source_resolved',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    Task::query()->create([
+        'parent_id' => $group->id,
+        'position' => 1,
+        'title' => 'Models',
+        'brief' => 'Store the records.',
+        'status' => TaskStatus::Running,
+        'started_at' => now(),
+    ]);
+
+    test_link_agent_threads($group);
+
+    return test_vm_group($group);
+}
+
 function check_operation_group(): Task
 {
-    $group = tick_group();
+    $group = check_operation_fixture_group();
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External->value]);
     $group->refresh();
     $group->tasks()->update(['implementer_agent_thread_id' => null]);
@@ -575,9 +650,11 @@ it('records an unconfirmed cancel before 502 and retries its stop on the next wa
     $operation = check_operation_start($group);
     app(OperationRunner::class)->run($operation->id);
     app(TaskCheckRunner::class)->failNextCancel = true;
+    $outerTransactionLevel = DB::transactionLevel();
 
     $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertStatus(502)->assertJsonPath('error.code', 'tasks.check_unreachable');
 
+    expect(app(TaskCheckRunner::class)->cancelTransactionLevels)->toBe([$outerTransactionLevel]);
     expect($operation->refresh()->cancel_requested_at)->not->toBeNull();
     expect($operation->status)->toBe(OperationStatus::Waiting);
     expect($operation->lock_key)->toBe('task_group:'.$group->id);

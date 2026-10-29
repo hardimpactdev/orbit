@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationCompletion;
+use App\Domain\Operations\OperationConnectionSecretSource;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationKinds;
@@ -28,6 +30,10 @@ final class ReceiptTestSecret implements OperationSecretSource
 
     public bool $rotates = false;
 
+    public bool $requiresLiveOwner = false;
+
+    public int $ownerReads = 0;
+
     public function name(): string
     {
         return 'receipt.test';
@@ -40,7 +46,9 @@ final class ReceiptTestSecret implements OperationSecretSource
 
     public function ownerId(Operation $operation): ?int
     {
-        return $operation->target_id;
+        $this->ownerReads++;
+
+        return $this->requiresLiveOwner && ! Node::query()->whereKey($operation->target_id)->exists() ? null : $operation->target_id;
     }
 
     public function resolve(Operation $operation, int $ownerId, string $key, string $parameter): OperationSecretValue
@@ -48,6 +56,44 @@ final class ReceiptTestSecret implements OperationSecretSource
         $this->resolves++;
 
         return new OperationSecretValue('receipt-private-value'.($this->rotates ? '-'.$this->resolves : ''));
+    }
+}
+
+final class ReceiptConnectionSecret implements OperationConnectionSecretSource
+{
+    public int $resolves = 0;
+
+    public int $connections = 0;
+
+    public bool $missingOwner = false;
+
+    public function name(): string
+    {
+        return 'receipt.connection';
+    }
+
+    public function targetTypes(): array
+    {
+        return ['node'];
+    }
+
+    public function ownerId(Operation $operation): ?int
+    {
+        return $this->missingOwner ? null : $operation->target_id;
+    }
+
+    public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
+    {
+        $this->resolves++;
+
+        return new OperationSecretValue('connection-private-key-value');
+    }
+
+    public function resolveConnection(Operation $operation, int $id): OperationSecretValue
+    {
+        $this->connections++;
+
+        return new OperationSecretValue('connection-private-key-value');
     }
 }
 
@@ -92,7 +138,12 @@ final class ReceiptTestExecution implements OperationCompletion, OperationFamily
         return null;
     }
 
-    public function complete(Operation $operation, OperationOutcome $outcome): void {}
+    public function complete(Operation $operation, OperationOutcome $outcome): void
+    {
+        if (($operation->input['delete_target_on_complete'] ?? false) && $outcome->status === OperationStatus::Succeeded) {
+            Node::query()->whereKey($operation->target_id)->delete();
+        }
+    }
 }
 
 final class ReceiptTestTransport implements OperationEffectTransport
@@ -107,6 +158,8 @@ final class ReceiptTestTransport implements OperationEffectTransport
 
     public bool $loseReply = true;
 
+    public ?string $connectionParameter = null;
+
     public ?string $refusal = null;
 
     public ?string $readRefusal = null;
@@ -115,7 +168,7 @@ final class ReceiptTestTransport implements OperationEffectTransport
 
     public function schema(Operation $operation, array $run): array|bool
     {
-        return ['type' => 'object', 'properties' => ['token' => ['type' => 'string']], 'required' => ['token'], 'additionalProperties' => false];
+        return ['type' => 'object', 'properties' => ['token' => ['type' => 'string'], 'auth' => ['type' => 'string']], 'required' => ['token'], 'additionalProperties' => false];
     }
 
     public function effectful(Operation $operation, array $run): bool
@@ -149,6 +202,10 @@ final class ReceiptTestTransport implements OperationEffectTransport
     public function receipt(Operation $operation, array $run, #[SensitiveParameter] array $input): array
     {
         $this->reads++;
+        if ($this->connectionParameter !== null) {
+            $credential = app(OperationSecrets::class)->connection($operation, $run, $this->connectionParameter);
+            expect($credential->value)->toBe('connection-private-key-value');
+        }
         if ($this->readRefusal !== null) {
             throw new AgentCommandRefused('agent.effect-receipt', $this->readRefusal, 'Receipt is uncertain.');
         }
@@ -337,6 +394,61 @@ it('processes the same raw safe fields before redaction for live replies and rec
     expect($this->source->resolves)->toBe(1);
 });
 
+function receiptConnectionFixture($test): ReceiptConnectionSecret
+{
+    $source = new ReceiptConnectionSecret;
+    app()->instance(ReceiptConnectionSecret::class, $source);
+    app()->tag([ReceiptConnectionSecret::class], OperationSecretSource::class);
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['secrets']['auth'] = 'receipt.connection';
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    $test->run['input']['auth'] = ['$secret' => 'receipt.connection', 'id' => $test->target->id];
+    $input = $test->operation->input;
+    $input['descriptors'][0]['input'] = $test->run['input'];
+    $test->operation->update(['input' => $input]);
+    $test->transport->connectionParameter = 'auth';
+
+    return $source;
+}
+
+it('reads only an explicitly non-minting connection credential while recovering a bootstrap receipt', function (): void {
+    $connection = receiptConnectionFixture($this);
+    $this->source->rotates = true;
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    $this->getJson($this->path.'/receipts/effect')->assertOk();
+    expect($connection->resolves)->toBe(1)->and($connection->connections)->toBe(1)
+        ->and($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1);
+    expect(json_encode($this->operation->refresh()->toArray()))->not->toContain('connection-private-key-value', 'receipt-private-value');
+    expect($this->operation->state['executor_runs']['effect']['input'])->toBe($this->run['input']);
+});
+
+it('refuses an ordinary payload source or unlisted parameter as receipt connection authentication', function (string $parameter): void {
+    $connection = receiptConnectionFixture($this);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $this->transport->connectionParameter = $parameter;
+    $this->getJson($this->path.'/receipts/effect')->assertStatus(502)->assertJsonPath('error.code', 'operation.receipt_unavailable');
+    expect($this->source->resolves)->toBe(1)->and($connection->resolves)->toBe(1)->and($connection->connections)->toBe(0);
+})->with(['token', 'undeclared']);
+
+it('reuses A owner target-type and exact-input checks before connection credential reads', function (string $case): void {
+    $connection = receiptConnectionFixture($this);
+    if ($case === 'null owner') {
+        $connection->missingOwner = true;
+    } elseif ($case === 'target type') {
+        $this->operation->update(['target_type' => 'project']);
+    } else {
+        $this->run['input']['auth']['id'] = $this->services->id;
+        if ($case === 'foreign owner') {
+            $input = $this->operation->input;
+            $input['descriptors'][0]['input'] = $this->run['input'];
+            $this->operation->update(['input' => $input]);
+        }
+    }
+    expect(fn () => app(OperationSecrets::class)->connection($this->operation, $this->run, 'auth'))->toThrow(ResourceOperationException::class);
+    expect($connection->connections)->toBe(0)->and($connection->resolves)->toBe(0)->and($this->source->resolves)->toBe(0);
+})->with(['null owner', 'target type', 'foreign owner', 'changed input']);
+
 it('leaves infrastructure refusals unresolved and later recovers the command result once', function (string $code): void {
     $this->transport->refusal = $code;
     $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
@@ -446,3 +558,76 @@ it('does not clear earlier uncertainty when a replay has a pre-start refusal', f
     expect($state['executor_runs']['effect']['started'])->toBeTrue();
     expect($state['executor_runs']['effect']['result'])->toBeNull();
 })->with(['agent.target_busy', 'agent.lock_unavailable', 'agent.supervisor_not_ready', 'agent.invalid_input', 'agent.version_mismatch']);
+
+it('retains terminal context completion replay and cached receipts after target deletion without hydration', function (): void {
+    $this->source->requiresLiveOwner = true;
+    $this->transport->loseReply = false;
+    $this->operation->update(['input' => [...$this->operation->input, 'delete_target_on_complete' => true],
+        'state' => [...$this->operation->state, 'executor_target' => ['node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]]]);
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $completion = ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result];
+    $ownerReads = $this->source->ownerReads;
+    $this->postJson($this->path.'/complete', $completion)->assertOk()->assertJsonPath('data.node_id', $this->target->id)
+        ->assertJsonPath('data.execution_context.descriptors.0.key', 'effect');
+    expect($this->operation->refresh()->node_id)->toBeNull()->and(Node::query()->whereKey($this->target->id)->exists())->toBeFalse();
+    $this->postJson($this->path.'/complete', $completion)->assertOk()->assertJsonPath('data.result', $result);
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.result', $result);
+    expect($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(0)->and($this->source->ownerReads)->toBe($ownerReads);
+});
+
+it('refuses a new transport effect after deletion before rehydrating or dispatching', function (string $transport): void {
+    $this->source->requiresLiveOwner = true;
+    $this->transport->loseReply = false;
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['transport'] = $transport;
+    $kind['completion_contract']['transport'] = $transport;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    app()->instance(OperationTransports::class, new OperationTransports([$transport => ReceiptTestTransport::class]));
+    $this->run['transport'] = $transport;
+    $input = $this->operation->input;
+    $input['descriptors'][0]['transport'] = $transport;
+    $input['descriptors'][] = [...$input['descriptors'][0], 'key' => 'later'];
+    $this->operation->update(['input' => $input, 'state' => [...$this->operation->state,
+        'executor_target' => ['node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]]]);
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    $this->target->delete();
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->assertJsonPath('data.execution_context.descriptors.0.key', 'effect');
+    $this->postJson($this->path.'/run', [...$this->run, 'key' => 'later'])->assertConflict()->assertJsonPath('error.code', 'operation.target_missing');
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    expect($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(0);
+})->with(['receipt-test', 'gateway']);
+
+it('refuses a nulled root target before completion projects or releases its hold', function (): void {
+    $this->transport->loseReply = false;
+    $this->operation->update(['state' => [...$this->operation->state, 'executor_target' => [
+        'node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]], 'lock_key' => 'node:'.$this->target->id]);
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $state = $this->operation->refresh()->state;
+    $this->operation->update(['node_id' => null]);
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+    expect($this->operation->refresh()->status)->toBe(OperationStatus::Running)->and($this->operation->lock_key)->not->toBeNull()
+        ->and($this->operation->state)->toBe($state)->and($this->operation->result)->toBeNull();
+});
+
+it('recovers a started effect after cancellation without synthesizing a final cancel receipt', function (bool $resumable): void {
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['resumable'] = $resumable;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    $input = $this->operation->input;
+    $input['descriptors'][0]['resumable'] = $resumable;
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    app(CancelOperationAction::class)->execute($this->operation->refresh());
+
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+
+    expect($this->operation->refresh()->state['executor_runs']['effect']['started'])->toBeTrue();
+    expect($this->operation->state['executor_runs']['effect']['result'])->toBeNull();
+    expect($this->operation->state['projections'] ?? 0)->toBe(0);
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    expect($this->transport->runs)->toBe(1);
+    expect($this->source->resolves)->toBe(1);
+    expect($this->operation->refresh()->state['projections'])->toBe(1);
+})->with([false, true]);

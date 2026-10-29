@@ -231,12 +231,19 @@ describe('enabled', function (): void {
         expect(TaskVmSettings::fromConfig()->wireguardRange)->toBe('10.43.0.192/26');
     });
 
-    it('validates once through the container singleton', function (): void {
+    it('validates settings on first use and retains them within the container scope', function (): void {
         enable_task_vms();
         $first = app(TaskVmSettings::class);
+
+        expect($first->devClusterId)->toBe(4);
         config(['task_vms.dev_cluster_id' => 0]);
 
         expect(app(TaskVmSettings::class))->toBe($first);
+        expect(app(TaskVmSettings::class)->devClusterId)->toBe(4);
+
+        app()->forgetInstance(TaskVmSettings::class);
+        $next = app(TaskVmSettings::class);
+        expect(fn (): ?int => $next->devClusterId)->toThrow(TaskVmException::class, 'dev_cluster_id');
     });
 
     it('needs at least one host', function (): void {

@@ -8,7 +8,12 @@ use Illuminate\Contracts\Console\Kernel;
 
 require __DIR__.'/../apps/gateway/vendor/autoload.php';
 
-$app = require __DIR__.'/../apps/gateway/bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
-$count = $app->make(OperationRegistryCheck::class)->execute();
-fwrite(STDOUT, "Operation registry valid: {$count} kinds.\n");
+try {
+    $app = require __DIR__.'/../apps/gateway/bootstrap/app.php';
+    $app->make(Kernel::class)->bootstrap();
+    $count = $app->make(OperationRegistryCheck::class)->execute();
+    fwrite(STDOUT, "Operation registry valid: {$count} kinds.\n");
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception::class.': '.$exception->getMessage()."\n");
+    exit(1);
+}
