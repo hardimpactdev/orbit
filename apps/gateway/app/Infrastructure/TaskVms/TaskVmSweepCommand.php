@@ -94,7 +94,7 @@ final readonly class TaskVmSweepCommand implements OperationEffectTransport
                     $servers->stop($server->uuid, null);
                 }
             } elseif ($deletion['kind'] === 'server') {
-                $servers->delete(ValidatedData::string($deletion['name']), ValidatedData::string($deletion['label']), ValidatedData::string($deletion['value']), ValidatedData::string($deletion['uuid']));
+                $servers->requestDelete(ValidatedData::string($deletion['name']), ValidatedData::string($deletion['label']), ValidatedData::string($deletion['value']), ValidatedData::string($deletion['uuid']));
             } elseif ($deletion['kind'] === 'template') {
                 $servers->deleteTemplate(ValidatedData::string($deletion['uuid']));
             } else {

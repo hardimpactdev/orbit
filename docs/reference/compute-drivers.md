@@ -1360,6 +1360,9 @@ These alternatives were also rejected:
 
 ## UpCloud overflow
 
+Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. Each Gateway delete primitive verifies the recorded name, label and stopped state, sends one request, and returns without polling. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
+
+
 When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
