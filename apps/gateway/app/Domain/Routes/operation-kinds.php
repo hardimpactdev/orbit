@@ -66,7 +66,7 @@ $definitions = [
             ['transport' => 'agent', 'name' => 'firewall.route-lan', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
         ],
         'completion_contract' => ['step' => 'offline-residue-proof', 'transport' => 'gateway', 'name' => 'route.offline-residue', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'ready', 'result', 'outcome', 'data.ready', 'data.digest', 'error_code', ['name' => 'removed', 'type' => 'list', 'items' => 'string', 'max' => 10000]],
+        'result_fields' => ['prepared', 'ready', 'result', 'outcome', 'data.ready', 'data.digest', 'error_code', ['name' => 'removed', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
     ],
     ...array_fill_keys(['route.withdraw_instance', 'route.cleanup_instance'], [
         'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => InstanceRuntimeExecution::class,
@@ -116,7 +116,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
             'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], $childKinds),
             'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway', 'name' => 'route.analytics-parent', 'result' => ['ready' => true]],
             'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage', 'route_id', 'wait_seconds', 'error_code',
-                ['name' => 'child_phases', 'max' => 10000, 'list_of' => ['stage' => 'string', 'key' => 'string']]],
+                ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']]],
         ];
     }
 }
@@ -140,7 +140,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
                 'name' => $router ? 'route.cluster-router' : 'route.parent', 'result' => ['ready' => true]],
             'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage',
                 'route_id', 'cluster_id', 'wait_seconds', 'activate_public', 'withdraw_public', 'changed', 'metrics', 'route_branch', 'failure_code', 'error_code',
-                ['name' => 'child_phases', 'max' => 10000, 'list_of' => ['stage' => 'string', 'key' => 'string']],
+                ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']],
                 ['name' => 'retained_on_nodes', 'max' => 128, 'list_of' => ['node_id' => 'int', 'node' => 'string',
                     'steps' => ['type' => 'list', 'items' => 'string', 'max' => 32]]]],
         ];

@@ -3,9 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationKinds;
-use App\Domain\Routes\AnalyticsRouteParentExecution;
-use App\Domain\Routes\CaddyOperationCompletion;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -30,16 +27,6 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $route = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'node_id' => $node->id, 'domain' => 'tracking.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $route->analyticsTracking()->create(['instance_id' => $instance->id]);
 
-    // Exercise B now. Production registration stays gated on C's bounded child-phase list.
-    $definitions = OperationKinds::definitions();
-    $definitions['route.analytics_host_withdraw'] = [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => AnalyticsRouteParentExecution::class,
-        'runs' => [['transport' => 'gateway', 'name' => 'route.analytics-parent', 'resumable' => true, 'input_fields' => [], 'input_values' => []]],
-        'children' => [['kind' => 'route.caddy_converge', 'node_from' => 'intent.node_ids']],
-        'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway', 'name' => 'route.analytics-parent', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'ready', 'opened', 'wait_seconds', 'stage', 'route_id', 'error_code'],
-    ];
-    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
     app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([]));
     $agents = new FakeAgentCommandRunner()->answer('caddy.publish', ['result' => 'published']);
     app()->instance(AgentCommandRunner::class, $agents);
@@ -50,7 +37,8 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $run = function (string $key, array $input, string $worker = 'parent-one') use ($path) {
         return $this->postJson($path.'/run', ['worker' => $worker, 'key' => $key, 'transport' => 'gateway', 'name' => 'route.analytics-parent', 'input' => $input]);
     };
-    $run('parent-prepare', ['action' => 'prepare'])->assertOk();
+    $prepared = $run('parent-prepare', ['action' => 'prepare'])->assertOk()->json('data');
+    expect($prepared['child_phases'])->toContain(['stage' => 'host-withdraw', 'key' => 'host-withdraw.node-'.$node->id]);
     $key = 'host-withdraw.node-'.$node->id;
     $this->postJson($path.'/children', ['worker' => 'parent-one', 'key' => $key])->assertUnprocessable()->assertJsonPath('error.code', 'operation.child_forbidden');
     $run('stage-open.await-dns-expiry', ['action' => 'open', 'stage' => 'await-dns-expiry'])->assertOk();

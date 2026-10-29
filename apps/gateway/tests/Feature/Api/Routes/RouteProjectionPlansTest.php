@@ -128,20 +128,23 @@ it('keeps replacement environment ownership and certificate cleanup in separate 
         ->and($this->agents->calls)->toBe([]);
 });
 
-it('refuses unavailable composition before reserving a Route or falling back to a PHP executor', function (): void {
+it('refuses an inactive target before reserving a Route or executing Node work', function (): void {
     expect(fn () => app(AdmitRouteOperationAction::class)->create(new CreateRouteData(
-        'unavailable.private.test', RoutePublication::Private, instanceId: $this->instance->id,
-    )))->toThrow(ResourceOperationException::class, 'shared child and result contracts');
+        'inactive.private.test', RoutePublication::Private, instanceId: $this->instance->id,
+    )))->toThrow(ResourceOperationException::class, 'The Route target must be active.');
     expect(Route::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
 });
 
-it('admits a destroy child through the normal Route action only when composition is available', function (): void {
+it('admits a destroy child through normal Route validation without deleting or executing early', function (): void {
     $parent = new Operation(['kind' => 'analytics.instance_enable', 'target_type' => 'instance', 'target_id' => $this->instance->id]);
     $intent = ['key' => 'remove-old-route', 'kind' => 'route.destroy', 'node_id' => $this->node->id,
         'input' => ['route_id' => $this->route->id, 'offline' => false]];
-    expect(fn () => app(RouteChildAdmission::class)->admit($parent, $intent))
-        ->toThrow(ResourceOperationException::class, 'shared child and result contracts');
-    expect(Route::query()->find($this->route->id))->not->toBeNull()->and(Operation::query()->count())->toBe(0);
+    $child = app(RouteChildAdmission::class)->admit($parent, $intent);
+    expect($child->kind)->toBe('route.destroy')->and($child->status)->toBe(OperationStatus::Queued)
+        ->and($child->node_id)->toBe($this->node->id)->and($child->input['route_id'])->toBe($this->route->id)
+        ->and($child->input['offline'])->toBeFalse();
+    expect(Route::query()->find($this->route->id))->not->toBeNull()->and(Operation::query()->count())->toBe(1)
+        ->and($this->route->targets()->exists())->toBeTrue()->and($this->agents->calls)->toBe([]);
 });
 
 it('exposes only the active analytics child phase and refuses unproven publication', function (): void {
