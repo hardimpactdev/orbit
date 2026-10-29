@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\CloneInstanceDatabaseAction;
-use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
@@ -32,7 +31,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
@@ -43,14 +41,11 @@ use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
-use App\Models\NodeAccess;
 use App\Models\Process;
 use App\Models\Project;
-use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakesEnvironmentSyncInspection;
-use Tests\Support\LifecycleAgent;
 
 const DATABASE_CLONE_ROOT_SECRET = 'clone-root-secret-77ab';
 
@@ -209,6 +204,22 @@ function database_clone_env(string $contents): array
     return $values;
 }
 
+/** Seed the retained synchronizer directly; creation now has its own asynchronous contract. */
+function retained_database_clone(Project $project, Node $node): Instance
+{
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature-x',
+        'checkout_path' => '/srv/orbit/apps/acme/feature-x', 'source_is_laravel' => true, 'selected_php_version' => '8.5', 'provisioning_step' => 'active',
+        'status' => InstanceState::Active]);
+    $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'generation_basis_node_id' => $node->id,
+        'domain' => 'feature-x.acme.test', 'publication' => 'private', 'provenance' => 'generated', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $plan = app(InstanceDatabaseClonePlanner::class)->plan($project, 'feature-x');
+    app(CloneInstanceDatabaseAction::class)->execute($instance, $plan);
+
+    return $instance;
+}
+
 describe('.env.testing on synchronization', function (): void {
     beforeEach(function (): void {
         $server = database_clone_server($this->node);
@@ -226,8 +237,7 @@ describe('.env.testing on synchronization', function (): void {
 
     // The writer seeds a missing file with these contents and merges only the managed keys into an existing one.
     it('sends the full .env.testing seed with the test database and records the test database', function (): void {
-        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
-        $instance = Instance::query()->where('name', 'feature-x')->sole();
+        $instance = retained_database_clone($this->project, $this->node);
         $this->environment->testingContents = null;
 
         $response = $this->call('POST', "/api/v1/instances/{$instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
@@ -252,8 +262,7 @@ describe('.env.testing on synchronization', function (): void {
 
     it('never writes a .env.testing that Git tracks and records the test database instead', function (): void {
         $this->environment->testingTracked = true;
-        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
-        $instance = Instance::query()->where('name', 'feature-x')->sole();
+        $instance = retained_database_clone($this->project, $this->node);
 
         $response = $this->call('POST', "/api/v1/instances/{$instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
             ->assertOk();
