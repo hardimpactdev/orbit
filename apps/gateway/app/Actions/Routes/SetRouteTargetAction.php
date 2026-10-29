@@ -70,11 +70,11 @@ final readonly class SetRouteTargetAction
             ),
         );
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+        DB::afterCommit(fn () => ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteUpdated,
             $result->id,
             RouteData::fromModel($result)->toArray(),
-        );
+        ));
 
         if ($grantSourceAccess) {
             $this->metrics?->reconcile();

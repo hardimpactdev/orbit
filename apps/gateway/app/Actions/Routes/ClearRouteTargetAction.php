@@ -48,11 +48,11 @@ final readonly class ClearRouteTargetAction
             fn (): Route => $this->executeOwned($route, $expectedTargetIds),
         );
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+        DB::afterCommit(fn () => ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteUpdated,
             $result->id,
             RouteData::fromModel($result)->toArray(),
-        );
+        ));
 
         if ($projectMetrics) {
             $this->metrics?->reconcile();

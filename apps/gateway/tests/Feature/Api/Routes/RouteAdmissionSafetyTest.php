@@ -6,6 +6,8 @@ use App\Actions\Routes\AdmitClusterRouterOperationAction;
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -24,6 +26,8 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RouteForeignChildKinds;
 use Tests\Support\RouteSwampGatewayFixture;
@@ -170,4 +174,48 @@ it('records the target Metrics child without calling the retained PHP reconciler
     expect($operation->status->value)->toBe('queued')
         ->and($operation->state['route_plan']['stages']['metrics-reconciled'][0]['kind'])->toBe('metrics.reconcile')
         ->and($operation->children()->exists())->toBeFalse()->and($this->agents->calls)->toBe([]);
+})->with(['set', 'unset']);
+
+it('does not announce a target change when admission preparation refuses', function (string $mode): void {
+    $this->node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $this->route->update(['status' => 'pending', 'sites_published' => false]);
+    if ($mode === 'set') {
+        $this->route->targets()->delete();
+    } else {
+        $this->instance->update(['status' => 'reserved']);
+    }
+    Event::fake([RecordBroadcast::class]);
+    $admission = app(AdmitRouteOperationAction::class);
+
+    expect(fn () => $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route))
+        ->toThrow(ResourceOperationException::class, 'metrics.reconcile');
+
+    Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated);
+    expect($this->route->targets()->pluck('instance_id')->all())->toBe($mode === 'set' ? [] : [$this->instance->id])
+        ->and(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
+})->with(['set', 'unset']);
+
+it('announces an admitted target change only after its transaction commits', function (string $mode): void {
+    $this->route->update(['status' => 'pending', 'sites_published' => false]);
+    if ($mode === 'set') {
+        $this->route->targets()->delete();
+    } else {
+        $this->instance->update(['status' => 'reserved']);
+    }
+    Event::fake([RecordBroadcast::class]);
+    $admission = app(AdmitRouteOperationAction::class);
+
+    $operation = DB::transaction(function () use ($admission, $mode): Operation {
+        $operation = $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route);
+        Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated);
+
+        return $operation;
+    });
+
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated
+        && $event->id === $this->route->id && count($event->data['targets']) === ($mode === 'set' ? 1 : 0));
+    expect(Event::dispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated))->toHaveCount(1);
+    expect($operation->fresh()->status->value)->toBe('queued')
+        ->and($this->route->targets()->pluck('instance_id')->all())->toBe($mode === 'set' ? [$this->instance->id] : [])
+        ->and($this->agents->calls)->toBe([]);
 })->with(['set', 'unset']);

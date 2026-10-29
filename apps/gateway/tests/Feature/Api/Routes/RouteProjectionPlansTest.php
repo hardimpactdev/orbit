@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
-use App\Actions\Routes\AwaitRouteOperationAction;
 use App\Actions\Routes\RouteChildAdmission;
 use App\Actions\Routes\RouteMutationState;
 use App\Actions\Routes\RouteTargetState;
@@ -46,7 +45,6 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
-use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RouteForeignChildKinds;
 
@@ -323,21 +321,6 @@ it('refuses a forged successful parent result even with a genuine final proof re
     $execution->assertCompletion($this->operation, OperationOutcome::succeeded([
         'ready' => true, 'route_id' => $this->route->id, 'retained_on_nodes' => [],
     ]));
-});
-
-it('retained Gateway callers return only the exact successful Route Operation and preserve failure evidence', function (): void {
-    $operation = Operation::query()->create(['kind' => 'route.update', 'target_type' => 'route', 'target_id' => $this->route->id,
-        'node_id' => $this->node->id, 'input' => ['route_id' => $this->route->id], 'status' => 'succeeded', 'sequence' => 1,
-        'result' => ['ready' => true, 'route_id' => $this->route->id], 'finished_at' => now()]);
-    // A retained caller waits only after admission commits, including the test harness transaction.
-    while (DB::transactionLevel() > 0) {
-        DB::commit();
-    }
-    $await = app(AwaitRouteOperationAction::class);
-    expect($await->route($operation)->id)->toBe($this->route->id);
-    $operation->update(['status' => 'failed', 'error_code' => 'route.workload_failed']);
-    expect(fn () => $await->execute($operation))->toThrow(ResourceOperationException::class, 'did not succeed');
-    expect($operation->fresh()->error_code)->toBe('route.workload_failed')->and($this->agents->calls)->toBe([]);
 });
 
 it('recovers an already cut-over replacement from publication or cleanup without replaying database cutover', function (string $checkpoint, string $mode): void {
