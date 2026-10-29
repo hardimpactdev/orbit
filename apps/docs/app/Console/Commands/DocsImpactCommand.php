@@ -27,8 +27,8 @@ final class DocsImpactCommand extends Command
             return self::FAILURE;
         }
         $root = dirname($docsPath);
-        $base = $this->option('base');
-        $paths = $this->option('paths');
+        $base = $this->input->getOption('base');
+        $paths = $this->input->getOption('paths');
         if ($base !== null && (! is_string($base) || trim($base) === '')) {
             $this->error('The --base commit must be a non-empty string.');
 
