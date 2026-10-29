@@ -28,6 +28,8 @@ Install, update, remove, and adopt return HTTP 202 with an [Operation](/referenc
 
 Each operation admits only the selected manager's named commands and exact recorded input. The Gateway takes the Node from the Operation, verifies successful run and step receipts before completion, and retains only declared, redacted scalar result leaves. Swamp saves completion intent before posting it and reuses effect keys after a lost reply. Package-manager output and credentials are never part of a receipt.
 
+Gateway package manager adapters keep package validation, version normalization and read-only inspection. Candidate selection, adoption probes and removal planning execute only through the Swamp workflow's named commands. Their Gateway interfaces expose no execution methods for those steps. Command activity records admission before any package runs; a managed Tool is created only after verified completion.
+
 Node enrollment and role operations can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
 
 The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.

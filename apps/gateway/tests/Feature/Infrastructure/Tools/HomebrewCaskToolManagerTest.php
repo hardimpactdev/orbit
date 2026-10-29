@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Models\Node;
@@ -68,9 +66,7 @@ describe(HomebrewCaskToolManager::class, function (): void {
 
     it('reads the native manager version and preserves absence and ambiguous inventories', function (): void {
         [$manager, $agent] = cask_manager();
-        $agent->answer('tool.homebrew-cask-candidate', ['version' => null]);
-        expect($manager->managerVersion(cask_node()))->toBe('Homebrew 4.6.15')
-            ->and($manager->candidateVersion(cask_node(), 'missing', ToolOperation::Install))->toBeNull();
+        expect($manager->managerVersion(cask_node()))->toBe('Homebrew 4.6.15');
         $agent->answer('tool.homebrew-cask-inventory', ['packages' => [
             ['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false],
             ['name' => 'ambiguous', 'versions' => ['1.0', '2.0'], 'unverifiable' => false],
@@ -83,13 +79,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
         $agent->refuse('tool.homebrew-cask-inventory', 'tool.homebrew_output_invalid');
         expect(fn () => $manager->installedVersion(cask_node(), 'font-hack'))->toThrow(ToolManagerException::class);
     });
-
-    it('returns native adoption facts without creating Tool rows', function (?string $version, ?string $block): void {
-        [$manager, $agent] = cask_manager();
-        $agent->answer('tool.homebrew-cask-adoption', ['installed_version' => $version, 'block' => $block]);
-        expect($manager->inspectForAdoption(cask_node(), 'font-hack'))->toEqual(new ToolAdoptionFact($version, $block));
-        expect(Tool::query()->count())->toBe(0);
-    })->with([['3.003', null], [null, null], ['3.003', 'authorization_required'], ['3.003', 'unsupported_source'], ['3.003', 'unsupported_artifact'], ['3.003', 'version_unreadable']]);
 
 });
 

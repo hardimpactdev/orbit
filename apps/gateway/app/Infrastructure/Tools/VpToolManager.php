@@ -6,15 +6,10 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\SupportsToolAdoption;
-use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolRemovalPlan;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -24,7 +19,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Models\Node;
 
-final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
+final readonly class VpToolManager implements ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 214;
 
@@ -171,14 +166,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         }
     }
 
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): string
-    {
-        $this->guardNode($node);
-        $this->guardPackage($package);
-
-        return $this->version($node, 'tool.vp-candidate', ['package' => $package], 'candidate-version');
-    }
-
     /** @return array{packages: list<array{name: string, version: ?string}>, scan_complete: bool} */
     public function inventory(Node $node): array
     {
@@ -216,36 +203,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
-    }
-
-    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
-    {
-        $this->guardNode($node);
-        $this->guardPackage($package);
-        $version = $this->installedVersion($node, $package);
-
-        if ($version === null) {
-            return new ToolAdoptionFact(null, null);
-        }
-
-        if ($package === 'pnpm') {
-            return new ToolAdoptionFact($version, ToolInventoryPackage::BLOCK_PROTECTED);
-        }
-
-        return new ToolAdoptionFact($version, null);
-    }
-
-    public function planRemoval(Node $node, string $package): ToolRemovalPlan
-    {
-        $this->guardNode($node);
-        $this->guardPackage($package);
-        $data = $this->globalCommand($node, 'tool.vp-removal-plan', ['package' => $package], 'removal-plan');
-
-        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages']) || array_filter($data['packages'], is_string(...)) !== $data['packages']) {
-            throw new ToolManagerException('removal-plan', 'The agent returned an invalid Vite+ removal plan.');
-        }
-
-        return new ToolRemovalPlan($data['packages']);
     }
 
     private function guardNode(Node $node): void

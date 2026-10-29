@@ -16,14 +16,10 @@ interface ToolManager
 
     public function managerVersion(Node $node): string;
 
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string;
-
     /** One fresh observation of the complete installed manager scope. */
     public function installedInventory(Node $node): InstalledToolInventory;
 
     public function installedVersion(Node $node, string $package): ?string;
 
     public function normalizeVersion(string $rawVersion): ?string;
-
-    public function planRemoval(Node $node, string $package): ToolRemovalPlan;
 }

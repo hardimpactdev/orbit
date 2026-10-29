@@ -4,29 +4,22 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
-use App\Domain\Nodes\RoleName;
 use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ReservesRolePackages;
-use App\Domain\Tools\SupportsToolAdoption;
-use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\PhpBuild;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
 
-final readonly class AptToolManager implements ReservesRolePackages, SupportsToolAdoption, ToolManager
+final readonly class AptToolManager implements ReservesRolePackages, ToolManager
 {
     /** Any PHP version's packages belong to the PHP role, not only the versions the recipe declares today. */
     private const string ROLE_PHP_PACKAGE_PATTERN = '/\Aphp[0-9]+\.[0-9]+-[a-z0-9.+-]+\z/D';
@@ -38,7 +31,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     public function __construct(
         private AgentCommandRunner $agents,
         private DebianVersionNormalizer $versions,
-        private ?NodeBootstrapPackageCatalog $packages = null,
         private ?MachineRecipe $recipe = null,
         private ?ToolCommandBudget $budget = null,
     ) {}
@@ -87,13 +79,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
         return $version;
     }
 
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
-    {
-        $this->guardPackage($package);
-
-        return $this->version($node, 'tool.apt-candidate', ['package' => $package], 'candidate-version');
-    }
-
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $data = $this->command($node, 'tool.apt-inventory', [], 'installed-version');
@@ -111,69 +96,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
-    }
-
-    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
-    {
-        $this->guardPackage($package);
-
-        if (! $this->supportsNode($node)) {
-            throw new ToolManagerException(
-                step: 'node',
-                message: 'APT tools require a Linux node.',
-            );
-        }
-
-        try {
-            $this->managerVersion($node);
-        } catch (ToolManagerException $exception) {
-            throw new ToolManagerException(
-                step: 'manager-absent',
-                message: 'The APT manager is not available.',
-                result: $exception->result,
-                previous: $exception,
-            );
-        }
-
-        $version = $this->installedVersion($node, $package);
-
-        if ($version === null) {
-            return new ToolAdoptionFact(null, null);
-        }
-
-        if (in_array($package, $this->protectedPackages($node), true) || $this->roleOwns($package)) {
-            return new ToolAdoptionFact($version, ToolInventoryPackage::BLOCK_PROTECTED);
-        }
-
-        return new ToolAdoptionFact($version, null);
-    }
-
-    /** @return list<string> */
-    private function protectedPackages(Node $node): array
-    {
-        $catalog = $this->packages ?? new NodeBootstrapPackageCatalog;
-        $names = $catalog->forNode($node);
-
-        foreach (RoleName::cases() as $role) {
-            $names = [...$names, ...$catalog->forRole($node, $role)];
-        }
-
-        $names[] = 'openssh-server';
-        $names[] = 'wireguard-tools';
-        $names = [...$names, ...($this->recipe ?? new RecipeLoader()->load())->gitPackages];
-
-        return array_values(array_unique($names));
-    }
-
-    public function planRemoval(Node $node, string $package): ToolRemovalPlan
-    {
-        $this->guardPackage($package);
-        $data = $this->command($node, 'tool.apt-removal-plan', ['package' => $package], 'removal-plan');
-        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages']) || array_filter($data['packages'], is_string(...)) !== $data['packages']) {
-            throw new ToolManagerException('removal-plan', 'The agent returned an invalid APT removal plan.');
-        }
-
-        return new ToolRemovalPlan($data['packages']);
     }
 
     private function guardPackage(string $package): void

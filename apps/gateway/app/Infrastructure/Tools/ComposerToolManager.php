@@ -6,21 +6,16 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\SupportsToolAdoption;
-use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 
-final readonly class ComposerToolManager implements SupportsToolAdoption, ToolManager
+final readonly class ComposerToolManager implements ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 255;
 
@@ -60,17 +55,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         return $version;
     }
 
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        if ($operation === ToolOperation::Remove || $operation === ToolOperation::Adopt) {
-            throw new ToolManagerException('candidate-version', 'This Composer operation does not select a candidate version.');
-        }
-
-        return $this->version($node, 'tool.composer-candidate', ['package' => $package, 'operation' => $operation->value], 'candidate-version');
-    }
-
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $data = $this->command($node, 'tool.composer-inventory', [], 'installed-version');
@@ -85,38 +69,9 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         return $this->installedInventory($node)->versionFor($package);
     }
 
-    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $roots = $this->adoptionRoots($node);
-        $installed = $this->installedVersion($node, $package);
-
-        if ($installed === null) {
-            return new ToolAdoptionFact(null, null);
-        }
-
-        if (! in_array($package, $roots, true)) {
-            return new ToolAdoptionFact($installed, ToolInventoryPackage::BLOCK_DEPENDENCY);
-        }
-
-        return new ToolAdoptionFact($installed, null);
-    }
-
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
-    }
-
-    public function planRemoval(Node $node, string $package): ToolRemovalPlan
-    {
-        $this->guardPackage($package);
-        $data = $this->command($node, 'tool.composer-removal-plan', ['package' => $package], 'removal-plan');
-        if (($data['packages'] ?? null) !== [$package]) {
-            throw new ToolManagerException('removal-plan', 'The agent returned an invalid Composer removal plan.');
-        }
-
-        return new ToolRemovalPlan($data['packages']);
     }
 
     private function guardPackage(string $package): void
@@ -141,21 +96,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
             step: 'node',
             message: 'Composer tools require a Linux node.',
         );
-    }
-
-    /**
-     * Reads the shared Composer scope without installing packages or creating directories.
-     *
-     * @return list<string>
-     */
-    private function adoptionRoots(Node $node): array
-    {
-        $data = $this->command($node, 'tool.inspect-composer-scope', [], 'manager-probe');
-        if (! is_array($data['roots'] ?? null) || ! array_is_list($data['roots']) || array_filter($data['roots'], is_string(...)) !== $data['roots']) {
-            throw new ToolManagerException('manager-probe', 'The agent returned an invalid Composer scope.');
-        }
-
-        return array_values(array_filter($data['roots'], $this->validatePackage(...)));
     }
 
     /** @param array<string, mixed> $input

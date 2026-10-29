@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -32,6 +33,20 @@ it('admits keyed installs without manager execution or premature Tool ownership'
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('tool.install')->and($operation->node_id)->toBe($this->node->id)
         ->and($operation->input['constraint_intervals'])->not->toBeEmpty()->and(Tool::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('records command activity for admission without claiming synchronous package completion', function (): void {
+    $response = $this->postJson('/api/v1/tools', [
+        'node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq',
+    ])->assertAccepted();
+
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $activity = Activity::query()->where('command', 'tool:install')->sole();
+    expect($operation->status->value)->toBe('queued')
+        ->and($activity->target_node_id)->toBe($this->node->id)
+        ->and($activity->subject_id)->toBeNull();
+    expect(Tool::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });
 
