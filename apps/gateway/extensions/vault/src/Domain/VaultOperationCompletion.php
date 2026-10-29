@@ -23,6 +23,7 @@ final readonly class VaultOperationCompletion implements OperationCompletion
             if ($outcome->status === OperationStatus::Failed) {
                 $this->settings->recordError($outcome->errorCode ?? 'vault.sync_failed', 'The Vault Operation failed. Read its steps.');
             }
+            $this->secrets->forgetTerminal($operation);
 
             return;
         }
@@ -63,5 +64,6 @@ final readonly class VaultOperationCompletion implements OperationCompletion
             $this->settings->recordVerified($now);
             $this->settings->recordSuccess($now);
         }
+        $this->secrets->forgetTerminal($operation);
     }
 }

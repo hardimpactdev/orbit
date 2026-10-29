@@ -6,11 +6,13 @@ namespace Orbit\Extensions\Vault\Domain;
 
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Models\Operation;
+use App\Models\Setting;
 use App\Support\ValidatedData;
 use SensitiveParameter;
 
@@ -76,9 +78,14 @@ final readonly class VaultOperationSecrets implements OperationSecretSource
         return ValidatedData::object(json_decode($stored, true, flags: JSON_THROW_ON_ERROR));
     }
 
-    public function forget(Operation $operation): void
+    /** Retain only snapshots which another unfinished Operation still needs for recovery. */
+    public function forgetTerminal(Operation $operation): void
     {
-        $this->settings->delete($this->scope(), $this->key($operation));
+        $active = Operation::query()->where('kind', 'like', 'vault.%')->whereKeyNot($operation->id)
+            ->whereNotIn('status', [OperationStatus::Succeeded, OperationStatus::Failed, OperationStatus::Cancelled])
+            ->get(['id'])->map(fn (Operation $pending): string => $this->key($pending))->all();
+        Setting::query()->where('scope_type', SettingScopeType::Gateway)->where('scope_id', 0)
+            ->where('key', 'like', 'vault.operation.%')->whereNotIn('key', $active)->delete();
     }
 
     private function scope(): SettingScope

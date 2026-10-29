@@ -188,7 +188,7 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The Gateway resolves the Operation's secret reference into an encrypted snapshot of the submitted credentials and wanted Database items. Swamp receives only safe metadata and the published item identifiers. Credentials never enter Operation input, results, step output, or Swamp data.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The Gateway resolves the Operation's secret reference into an encrypted snapshot of the submitted credentials and wanted Database items. Swamp receives only safe metadata and the published item identifiers. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and retired snapshots; only unfinished Operations retain their inputs for recovery. Successful teardown also removes historical and orphaned snapshots.
 
 A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 

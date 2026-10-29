@@ -170,6 +170,7 @@ it('projects proven setup and sync metadata and retains it until successful tear
     expect($settings->configuration()?->collectionId)->toBe('fixture-collection')
         ->and($settings->configuration()?->credentials->clientSecret)->toBe($this->payload['client_secret'])
         ->and($settings->lastVerifiedAt())->toBeNull();
+    expect(Setting::query()->where('key', 'vault.operation.'.$setup->id)->exists())->toBeFalse();
     VaultItem::query()->create(['source' => 'obsolete', 'cipher_id' => 'old', 'revision_date' => 'old', 'fingerprint' => 'old']);
     $sync = new Operation(['kind' => 'vault.sync']);
 
@@ -196,4 +197,49 @@ it('projects proven setup and sync metadata and retains it until successful tear
         ->and($settings->lastVerifiedAt())->toBeNull()->and($settings->lastError())->toBeNull();
     $this->assertDatabaseCount('vault_items', 0);
     Http::assertNothingSent();
+});
+
+it('deletes terminal credential snapshots while retaining another unfinished Operation snapshot', function (string $action, string $status): void {
+    $operation = Operation::query()->create(['kind' => 'vault.'.$action, 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'running', 'input' => []]);
+    $pending = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'queued', 'input' => []]);
+    $secrets = app(VaultOperationSecrets::class);
+    $secrets->store($operation, $this->payload);
+    $secrets->store($pending, $this->payload);
+
+    app(VaultOperationCompletion::class)->complete($operation, $status === 'failed'
+        ? OperationOutcome::failed('vault.test_failed') : OperationOutcome::cancelled());
+
+    expect(Setting::query()->where('key', 'vault.operation.'.$operation->id)->exists())->toBeFalse();
+    expect($secrets->snapshot($pending, ['$secret' => 'vault.credentials', 'id' => $this->caller->id])['client_secret'])->toBe($this->payload['client_secret']);
+})->with(['setup', 'sync', 'teardown'])->with(['failed', 'cancelled']);
+
+it('removes historical and orphaned credential snapshots after proven teardown', function (): void {
+    $secrets = app(VaultOperationSecrets::class);
+    $historical = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'succeeded', 'input' => []]);
+    $secrets->store($historical, $this->payload);
+    $orphan = Operation::query()->create(['kind' => 'vault.setup', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'failed', 'input' => []]);
+    $secrets->store($orphan, $this->payload);
+    $orphan->delete();
+    $teardown = Operation::query()->create(['kind' => 'vault.teardown', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'running', 'input' => []]);
+    $secrets->store($teardown, $this->payload);
+
+    app(VaultOperationCompletion::class)->complete($teardown, OperationOutcome::succeeded(['data' => ['backend' => 'absent']]));
+
+    expect(Setting::query()->where('key', 'like', 'vault.%')->exists())->toBeFalse();
+});
+
+it('removes the sync credential snapshot after proven ledger projection', function (): void {
+    $operation = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'running', 'input' => []]);
+    app(VaultOperationSecrets::class)->store($operation, $this->payload);
+
+    app(VaultOperationCompletion::class)->complete($operation, OperationOutcome::succeeded(['data' => ['backend' => 'synced',
+        'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => []]]));
+
+    expect(Setting::query()->where('key', 'vault.operation.'.$operation->id)->exists())->toBeFalse();
 });
