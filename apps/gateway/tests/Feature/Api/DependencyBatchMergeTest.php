@@ -833,14 +833,14 @@ it('refuses an unreferenced lock package even with trusted sources and an unchan
     Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
 })->with(['composer.lock', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock']);
 
-it('refuses newly introduced npm and Bun names even when a lock edge claims them', function (string $file): void {
+it('refuses newly introduced JavaScript package names even when a lock edge claims them', function (string $file): void {
     $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
     $base = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', []]]);
     $head = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', ['injected' => '1.0.0']], 'injected' => ['1.0.0', []]]);
     dependencyContent($this, $file, $head, $base);
     $this->withHeader('Idempotency-Key', 'new-lock-name')->postJson($this->url, $this->body)
         ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
-})->with(['package-lock.json', 'npm-shrinkwrap.json', 'bun.lock']);
+})->with(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock']);
 
 it('refuses pnpm snapshot name aliases even when they form a reachable graph', function (): void {
     $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
@@ -933,3 +933,45 @@ it('refuses npm v2 legacy entries outside its authoritative package graph', func
     $this->withHeader('Idempotency-Key', 'legacy-orphan')->postJson($this->url, $this->body)
         ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
 });
+
+it('refuses new Composer providers for transitive virtual requirements', function (string $field): void {
+    $baseRoot = dependencyRegistryPackage();
+    $baseRoot['require'] = ['acme/dep' => '^1.0'];
+    $dep = dependencyRegistryPackage();
+    $dep['name'] = 'acme/dep';
+    $headRoot = dependencyRegistryPackage('1.0.1');
+    $headRoot['require'] = ['acme/virtual' => '^1.0'];
+    $claimer = dependencyRegistryPackage();
+    $claimer['name'] = 'evil/claimer';
+    $claimer[$field] = ['acme/virtual' => '*'];
+    $claimer['autoload'] = ['files' => ['force-green.php']];
+    $this->registry['acme/library'] = $headRoot;
+    $this->registry['evil/claimer'] = $claimer;
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => [$headRoot, $claimer], 'packages-dev' => []]), json_encode(['packages' => [$baseRoot, $dep], 'packages-dev' => []]));
+    $this->withHeader('Idempotency-Key', 'new-provider')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+    Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
+})->with(['replace', 'provide']);
+
+it('refuses replacing a real transitive Composer package with an existing provider', function (string $field): void {
+    $root = dependencyRegistryPackage();
+    $root['require'] = ['acme/dep' => '^1.0', 'acme/claimer' => '^1.0'];
+    $dep = dependencyRegistryPackage();
+    $dep['name'] = 'acme/dep';
+    $baseClaimer = dependencyRegistryPackage();
+    $baseClaimer['name'] = 'acme/claimer';
+    $claimer = dependencyRegistryPackage('1.0.1');
+    $claimer['name'] = 'acme/claimer';
+    $claimer[$field] = ['acme/dep' => '*'];
+    $claimer['autoload'] = ['files' => ['force-green.php']];
+    $this->registry['acme/library'] = $root;
+    $this->registry['acme/dep'] = $dep;
+    $this->registry['acme/claimer'] = $claimer;
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
+    $base = json_encode(['packages' => [$root, $dep, $baseClaimer], 'packages-dev' => []]);
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => [$root, $claimer], 'packages-dev' => []]), $base);
+    $this->withHeader('Idempotency-Key', 'real-package-provider')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+    Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
+})->with(['replace', 'provide']);
