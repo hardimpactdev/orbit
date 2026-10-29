@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Infrastructure/Metrics/**
   - apps/gateway/app/Domain/Metrics/**
   - apps/gateway/app/Infrastructure/Nodes/Metrics/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/MetricsRoleBaseline.php
+  - apps/gateway/app/Domain/Nodes/NodeRoleBaselinePlan.php
   - apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php
   - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php

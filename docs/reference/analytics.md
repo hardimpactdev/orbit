@@ -3,7 +3,7 @@ title: "Analytics role"
 description: "How the analytics role runs Plausible Community Edition, where it keeps its data, and how an Instance publishes a tracking host."
 covers:
   - apps/gateway/{app/Domain/Analytics,app/Infrastructure/Analytics,app/Actions/Analytics,extensions/analytics}/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/AnalyticsRoleBaseline.php
+  - apps/gateway/app/Domain/Nodes/NodeRoleBaselinePlan.php
   - apps/gateway/app/Actions/Routes/ConvergeAnalyticsTrackingPlacementAction.php
   - apps/gateway/resources/analytics/**
   - apps/gateway/tests/{Feature/Infrastructure/Analytics,Feature/Extensions/Analytics,Unit/Extensions/Analytics}/**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Actions\Nodes\AdmitNodeRemovalStageAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Nodes\StartNodeNetworkOperationAction;
@@ -23,6 +24,9 @@ final readonly class NodeChildAdmission implements OperationChildAdmission
 
     public function admit(Operation $parent, array $intent): Operation
     {
+        if (in_array($intent['kind'], ['node.removal_begin', 'node.removal_restore'], true)) {
+            return app(AdmitNodeRemovalStageAction::class)->execute($parent, $intent);
+        }
         if ($intent['kind'] === 'node.network_rollback') {
             if ($intent['node_id'] !== $parent->node_id || $intent['input'] !== []) {
                 throw new ResourceOperationException('operation.child_forbidden', 'Peer rollback has no caller-selected payload.', 422);

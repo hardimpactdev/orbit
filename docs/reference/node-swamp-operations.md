@@ -13,6 +13,12 @@ The internal `node.network_converge` child records its public connection and hos
 
 First-role failure uses `node.network_rollback {}` as a compensation child under the same target hold. Its public connection and credential reference come from the proven network child. Cancellation admits only that declared compensation after the network child succeeds; the parent runs no further effect. These role kinds require the kit's `compensations` capability.
 
+## Node removal
+
+Removal admission takes the Node target hold and records the source roles, Route IDs, prior lifecycle state and each serving Node's child intent. It keeps the departing Node's Route associations while cleanup runs. A protected Node or active Route refuses removal. Offline removal requires an actual unreachable verdict and explicit consent; a reachable Node keeps its role guard.
+
+Offline role children finish before the parent marks the Node removing. Each residue child receives exactly `{removed_node_id: <departing Node ID>}` and targets its own serving Node. Final deletion waits for those children and the network publication proofs. Cleanup of residue whose source Route no longer exists uses null through `node.converge`.
+
 ## Footprint children
 
 `node.converge` takes `{force_artifacts: bool, first_visit: bool}`. Its target is the managed Linux Node. The Gateway records the expected artifact digests and typed payloads before Swamp starts effects. A retry uses that snapshot. Matching artifacts need no effect unless owned drift or a recorded failed agent pin requires repair.

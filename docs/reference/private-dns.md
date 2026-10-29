@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
   - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy,PeerDnsInspector,UplinkDnsResolvers}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
-  - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
+  - apps/gateway/app/Infrastructure/Fleet/Footprint/PrivateDnsFootprintArtifact.php
   - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Actions/Nodes/ReconcilePeerDnsAction,Console/Commands/RepairNodeDnsCommand,Console/Commands/CheckNodeDnsCommand,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
