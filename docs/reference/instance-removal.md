@@ -14,7 +14,9 @@ covers:
 
 # Instance removal
 
-Development removal returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
+Development removal on a workload Node returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
+
+Removal on a Swamp executor Node stays synchronous through `DestroyInstanceAction`, including owned Process and Schedule cleanup. It returns HTTP 200 with the completed removal receipt and admits no Operation, so removal does not depend on the executor that it may stop.
 
 Production removal stays synchronous until its own Swamp cutover. That cutover follows the deployment and step-list, Process and Schedule, and Route child registrations.
 

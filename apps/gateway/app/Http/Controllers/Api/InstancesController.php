@@ -16,6 +16,7 @@ use App\Data\Instances\InstanceData;
 use App\Data\Instances\InstanceRegistrationData;
 use App\Data\Instances\InstanceRemovalData;
 use App\Data\Operations\OperationData;
+use App\Domain\Processes\ProcessSwampSafety;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -126,7 +127,7 @@ final class InstancesController extends Controller
         StartInstanceDestroyAction $action,
     ): JsonResponse {
         $target = Instance::query()->findOrFail($instance);
-        if ($target->placedOnAppProd()) {
+        if ($target->placedOnAppProd() || app(ProcessSwampSafety::class)->requiresSynchronous($target->node)) {
             return response()->json([
                 'data' => InstanceRemovalData::fromModel(app(DestroyInstanceAction::class)->execute($target, $request->force()))->toArray(),
                 'meta' => $this->meta($request),

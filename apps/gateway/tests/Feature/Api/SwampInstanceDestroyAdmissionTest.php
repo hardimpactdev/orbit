@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
+use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Support\Facades\Queue;
 
@@ -68,6 +73,41 @@ it('admits a fixed source set without executing teardown, deleting source or acc
         ->and(InstanceRemoval::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 })->with([false, true]);
+
+it('removes an executor Node Instance and its Process synchronously without admitting Operations', function (string $executor): void {
+    config($executor === 'services'
+        ? ['dependency_detection.services_node_id' => $this->node->id]
+        : ['operation_executor.worker_node_ids' => [$this->node->id]]);
+    $process = Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $this->instance->id,
+        'name' => 'ssr', 'runtime' => 'systemd', 'working_directory' => $this->instance->checkout_path,
+        'runtime_config' => ['command' => ['vp', 'dev']], 'restart_policy' => 'always',
+        'desired_state' => 'running', 'status' => 'active']);
+    $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
+    $finalizer = Mockery::mock(DevelopmentInstanceSourceFinalizer::class);
+    $finalizer->shouldReceive('prepare')->once();
+    $finalizer->shouldReceive('revalidate')->andReturn(InstanceSourceRevalidationState::Present);
+    $finalizer->shouldReceive('finalize')->once()->andReturn(hash('sha256', 'executor-source-removed'));
+    app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
+    $projector = Mockery::mock(InstanceRemovalProjector::class);
+    $projector->shouldReceive('withdrawPhpPool')->once();
+    $projector->shouldReceive('cleanupRuntime')->once();
+    app()->instance(InstanceRemovalProjector::class, $projector);
+    $runtime = Mockery::mock(ProcessRuntimeManager::class);
+    $runtime->shouldReceive('remove')->once()->withArgs(fn (Process $owned): bool => $owned->id === $process->id);
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+
+    $this->deleteJson($this->path, ['force' => true])->assertOk()
+        ->assertJsonPath('data.id', $this->instance->id)
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.completed', 1)
+        ->assertJsonPath('data.remaining', 0);
+
+    $this->assertDatabaseMissing('instances', ['id' => $this->instance->id]);
+    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
+    $this->assertDatabaseCount('operations', 0);
+    expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
+    Queue::assertNothingPushed();
+})->with(['services', 'worker']);
 
 it('replays the receipt after row deletion with the original Node access and request fingerprint', function (): void {
     $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
