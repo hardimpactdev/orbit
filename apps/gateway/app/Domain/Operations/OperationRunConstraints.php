@@ -38,8 +38,6 @@ final readonly class OperationRunConstraints
             }
             if ($checks[$name] instanceof OperationTimeWindow) {
                 $checks[$name]->validate($parameters);
-            } else {
-                $checks[$name]->assertAllowed($operation, $parameters);
             }
         }
     }

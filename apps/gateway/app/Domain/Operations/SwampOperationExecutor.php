@@ -48,14 +48,14 @@ final readonly class SwampOperationExecutor
                                     ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
                             });
                     })->orderBy('id')->lockForUpdate()->get();
-                $operation = $candidates->first(fn (Operation $candidate): bool => $candidate->status !== OperationStatus::Waiting || app(OperationChildren::class)->ready($candidate));
+                $operation = $candidates->first(fn (Operation $candidate): bool => $candidate->status !== OperationStatus::Waiting || app(OperationChildren::class)->ready($candidate, true));
             }
             if ($operation === null) {
                 return null;
             }
             $state = [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId];
             if ($operation->status === OperationStatus::Waiting) {
-                $state['executor_reentry'] = $state['executor_wait'];
+                $state['executor_reentry'] = app(OperationChildren::class)->reentry($operation);
                 unset($state['executor_wait']);
             }
             $this->store->change($operation, [
@@ -225,7 +225,7 @@ final readonly class SwampOperationExecutor
     public function run(Operation $operation, array $data, int $nodeId): array
     {
         $result = null;
-        $held = app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation, $data, $nodeId, &$result): void {
+        $held = app(OperationAttemptLease::class)->hold(app(OperationChildren::class)->executionLeaseId($operation), function () use ($operation, $data, $nodeId, &$result): void {
             $result = $this->invoke($operation, $data, $nodeId);
         });
         if (! $held || $result === null) {
@@ -251,7 +251,7 @@ final readonly class SwampOperationExecutor
             throw new ResourceOperationException('operation.execution_forbidden', 'The step has no admitted run descriptor.', 422);
         }
         $result = null;
-        $held = app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation, $key, $effectKey, $nodeId, &$result): void {
+        $held = app(OperationAttemptLease::class)->hold(app(OperationChildren::class)->executionLeaseId($operation), function () use ($operation, $key, $effectKey, $nodeId, &$result): void {
             $operation->refresh();
             $entry = ValidatedData::object($operation->state['executor_runs'] ?? [])[$key] ?? null;
             if (! is_array($entry)) {
@@ -410,7 +410,7 @@ final readonly class SwampOperationExecutor
         } else {
             $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                 if ($this->contract->cancellationAllowsRun($operation)) {
-                    app(OperationChildren::class)->assertRun($operation);
+                    app(OperationChildren::class)->assertRun($operation, false);
                     $this->contract->execution($operation)?->beforeRun($operation, $data);
                 }
             });

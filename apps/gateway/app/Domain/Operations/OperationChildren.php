@@ -41,15 +41,16 @@ final readonly class OperationChildren
 
             return ['operation' => $existing, 'created' => false];
         }
-        if (! $this->contract->cancellationAllowsRun($parent)) {
-            throw new ResourceOperationException('operation.cancelled', 'The parent was cancelled before child admission.', 409);
-        }
         $context = $this->context($parent);
         $matches = array_values(array_filter($context['children'], static fn (array $entry): bool => $entry['key'] === $key));
         if (count($matches) !== 1) {
             throw new ResourceOperationException('operation.child_forbidden', 'The child key is not eligible in the recorded plan.', 422);
         }
         $intent = $matches[0];
+        $this->assertAncestors($parent);
+        if ($parent->cancel_requested_at !== null && ! $this->compensationAllowed($parent, $intent['kind'])) {
+            throw new ResourceOperationException('operation.cancelled', 'The parent was cancelled before child admission.', 409);
+        }
         $this->authorize($parent, $intent, $context['intent']);
         $this->assertPayload($data, $intent);
         $definition = $this->kinds->definition($intent['kind']);
@@ -150,16 +151,63 @@ final readonly class OperationChildren
         }
     }
 
-    public function assertRun(Operation $operation): void
+    /** A cancelled ancestor admits only a stamped compensation branch. */
+    private function assertAncestors(Operation $operation): void
     {
-        if ($operation->parent_operation_id !== null) {
+        while ($operation->parent_operation_id !== null) {
             $parent = Operation::query()->find($operation->parent_operation_id);
             if ($parent === null || $parent->status->terminal()) {
                 throw new ResourceOperationException('operation.child_unproven', 'The parent no longer holds this child admission.', 409);
             }
             $this->verify($parent, $operation);
+            if ($parent->cancel_requested_at !== null && ! $this->compensationAllowed($parent, $operation->kind)) {
+                throw new ResourceOperationException('operation.cancelled', 'An ancestor cancelled this child branch.', 409);
+            }
+            $operation = $parent;
         }
-        $this->constraints->assertAllowed($operation);
+    }
+
+    private function compensationAllowed(Operation $parent, string $kind): bool
+    {
+        $definition = $this->kinds->definition($parent->kind);
+        if (! is_array($definition) || ! in_array($kind, $definition['compensations'] ?? [], true)
+            || ! isset($definition['cancellation_boundary'])) {
+            return false;
+        }
+        try {
+            $this->requireSucceeded($parent, $definition['cancellation_boundary']);
+            return true;
+        } catch (ResourceOperationException) {
+            return false;
+        }
+    }
+
+    public function assertRun(Operation $operation, bool $checkConstraints = true): void
+    {
+        $this->assertAncestors($operation);
+        if ($checkConstraints) {
+            $this->constraints->assertAllowed($operation);
+        }
+    }
+
+    /** All effects sharing an ancestor's target hold share its attempt lease too. */
+    public function executionLeaseId(Operation $operation): int
+    {
+        $targetType = $operation->target_type;
+        $targetId = $operation->target_id;
+        $leaseId = $operation->id;
+        while ($operation->parent_operation_id !== null) {
+            $parent = Operation::query()->find($operation->parent_operation_id);
+            if ($parent === null) {
+                break;
+            }
+            $this->verify($parent, $operation);
+            if ($parent->target_type === $targetType && $parent->target_id === $targetId && $parent->lock_key !== null) {
+                $leaseId = $parent->id;
+            }
+            $operation = $parent;
+        }
+        return $leaseId;
     }
 
     public function requireSucceeded(Operation $parent, string $key): Operation
@@ -209,24 +257,52 @@ final readonly class OperationChildren
         return $tuples;
     }
 
-    public function ready(Operation $parent): bool
+    /** Pure by default so discovery cannot write assistance state. */
+    public function ready(Operation $parent, bool $flagAssistance = false): bool
     {
         $record = ValidatedData::object($parent->state['executor_wait'] ?? []);
         $wait = $record['children'] ?? null;
-        if (! is_array($wait) || $wait === []) {
+        try {
+            if (! is_array($wait) || $wait === []) {
+                throw new ResourceOperationException('operation.child_unproven', 'The waiting child evidence is missing.', 409);
+            }
+            $ready = true;
+            foreach ($wait as $tuple) {
+                if (! is_array($tuple) || ! is_string($tuple['key'] ?? null)) {
+                    throw new ResourceOperationException('operation.child_unproven', 'The waiting child evidence is invalid.', 409);
+                }
+                $child = $this->child($parent, $tuple['key']);
+                if ($child->id !== ($tuple['id'] ?? null) || $child->child_fingerprint !== ($tuple['fingerprint'] ?? null)) {
+                    throw new ResourceOperationException('operation.child_unproven', 'The waiting child identity changed.', 409);
+                }
+                if ($child->status === OperationStatus::Queued && ! is_array($this->kinds->definition($child->kind))) {
+                    throw new ResourceOperationException('operation.kind_unavailable', 'A waiting child kind is unavailable.', 409);
+                }
+                $ready = $ready && $child->status->terminal();
+            }
+            return $ready;
+        } catch (ResourceOperationException $exception) {
+            if ($flagAssistance) {
+                $flag = ['error_code' => $exception->errorCode];
+                if (($parent->state['executor_assistance'] ?? null) !== $flag) {
+                    app(OperationStore::class)->change($parent, ['state' => [...($parent->state ?? []), 'executor_assistance' => $flag]]);
+                }
+            }
             return false;
         }
-        foreach ($wait as $tuple) {
-            if (! is_array($tuple) || ! is_string($tuple['key'] ?? null)) {
-                return false;
-            }
-            $child = $this->child($parent, $tuple['key']);
-            if ($child->id !== ($tuple['id'] ?? null) || $child->child_fingerprint !== ($tuple['fingerprint'] ?? null) || ! $child->status->terminal()) {
-                return false;
-            }
-        }
+    }
 
-        return true;
+    /** @return array<string,mixed> */
+    public function reentry(Operation $parent): array
+    {
+        $record = ValidatedData::object($parent->state['executor_wait'] ?? []);
+        $children = [];
+        foreach (is_array($record['children'] ?? null) ? $record['children'] : [] as $tuple) {
+            $child = $this->child($parent, ValidatedData::string($tuple['key']));
+            $children[] = [...$tuple, 'kind' => $child->kind, 'status' => $child->status->value, 'error_code' => $child->error_code,
+                'result' => $child->result === null ? null : $this->contract->result($child, $child->result)];
+        }
+        return [...$record, 'children' => $children];
     }
 
     public function assertNoPending(Operation $parent): void
