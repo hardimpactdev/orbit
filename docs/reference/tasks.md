@@ -1477,4 +1477,4 @@ A range-to-dist-tag change is refused. Archive names are not dist-tags. A constr
 
 Run receipts and input fingerprints store and hash only the unhydrated input, including the secret reference. Hydrated tokens never enter receipts, fingerprints or exception arguments. Swamp refreshes the private project configuration before an unproven merge invocation and refuses it when `dependencyAutoMerge` is off. A proven receipt still completes after disablement.
 
-Lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.
+The Gateway run is explicitly resumable: lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.

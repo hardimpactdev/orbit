@@ -19,7 +19,7 @@ return [
         'runs' => [[
             'transport' => 'gateway', 'name' => 'github.dependency-squash',
             'input_fields' => ['project_id', 'group_id', 'publish_operation_id', 'repository', 'default_branch', 'smoke_workflow', 'pr_number', 'head_sha', 'token'],
-            'input_values' => [], 'secrets' => ['token' => 'github.dependency_merge'],
+            'input_values' => [], 'secrets' => ['token' => 'github.dependency_merge'], 'resumable' => true,
         ]],
         'completion_contract' => ['step' => 'squash', 'transport' => 'gateway', 'name' => 'github.dependency-squash', 'result' => ['merged' => true]],
         'result_fields' => ['merged', 'head_sha', 'merge_sha', 'error_code'],
