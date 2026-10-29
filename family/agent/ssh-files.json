@@ -1,0 +1,23 @@
+{
+  "package": "@swamp/ssh",
+  "version": "2026.10.23.1",
+  "archive_sha256": "80d000d7ff71ee7b14cfd91add03458f08caa1a2cb2cf07e8f38647ea4c33dd2",
+  "files_sha256": {
+    "files/LICENSE.txt": "11a174ff15fcbc0565299b2825d8f45cc62efe81ed5a8c655921529e4c3180cf",
+    "files/README.md": "99afbed91c198f11289a986091893d61bc8d89f518441ca72de4b485bb4e95bb",
+    "manifest.yaml": "da484d2ec7de935c2ba81875b01252caaeead22c89e6243463235160e4ae1889",
+    "models/_lib/checks.ts": "fbc2fa2deb1f9b8a2f70beee84156e08c03ddba3916105b93c21df6ef6ffb52a",
+    "models/_lib/cidr.ts": "8effa78825bf5829322aa8fb4ece1faca95d50171eed7788b446ed5219c5d192",
+    "models/_lib/control_master.ts": "0a3a9166dd87c43ab91a4830a184e6bf702bba161c69adadd5aef5f0d2fc5717",
+    "models/_lib/forwarding.ts": "63616615900641d7e39c1b2acfc100282052cdb1ccf872276d6ef3cd23a5ba57",
+    "models/_lib/hex.ts": "49407cc3d6c47e76045ab49e97618c6a8a222740435447d5aa26d9b7c03218ed",
+    "models/_lib/host_keys.ts": "e7ec9c0f3d838dd39ad8c82b91607f96e5a1df054dd75f418f9c6a3d9293b81b",
+    "models/_lib/hosts.ts": "d33e58f7ce8dbc627db91fc00326b122d7f643d6de7f0fbfdf10a75013ce91da",
+    "models/_lib/identities.ts": "0d51932f10e03d566ab03d208bc414e1bc45599aa95fd9bf3319b0ed4cefc9d5",
+    "models/_lib/operations.ts": "3b6482435a652c22093c34b0840a0e41c9e08fbaeb53b958d6b01ed184fe392f",
+    "models/_lib/runner.ts": "48969967bfaae2c1c1dd9c95dc32f5fe028c3ce528b135268ac4aa032f85a567",
+    "models/_lib/schemas.ts": "599cd5fc188f3865c6a7f8c2a2ce3017bbc3120376d71a506112acc958804acf",
+    "models/_lib/selectors.ts": "66695850fc92cdec458edf072376f76608b9655dde6560753f5aa09a861a9c09",
+    "models/ssh.ts": "9bf602decab11f93d3d8a216b458c2d35cb4375d7c21bc6d2c70d16ba823e2da"
+  }
+}

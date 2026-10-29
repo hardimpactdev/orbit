@@ -1,0 +1,28 @@
+{
+  "@swamp/ssh": {
+    "version": "2026.10.23.1",
+    "pulledAt": "2026-10-29T20:54:25.168Z",
+    "files": [
+      ".swamp/pulled-extensions/@swamp/ssh/files/LICENSE.txt",
+      ".swamp/pulled-extensions/@swamp/ssh/files/README.md",
+      ".swamp/pulled-extensions/@swamp/ssh/manifest.yaml",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/checks.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/cidr.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/control_master.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/forwarding.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/hex.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/host_keys.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/hosts.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/identities.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/operations.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/runner.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/schemas.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/_lib/selectors.ts",
+      ".swamp/pulled-extensions/@swamp/ssh/models/ssh.ts"
+    ],
+    "checksum": "80d000d7ff71ee7b14cfd91add03458f08caa1a2cb2cf07e8f38647ea4c33dd2",
+    "filesChecksum": "7787dc82d9c89d16c3dbd25667940dbf40f9a8b134d108415f83ce8c3481c569",
+    "serverUrl": "https://swamp-club.com",
+    "publishedChannel": "stable"
+  }
+}

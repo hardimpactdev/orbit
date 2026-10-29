@@ -4,7 +4,9 @@
 reviewed YAML or JSON spec. This first slice is additive and inactive. No
 current family loads these artifacts. The paired Gateway artifact loader checks
 release pins and registered names. Shared admission/completion adapters, the
-control-worker allowlist and typed SSH method still follow before adoption.
+control-worker allowlist and registered typed SSH method still follow before
+adoption. The [typed SSH factory](typed-agent.md) is implemented separately and
+remains unregistered until those adapters and command contracts land.
 
 The compiler emits `workflow.yaml` and `contract.json` into a new build
 directory. It preserves the workflow ID assigned by `swamp workflow create`.
