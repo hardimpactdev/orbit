@@ -709,3 +709,75 @@ it('removes one target from a public clustered production Route and reports reta
         ->and($this->removalSource->calls)
         ->toBeEmpty();
 });
+
+function create_app_prod_node(string $name, ?string $tld = 'test'): Node
+{
+    $addressSuffix = Node::query()->count() + 30;
+    $nodeTld = $tld === 'test' ? "{$name}.test" : $tld;
+    $node = Node::query()->create([
+        'name' => $name,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'tld' => $nodeTld,
+        'public_ssh_host' => "192.0.2.{$addressSuffix}",
+        'wireguard_ip' => "10.44.1.{$addressSuffix}",
+        'user' => 'orbit',
+    ]);
+    $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+
+    return $node->refresh();
+}
+
+/** @return array{Instance, Route} */
+function seed_active_production_app_instance(
+    Project $project,
+    Node $node,
+    string $name,
+    ?string $domain = null,
+    ?string $root = null,
+    ?string $branchOverride = null,
+    bool $flatHome = false,
+): array {
+    $user = "orbit-app-{$project->id}";
+    $home = "/home/{$user}";
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => $name,
+        'environment' => 'production',
+        'source_layout' => InstanceSourceLayout::Checkout->value,
+        'checkout_path' => $flatHome ? $home : "{$home}/releases/initial",
+        'production_user' => $user,
+        'production_home' => $home,
+        'root' => $root,
+        'branch' => $branchOverride ?? $project->default_branch,
+        'branch_override' => $branchOverride,
+        'starting_commit' => str_repeat('b', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => false,
+        'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
+        'production_php_pool' => "orbit-{$user}",
+        'production_php_socket' => "/run/php/{$user}.sock",
+        'provisioning_step' => 'active',
+        'status' => InstanceState::Active,
+    ]);
+    $resolvedHostname = $domain ?? "{$name}.{$project->slug}.{$node->tld}";
+    $generated = $domain === null;
+    $route = Route::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'generation_basis_node_id' => $generated ? $node->id : null,
+        'domain' => $resolvedHostname,
+        'provenance' => $generated ? RouteProvenance::Generated : RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create([
+        'instance_id' => $instance->id,
+        'position' => 0,
+    ]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return [$instance->refresh(), $route->refresh()];
+}
+

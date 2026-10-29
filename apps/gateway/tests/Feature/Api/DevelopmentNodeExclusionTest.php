@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
