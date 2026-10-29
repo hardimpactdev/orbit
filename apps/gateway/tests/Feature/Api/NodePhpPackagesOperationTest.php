@@ -244,3 +244,22 @@ it('fails malformed installer data or unexpected outcomes and releases the compo
     expect($operation->refresh()->status->value)->toBe('failed')
         ->and(Operation::findOrFail($operation->parent_operation_id)->lock_key)->toBeNull();
 })->with([[null], ['not-an-array'], [['stale_masters' => 'not-a-list']], [['deferred' => ['bad' => 'map']]], [[], 'planned']]);
+
+it('reuses a proven installer receipt after the admission deadline without dispatching again', function (): void {
+    $node = FleetFixtures::node('receipt-packages', [RoleName::AppProd]);
+    $operation = phpPackagesChild($this, $node);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('php.install-build', PhpBuildAnswers::result());
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
+    $path = "/api/v1/operation-executor/{$operation->id}";
+    $run = ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']];
+    $result = $this->postJson($path.'/run', $run)->assertOk()->json('data');
+    $this->travel(121)->seconds();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'recovery', 'operation_id' => $operation->id])->assertOk()->assertJsonPath('data.id', $operation->id);
+
+    $this->postJson($path.'/run', [...$run, 'worker' => 'recovery'])->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($path.'/step', ['worker' => 'recovery', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'recovery', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($agents->calls)->toHaveCount(1);
+});
