@@ -100,6 +100,34 @@ final readonly class RemotePhpPackageManager
         $this->runInstaller($node, array_values($versions->all()), self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none', opentelemetry: $this->opentelemetry($node));
     }
 
+    public function packagesOnlyRecipeRevision(): string
+    {
+        return hash('sha256', ($this->recipe ?? new RecipeLoader()->load())->canonicalJson);
+    }
+
+    /**
+     * Immutable package-only input for the Node child Operation. It never restarts an FPM master.
+     *
+     * @param  list<string>  $versions
+     * @return array<string, mixed>
+     */
+    public function packagesOnlyInputForAppProd(Node $node, array $versions): array
+    {
+        $recipe = $this->recipe ?? new RecipeLoader()->load();
+        foreach ($versions as $version) {
+            if (! isset($recipe->php[$version])) {
+                throw new RuntimeConvergenceException(
+                    step: self::APP_PROD_FAILURE_CONTRACT['source_step'],
+                    errorCode: self::APP_PROD_FAILURE_CONTRACT['source_error'],
+                    message: "The machine software recipe has no PHP {$version} build.",
+                );
+            }
+        }
+
+        return PhpBuildInstaller::input($recipe, $versions, $this->pcov($node), extras: 'keep', fpm: 'none',
+            opentelemetry: $this->opentelemetry($node), release: $this->release(RoleName::AppProd));
+    }
+
     /**
      * The programs that install the `app-dev` PHP build of `$versions` on an `app-dev` Node, as
      * {@see self::installForAppDev()} runs them: the installer first, then the runtime module of each version.
