@@ -141,7 +141,7 @@ describe(VpToolManager::class, function (): void {
         expect($agent->commands())->toBe(['tool.vp-inventory', 'tool.vp-inventory']);
     });
 
-    it('compares project locks with a newer recipe manager for Doctor without a command', function (): void {
+    it('admits older project locks with a newer recipe manager without upgrading', function (): void {
         [$manager, $agent] = vp_tool_manager();
 
         expect($manager->versionSatisfies('vp v1.4.0', '1.2.0'))->toBeTrue();
@@ -151,7 +151,7 @@ describe(VpToolManager::class, function (): void {
         expect($agent->commands())->toBe([]);
     });
 
-    it('compares observed recipe versions for Doctor without upgrading', function (): void {
+    it('gates project requirements against the observed recipe manager without upgrading', function (): void {
         [$manager, $agent] = vp_tool_manager();
 
         expect($manager->versionSatisfies('vp v0.3.3', '0.3.3'))->toBeTrue();
