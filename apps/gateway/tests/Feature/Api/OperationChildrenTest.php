@@ -6,6 +6,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationAttemptLease;
+use App\Domain\Operations\OperationCancelGuard;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationCompletion;
@@ -24,6 +25,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 final class ChildKitFamily implements OperationCompletion, OperationFamilyChildren, OperationFamilyExecution
 {
@@ -57,6 +59,20 @@ final class ChildKitFamily implements OperationCompletion, OperationFamilyChildr
     }
 
     public function complete(Operation $operation, OperationOutcome $outcome): void {}
+}
+
+final class ChildKitCancelGuard implements OperationCancelGuard
+{
+    public array $seen = [];
+
+    public function assertCancellable(Operation $operation): void
+    {
+        $this->seen[$operation->id] = ['transaction' => DB::transactionLevel(),
+            'cancelled' => Operation::query()->whereNotNull('cancel_requested_at')->count()];
+        if ($operation->steps()->where('name', 'transfer-cutover')->where('status', 'succeeded')->exists()) {
+            throw new ResourceOperationException('operation.cancel_refused', 'The cutover has succeeded.', 409);
+        }
+    }
 }
 
 final class ChildKitAdmission implements OperationChildAdmission
@@ -849,4 +865,63 @@ it('refuses a settled child whose admitted intent differs from the recorded plan
     $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'input' => [...$this->intent['input'], 'removed_node_id' => 999]]]]]);
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => []]])
         ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+});
+
+function childKitCancelGuard($test): ChildKitCancelGuard
+{
+    $guard = new ChildKitCancelGuard;
+    app()->instance(ChildKitCancelGuard::class, $guard);
+    $test->parentSpec['cancel_guard'] = ChildKitCancelGuard::class;
+    $test->childSpec['cancel_guard'] = ChildKitCancelGuard::class;
+    ($test->register)();
+
+    return $guard;
+}
+
+it('allows a guarded cancel only after checking the root and child before any write', function (): void {
+    $guard = childKitCancelGuard($this);
+    $child = childKitAdmit($this);
+    $this->call('POST', '/api/v1/operations/'.$this->parent->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
+    expect(array_keys($guard->seen))->toBe([$this->parent->id, $child->id]);
+    foreach ($guard->seen as $seen) {
+        expect($seen['transaction'])->toBeGreaterThan(0)->and($seen['cancelled'])->toBe(0);
+    }
+    expect($this->parent->refresh()->cancel_requested_at)->not->toBeNull()
+        ->and($child->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and(OperationKinds::supports('cancel_guard'))->toBeTrue();
+});
+
+it('refuses guarded cancellation from recorded proof without changing the tree', function (string $member): void {
+    $guard = childKitCancelGuard($this);
+    $child = childKitAdmit($this);
+    $blocked = $member === 'root' ? $this->parent : $child;
+    if ($member === 'grandchild') {
+        $blocked = app(StartOperationAction::class)->execute('test.effect', 'node', $this->peer->id, $this->peer->id, [], 'test', null);
+        $blocked->forceFill(['parent_operation_id' => $child->id])->save();
+    }
+    $blocked->steps()->create(['position' => 1, 'name' => 'transfer-cutover', 'status' => 'succeeded', 'sequence' => 0, 'resumable' => false]);
+    $before = Operation::query()->orderBy('id')->get()->map->getAttributes()->all();
+    $this->call('POST', '/api/v1/operations/'.$this->parent->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertConflict()->assertJsonPath('error.code', 'operation.cancel_refused');
+    expect(Operation::query()->orderBy('id')->get()->map->getAttributes()->all())->toBe($before)
+        ->and($guard->seen[$blocked->id]['transaction'])->toBeGreaterThan(0)
+        ->and($guard->seen[$blocked->id]['cancelled'])->toBe(0);
+})->with(['root', 'child', 'grandchild']);
+
+it('does not consult guards when cancelling a terminal Operation', function (): void {
+    $guard = childKitCancelGuard($this);
+    $this->parent->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
+    $this->parent->steps()->create(['position' => 1, 'name' => 'transfer-cutover', 'status' => 'succeeded', 'sequence' => 0, 'resumable' => false]);
+    $before = $this->parent->refresh()->getAttributes();
+    $this->call('POST', '/api/v1/operations/'.$this->parent->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
+    expect($guard->seen)->toBe([])->and($this->parent->refresh()->getAttributes())->toBe($before);
+});
+
+it('allows parent cancellation when a terminal child no longer needs its guard', function (): void {
+    $guard = childKitCancelGuard($this);
+    $child = childKitAdmit($this);
+    childKitFinish($this, $child);
+    $child->steps()->create(['position' => 2, 'name' => 'transfer-cutover', 'status' => 'succeeded', 'sequence' => 0, 'resumable' => false]);
+    $this->call('POST', '/api/v1/operations/'.$this->parent->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
+    expect(array_keys($guard->seen))->toBe([$this->parent->id])->and($this->parent->refresh()->cancel_requested_at)->not->toBeNull()
+        ->and($child->refresh()->status)->toBe(OperationStatus::Succeeded);
 });

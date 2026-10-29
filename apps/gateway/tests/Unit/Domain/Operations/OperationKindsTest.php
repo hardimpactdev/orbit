@@ -3,9 +3,13 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
+use App\Domain\Operations\OperationCancelGuard;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\TaskPublishOperation;
 use Illuminate\Container\Container;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 describe(OperationKinds::class, function (): void {
     it('names every kind and target type in the form that the list filters accept', function (): void {
@@ -141,3 +145,10 @@ it('refuses archive relay kinds whose execution class cannot bind the source', f
     expect(fn () => new OperationKinds(new Container, ['test.relay' => $definition]))
         ->toThrow(LogicException::class, 'OperationFamilyArchiveRelay');
 });
+
+it('rejects invalid cancel guard registrations at kind loading', function (mixed $guard): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['cancel_guard'] = $guard;
+    expect(fn () => new OperationKinds(new Container, ['test.guarded' => $definition]))
+        ->toThrow(LogicException::class, 'OperationCancelGuard');
+})->with([[null], [true], [stdClass::class], ['MissingCancelGuard'], [OperationCancelGuard::class]]);

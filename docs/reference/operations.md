@@ -233,6 +233,8 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 `operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A waiting operation calls its current step’s stop hook at once and becomes `cancelled` only after the hook confirms the stop. Orbit records the cancel request before calling the hook. When the hook cannot confirm the stop, the request answers with that step’s error, such as HTTP 502. The operation and step stay `waiting`, keep the target, and retry the stop on the next delayed read.
 
+A Swamp kind may declare `cancel_guard: GuardClass`, implementing `OperationCancelGuard::assertCancellable(Operation): void`. The Gateway checks the root and every nonterminal descendant under the parent lock in the cancel transaction, before recording a cancel or changing any child. Guards read Gateway-recorded proof only and perform no effects. A typed refusal, such as `operation.cancel_refused` with HTTP 409, leaves the whole tree unchanged. Terminal Operations remain unchanged without invoking a guard. Kind loading rejects an invalid guard class; `OperationKinds::supports("cancel_guard")` reports this capability.
+
 When a waiting `tasks.publish` has started its push, cancellation is deferred without an error. It returns the waiting record and keeps the group held until the job records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
 A running operation finishes its running step, starts no further step, and becomes `cancelled`. The steps it did not reach become `cancelled`. A cancel request for a terminal operation changes nothing and returns the record.
