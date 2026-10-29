@@ -222,9 +222,10 @@ final readonly class OperationExecutionContract
      */
     public function assertStep(Operation $operation, string $name, array $result): void
     {
+        $result = $this->canonicalStepResult($operation, $name, $result);
         if ($this->execution($operation) !== null) {
             $proven = array_any(ValidatedData::object($operation->state['executor_runs'] ?? []), fn ($receipt) => is_array($receipt) && ($receipt['step'] ?? null) === $name && is_array($receipt['result'] ?? null)
-                && ! isset($receipt['result']['error_code']) && $this->same($receipt['result'], $result));
+                && ! isset($receipt['result']['error_code']) && $this->same($this->canonicalStepResult($operation, $name, ValidatedData::object($receipt['result'])), $result));
             if (! $proven) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The descriptor step has no matching keyed transport receipt.', 409);
             }
@@ -238,6 +239,9 @@ final readonly class OperationExecutionContract
                 continue;
             }
             $recorded = $run['result'] ?? null;
+            if (is_array($recorded) && ! isset($recorded['error_code'])) {
+                $recorded = $this->canonicalStepResult($operation, $name, ValidatedData::object($recorded));
+            }
             if (is_array($recorded) && ! isset($recorded['error_code'])
                 && $this->same(Arr::only($recorded, array_keys($contract['result'])), $contract['result'])
                 && $this->same($recorded, $result)) {
@@ -263,11 +267,24 @@ final readonly class OperationExecutionContract
         }
         $steps = ValidatedData::object($operation->state['steps'] ?? []);
         $stepResult = $steps[$contract['step']] ?? null;
-        if (! is_array($stepResult) || ! $this->same($stepResult, $result)
+        if (! is_array($stepResult) || ! $this->same($this->canonicalStepResult($operation, $contract['step'], ValidatedData::object($stepResult)), $result)
             || ! $operation->steps()->where('name', $contract['step'])->where('status', OperationStepStatus::Succeeded->value)->exists()) {
             throw new ResourceOperationException('operation.completion_unproven', 'A successful Node step is required.', 409);
         }
         $this->assertStep($operation, $contract['step'], $result);
+    }
+
+    /** Only the final settled-child proof may replace redacted public child identifiers with verified metadata.
+     * @param  array<string,mixed>  $result
+     * @return array<string,mixed>
+     */
+    private function canonicalStepResult(Operation $operation, string $name, array $result): array
+    {
+        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+
+        return ($contract['step'] ?? null) === $name && isset($contract['children_settled'])
+            ? $this->completionResult($operation, $result, true)
+            : $result;
     }
 
     /** @param array<string,mixed> $result */
