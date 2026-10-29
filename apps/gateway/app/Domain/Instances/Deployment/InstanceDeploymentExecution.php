@@ -14,10 +14,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -34,7 +32,6 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         private InstanceDeploymentGuards $guards,
         private InstanceDeploymentRecorder $recorder,
         private OperationStore $operations,
-        private AgentCommandRunner $agents,
         private InstanceVpEnvironmentMaterial $vp,
         private InstanceDeploymentBudget $budget,
         private OperationChildren $children,
@@ -42,6 +39,10 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
 
     public function context(Operation $operation): array
     {
+        if (InstanceDeploymentIntent::legacy($operation)) {
+            return ['descriptors' => [], 'result' => $this->result($operation)];
+        }
+
         return ['descriptors' => $this->descriptors($operation), 'result' => $this->result($operation)];
     }
 
@@ -173,6 +174,9 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
 
     public function childContext(Operation $parent): array
     {
+        if (InstanceDeploymentIntent::legacy($parent)) {
+            return ['intent' => [], 'children' => []];
+        }
         $eligible = [];
         foreach ($this->childPlan($parent) as $child) {
             try {
@@ -321,13 +325,19 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         return $receipt;
     }
 
-    /** Pure reads determine the public identity; success still requires every effect receipt.
+    /** Proven receipts determine the public identity without requiring a reachable Node.
      * @return array{deployment_id:int,release:?string,selected_release:?string,commit:?string}|array{}
      */
     public function result(Operation $operation): array
     {
         if (! isset($operation->state['deployment_id'])) {
             return [];
+        }
+        if (InstanceDeploymentIntent::legacy($operation)) {
+            $row = InstanceDeployment::query()->where('instance_id', $operation->target_id)->find(ValidatedData::integer($operation->state['deployment_id']));
+
+            return $row === null ? [] : ['deployment_id' => $row->id, 'release' => null,
+                'selected_release' => null, 'commit' => $row->commit];
         }
         $candidate = $this->candidate($operation);
         $selected = InstanceDeploymentIntent::admitted($operation)['variant'] === 'development' ? null : $this->selected($operation);
@@ -342,6 +352,13 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         $result = $this->result($operation);
         if ($outcome->result !== $result) {
             throw $this->unproven();
+        }
+        if (InstanceDeploymentIntent::legacy($operation)) {
+            if ($outcome->status !== OperationStatus::Failed || $outcome->errorCode !== 'deployment.interrupted') {
+                throw $this->unproven();
+            }
+
+            return;
         }
         if ($outcome->status !== OperationStatus::Succeeded) {
             return;
@@ -364,6 +381,15 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         if ($row === null || $row->status !== 'running') {
             return;
         }
+        if (InstanceDeploymentIntent::legacy($operation)) {
+            if ($row->instance_id !== $operation->target_id) {
+                throw $this->unproven();
+            }
+            $this->recorder->finish($row, DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation,
+                'deployment.interrupted', commit: $row->commit), $row->events ?? []);
+
+            return;
+        }
         $candidate = InstanceDeploymentIntent::storedRelease($this->candidate($operation));
         $instance = Instance::query()->findOrFail($operation->target_id);
         $development = InstanceDeploymentIntent::admitted($operation)['variant'] === 'development';
@@ -383,6 +409,9 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
 
     public function cancellationBoundary(Operation $operation): ?array
     {
+        if (InstanceDeploymentIntent::legacy($operation)) {
+            return null;
+        }
         $candidate = $this->candidate($operation);
 
         return $candidate === null || InstanceDeploymentIntent::admitted($operation)['variant'] === 'development' ? null : [
@@ -460,9 +489,8 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
 
     private function selected(Operation $operation): ?DeploymentRelease
     {
-        $receipt = $this->agents->run(Node::query()->findOrFail($operation->node_id), 'instance.inspect-release', $this->home($operation));
-
-        return InstanceDeploymentIntent::storedRelease($this->release($operation, $receipt['release'] ?? null));
+        return InstanceDeploymentIntent::provenActivation($operation)
+            ?? InstanceDeploymentIntent::storedRelease($this->previous($operation));
     }
 
     /** @return array{name:string,path:string,commit:string}|null */

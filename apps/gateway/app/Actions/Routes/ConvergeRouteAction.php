@@ -10,6 +10,7 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\Environment\InstanceRouteExecutionCutover;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteDomain;
@@ -60,6 +61,7 @@ final readonly class ConvergeRouteAction
         ?RoutePlacement $placement = null,
         bool $deferPlacementWithdrawal = false,
     ): Route {
+        InstanceRouteExecutionCutover::assertRoute($route);
         if ($route->isAnalyticsTracking() && $placement instanceof RoutePlacement) {
             return $this->convergeTrackingPlacement($route, $placement, $deferPlacementWithdrawal);
         }
@@ -109,6 +111,7 @@ final readonly class ConvergeRouteAction
         $routeList = [];
 
         foreach ($routes as $route) {
+            InstanceRouteExecutionCutover::assertRoute($route);
             $routeList[] = $route;
         }
 
@@ -1285,6 +1288,7 @@ final readonly class ConvergeRouteAction
      */
     public function withdrawReplacement(Route $replacement, array $skipped = [], ?Closure $beforeStep = null): Route
     {
+        InstanceRouteExecutionCutover::assertRoute($replacement);
         $targetIds = $this->targetIds($replacement);
 
         return $this->owned($targetIds, function () use ($replacement, $targetIds, $skipped, $beforeStep): Route {

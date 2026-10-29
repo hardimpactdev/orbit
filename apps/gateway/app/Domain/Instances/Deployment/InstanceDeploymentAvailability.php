@@ -6,10 +6,41 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
+use LogicException;
 
 /** Never admit a deploy that cannot compose its required owning-family children. */
 final class InstanceDeploymentAvailability
 {
+    /**
+     * Release gate: deleting the PHP executor requires all production callers and child contracts.
+     *
+     * @param  array<string,mixed>|null  $definitions
+     */
+    public static function assertReleaseReady(?array $definitions = null): void
+    {
+        $definitions ??= OperationKinds::definitions();
+        $required = ['instance.deploy', 'instance.rollback', 'instance.synchronize_environment', 'instance.clone'];
+        foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime'] as $kind) {
+            $definition = $definitions[$kind] ?? [];
+            if (is_array($definition)) {
+                $children = $definition['children'] ?? [];
+                if (! is_array($children)) {
+                    throw new LogicException('Invalid deployment children.');
+                }
+                foreach ($children as $child) {
+                    if (! is_array($child) || ! is_string($child['kind'] ?? null)) {
+                        throw new LogicException('Invalid deployment child kind.');
+                    }
+                    $required[] = $child['kind'];
+                }
+            }
+        }
+        $missing = array_values(array_filter(array_unique($required), static fn (string $kind): bool => ! is_array($definitions[$kind] ?? null) || ($definitions[$kind]['executor'] ?? null) !== 'swamp'));
+        if ($missing !== []) {
+            throw new LogicException('Instance deployment cutover requires Swamp kinds: '.implode(', ', $missing).'.');
+        }
+    }
+
     /** @param array<string,mixed> $intent */
     public static function assertAvailable(array $intent): void
     {

@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
 use App\Domain\Operations\OperationRegistryCheck;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -12,6 +13,7 @@ try {
     $app = require __DIR__.'/../apps/gateway/bootstrap/app.php';
     $app->make(Kernel::class)->bootstrap();
     $count = $app->make(OperationRegistryCheck::class)->execute();
+    InstanceDeploymentAvailability::assertReleaseReady();
     fwrite(STDOUT, "Operation registry valid: {$count} kinds.\n");
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception::class.': '.$exception->getMessage()."\n");

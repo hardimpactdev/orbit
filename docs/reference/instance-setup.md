@@ -92,6 +92,8 @@ The checkout's `.git/config` is not trusted. The operator writes it, and so does
 
 Swamp executes each Project setup or teardown list as an `instance.run_steps` Operation. The Gateway keeps list configuration, validates its immutable digest and target, and records proven receipts. `instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. A create or removal parent owns its rollback policy.
 
+Client migration: older MCP, SDK and CLI clients expect a synchronous setup result. Update them to follow the returned Operation. A retained Gateway caller waits for at most 120 seconds. If that wait ends first, `operation.await_timeout` reports `outcome: unconfirmed` and the Operation ID. Setup continues; the caller keeps the Instance and does not start rollback or removal.
+
 A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
 `instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies. Setup steps receive two variables:

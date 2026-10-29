@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceRouteExecutionCutover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
@@ -73,12 +74,15 @@ final readonly class CreateRouteAction
     /** @return array{route: Route, created: bool} */
     public function execute(CreateRouteData $data): array
     {
+        InstanceRouteExecutionCutover::assertInstances($data->instanceId === null ? [] : [$data->instanceId]);
+
         return $this->withProcessLease($data, fn (): array => $this->run($data));
     }
 
     /** @return array{route: Route, created: bool} */
     public function executeForRouteCreate(CreateRouteData $data): array
     {
+        InstanceRouteExecutionCutover::assertInstances($data->instanceId === null ? [] : [$data->instanceId]);
         if ($data->isCustomProxy()) {
             return $this->withProcessLease($data, fn (): array => ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(fn (): array => $this->run($data)));
         }

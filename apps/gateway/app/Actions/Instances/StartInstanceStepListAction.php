@@ -58,7 +58,15 @@ final readonly class StartInstanceStepListAction
 
     public function await(Operation $operation): Operation
     {
-        $finished = app(AwaitOperation::class)->execute($operation, 120);
+        try {
+            $finished = app(AwaitOperation::class)->execute($operation, 120);
+        } catch (ResourceOperationException $failure) {
+            if ($failure->errorCode !== 'operation.await_timeout') {
+                throw $failure;
+            }
+            throw new ResourceOperationException($failure->errorCode, $failure->getMessage(), $failure->status,
+                previous: $failure, details: [...$failure->details, 'outcome' => 'unconfirmed']);
+        }
         if ($finished->status !== OperationStatus::Succeeded) {
             $result = $finished->result ?? [];
             throw new ResourceOperationException($finished->error_code ?? 'instance.lifecycle_unconfirmed',
