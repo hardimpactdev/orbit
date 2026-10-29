@@ -103,7 +103,7 @@ final readonly class StartToolOperationAction
             if (! str_starts_with($error->errorCode, 'tool.')) {
                 throw $error;
             }
-            $toolId = ($selected?->id) ?? Tool::query()->where('node_id', $nodeId)->where('package', $package)
+            $toolId = $selected->id ?? Tool::query()->where('node_id', $nodeId)->where('package', $package)
                 ->whereHas('manager', static fn ($query) => $query->where('name', $managerName))->value('id');
             throw new ToolOperationException(
                 step: $verb, errorCode: $error->errorCode,
