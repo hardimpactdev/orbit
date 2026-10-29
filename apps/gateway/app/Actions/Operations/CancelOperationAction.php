@@ -31,6 +31,7 @@ final readonly class CancelOperationAction
             if ($operation->status->terminal()) {
                 return;
             }
+            $this->assertCancellableTree($operation);
             $now = Carbon::now();
             $descendants = [];
             $cancelled = clone $operation;
@@ -76,6 +77,22 @@ final readonly class CancelOperationAction
         }
 
         return $operation->refresh();
+    }
+
+    private function assertCancellableTree(Operation $operation): void
+    {
+        $executors = app(OperationExecutors::class);
+        $frontier = [$operation];
+        while ($frontier !== []) {
+            $ids = [];
+            foreach ($frontier as $member) {
+                if (! $member->status->terminal()) {
+                    $executors->cancelGuard($member->kind)?->assertCancellable($member);
+                }
+                $ids[] = $member->id;
+            }
+            $frontier = Operation::query()->whereIn('parent_operation_id', $ids)->orderBy('id')->lockForUpdate()->get()->all();
+        }
     }
 
     /** Abandoned admissions cannot execute or project, but must release their own holds. */

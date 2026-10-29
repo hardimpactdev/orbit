@@ -16,6 +16,14 @@ final readonly class OperationExecutors
         return is_array($this->kinds->definition($kind));
     }
 
+    public function cancelGuard(string $kind): ?OperationCancelGuard
+    {
+        $definition = $this->kinds->definition($kind);
+        $class = is_array($definition) ? ($definition['cancel_guard'] ?? null) : null;
+
+        return $class === null ? null : app($class);
+    }
+
     public function completion(string $kind): ?OperationCompletion
     {
         $definition = $this->kinds->definition($kind);

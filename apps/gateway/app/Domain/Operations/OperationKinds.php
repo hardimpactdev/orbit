@@ -87,9 +87,14 @@ final readonly class OperationKinds
     /** @param array<string, mixed> $definition */
     private static function validateDefinition(string $kind, array $definition): void
     {
-        self::assertKeys($kind, 'kind', $definition, ['executor', 'completion', 'execution', 'runs', 'completion_contract', 'result_fields', 'children', 'admission', 'compensations', 'cancellation_boundary']);
+        self::assertKeys($kind, 'kind', $definition, ['executor', 'completion', 'execution', 'runs', 'completion_contract', 'result_fields', 'children', 'admission', 'compensations', 'cancellation_boundary', 'cancel_guard']);
         if (($definition['executor'] ?? null) !== 'swamp' || ! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'] ?? null)) {
             throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
+        }
+        if (array_key_exists('cancel_guard', $definition) && (! self::supports('cancel_guard')
+            || ! is_string($definition['cancel_guard']) || ! class_exists($definition['cancel_guard'])
+            || ! is_a($definition['cancel_guard'], OperationCancelGuard::class, true))) {
+            throw new LogicException("Operation kind [{$kind}] requires an OperationCancelGuard class.");
         }
         self::validateChildren($kind, $definition);
         if (array_key_exists('compensations', $definition) || array_key_exists('cancellation_boundary', $definition)) {
@@ -188,7 +193,7 @@ final readonly class OperationKinds
      */
     public static function supports(string $capability): bool
     {
-        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations', 'secret_outputs', 'archive_relay'], true);
+        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations', 'secret_outputs', 'archive_relay', 'cancel_guard'], true);
     }
 
     public static function executor(string $kind): string
