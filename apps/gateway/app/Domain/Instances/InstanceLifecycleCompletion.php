@@ -63,8 +63,13 @@ final readonly class InstanceLifecycleCompletion implements OperationCompletion
             }
         }
         if ($operation->kind === 'instance.transfer') {
-            InstanceTransfer::query()->whereKey($operation->input['transfer_id'])->update([
+            $pending = $outcome->status === OperationStatus::Cancelled
+                && app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation);
+            $transfer = InstanceTransfer::query()->findOrFail(ValidatedData::string($operation->input['transfer_id']));
+            $transfer->update([
                 'status' => InstanceTransferStatus::Failed, 'error_code' => $code,
+                ...($pending ? ['recovery_evidence' => [...($transfer->recovery_evidence ?? []),
+                    'rollback_pending' => true, 'capture_pending' => true, 'transfer_operation_id' => $operation->id]] : []),
             ]);
         }
     }

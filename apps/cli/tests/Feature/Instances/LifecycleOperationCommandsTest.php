@@ -11,6 +11,7 @@ use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
@@ -54,5 +55,6 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'clone' => ['instance:clone', CloneInstanceRequest::class, ['candidate' => 501, 'node' => 10, 'name' => 'prod', '--preview-name' => 'preview'],
         ['node_id' => 10, 'name' => 'prod', 'preview_name' => 'preview']],
     'rename' => ['instance:rename', RenameInstanceRequest::class, ['instance' => 501, '--branch' => 'feature'], ['branch' => 'feature']],
+    'transfer' => ['instance:transfer', TransferInstanceRequest::class, ['instance' => 501, 'node' => 10, '--force' => true], ['node_id' => 10]],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
 ]);

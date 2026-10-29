@@ -28,6 +28,11 @@ final readonly class InstanceLifecycleState
         $instance = Instance::query()->with(['project', 'node'])->findOrFail(ValidatedData::integer($operation->input['instance_id']));
         $nodeId = $operation->node_id;
         $checkout = $operation->input['checkout'] ?? null;
+        if (in_array($operation->kind, ['instance.transfer', 'instance.transfer_destination'], true)) {
+            $transfer = app(InstanceTransferState::class)->transfer($operation);
+            $nodeId = $transfer->cutover_at === null ? $transfer->source_node_id : $transfer->destination_node_id;
+            $checkout = $transfer->cutover_at === null ? $transfer->source_path : $transfer->destination_path;
+        }
         if ($instance->node_id !== $nodeId
             || $checkout !== null && $instance->checkout_path !== $checkout
             || isset($operation->input['project_id']) && $instance->project_id !== $operation->input['project_id']
