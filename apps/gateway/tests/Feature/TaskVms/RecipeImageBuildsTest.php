@@ -3,13 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
@@ -106,6 +110,40 @@ it('records one immutable Swamp image Operation and reuses unchanged intent', fu
     expect($operation->target_id)->toBe($first->id)->and($operation->node_id)->toBe($host->id);
     expect($operation->input['recipe'])->toBeString();
     expect($operation->input['generation'])->toBe($first->recipe_generation);
+});
+
+it('keeps image boot observations pending until the matching guest agent installation is proven', function (bool $smoke, bool $seed): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    app(RecipeImageBuilds::class)->reconcile();
+    $parent = Operation::query()->where('kind', 'task_vm.image_build')->sole();
+
+    expect(app(TaskVmImageRead::class)->boot($parent, $smoke, $seed))->toBe(['ready' => false, 'expired' => false]);
+    expect($incus->guestCalls)->toBe([]);
+})->with(['builder' => [false, false], 'smoke' => [true, false], 'seed' => [true, true]]);
+
+it('observes cloud init after a proven agent installation and preserves real bootstrap failures', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    app(RecipeImageBuilds::class)->reconcile();
+    $parent = Operation::query()->where('kind', 'task_vm.image_build')->sole();
+    $child = app(OperationChildren::class)->admit($parent, ['key' => 'builder-agent'])['operation'];
+    $executor = app(SwampOperationExecutor::class);
+    $child = $executor->claim($child->kind, 'builder-install', $host->id, $child->id);
+    $result = $executor->run($child, ['worker' => 'builder-install', 'key' => 'guest-install', 'transport' => 'task_vm_guest', 'name' => 'task_vm.guest',
+        'input' => ['command' => 'agent.install-guest', 'guest' => $child->input['guest'], 'parameters_json' => '{}']], $host->id);
+    $executor->step($child->fresh(), ['worker' => 'builder-install', 'key' => 'finish', 'name' => 'guest-install', 'status' => 'succeeded', 'result' => $result], $host->id);
+    $executor->complete($child->fresh(), ['worker' => 'builder-install', 'status' => 'succeeded', 'result' => $result], $host->id);
+
+    expect(app(TaskVmImageRead::class)->boot($parent->fresh(), false))->toBe(['ready' => true, 'expired' => false]);
+    expect(array_column($incus->guestCalls, 'command'))->toBe(['guest.cloud-init']);
+    expect(app(TaskVmImageRead::class)->boot($parent->fresh(), true))->toBe(['ready' => false, 'expired' => false]);
+    expect(app(TaskVmImageRead::class)->boot($parent->fresh(), true, true))->toBe(['ready' => false, 'expired' => false]);
+    expect(array_column($incus->guestCalls, 'command'))->toBe(['guest.cloud-init']);
+    $incus->fail = 'cloud-init';
+    expect(fn () => app(TaskVmImageRead::class)->boot($parent->fresh(), false))->toThrow(TaskVmException::class, 'Cloud-init failed');
 });
 
 it('fences an unowned running PHP image attempt and starts Swamp from stock', function (TaskVmImageBuildStep $step, ?string $program): void {
