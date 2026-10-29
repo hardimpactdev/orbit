@@ -63,6 +63,40 @@ final readonly class GatewayReleaseRecorder
         ]);
     }
 
+    /** Keep one queued candidate while its immutable published delivery is not available yet. */
+    public function queuePublication(string $sha): GatewayRelease
+    {
+        $record = GatewayRelease::publicationWaiting();
+        if ($record instanceof GatewayRelease && $record->requested === $sha) {
+            return $record;
+        }
+        $publication = $record?->publicationPhase() ?? [
+            'outcome' => 'waiting',
+            'since' => Carbon::now('UTC')->toIso8601String(),
+            'alerted' => false,
+        ];
+        $record ??= $this->queue('auto', $sha, $sha);
+        $record->forceFill([
+            'requested' => $sha,
+            'sha' => $sha,
+            'release_id' => GatewayReleaseCommit::id($sha),
+            'phases' => ['publication' => $publication],
+            'error_code' => null,
+            'message' => null,
+        ])->save();
+
+        return $record;
+    }
+
+    /** A manual release or an already-current target makes the pending candidate obsolete. */
+    public function supersedePublication(?int $except = null): void
+    {
+        $record = GatewayRelease::publicationWaiting();
+        if ($record instanceof GatewayRelease && $record->id !== $except) {
+            $record->forceFill(['outcome' => 'superseded'])->save();
+        }
+    }
+
     /**
      * Starts an attempt under the release lock: claims a queued record, or creates a running one.
      * Holding the lock proves that no other attempt runs, so a record still `running` belongs to a
@@ -75,6 +109,7 @@ final readonly class GatewayReleaseRecorder
             return null;
         }
 
+        $this->supersedePublication($record?->id);
         $this->settleDead($record?->id);
 
         if ($record instanceof GatewayRelease) {
@@ -122,6 +157,9 @@ final readonly class GatewayReleaseRecorder
             ->get();
 
         foreach ($records as $record) {
+            if ($record->awaitingPublication()) {
+                continue;
+            }
             if ($record->outcome === GatewayRelease::Queued) {
                 $young = $record->created_at !== null && $record->created_at->gt(Carbon::now()->subSeconds(self::QueuedStartSeconds));
 
@@ -147,7 +185,7 @@ final readonly class GatewayReleaseRecorder
     {
         $record->refresh();
 
-        if ($record->finished()) {
+        if ($record->finished() || $record->awaitingPublication()) {
             return false;
         }
 

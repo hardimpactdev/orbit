@@ -7,6 +7,7 @@ use App\Domain\Releases\ReleaseAlertKind;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use Illuminate\Support\Sleep;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
@@ -286,6 +287,124 @@ describe('gateway:release:auto', function (): void {
         $this->travel(11)->minutes();
 
         expect($this->pipeline->automatic()->execute()['result'])->toBe('released');
+    });
+
+    it('keeps unpublished delivery queued and releases the same record twenty seconds after publication', function (): void {
+        $deployed = $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $sha = $this->pipeline->green = $this->pipeline->fixture->commit('Publishing');
+        $this->pipeline->fixture->releaseAgent->available = false;
+
+        $tick = $this->pipeline->automatic()->execute();
+        $record = GatewayRelease::query()->sole();
+        expect($tick['result'])->toBe('waiting_for_agent_delivery')
+            ->and($tick['record'])->toBe($record->id)
+            ->and($tick['error_code'])->toBeNull()
+            ->and($record->outcome)->toBe(GatewayRelease::Queued)
+            ->and($record->error_code)->toBeNull()
+            ->and(GatewayRelease::failedShas())->toBe([])
+            ->and(Activity::query()->where('status', 'failed')->count())->toBe(0)
+            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($deployed, 0, 12));
+
+        $this->travel(20)->seconds();
+        $this->pipeline->fixture->releaseAgent->available = true;
+        expect($this->pipeline->automatic()->execute()['result'])->toBe('released')
+            ->and(GatewayRelease::query()->sole()->id)->toBe($record->id)
+            ->and($record->refresh()->outcome)->toBe('verified')
+            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and($this->pipeline->alerts)->toBe([]);
+    });
+
+    it('keeps publication queued across settlement and alerts once at fifteen minutes without spending attempts', function (): void {
+        $this->freezeTime();
+        $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $this->pipeline->green = $this->pipeline->fixture->commit('Delayed publication');
+        $this->pipeline->fixture->releaseAgent->available = false;
+        $this->pipeline->automatic()->execute();
+        $record = GatewayRelease::query()->sole();
+        $this->travel(14)->minutes();
+        $this->pipeline->lock()->run(fn () => $this->pipeline->recorder()->settleDead());
+        expect($record->refresh()->outcome)->toBe(GatewayRelease::Queued)
+            ->and($this->pipeline->recorder()->settle($record))->toBeFalse()
+            ->and($this->pipeline->automatic()->execute()['result'])->toBe('waiting_for_agent_delivery')
+            ->and($this->pipeline->alerts)->toBe([]);
+
+        $this->travel(1)->minutes();
+        $this->pipeline->automatic()->execute();
+        $this->travel(20)->seconds();
+        $this->pipeline->automatic()->execute();
+        expect($this->pipeline->alerts)->toHaveCount(1)
+            ->and($this->pipeline->alerts[0]->kind)->toBe(ReleaseAlertKind::ReleaseStalled)
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe(GatewayRelease::Queued)
+            ->and($record->refresh()->error_code)->toBeNull();
+    });
+
+    it('replaces a queued publication with the newest green commit before mutating the Gateway', function (): void {
+        $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $this->pipeline->green = $this->pipeline->fixture->commit('Older publication');
+        $this->pipeline->fixture->releaseAgent->available = false;
+        $this->pipeline->automatic()->execute();
+        $id = GatewayRelease::query()->sole()->id;
+        $new = $this->pipeline->green = $this->pipeline->fixture->commit('Newer green');
+        $this->pipeline->fixture->releaseAgent->available = true;
+
+        expect($this->pipeline->automatic()->execute()['result'])->toBe('released')
+            ->and(GatewayRelease::query()->sole()->id)->toBe($id)
+            ->and(GatewayRelease::query()->sole()->sha)->toBe($new);
+    });
+
+    it('polls publication at twenty seconds in the timer command and releases without another timer tick', function (): void {
+        $this->freezeTime();
+        $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $this->pipeline->green = $this->pipeline->fixture->commit('Publishing in command');
+        $this->pipeline->fixture->releaseAgent->available = false;
+        $this->pipeline->bind();
+        Sleep::fake(syncWithCarbon: true);
+        Sleep::whenFakingSleep(function (): void {
+            // Publication polling holds no release lock.
+            $this->pipeline->lock()->run(fn (): bool => $this->pipeline->fixture->releaseAgent->available = true);
+        });
+
+        $this->artisan('gateway:release:auto')
+            ->expectsOutputToContain('"result":"waiting_for_agent_delivery"')
+            ->expectsOutputToContain('"result":"released"')
+            ->assertExitCode(0);
+        Sleep::assertSequence([Sleep::for(20)->seconds()]);
+        expect(GatewayRelease::query()->sole()->outcome)->toBe('verified');
+    });
+
+    it('bounds each timer invocation and leaves one recoverable queued record when publication stays missing', function (): void {
+        $this->freezeTime();
+        $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $this->pipeline->green = $this->pipeline->fixture->commit('Still publishing');
+        $this->pipeline->fixture->releaseAgent->available = false;
+        $this->pipeline->bind();
+        Sleep::fake(syncWithCarbon: true);
+        Sleep::whenFakingSleep(fn () => $this->travel(15)->minutes());
+
+        $this->artisan('gateway:release:auto')->assertExitCode(0);
+        Sleep::assertSleptTimes(1);
+        expect(GatewayRelease::query()->sole()->outcome)->toBe(GatewayRelease::Queued)
+            ->and($this->pipeline->alerts)->toHaveCount(1);
+    });
+
+    it('lets an explicit release supersede the candidate waiting for publication', function (): void {
+        $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $this->pipeline->green = $this->pipeline->fixture->commit('Publication pending');
+        $this->pipeline->fixture->releaseAgent->available = false;
+        $this->pipeline->automatic()->execute();
+        $pending = GatewayRelease::query()->sole();
+        $this->pipeline->fixture->releaseAgent->available = true;
+        $manual = $this->pipeline->fixture->commit('Manual release');
+        $this->pipeline->deployer()->execute($manual);
+
+        expect($pending->refresh()->outcome)->toBe('superseded')
+            ->and(GatewayRelease::query()->where('outcome', 'verified')->count())->toBe(1);
     });
 
     it('prints the tick as JSON from the timer command', function (): void {

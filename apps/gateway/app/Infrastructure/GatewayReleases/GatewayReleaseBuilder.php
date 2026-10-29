@@ -48,15 +48,36 @@ final readonly class GatewayReleaseBuilder
         $this->reservedBytes = $reservedBytes ?? static fn (): int => 0;
     }
 
-    /** New adoption releases can skip the web artifact; reused releases always restore their web build. */
-    public function prepare(string $revision, bool $withWeb = true): PreparedGatewayRelease
+    /**
+     * Verify and cache the release agent before starting any release mutations.
+     *
+     * @return array{sha: string, manifest: string}
+     */
+    public function fetchDelivery(string $revision): array
     {
-        $startedAt = hrtime(true);
+        return $this->agent->fetch($revision, $this->gateway());
+    }
+
+    private function gateway(): Node
+    {
         $gateway = GatewayCommandNode::find();
         if (! $gateway instanceof Node) {
             throw new GatewayReleaseException('agent-delivery', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists for release commands.', 500);
         }
-        $delivery = $this->agent->fetch($revision, $gateway);
+
+        return $gateway;
+    }
+
+    /**
+     * New adoption releases can skip the web artifact; reused releases always restore their web build.
+     *
+     * @param  array{sha: string, manifest: string}|null  $delivery  the delivery already fetched by an automatic attempt
+     */
+    public function prepare(string $revision, bool $withWeb = true, ?array $delivery = null): PreparedGatewayRelease
+    {
+        $startedAt = hrtime(true);
+        $gateway = $this->gateway();
+        $delivery ??= $this->agent->fetch($revision, $gateway);
         $sha = $delivery['sha'];
         $id = GatewayReleaseCommit::id($sha);
         $path = $this->layout->releasePath($id);
