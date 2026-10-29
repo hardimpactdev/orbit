@@ -1,0 +1,27 @@
+id: a574d7de-b643-4189-bbcc-399785e6bbe0
+name: operation-instance-lifecycle
+description: Claim and execute an Instance lifecycle kind within one placed worker invocation.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: {
+      type: string,
+      enum: [instance.rename],
+    }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: lifecycle
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-instance-lifecycle"
+          behaviorName: '${{ "operation-instance-lifecycle-" + {"instance.create":"create", "instance.clone":"clone", "instance.destroy":"destroy", "instance.register":"register", "instance.rename":"rename", "instance.transfer":"transfer", "instance.transfer_rollback":"transfer_rollback", "instance.transfer_discard":"transfer_discard"}[inputs.kind] }}'
+          methodName: execute
+          inputs:
+            kind: "${{ inputs.kind }}"
+            worker: "${{ inputs.worker }}"

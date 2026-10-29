@@ -1,0 +1,6 @@
+{
+  "kinds": [
+    "instance.rename"
+  ],
+  "workflow": "operation-instance-lifecycle"
+}
