@@ -139,5 +139,23 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.assertEqual(state["operation"]["status"], "succeeded")
 
 
+    def test_php_versions_recover_lost_reply_in_a_fresh_process(self):
+        self.footprint("php-runtime")
+        self.state["operation"]["input"]["_footprint"]["payloads"]["php-runtime"] = {
+            "configurations": [{"version": version, "runtime_ini": "Gateway-rendered module",
+                                "release": {"id": "ubuntu", "codenames": ["resolute"]}}
+                               for version in ["8.4", "8.5"]]}
+        self.state["loseRunReplyKey"] = "footprint-php-runtime-8.5"
+        self.save()
+        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.assertEqual(self.read()["runs"], 2)
+        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        state = self.read()
+        self.assertEqual(state["runs"], 2)
+        self.assertEqual(state["keys"].count("footprint-php-runtime-8.4"), 1)
+        self.assertEqual(state["keys"].count("footprint-php-runtime-8.5"), 1)
+        self.assertEqual(state["operation"]["status"], "succeeded")
+
+
 if __name__ == "__main__":
     unittest.main()

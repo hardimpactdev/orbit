@@ -135,6 +135,30 @@ export async function converge(
       }
       continue;
     }
+    if (artifact.name === "php-runtime") {
+      const configurations = z.array(
+        z.object({
+          version: z.string().regex(/^[0-9]+\.[0-9]+$/),
+          runtime_ini: z.string(),
+          release: z.object({ id: z.string(), codenames: z.array(z.string()) }),
+        }).strict(),
+      ).parse(snapshot.payloads[artifact.name]?.configurations);
+      for (const input of configurations) {
+        const result = await run(
+          `${step}-${input.version}`,
+          "agent",
+          "php.configure-runtime",
+          input,
+        );
+        if (result.error_code) {
+          return result.error_code === "operation.cancelled"
+            ? outcome(result)
+            : await finish();
+        }
+        z.boolean().parse(result.changed);
+      }
+      continue;
+    }
     let result: Result;
     if (artifact.name === "agent") {
       const installed = await run(

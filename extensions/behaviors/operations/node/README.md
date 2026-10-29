@@ -41,5 +41,16 @@ has only a target presence marker stays uncertain. The Gateway's owner-checked
 proof or complete the original footprint.
 
 Run `python3 extensions/behaviors/operations/node/converge_native_test.py` for
-four disposable native restart and child-wait checks. The existing native Node
+five disposable native restart and child-wait checks. The existing native Node
 checks continue to cover the retained package and settings runners.
+
+For each required `php-runtime` artifact, Swamp runs `php.configure-runtime`
+once per captured version, in order, with stable keys
+`footprint-php-runtime-VERSION`. The Gateway binds each input and requires all
+version receipts before publishing the artifact digest. A refusal stops later
+effects. Recovery reads the original receipt before continuing, including after
+a fresh worker process starts. Deferred PHP-FPM master warnings stay in declared
+run and step results; the Gateway logs them.
+
+A matching artifact digest skips its effects. Recipe composition must request
+`force_artifacts: true` after installing a runtime whose module may be absent.

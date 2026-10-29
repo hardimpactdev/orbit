@@ -316,3 +316,89 @@ Deno.test("a waiting nested child durably parks its footprint parent", async () 
   });
   assertEquals(f.completion(), undefined);
 });
+
+function phpRuntime(f: Fixture) {
+  f.artifact("php-runtime");
+  const configurations = ["8.4", "8.5"].map((version) => ({
+    version,
+    runtime_ini: "Gateway-rendered module",
+    release: { id: "ubuntu", codenames: ["resolute"] },
+  }));
+  f.snapshot.payloads["php-runtime"] = { configurations };
+  return configurations;
+}
+Deno.test("PHP runtime applies every captured version in order and preserves deferred warnings", async () => {
+  const f = new Fixture();
+  const configurations = phpRuntime(f);
+  f.replies.set("footprint-php-runtime-8.4", {
+    changed: false,
+    reloaded: false,
+  });
+  f.replies.set("footprint-php-runtime-8.5", {
+    changed: true,
+    reloaded: false,
+    deferred: ["orbit-php-instance-42.service"],
+  });
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.runs(), [
+    "node.prepare-footprint",
+    "php.configure-runtime",
+    "php.configure-runtime",
+    "node.footprint-result",
+  ]);
+  assertEquals(
+    f.calls.filter((c) => c.body.name === "php.configure-runtime").map((c) =>
+      c.body.input
+    ),
+    configurations,
+  );
+  assertEquals(f.operation.step_results["footprint-php-runtime-8.5"], {
+    changed: true,
+    reloaded: false,
+    deferred: ["orbit-php-instance-42.service"],
+  });
+});
+Deno.test("PHP runtime stops at a version refusal and uses Gateway failure proof", async () => {
+  const f = new Fixture();
+  phpRuntime(f);
+  f.artifact("tmpfiles");
+  f.replies.set("footprint-php-runtime-8.4", {
+    error_code: "php.runtime_configuration_failed",
+  });
+  f.replies.set("footprint-result", {
+    error_code: "php.runtime_configuration_failed",
+    artifacts: [],
+    skipped: [],
+  });
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.runs(), [
+    "node.prepare-footprint",
+    "php.configure-runtime",
+    "node.footprint-result",
+  ]);
+  assertEquals(f.completion()?.error_code, "php.runtime_configuration_failed");
+});
+Deno.test("PHP runtime recovers a lost version reply without repeating a proven effect", async () => {
+  const f = new Fixture();
+  phpRuntime(f);
+  f.lostRun = "footprint-php-runtime-8.5";
+  await assertRejects(() => f.execute(), Error, "Lost run reply");
+  assertEquals((await f.execute("worker-2")).status, "succeeded");
+  assertEquals(
+    f.calls.filter((c) =>
+      c.path.endsWith("/run") && c.body.name === "php.configure-runtime"
+    ).length,
+    2,
+  );
+  assertEquals(
+    f.calls.some((c) => c.path.endsWith("/receipts/footprint-php-runtime-8.5")),
+    true,
+  );
+});
+Deno.test("matching PHP runtime digest skips version effects", async () => {
+  const f = new Fixture();
+  phpRuntime(f);
+  f.snapshot.artifacts[0].required = false;
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.runs(), ["node.prepare-footprint", "node.footprint-result"]);
+});
