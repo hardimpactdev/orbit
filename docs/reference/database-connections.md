@@ -46,7 +46,7 @@ Transfer rollback prepares `sqliteSeedAbandon` from the seed intent ID stored in
 
 `database.sqlite_seed_abandon` requires `OperationKinds::supports('compensations')`, in addition to children and receipts. A cancelled transfer admits it through the kit's declared compensation boundary, directly or inside its owning rollback compensation child. The cancelled parent performs no rollback effects itself.
 
-Kind contracts, including runs, child Node relations, completion proof, and redacted results, live in `apps/gateway/app/Domain/DatabaseServers/operation-kinds.php`. Database workflow execution lives under `extensions/behaviors/operations/database/` in orbit-swamp.
+Kind contracts, including runs, child Node relations, completion proof, and redacted results, live in `apps/gateway/app/Domain/DatabaseServers/operation-kinds.php`. Database workflow execution lives under `extensions/behaviors/operations/database/` in orbit-swamp. The placed family invocation claims and executes on the same worker. It records its assigned Operation before effects, and retries keep that assignment. A retry after a lost completion response confirms the original terminal result through the read API before finishing.
 
 Database execution requires the kit's children and receipt capabilities. Until both are available, admission returns `operation.kind_unavailable`; the Gateway still loads other families and serves database reads. Child admission uses the recorded database intent's kind, target, Node and exact input. Swamp supplies only its key.
 

@@ -99,3 +99,11 @@ it('covers future prefix test databases only after the grant has a successful du
     $this->connection->update(['username' => 'other_user']);
     expect($ownership->mysqlNames($this->connection->fresh(), ['legacy_app_test_8']))->toBe([]);
 });
+
+it('invalidates adopted ownership when the recorded database account changes', function (): void {
+    $this->artisan('database:ownership', ['action' => 'adopt', 'connection' => 'legacy', '--actor' => 'nick', '--reason' => 'Verified legacy grants'])->assertSuccessful();
+    $this->connection->update(['username' => 'different_owner']);
+
+    expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$this->connection->fresh()]))
+        ->toThrow(ResourceOperationException::class, 'operator adoption proof');
+});
