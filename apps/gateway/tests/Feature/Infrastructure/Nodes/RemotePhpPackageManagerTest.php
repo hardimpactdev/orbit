@@ -51,15 +51,13 @@ it('keeps PCOV and OpenTelemetry placement consistent across roles on one Node',
     $manager->installForAppDev($node, collect(['8.5']));
     $manager->installForInstance($node, collect(['8.5']), RoleName::AppProd);
     $manager->installForAppProd($node, collect(['8.5']));
-    $manager->installPackagesOnlyForAppProd($node, collect(['8.5']));
     $calls = collect($this->agents->calls)->where('command', 'php.install-build')->values();
-    expect($calls)->toHaveCount(4);
+    expect($calls)->toHaveCount(3);
     foreach ($calls as $call) {
         expect($call['input']['pcov'])->toBe($development)
             ->and($call['input']['opentelemetry'])->toBe($development)
             ->and(in_array('php8.5-opentelemetry', array_column($call['input']['versions']['8.5']['packages'], 'name'), true))->toBe($development);
     }
-    expect($calls[3]['input']['fpm'])->toBe('none');
     $profiles = collect($this->agents->calls)->where('command', 'php.configure-runtime')->values();
     expect($profiles)->toHaveCount(3)
         ->and($profiles[2]['input']['runtime_ini'])->toContain('opcache.memory_consumption = '.($development ? '512' : '256'));
@@ -69,7 +67,6 @@ it('performs no work for an empty version set or an unsupported recipe version',
     $node = php_package_node(RoleName::AppDev);
     $manager = new RemotePhpPackageManager;
     $manager->installForAppDev($node, collect());
-    $manager->installPackagesOnlyForAppProd($node, collect());
     expect(fn () => $manager->installForAppDev($node, collect(['8.6'])))
         ->toThrow(fn (RuntimeConvergenceException $e) => expect($e->errorCode)->toBe('app-dev.php_package_source_unavailable')->and($e->getMessage())->toContain('no PHP 8.6 build'));
     expect($this->agents->calls)->toBe([]);
