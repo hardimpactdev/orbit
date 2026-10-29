@@ -7,6 +7,7 @@ use super::source::git_in;
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     ffi::OsString,
     fs, io,
@@ -40,6 +41,9 @@ pub enum TransferInput {
     Discard {
         destination: PathBuf,
     },
+    DiscardArchive {
+        archive: PathBuf,
+    },
     Cleanup {
         source: PathBuf,
         common: Option<PathBuf>,
@@ -54,10 +58,16 @@ pub enum TransferOutput {
         branch: Option<String>,
         detached: bool,
         archive: PathBuf,
+        bytes: u64,
+        sha256: String,
         common: Option<String>,
         refs: Vec<String>,
     },
     Done {},
+    Materialized {
+        bytes: u64,
+        sha256: String,
+    },
 }
 
 fn git(directory: &Path, arguments: &[&str], step: &str) -> Result<String, TransferError> {
@@ -183,11 +193,23 @@ fn capture(
         let _ = fs::remove_file(&archive);
         return Err(error);
     }
+    let facts = fs::File::open(&archive)
+        .map_err(|_| failed(step))
+        .and_then(|mut file| archive_digest(&mut file, None));
+    let (bytes, sha256) = match facts {
+        Ok(facts) => facts,
+        Err(error) => {
+            let _ = fs::remove_file(&archive);
+            return Err(error);
+        }
+    };
     Ok(TransferOutput::Captured {
         head,
         branch: (!detached && !branch.is_empty()).then_some(branch),
         detached,
         archive,
+        bytes,
+        sha256,
         common: common.filter(|common| !common.is_empty()),
         refs: refs.split_whitespace().map(String::from).collect(),
     })
@@ -302,6 +324,33 @@ pub fn transfer(input: &TransferInput) -> Result<TransferOutput, TransferError> 
             layout,
             sqlite_source,
         } => capture(source, layout, sqlite_source.as_deref()),
+        TransferInput::DiscardArchive { archive } => {
+            if archive.parent() != Some(Path::new("/tmp"))
+                || !archive
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        name.starts_with("orbit-transfer-") && name.ends_with(".tar")
+                    })
+            {
+                return Err(TransferError::Archive {});
+            }
+            match fs::symlink_metadata(archive) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    Ok(TransferOutput::Done {})
+                }
+                Ok(metadata)
+                    if metadata.is_file()
+                        && metadata.uid() == crate::command::identity::effective_uid()
+                        && metadata.mode() & 0o7777 == 0o600
+                        && metadata.nlink() == 1 =>
+                {
+                    fs::remove_file(archive).map_err(|_| failed("discard-archive"))?;
+                    Ok(TransferOutput::Done {})
+                }
+                _ => Err(TransferError::Archive {}),
+            }
+        }
         TransferInput::Discard { destination } => remove_tree(destination)
             .map(|()| TransferOutput::Done {})
             .map_err(|_| failed("discard")),
@@ -408,6 +457,36 @@ pub struct ArchiveInput {
 #[derive(schemars::JsonSchema, Serialize)]
 pub struct ArchiveOutput {
     bytes: u64,
+    sha256: String,
+}
+fn archive_digest(
+    file: &mut fs::File,
+    context: Option<&Context>,
+) -> Result<(u64, String), TransferError> {
+    let bytes = file
+        .metadata()
+        .map_err(|_| TransferError::Archive {})?
+        .len();
+    if bytes == 0 || bytes > MAX_ARCHIVE_BYTES {
+        return Err(TransferError::Archive {});
+    }
+    file.rewind().map_err(|_| TransferError::Archive {})?;
+    let mut sha = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        if context.is_some_and(|context| context.remaining().is_zero()) {
+            return Err(failed("archive-digest"));
+        }
+        let count = file
+            .read(&mut buffer)
+            .map_err(|_| TransferError::Archive {})?;
+        if count == 0 {
+            break;
+        }
+        sha.update(&buffer[..count]);
+    }
+    file.rewind().map_err(|_| TransferError::Archive {})?;
+    Ok((bytes, crate::command::run::hex(&sha.finalize())))
 }
 fn read_archive(
     input: &ArchiveInput,
@@ -440,6 +519,7 @@ fn read_archive(
         return Err(TransferError::Archive {});
     }
     validate_archive(&mut file, context)?;
+    let (_, sha256) = archive_digest(&mut file, Some(context))?;
     let mut output = crate::command::binary_output::Frames::new(output, MAX_ARCHIVE_BYTES);
     let mut buffer = [0; 65536];
     loop {
@@ -459,6 +539,7 @@ fn read_archive(
     }
     Ok(ArchiveOutput {
         bytes: output.bytes(),
+        sha256,
     })
 }
 pub struct ReadArchive;
@@ -489,6 +570,8 @@ impl Command for ReadArchive {
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaterializeInput {
+    bytes: u64,
+    sha256: String,
     destination: PathBuf,
     head: String,
     branch: Option<String>,
@@ -512,17 +595,23 @@ impl Command for Materialize {
         Some(format!("transfer:{}", input.destination.display()))
     }
     fn run(input: MaterializeInput, context: &Context) -> Result<TransferOutput, TransferError> {
+        let mut file = context
+            .take_binary_input()
+            .ok_or(TransferError::Archive {})?;
+        let (bytes, sha256) = archive_digest(&mut file, Some(context))?;
+        if bytes != input.bytes || sha256 != input.sha256 {
+            return Err(TransferError::Archive {});
+        }
         materialize(
-            context
-                .take_binary_input()
-                .ok_or(TransferError::Archive {})?,
+            file,
             &input.destination,
             &input.head,
             input.branch.as_deref(),
             input.detached,
             &input.environment,
             context,
-        )
+        )?;
+        Ok(TransferOutput::Materialized { bytes, sha256 })
     }
 }
 #[cfg(test)]

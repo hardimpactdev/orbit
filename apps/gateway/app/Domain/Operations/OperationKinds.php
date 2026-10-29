@@ -129,6 +129,10 @@ final readonly class OperationKinds
                 throw new LogicException("Operation kind [{$kind}] requires named run contracts.");
             }
             self::assertKeys($kind, 'runs', ValidatedData::object($run), ['transport', 'name', 'input_fields', 'input_values', 'bind', 'secrets', 'resumable', 'uncertain_error_code', 'node_field', 'input_schema']);
+            if (($run['transport'] ?? null) === 'archive_relay'
+                && (! is_string($definition['execution'] ?? null) || ! is_a($definition['execution'], OperationFamilyArchiveRelay::class, true))) {
+                throw new LogicException("Operation kind [{$kind}] requires OperationFamilyArchiveRelay for archive relay runs.");
+            }
         }
     }
 
@@ -184,7 +188,7 @@ final readonly class OperationKinds
      */
     public static function supports(string $capability): bool
     {
-        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations', 'secret_outputs'], true);
+        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations', 'secret_outputs', 'archive_relay'], true);
     }
 
     public static function executor(string $kind): string

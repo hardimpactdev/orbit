@@ -68,7 +68,7 @@ final class FakeInstanceTransferAgents
         })->answer('instance.read-transfer-archive', static function (array $input, Node $node, ?AgentBinaryOutput $output): array {
             $output?->write('archive');
 
-            return ['bytes' => 7];
+            return ['bytes' => 7, 'sha256' => hash('sha256', 'archive')];
         })->answer('instance.materialize-transfer', function (): array {
             $this->destinationExists = true;
 

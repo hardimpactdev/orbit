@@ -171,6 +171,8 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             throw $this->stagingFailed('app-instance-transfer-upload');
         }
         AgentStep::run($this->agents, $destination, 'instance.materialize-transfer', [
+            'bytes' => $binary->bytes,
+            'sha256' => hash_file('sha256', $archive),
             'destination' => $path->value,
             'head' => $capture->head,
             'branch' => $capture->branch,

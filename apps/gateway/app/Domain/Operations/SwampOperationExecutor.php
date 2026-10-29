@@ -507,6 +507,12 @@ final readonly class SwampOperationExecutor
                 });
                 try {
                     $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : $this->cancelledRunResult($operation, $data['key']);
+                } catch (OperationDispatchNotStarted $exception) {
+                    if (($receipt['started'] ?? false) === true) {
+                        throw new ResourceOperationException('operation.execution_uncertain', 'An earlier effect still requires its target receipt.', 409);
+                    }
+                    $this->notStarted($operation, $data, $nodeId);
+                    throw OperationSecrets::refusal($exception);
                 } catch (AgentCommandRefused $exception) {
                     $result = ['error_code' => $exception->errorCode];
                 } catch (ResourceOperationException $exception) {
@@ -529,18 +535,24 @@ final readonly class SwampOperationExecutor
                 throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
             }
             if ($notStarted) {
-                $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
-                    $state = $operation->state ?? [];
-                    $runs = ValidatedData::object($state['executor_runs'] ?? []);
-                    $runs[$data['key']] = [...ValidatedData::object($runs[$data['key']]), 'started' => false];
-                    $this->store->change($operation, ['state' => [...$state, 'executor_runs' => $runs]]);
-                });
+                $this->notStarted($operation, $data, $nodeId);
 
                 return ['error_code' => $code, 'not_started' => true];
             }
         }
 
         return $this->recordResult($operation, $data, $result, $values, ($run['effect_metadata'] ?? null)?->receipt() ?? [], $nodeId);
+    }
+
+    /** @param RunInput $data */
+    private function notStarted(Operation $operation, array $data, int $nodeId): void
+    {
+        $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
+            $state = $operation->state ?? [];
+            $runs = ValidatedData::object($state['executor_runs'] ?? []);
+            $runs[$data['key']] = [...ValidatedData::object($runs[$data['key']]), 'started' => false];
+            $this->store->change($operation, ['state' => [...$state, 'executor_runs' => $runs]]);
+        });
     }
 
     /** @return array{error_code:string} */
