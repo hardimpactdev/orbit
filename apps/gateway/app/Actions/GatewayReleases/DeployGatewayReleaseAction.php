@@ -97,11 +97,16 @@ final readonly class DeployGatewayReleaseAction
         $this->owner->assertAllowed($commit);
         GatewayReleaseHold::assertNone();
         $startedAt = hrtime(true);
-        $record = $this->recorder->begin($trigger, $commit, $record, $force);
+        $record = $trigger === 'auto'
+            ? $this->recorder->queuePublication($commit)
+            : $this->recorder->begin($trigger, $commit, $record, $force);
 
         try {
             $deployed = $this->attempt($commit, $force, $trigger, $record, $startedAt, $held);
         } catch (Throwable $exception) {
+            if ($this->waitingForPublication($record, $exception)) {
+                throw $exception;
+            }
             $this->recorder->fail($record, $exception, retryable: true, durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000));
 
             throw $exception;
@@ -125,7 +130,12 @@ final readonly class DeployGatewayReleaseAction
         $migrationsRan = false;
 
         try {
-            $prepared = $this->builder->prepare($commit);
+            $delivery = null;
+            if ($trigger === 'auto') {
+                $delivery = $this->builder->fetchDelivery($commit);
+                $record = $this->recorder->begin($trigger, $commit, $record, $force);
+            }
+            $prepared = $this->builder->prepare($commit, delivery: $delivery);
             $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
             $this->recorder->progress($record, $phases, $prepared->sha);
             $step = 'guard';
@@ -169,6 +179,9 @@ final readonly class DeployGatewayReleaseAction
             }
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
+            if ($this->waitingForPublication($record, $exception)) {
+                throw $exception;
+            }
             $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt, $trigger, $record, $migrationsRan);
 
             throw $exception;
@@ -185,6 +198,13 @@ final readonly class DeployGatewayReleaseAction
             record: $record,
             held: $held,
         );
+    }
+
+    private function waitingForPublication(?GatewayRelease $record, Throwable $exception): bool
+    {
+        return $record?->awaitingPublication() === true
+            && $exception instanceof GatewayReleaseException
+            && $exception->errorCode === 'gateway.release_agent_delivery_unavailable';
     }
 
     /**

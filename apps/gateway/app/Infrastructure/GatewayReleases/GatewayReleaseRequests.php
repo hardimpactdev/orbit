@@ -52,7 +52,7 @@ final readonly class GatewayReleaseRequests
         $waiting = GatewayRelease::query()
             ->where('outcome', GatewayRelease::Queued)
             ->latest('id')
-            ->first();
+            ->get()->first(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication());
 
         if ($waiting instanceof GatewayRelease) {
             throw new GatewayReleaseException(

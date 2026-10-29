@@ -121,7 +121,7 @@ Prepare first takes the commit's agent, in PHP and before any agent command, so 
 2. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
 3. It checks the manifest against `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
 
-A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. An automatic release tries it again 10 minutes later, as for any [retryable failure](#what-a-tick-does). A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
+A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks publication every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
 
 Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
@@ -636,7 +636,11 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
 8. It deploys that commit with the trigger `auto`, under the release lock.
 
-The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts.
+The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts. Waiting for published agent delivery is not a failed attempt and spends no retry budget.
+
+The automatic command continues publication checks for up to 15 minutes per invocation. Each check releases the lock before the 20-second wait, then resolves the newest green commit again. A newer green commit replaces the queued candidate. Disable, pause, a manual request or a busy lock stops this invocation. After the bound, the command exits successfully with the record still queued; the next timer invocation resumes it.
+
+Publication waiting survives process exit and raises one alert after 15 minutes of continuous publication waiting, even if newer green candidates replace the original. A queued publication record has changed no live state and does not block a manual request. A manual release or an already-current target ends it as `superseded`, without a failure or an alert.
 
 Every tick stores its result as the last tick. A tick prints it as one JSON object. It exits 1 only when it ran a release that failed.
 
@@ -645,6 +649,7 @@ Every tick stores its result as the last tick. A tick prints it as one JSON obje
 | `disabled`, `paused`, `busy` | Automatic releases are off or paused, or another release step runs or waits for its unit. A `busy` result counts toward a stall |
 | `not_adopted`, `no_deployed_release` | The Gateway does not run from a release, or its `REVISION` is unreadable. Deploy the first release by hand |
 | `up_to_date` | No newer commit qualifies |
+| `waiting_for_agent_delivery` | The candidate stays queued until its published delivery can be verified; the runner rechecks every 20 seconds |
 | `backing_off` | The newest commit failed for a retryable reason less than 10 minutes ago |
 | `source_unavailable` | GitHub, the App, or the shared repository's origin did not answer. The tick is skipped |
 | `released` | The tick released a commit, and it went live |
@@ -821,7 +826,7 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `release_failed` | A release failed. Nothing went live, or the previous release serves again |
 | `release_paused` | A release failed after its migrations ran, or died after it touched the schema or the current link, and automatic releases are paused |
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
-| `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
+| `release_stalled` | Published agent delivery waited 15 minutes, [automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
 | `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
