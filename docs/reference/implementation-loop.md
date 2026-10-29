@@ -120,13 +120,15 @@ The fast CI gate uses hosted runners. It needs no Gateway test system packages, 
 
 ### macOS agent runner on mini
 
-When the repository variable `ORBIT_MINI_RUNNER` is `true`, the `Build macOS agent` job runs on mini, a Mac Node. The job builds both macOS agent binaries. During the migration it runs no tests. On mini it skips the hosted macOS queue. A pull request from a fork always uses the hosted `macos-15` runner. Set the variable to anything else to move the job back to GitHub-hosted runners.
+When the repository variable `ORBIT_MINI_RUNNER` is `true`, the `Build macOS agent` job runs on mini, a Mac Node. The job builds both macOS agent binaries. During the migration it runs no tests. On mini it skips the hosted macOS queue. The workflow selects hosted `macos-15` for fork pull requests, but a fork can change that workflow. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
-On mini, checkout keeps `apps/agent/target` between runs, so builds stay warm, and it still resets every tracked file. The job does not install or update Rust and restores no Rust cache, because both would change the account's own `~/.cargo` and toolchain. It only checks that the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets are installed. Update the toolchain by hand while the runner is idle.
+The repository approval policy, `all_external_contributors`, requires approval before a fork workflow runs. Before approving a fork run, check `.github/**` changes, including runner selection. The workflow guard alone does not protect mini.
 
-The runner is registered to this repository only, with the label `mini`, and runs as a launchd service of the `nckrtl` account. It has no isolation. A job runs with that account's files and SSH keys, and with mini's WireGuard address, which the Gateway trusts as the mini Node. That covers every push and pull request from a branch in this repository, including task handoff pushes that task agents write.
+On mini, checkout keeps `apps/agent/target` across runs and refs, so builds stay warm, and it still resets every tracked file. The job does not install or update Rust and restores no Rust cache, because both would change the account's own `~/.cargo` and toolchain. It only checks that the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets are installed. Update the toolchain by hand while the runner is idle.
 
-The macOS agent binaries in each release come from this job, so they are built on mini too. The maintainer accepted this for this one job. Do not send other jobs to mini.
+The runner is registered to this repository only, with the label `mini`, and runs as a launchd service of the `nckrtl` account. Mini also hosts the migration orchestrator state and the beast relay under that same account. It has no isolation. A job runs with that account's files and SSH keys, and with mini's WireGuard address, which the Gateway trusts as the mini Node. That covers every push and pull request from a branch in this repository, including task handoff pushes that task agents write.
+
+The macOS agent binaries in each release come from this job, so they are built on mini too. Nick accepts the shared-account risk for this one job. Do not send other jobs to mini.
 
 ### Self-hosted shard runners
 
