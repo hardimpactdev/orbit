@@ -83,6 +83,8 @@ jobs:
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
+      - name: Boot and validate Operation kinds
+        run: bin/check-operation-kinds
       - name: Check OpenAPI and MCP tools
         run: |
           bin/docs-openapi --check

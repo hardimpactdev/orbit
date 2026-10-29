@@ -11,6 +11,7 @@ use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Closure;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -38,18 +39,7 @@ final readonly class SwampOperationExecutor
         return DB::transaction(function () use ($kind, $worker, $nodeId, $operationId): ?Operation {
             $operation = Operation::query()->where('kind', $kind)->when($operationId !== null, fn ($query) => $query->whereKey($operationId))->where('status', OperationStatus::Running->value)
                 ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
-            if ($operation === null) {
-                $candidates = Operation::query()->where('kind', $kind)
-                    ->when($operationId !== null, fn ($query) => $query->whereKey($operationId))
-                    ->where(function ($query): void {
-                        $query->whereIn('status', [OperationStatus::Queued->value, OperationStatus::Waiting->value])
-                            ->orWhere(function ($query): void {
-                                $query->where('status', OperationStatus::Running->value)
-                                    ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
-                            });
-                    })->orderBy('id')->lockForUpdate()->get();
-                $operation = $candidates->first(fn (Operation $candidate): bool => $candidate->status !== OperationStatus::Waiting || app(OperationChildren::class)->ready($candidate, true));
-            }
+            $operation ??= $this->claimCandidates($kind, $operationId, true)->first();
             if ($operation === null) {
                 return null;
             }
@@ -68,6 +58,37 @@ final readonly class SwampOperationExecutor
 
             return $operation;
         });
+    }
+
+    /** @return list<array{kind:string,claimable:int,oldest_at:string|null}> */
+    public function claimable(): array
+    {
+        $kinds = [];
+        foreach (OperationKinds::names() as $kind) {
+            if (! $this->executors->swamp($kind)) {
+                continue;
+            }
+            $candidates = $this->claimCandidates($kind);
+            $oldest = $candidates->sortBy('created_at')->first()?->created_at;
+            $kinds[] = ['kind' => $kind, 'claimable' => $candidates->count(), 'oldest_at' => $oldest?->toISOString()];
+        }
+
+        return $kinds;
+    }
+
+    /** @return Collection<int,Operation> */
+    private function claimCandidates(string $kind, ?int $operationId = null, bool $forClaim = false): Collection
+    {
+        return Operation::query()->where('kind', $kind)
+            ->when($operationId !== null, fn ($query) => $query->whereKey($operationId))
+            ->where(function ($query): void {
+                $query->whereIn('status', [OperationStatus::Queued->value, OperationStatus::Waiting->value])
+                    ->orWhere(function ($query): void {
+                        $query->where('status', OperationStatus::Running->value)
+                            ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
+                    });
+            })->orderBy('id')->when($forClaim, fn ($query) => $query->lockForUpdate())->get()
+            ->filter(fn (Operation $candidate): bool => $candidate->status !== OperationStatus::Waiting || app(OperationChildren::class)->ready($candidate, $forClaim))->values();
     }
 
     public function heartbeat(Operation $operation, string $worker, int $nodeId): Operation

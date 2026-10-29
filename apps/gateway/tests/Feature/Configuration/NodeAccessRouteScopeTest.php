@@ -235,6 +235,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'operation:executor:children' => ServingNode::Gateway,
         'operation:executor:children:read' => ServingNode::Gateway,
         'operation:executor:claim' => ServingNode::Gateway,
+        'operation:executor:claimable' => ServingNode::Gateway,
         'operation:executor:complete' => ServingNode::Gateway,
         'operation:executor:heartbeat' => ServingNode::Gateway,
         'operation:executor:receipt' => ServingNode::Gateway,

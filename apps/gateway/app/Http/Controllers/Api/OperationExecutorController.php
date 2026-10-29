@@ -12,6 +12,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\ChildrenExecutorRequest;
+use App\Http\Requests\Operations\ClaimableExecutorRequest;
 use App\Http\Requests\Operations\ClaimExecutorRequest;
 use App\Http\Requests\Operations\CompleteExecutorRequest;
 use App\Http\Requests\Operations\ExecutorRequest;
@@ -28,6 +29,11 @@ use Illuminate\Http\JsonResponse;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class OperationExecutorController extends Controller
 {
+    public function claimable(ClaimableExecutorRequest $request, SwampOperationExecutor $executor): JsonResponse
+    {
+        return $this->respond($request, ['kinds' => $executor->claimable()]);
+    }
+
     public function claim(ClaimExecutorRequest $request, SwampOperationExecutor $executor): JsonResponse
     {
         $operation = $executor->claim(ValidatedData::string($request->validated('kind')), $request->worker(), $request->peerNodeId(), $request->validated('operation_id') === null ? null : $request->integer('operation_id'));
