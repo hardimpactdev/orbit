@@ -111,7 +111,7 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 
 ## Service metrics
 
-[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Instance runtime changes and changes to Metrics-relevant public Route hosts trigger a fleet reconcile to update those services and the Prometheus targets. Private Route changes, unchanged publication, target binding and web-root-only changes do not change that host catalog and do not trigger Route reconciliation of Metrics.
+[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Instance runtime changes and changes to public, active Route hosts trigger a fleet reconcile to update those services and the Prometheus targets. Private Route changes, unchanged publication, target binding and web-root-only changes do not change that host catalog and do not trigger Route reconciliation of Metrics.
 
 If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. The operation that triggered the reconcile continues. For example, an Instance removal on another Node does not fail because service metrics cannot reconcile on this Node. The Gateway skips the degraded Node and continues reconciling the rest of the fleet. It retries the Node on a later reconcile and clears the degradation when reconciliation succeeds. Inspect the Node's exporter row in `orbit metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
 
