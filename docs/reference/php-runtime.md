@@ -62,6 +62,8 @@ For package changes, the PHP step of an Instance uses these options:
 
 Package changes restart no dedicated production master. The step logs the masters left running, which may still use the previous PHP build or settings. Their next restart, such as the next deployment, loads the new build.
 
+The shared and dedicated PHP-FPM global configurations set `process_control_timeout = 30s`, so later graceful reloads allow in-flight requests up to 30 seconds to finish. The first reload after rollout still uses the old timeout already loaded in the running master; it can cut in-flight requests once. Runtime module publication reports every active master whose configuration check fails; the Gateway logs those deferred units for repair.
+
 A settings-only change follows the [PHP build installer's reload policy](/reference/compute-drivers#install-the-php-build): it validates every active master, including dedicated production masters, and gracefully reloads those that pass. An Instance step keeps a master with invalid configuration running, reports it as deferred, logs it, and continues with the other masters. It keeps the INI so that master loads the setting at its next successful reload or restart. Pool publication can then repair the Instance's configuration without another master's invalid configuration blocking the step.
 
 Recipe convergence instead fails and restores the previous settings when a master fails validation. Rollback reloads masters that were reloaded and restarts only masters that were restarted.
@@ -97,7 +99,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, so one such poo
 
 Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. It runs after the Route target is cleared and before the checkout is deleted. At that point stored state renders no pool for the Instance, so the convergence removes the pool and reloads PHP-FPM while its directory still exists. See [Instance removal](/reference/instance-removal#runtime-cleanup).
 
-Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file, repairs the link, and gracefully reloads active shared and dedicated production masters only when the module or its enablement changed and their pools pass `php-fpm<version> -t`. A master with invalid pools stays running until pool publication repairs it. A failed publication restores the previous module and link and reloads the masters already changed.
+Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file, repairs the link, and gracefully reloads active shared and dedicated production masters only when the module, its enablement, or the shared global configuration changed and their pools pass `php-fpm<version> -t`. A master with invalid pools stays running until pool publication repairs it. A failed publication restores the previous module and link and reloads the masters already changed.
 
 A development pool checks every file on every request, so a saved file is served at once:
 

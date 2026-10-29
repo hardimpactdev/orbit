@@ -22,6 +22,8 @@ pub struct Input {
 pub struct Configured {
     pub changed: bool,
     pub reloaded: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred: Vec<String>,
 }
 fn size_bytes(value: &str) -> Option<u64> {
     let (number, multiplier) = match value.as_bytes().last() {
@@ -91,6 +93,39 @@ fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
 struct Before {
     file: Option<Vec<u8>>,
     link: Option<PathBuf>,
+    shared: String,
+}
+
+fn fpm_configuration(text: &str) -> String {
+    let mut global = true;
+    let has_global = text.lines().any(|line| line.trim() == "[global]");
+    let mut emitted = !has_global;
+    let mut lines = if has_global {
+        String::new()
+    } else {
+        String::from("[global]\nprocess_control_timeout = 30s\n")
+    };
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            global = trimmed == "[global]";
+        }
+        if global && trimmed == "[global]" && !emitted {
+            lines.push_str(line);
+            lines.push_str("process_control_timeout = 30s\n");
+            emitted = true;
+            continue;
+        }
+        if global
+            && trimmed
+                .split_once('=')
+                .is_some_and(|(key, _)| key.trim() == "process_control_timeout")
+        {
+            continue;
+        }
+        lines.push_str(line);
+    }
+    lines
 }
 pub fn configure(
     host: &mut impl recipe::Host,
@@ -115,6 +150,7 @@ pub fn configure(
         return Ok(Configured {
             changed: false,
             reloaded: false,
+            deferred: Vec::new(),
         });
     }
     let available = files.path(&format!(
@@ -126,6 +162,7 @@ pub fn configure(
         input.version
     ));
     let unit = format!("php{}-fpm.service", input.version);
+    let shared = files.path(&format!("/etc/php/{}/fpm/php-fpm.conf", input.version));
     let binary = files
         .path(&format!("/usr/sbin/php-fpm{}", input.version))
         .display()
@@ -146,21 +183,31 @@ pub fn configure(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(build::Failure::io(e)),
         };
-        Ok(Before { file, link })
+        let shared = fs::read_to_string(&shared).map_err(build::Failure::io)?;
+        Ok(Before { file, link, shared })
     };
     let failed = |error: build::Failure, restored| Error::Failed {
         reason: recipe::diagnostic(&serde_json::to_string(&error.data).expect("typed error")),
         restored,
     };
     let before = capture().map_err(|e| failed(e, true))?;
-    let correct_link = fs::canonicalize(&enabled).ok().as_ref() == Some(&available);
-    let changed = before.file.as_deref() != Some(input.runtime_ini.as_bytes()) || !correct_link;
+    let correct_link = fs::canonicalize(&enabled)
+        .ok()
+        .zip(fs::canonicalize(&available).ok())
+        .is_some_and(|(enabled, available)| enabled == available);
+    let configuration = fpm_configuration(&before.shared);
+    let changed = before.file.as_deref() != Some(input.runtime_ini.as_bytes())
+        || !correct_link
+        || before.shared != configuration;
     let mut touched = false;
     let mut reloaded_units = Vec::new();
+    let mut deferred = Vec::new();
+    let mut master_before = BTreeMap::new();
     let action = (|| -> build::Result<Configured> {
         if changed {
             touched = true;
             build::runtime::write_ini(files, &available, input.runtime_ini.as_bytes())?;
+            build::runtime::write_ini(files, &shared, configuration.as_bytes())?;
             if !correct_link {
                 build::remove(&enabled)?;
                 symlink("../../mods-available/orbit-runtime.ini", &enabled)
@@ -181,13 +228,24 @@ pub fn configure(
         }
         if changed {
             let units = build::runtime::fpm_units(host, files, &input.version, build::Fpm::All)?;
+            deferred.extend(units.skipped);
             for (name, configuration) in units.active {
+                if name != unit {
+                    let previous =
+                        fs::read_to_string(&configuration).map_err(build::Failure::io)?;
+                    let next = fpm_configuration(&previous);
+                    if next != previous {
+                        master_before.insert(configuration.clone(), previous);
+                        build::runtime::write_ini(files, &configuration, next.as_bytes())?;
+                    }
+                }
                 let mut args = vec![binary.as_str(), "-t"];
                 let path = configuration.display().to_string();
                 if name != unit {
                     args.extend(["--fpm-config", &path]);
                 }
                 if build::invoke(host, &args, false)?.code != 0 {
+                    deferred.push(name);
                     continue;
                 }
                 reloaded_units.push((
@@ -215,11 +273,19 @@ pub fn configure(
             return Err(build::Failure::io("PHP-FPM loads PCOV"));
         }
         build::invoke(host, &["systemctl", "is-enabled", "--quiet", &unit], true)?;
-        Ok(Configured { changed, reloaded })
+        Ok(Configured {
+            changed,
+            reloaded,
+            deferred,
+        })
     })();
     action.map_err(|error| {
         let mut restored = true;
         if touched {
+            restored &= build::runtime::write_ini(files, &shared, before.shared.as_bytes()).is_ok();
+            for (path, previous) in &master_before {
+                restored &= build::runtime::write_ini(files, path, previous.as_bytes()).is_ok();
+            }
             restored &= match &before.file {
                 Some(b) => build::runtime::write_ini(files, &available, b),
                 None => build::remove(&available),

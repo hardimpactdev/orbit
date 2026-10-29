@@ -191,6 +191,7 @@ final readonly class RemotePhpPackageManager
             $result = AgentStep::run($this->agents ?? app(AgentCommandRunner::class), $node, 'php.configure-runtime',
                 $this->profileInput($version, $profile, $role),
                 step: $failure['install_step'], errorCode: $failure['install_error'], label: 'PHP runtime');
+            $this->logOutcome($node, new ProgramResult('configured', $result, ''));
             $changed = ($result['changed'] ?? false) === true || $changed;
         }
 

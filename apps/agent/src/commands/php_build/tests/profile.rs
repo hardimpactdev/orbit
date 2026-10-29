@@ -4,6 +4,11 @@ use crate::commands::php_profile::{self, Error, Input};
 fn fixture() -> Fixture {
     let f = Fixture::new();
     write(&f.files, "/usr/sbin/php-fpm8.5", "fake binary\n");
+    write(
+        &f.files,
+        "/etc/orbit/example.conf",
+        "[global]\ninclude=/etc/orbit/example-pool.conf\n",
+    );
     f
 }
 
@@ -34,6 +39,19 @@ fn shared_module_is_fpm_only_and_reloads_only_when_changed_and_valid() {
         let result = php_profile::configure(&mut f.host, &f.files, &input()).unwrap();
         assert!(result.changed);
         assert_eq!(result.reloaded, active && valid);
+        assert_eq!(
+            result.deferred,
+            if active && !valid {
+                vec![UNIT.to_owned()]
+            } else {
+                vec![]
+            }
+        );
+        assert!(
+            fs::read_to_string(f.files.path("/etc/php/8.5/fpm/php-fpm.conf"))
+                .unwrap()
+                .contains("process_control_timeout = 30s")
+        );
         assert_eq!(
             fs::read_to_string(
                 f.files
@@ -217,6 +235,8 @@ fn adding_request_limits_reloads_existing_shared_and_dedicated_masters_once() {
 #[test]
 fn failed_dedicated_reload_restores_and_reloads_every_master_already_touched() {
     let mut f = fixture();
+    let shared_before = fs::read(f.files.path("/etc/php/8.5/fpm/php-fpm.conf")).unwrap();
+    let dedicated_before = fs::read(f.files.path("/etc/orbit/example.conf")).unwrap();
     let available = write(
         &f.files,
         "/etc/php/8.5/mods-available/orbit-runtime.ini",
@@ -229,6 +249,14 @@ fn failed_dedicated_reload_restores_and_reloads_every_master_already_touched() {
         Err(Error::Failed { restored: true, .. })
     ));
     assert_eq!(fs::read_to_string(available).unwrap(), "previous\n");
+    assert_eq!(
+        fs::read(f.files.path("/etc/php/8.5/fpm/php-fpm.conf")).unwrap(),
+        shared_before
+    );
+    assert_eq!(
+        fs::read(f.files.path("/etc/orbit/example.conf")).unwrap(),
+        dedicated_before
+    );
     for unit in [UNIT, DEDICATED] {
         assert_eq!(
             f.host
@@ -337,5 +365,88 @@ fn absent_recipe_version_is_untouched_until_fpm_is_installed() {
         )
         .unwrap(),
         input().runtime_ini
+    );
+}
+
+#[test]
+fn runtime_module_link_is_idempotent_through_a_symlinked_php_directory() {
+    let mut f = fixture();
+    let php = f.files.path("/etc/php");
+    let real = f.files.path("/etc/php-real");
+    fs::rename(&php, &real).unwrap();
+    symlink("php-real", &php).unwrap();
+    f.host.active.insert(UNIT.into());
+    let first = php_profile::configure(&mut f.host, &f.files, &input()).unwrap();
+    assert!(first.changed && first.reloaded);
+    f.host.calls.clear();
+    let repeat = php_profile::configure(&mut f.host, &f.files, &input()).unwrap();
+    assert!(!repeat.changed && !repeat.reloaded);
+    assert!(!f.host.calls.iter().any(|call| call
+        .argv
+        .starts_with(&["systemctl".into(), "reload".into()])));
+}
+
+#[test]
+fn shared_timeout_replaces_zero_and_is_idempotent() {
+    let mut f = fixture();
+    let path = f.files.path("/etc/php/8.5/fpm/php-fpm.conf");
+    fs::write(
+        &path,
+        "[global]\nprocess_control_timeout = 0\ninclude=/etc/php/8.5/fpm/pool.d/*.conf\n",
+    )
+    .unwrap();
+    php_profile::configure(&mut f.host, &f.files, &input()).unwrap();
+    let expected =
+        "[global]\nprocess_control_timeout = 30s\ninclude=/etc/php/8.5/fpm/pool.d/*.conf\n";
+    assert_eq!(fs::read_to_string(&path).unwrap(), expected);
+    assert!(
+        !php_profile::configure(&mut f.host, &f.files, &input())
+            .unwrap()
+            .changed
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), expected);
+}
+
+#[test]
+fn existing_dedicated_master_gets_its_timeout_before_reload() {
+    struct CheckingHost<'a> {
+        inner: &'a mut Fake,
+        files: &'a Files,
+    }
+    impl RecipeHost for CheckingHost<'_> {
+        fn wait(&mut self, delay: Duration) -> std::result::Result<(), recipe::Failure> {
+            self.inner.wait(delay)
+        }
+        fn execute(&mut self, call: &Invocation) -> std::result::Result<Output, recipe::Failure> {
+            if call
+                .argv
+                .starts_with(&["systemctl".into(), "reload".into()])
+            {
+                let path = if call.argv[2] == DEDICATED {
+                    "/etc/orbit/example.conf"
+                } else {
+                    "/etc/php/8.5/fpm/php-fpm.conf"
+                };
+                assert!(fs::read_to_string(self.files.path(path))
+                    .unwrap()
+                    .contains("process_control_timeout = 30s"));
+            }
+            self.inner.execute(call)
+        }
+    }
+    let mut f = fixture();
+    f.host.active.extend([UNIT.into(), DEDICATED.into()]);
+    let mut host = CheckingHost {
+        inner: &mut f.host,
+        files: &f.files,
+    };
+    let result = php_profile::configure(&mut host, &f.files, &input()).unwrap();
+    assert!(result.changed && result.reloaded);
+    assert_eq!(
+        fs::read_to_string(f.files.path("/etc/orbit/example.conf"))
+            .unwrap()
+            .matches("process_control_timeout = 30s")
+            .count(),
+        1
     );
 }
