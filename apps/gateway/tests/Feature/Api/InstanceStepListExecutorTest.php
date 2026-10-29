@@ -184,7 +184,7 @@ it('keeps a budget-cut timeout distinct from a command failed at its own timeout
         'error_code' => 'command.deadline_exceeded'])->assertOk();
 });
 
-it('adopts a target environment receipt through the deploy transport without resolving protected content again', function (bool $wrongIdentity): void {
+it('adopts a target environment receipt through the deploy transport without resolving protected content again', function (bool $wrongIdentity, bool $cancelled): void {
     [$instance, , $agents] = stepListExecutor($this);
     $instance->update(['provisioning_step' => 'active', 'source_is_laravel' => false]);
     $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'synthetic-rotating-environment']);
@@ -204,6 +204,12 @@ it('adopts a target environment receipt through the deploy transport without res
     $this->postJson($path.'/run', ['worker' => 'proof', ...array_intersect_key($write, array_flip(['key', 'transport', 'name', 'input']))])
         ->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
     expect($operation->refresh()->state['executor_runs']['environment.write']['result'])->toBeNull();
+    if ($cancelled) {
+        $operation->update(['cancel_requested_at' => now()]);
+        $this->postJson($path.'/run', ['worker' => 'proof', ...array_intersect_key($write, array_flip(['key', 'transport', 'name', 'input']))])
+            ->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+        expect($operation->refresh()->state['executor_runs']['environment.write']['result'])->toBeNull();
+    }
     $identity = $operation->state['executor_effect_identity'];
     $metadata = $agents->calls[0]['input'][EffectReceiptMetadata::InputKey]->envelope();
     expect($metadata['nonce'])->toBe($identity['nonce'])->and($metadata['created_at'])->toBe($identity['created_at']);
@@ -226,7 +232,7 @@ it('adopts a target environment receipt through the deploy transport without res
     expect($agents->calls[0]['input']['effect_key'])->toBe($key);
     expect($operation->refresh()->state['executor_runs']['environment.write']['input']['content'])->toBe(['$secret' => 'instance.environment_sync', 'id' => $instance->id]);
     expect(json_encode($operation->toArray()))->not->toContain('synthetic-rotating-environment');
-})->with([false, true]);
+})->with([false, true])->with([false, true]);
 
 it('completes a development deployment with a proven best-effort warning without production-only children', function (): void {
     [$instance, $setup, $agents] = stepListExecutor($this);
