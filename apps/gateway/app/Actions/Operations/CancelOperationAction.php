@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
-use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationChildren;
-use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStepStatus;
+use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStepStatus;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
@@ -65,6 +65,7 @@ final readonly class CancelOperationAction
             if (! $executors->swamp($operation->kind)) {
                 $this->runner->cancelWaiting($operation, $targetEnding);
             }
+
             return $operation->refresh();
         });
     }

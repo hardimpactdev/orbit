@@ -615,3 +615,47 @@ it('refuses a changed live Node foreign key while the stamped Node still exists'
     $child->update(['node_id' => null]);
     expect(fn () => app(OperationChildren::class)->requireSucceeded($this->parent, 'apply'))->toThrow(ResourceOperationException::class);
 });
+
+it('keeps serving-node child identities when another same-target Node is removed', function (): void {
+    $removed = Node::query()->create(['name' => 'old', 'public_ssh_host' => '192.0.2.50', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.50', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $this->parentSpec['children'][0]['node_from'] = 'input.child_nodes';
+    ($this->register)();
+    $this->parent->update(['input' => [...$this->parent->input, 'child_nodes' => [$removed->id, $this->parent->node_id]],
+        'state' => [...$this->parent->refresh()->state, 'child_intents' => [
+            [...$this->intent, 'node_id' => $removed->id, 'input' => [...$this->intent['input'], 'target_id' => $removed->id]],
+            [...$this->intent, 'key' => 'residue'],
+        ]]]);
+    $sameTarget = childKitAdmit($this);
+    childKitFinish($this, $sameTarget);
+    $id = $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'residue'])->assertAccepted()->json('data.id');
+    $serving = Operation::findOrFail($id);
+    childKitFinish($this, $serving);
+    $removedId = $removed->id;
+    $removed->delete();
+    $receipts = app(OperationChildren::class)->receipts($this->parent);
+    expect($receipts[0]['node_id'])->toBe($removedId)->and($receipts[1]['node_id'])->toBe($serving->node_id);
+    expect(app(OperationChildren::class)->requireSucceeded($this->parent, 'apply')->target_id)->toBe($removedId)
+        ->and(app(OperationChildren::class)->requireSucceeded($this->parent, 'residue')->target_id)->toBe($serving->target_id);
+});
+
+it('lets an enclosing parent prove its completed Node removal child after deletion', function (): void {
+    $node = Node::query()->create(['name' => 'old', 'public_ssh_host' => '192.0.2.50', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.50', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $this->parentSpec['children'] = [['kind' => 'test.middle', 'node_from' => 'input.child_node']];
+    $this->parentSpec['completion_contract']['children_succeeded'] = ['test.middle'];
+    ($this->register)();
+    $this->parent->update(['input' => [...$this->parent->input, 'child_node' => $node->id],
+        'state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'kind' => 'test.middle', 'node_id' => $node->id, 'input' => [...$this->intent['input'], 'target_id' => $node->id]]]]]);
+    $middle = childKitAdmit($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.middle', 'worker' => 'middle'])->assertOk();
+    $middle->update(['state' => [...$middle->refresh()->state, 'child_intents' => [[...$this->intent, 'node_id' => $node->id, 'input' => [...$this->intent['input'], 'target_id' => $node->id]]]]]);
+    $middlePath = '/api/v1/operation-executor/'.$middle->id;
+    $id = $this->postJson($middlePath.'/children', ['worker' => 'middle', 'key' => 'apply'])->assertAccepted()->json('data.id');
+    childKitFinish($this, Operation::findOrFail($id));
+    $nodeId = $node->id;
+    $node->delete();
+    $completion = ['worker' => 'middle', 'status' => 'succeeded'];
+    $this->postJson($middlePath.'/complete', $completion)->assertOk()->assertJsonPath('data.node_id', $nodeId);
+    $this->postJson($middlePath.'/complete', $completion)->assertOk();
+    expect(app(OperationChildren::class)->requireSucceeded($this->parent, 'apply')->id)->toBe($middle->id);
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded'])->assertOk();
+});

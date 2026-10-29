@@ -68,12 +68,14 @@ final class OperationData extends Data
             assistance: self::assistance($operation),
         );
     }
+
     /** @return array{error_code:string}|null */
     private static function assistance(Operation $operation): ?array
     {
-        $code = $operation->state['executor_assistance']['error_code'] ?? null;
+        $flag = $operation->state['executor_assistance'] ?? null;
+        $code = is_array($flag) ? ($flag['error_code'] ?? null) : null;
+
         return is_string($code) && in_array($code, ['operation.child_unproven', 'operation.kind_unavailable'], true)
             ? ['error_code' => $code] : null;
     }
-
 }

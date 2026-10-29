@@ -6,10 +6,10 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use InvalidArgumentException;
 use LogicException;
-use Illuminate\Support\Facades\DB;
 
 /** Bounded, sleeping reads for retained Gateway callers. Never executes or cancels work. */
 final readonly class AwaitOperation

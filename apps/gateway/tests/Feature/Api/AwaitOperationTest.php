@@ -6,15 +6,18 @@ use App\Domain\Operations\AwaitOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use Illuminate\Support\Sleep;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Sleep;
 
 function awaitKitOperation(OperationStatus $status = OperationStatus::Queued): Operation
 {
     $operation = Operation::query()->create(['kind' => 'test.await', 'target_type' => 'node', 'target_id' => 27,
         'node_id' => null, 'status' => $status, 'input' => [], 'sequence' => 1, 'attempts' => 0]);
     // A real retained caller has committed admission before waiting. End the test harness transaction too.
-    while (DB::transactionLevel() > 0) { DB::commit(); }
+    while (DB::transactionLevel() > 0) {
+        DB::commit();
+    }
+
     return $operation;
 }
 
@@ -64,7 +67,6 @@ it('ends the caller wait on deadline without cancelling or changing the pending 
 it('refuses an unbounded or zero caller wait', function (int $seconds): void {
     expect(fn () => app(AwaitOperation::class)->execute(awaitKitOperation(), $seconds))->toThrow(InvalidArgumentException::class);
 })->with([0, -1, 121]);
-
 
 it('refuses waiting inside a transaction before reading or sleeping', function (): void {
     $operation = awaitKitOperation();

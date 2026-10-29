@@ -29,6 +29,10 @@ final class ReceiptTestSecret implements OperationSecretSource
 
     public bool $rotates = false;
 
+    public bool $requiresLiveOwner = false;
+
+    public int $ownerReads = 0;
+
     public function name(): string
     {
         return 'receipt.test';
@@ -41,7 +45,9 @@ final class ReceiptTestSecret implements OperationSecretSource
 
     public function ownerId(Operation $operation): ?int
     {
-        return $operation->target_id;
+        $this->ownerReads++;
+
+        return $this->requiresLiveOwner && ! Node::query()->whereKey($operation->target_id)->exists() ? null : $operation->target_id;
     }
 
     public function resolve(Operation $operation, int $ownerId, string $key, string $parameter): OperationSecretValue
@@ -131,7 +137,12 @@ final class ReceiptTestExecution implements OperationCompletion, OperationFamily
         return null;
     }
 
-    public function complete(Operation $operation, OperationOutcome $outcome): void {}
+    public function complete(Operation $operation, OperationOutcome $outcome): void
+    {
+        if (($operation->input['delete_target_on_complete'] ?? false) && $outcome->status === OperationStatus::Succeeded) {
+            Node::query()->whereKey($operation->target_id)->delete();
+        }
+    }
 }
 
 final class ReceiptTestTransport implements OperationEffectTransport
@@ -546,3 +557,48 @@ it('does not clear earlier uncertainty when a replay has a pre-start refusal', f
     expect($state['executor_runs']['effect']['started'])->toBeTrue();
     expect($state['executor_runs']['effect']['result'])->toBeNull();
 })->with(['agent.target_busy', 'agent.lock_unavailable', 'agent.supervisor_not_ready', 'agent.invalid_input', 'agent.version_mismatch']);
+
+it('retains terminal context completion replay and cached receipts after target deletion without hydration', function (): void {
+    $this->source->requiresLiveOwner = true;
+    $this->transport->loseReply = false;
+    $this->operation->update(['input' => [...$this->operation->input, 'delete_target_on_complete' => true],
+        'state' => [...$this->operation->state, 'executor_target' => ['node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]]]);
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $completion = ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result];
+    $ownerReads = $this->source->ownerReads;
+    $this->postJson($this->path.'/complete', $completion)->assertOk()->assertJsonPath('data.node_id', $this->target->id)
+        ->assertJsonPath('data.execution_context.descriptors.0.key', 'effect');
+    expect($this->operation->refresh()->node_id)->toBeNull()->and(Node::query()->whereKey($this->target->id)->exists())->toBeFalse();
+    $this->postJson($this->path.'/complete', $completion)->assertOk()->assertJsonPath('data.result', $result);
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.result', $result);
+    expect($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(0)->and($this->source->ownerReads)->toBe($ownerReads);
+});
+
+it('refuses a new transport effect after deletion before rehydrating or dispatching', function (): void {
+    $this->source->requiresLiveOwner = true;
+    $this->transport->loseReply = false;
+    $input = $this->operation->input;
+    $input['descriptors'][] = [...$input['descriptors'][0], 'key' => 'later'];
+    $this->operation->update(['input' => $input, 'state' => [...$this->operation->state,
+        'executor_target' => ['node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]]]);
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    $this->target->delete();
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->assertJsonPath('data.execution_context.descriptors.0.key', 'effect');
+    $this->postJson($this->path.'/run', [...$this->run, 'key' => 'later'])->assertConflict()->assertJsonPath('error.code', 'operation.target_missing');
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    expect($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(0);
+});
+
+it('refuses a nulled root target before completion projects or releases its hold', function (): void {
+    $this->transport->loseReply = false;
+    $this->operation->update(['state' => [...$this->operation->state, 'executor_target' => [
+        'node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]], 'lock_key' => 'node:'.$this->target->id]);
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $state = $this->operation->refresh()->state;
+    $this->operation->update(['node_id' => null]);
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+    expect($this->operation->refresh()->status)->toBe(OperationStatus::Running)->and($this->operation->lock_key)->not->toBeNull()
+        ->and($this->operation->state)->toBe($state)->and($this->operation->result)->toBeNull();
+});

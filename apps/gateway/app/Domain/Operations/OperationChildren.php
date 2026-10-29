@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Operation;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use LogicException;
@@ -136,8 +136,11 @@ final readonly class OperationChildren
     /** @return array<string,mixed> */
     private function identity(Operation $child): array
     {
+        $snapshot = $child->child_admission['admitted'] ?? null;
+        $admittedNode = is_array($snapshot) ? ($snapshot['node_id'] ?? null) : null;
+
         return ['parent_operation_id' => $child->parent_operation_id, 'key' => $child->child_key,
-            'kind' => $child->kind, 'node_id' => $child->node_id ?? ($child->child_admission['admitted']['node_id'] ?? null), 'target_type' => $child->target_type,
+            'kind' => $child->kind, 'node_id' => $child->node_id ?? $admittedNode, 'target_type' => $child->target_type,
             'target_id' => $child->target_id, 'input' => $child->input, 'run_constraints' => $child->run_constraints ?? []];
     }
 
@@ -167,6 +170,7 @@ final readonly class OperationChildren
                 || ($operation->node_id === null && $id !== null && Node::query()->whereKey($id)->exists())) {
                 throw new ResourceOperationException('operation.child_unproven', 'The Operation target no longer matches admission.', 409);
             }
+
             return $id === null ? null : ValidatedData::integer($id);
         }
         $parent = Operation::query()->find($operation->parent_operation_id);
@@ -174,7 +178,9 @@ final readonly class OperationChildren
             throw new ResourceOperationException('operation.child_unproven', 'The stamped parent is unavailable.', 409);
         }
         $this->verify($parent, $operation);
-        $id = $operation->child_admission['admitted']['node_id'] ?? null;
+        $admitted = ValidatedData::object($operation->child_admission['admitted'] ?? []);
+        $id = $admitted['node_id'] ?? null;
+
         return $id === null ? null : ValidatedData::integer($id);
     }
 
@@ -341,11 +347,13 @@ final readonly class OperationChildren
         foreach ($parent->children()->whereNotIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])->get() as $child) {
             try {
                 $this->verify($parent, $child);
+
                 return true;
             } catch (ResourceOperationException) {
                 // An invalid admission is the assistance case, never proof of active child ownership.
             }
         }
+
         return false;
     }
 

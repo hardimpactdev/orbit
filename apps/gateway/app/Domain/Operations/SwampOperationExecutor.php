@@ -7,14 +7,14 @@ namespace App\Domain\Operations;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
-use App\Models\Operation;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Closure;
-use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 
 /**
@@ -53,6 +53,7 @@ final readonly class SwampOperationExecutor
                 return null;
             }
             $state = [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId];
+            $state['executor_target'] ??= ['node_id' => app(OperationChildren::class)->nodeId($operation), 'target_type' => $operation->target_type, 'target_id' => $operation->target_id];
             if ($operation->status === OperationStatus::Waiting) {
                 $state['executor_reentry'] = app(OperationChildren::class)->reentry($operation);
                 unset($state['executor_wait'], $state['executor_assistance']);
@@ -224,6 +225,7 @@ final readonly class SwampOperationExecutor
     {
         return DB::transaction(function () use ($operation, $data, $nodeId): Operation {
             $operation->refresh();
+            app(OperationChildren::class)->nodeId($operation);
             $receipt = ['status' => $data['status'], 'result' => $this->contract->result($operation, $data['result'] ?? []),
                 'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code']) : null];
             if ($operation->status->terminal()) {
@@ -287,6 +289,7 @@ final readonly class SwampOperationExecutor
     {
         $effectKey = $this->effectKey($operation, $key);
         $operation->refresh();
+        app(OperationChildren::class)->nodeId($operation);
         if (($operation->state['executor_lease_node_id'] ?? null) !== $nodeId) {
             throw new ResourceOperationException('operation.lease_lost', 'Claim the Operation with this executor peer before reading its receipt.', 409);
         }
@@ -314,12 +317,13 @@ final readonly class SwampOperationExecutor
             $data = ['worker' => $operation->worker ?? '', 'key' => $key, 'transport' => ValidatedData::string($entry['transport']),
                 'name' => ValidatedData::string($entry['name']), 'input' => ValidatedData::object($entry['input'] ?? [])];
             $spec = $this->contract->authorizeRun($operation, $data);
-            $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
             if (is_array($entry['result'] ?? null)) {
                 $result = $this->receiptBody($effectKey, $entry);
 
                 return;
             }
+            $this->assertTargetExists($operation, $data['transport']);
+            $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
             $this->owned($operation, $data['worker'], $nodeId, static function (Operation $operation): void {});
             $transport = $this->transports->get($data['transport']);
             $run = [...$data, 'effect_key' => $effectKey, 'effect_identity' => $this->effectIdentity($operation)];
@@ -431,8 +435,8 @@ final readonly class SwampOperationExecutor
         $spec = null;
         $references = [];
         $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data, $fingerprint, &$receipt, &$spec, &$references): void {
+            app(OperationChildren::class)->nodeId($operation);
             $spec = $this->contract->authorizeRun($operation, $data);
-            $references = $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
             if (! isset($operation->state['executor_effect_identity'])) {
                 if ($operation->created_at === null) {
                     throw new ResourceOperationException('operation.execution_uncertain', 'The Operation has no creation time.', 409);
@@ -446,6 +450,10 @@ final readonly class SwampOperationExecutor
                 throw new ResourceOperationException('operation.idempotency_conflict', 'The execution key has another payload.', 409);
             }
             if ($receipt === null) {
+                if ($this->contract->cancellationAllowsRun($operation)) {
+                    $this->assertTargetExists($operation, $data['transport']);
+                    $references = $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
+                }
                 $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'input' => $data['input'], 'references' => $references, 'step' => $spec['step'] ?? null, 'started' => false, 'result' => null];
                 $this->store->change($operation, ['state' => [...($operation->state ?? []), 'executor_runs' => $runs]]);
             }

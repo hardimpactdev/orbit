@@ -436,8 +436,21 @@ The read and claim paths use one shared candidate selector. It counts queued Ope
 
 ### Cancel child plans
 
-A kind may declare `compensations: [<child kinds>]` with `cancellation_boundary: <child key>`, gated by `OperationKinds::supports("compensations")`. Each compensation kind must also be a declared child kind. After cancellation, this parent performs no further effect itself. It may admit and run several compensation kinds only after the named boundary is a Gateway-stamped successful child of this parent. Existing input, target and receipt checks still apply. Ordinary child effects refuse when any ancestor has requested cancellation. Descendants inside a proven compensation branch may execute that branch's cleanup plan.
+A kind may declare `compensations: [<child kinds>]` with `cancellation_boundary: <child key>`, gated by `OperationKinds::supports("compensations")`. Each compensation kind must also be a declared child kind. After cancellation, this parent performs no further effect itself. It may admit and run several compensation kinds only after the named boundary is a Gateway-stamped successful child of this parent. Existing input, target and receipt checks still apply.
 
-Child Node relations cannot use `state.steps` or `state.executor_*`, because those hold Swamp step data and target receipts. Use admitted input or Gateway-owned intent and plans. Same-target siblings serialize their effects under the original ancestor's attempt lease without acquiring or releasing its target hold. Custom run constraints check once at final dispatch; the owning admission adapter validates custom parameters.
+Cancellation stamps every nonterminal descendant in the same transaction and immediately settles queued children that have not started. Running children observe their own cancel request, so their own proven activation boundary or compensation contract still applies. A cancelled child returns the ordinary `operation.cancelled` result and can settle.
+
+An intermediate transfer can therefore restore after its grandparent is cancelled. New compensation children run their cleanup plan under the existing proof rules.
+
+Child Node relations may use only `state.child_intents`, `state.integration_intent`, `state.route_plan` or `state.role_intent` and their nested fields. Other state prefixes refuse at load. Use admitted `input`, `intent` or `operation.node_id` for other plans. Swamp step data and target receipts never supply Node authority. Same-target siblings serialize their effects under the original ancestor's attempt lease without acquiring or releasing its target hold. Custom run constraints check once at final dispatch; the owning admission adapter validates custom parameters.
 
 An invalid waiting child makes that parent unavailable for claim, without stopping other candidates. Claim records a safe `state.executor_assistance.error_code`; discovery remains read-only. Missing Gateway Swamp kind registration also raises this assistance flag. The Gateway cannot infer whether a deployed Swamp checkout includes a workflow, so deploy each family's registration with its Gateway kind. Re-entry copies verified child states, error codes and redacted results beside their original identities.
+
+
+### Resolve cancellation and missing targets
+
+Operation show and list expose a safe `assistance` value: null, or `{error_code}` for an invalid waiting child or unavailable child kind. Internal state and arbitrary details stay private. An explicit cancel may end a flagged waiting parent and release its target once no stamped nonterminal child can still be proven. A proven running child keeps the hold until it settles. Cancel cascades to every nonterminal descendant; queued children that have not started end immediately.
+
+Admission records the original Node ID, target type and target ID independently of the live Node foreign key. Child admission proof retains these immutable values after Node deletion. Child receipts and terminal executor context keep the original Node identity. Completion replies, lost-reply replays and cached effect receipt reads do not hydrate sources. New transport effects on a deleted Node fail with `operation.target_missing` before hydration or dispatch. Clearing a live Node foreign key while that admitted Node still exists refuses proof.
+
+`AwaitOperation` refuses with a `LogicException` when called inside a database transaction. Commit admission before awaiting; otherwise the Gateway would hold SQLite's write lock while waiting for Swamp to complete. Claim scans candidates in ID order, stops at the first eligible candidate and locks only that selected row. Discovery uses the same readiness predicate and writes nothing.
