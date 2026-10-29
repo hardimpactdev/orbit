@@ -455,7 +455,10 @@ impl Store {
                     if super::NOT_STARTED_ERRORS.contains(&code.as_str())
                         || super::PREFLIGHT_ERRORS.contains(&code.as_str())
                     {
-                        return Err(refused("agent.effect_unknown"));
+                        fs::remove_file(self.path(key))
+                            .and_then(|()| File::open(&self.directory)?.sync_all())
+                            .map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+                        return Self::sanitize(outcome, context);
                     }
                     if super::COMMON_ERRORS.contains(&code.as_str()) {
                         return Self::sanitize(outcome, context);
