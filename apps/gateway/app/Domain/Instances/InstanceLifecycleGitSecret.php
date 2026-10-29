@@ -9,11 +9,12 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Operation;
 use App\Models\Project;
-use App\Support\ValidatedData;
+use InvalidArgumentException;
 
 /** Resolves the admitted Project's existing Git access only in request memory. */
 final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
@@ -53,8 +54,15 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
         $project = Project::query()->findOrFail($id);
+        $repository = $operation->input['repository'] ?? null;
+        try {
+            $identity = is_string($repository) ? GitRepositoryIdentity::derive($repository) : null;
+        } catch (InvalidArgumentException) {
+            $identity = null;
+        }
         if ($parameter !== 'git_read' || $id !== $this->ownerId($operation)
             || $project->repository_identity !== ($operation->input['repository_identity'] ?? null)
+            || $identity !== $project->repository_identity || ! is_string($project->repository_url)
             || ! in_array($operation->kind, ['instance.create', 'instance.clone', 'instance.destroy', 'instance.clone_candidate', 'instance.transfer_destination'], true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Git reference is not owned by this lifecycle intent.', 422);
         }
@@ -62,6 +70,6 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
             return new OperationSecretValue(GitReadEnvironment::none());
         }
 
-        return new OperationSecretValue($this->access->for(ValidatedData::string($operation->input['repository']), $project->source_access));
+        return new OperationSecretValue($this->access->for($project->repository_url, $project->source_access));
     }
 }

@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 /** Laravel configuration lines never enter an Operation, descriptor, or Swamp resource. */
 final readonly class InstanceLifecycleUrlSecret implements OperationSecretSource
@@ -55,14 +56,26 @@ final readonly class InstanceLifecycleUrlSecret implements OperationSecretSource
             throw $this->forbidden();
         }
         if ($parameter === 'app_key') {
-            $value = LaravelApplicationKey::storedOrGenerated($instance);
+            $value = DB::transaction(function () use ($instance): string {
+                $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+                $stored = LaravelApplicationKey::stored($locked);
+                if ($stored !== null) {
+                    return $stored;
+                }
+                $generated = LaravelApplicationKey::generate();
+                $locked->environmentValues()->updateOrCreate(['env_key' => 'APP_KEY'], ['env_value' => $generated]);
+
+                return $generated;
+            });
 
             return new OperationSecretValue('APP_KEY='.InstanceEnvironmentRenderer::quote($value), [$value]);
         }
         $name = $instance->environmentValues()->where('env_key', 'APP_NAME')->first()?->env_value;
         $value = is_string($name) && $name !== '' && ! str_contains($name, '{{') ? $name : $instance->project->name;
 
-        return new OperationSecretValue('APP_NAME='.InstanceEnvironmentRenderer::quote($value), [$value]);
+        $quoted = InstanceEnvironmentRenderer::quote($value);
+
+        return new OperationSecretValue('APP_NAME='.$quoted, [$value, $quoted, substr($quoted, 1, -1)]);
     }
 
     private function forbidden(): ResourceOperationException

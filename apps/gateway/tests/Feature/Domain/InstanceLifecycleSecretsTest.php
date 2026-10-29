@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Instances\InstanceLifecycleUrlSecret;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -43,7 +44,7 @@ it('hydrates Git only in memory while retaining the credential-marked transport 
 
 it('hydrates public repository access without inventing credentials or redaction masks', function (): void {
     $repository = 'https://git.example.test/secret-proof.git';
-    $this->project->update(['repository_url' => $repository, 'source_access' => 'github_app']);
+    $this->project->forceFill(['repository_url' => $repository, 'repository_identity' => GitRepositoryIdentity::derive($repository), 'source_access' => 'github_app'])->save();
     $this->operation->input = [...$this->operation->input, 'repository' => $repository,
         'repository_identity' => $this->project->refresh()->repository_identity];
     $cli = Mockery::mock(GitHubCliToken::class);
@@ -85,6 +86,17 @@ it('rejects a Project that does not own the target before resolving Git credenti
         ->toThrow(ResourceOperationException::class);
 });
 
+it('refuses a repository URL outside the owning Project before resolving Git credentials', function (): void {
+    $this->operation->input = [...$this->operation->input, 'repository' => 'https://github.com/foreign/private.git'];
+    $cli = Mockery::mock(GitHubCliToken::class);
+    $cli->shouldNotReceive('token');
+    app()->instance(GitHubCliToken::class, $cli);
+
+    expect(fn () => app(OperationSecrets::class)->hydrate($this->operation, 'source-prepare',
+        ['git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $this->project->id]], ['git_read' => 'instance.lifecycle_git']))
+        ->toThrow(ResourceOperationException::class);
+});
+
 it('resolves stored Laravel lines without exposing them in the source value wrapper', function (): void {
     $key = 'base64:lifecycle-private-application-key';
     InstanceEnvironmentValue::query()->create(['instance_id' => $this->instance->id, 'env_key' => 'APP_KEY', 'env_value' => $key]);
@@ -93,10 +105,23 @@ it('resolves stored Laravel lines without exposing them in the source value wrap
         ->and(json_encode($value))->toBe('"[REDACTED]"')->and(print_r($value, true))->not->toContain($key);
 });
 
-it('does not invent stored APP_KEY inventory when a URL write only needs a generated fallback', function (): void {
+it('retains a generated APP_KEY so hydration retries send the same value', function (): void {
     $value = app(InstanceLifecycleUrlSecret::class)->resolve($this->operation, $this->instance->id, 'source-configuration', 'app_key');
+    $retry = app(InstanceLifecycleUrlSecret::class)->resolve($this->operation, $this->instance->id, 'source-configuration', 'app_key');
     expect($value->value)->toStartWith('APP_KEY="base64:')
-        ->and(InstanceEnvironmentValue::query()->where('instance_id', $this->instance->id)->count())->toBe(0);
+        ->and($retry->value)->toBe($value->value);
+    $stored = InstanceEnvironmentValue::query()->where('instance_id', $this->instance->id)->sole();
+    expect($stored->env_key)->toBe('APP_KEY')->and($value->value)->toBe('APP_KEY="'.$stored->env_value.'"');
+});
+
+it('redacts raw and escaped APP_NAME values from protected receipts', function (): void {
+    $name = "Proof \"quoted\" \$build\nback\\slash";
+    $this->instance->environmentValues()->create(['env_key' => 'APP_NAME', 'env_value' => $name]);
+    $hydrated = app(OperationSecrets::class)->hydrate($this->operation, 'source-configuration',
+        ['app_name' => ['$secret' => 'instance.lifecycle_url', 'id' => $this->instance->id]], ['app_name' => 'instance.lifecycle_url']);
+
+    expect(app(OperationSecrets::class)->redact(['raw' => $name, 'escaped' => 'Proof \\"quoted\\" \\$build\\nback\\\\slash'], $hydrated['values']))
+        ->toBe(['raw' => '[REDACTED]', 'escaped' => '[REDACTED]']);
 });
 
 it('refuses a registration secret for a member outside the admitted set', function (): void {
