@@ -6,8 +6,6 @@ namespace App\Providers\Domains;
 
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
-use App\Console\Commands\CheckInstanceDeploymentOperationsCommand;
-use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
@@ -86,7 +84,6 @@ use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Processes\CommandDeadline;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -156,10 +153,6 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->commands([CheckInstanceDeploymentOperationsCommand::class]);
-        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
-            GatewaySchedule::command($schedule, 'orbit:instance-deployment-operations-check', uniqueFor: 120, overlapMinutes: 2)->everyMinute();
-        });
         $this->app->booted(function (): void {
             foreach ($this->app->make(Router::class)->getRoutes()->getRoutes() as $route) {
                 if ($route->getActionName() === OperationExecutorController::class.'@run') {

@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn;
 
-use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Activity\ActivityInputRedaction;
-use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
 use App\Providers\ExtensionServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
-use Orbit\Extensions\Conn\Console\Commands\CheckConnOperationsCommand;
 use Orbit\Extensions\Conn\Domain\ConnOperationSecrets;
 use Orbit\Extensions\Conn\Domain\ConnPairingCredentialStore;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
@@ -46,10 +42,6 @@ final class ConnServiceProvider extends ExtensionServiceProvider
     public function boot(): void
     {
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
-        $this->commands([CheckConnOperationsCommand::class]);
-        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
-            GatewaySchedule::command($schedule, 'orbit:conn-operations-check', uniqueFor: 120, overlapMinutes: 2)->everyMinute()
-                ->when(static fn (): bool => app(ExtensionStore::class)->enabled('conn'));
-        });
+
     }
 }

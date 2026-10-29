@@ -84,7 +84,7 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 The collection belongs to Orbit. Do not add items with an `orbit.source` field by hand.
 
-One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. If an Operation remains unclaimed for five minutes, the next tick records `vault.executor_unclaimed`, including its Operation ID, and exits with failure. Status exposes that error even when initial setup is still queued. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
+One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
 [`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
 

@@ -24,50 +24,11 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
 });
 
-it('alerts a caller and the scheduled check after five unclaimed minutes without running the effect', function (string $verb): void {
-    $this->postJson('/api/v1/conn/environments/conn-health/pairings'.($verb === 'revoke' ? '/revoke' : ''), $verb === 'create' ? ['async' => true] : [])->assertAccepted();
-    $operation = Operation::query()->sole();
-    $path = '/api/v1/conn/operations/'.$operation->id;
-    $this->travel(4)->minutes();
-    $this->getJson($path)->assertOk()->assertJsonPath('data.assistance', null);
-    $this->artisan('orbit:conn-operations-check')->assertSuccessful();
-    $this->travel(1)->minutes();
-
-    $response = $this->getJson($path)->assertOk()->assertJsonPath('data.status', 'queued')
-        ->assertJsonPath('data.assistance.error_code', 'conn.executor_unclaimed');
-    $this->artisan('orbit:conn-operations-check')->expectsOutputToContain('conn.executor_unclaimed: Conn Operation '.$operation->id)->assertFailed();
-
-    expect($response->getContent())->not->toContain('health-session-sentinel');
-    expect($operation->fresh()->started_at)->toBeNull()->and($operation->fresh()->cancel_requested_at)->toBeNull();
-    expect(Operation::query()->count())->toBe(1)->and($operation->steps()->count())->toBe(0);
-    Http::assertNothingSent();
-
-    $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'operation_id' => $operation->id, 'worker' => 'health-proof'])->assertOk();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    $this->getJson($path)->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.assistance', null);
-    $this->artisan('orbit:conn-operations-check')->assertSuccessful();
-    Http::assertNothingSent();
-})->with(['create', 'revoke']);
-
-it('does not alert terminal or unrelated Operations', function (string $status): void {
-    $this->postJson('/api/v1/conn/environments/conn-health/pairings/revoke')->assertAccepted();
-    $operation = Operation::query()->sole();
-    $operation->update(['status' => $status]);
-    Operation::query()->create(['kind' => 'firewall.allow', 'target_type' => 'node', 'target_id' => $this->services->id,
-        'node_id' => $this->services->id, 'status' => 'queued', 'input' => []]);
-    $this->travel(6)->minutes();
-
-    $this->getJson('/api/v1/conn/operations/'.$operation->id)->assertOk()->assertJsonPath('data.assistance', null);
-    $this->artisan('orbit:conn-operations-check')->assertSuccessful();
-
-    Http::assertNothingSent();
-})->with(['succeeded', 'failed', 'cancelled']);
-
 it('keeps an unclaimed revocation private to its original requester', function (): void {
     $this->postJson('/api/v1/conn/environments/conn-health/pairings/revoke')->assertAccepted();
     $operation = Operation::query()->sole();
     $this->travel(6)->minutes();
+    $this->getJson('/api/v1/conn/operations/'.$operation->id)->assertOk()->assertJsonPath('data.assistance.error_code', 'operation.executor_unclaimed');
     $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
 
     $this->getJson('/api/v1/conn/operations/'.$operation->id)->assertNotFound();

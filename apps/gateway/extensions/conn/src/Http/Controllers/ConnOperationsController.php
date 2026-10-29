@@ -14,17 +14,15 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Orbit\Extensions\Conn\Domain\ConnOperationHealth;
 
 /** Conn callers can follow their own effects without access to the Gateway Node. */
 final class ConnOperationsController extends Controller
 {
-    public function show(ShowOperationRequest $request, Operation $operation, ConnOperationHealth $health): JsonResponse
+    public function show(ShowOperationRequest $request, Operation $operation): JsonResponse
     {
         $this->assertOwner($request, $operation);
 
         $data = OperationsController::withSteps($operation, $request->afterSequence(), $operation->caller_node_name);
-        $data['assistance'] ??= $health->assistance($operation);
 
         return response()->json(['data' => $data,
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
