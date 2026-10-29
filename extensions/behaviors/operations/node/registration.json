@@ -1,4 +1,4 @@
 {
-  "kinds": ["node.prepare_php_packages"],
+  "kinds": ["node.prepare_php_packages", "node.settings"],
   "workflow": "operation-node"
 }

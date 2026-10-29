@@ -18,6 +18,12 @@ const Completion = z.object({
   result: Result,
   error_code: ErrorCode.nullable(),
 });
+const Storage = z.object({
+  root: z.string().startsWith("/"),
+  user: z.string().min(1),
+  group: z.string().min(1),
+  create_missing: z.boolean(),
+}).strict();
 const Input = z.object({
   versions: z.array(z.string().regex(/^[0-9]+\.[0-9]+$/)).min(1).max(8),
   profile: z.literal("app-prod"),
@@ -88,7 +94,7 @@ export function node(
       },
       intent: {
         description: "Reference-only immutable effect input",
-        schema: Input.shape._php_packages,
+        schema: z.union([Input.shape._php_packages, Storage]),
         lifetime: "infinite",
         garbageCollection: 10,
       },
@@ -101,9 +107,10 @@ export function node(
     },
     methods: {
       execute: {
-        description: "Prepare the admitted production PHP packages",
+        description:
+          "Execute the admitted Node settings or production PHP packages",
         arguments: z.object({
-          kind: z.literal("node.prepare_php_packages"),
+          kind: z.enum(["node.prepare_php_packages", "node.settings"]),
           worker: z.string().min(1),
         }),
         execute: async (
@@ -152,7 +159,9 @@ export function node(
           if (!operation) return { claimed: false };
           if (
             operation.kind !== args.kind ||
-            operation.kind !== "node.prepare_php_packages" ||
+            !["node.prepare_php_packages", "node.settings"].includes(
+              operation.kind,
+            ) ||
             (id !== undefined && operation.id !== id)
           ) throw new ExecutorError("operation.execution_forbidden");
           if (id === undefined) {
@@ -178,7 +187,39 @@ export function node(
           if (operation.node_id === null) {
             throw new ExecutorError("operation.target_missing");
           }
-          const input = Input.parse(operation.input)._php_packages;
+          const settings = operation.kind === "node.settings";
+          if (settings && operation.input.node_id !== operation.node_id) {
+            throw new ExecutorError("operation.execution_forbidden");
+          }
+          const input = settings
+            ? Storage.parse(
+              Object.fromEntries(
+                Object.keys(Storage.shape).map((
+                  key,
+                ) => [key, operation.input[key]]),
+              ),
+            )
+            : Input.parse(operation.input)._php_packages;
+          const outcomeFor = settings
+            ? (result: Record<string, unknown>): z.infer<typeof Completion> => {
+              const error = result.error_code === undefined
+                ? null
+                : ErrorCode.parse(result.error_code);
+              return {
+                status: error === "operation.cancelled"
+                  ? "cancelled"
+                  : error
+                  ? "failed"
+                  : "succeeded",
+                result,
+                error_code: error === "operation.cancelled"
+                  ? error
+                  : error
+                  ? "node.settings_root_failed"
+                  : null,
+              };
+            }
+            : completion;
           let heartbeatError: unknown;
           let renewing = false;
           const timer = setInterval(() => {
@@ -195,7 +236,7 @@ export function node(
             ctx.signal?.throwIfAborted();
           };
           try {
-            const step = "php-packages";
+            const step = settings ? "node-storage-root" : "php-packages";
             const previous = await ctx.readResource(`intent-${path}`);
             let outcome: z.infer<typeof Completion>;
             if (
@@ -221,7 +262,9 @@ export function node(
                   key: `${step}:start`,
                   name: step,
                   status: "running",
-                  output: "Prepare production PHP packages\n",
+                  output: settings
+                    ? "Prepare Node apps root\n"
+                    : "Prepare production PHP packages\n",
                 });
                 if (previous) {
                   const receipt = await executor.receipt(operation.id, step);
@@ -250,18 +293,21 @@ export function node(
                     await post("run", {
                       key: step,
                       transport: "agent",
-                      name: "php.install-build",
+                      name: settings
+                        ? "node.prepare-storage-root"
+                        : "php.install-build",
                       input,
                     }),
                   );
                 } catch (error) {
                   if (
                     !(error instanceof ExecutorError) ||
-                    error.code !== "app-prod.php_package_source_unavailable"
+                    (settings ||
+                      error.code !== "app-prod.php_package_source_unavailable")
                   ) throw error;
                   result = { error_code: error.code };
                 }
-                outcome = completion(result);
+                outcome = outcomeFor(result);
                 fence();
                 await post("step", {
                   key: `${step}:finish`,
@@ -271,9 +317,11 @@ export function node(
                     : "failed",
                   result,
                   error_code: outcome.error_code,
-                  output: "PHP package preparation ended\n",
+                  output: settings
+                    ? "Node apps root check ended\n"
+                    : "PHP package preparation ended\n",
                 });
-              } else outcome = completion(result);
+              } else outcome = outcomeFor(result);
             }
             fence();
             const handle = await ctx.writeResource(
