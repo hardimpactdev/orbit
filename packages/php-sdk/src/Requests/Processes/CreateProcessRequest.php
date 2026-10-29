@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Processes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -55,11 +55,12 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
         return '/api/v1/processes';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ProcessMutationResponse
     {
-        return OperationResponse::fromGatewayData(
+        return ProcessMutationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
+            $response->status(),
         );
     }
 

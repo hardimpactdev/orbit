@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\StartProcessAction;
-use App\Actions\Processes\StopProcessAction;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,12 +28,19 @@ beforeEach(function (): void {
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
 });
 
-it('refuses executor-host mutations without changing intent or touching its runtime', function (string $peer, string $verb): void {
+it('runs executor-host mutations synchronously with the original HTTP responses', function (string $peer, string $verb): void {
     config($peer === 'services'
         ? ['dependency_detection.services_node_id' => (string) $this->node->id]
         : ['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->process->update(['name' => $peer === 'worker' ? 'renamed-executor-dependency' : 'swamp-serve']);
-    $before = $this->process->refresh()->getAttributes();
+    $this->runtime->shouldReceive('status')->andReturn('active');
+    match ($verb) {
+        'create', 'update' => $this->runtime->shouldReceive('converge')->once(),
+        'destroy' => $this->runtime->shouldReceive('remove')->once(),
+        'start' => $this->runtime->shouldReceive('start')->once(),
+        'stop' => $this->runtime->shouldReceive('stop')->once(),
+        'restart' => $this->runtime->shouldReceive('restart')->once(),
+    };
     $path = '/api/v1/processes/'.$this->process->id;
 
     $response = match ($verb) {
@@ -48,23 +53,54 @@ it('refuses executor-host mutations without changing intent or touching its runt
         default => $this->postJson($path.'/'.$verb),
     };
 
-    $response->assertConflict()->assertJsonPath('error.code', 'process.executor_dependency');
-    expect($this->process->refresh()->getAttributes())->toBe($before);
-    $this->assertDatabaseCount('processes', 1);
+    $verb === 'create' ? $response->assertCreated() : $response->assertOk();
+    $response->assertJsonPath('data.target_type', 'node')->assertJsonPath('data.target_id', $this->node->id)->assertJsonMissingPath('data.kind');
+    if ($verb === 'destroy') {
+        $response->assertJsonPath('data.runtime_status', 'absent');
+        $this->assertModelMissing($this->process);
+    } elseif ($verb === 'update') {
+        expect($this->process->refresh()->runtime_config['command'])->toBe(['/bin/sleep', '300']);
+    } elseif ($verb !== 'create') {
+        expect($this->process->refresh()->desired_state->value)->toBe($verb === 'stop' ? 'stopped' : 'running');
+    }
+    $this->assertDatabaseCount('processes', match ($verb) {
+        'create' => 2, 'destroy' => 0, default => 1
+    });
     $this->assertDatabaseCount('operations', 0);
 })->with(['services', 'worker'])->with(['create', 'update', 'start', 'stop', 'restart', 'destroy']);
 
-it('leaves synchronous stop and recovery available without a Swamp worker', function (): void {
+it('stops and starts serve through HTTP without a Swamp worker', function (): void {
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->runtime->shouldReceive('stop')->once()->withArgs(fn (Process $process): bool => $process->id === $this->process->id);
     $this->runtime->shouldReceive('start')->once()->withArgs(fn (Process $process, bool $explicit): bool => $process->id === $this->process->id && $explicit);
-    $this->runtime->shouldReceive('status')->andReturn('inactive', 'active');
+    $this->runtime->shouldReceive('status')->andReturnUsing(fn (Process $process): string => $process->desired_state->value === 'running' ? 'active' : 'inactive');
 
-    app(StopProcessAction::class)->execute($this->process);
+    $this->postJson('/api/v1/processes/'.$this->process->id.'/stop')->assertOk()
+        ->assertJsonPath('data.id', $this->process->id)->assertJsonPath('data.desired_state', 'stopped')->assertJsonPath('data.runtime_status', 'inactive');
     expect($this->process->refresh()->desired_state->value)->toBe('stopped');
-    app(StartProcessAction::class)->execute($this->process);
+    $this->postJson('/api/v1/processes/'.$this->process->id.'/start')->assertOk()
+        ->assertJsonPath('data.id', $this->process->id)->assertJsonPath('data.desired_state', 'running')->assertJsonPath('data.runtime_status', 'active');
 
     expect($this->process->refresh()->desired_state->value)->toBe('running');
+    $this->assertDatabaseCount('operations', 0);
+});
+
+it('creates reuses stops and destroys a Services deploy helper without admitting an Operation', function (): void {
+    config(['dependency_detection.services_node_id' => $this->node->id]);
+    $this->withHeader('Idempotency-Key', 'services-helper');
+    $this->runtime->shouldReceive('converge')->twice();
+    $this->runtime->shouldReceive('status')->andReturn('active');
+    $this->runtime->shouldReceive('stop')->once();
+    $this->runtime->shouldReceive('remove')->once();
+    $payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'deploy-helper',
+        'runtime' => 'systemd', 'command' => ['/bin/sleep', '300'], 'start' => true];
+
+    $id = $this->postJson('/api/v1/processes', $payload)->assertCreated()->json('data.id');
+    $this->postJson('/api/v1/processes', $payload)->assertOk()->assertJsonPath('data.id', $id);
+    $this->postJson('/api/v1/processes/'.$id.'/stop')->assertOk()->assertJsonPath('data.desired_state', 'stopped');
+    $this->deleteJson('/api/v1/processes/'.$id)->assertOk()->assertJsonPath('data.id', $id)->assertJsonPath('data.runtime_status', 'absent');
+
+    $this->assertDatabaseMissing('processes', ['id' => $id]);
     $this->assertDatabaseCount('operations', 0);
 });
 

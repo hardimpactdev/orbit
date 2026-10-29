@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
@@ -22,6 +23,7 @@ use Orbit\Sdk\Requests\Projects\DestroyProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Projects\ShowProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -1690,3 +1692,27 @@ it('renders the blocking Route when an update changes its listener', function (b
         expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.route_upstream_changed');
     }
 })->with([true, false]);
+
+it('still follows HTTP 202 Process Operations on ordinary workload Nodes', function (string $command, array $arguments, string $requestClass): void {
+    $operation = ['id' => 91, 'kind' => 'process.stop', 'target_type' => 'process', 'target_id' => 12,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['ready' => true]];
+    $envelope = ['data' => $operation, 'meta' => ['request_id' => process_cli_request_id()]];
+    $mock = MockClient::global([
+        $requestClass => MockResponse::make($envelope, 202),
+        ShowOperationRequest::class => MockResponse::make($envelope),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+    ]);
+
+    [$exit, $output] = process_cli_display($command, [...$arguments, '--json' => true]);
+
+    expect($exit)->toBe(0)
+        ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['id' => 91, 'status' => 'succeeded', 'kind' => 'process.stop']);
+    $mock->assertSent(fn ($request): bool => $request instanceof ShowOperationRequest);
+})->with([
+    'create' => ['process:create', ['name' => 'helper', '--node' => '4', '--command' => ['/bin/sleep', '300']], CreateProcessRequest::class],
+    'update' => ['process:update', ['name' => '12', '--keep-alive' => true], UpdateProcessRequest::class],
+    'start' => ['process:start', ['process' => '12'], StartProcessRequest::class],
+    'stop' => ['process:stop', ['process' => '12'], StopProcessRequest::class],
+    'restart' => ['process:restart', ['process' => '12'], RestartProcessRequest::class],
+    'destroy' => ['process:destroy', ['process' => '12', '--yes' => true], DestroyProcessRequest::class],
+]);

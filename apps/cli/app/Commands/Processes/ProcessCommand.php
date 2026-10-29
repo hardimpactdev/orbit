@@ -11,11 +11,21 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Logs\LogRedaction;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
 abstract class ProcessCommand extends GatewayCommand
 {
     use FollowsOperations;
+
+    protected function finishMutation(GatewayConnector $connector, GatewayConfigRepository $repository, ProcessMutationResponse $response, string $title, string $pastTense): int
+    {
+        $result = $response->result;
+
+        return $result instanceof OperationResponse
+            ? $this->finishOperation($connector, $repository, $result, $title)
+            : $this->renderProcess($result, "Process [{$result->name}] {$pastTense}.");
+    }
 
     protected function finishOperation(GatewayConnector $connector, GatewayConfigRepository $repository, OperationResponse $operation, string $title): int
     {

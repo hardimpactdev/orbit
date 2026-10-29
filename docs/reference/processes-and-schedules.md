@@ -22,7 +22,11 @@ Process create, update, start, stop, restart, and destroy record an Operation an
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
-Processes on the configured Swamp Services Node or executor worker Nodes cannot be mutated through Swamp. Admission and final dispatch refuse with `process.executor_dependency` (HTTP 409). This includes Instance Processes on those Nodes. The guard covers every Process there, because stopping serve or a local dependency could remove the executor needed for recovery. It uses the configured Node identities, so renaming a Process cannot bypass it. Read commands and retained synchronous PHP actions remain available. Use the synchronous control path to maintain executor Processes; do not enqueue their own recovery in Swamp.
+When a Process runs on the configured Swamp Services Node or an executor worker Node, its mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Create returns HTTP 201 for a new Process or 200 for an existing one. Update, start, stop, restart and destroy return HTTP 200 with Process data. They record no Operation and need no Swamp worker, so stopping serve does not remove its recovery path.
+
+Placement uses the configured Node identities; renaming a Process cannot bypass it. Direct Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
+
+The SDK exposes the mutation's Process or Operation result through `ProcessMutationResponse.result`. The CLI prints the completed Process for synchronous responses and follows the Operation for HTTP 202.
 
 ## Owners
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Processes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
@@ -30,11 +30,11 @@ abstract class ProcessActionRequest extends GatewayRequest
         return "/api/v1/processes/{$this->processId}/{$this->action()}";
     }
 
-    final public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    final public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ProcessMutationResponse
     {
         $requestId = $this->successRequestId($response);
 
-        return OperationResponse::fromGatewayData($this->unwrapData($response), $requestId);
+        return ProcessMutationResponse::fromGatewayData($this->unwrapData($response), $requestId, $response->status());
     }
 
     abstract protected function action(): string;

@@ -11,6 +11,7 @@ use JsonException;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Projects\CreateProcessDefinitionRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class CreateProcessCommand extends TargetedProcessCommand
@@ -243,14 +244,16 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 user: $user,
                 idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            OperationResponse::class,
+            ProcessMutationResponse::class,
         );
 
-        if (! $process instanceof OperationResponse) {
+        if (! $process instanceof ProcessMutationResponse) {
             return self::FAILURE;
         }
 
-        return $this->finishOperation($connector, $repository, $process, "Create Process [{$name}]");
+        return $process->result instanceof OperationResponse
+            ? $this->finishOperation($connector, $repository, $process->result, "Create Process [{$name}]")
+            : $this->renderProcess($process->result, "Process [{$process->result->name}] is {$process->result->runtimeStatus}.");
     }
 
     /**

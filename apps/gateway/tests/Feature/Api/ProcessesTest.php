@@ -44,6 +44,7 @@ beforeEach(function (): void {
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $node = $this->markAsGateway($node);
     $this->node = $node;
+    config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     $orbitApp = Project::query()->create([
         'name' => 'Docs',
