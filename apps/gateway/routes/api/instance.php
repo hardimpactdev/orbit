@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\InstanceDependenciesController;
 use App\Http\Controllers\Api\InstanceDeploymentsController;
 use App\Http\Controllers\Api\InstanceDeploymentSourceController;
 use App\Http\Controllers\Api\InstanceDeployStepsController;
+use App\Http\Controllers\Api\InstanceLifecycleContextController;
 use App\Http\Controllers\Api\InstanceLogsController;
 use App\Http\Controllers\Api\InstanceLogStreamsController;
 use App\Http\Controllers\Api\InstanceQueueController;
@@ -49,6 +50,7 @@ Route::middleware([
     Route::delete('projects/{project}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownDestroy'])
         ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
         ->name('instance:teardown-step:destroy');
+    Route::get('operations/{operation}/instance-lifecycle', [InstanceLifecycleContextController::class, '__invoke'])->whereNumber('operation')->name('instance:lifecycle:context');
     Route::get('instances/resolve-directory', [ResolveDirectoryInstanceController::class, '__invoke'])->name('instance:resolve-directory');
     Route::get('instances/resolve', [ResolveDependencyInstanceController::class, '__invoke'])->name('instance:resolve');
     Route::get('instances/{instance}/dependencies', [InstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
