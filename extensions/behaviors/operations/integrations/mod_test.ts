@@ -565,3 +565,91 @@ Deno.test("an unrecognized pre-start marker cannot become a terminal command ref
     false,
   );
 });
+
+Deno.test("Conn server refusal ends the admitted workflow and cannot return an issued credential", async () => {
+  for (
+    const code of [
+      "conn.server_unreachable",
+      "conn.session_rejected",
+      "conn.request_refused",
+    ]
+  ) {
+    const f = new Fixture();
+    f.operation.kind = "conn.pairing_create";
+    f.operation.input = {
+      environment: { $secret: "conn.environment", id: 8 },
+      pairing_ids: [77],
+    };
+    f.result = { error_code: code };
+    assertEquals((await f.execute()).status, "failed");
+    assertEquals(f.calls.at(-1)?.body, {
+      worker: "workflow-12",
+      status: "failed",
+      result: { error_code: code },
+      error_code: code,
+    });
+    assertEquals(f.effects, 1);
+    assertEquals(
+      f.calls.some((call) => JSON.stringify(call).includes("pairing_url")),
+      false,
+    );
+  }
+});
+
+Deno.test("Conn pairing workflow reuses its issued secret reference after a lost completion reply", async () => {
+  const f = new Fixture();
+  f.operation.kind = "conn.pairing_create";
+  f.operation.input = {
+    environment: { $secret: "conn.environment", id: 8 },
+    pairing_ids: [77],
+  };
+  f.result = {
+    backend: "issued",
+    pairing_id: 77,
+    pairing_link_id: "link-1",
+    credential: { $secret: "conn.pairing.credential", id: 77 },
+  };
+  f.loseCompletion = true;
+  await assertRejects(() => f.execute(), Error, "Lost completion reply");
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.effects, 1);
+  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
+});
+
+Deno.test("Vault sync resumes its keyed collection result and completes every admitted ledger field", async () => {
+  const f = new Fixture();
+  f.operation.kind = "vault.sync";
+  f.operation.input = {
+    configuration: { $secret: "vault.credentials", id: 2 },
+  };
+  f.result = {
+    outcome: "succeeded",
+    data: {
+      backend: "synced",
+      sources: ["database-connection:1", "database-user:2"],
+      cipher_ids: ["cipher-1", "cipher-2"],
+      revisions: ["revision-1", "revision-2"],
+      fingerprints: ["hash-1", "hash-2"],
+    },
+  };
+  f.loseRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost run reply");
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.effects, 1);
+  assertEquals(f.calls.at(-1)?.body.result, f.result);
+  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
+});
+
+Deno.test("Vault failed collection deletion or write cannot complete as a successful sync", async () => {
+  for (const action of ["sync", "teardown"]) {
+    const f = new Fixture();
+    f.operation.kind = `vault.${action}`;
+    f.operation.input = {
+      configuration: { $secret: "vault.credentials", id: 2 },
+    };
+    f.result = { outcome: "failed", data: { error_code: "vault.unreachable" } };
+    assertEquals((await f.execute()).status, "failed");
+    assertEquals(f.calls.at(-1)?.body.error_code, "vault.unreachable");
+    assertEquals(f.effects, 1);
+  }
+});

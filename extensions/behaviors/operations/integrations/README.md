@@ -46,7 +46,10 @@ restore settles. The cancelled parent performs no further effects.
 
 Secrets enter remote effects only after Gateway hydration. Conn's one-time
 output is declared as a secret output owned by its pairing record. Swamp accepts
-only its reference, never the credential.
+only its reference, never the credential. The Conn HTTP 201 path admits this
+same workflow and waits for a bounded Gateway read; it contains no separate
+pairing executor. A caller timeout leaves the existing Operation available for
+recovery.
 
 Focused checks:
 
