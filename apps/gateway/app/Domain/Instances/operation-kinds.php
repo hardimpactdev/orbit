@@ -9,6 +9,7 @@ use App\Domain\Instances\Smoke\InstanceSmokeOperation;
 use App\Domain\Operations\OperationKinds;
 
 return [
+    ...require __DIR__.'/environment-operation-kinds.php',
     OperationKinds::InstanceSmoke => InstanceSmokeOperation::class,
     OperationKinds::InstanceDeploy => InstanceDeployOperation::class,
     OperationKinds::InstancePolicyEvent => AutomaticDeployEventOperation::class,

@@ -78,6 +78,14 @@ The Instance must be active and have complete placement. The Node must have exac
 
 Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 
+## Environment child Operations
+
+Route plans use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. Instance lifecycle and deployment parents use `{instance_id}`. The Gateway stamps parent ancestry and fixes the Instance and Node. Callers cannot supply a mode, a path, environment contents or parent metadata. Existing synchronous environment commands and retained deploy callers keep their current execution path until their owning cutover.
+
+Swamp executes preparation, the main environment write, managed testing-file merge, additional Route URL writes and final verification in that order. URL-only web-root stages, including rollback stages, leave the main environment and testing files alone. Removed targets remain owned through the Route's admitted previous-target set. Each required write needs its original keyed receipt and a matching successful step before the child can succeed.
+
+The Gateway resolves stored values and checks workload keys in memory immediately before dispatch. Operation input and workflow context contain protected references, never raw or encoded environment values. An uncertain write keeps its result open for the original target receipt; a retry does not render or write again. Cancellation cannot turn an unknown result into successful synchronization.
+
 ## Where the file lives
 
 The Instance's recorded [vp runtime and package-manager environment](/reference/tools#project-environments-in-the-vite-store) is separate from its environment variables. The nullable `vp_environment` record holds store versions and prerequisite status, not `.env` keys or values. Preparing or adopting those tools does not import, synchronize, or rewrite the Instance's `.env` file.

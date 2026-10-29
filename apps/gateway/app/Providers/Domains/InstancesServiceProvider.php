@@ -17,6 +17,7 @@ use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
+use App\Domain\Instances\Environment\EnvironmentSyncSecrets;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
@@ -136,7 +137,7 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class], OperationSecretSource::class);
+        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
