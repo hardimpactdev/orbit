@@ -92,7 +92,7 @@ A completion variant declares `completion_contract: {completion: {by: "input_fie
 
 On success, `skipped` must acknowledge every failed or cancelled child with its ID and a nonempty reason. The Gateway stamps any declared key and kind from the verified child row. Duplicate, foreign, running or successful skips refuse completion. On failed or cancelled completion the Gateway derives skipped from stamped children, using their terminal status as the reason. No echo is required.
 
-Kind loading requires a bounded skipped object list with `child_id:int`, `reason:string` and optional `key:string`/`kind:string`. Admission checks that its count and encoded byte capacity can retain every child failure. Canonical child metadata appears only in completion results; step and run results keep ordinary redaction. Executor routes bypass string trimming and empty-string conversion to preserve exact bytes.
+Kind loading requires a bounded skipped object list with `child_id:int`, `reason:string` and optional `key:string`/`kind:string`. Admission checks that its count and encoded byte capacity can retain every child failure. Canonical child metadata appears only in completion results; step and run results keep ordinary redaction. Final step and completion proof compare skipped child metadata after verifying and stamping it from the child rows. All other receipt fields must still match. Executor routes bypass string trimming and empty-string conversion to preserve exact bytes.
 
 ### Await from a Gateway caller
 

@@ -86,7 +86,7 @@ it('restricts claims to Services and to registered Swamp kinds', function (): vo
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'run-1'])
         ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
     asExecutor($this);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.deploy', 'worker' => 'run-1'])
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'unregistered.kind', 'worker' => 'run-1'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'operation.executor_invalid');
 });
 
