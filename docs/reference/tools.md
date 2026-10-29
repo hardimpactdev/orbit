@@ -32,14 +32,9 @@ Gateway package manager adapters keep package validation, version normalization 
 
 Node enrollment and role operations can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
 
-The family spec compiles its fixed command allowlist, completion variants, result
-fields, and required kit capabilities through `OperationFamilySpec`. Swamp
-consumes the admitted descriptors for names and input. It keeps one execution
-policy implementation for candidate constraints, adoption, exact removal, and
-final package state. The Gateway keeps admission, exact target and input
-bindings, native schemas, redaction, receipt identity, and intent projection.
-It does not repeat that package policy in its execution hooks. This boundary
-trusts the configured Swamp executor as part of the control plane.
+The family spec compiles its fixed command allowlist, completion variants, result fields, and required kit capabilities through `OperationFamilySpec`. Swamp consumes the admitted descriptors for names and input. It keeps one execution policy implementation for candidate constraints, adoption, exact removal, and final package state. The Gateway keeps admission, exact target and input bindings, native schemas, redaction, receipt identity, and intent projection. It does not repeat that package policy in its execution hooks. This boundary trusts the configured Swamp executor as part of the control plane.
+
+The Gateway refuses a successful remove result with an installed version, or a successful install, update, or adoption result without one, before projecting Tool or manager state.
 
 The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
 
@@ -75,7 +70,7 @@ On macOS, `tool.inspect-homebrew-scope` reads the enrolled account from the nati
 
 `tool.homebrew-version` and `tool.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
 
-`tool.homebrew-formula-adoption` reads the installed version and metadata together. It returns the observed version and any adoption block. It changes no package or Tool intent. The Gateway records only the selected package after checking that result.
+`tool.homebrew-formula-adoption` reads the installed version and metadata together. It returns the observed version and any adoption block. It changes no package or Tool intent. Swamp checks that result. The Gateway records only the selected package after authenticated completion.
 
 The `tool.homebrew-cask-*` commands own cask metadata, installed versions, discovery, adoption checks, and package changes on macOS. The agent resolves the Node's variation and checks artifact destinations against the enrolled account's native home and verified Homebrew prefix. Cask mutations share the formula mutation lock. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
 
@@ -345,7 +340,7 @@ When Doctor or a Tool operation checks whether a package is installed, it uses t
 
 A new install records its Operation, installs the package, and reads the installed version. A success records the Tool as `installed` and reports `applied`. A package-phase failure retains a `failed` Tool, so the same command can retry it or removal can drop it. A manager failure creates no Tool. List Tools to find the retained record. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
-The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, Swamp reads the manager's candidate version. The Gateway compiles the admitted range with Composer and rechecks the proven candidate before mutation.
+The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. The Gateway compiles the admitted range with Composer. Before an install, Swamp reads the manager's candidate version and checks it against that range before mutation.
 
 A candidate outside the range records the Tool as `failed` with `tool.version_constraint_blocked` (HTTP 422, outcome `blocked_by_constraint`) and installs nothing. Remove that row, or retry with a constraint the candidate satisfies. The Gateway never searches for another matching version and never downgrades. When the candidate is not SemVer, the same failed row is kept and the code is `tool.candidate_version_unparseable`. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
 

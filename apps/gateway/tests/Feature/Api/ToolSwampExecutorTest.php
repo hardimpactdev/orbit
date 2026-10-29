@@ -80,6 +80,18 @@ it('reuses keyed effects and projects only a proven selected package', function 
         ->and(Operation::query()->findOrFail($this->operationId)->result)->toBe($result);
 });
 
+it('rejects a successful install with an absent package without recording Tool intent', function (): void {
+    $path = '/api/v1/operation-executor/'.$this->operationId;
+    toolExecutorStep($this, $path, 'manager-ready', 'tool.apt-version');
+    $result = toolExecutorStep($this, $path, 'tool-verified', 'tool.apt-inventory');
+
+    $this->postJson($path.'/complete', ['worker' => 'tools-run', 'status' => 'succeeded', 'result' => $result])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+
+    $this->assertDatabaseCount('tools', 0);
+    expect(Operation::query()->findOrFail($this->operationId)->finished_at)->toBeNull();
+});
+
 it('drops unrelated secrets from run receipts and completion and redacts step output', function (): void {
     $path = '/api/v1/operation-executor/'.$this->operationId;
     $secret = 'ghp_'.str_repeat('z', 40);
