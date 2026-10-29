@@ -434,17 +434,21 @@ final readonly class StartInstanceDestroyAction
         if ($this->sourceResolvedWorkspace($instance) && ! $this->failedCreation($instance)) {
             return in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
                 && $route->project_id === $instance->project_id
-                && ($route->node_id === $instance->node_id
-                    || ($route->node_id === null
-                        && $route->cluster_id !== null
-                        && $route->cluster_id === $instance->node->cluster_id));
+                && $this->routePlacedOnInstance($route, $instance);
         }
 
         return $route->status === RouteStatus::Active
             || ($this->failedCreation($instance)
                 && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
-                && $route->node_id === $instance->node_id
+                && $this->routePlacedOnInstance($route, $instance)
                 && $route->project_id === $instance->project_id);
+    }
+
+    private function routePlacedOnInstance(Route $route, Instance $instance): bool
+    {
+        return $route->node_id === $instance->node_id
+            || ($route->node_id === null && $route->cluster_id !== null
+                && $route->cluster_id === $instance->node->cluster_id);
     }
 
     private function failedCreation(Instance $instance): bool

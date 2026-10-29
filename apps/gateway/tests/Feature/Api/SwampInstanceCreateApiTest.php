@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
@@ -14,6 +15,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -168,16 +170,26 @@ it('keeps failed-create replay context after its proven cleanup deletes the Inst
     expect($parent->refresh()->lock_key)->toBeNull();
 });
 
-it('admits the owning destroy child for a prepared create after native Git failure', function (): void {
+it('admits the owning destroy child for a prepared create after native Git failure', function (bool $worktree, bool $clustered): void {
     $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
     $parent = Operation::query()->findOrFail($id);
     $instance = Instance::query()->findOrFail($parent->target_id);
-    $instance->update(['status' => 'checkout_prepared']);
+    $instance->update(['status' => 'checkout_prepared', 'source_layout' => $worktree ? 'worktree' : 'checkout',
+        'seed_repository' => $worktree ? '/srv/apps/admission/default' : null,
+        'seed_commit' => $worktree ? str_repeat('a', 40) : null]);
+    $route = $instance->routes()->sole();
+    if ($clustered) {
+        $cluster = Cluster::query()->create(['name' => 'cleanup-cluster', 'tld' => 'test', 'state' => 'active']);
+        $this->node->update(['cluster_id' => $cluster->id]);
+    }
+    if ($clustered) {
+        $route->update(['node_id' => null, 'cluster_id' => $this->node->cluster_id, 'generation_basis_node_id' => $this->node->id]);
+    }
     $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
     $source->shouldReceive('inspect')->once()->andReturn(new InstanceSourceInventory(
-        instanceId: $instance->id, layout: 'checkout', repositoryIdentity: $this->project->repository_identity,
+        instanceId: $instance->id, layout: $worktree ? 'worktree' : 'checkout', repositoryIdentity: $this->project->repository_identity,
         checkoutPath: $instance->checkout_path, root: 'public', branch: null, startingCommit: str_repeat('a', 40),
-        commonRepositoryPath: $instance->checkout_path, sourceIdentity: 'prepared:1', linkedWorktreePaths: [$instance->checkout_path],
+        commonRepositoryPath: $worktree ? '/srv/apps/admission/default' : $instance->checkout_path, sourceIdentity: 'prepared:1', linkedWorktreePaths: [$instance->checkout_path],
         digest: str_repeat('b', 64), origin: $this->project->repository_url));
     app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
     $peer = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway))->sole();
@@ -193,4 +205,28 @@ it('admits the owning destroy child for a prepared create after native Git failu
     expect($child->parent_operation_id)->toBe($parent->id)->and($child->input['members'][0]['instance_id'])->toBe($instance->id)
         ->and($child->input['members'][0]['run_teardown'])->toBeFalse();
     $this->assertModelExists($instance);
+})->with(['checkout / direct Route' => [false, false], 'checkout / clustered Route' => [false, true],
+    'worktree / direct Route' => [true, false], 'worktree / clustered Route' => [true, true]]);
+
+it('refuses prepared worktree cleanup when its pending Route belongs to another cluster', function (): void {
+    $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
+    $instance = Instance::query()->findOrFail(Operation::query()->findOrFail($id)->target_id);
+    $instance->update(['status' => 'checkout_prepared', 'source_layout' => 'worktree',
+        'seed_repository' => '/srv/apps/admission/default', 'seed_commit' => str_repeat('a', 40)]);
+    $route = $instance->routes()->sole();
+    $cluster = Cluster::query()->create(['name' => 'foreign-cluster', 'tld' => 'foreign', 'state' => 'active']);
+    $route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
+    $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
+    $source->shouldReceive('inspect')->once()->andReturn(new InstanceSourceInventory(
+        instanceId: $instance->id, layout: 'worktree', repositoryIdentity: $this->project->repository_identity,
+        checkoutPath: $instance->checkout_path, root: 'public', branch: null, startingCommit: str_repeat('a', 40),
+        commonRepositoryPath: '/srv/apps/admission/default', sourceIdentity: 'prepared:1', linkedWorktreePaths: [$instance->checkout_path],
+        digest: str_repeat('b', 64), origin: $this->project->repository_url));
+    app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
+
+    expect(fn () => app(StartInstanceDestroyAction::class)->snapshot($instance, true))
+        ->toThrow(ResourceOperationException::class);
+    $this->assertModelExists($instance);
+    $this->assertModelExists($route);
+    expect(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
 });
