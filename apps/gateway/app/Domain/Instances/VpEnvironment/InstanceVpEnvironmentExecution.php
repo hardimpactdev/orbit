@@ -60,7 +60,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         $prepared = InstanceExecutionEvidence::result($parent, 'vp.plan');
         if ($prepared !== null && ($plan['environment'] ?? null) !== null) {
             $children[] = ['key' => 'vp_manager', 'kind' => 'tool.manager_converge', 'node_id' => $parent->node_id,
-                'input' => ['manager' => 'vp']];
+                'input' => ['manager' => 'vp', 'image_provides_manager' => false]];
         }
 
         return ['intent' => [], 'children' => $children];

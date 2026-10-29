@@ -8,10 +8,14 @@ use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
+use App\Domain\Operations\OperationChildIntent;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeAgentCommandRunner;
 
 function instanceVpMaterialFixture(): array
@@ -54,6 +58,36 @@ it('resolves registry settings in memory only for the admitted environment', fun
     $secret = app(InstanceVpEnvironmentSecrets::class)->resolve($child, $instance->id, 'vp.install', 'npmrc');
     expect($secret->value)->toContain('synthetic-registry-token')->and($secret->strings())->toContain('synthetic-registry-token')
         ->and(json_encode([$child->toArray(), $secret]))->not->toContain('synthetic-registry-token');
+});
+
+it('admits the VP manager from a proven project plan without assuming an image supplies it', function (): void {
+    Queue::fake();
+    [$vp, $parent, $instance, $agents] = instanceVpMaterialFixture();
+    $instance->node->update(['architecture' => 'x86_64']);
+    $plan = app(InstanceVpEnvironmentMaterial::class)->plan($vp);
+    $vp->fill(['status' => 'running', 'sequence' => 1, 'state' => ['vp_plan' => $plan,
+        'executor_runs' => ['vp.plan' => ['name' => 'instance.vp-plan', 'transport' => 'gateway', 'step' => 'vp_plan', 'result' => $plan]]]]);
+    $vp->forceFill(['child_key' => 'vp_environment']);
+    $identity = ['parent_operation_id' => $parent->id, 'key' => 'vp_environment', 'kind' => $vp->kind,
+        'node_id' => $vp->node_id, 'target_type' => 'instance', 'target_id' => $instance->id,
+        'input' => $vp->input, 'run_constraints' => []];
+    $snapshot = ['intent' => [], 'admitted' => $identity];
+    $vp->forceFill(['child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    $vp->steps()->create(['name' => 'vp_plan', 'sequence' => 1, 'position' => 1, 'status' => 'succeeded', 'resumable' => true]);
+    $children = app(OperationChildren::class);
+
+    $manager = DB::transaction(fn (): Operation => $children->admit($vp, ['key' => 'vp_manager'])['operation']);
+    $replay = DB::transaction(fn (): array => $children->admit($vp, ['key' => 'vp_manager']));
+
+    expect($manager->kind)->toBe('tool.manager_converge')->and($manager->node_id)->toBe($instance->node_id)
+        ->and($manager->target_type)->toBe('node_tools')->and($manager->target_id)->toBe($instance->node_id)
+        ->and($manager->parent_operation_id)->toBe($vp->id)->and($manager->child_key)->toBe('vp_manager')
+        ->and($manager->input['manager'])->toBe('vp')->and($manager->input['materialize_command'])->toBe('tool.materialize-vp');
+    expect($replay['created'])->toBeFalse()->and($replay['operation']->id)->toBe($manager->id);
+    expect(array_column($agents->calls, 'command'))->toBe(['tool.read-vp-project']);
+    $this->assertDatabaseCount('operations', 3);
+    $this->assertDatabaseCount('tools', 0);
+    Queue::assertNothingPushed();
 });
 
 it('refuses moving Project runtime requirements before any install', function (): void {
