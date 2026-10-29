@@ -7,6 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationCompletion;
+use App\Domain\Operations\OperationDispatchNotStarted;
 use App\Domain\Operations\OperationFamilyArchiveRelay;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
@@ -16,6 +17,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\OperationArchiveRelayTransport;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -25,6 +27,14 @@ final class RelayFamily implements OperationCompletion, OperationFamilyArchiveRe
 {
     public int $limit = 10000;
 
+    public string $archive = '/tmp/orbit-transfer-fixture.tar';
+
+    public bool $resumable = false;
+
+    public string $reader = 'instance.read-transfer-archive';
+
+    public ?array $readInput = null;
+
     public function childContext(Operation $operation): array
     {
         return ['intent' => ['nodes' => $operation->input['nodes'] ?? []], 'children' => $operation->state['child_intents'] ?? []];
@@ -32,7 +42,7 @@ final class RelayFamily implements OperationCompletion, OperationFamilyArchiveRe
 
     public function context(Operation $operation): array
     {
-        return ['descriptors' => $operation->input['descriptors'] ?? []];
+        return ['descriptors' => array_map(fn (array $descriptor): array => [...$descriptor, 'resumable' => $this->resumable], $operation->input['descriptors'] ?? [])];
     }
 
     public function input(Operation $operation, array $run): array
@@ -59,7 +69,7 @@ final class RelayFamily implements OperationCompletion, OperationFamilyArchiveRe
     public function archiveRelay(Operation $operation, array $run): array
     {
         return ['source_transport' => 'agent', 'source_name' => 'instance.transfer-source',
-            'read' => ['name' => 'instance.read-transfer-archive', 'input' => ['archive' => '/tmp/orbit-transfer-fixture.tar']], 'max_bytes' => $this->limit];
+            'read' => ['name' => $this->reader, 'input' => $this->readInput ?? ['archive' => $this->archive]], 'max_bytes' => $this->limit];
     }
 }
 final class RelayAdmission implements OperationChildAdmission
@@ -111,7 +121,7 @@ beforeEach(function (): void {
             'runs' => [['transport' => 'agent', 'name' => 'instance.transfer-source']],
             'completion_contract' => [...$base['completion_contract'], 'transport' => 'agent', 'name' => 'instance.transfer-source']],
         'test.relay_destination' => [...$base, 'admission' => RelayAdmission::class,
-            'runs' => [['transport' => 'archive_relay', 'name' => 'instance.materialize-transfer']],
+            'runs' => [['transport' => 'archive_relay', 'name' => 'instance.materialize-transfer', 'resumable' => true]],
             'completion_contract' => [...$base['completion_contract'], 'transport' => 'archive_relay', 'name' => 'instance.materialize-transfer']]]));
     $this->parent = app(StartOperationAction::class)->execute('test.relay_parent', 'project', 111, $gateway->id,
         ['nodes' => [$this->sourceNode->id, $this->destinationNode->id]], 'test', null);
@@ -150,13 +160,18 @@ it('relays verified bytes privately and replays the keyed receipt without transp
 });
 
 it('refuses corrupted streams before destination dispatch and closes staging', function (): void {
+    $original = $this->bytes;
     $this->bytes = str_repeat('x', strlen($this->bytes));
     $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.archive_invalid');
     expect($this->agents->commands())->toBe(['instance.transfer-source', 'instance.read-transfer-archive'])->and($this->sink->write('closed'))->toBeFalse();
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
+    $this->bytes = $original;
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
 });
 
 it('refuses invalid source proof or limits before reading bytes', function (string $case): void {
-    $state = $this->source->fresh()->state;
+    $state = $originalState = $this->source->fresh()->state;
+    $originalInput = $this->source->input;
     if ($case === 'limit') {
         $this->family->limit = 1;
     } elseif ($case === 'deleted') {
@@ -171,6 +186,12 @@ it('refuses invalid source proof or limits before reading bytes', function (stri
     }
     $this->postJson($this->path.'/run', $this->run)->assertConflict();
     expect($this->agents->commands())->toBe(['instance.transfer-source']);
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
+    if ($case !== 'deleted') {
+        $this->family->limit = 10000;
+        $this->source->update(['state' => $originalState, 'input' => $originalInput, 'status' => OperationStatus::Succeeded]);
+        $this->postJson($this->path.'/run', $this->run)->assertOk();
+    }
 })->with(['limit', 'deleted', 'tampered', 'unfinished', 'producer', 'receipt']);
 
 it('refuses caller changes through exact input authorization', function (): void {
@@ -188,6 +209,8 @@ it('observes cancellation during download before sending any destination bytes',
         return $this->metadata;
     });
     $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.cancelled');
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'operation.cancelled');
     expect($this->agents->commands())->toBe(['instance.transfer-source', 'instance.read-transfer-archive'])->and($this->sink->write('closed'))->toBeFalse();
 });
 
@@ -214,6 +237,76 @@ it('closes staging after a failed source read without exposing exception text', 
         $output->write('partial');
         throw new RuntimeException('private archive diagnostic');
     });
-    $response = $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $response = $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.archive_unavailable');
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
     expect($response->getContent())->not->toContain('private archive diagnostic')->and($this->sink->write('closed'))->toBeFalse();
+});
+
+it('retries a failed source read without admitting a second destination effect', function (): void {
+    $this->agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+        $output->write('partial');
+        throw new RuntimeException('lost source read');
+    });
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.archive_unavailable');
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
+    $this->agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+        $output->write($this->bytes);
+
+        return $this->metadata;
+    });
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    expect($this->agents->commands())->toBe(['instance.transfer-source', 'instance.read-transfer-archive', 'instance.read-transfer-archive', 'instance.materialize-transfer']);
+});
+
+it('binds the reader path to the proven producer archive before reading', function (): void {
+    $this->family->archive = '/tmp/orbit-transfer-other.tar';
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.archive_forbidden');
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
+    expect($this->agents->commands())->toBe(['instance.transfer-source']);
+    $this->family->archive = '/tmp/orbit-transfer-fixture.tar';
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+});
+
+it('never clears earlier upload uncertainty after a later preparation refusal', function (): void {
+    $this->family->resumable = true;
+    $this->agents->answer('instance.materialize-transfer', function (): array {
+        throw new RuntimeException('lost upload reply');
+    });
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $this->family->limit = 1;
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => true, 'result' => null]);
+    expect($this->agents->commands())->toBe(['instance.transfer-source', 'instance.read-transfer-archive', 'instance.materialize-transfer']);
+});
+
+it('binds a SQLite reader path to the producer path', function (): void {
+    $this->family->reader = 'instance.read-sqlite-snapshot';
+    $this->family->readInput = ['path' => '/tmp/orbit-sqlite-wrong.sqlite', ...$this->metadata];
+    $state = $this->source->fresh()->state;
+    $state['executor_runs']['capture']['result']['path'] = '/tmp/orbit-sqlite-proven.sqlite';
+    $this->source->update(['state' => $state]);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.archive_forbidden');
+    expect($this->destination->fresh()->state['executor_runs']['deliver'])->toMatchArray(['started' => false, 'result' => null]);
+    expect($this->agents->commands())->toBe(['instance.transfer-source']);
+});
+
+it('refuses staging without enough free disk space and reserve before reading', function (): void {
+    $free = disk_free_space(sys_get_temp_dir());
+    if ($free === false || $free < 1 || $free > (1 << 40)) {
+        $this->markTestSkipped('This filesystem cannot exercise the native one-TiB staging bound.');
+    }
+    $bytes = (int) $free;
+    $this->family->limit = $bytes;
+    $state = $this->source->fresh()->state;
+    $state['executor_runs']['capture']['result']['bytes'] = $bytes;
+    $this->source->update(['state' => $state]);
+    $input = $this->payload;
+    $input['input']['bytes'] = $bytes;
+    try {
+        app(OperationArchiveRelayTransport::class)->run($this->destination, $this->run, $input);
+        $this->fail('Insufficient staging space must refuse.');
+    } catch (OperationDispatchNotStarted $exception) {
+        expect($exception->errorCode)->toBe('operation.archive_unavailable');
+    }
+    expect($this->agents->commands())->toBe(['instance.transfer-source']);
 });

@@ -132,3 +132,10 @@ it('requires a usable skipped schema for settled child contracts at kind load', 
     };
     expect(fn () => new OperationKinds(new Container, ['test.settled' => $definition]))->toThrow(LogicException::class);
 })->with(['missing', 'id', 'reason', 'max', 'unknown']);
+
+it('refuses archive relay kinds whose execution class cannot bind the source', function (): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['runs'][0]['transport'] = 'archive_relay';
+    expect(fn () => new OperationKinds(new Container, ['test.relay' => $definition]))
+        ->toThrow(LogicException::class, 'OperationFamilyArchiveRelay');
+});

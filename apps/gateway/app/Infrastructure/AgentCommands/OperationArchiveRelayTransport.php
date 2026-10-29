@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\OperationDispatchNotStarted;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationFamilyArchiveRelay;
@@ -15,7 +16,9 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Throwable;
 
-/** Relays protected binary input between proven siblings; no archive bytes become public results. */
+/** Relays protected binary input between proven siblings; no archive bytes become public results.
+ * @phpstan-import-type EffectRunInput from \App\Domain\Operations\SwampOperationExecutor
+ */
 final readonly class OperationArchiveRelayTransport implements OperationEffectTransport, OperationTransportInput
 {
     public function __construct(private AgentCommandRunner $runner, private AgentContract $contract,
@@ -56,6 +59,24 @@ final readonly class OperationArchiveRelayTransport implements OperationEffectTr
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
+        $dispatched = false;
+        try {
+            return $this->relay($operation, $run, $input, $dispatched);
+        } catch (Throwable $exception) {
+            if (! $dispatched) {
+                $code = $exception instanceof ResourceOperationException ? $exception->errorCode : 'operation.archive_unavailable';
+                throw new OperationDispatchNotStarted($code, 'The archive relay refused before destination dispatch.', 409);
+            }
+            $this->refuse('operation.execution_uncertain');
+        }
+    }
+
+    /** @param EffectRunInput $run
+     * @param  array<string,mixed>  $input
+     * @return array<string,mixed>
+     */
+    private function relay(Operation $operation, array $run, #[\SensitiveParameter] array $input, bool &$dispatched): array
+    {
         $family = $this->execution->execution($operation);
         if (! $family instanceof OperationFamilyArchiveRelay) {
             $this->refuse();
@@ -86,7 +107,9 @@ final readonly class OperationArchiveRelayTransport implements OperationEffectTr
         $receiver = $this->contract->command($run['name']);
         $bytes = $facts['bytes'] ?? null;
         $digest = $facts['sha256'] ?? null;
-        if (! is_int($bytes) || $bytes < 1 || ! is_string($digest) || preg_match('/\A[a-f0-9]{64}\z/D', $digest) !== 1
+        $artifactField = array_key_exists('archive', $read['input']) ? 'archive' : 'path';
+        if (! is_string($read['input'][$artifactField] ?? null) || ($facts[$artifactField] ?? null) !== $read['input'][$artifactField]
+            || ! is_int($bytes) || $bytes < 1 || ! is_string($digest) || preg_match('/\A[a-f0-9]{64}\z/D', $digest) !== 1
             || $binding['max_bytes'] < 1 || $bytes > min($binding['max_bytes'], $reader->outputMaxBytes, $receiver->inputMaxBytes, 1 << 40)
             || $reader->mutates || ! $receiver->mutates || $reader->inputMaxBytes !== 0 || $receiver->outputMaxBytes !== 0
             || ($native['bytes'] ?? null) !== $bytes || ($native['sha256'] ?? null) !== $digest
@@ -96,6 +119,10 @@ final readonly class OperationArchiveRelayTransport implements OperationEffectTr
         }
         $sourceNode = $this->node($source);
         $destinationNode = $this->node($operation);
+        $free = disk_free_space(sys_get_temp_dir());
+        if ($free === false || $free < $bytes + max(64 << 20, ceil($bytes / 10))) {
+            $this->refuse('operation.archive_unavailable');
+        }
         $file = tmpfile();
         if ($file === false) {
             $this->refuse('operation.archive_unavailable');
@@ -120,12 +147,11 @@ final readonly class OperationArchiveRelayTransport implements OperationEffectTr
             $this->node($source);
             $this->node($operation);
 
-            return $this->runner->run($destinationNode, $run['name'], AgentEffectReceipts::input($run, $native),
-                binaryInput: AgentBinaryInput::fromStream($file, $bytes));
-        } catch (ResourceOperationException $exception) {
-            throw $exception;
-        } catch (Throwable) {
-            $this->refuse('operation.execution_uncertain');
+            $binary = AgentBinaryInput::fromStream($file, $bytes);
+            $destinationInput = AgentEffectReceipts::input($run, $native);
+            $dispatched = true;
+
+            return $this->runner->run($destinationNode, $run['name'], $destinationInput, binaryInput: $binary);
         } finally {
             fclose($file);
         }
