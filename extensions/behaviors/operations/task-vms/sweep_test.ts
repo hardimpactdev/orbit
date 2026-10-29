@@ -107,3 +107,87 @@ Deno.test("UpCloud sweep hard-stops an owned orphan and waits for its deletion",
   ]);
   assertEquals(waits, 2);
 });
+
+Deno.test("clone sweep reuses its admitted orphan deletion after a lost reply and preserves other volumes", async () => {
+  const effects = new Effects();
+  const volumes = new Set([
+    "tvm-5-topology-seed",
+    "tvm-999-topology-seed",
+    "orbit-topology-seed-cccccccccccc",
+    "operator-data",
+  ]);
+  const calls: {
+    key: string;
+    kind: string;
+    node: number;
+    data: Record<string, unknown>;
+  }[] = [];
+  const receipts = new Map<string, { ready: boolean }>();
+  let lost = false;
+  effects.read = () =>
+    Promise.resolve({
+      deletions: [{ kind: "volume", name: "tvm-999-topology-seed" }],
+    });
+  effects.child = (key, kind, node, data) => {
+    if (!receipts.has(key)) {
+      calls.push({ key, kind, node, data });
+      if (kind === "task_vm.sweep_delete") {
+        volumes.delete(String((data.deletion as Record<string, unknown>).name));
+      }
+      receipts.set(key, { ready: true });
+      if (!lost) {
+        lost = true;
+        return Promise.reject(new ExecutorError("operation.outcome_unknown"));
+      }
+    }
+    return Promise.resolve(receipts.get(key)!);
+  };
+
+  await assertRejects(
+    () => sweepHost(input(), effects),
+    ExecutorError,
+    "operation.outcome_unknown",
+  );
+  assertEquals(await sweepHost(input(), effects), { ready: true });
+  assertEquals(calls, [
+    {
+      key: "delete-volume-tvm-999-topology-seed",
+      kind: "task_vm.sweep_delete",
+      node: 4,
+      data: {
+        node_id: 4,
+        provider: "incus",
+        sweep_id: 27,
+        deletion: { kind: "volume", name: "tvm-999-topology-seed" },
+      },
+    },
+    {
+      key: "observe",
+      kind: "task_vm.sweep_observe",
+      node: 4,
+      data: { node_id: 4, provider: "incus", sweep_id: 27 },
+    },
+  ]);
+  assertEquals([...volumes], [
+    "tvm-5-topology-seed",
+    "orbit-topology-seed-cccccccccccc",
+    "operator-data",
+  ]);
+});
+
+Deno.test("a refused clone deletion remains failed while other cleanup and observation finish", async () => {
+  const effects = new Effects();
+  effects.refuse = "delete-volume-tvm-200-topology-seed";
+
+  await assertRejects(
+    () => sweepHost(input(), effects),
+    ExecutorError,
+    "task_vm.host_command_failed",
+  );
+
+  assertEquals(effects.calls.map((call) => call.key), [
+    "delete-instance-tvm-100",
+    "delete-volume-tvm-200-topology-seed",
+    "observe",
+  ]);
+});

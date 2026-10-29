@@ -241,8 +241,15 @@ Deno.test("an effect cannot change kind, VM identity or command fields", () => {
   );
 });
 
-for (const lostReply of [false, true]) {
-  Deno.test(`cache fill keeps successful archives and fails partial results${lostReply ? " after a lost reply" : ""}`, async () => {
+for (
+  const [reason, lostReply] of [
+    ["Archive checksum mismatch", false],
+    ["HTTP 429", false],
+    ["x".repeat(160), false],
+    ["Archive checksum mismatch", true],
+  ] as const
+) {
+  Deno.test(`cache fill keeps verified archives with reason ${reason.slice(0, 24)}${lostReply ? " after a lost reply" : ""}`, async () => {
     const f = new Fixture();
     f.operation.kind = "task_vm.fill_package_cache_batch";
     f.operation.input = {
@@ -257,7 +264,7 @@ for (const lostReply of [false, true]) {
       archive_ids: ["verified"],
       archive_digests: [`sha256-${"a".repeat(64)}`],
       failed_ids: ["failed-archive"],
-      failure_reasons: ["Archive checksum mismatch"],
+      failure_reasons: [reason],
     };
     if (lostReply) {
       f.lose = "run";
@@ -278,6 +285,28 @@ for (const lostReply of [false, true]) {
     });
   });
 }
+
+Deno.test("a typed cache fill refusal fails its step and completion with the same code", async () => {
+  const f = new Fixture();
+  f.operation.kind = "task_vm.fill_package_cache_batch";
+  f.operation.input = {
+    host_node_id: 3,
+    artifacts: [],
+    conflicts: {},
+    max_bytes: 1024,
+    github_token: { $secret: "task_vm.package_cache_github", id: 3 },
+  };
+  f.result = { error_code: "task_vm.package_cache_failed" };
+
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.calls.at(-1)!.body.error_code, "task_vm.package_cache_failed");
+  assertEquals(f.operation.steps[0].status, "failed");
+  assertEquals(f.mutations, 1);
+  assertEquals(
+    f.calls.find((call) => call.path.endsWith("/run"))!.body.transport,
+    "task_vm_package-cache",
+  );
+});
 
 Deno.test("a preservation refusal stops deletion with the Gateway error", async () => {
   const f = new Fixture();

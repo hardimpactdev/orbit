@@ -119,6 +119,17 @@ Deno.test("image builds snapshot apt first and proves smoke and topology before 
   for (const key of ["smoke-check", "smoke-verify", "finish-seed"]) {
     assertEquals(keys.indexOf(key) < keys.indexOf("promote"), true);
   }
+  assertEquals(effects.calls.find((call) => call.key === "finish-seed"), {
+    key: "finish-seed",
+    kind: "task_vm.image_finish_seed",
+    input: {
+      build_id: 4,
+      attempt: 1,
+      phase: "topology-seed",
+      location: { project: "tasks", pool: "default" },
+      operation: { kind: "finish_seed", fingerprint: "c".repeat(64) },
+    },
+  });
   assertEquals(keys.at(-1), "prune");
 });
 Deno.test("image refusals preserve the existing alias and stop later effects", async () => {
