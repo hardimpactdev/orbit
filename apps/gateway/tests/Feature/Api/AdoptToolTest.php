@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
@@ -20,7 +19,6 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->withHeader('X-Orbit-Request-Id', fixture_request_id());
     $this->toolManager = new FakeToolManager(ToolManagerName::Apt);
-    $this->toolManager->adoption = new ToolAdoptionFact('1.2.3', null);
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$this->toolManager]));
 });
 

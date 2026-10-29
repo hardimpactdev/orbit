@@ -5,11 +5,9 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -71,27 +69,6 @@ describe(HomebrewToolManager::class, function (): void {
             ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe('installed-version'));
         expect($ssh->commands)->toBe([]);
     })->with(['tool.homebrew_operation_failed', 'tool.homebrew_output_invalid']);
-
-    it('keeps absent candidates separate from failed probes', function (): void {
-        [$manager, , $agent] = homebrew_tool_manager([]);
-        $agent->answer('tool.homebrew-formula-candidate', ['version' => null]);
-        expect($manager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))->toBeNull();
-        $agent->refuse('tool.homebrew-formula-candidate', 'tool.homebrew_operation_failed');
-        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))->toThrow(ToolManagerException::class);
-    });
-
-    it('preserves native adoption facts without executing Homebrew', function (?string $version, ?string $block): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->answer('tool.homebrew-formula-adoption', ['installed_version' => $version, 'block' => $block]);
-        expect($manager->inspectForAdoption(homebrew_tool_node('macos', architecture: 'arm64'), 'ripgrep'))
-            ->toEqual(new ToolAdoptionFact($version, $block));
-        expect($agent->calls)->toBe([['node' => 'homebrew-tool-node', 'command' => 'tool.homebrew-formula-adoption', 'input' => ['package' => 'ripgrep', 'architecture' => 'arm64']]])
-            ->and($ssh->commands)->toBe([]);
-    })->with([
-        ['14.1.1', null], [null, null], ['14.1.1', 'dependency'], ['14.1.1', 'protected'],
-        ['14.1.1', 'unsupported_source'], [null, 'version_unreadable'],
-        ['14.1.1', 'unsupported_artifact'], ['14.1.1', 'bottle_unavailable'],
-    ]);
 
     it('normalizes versions in the Gateway and keeps the native manager version', function (): void {
         [$manager, , $agent] = homebrew_tool_manager([]);

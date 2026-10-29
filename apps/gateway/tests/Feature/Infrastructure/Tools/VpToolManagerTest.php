@@ -5,11 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
-use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolOperation;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -106,13 +103,11 @@ describe(VpToolManager::class, function (): void {
     it('refuses malformed typed agent results', function (string $method, string $command, array $data): void {
         [$manager, $agent] = vp_tool_manager();
         $agent->answerMalformed($command, $data);
-        expect(fn () => $manager->{$method}(vp_tool_node(), 'typescript', ToolOperation::Install))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->{$method}(vp_tool_node()))->toThrow(ToolManagerException::class);
     })->with([
         ['managerVersion', 'tool.vp-version', ['version' => []]],
-        ['candidateVersion', 'tool.vp-candidate', []],
         ['installedInventory', 'tool.vp-inventory', ['packages' => [], 'scan_complete' => null]],
         ['installedInventory', 'tool.vp-inventory', ['packages' => [['name' => 'typescript']], 'scan_complete' => true]],
-        ['planRemoval', 'tool.vp-removal-plan', ['packages' => [42]]],
     ]);
 
     it('keeps individual Tools verifiable beside ambiguous and unmanageable observations', function (): void {
@@ -126,19 +121,11 @@ describe(VpToolManager::class, function (): void {
         ], 'scan_complete' => false]);
         $inventory = $manager->installedInventory(vp_tool_node());
         expect($inventory->versionFor('typescript'))->toBe('5.7.3');
-        expect($inventory->versionFor('JSONStream'))->toBeNull();
-        expect($inventory->versionFor('absent'))->toBeNull();
+        expect(fn () => $inventory->versionFor('JSONStream'))->toThrow(ToolManagerException::class);
+        expect(fn () => $inventory->versionFor('absent'))->toThrow(ToolManagerException::class);
         expect(fn () => $inventory->versionFor('dup'))->toThrow(ToolManagerException::class);
         expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
         expect($agent->commands())->toBe(['tool.vp-inventory']);
-    });
-
-    it('protects pnpm adoption while leaving missing packages absent', function (): void {
-        [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tool.vp-inventory', ['packages' => [['name' => 'pnpm', 'version' => '12.0.0']], 'scan_complete' => true]);
-        expect($manager->inspectForAdoption(vp_tool_node(), 'pnpm'))->toEqual(new ToolAdoptionFact('12.0.0', ToolInventoryPackage::BLOCK_PROTECTED));
-        expect($manager->inspectForAdoption(vp_tool_node(), 'missing'))->toEqual(new ToolAdoptionFact(null, null));
-        expect($agent->commands())->toBe(['tool.vp-inventory', 'tool.vp-inventory']);
     });
 
     it('admits older project locks with a newer recipe manager without upgrading', function (): void {
