@@ -17,6 +17,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\Schedule;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
@@ -71,7 +72,7 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $parent = ['executor' => 'swamp', 'completion' => InstanceRuntimeTestParent::class, 'execution' => InstanceRuntimeTestParent::class,
-        'runs' => [], 'children' => [['kind' => 'process.install_instance_definitions', 'node_from' => 'operation.node_id'], ['kind' => 'schedule.install_instance_definitions', 'node_from' => 'operation.node_id']],
+        'runs' => [], 'children' => [['kind' => 'process.install_instance_definitions', 'node_from' => 'operation.node_id'], ['kind' => 'schedule.install_instance_definitions', 'node_from' => 'operation.node_id'], ['kind' => 'process.restart_instance', 'node_from' => 'operation.node_id']],
         'completion_contract' => ['children_succeeded' => ['process.install_instance_definitions', 'schedule.install_instance_definitions']], 'result_fields' => ['ready']];
     app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.runtime_parent' => $parent]));
     $this->root = app(StartOperationAction::class)->execute('test.runtime_parent', 'instance', $this->instance->id, $this->node->id, [], 'test', null);
@@ -119,13 +120,56 @@ it('refuses enabling an unfinished definition copy during stopped installation',
     expect($this->agents->calls)->toBe([]);
 })->with(['process', 'schedule']);
 
+it('proves the exact restarted Process ID list through child execution and HTTP completion', function (bool $empty): void {
+    $route = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id, 'domain' => 'runtime.example.test',
+        'status' => 'pending', 'publication' => 'private', 'provenance' => 'explicit']);
+    $route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $this->instance->update(['status' => 'active', 'provisioning_step' => 'active']);
+    $this->agents->answer('process.check-release', ['available' => true])->answer('process.control', [])->answer('process.status', ['state' => 'active']);
+    $selected = [];
+    if (! $empty) {
+        foreach (['first' => [], 'opt-out' => ['restart_on_deploy' => false], 'stopped' => ['desired_state' => 'stopped'], 'failed' => ['status' => 'failed'], 'second' => []] as $name => $attributes) {
+            $process = Process::query()->create([...['owner_type' => Instance::MorphAlias, 'owner_id' => $this->instance->id, 'name' => $name,
+                'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '300']], 'restart_policy' => 'never',
+                'status' => 'active', 'desired_state' => 'running', 'restart_on_deploy' => true], ...$attributes]);
+            if ($attributes === []) {
+                $selected[] = $process->id;
+            }
+        }
+    }
+    $this->root->update(['state' => [...($this->root->refresh()->state ?? []), 'child_intents' => [['key' => 'restart', 'kind' => 'process.restart_instance', 'node_id' => $this->node->id, 'input' => ['instance_id' => $this->instance->id]]]]]);
+    $id = $this->postJson('/api/v1/operation-executor/'.$this->root->id.'/children', ['worker' => 'root', 'key' => 'restart'])->assertAccepted()->json('data.id');
+    $path = '/api/v1/operation-executor/'.$id;
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.restart_instance', 'worker' => 'restart-worker', 'operation_id' => $id])->assertOk();
+    $ready = ['worker' => 'restart-worker', 'key' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.instance_runtime_ready', 'input' => ['instance_id' => $this->instance->id]];
+    foreach ($selected as $index => $processId) {
+        $this->postJson($path.'/run', $ready)->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+        $child = $this->postJson($path.'/children', ['worker' => 'restart-worker', 'key' => 'runtime-'.$index])->assertAccepted()->json('data.id');
+        $leaf = Operation::query()->findOrFail($child);
+        expect($leaf->target_id)->toBe($processId);
+        runtimeExecuteLeaf($this, $leaf);
+    }
+    $result = $this->postJson($path.'/run', $ready)->assertOk()->assertJsonPath('data.process_ids', $selected)->json('data');
+    $this->postJson($path.'/step', ['worker' => 'restart-worker', 'key' => 'ready-done', 'name' => 'runtime-ready', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'restart-worker', 'status' => 'succeeded', 'result' => ['ready' => true, 'process_ids' => [...$selected, 99999]]])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    $this->postJson($path.'/complete', ['worker' => 'restart-worker', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.result.process_ids', $selected);
+    $controls = array_filter($this->agents->calls, static fn (array $call): bool => $call['command'] === 'process.control');
+    expect(array_values(array_map(static fn (array $call): int => $call['input']['process_id'], $controls)))->toBe($selected);
+})->with([false, true])->skip(! OperationKinds::supports('list_of'), 'Requires the shared kit C list-result contract.');
+
 /** Execute descriptors through the real HTTP proof boundary with a fake target agent. */
 function runtimeExecuteLeaf(TestCase $test, Operation $operation): void
 {
     $worker = 'leaf-'.$operation->id;
     $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => $worker, 'operation_id' => $operation->id])->assertOk();
     $path = '/api/v1/operation-executor/'.$operation->id;
-    $names = $operation->kind === 'process.create' ? ['process-stage-unit', 'process-activate-unit', 'process-status', 'runtime-ready'] : ['schedule-install'];
+    $names = match ($operation->kind) {
+        'process.create' => ['process-stage-unit', 'process-activate-unit', 'process-status', 'runtime-ready'],
+        'process.restart' => ['process-check-release', 'process-restart', 'process-status', 'runtime-ready'],
+        default => ['schedule-install'],
+    };
     $result = [];
     foreach ($names as $name) {
         $context = app(OperationExecutionContract::class)->context($operation->refresh());
