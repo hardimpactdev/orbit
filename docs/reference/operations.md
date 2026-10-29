@@ -80,6 +80,18 @@ A same-target child inherits the ancestor's target hold, including chains such a
 
 Owning admission may add a server-only `run_constraints` map. Children retain inherited constraints unchanged. The named `time_window` constraint takes `{timezone,start,end}`, with an IANA timezone and distinct `HH:mm` times; start is inclusive and end is exclusive. Midnight crossing is supported. The Gateway checks constraints before hydration and immediately before dispatch. Families contribute other constraints through tagged `OperationRunConstraint` implementations.
 
+### Bounded results and completion variants
+
+A Swamp kind's `result_fields` accepts scalar paths and bounded lists. Scalar lists declare `{name,type:"list",items:"string"|"integer"|"boolean",max:N}`. Object lists declare `{name,list_of:{field:type},max:N}`. An omitted object-list bound is 4096; explicit bounds are 1–4096. Object fields use `string`, `int`, `bool`, `enum(a,b)` or a nullable form such as `string|null`. Every object field is required, and unknown fields refuse the result. A field inside an object entry may instead use a bounded scalar-list declaration. No other nested containers or keyed maps are allowed.
+
+Lists must use JSON arrays. The step and completion boundaries refuse empty objects and objects with numeric keys. List strings are limited to 1024 bytes each. The complete encoded result is limited to 256 KiB, including scalar paths. A declaration may allow at most 65,536 total list items after expanding nested bounds. List order and scalar types are preserved. Selected values pass through redaction before storage; invalid results return only `operation.result_invalid` and never project a partial receipt.
+
+A completion variant declares `completion_contract: {completion: {by: "input_field_path", map: {variant: proof}}}`. The path is relative to the immutable Operation input, for example `completion_variant` or `configuration.manager`. Each map value is a full named step or child proof. Missing or unlisted variants refuse completion with `operation.completion_unproven`; Swamp cannot choose a variant in a step or completion request. Root `completion` still names the family projection class.
+
+`children_settled:[kinds]` requires terminal children. On success, `skipped` must acknowledge every failed or cancelled child with its ID and a nonempty reason. The Gateway stamps any declared key and kind from the verified child row. Duplicate, foreign, running or successful skips refuse completion. On failed or cancelled completion the Gateway derives skipped from stamped children, using their terminal status as the reason. No echo is required. A family uses exact plan proof for optional children instead of declaring an unconditional superset.
+
+Kind loading requires a bounded skipped object list with `child_id:int`, `reason:string` and optional `key:string`/`kind:string`. Admission checks that its count and encoded byte capacity can retain every child failure. Canonical child metadata appears only in completion results; step and run results keep ordinary redaction. Executor routes bypass string trimming and empty-string conversion to preserve exact bytes.
+
 ### Await from a Gateway caller
 
 A retained internal caller can use `AwaitOperation::execute($operation, $timeoutSeconds = 30)` after admission commits. It refreshes only that Operation and sleeps between reads. The bound must be 1–120 seconds. It returns any terminal Operation, including failed or cancelled; the caller must check its outcome before dependent teardown. At the deadline it throws `operation.await_timeout` with `operation_id` and leaves the pending work unchanged. Prefer returning the Operation with HTTP 202 when the caller can follow it. Never wait inside the transaction that admits or holds the Operation.
@@ -399,12 +411,12 @@ Firewall `allow`, `deny` and `remove` use Swamp. Their normal commands validate 
 Protected sources resolve only during invocation hydration. Step, completion and context reads never mint credentials for redaction. Known values are redacted in the run before projection, storage or return; Swamp reuses those redacted results. Later messages retain ordinary secret-pattern filtering. Transport schema and wire failures return a fixed refusal, and a permissive `true` schema is refused.
 
 
-Kind loading rejects unsupported kind, run and completion-contract keys. A family cannot declare a guarantee before the shared executor enforces it. Child declarations and `children_succeeded` use the checks above. `children_settled` remains invalid until its checks ship.
+Kind loading rejects unsupported kind, run and completion-contract keys. A family cannot declare a guarantee before the shared executor enforces it. Child declarations and `children_succeeded` use the checks above. `children_settled` uses the verified terminal and skip checks above.
 
 
 An uncertain executor response leaves the keyed result unset for a proven recovered receipt. It never projects uncertainty as a completed effect. A successful outcome clears `failed_step` while retaining any failed best-effort step rows. The Gateway requires redaction strings for protected content, including typed credentials and scalars. Boolean flags, null, empty strings, empty arrays, empty plain objects and `GitReadEnvironment::none()` keep their native types without inferred masks. In particular, true does not add a mask for the digit `1`. Unknown opaque values without masks remain refused.
 
-Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission. The `children`, `receipts` and `compensations` capabilities are enabled. `children_settled`, `list_of` and `secret_outputs` remain unavailable.
+Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission. The `children`, `children_settled`, `list_of`, `receipts` and `compensations` capabilities are enabled. `secret_outputs` remains unavailable.
 ### Target effect receipts
 
 Remote executor runs use `effect_key` equal to `op-<operation id>.<step key>`. The Gateway adds the key after authorizing the original input. Fingerprints and stored inputs always use the unhydrated request. Native commands persist their intent and result in the shared agent receipt store. Existing fixed RemotePrograms use `KeyedRemoteProgramRunner`, which reserves and completes receipts through that same store.

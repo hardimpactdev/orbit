@@ -54,6 +54,7 @@ final readonly class OperationChildren
         }
         $this->authorize($parent, $intent, $context['intent']);
         $this->assertPayload($data, $intent);
+        $this->assertSettledCapacity($parent, $intent);
         $definition = $this->kinds->definition($intent['kind']);
         $class = is_array($definition) ? ($definition['admission'] ?? null) : null;
         $adapter = is_string($class) ? app($class) : null;
@@ -384,5 +385,81 @@ final readonly class OperationChildren
                 $this->requireSucceeded($parent, (string) $child->child_key);
             }
         }
+    }
+
+    /** @param list<string> $kinds
+     * @param  array<string,mixed>  $result
+     * @return list<array{child_id:int,reason:string,key:string,kind:string}>
+     */
+    public function assertSettled(Operation $parent, array $kinds, array $result, bool $requireExpected = true): array
+    {
+        $expectedChildren = $requireExpected ? $this->context($parent)['children'] : [];
+        $failedChildren = $parent->children()->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value])->orderBy('id')->get();
+        $failed = $failedChildren->map(static fn (Operation $child): int => $child->id)->all();
+        foreach ($kinds as $kind) {
+            if ($requireExpected) {
+                $expected = array_filter($expectedChildren, static fn (array $intent): bool => $intent['kind'] === $kind);
+                foreach ($expected as $intent) {
+                    $this->child($parent, $intent['key']);
+                }
+            }
+            $children = $parent->children()->where('kind', $kind)->get();
+            if ($requireExpected && $children->isEmpty()) {
+                throw new ResourceOperationException('operation.child_unproven', 'A required settled child kind is missing.', 409);
+            }
+            foreach ($children as $child) {
+                $this->verify($parent, $child);
+                if (! $child->status->terminal()) {
+                    throw new ResourceOperationException('operation.child_unproven', 'A required child has not settled.', 409);
+                }
+            }
+        }
+        $skips = $requireExpected ? ($result['skipped'] ?? []) : $failedChildren->map(static fn (Operation $child): array => ['child_id' => $child->id, 'reason' => $child->status->value])->all();
+        if (! is_array($skips) || ! array_is_list($skips)) {
+            throw new ResourceOperationException('operation.child_unproven', 'The skipped child evidence is invalid.', 409);
+        }
+        $acknowledged = [];
+        $canonical = [];
+        foreach ($skips as $skip) {
+            if (! is_array($skip) || ! is_int($skip['child_id'] ?? null) || ! is_string($skip['reason'] ?? null)
+                || array_diff(array_keys($skip), ['child_id', 'reason', 'key', 'kind']) !== []
+                || trim($skip['reason']) === '' || strlen($skip['reason']) > 500 || in_array($skip['child_id'], $acknowledged, true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The skipped child evidence is invalid.', 409);
+            }
+            $child = $parent->children()->whereKey($skip['child_id'])->first();
+            if ($child === null || ! in_array($child->status, [OperationStatus::Failed, OperationStatus::Cancelled], true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The skipped child does not match this parent failure.', 409);
+            }
+            $this->verify($parent, $child);
+            $acknowledged[] = $child->id;
+            $canonical[] = ['child_id' => $child->id, 'reason' => $skip['reason'], 'key' => (string) $child->child_key, 'kind' => $child->kind];
+        }
+        if (array_diff($failed, $acknowledged) !== []) {
+            throw new ResourceOperationException('operation.child_unproven', 'A failed child is missing from skipped evidence.', 409);
+        }
+
+        return $canonical;
+    }
+
+    /** Reserve a complete derived failure receipt before admitting another child.
+     * @param  ChildIntent  $intent
+     */
+    private function assertSettledCapacity(Operation $parent, array $intent): void
+    {
+        $definition = $this->kinds->definition($parent->kind);
+        if (! is_array($definition)) {
+            return;
+        }
+        $contract = OperationCompletionContracts::select($parent, $definition['completion_contract']);
+        if (($contract['children_settled'] ?? []) === []) {
+            return;
+        }
+        $schema = ValidatedData::object(OperationResultFields::skippedField($definition['result_fields'])['list_of']);
+        $skips = [];
+        foreach ($parent->children()->get() as $child) {
+            $skips[] = array_intersect_key(['child_id' => PHP_INT_MAX, 'reason' => 'cancelled', 'key' => $child->child_key, 'kind' => $child->kind], $schema);
+        }
+        $skips[] = array_intersect_key(['child_id' => PHP_INT_MAX, 'reason' => 'cancelled', 'key' => $intent['key'], 'kind' => $intent['kind']], $schema);
+        OperationResultFields::filter($definition['result_fields'], ['skipped' => $skips]);
     }
 }

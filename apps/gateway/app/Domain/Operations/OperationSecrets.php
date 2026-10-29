@@ -134,6 +134,12 @@ final readonly class OperationSecrets
     /** @param list<string> $values */
     public function redact(mixed $value, #[\SensitiveParameter] array $values): mixed
     {
+        return $this->redactValues(is_array($value) ? $this->sanitizer->sanitizeProperties($value) : $value, $values);
+    }
+
+    /** @param list<string> $values */
+    private function redactValues(#[\SensitiveParameter] mixed $value, #[\SensitiveParameter] array $values): mixed
+    {
         if (is_scalar($value) && ! is_string($value) && in_array((string) $value, $values, true)) {
             return '[REDACTED]';
         }
@@ -143,10 +149,9 @@ final readonly class OperationSecrets
             return $this->redactor->redact($value, $values);
         }
         if (is_array($value)) {
-            $value = $this->sanitizer->sanitizeProperties($value);
             $safe = [];
             foreach ($value as $key => $item) {
-                $safe[is_string($key) ? $this->redactor->redact($key, $values) : $key] = $this->redact($item, $values);
+                $safe[is_string($key) ? $this->redactor->redact($key, $values) : $key] = $this->redactValues($item, $values);
             }
 
             return $safe;

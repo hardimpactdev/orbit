@@ -31,6 +31,7 @@ beforeEach(function (): void {
 });
 
 it('restricts the Tool executor to Services', function (): void {
+    $this->target->accessibleNodes()->attach($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $this->target->wireguard_ip]);
     $this->postJson('/api/v1/operation-executor/'.$this->operationId.'/run', toolExecutorRun('manager-ready', 'tool.apt-version'))
         ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
@@ -42,13 +43,13 @@ it('rejects a changed Node, command, manager, package or schema', function (arra
         ->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
     expect($this->agents->calls)->toBe([]);
 })->with([
-    ['node_id' => 999],
-    ['name' => 'firewall.rule'],
-    ['name' => 'tool.vp-install'],
-    ['transport' => 'remote_program', 'name' => 'arbitrary'],
-    ['input' => ['package' => 'other-package']],
-    ['input' => ['package' => 'jq', 'script' => 'arbitrary']],
-    ['input' => ['package' => 42]],
+    [['node_id' => 999]],
+    [['name' => 'firewall.rule']],
+    [['name' => 'tool.vp-install']],
+    [['transport' => 'remote_program', 'name' => 'arbitrary']],
+    [['input' => ['package' => 'other-package']]],
+    [['input' => ['package' => 'jq', 'script' => 'arbitrary']]],
+    [['input' => ['package' => 42]]],
 ]);
 
 it('rejects completion without a run receipt and rejects a forged final step', function (): void {

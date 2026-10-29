@@ -226,7 +226,7 @@ final readonly class SwampOperationExecutor
         return DB::transaction(function () use ($operation, $data, $nodeId): Operation {
             $operation->refresh();
             app(OperationChildren::class)->nodeId($operation);
-            $receipt = ['status' => $data['status'], 'result' => $this->contract->result($operation, $data['result'] ?? []),
+            $receipt = ['status' => $data['status'], 'result' => $this->contract->completionResult($operation, $data['result'] ?? [], $data['status'] === 'succeeded'),
                 'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code']) : null];
             if ($operation->status->terminal()) {
                 if ($operation->worker !== $data['worker'] || ($operation->state['executor_lease_node_id'] ?? null) !== $nodeId || ($operation->state['executor_completion'] ?? null) !== $receipt) {
@@ -242,6 +242,7 @@ final readonly class SwampOperationExecutor
                 }
                 $children = app(OperationChildren::class);
                 $children->assertNoPending($operation);
+                $this->contract->assertSettledChildren($operation, $receipt['result'], $receipt['status'] === 'succeeded');
                 if ($operation->parent_operation_id !== null) {
                     $children->child(Operation::query()->findOrFail($operation->parent_operation_id), (string) $operation->child_key);
                 }

@@ -41,18 +41,20 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
         ->toThrow(LogicException::class, "unsupported {$part} keys: {$key}");
 })->with([
     ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
-    ['completion_contract', 'children'], ['completion_contract', 'children_settled'],
+    ['completion_contract', 'children'],
     ['runs', 'unknown_guard'],
 ]);
 
 it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
     expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['children_settled', 'list_of', 'unknown']);
+})->with(['secret_outputs', 'unknown']);
 
 it('reports enforced child and target receipt capabilities', function (): void {
     expect(OperationKinds::supports('children'))->toBeTrue()
         ->and(OperationKinds::supports('receipts'))->toBeTrue()
-        ->and(OperationKinds::supports('compensations'))->toBeTrue();
+        ->and(OperationKinds::supports('compensations'))->toBeTrue()
+        ->and(OperationKinds::supports('list_of'))->toBeTrue()
+        ->and(OperationKinds::supports('children_settled'))->toBeTrue();
 });
 
 it('rejects a child-only completion contract that proves no child', function (): void {
@@ -61,7 +63,6 @@ it('rejects a child-only completion contract that proves no child', function ():
     expect(fn () => new OperationKinds(new Container, ['test.empty' => $definition]))
         ->toThrow(LogicException::class, 'complete enforced completion proof');
 });
-
 
 it('refuses child Node relations from Swamp-written state', function (string $path): void {
     $definition = OperationKinds::definitions()['firewall.allow'];
@@ -81,3 +82,53 @@ it('requires compensation kinds to be declared with a bounded child boundary key
     };
     expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
 })->with(['kind', 'empty', 'boundary']);
+
+it('rejects result declarations that cannot be enforced', function (string $case): void {
+    $field = ['name' => 'artifacts', 'list_of' => ['node_id' => 'int'], 'max' => 4];
+    match ($case) {
+        'zero bound' => $field['max'] = 0,
+        'large bound' => $field['max'] = 4097,
+        'unknown field' => $field['unimplemented'] = true,
+        'unsupported type' => $field['list_of']['node_id'] = 'object',
+        'empty object' => $field['list_of'] = [],
+        'nested object' => $field['list_of']['node_id'] = ['list_of' => ['id' => 'int'], 'max' => 4],
+        'unbounded nested' => $field['list_of']['node_id'] = ['type' => 'list', 'items' => 'integer'],
+    };
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['result_fields'] = [$field];
+    expect(fn () => new OperationKinds(new Container, ['test.invalid' => $definition]))->toThrow(LogicException::class);
+})->with(['zero bound', 'large bound', 'unknown field', 'unsupported type', 'empty object', 'nested object', 'unbounded nested']);
+
+it('rejects malformed completion variants at kind load', function (string $case): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $variant = ['by' => 'manager', 'map' => ['apt' => $definition['completion_contract']]];
+    match ($case) {
+        'missing selector' => $variant['by'] = '',
+        'empty map' => $variant['map'] = [],
+        'incomplete proof' => $variant['map']['apt'] = ['step' => 'verified'],
+        'unknown guarantee' => $variant['map']['apt']['unknown'] = true,
+    };
+    $definition['completion_contract'] = ['completion' => $variant];
+    expect(fn () => new OperationKinds(new Container, ['test.invalid' => $definition]))->toThrow(LogicException::class);
+})->with(['missing selector', 'empty map', 'incomplete proof', 'unknown guarantee']);
+
+it('rejects excessive expanded nested list capacity', function (): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['result_fields'] = [['name' => 'large', 'max' => 4096, 'list_of' => ['steps' => ['type' => 'list', 'items' => 'string', 'max' => 4096]]]];
+    expect(fn () => new OperationKinds(new Container, ['test.large' => $definition]))->toThrow(LogicException::class);
+});
+
+it('requires a usable skipped schema for settled child contracts at kind load', function (string $case): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['children'] = [['kind' => 'test.first', 'node_from' => 'operation.node_id'], ['kind' => 'test.second', 'node_from' => 'operation.node_id']];
+    $definition['completion_contract'] = ['children_settled' => ['test.first', 'test.second']];
+    $definition['result_fields'] = [['name' => 'skipped', 'max' => 2, 'list_of' => ['child_id' => 'int', 'reason' => 'string']]];
+    match ($case) {
+        'missing' => $definition['result_fields'] = [],
+        'id' => $definition['result_fields'][0]['list_of']['child_id'] = 'string',
+        'reason' => $definition['result_fields'][0]['list_of']['reason'] = 'string|null',
+        'max' => $definition['result_fields'][0]['max'] = 1,
+        'unknown' => $definition['result_fields'][0]['list_of']['unimplemented'] = 'string',
+    };
+    expect(fn () => new OperationKinds(new Container, ['test.settled' => $definition]))->toThrow(LogicException::class);
+})->with(['missing', 'id', 'reason', 'max', 'unknown']);

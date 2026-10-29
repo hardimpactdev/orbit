@@ -156,6 +156,8 @@ final class KitGatewayCommand implements OperationGatewayCommand
 
     public bool $refuse = false;
 
+    public ?array $result = null;
+
     public function schema(): array
     {
         return ['type' => 'object', 'properties' => ['token' => ['type' => 'string'], 'port' => ['type' => 'integer']],
@@ -170,7 +172,7 @@ final class KitGatewayCommand implements OperationGatewayCommand
             throw new RuntimeException('transport exposed kit-private-token-value');
         }
 
-        return $this->refuse ? ['error_code' => 'test.refused'] : ['backend' => 'active', 'echo' => $input['token'], 'undeclared' => $input['token']];
+        return $this->refuse ? ['error_code' => 'test.refused'] : ($this->result ?? ['backend' => 'active', 'echo' => $input['token'], 'undeclared' => $input['token']]);
     }
 }
 
@@ -692,3 +694,173 @@ it('hydrates protected booleans through the HTTP schema without masking digit on
         ->and((new OperationSecretValue($stored))->strings())->toBe([])
         ->and($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
 })->with([true, false]);
+
+function richKitFields(): array
+{
+    return ['backend', 'error_code',
+        ['name' => 'process_ids', 'type' => 'list', 'items' => 'integer', 'max' => 3],
+        ['name' => 'warnings', 'type' => 'list', 'items' => 'string', 'max' => 3],
+        ['name' => 'retained_on_nodes', 'max' => 2, 'list_of' => ['node_id' => 'int', 'node' => 'string', 'steps' => ['type' => 'list', 'items' => 'string', 'max' => 2]]],
+        ['name' => 'child_phases', 'list_of' => ['stage' => 'string', 'key' => 'string']],
+        ['name' => 'artifacts', 'list_of' => ['name' => 'string', 'status' => 'enum(applied, unchanged, skipped)', 'reason' => 'string|null', 'changed' => 'bool']],
+    ];
+}
+
+function richKitResult(): array
+{
+    return ['backend' => 'active', 'process_ids' => [7, 2], 'warnings' => ['kit-private-token-value'],
+        'retained_on_nodes' => [['node_id' => 7, 'node' => 'old-node', 'steps' => ['caddy', 'dns']]],
+        'child_phases' => [['stage' => 'routes', 'key' => 'route-7']],
+        'artifacts' => [['name' => 'caddy', 'status' => 'unchanged', 'reason' => null, 'changed' => false]],
+    ];
+}
+
+it('stores bounded typed lists and nested scalar lists through run step and completion with redaction', function (): void {
+    $this->spec['result_fields'] = richKitFields();
+    ($this->register)();
+    $this->command->result = richKitResult();
+    $safe = [...richKitResult(), 'warnings' => ['[REDACTED]']];
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data', $safe);
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'rich.done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $safe])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $safe])->assertOk()->assertJsonPath('data.result', $safe);
+    expect($this->operation->refresh()->result)->toBe($safe);
+});
+
+it('rejects invalid list results without a partial receipt or projection', function (string $case): void {
+    $this->spec['result_fields'] = richKitFields();
+    ($this->register)();
+    $result = richKitResult();
+    match ($case) {
+        'long string' => $result['warnings'] = [str_repeat('x', 1025)],
+        'long object string' => $result['artifacts'][0]['name'] = str_repeat('x', 1025),
+        'long nested string' => $result['retained_on_nodes'][0]['steps'] = [str_repeat('x', 1025)],
+        'numeric string' => $result['process_ids'] = ['7'],
+        'list map' => $result['process_ids'] = ['node' => 7],
+        'outer bound' => $result['process_ids'] = [1, 2, 3, 4],
+        'unknown field' => $result['retained_on_nodes'][0]['extra'] = 'unlisted-private-value',
+        'missing field' => $result['retained_on_nodes'][0] = ['node_id' => 7, 'steps' => []],
+        'nested type' => $result['retained_on_nodes'][0]['steps'] = [false],
+        'nested bound' => $result['retained_on_nodes'][0]['steps'] = ['one', 'two', 'three'],
+        'enum' => $result['artifacts'][0]['status'] = 'invented',
+        'bool' => $result['artifacts'][0]['changed'] = 1,
+    };
+    $this->command->result = $result;
+    $response = $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+    expect($response->getContent())->not->toContain('unlisted-private-value', 'kit-private-token-value');
+    $state = $this->operation->refresh()->state;
+    expect($state['executor_runs']['effect']['result'])->toBeNull()->and($state)->not->toHaveKey('projection_count');
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'operation.execution_uncertain');
+    expect($this->command->runs)->toBe(1);
+})->with(['long string', 'long object string', 'long nested string', 'numeric string', 'list map', 'outer bound', 'unknown field', 'missing field', 'nested type', 'nested bound', 'enum', 'bool']);
+
+it('selects completion command proof only from the admitted variant', function (string $variant): void {
+    $name = $variant === 'primary' ? 'test.command' : 'test.alternative';
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.command' => KitGatewayCommand::class, 'test.alternative' => KitGatewayCommand::class]));
+    $this->spec['runs'][] = [...$this->spec['runs'][0], 'name' => 'test.alternative'];
+    $proof = $this->spec['completion_contract'];
+    $this->spec['completion_contract'] = ['completion' => ['by' => 'configuration.manager', 'map' => ['primary' => $proof, 'alternative' => [...$proof, 'name' => 'test.alternative']]]];
+    ($this->register)();
+    $input = $this->operation->input;
+    $input['configuration']['manager'] = $variant;
+    $input['descriptors'][0]['name'] = $name;
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/run', [...$this->run, 'name' => $name])->assertOk();
+    $result = ['backend' => 'active', 'echo' => '[REDACTED]'];
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'variant.done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk();
+})->with(['primary', 'alternative']);
+
+it('refuses a different command receipt for the selected completion variant', function (): void {
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.command' => KitGatewayCommand::class, 'test.alternative' => KitGatewayCommand::class]));
+    $this->spec['runs'][] = [...$this->spec['runs'][0], 'name' => 'test.alternative'];
+    $proof = $this->spec['completion_contract'];
+    $this->spec['completion_contract'] = ['completion' => ['by' => 'configuration.manager', 'map' => ['primary' => $proof, 'alternative' => [...$proof, 'name' => 'test.alternative']]]];
+    ($this->register)();
+    $input = $this->operation->input;
+    $input['configuration']['manager'] = 'primary';
+    $input['descriptors'][0]['name'] = 'test.alternative';
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/run', [...$this->run, 'name' => 'test.alternative'])->assertOk();
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'variant.wrong', 'name' => 'effect', 'status' => 'succeeded', 'result' => ['backend' => 'active', 'echo' => '[REDACTED]']])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+});
+
+it('refuses completion when the admitted variant is missing or unavailable', function (string $variant): void {
+    $proof = $this->spec['completion_contract'];
+    $this->spec['completion_contract'] = ['completion' => ['by' => 'configuration.manager', 'map' => ['primary' => $proof]]];
+    ($this->register)();
+    if ($variant !== 'missing') {
+        $input = $this->operation->input;
+        $input['configuration']['manager'] = $variant;
+        $this->operation->update(['input' => $input]);
+    }
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded'])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+})->with(['missing', 'unlisted']);
+
+it('refuses JSON objects disguised as result lists before storing a step or completion', function (string $container, string $endpoint): void {
+    $this->spec['result_fields'] = richKitFields();
+    ($this->register)();
+    $this->command->result = richKitResult();
+    if ($container === 'empty') {
+        $this->command->result['warnings'] = [];
+    }
+    $safe = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
+    $wire = json_decode(json_encode($safe, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
+    match ($container) {
+        'empty' => $wire->warnings = new stdClass,
+        'scalar' => $wire->process_ids = (object) $wire->process_ids,
+        'object' => $wire->retained_on_nodes = (object) $wire->retained_on_nodes,
+        'nested' => $wire->retained_on_nodes[0]->steps = (object) $wire->retained_on_nodes[0]->steps,
+    };
+    $before = $this->operation->refresh()->getAttributes();
+    $body = ['worker' => 'worker', 'status' => 'succeeded', 'result' => $wire];
+    if ($endpoint === 'step') {
+        $body += ['key' => 'rich.done', 'name' => 'effect'];
+    }
+
+    $this->call('POST', $this->path.'/'.$endpoint, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: json_encode($body, JSON_THROW_ON_ERROR))
+        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+
+    expect($this->operation->refresh()->getAttributes())->toBe($before);
+    expect($this->operation->steps()->count())->toBe(0);
+})->with(['empty', 'scalar', 'object', 'nested'])->with(['step', 'complete']);
+
+it('preserves actual empty JSON lists in rich step and completion receipts', function (): void {
+    $this->spec['result_fields'] = richKitFields();
+    ($this->register)();
+    $this->command->result = ['backend' => 'active', 'process_ids' => [], 'warnings' => [], 'retained_on_nodes' => [], 'artifacts' => [], 'child_phases' => []];
+    $safe = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'rich.empty', 'name' => 'effect', 'status' => 'succeeded', 'result' => $safe])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $safe])->assertOk()->assertJsonPath('data.result', $safe);
+});
+
+it('refuses an oversized encoded result before saving a receipt or projection', function (bool $list): void {
+    $this->spec['result_fields'] = $list ? ['backend', ['name' => 'notes', 'type' => 'list', 'items' => 'string', 'max' => 4096]] : ['backend', 'notes'];
+    ($this->register)();
+    $this->command->result = ['backend' => 'active', 'notes' => $list ? array_fill(0, 200, str_repeat('\\', 1024)) : str_repeat('x', 262144)];
+    $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+    $state = $this->operation->refresh()->state;
+    expect($state['executor_runs']['effect']['result'])->toBeNull();
+    expect($state)->not->toHaveKey('projection_count');
+})->with([false, true]);
+
+it('accepts a list string exactly at its byte bound', function (): void {
+    $this->spec['result_fields'] = ['backend', ['name' => 'notes', 'type' => 'list', 'items' => 'string', 'max' => 1]];
+    ($this->register)();
+    $this->command->result = ['backend' => 'active', 'notes' => [str_repeat('x', 1024)]];
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.notes.0', str_repeat('x', 1024));
+});
+
+it('refuses an oversized completion or step result without changing Operation records', function (string $endpoint): void {
+    $this->spec['result_fields'] = ['backend', ['name' => 'notes', 'type' => 'list', 'items' => 'string', 'max' => 4096]];
+    ($this->register)();
+    $body = ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'test.failed', 'result' => ['notes' => array_fill(0, 200, str_repeat('\\', 1024))]];
+    if ($endpoint === 'step') {
+        $body += ['key' => 'oversized', 'name' => 'effect'];
+    }
+    $before = $this->operation->refresh()->getAttributes();
+    $this->postJson($this->path.'/'.$endpoint, $body)->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+    expect($this->operation->refresh()->getAttributes())->toBe($before);
+    expect($this->operation->steps()->count())->toBe(0);
+})->with(['step', 'complete']);
