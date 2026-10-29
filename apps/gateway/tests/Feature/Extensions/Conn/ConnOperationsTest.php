@@ -167,14 +167,14 @@ it('lets the no-grant originating caller read and cancel only its own Conn Opera
     $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
     $this->getJson($path)->assertNotFound();
     $this->call('POST', $path.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertNotFound();
-    expect($this->operation->fresh()->cancel_requested)->not->toBeTrue();
+    expect($this->operation->fresh()->cancel_requested_at)->toBeNull();
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $this->getJson('/api/v1/operations/'.$this->operation->id)->assertForbidden();
 
     $this->getJson($path)->assertOk()->assertJsonPath('data.id', $this->operation->id)->assertJsonPath('data.kind', 'conn.pairing_create');
     $this->call('POST', $path.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
 
-    expect($this->operation->fresh()->cancel_requested)->toBeTrue()->and($this->caller->accessibleNodes()->count())->toBe(0);
+    expect($this->operation->fresh()->cancel_requested_at)->not->toBeNull()->and($this->caller->accessibleNodes()->count())->toBe(0);
     Http::assertNothingSent();
 });
 
