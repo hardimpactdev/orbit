@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -678,6 +679,23 @@ describe('environment registration', function (): void {
             && in_array($request['sessionId'], ['new', 'phone'], true));
     });
 
+    it('cleans intermediate Gateway sessions synchronously across repeated registrations', function (): void {
+        conn_layer_fake_server([
+            CONN_LAYER_SERVER.'/api/auth/clients/revoke' => Http::response(['revoked' => true]),
+            CONN_LAYER_SERVER.'/api/auth/clients' => Http::sequence()
+                ->push([['sessionId' => 'first-old', 'client' => ['label' => 'Orbit Gateway'], 'current' => false]])
+                ->push([['sessionId' => 'intermediate', 'client' => ['label' => 'Orbit Gateway'], 'current' => false]]),
+        ]);
+
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk();
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk();
+
+        foreach (['first-old', 'intermediate'] as $id) {
+            Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke' && $request['sessionId'] === $id);
+        }
+        expect(Operation::query()->count())->toBe(0);
+    });
+
     it('refuses a URL that serves another environment before it sends the session', function (): void {
         conn_layer_fake_server();
 
@@ -721,7 +739,7 @@ describe('environment registration', function (): void {
 });
 
 describe('pairing', function (): void {
-    it('mints a pairing link for the calling Node and records it', function (): void {
+    it('keeps the synchronous pairing reply without an Operation', function (bool $explicit): void {
         Http::preventStrayRequests();
         Http::fake([
             CONN_LAYER_SERVER.'/api/auth/pairing-token' => Http::response([
@@ -733,7 +751,7 @@ describe('pairing', function (): void {
         ]);
         conn_layer_environment();
 
-        $response = $this->postJson('/api/v1/conn/environments/env-beast/pairings')
+        $response = $this->postJson('/api/v1/conn/environments/env-beast/pairings', $explicit ? ['async' => false] : [])
             ->assertCreated()
             ->assertJsonPath('data.pairing_url', CONN_LAYER_SERVER.'/pair#token=device-pairing-token')
             ->assertJsonPath('data.pairing.environment_id', 'env-beast')
@@ -741,6 +759,8 @@ describe('pairing', function (): void {
             ->assertJsonPath('data.pairing.revoked_at', null);
 
         $pairing = ConnPairing::query()->sole();
+        expect(Operation::query()->count())->toBe(0);
+        expect($pairing->credential)->toBeNull();
         expect($pairing->pairing_link_id)->toBe('link-1')
             ->and($pairing->client_label)->toStartWith('phone via Orbit ')
             ->and($response->json('data.pairing.client_label'))->toBe($pairing->client_label);
@@ -757,7 +777,8 @@ describe('pairing', function (): void {
             ->assertJsonMissingPath('data.0.pairing_link_id')
             ->assertJsonPath('data.0.client_label', $pairing->client_label);
         expect(Activity::query()->where('command', 'conn:pairing:create')->value('caller_ip'))->toBe(CONN_LAYER_PHONE);
-    });
+        expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('device-pairing-token');
+    })->with([false, true]);
 
     it('refuses to mint with an expired admin session', function (): void {
         Http::preventStrayRequests();
@@ -781,62 +802,5 @@ describe('pairing', function (): void {
 
     it('answers 404 for an environment that never registered', function (): void {
         $this->postJson('/api/v1/conn/environments/env-missing/pairings')->assertNotFound();
-    });
-});
-
-describe('revoke', function (): void {
-    it("revokes the Node's sessions and unused links on the server", function (): void {
-        Http::preventStrayRequests();
-        $environment = conn_layer_environment();
-        $phone = $this->phone;
-        $laptop = $this->laptop;
-        foreach ([[$phone, 'link-1', 'phone via Orbit a'], [$phone, 'link-2', 'phone via Orbit b'], [$laptop, 'link-3', 'laptop via Orbit c']] as [$node, $link, $label]) {
-            ConnPairing::query()->create([
-                'node_id' => $node->id,
-                'conn_environment_id' => $environment->id,
-                'pairing_link_id' => $link,
-                'client_label' => $label,
-                'expires_at' => Carbon::now()->addMinutes(5),
-            ]);
-        }
-        Http::fake([
-            CONN_LAYER_SERVER.'/api/auth/clients/revoke' => Http::response(['revoked' => true]),
-            CONN_LAYER_SERVER.'/api/auth/pairing-links/revoke' => Http::response(['revoked' => false]),
-            CONN_LAYER_SERVER.'/api/auth/clients' => Http::response([
-                ['sessionId' => 'gateway', 'client' => ['label' => 'Orbit Gateway', 'deviceType' => 'bot'], 'current' => true],
-                ['sessionId' => 'phone-session', 'client' => ['label' => 'phone via Orbit a', 'deviceType' => 'mobile'], 'current' => false],
-                ['sessionId' => 'laptop-session', 'client' => ['label' => 'laptop via Orbit c', 'deviceType' => 'desktop'], 'current' => false],
-            ]),
-        ]);
-
-        $this->postJson('/api/v1/conn/environments/env-beast/pairings/revoke')
-            ->assertOk()
-            ->assertJsonPath('data.node_id', $phone->id)
-            ->assertJsonPath('data.revoked_sessions', 1)
-            ->assertJsonCount(2, 'data.pairings');
-
-        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke'
-            && $request['sessionId'] === 'phone-session'
-            && $request->hasHeader('Authorization', 'Bearer admin-session-token'));
-        Http::assertNotSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke'
-            && $request['sessionId'] !== 'phone-session');
-        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/pairing-links/revoke' && $request['id'] === 'link-2');
-        expect(ConnPairing::query()->whereNotNull('revoked_at')->pluck('pairing_link_id')->all())->toBe(['link-1', 'link-2']);
-
-        $this->postJson('/api/v1/conn/environments/env-beast/pairings/revoke', ['node_id' => $laptop->id])
-            ->assertOk()
-            ->assertJsonPath('data.revoked_sessions', 1);
-        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke' && $request['sessionId'] === 'laptop-session');
-    });
-
-    it('calls nothing when the Node holds no pairing on the server', function (): void {
-        Http::preventStrayRequests();
-        conn_layer_environment();
-
-        $this->postJson('/api/v1/conn/environments/env-beast/pairings/revoke')
-            ->assertOk()
-            ->assertJsonPath('data.revoked_sessions', 0)
-            ->assertJsonPath('data.pairings', []);
-        Http::assertNothingSent();
     });
 });

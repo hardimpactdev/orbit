@@ -4,53 +4,28 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Actions;
 
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Integrations\IntegrationAvailability;
+use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
-use Illuminate\Support\Carbon;
-use Orbit\Extensions\Conn\Data\ConnPairingData;
-use Orbit\Extensions\Conn\Data\ConnRevocationData;
-use Orbit\Extensions\Conn\Domain\T3ServerClient;
+use App\Models\Operation;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
-/**
- * Ends a Node's access to one T3 server: it revokes every session paired from the Node's pairing
- * links there, and any link not used yet. WireGuard access stays as it is.
- */
 final readonly class RevokeConnPairingsAction
 {
-    public function __construct(private T3ServerClient $server) {}
+    public function __construct(private StartOperationAction $operations, private NodeAccessAuthorizer $nodes) {}
 
-    public function execute(Node $node, ConnEnvironment $environment): ConnRevocationData
+    public function execute(Node $node, ConnEnvironment $environment, Node $caller): Operation
     {
-        $pairings = ConnPairing::query()
-            ->where('node_id', $node->id)
-            ->where('conn_environment_id', $environment->id)
-            ->whereNull('revoked_at')
-            ->orderBy('id')
-            ->get();
-        $revokedSessions = 0;
+        IntegrationAvailability::assertKind('conn.pairing_revoke');
+        $gateway = $this->nodes->activeGatewayId() ?? throw new ResourceOperationException('conn.gateway_missing', 'Pairing needs one active Gateway Node.', 409);
+        $ids = ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)
+            ->whereNull('revoked_at')->orderBy('id')->pluck('id')->all();
 
-        if ($pairings->isNotEmpty()) {
-            $labels = $pairings->pluck('client_label')->all();
-
-            foreach ($this->server->clientSessions($environment->url, $environment->admin_session) as $session) {
-                if (! $session->current && in_array($session->label, $labels, true)
-                    && $this->server->revokeClientSession($environment->url, $environment->admin_session, $session->sessionId)) {
-                    $revokedSessions++;
-                }
-            }
-
-            foreach ($pairings as $pairing) {
-                $this->server->revokePairingLink($environment->url, $environment->admin_session, $pairing->pairing_link_id);
-                $pairing->forceFill(['revoked_at' => Carbon::now()])->save();
-            }
-        }
-
-        return new ConnRevocationData(
-            environmentId: $environment->environment_id,
-            nodeId: $node->id,
-            revokedSessions: $revokedSessions,
-            pairings: array_values($pairings->map(static fn (ConnPairing $pairing): ConnPairingData => ConnPairingData::fromModel($pairing))->all()),
-        );
+        return $this->operations->execute('conn.pairing_revoke', 'conn_pairing_node', $node->id, $gateway,
+            ['conn_environment_id' => $environment->id, 'environment' => ['$secret' => 'conn.environment', 'id' => $environment->id],
+                'pairing_ids' => $ids, 'subject_node_id' => $node->id, 'caller_node_id' => $caller->id], 'operator', null);
     }
 }

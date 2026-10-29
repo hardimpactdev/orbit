@@ -7,6 +7,7 @@ use App\Http\Middleware\RequireEnabledExtension;
 use Illuminate\Support\Facades\Route;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnOperationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 
@@ -17,6 +18,8 @@ Route::middleware([
     RequireEnabledExtension::class.':conn',
 ])->prefix('api/v1/conn')->group(function (): void {
     Route::get('me', [ConnNodesController::class, 'show'])->name('conn:me');
+    Route::get('operations/{operation}', [ConnOperationsController::class, 'show'])->whereNumber('operation')->name('conn:operation:show');
+    Route::post('operations/{operation}/cancel', [ConnOperationsController::class, 'cancel'])->whereNumber('operation')->name('conn:operation:cancel');
     Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
     Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');
     Route::post('profiles', [ConnProfilesController::class, 'store'])->name('conn:profile:create');
@@ -32,6 +35,7 @@ Route::middleware([
     Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
     Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
     Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
+    Route::get('environments/{environment}/pairings/{pairing}', [ConnPairingsController::class, 'show'])->whereNumber('pairing')->name('conn:pairing:show');
     Route::post('environments/{environment}/pairings', [ConnPairingsController::class, 'store'])->name('conn:pairing:create');
     Route::post('environments/{environment}/pairings/revoke', [ConnPairingsController::class, 'revoke'])->name('conn:pairing:revoke');
 });
