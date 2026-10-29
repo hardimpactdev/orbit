@@ -143,6 +143,14 @@ final readonly class ProvisionNodeAction
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $wasNew = ! $node->exists;
 
+        // An unmanaged peer on another platform, such as an iPad, runs nothing Orbit installs.
+        if ($node->exists && ! in_array($node->platform, ['linux', 'macos'], true)) {
+            throw new ResourceOperationException(
+                errorCode: 'node.platform_unsupported',
+                message: "Node [{$node->name}] is {$node->platform}. Orbit runs nothing on it. Set its platform with node:platform first if that is wrong.",
+            );
+        }
+
         if ($this->enrollsMacOs($node, $data)) {
             $enrolled = $this->macNodes->execute($node, $data);
 

@@ -87,7 +87,7 @@ The dashboard and the Nodes page list Nodes with roles, with their meters, apart
 
 A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux, with the existing operator rules, Orbit rules, live rules, and missing-state comparisons. macOS tool support does not enable firewall management.
 
-The menu chooses the URL. Overview is `/nodes/<id>`. Tools is `/nodes/<id>/tools`. Firewall is `/nodes/<id>/firewall` on Linux. On a narrow screen the menu is one row, so the list keeps the width of the page. A macOS Firewall URL returns to Overview and does not request Linux firewall rules.
+The menu chooses the URL. Overview is `/nodes/<id>`. Tools is `/nodes/<id>/tools`. Firewall is `/nodes/<id>/firewall` on Linux. On a narrow screen the menu is one row, so the list keeps the width of the page. A macOS Firewall URL returns to Overview and does not request Linux firewall rules. An [iPadOS peer](/reference/node-provisioning#ipados-peers) follows the same rule: its page shows the platform `ipados`, no metrics, and no Firewall section. Its Tools section reports that the Gateway refuses a tool scan, because Orbit does not manage the Node.
 
 ### Tools
 

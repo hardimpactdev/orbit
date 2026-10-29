@@ -1,0 +1,10 @@
+Setting Node platform...
+
+┌  Set Node platform
+│
+├  ● Setting Node platform
+│
+└  Operation failed.
+
+Only an unmanaged Node, with no pinned SSH host key and no role, takes a platfor
+m from this command.

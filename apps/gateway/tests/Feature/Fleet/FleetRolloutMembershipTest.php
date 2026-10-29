@@ -21,6 +21,7 @@ describe('fleet rollout set', function (): void {
         FleetFixtures::node('services', [RoleName::AppDev, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]);
         FleetFixtures::node('sabre', [RoleName::CiRunner]);
         FleetFixtures::node('mini', platform: 'macos');
+        FleetFixtures::node('ipad', platform: 'ipados', managed: false);
         FleetFixtures::node('polar');
         FleetFixtures::node('unpinned', [RoleName::AppDev], managed: false);
         FleetFixtures::node('broken', [RoleName::AppDev], status: LifecycleStatus::Failed);
@@ -36,6 +37,7 @@ describe('fleet rollout set', function (): void {
                 'services' => null,
                 'sabre' => null,
                 'mini' => 'platform',
+                'ipad' => 'platform',
                 'polar' => 'roleless',
                 'unpinned' => 'unmanaged',
                 'broken' => 'inactive',

@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\SetNodePlatformRequest",
+    "route": "PATCH /api/v1/nodes/{node}/platform",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "node.platform_managed",
+            "message": "Only an unmanaged Node, with no pinned SSH host key and no role, takes a platform from this command.",
+            "details": {}
+        }
+    }
+}

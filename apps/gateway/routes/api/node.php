@@ -56,6 +56,9 @@ Route::middleware([
     Route::patch('nodes/{node}/wireguard-key', [NodesController::class, 'wireguardKey'])
         ->whereNumber('node')
         ->name('node:wireguard-key');
+    Route::patch('nodes/{node}/platform', [NodesController::class, 'platform'])
+        ->whereNumber('node')
+        ->name('node:platform');
     Route::patch('nodes/{node}/settings', [NodesController::class, 'settings'])
         ->whereNumber('node')
         ->name('node:settings');

@@ -284,6 +284,30 @@ On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Ad
 
 Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
 
+## iPadOS peers
+
+An iPad or iPhone can join WireGuard as an unmanaged peer. The operator owns its tunnel. It has no pinned SSH host key and no role. Orbit runs nothing on it. The `ipados` platform records this, so the Node is not mistaken for a Linux machine.
+
+Set the platform with [`node:platform`](/cli/node#orbit-nodeplatform). The command takes `linux`, `macos`, or `ipados`, and accepts only a Node with no pinned SSH host key and no role. It changes the stored platform and nothing else. `node:add` does not accept `ipados`. Keep the architecture the machine reports, such as `arm64`.
+
+The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the platform gates that macOS and unmanaged Nodes already have.
+
+| Operation | Result |
+| --- | --- |
+| `node:add`, including `--platform=macos` | `node.platform_unsupported` (HTTP 422) before SSH. The record stays as it was. |
+| Any role on `node:role:add` | `node.platform_unsupported` (HTTP 422). |
+| `node:converge` | `node.converge_unsupported` (HTTP 422). |
+| Process mutation | `process.platform_unsupported` (HTTP 422). |
+| Schedule mutation | `schedule.platform_unsupported` (HTTP 422). |
+| Metrics exporter or Metrics role | `metrics.platform_unsupported` (HTTP 422). |
+| Firewall mutation | `firewall.platform_unsupported` (HTTP 422). |
+| DNS repair | `node.dns_repair_operator_owned`, because the Node has no role. |
+| Tool operations | `tool.node_unmanaged` (HTTP 409). |
+| Fleet rollout | Left out with reason `platform`. |
+| Doctor | Lifecycle check only, as for any Node without a pinned SSH host key. |
+
+`node:wireguard-key` still sets the peer's public key, and `node:access:add` still grants it access to call the Gateway. Removing an `ipados` Node deletes the registry row and the hub peer. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `host-wireguard`, the tunnel the operator configured on the device.
+
 ## Enroll through a jump host
 
 The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.

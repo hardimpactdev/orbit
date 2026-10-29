@@ -117,6 +117,22 @@ Injected-failure tests must stop the operation after the registry save but befor
 
 This entry is the docs-first endpoint contract. The generated API sidebar and OpenAPI operation are added from the route, request, SDK, and CLI definitions when the command is implemented; generated files are not hand-edited to advertise a route that does not yet exist.
 
+## Set an unmanaged Node's platform
+
+`PATCH /api/v1/nodes/{node}/platform` serves [`node:platform`](/cli/node#orbit-nodeplatform). The path takes a positive numeric Node ID. The caller needs access to the target Node.
+
+Send exactly one member, `platform`, set to `linux`, `macos`, or `ipados`:
+
+```json
+{
+  "platform": "ipados"
+}
+```
+
+Another value, a missing member, or an extra member returns HTTP 422 `validation.failed`. The Gateway refuses a Node with a pinned SSH host fingerprint or any role assignment with HTTP 409 `node.platform_managed`. A competing lifecycle operation on the Node returns HTTP 409 `node.provisioning_busy`. These refusals change nothing.
+
+On success the Gateway stores the platform and returns HTTP 200 with the standard Node record and `meta.request_id`. It does not contact the machine. A changed platform sends the normal `node.updated` broadcast. Repeating the stored platform writes nothing. Activity records the command as `node:platform`. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what the Gateway refuses on an `ipados` Node.
+
 ## Follow a long operation
 
 `POST /api/v1/instances/{instance}/deploy` and `POST /api/v1/instances/{instance}/rollback` answer `202 Accepted` with an [operation](/reference/operations) and return at once. The deploy or rollback runs on the Gateway queue. Read `GET /api/v1/operations/{operation}?after_sequence=N` after the record's `poll_after_seconds` until its `status` is `succeeded`, `failed`, or `cancelled`, or subscribe to `private-operation.{id}` over Reverb. Closing the connection does not stop the operation; `POST /api/v1/operations/{operation}/cancel` does. [The rollback operation](/reference/deployments#the-rollback-operation) lists the rollback's steps.

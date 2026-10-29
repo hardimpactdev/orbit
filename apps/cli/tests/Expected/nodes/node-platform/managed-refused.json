@@ -1,0 +1,1 @@
+{"error":{"code":"node.platform_managed","message":"Only an unmanaged Node, with no pinned SSH host key and no role, takes a platform from this command.","request_id":null}}
