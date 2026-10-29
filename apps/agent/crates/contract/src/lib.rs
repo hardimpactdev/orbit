@@ -95,6 +95,7 @@ pub struct Context {
     deadline: Instant,
     binary_input: std::sync::Mutex<Option<std::fs::File>>,
     effect_masks: Option<Vec<String>>,
+    effect_identity: Option<(String, i64)>,
 }
 impl Context {
     pub fn new(platform: Platform, deadline: Instant) -> Self {
@@ -103,6 +104,7 @@ impl Context {
             deadline,
             binary_input: std::sync::Mutex::new(None),
             effect_masks: None,
+            effect_identity: None,
         }
     }
     /// Protected invocation metadata. Never included in command input, fingerprints, or receipts.
@@ -112,6 +114,16 @@ impl Context {
     }
     pub fn effect_masks(&self) -> Option<&[String]> {
         self.effect_masks.as_deref()
+    }
+    /// Original Gateway Operation identity, independent of reused numeric database IDs.
+    pub fn with_effect_identity(mut self, nonce: String, created_at: i64) -> Self {
+        self.effect_identity = Some((nonce, created_at));
+        self
+    }
+    pub fn effect_identity(&self) -> Option<(&str, i64)> {
+        self.effect_identity
+            .as_ref()
+            .map(|(nonce, created_at)| (nonce.as_str(), *created_at))
     }
     /// The dispatcher supplies a complete, size-checked private input file.
     pub fn with_binary_input(self, file: std::fs::File) -> Self {

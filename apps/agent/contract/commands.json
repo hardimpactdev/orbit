@@ -18,7 +18,8 @@
     "agent.effect_receipt_unavailable",
     "agent.effect_receipt_invalid",
     "agent.effect_sanitization_required",
-    "agent.effect_unsanitized"
+    "agent.effect_unsanitized",
+    "agent.effect_expired"
   ],
   "commands": [
     {
