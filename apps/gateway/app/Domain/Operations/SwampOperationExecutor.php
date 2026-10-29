@@ -29,6 +29,8 @@ final readonly class SwampOperationExecutor
 {
     public const int LeaseSeconds = 120;
 
+    public const int MaxAttempts = 5;
+
     public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports, private OperationSecretOutputs $outputs) {}
 
     public function claim(string $kind, string $worker, int $nodeId, ?int $operationId = null): ?Operation
@@ -39,7 +41,9 @@ final readonly class SwampOperationExecutor
 
         return DB::transaction(function () use ($kind, $worker, $nodeId, $operationId): ?Operation {
             $operation = Operation::query()->where('kind', $kind)->when($operationId !== null, fn ($query) => $query->whereKey($operationId))->where('status', OperationStatus::Running->value)
-                ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
+                ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)
+                ->where('updated_at', '>', Carbon::now()->subSeconds(self::LeaseSeconds))->first();
+            $replaying = $operation !== null;
             if ($operation === null) {
                 foreach ($this->claimCandidates($kind, $operationId, true) as $candidate) {
                     $locked = Operation::query()->whereKey($candidate->id)->lockForUpdate()->first();
@@ -54,13 +58,14 @@ final readonly class SwampOperationExecutor
             }
             $state = [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId];
             $state['executor_target'] ??= ['node_id' => app(OperationChildren::class)->nodeId($operation), 'target_type' => $operation->target_type, 'target_id' => $operation->target_id];
-            if ($operation->status === OperationStatus::Waiting) {
+            $resuming = $operation->status === OperationStatus::Waiting;
+            if ($resuming) {
                 $state['executor_reentry'] = app(OperationChildren::class)->reentry($operation);
                 unset($state['executor_wait'], $state['executor_assistance']);
             }
             $this->store->change($operation, [
                 'status' => OperationStatus::Running, 'worker' => $worker,
-                'attempts' => $operation->attempts + ($operation->worker === $worker && ($operation->state['executor_lease_node_id'] ?? null) === $nodeId ? 0 : 1),
+                'attempts' => $operation->attempts + ($replaying || $resuming ? 0 : 1),
                 'state' => $state,
                 'started_at' => $operation->started_at ?? Carbon::now(),
                 'updated_at' => Carbon::now(),
@@ -105,17 +110,31 @@ final readonly class SwampOperationExecutor
                             ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
                     });
             })->orderBy('id')->cursor()
-            ->filter(fn (Operation $candidate): bool => $this->eligible($candidate, $forClaim))->values();
+            ->filter(fn (Operation $candidate): bool => $forClaim || $this->eligible($candidate, false))->values();
     }
 
     private function eligible(Operation $candidate, bool $flagAssistance): bool
     {
-        return match ($candidate->status) {
+        if (($candidate->state['executor_assistance'] ?? null) === ['error_code' => 'operation.reclaim_limit']) {
+            return false;
+        }
+        $ready = match ($candidate->status) {
             OperationStatus::Queued => true,
             OperationStatus::Running => $candidate->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds)) ?? false,
             OperationStatus::Waiting => app(OperationChildren::class)->ready($candidate, $flagAssistance),
             default => false,
         };
+        if ($ready && $candidate->status !== OperationStatus::Waiting && $candidate->attempts >= self::MaxAttempts) {
+            if ($flagAssistance) {
+                $this->store->change($candidate, ['status' => OperationStatus::Waiting, 'worker' => null,
+                    'state' => [...($candidate->state ?? []), 'executor_assistance' => ['error_code' => 'operation.reclaim_limit']]]);
+            }
+
+            // Discovery stays read-only; one empty claim parks exhausted work instead of executing it.
+            return ! $flagAssistance;
+        }
+
+        return $ready;
     }
 
     public function heartbeat(Operation $operation, string $worker, int $nodeId): Operation

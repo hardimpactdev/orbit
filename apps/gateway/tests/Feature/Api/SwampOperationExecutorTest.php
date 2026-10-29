@@ -105,6 +105,40 @@ it('replays a claim and fences the previous worker after lease expiry', function
     $this->postJson("/api/v1/operation-executor/{$id}/heartbeat", ['worker' => 'run-2'])->assertOk();
 });
 
+it('parks an exhausted Operation without a sixth execution or dropping its target hold', function (bool $sameWorker): void {
+    $this->freezeTime();
+    [, $id] = firewallAdmission($this);
+    asExecutor($this);
+    foreach (range(1, 5) as $attempt) {
+        $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'reclaim-'.$attempt])
+            ->assertOk()->assertJsonPath('data.id', $id);
+        expect(Operation::findOrFail($id)->attempts)->toBe($attempt);
+        if ($attempt < 5) {
+            $this->travel(121)->seconds();
+        }
+    }
+    $this->postJson('/api/v1/operation-executor/'.$id.'/heartbeat', ['worker' => 'reclaim-5'])->assertOk();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'reclaim-6'])->assertOk()->assertJsonPath('data', null);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'reclaim-5'])->assertOk()->assertJsonPath('data.id', $id);
+    expect(Operation::findOrFail($id)->attempts)->toBe(5);
+    $this->travel(121)->seconds();
+    $before = Operation::findOrFail($id)->getRawOriginal();
+    $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
+    expect(Operation::findOrFail($id)->getRawOriginal())->toBe($before);
+    $claim = ['kind' => 'firewall.allow', 'worker' => $sameWorker ? 'reclaim-5' : 'reclaim-6'];
+    $this->postJson('/api/v1/operation-executor/claim', $claim)->assertOk()->assertJsonPath('data', null);
+    $operation = Operation::findOrFail($id);
+    expect($operation->status)->toBe(OperationStatus::Waiting)
+        ->and($operation->attempts)->toBe(5)
+        ->and($operation->lock_key)->not->toBeNull()
+        ->and($operation->state['executor_assistance']['error_code'])->toBe('operation.reclaim_limit')
+        ->and($operation->steps()->count())->toBe(0);
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.assistance.error_code', 'operation.reclaim_limit');
+    $sequence = $operation->sequence;
+    $this->postJson('/api/v1/operation-executor/claim', $claim)->assertOk()->assertJsonPath('data', null);
+    expect($operation->refresh()->sequence)->toBe($sequence);
+})->with([false, true]);
+
 it('records keyed output once and projects one repeatable completion', function (): void {
     [, $id] = firewallAdmission($this);
     asExecutor($this);
