@@ -95,6 +95,7 @@ pub struct Context {
     deadline: Instant,
     binary_input: std::sync::Mutex<Option<std::fs::File>>,
     effect_masks: Option<Vec<String>>,
+    effect_secret_outputs: Vec<String>,
     effect_boolean_masks: Vec<bool>,
     effect_identity: Option<(String, i64)>,
 }
@@ -105,6 +106,7 @@ impl Context {
             deadline,
             binary_input: std::sync::Mutex::new(None),
             effect_masks: None,
+            effect_secret_outputs: Vec::new(),
             effect_boolean_masks: Vec::new(),
             effect_identity: None,
         }
@@ -113,6 +115,14 @@ impl Context {
     pub fn with_effect_masks(mut self, masks: Vec<String>) -> Self {
         self.effect_masks = Some(masks);
         self
+    }
+    /// Public output paths whose values must never enter the target receipt store.
+    pub fn with_effect_secret_outputs(mut self, paths: Vec<String>) -> Self {
+        self.effect_secret_outputs = paths;
+        self
+    }
+    pub fn effect_secret_outputs(&self) -> &[String] {
+        &self.effect_secret_outputs
     }
     pub fn effect_masks(&self) -> Option<&[String]> {
         self.effect_masks.as_deref()

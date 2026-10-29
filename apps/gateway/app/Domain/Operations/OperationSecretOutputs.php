@@ -40,6 +40,12 @@ final readonly class OperationSecretOutputs
         return $outputs;
     }
 
+    /** @return list<string> Public declaration paths, never values. */
+    public function paths(Operation $operation): array
+    {
+        return array_column($this->fields($operation), 'name');
+    }
+
     public function authorize(Operation $operation): void
     {
         foreach ($this->fields($operation) as $field) {
@@ -53,12 +59,25 @@ final readonly class OperationSecretOutputs
     public function extract(Operation $operation, #[\SensitiveParameter] array $result): array
     {
         $values = [];
+        $booleans = [];
         $bytes = 0;
+        $collectBooleans = static function (mixed $value) use (&$collectBooleans, &$booleans): void {
+            if (is_bool($value)) {
+                $booleans[] = $value;
+            } elseif (is_array($value)) {
+                foreach ($value as $item) {
+                    $collectBooleans($item);
+                }
+            }
+        };
         foreach ($this->fields($operation) as $field) {
             if (! Arr::has($result, $field['name'])) {
                 continue;
             }
             $value = Arr::get($result, $field['name']);
+            if ($value === ['$secret_output' => true]) {
+                throw new ResourceOperationException('operation.execution_uncertain', 'The target confirms an output but its value was not stored.', 409);
+            }
             try {
                 $bytes += strlen(json_encode($value, JSON_THROW_ON_ERROR));
                 $protected = new OperationSecretValue($value);
@@ -73,11 +92,20 @@ final readonly class OperationSecretOutputs
             } catch (Throwable) {
                 $this->refuse();
             }
+            $collectBooleans($value);
             $values = [...$values, ...$protected->strings()];
             Arr::set($result, $field['name'], ['$secret' => $field['store'], 'id' => $owner]);
         }
 
-        return ['result' => $result, 'values' => $values];
+        $redactBooleans = static function (mixed $value) use (&$redactBooleans, $booleans): mixed {
+            if (is_bool($value) && in_array($value, $booleans, true)) {
+                return '[REDACTED]';
+            }
+
+            return is_array($value) ? array_map($redactBooleans, $value) : $value;
+        };
+
+        return ['result' => array_map($redactBooleans, $result), 'values' => $values];
     }
 
     /** @param array{name:string,secret:true,store:string} $field

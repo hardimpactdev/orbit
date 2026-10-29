@@ -26,6 +26,7 @@ final class OperationResultFields
     {
         $names = [];
         $totalItems = 0;
+        $secretFields = 0;
         foreach ($fields as $field) {
             $name = is_string($field) ? $field : (is_array($field) ? ($field['name'] ?? null) : null);
             if (! is_string($name) || preg_match('/\A[a-zA-Z_][a-zA-Z0-9_.-]*\z/D', $name) !== 1 || in_array($name, $names, true)) {
@@ -40,7 +41,8 @@ final class OperationResultFields
             }
             if (array_key_exists('secret', $field) || array_key_exists('store', $field)) {
                 self::keys($field, ['name', 'secret', 'store']);
-                if (($field['secret'] ?? null) !== true || ! is_string($field['store'] ?? null)
+                $secretFields++;
+                if ($secretFields > 64 || ($field['secret'] ?? null) !== true || strlen($name) > 192 || in_array('', explode('.', $name), true) || ! is_string($field['store'] ?? null)
                     || preg_match('/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\z/D', $field['store']) !== 1) {
                     self::invalidDeclaration();
                 }

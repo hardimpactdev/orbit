@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationGatewayCommand;
@@ -13,11 +14,13 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\WebSocketApp;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
 
 final class OutputStore implements OperationSecretOutputStore
 {
@@ -28,6 +31,8 @@ final class OutputStore implements OperationSecretOutputStore
     public bool $wrongType = false;
 
     public bool $fail = false;
+
+    public bool $acceptBoolean = false;
 
     public function name(): string
     {
@@ -49,6 +54,9 @@ final class OutputStore implements OperationSecretOutputStore
         $this->calls++;
         if ($this->fail) {
             throw new ResourceOperationException('test.output_refused', 'private-output-credential-value', 409, ['credential' => $value]);
+        }
+        if ($this->acceptBoolean && is_bool($value)) {
+            $value = json_encode($value, JSON_THROW_ON_ERROR);
         }
         if (! is_string($value)) {
             throw new LogicException('Expected a string credential.');
@@ -78,7 +86,7 @@ final class OutputCommand implements OperationGatewayCommand
             WebSocketApp::query()->whereKey($operation->target_id)->delete();
         }
 
-        return ['backend' => 'issued', 'credential' => $this->value, 'echo' => 'echo:'.(is_string($this->value) ? $this->value : 'other')];
+        return ['backend' => 'issued', 'credential' => $this->value, 'echo' => is_bool($this->value) ? $this->value : 'echo:'.(is_string($this->value) ? $this->value : 'other')];
     }
 }
 final class OutputFamily implements OperationCompletion, OperationFamilyExecution
@@ -122,6 +130,7 @@ final class OutputFamily implements OperationCompletion, OperationFamilyExecutio
 
 beforeEach(function (): void {
     $gateway = Node::query()->create(['name' => 'gateway', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'user' => 'orbit', 'status' => 'active', 'public_ssh_host' => '192.0.2.1']);
+    $this->gateway = $gateway;
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => 'active']);
     $services = Node::query()->create(['name' => 'services', 'wireguard_ip' => '10.44.0.17', 'platform' => 'linux', 'user' => 'orbit', 'status' => 'active', 'public_ssh_host' => '192.0.2.17']);
     $services->accessibleNodes()->attach($gateway);
@@ -215,7 +224,7 @@ it('refuses raw credentials or forged reference owners in public completion proo
 })->with(['raw', 'reference']);
 
 it('refuses declarations whose transport could persist secret outputs before extraction', function (): void {
-    $this->definition['runs'][0]['transport'] = 'agent';
+    $this->definition['runs'][0]['transport'] = 'remote_program';
     $this->definition['runs'][0]['name'] = 'agent.status';
     expect(fn () => new OperationKinds(app(), ['test.unsafe_output' => $this->definition]))->toThrow(LogicException::class, 'Secret outputs require a transport');
 });
@@ -230,7 +239,6 @@ it('rechecks owner authorization before an unstarted retry can dispatch', functi
     expect($this->command->calls)->toBe(0)->and($this->store->calls)->toBe(0);
 });
 
-
 it('refuses malformed secret output declarations at kind load', function (array $field): void {
     $this->definition['result_fields'] = [$field];
     expect(fn () => new OperationKinds(app(), ['test.invalid_output' => $this->definition]))->toThrow(LogicException::class);
@@ -240,3 +248,71 @@ it('refuses malformed secret output declarations at kind load', function (array 
     'invalid store' => [['name' => 'credential', 'secret' => true, 'store' => 'test..credential']],
     'unknown rule' => [['name' => 'credential', 'secret' => true, 'store' => 'test.owner.credential', 'type' => 'string']],
 ]);
+
+function startSecretAgentOutput($test): Operation
+{
+    $fields = ['secret_hash', 'configuration', 'certificate', 'unit', 'checkouts', 'binary_changed'];
+    $definition = [...array_diff_key($test->definition, ['execution' => true]),
+        'runs' => [['transport' => 'agent', 'name' => 'agent.configure', 'input_fields' => $fields]],
+        'completion_contract' => ['step' => 'configure', 'transport' => 'agent', 'name' => 'agent.configure', 'result' => ['restarted' => true]],
+        'result_fields' => ['restarted', ['name' => 'unclosed', 'type' => 'list', 'items' => 'string', 'max' => 32],
+            ['name' => 'secret_hash', 'secret' => true, 'store' => 'test.owner.credential']]];
+    $kinds = new OperationKinds(app(), [...OperationKinds::definitions(), 'test.secret_output' => $test->definition, 'test.agent_output' => $definition]);
+    app()->instance(OperationKinds::class, $kinds);
+    app()->instance(OperationSecretOutputs::class, new OperationSecretOutputs([$test->store], $kinds));
+    $test->owner = WebSocketApp::query()->create(['name' => 'agent-output', 'app_id' => 'agent-output', 'key' => 'agent-output', 'secret' => 'original']);
+    $test->input = ['secret_hash' => null, 'configuration' => '', 'certificate' => '', 'unit' => '', 'checkouts' => [], 'binary_changed' => false];
+    $operation = app(StartOperationAction::class)->execute('test.agent_output', 'websocket_app', $test->owner->id, $test->gateway->id, $test->input, 'test', null);
+    $test->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.agent_output', 'worker' => 'agent-output'])->assertOk();
+    $test->path = '/api/v1/operation-executor/'.$operation->id;
+    $test->run = ['worker' => 'agent-output', 'key' => 'configure', 'transport' => 'agent', 'name' => 'agent.configure', 'input' => $test->input];
+
+    return $operation;
+}
+
+it('binds agent.configure output stripping in protected metadata and encrypts the live hash', function (): void {
+    $operation = startSecretAgentOutput($this);
+    $hash = hash('sha256', 'fixture-agent-secret');
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('agent.configure', function (array $input) use ($hash): array {
+        $effect = $input[EffectReceiptMetadata::InputKey];
+        expect($effect->envelope()['secret_outputs'])->toBe(['secret_hash']);
+
+        return ['secret_hash' => $hash, 'restarted' => true, 'unclosed' => []];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.secret_hash', ['$secret' => 'test.owner.credential', 'id' => $this->owner->id]);
+    expect($this->owner->fresh()->secret)->toBe($hash)->and(json_encode($operation->fresh()->state))->not->toContain($hash)
+        ->and(DB::table('websocket_apps')->where('id', $this->owner->id)->value('secret'))->not->toContain($hash);
+});
+
+it('keeps a presence-only recovered agent output uncertain without writing or projecting', function (): void {
+    $operation = startSecretAgentOutput($this);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('agent.configure', function (): array {
+        throw new RuntimeException('lost live reply');
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $identity = $operation->fresh()->state['executor_effect_identity'];
+    $agents->answer('agent.effect-receipt', ['command' => 'agent.configure', 'effect_key' => 'op-'.$operation->id.'.configure', 'state' => 'succeeded',
+        'sanitized' => true, 'effect_nonce' => $identity['nonce'], 'effect_created_at' => $identity['created_at'], 'exit_code' => 0,
+        'result' => ['ok' => true, 'data' => ['secret_hash' => ['$secret_output' => true], 'restarted' => true, 'unclosed' => []]],
+        'result_digest' => str_repeat('c', 64), 'finished_at' => '2026-10-29T02:00:00Z']);
+    $this->getJson($this->path.'/receipts/configure')->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    expect($operation->fresh()->state['executor_runs']['configure']['result'])->toBeNull()->and($this->store->calls)->toBe(0)
+        ->and($this->owner->fresh()->secret)->toBe('original')->and($agents->commands())->toBe(['agent.configure', 'agent.effect-receipt']);
+});
+
+it('preserves declared reference fields when their secret equals the public field name', function (): void {
+    $this->command->value = 'credential';
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.credential', $this->reference)->assertJsonPath('data.echo', 'echo:[REDACTED]');
+    expect($this->owner->fresh()->secret)->toBe('credential');
+});
+
+it('redacts generated boolean echoes while preserving the owning record reference', function (): void {
+    $this->store->acceptBoolean = true;
+    $this->command->value = true;
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.credential', $this->reference)->assertJsonPath('data.echo', '[REDACTED]');
+    expect($this->owner->fresh()->secret)->toBe('true');
+});

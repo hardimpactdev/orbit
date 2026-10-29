@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Domain\Operations\OperationEffectTransport;
+use App\Domain\Operations\OperationSecretOutputTransport;
 use App\Domain\Operations\OperationTransportInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 
-final readonly class OperationAgentTransport implements OperationEffectTransport, OperationTransportInput
+final readonly class OperationAgentTransport implements OperationEffectTransport, OperationSecretOutputTransport, OperationTransportInput
 {
     public function __construct(private AgentCommandRunner $runner, private AgentContract $contract, private AgentEffectReceipts $receipts) {}
 

@@ -491,7 +491,7 @@ final readonly class SwampOperationExecutor
                 $values = $hydrated['values'];
                 $input = $hydrated['input'];
                 $this->contract->validateHydratedInput($operation, $data, $spec, $input);
-                $run = [...$data, 'effect_key' => $effectKey, 'effect_metadata' => EffectReceiptMetadata::hydrated($values, $this->effectIdentity($operation), $input, array_keys($references))];
+                $run = [...$data, 'effect_key' => $effectKey, 'effect_metadata' => EffectReceiptMetadata::hydrated($values, $this->effectIdentity($operation), $input, array_keys($references), $this->outputs->paths($operation))];
                 $invoke = static fn (): array => $transport->run($operation, $run, $input);
                 $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                     if ($this->contract->cancellationAllowsRun($operation)) {
