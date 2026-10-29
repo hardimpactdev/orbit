@@ -127,6 +127,12 @@ final readonly class RemotePhpPackageManager
             opentelemetry: $this->opentelemetry($node), release: $this->release(RoleName::AppProd));
     }
 
+    /** @return array<string, mixed> Immutable runtime-module input for a composed production deploy. */
+    public function runtimeInputForAppProd(Node $node, string $version): array
+    {
+        return $this->profileInput($version, self::runtimeProfile($node), RoleName::AppProd);
+    }
+
     /**
      * The programs that install the `app-dev` PHP build of `$versions` on an `app-dev` Node, as
      * {@see self::installForAppDev()} runs them: the installer first, then the runtime module of each version.

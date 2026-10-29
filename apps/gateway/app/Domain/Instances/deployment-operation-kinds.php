@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
 use App\Domain\Instances\Deployment\InstanceProjectionExecution;
-use App\Domain\Instances\Environment\InstanceEnvironmentRefreshExecution;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\InstanceExecutionChildAdmission;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
@@ -19,6 +18,7 @@ $deployment = static fn (bool $rollback): array => [
     'runs' => [
         ['transport' => 'instance-deploy-agent', 'name' => 'instance.inspect-release', 'resumable' => true],
         ['transport' => 'instance-deploy-agent', 'name' => 'instance.activate-release', 'resumable' => true],
+        ['transport' => 'instance-deploy-agent', 'name' => 'php.configure-runtime', 'resumable' => true],
         ['transport' => 'instance-deploy-agent', 'name' => 'php.converge-production-runtime', 'resumable' => true],
         ['transport' => 'instance-deploy-agent', 'name' => 'php.refresh-production-cache', 'resumable' => true],
         ...($rollback ? [] : [
@@ -32,6 +32,7 @@ $deployment = static fn (bool $rollback): array => [
             ['transport' => 'instance-deploy-agent', 'name' => 'instance.prune-releases', 'resumable' => true],
             ['transport' => 'instance-deploy-agent', 'name' => 'tool.prune-vp-store', 'resumable' => true],
         ]),
+        ['transport' => 'gateway', 'name' => 'instance.executor-runtime', 'resumable' => false, 'uncertain_error_code' => 'deployment.interrupted'],
         ['transport' => 'gateway', 'name' => 'instance.child-receipt', 'resumable' => true],
         ['transport' => 'gateway', 'name' => 'instance.deployment-budget', 'resumable' => true],
         ['transport' => 'gateway', 'name' => 'instance.deployment-receipt', 'resumable' => true],
@@ -42,6 +43,7 @@ $deployment = static fn (bool $rollback): array => [
     'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.deployment-receipt', 'result' => []],
     'result_fields' => ['deployment_id', 'release', 'selected_release', 'commit', 'name', 'path',
         'release.name', 'release.path', 'release.commit', 'previous', 'previous.name', 'previous.path', 'previous.commit',
+        ['name' => 'process_ids', 'type' => 'list', 'items' => 'integer', 'max' => 4096], 'ready', 'changed',
         'child_id', 'child_kind', 'child_status', 'published', 'complete', 'budget_seconds', 'timeout_seconds', 'command_timeout_seconds', 'exit_code', 'timed_out', 'output_tail', 'truncated', 'removed_count', 'in_use_count', 'error_code'],
 ];
 
@@ -77,11 +79,12 @@ $instanceExecutionKinds = [
             ['transport' => 'gateway', 'name' => 'instance.child-receipt', 'resumable' => true],
             ['transport' => 'gateway', 'name' => 'instance.php-plan', 'resumable' => true],
             ['transport' => 'gateway', 'name' => 'instance.php-receipt', 'resumable' => true],
+            ['transport' => 'instance-deploy-agent', 'name' => 'php.configure-runtime', 'resumable' => true],
             ['transport' => 'instance-deploy-agent', 'name' => 'php.converge-production-runtime', 'resumable' => true],
         ],
         'completion_contract' => ['step' => 'php_receipt', 'transport' => 'gateway', 'name' => 'instance.php-receipt', 'result' => ['confirmed' => true]],
         'result_fields' => ['child_id', 'child_kind', 'child_status', 'prepared', 'has_runtime',
-            'published', 'instance_id', 'confirmed', 'no_op', 'error_code'],
+            'published', 'changed', 'instance_id', 'confirmed', 'no_op', 'error_code'],
     ],
     'instance.prepare_vp_environment' => [
         ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
@@ -122,24 +125,6 @@ $instanceExecutionKinds = [
     ],
 
 ];
-
-if (OperationKinds::supports('children') && OperationKinds::supports('list_of')) {
-    $instanceExecutionKinds['instance.synchronize_environment'] = [
-        'executor' => 'swamp', 'execution' => InstanceEnvironmentRefreshExecution::class, 'completion' => InstanceEnvironmentRefreshExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'instance.child-receipt', 'resumable' => true],
-            ['transport' => 'gateway', 'name' => 'instance.environment-refresh-receipt', 'resumable' => true],
-            ['transport' => 'instance-deploy-agent', 'name' => 'instance.refresh-config-cache', 'resumable' => true],
-            ['transport' => 'instance-deploy-agent', 'name' => 'php.refresh-production-cache', 'resumable' => true],
-        ],
-        'children' => [['kind' => 'instance.sync_environment', 'node_from' => 'operation.node_id'], ['kind' => 'process.restart_instance', 'node_from' => 'operation.node_id']],
-        'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.environment-refresh-receipt',
-            'result' => ['confirmed' => true]],
-        'result_fields' => ['instance_id', 'confirmed', 'changed', 'environment_changed', 'key_count', 'testing_status', 'test_database',
-            'runtime_refresh', 'outcome', 'child_id', 'child_kind', 'child_status', 'error_code',
-            ['name' => 'restarted_process_ids', 'type' => 'list', 'items' => 'integer', 'max' => 4096]],
-    ];
-}
 
 if (! OperationKinds::supports('children')) {
     foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.repair_projection', 'instance.prepare_served_web_roots'] as $kind) {

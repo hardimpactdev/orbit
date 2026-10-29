@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
+use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Routes\RouteWebRoot;
@@ -17,6 +18,7 @@ use App\Domain\SourceControl\GitCommitSha;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
@@ -27,7 +29,7 @@ use InvalidArgumentException;
  * Freezes deployment intent without storing scripts, environment contents or credentials.
  *
  * @phpstan-type IntentStep array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string}
- * @phpstan-type Intent array{variant:string,projection_route_id:?int,php:bool,needs_vp:bool,php_version:?string,php_runtime:?array<string,mixed>,php_refresh:?array<string,mixed>,project_id:int,branch:string,repository:string,home:string,user:?string,relative_root:?string,application_suffix:?string,served:list<array{web_root:string,directory:string}>,shared_paths:list<string>,steps:list<IntentStep>}
+ * @phpstan-type Intent array{variant:string,runtime_synchronous:bool,php_profile:?array<string,mixed>,projection_route_id:?int,php:bool,needs_vp:bool,php_version:?string,php_runtime:?array<string,mixed>,php_refresh:?array<string,mixed>,project_id:int,branch:string,repository:string,home:string,user:?string,relative_root:?string,application_suffix:?string,served:list<array{web_root:string,directory:string}>,shared_paths:list<string>,steps:list<IntentStep>}
  */
 final readonly class InstanceDeploymentIntent
 {
@@ -51,7 +53,7 @@ final readonly class InstanceDeploymentIntent
             ], $development);
 
             return [
-                'variant' => 'development', 'projection_route_id' => $instance->development_projection_pending ? $instance->authoritativeRoute()?->id : null, 'php' => false, 'steps' => $steps,
+                'variant' => 'development', 'runtime_synchronous' => false, 'php_profile' => null, 'projection_route_id' => $instance->development_projection_pending ? $instance->authoritativeRoute()?->id : null, 'php' => false, 'steps' => $steps,
                 'php_version' => null, 'php_runtime' => null, 'php_refresh' => null,
                 'user' => null, 'relative_root' => null, 'application_suffix' => null, 'served' => [], 'shared_paths' => [],
                 'needs_vp' => array_any($development, static fn (DevelopmentDeployStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
@@ -63,6 +65,8 @@ final readonly class InstanceDeploymentIntent
         [$runtime, $refresh] = $this->runtimeIntent($instance);
 
         return [
+            'runtime_synchronous' => app(ProcessSwampSafety::class)->requiresSynchronous($instance->node),
+            'php_profile' => is_string($instance->selected_php_version) ? app(RemotePhpPackageManager::class)->runtimeInputForAppProd($instance->node, $instance->selected_php_version) : null,
             'variant' => $rollback ? 'rollback' : 'production', 'projection_route_id' => null,
             'needs_vp' => ! $rollback && array_any($config->steps, static fn (DeploymentStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
             'php' => is_string($instance->selected_php_version), 'php_version' => $instance->selected_php_version,
@@ -122,7 +126,7 @@ final readonly class InstanceDeploymentIntent
         $data = ValidatedData::object($operation->input['deployment']);
         $variant = ValidatedData::string($data['variant']);
         if (! in_array($variant, ['development', 'production', 'rollback'], true)
-            || ! is_bool($data['php']) || ! is_bool($data['needs_vp'])
+            || ! is_bool($data['runtime_synchronous']) || ! is_bool($data['php']) || ! is_bool($data['needs_vp'])
             || ! is_array($data['steps']) || ! array_is_list($data['steps'])) {
             throw new InvalidArgumentException('Invalid admitted deployment intent.');
         }
@@ -147,7 +151,8 @@ final readonly class InstanceDeploymentIntent
             }
         }
 
-        return ['variant' => $variant, 'projection_route_id' => isset($data['projection_route_id']) ? ValidatedData::integer($data['projection_route_id']) : null, 'php' => $data['php'], 'needs_vp' => $data['needs_vp'],
+        return ['variant' => $variant, 'runtime_synchronous' => $data['runtime_synchronous'],
+            'php_profile' => $data['php_profile'] === null ? null : ValidatedData::object($data['php_profile']), 'projection_route_id' => isset($data['projection_route_id']) ? ValidatedData::integer($data['projection_route_id']) : null, 'php' => $data['php'], 'needs_vp' => $data['needs_vp'],
             'php_version' => ValidatedData::nullableString($data['php_version'] ?? null),
             'php_runtime' => $data['php_runtime'] === null ? null : ValidatedData::object($data['php_runtime']),
             'php_refresh' => $data['php_refresh'] === null ? null : ValidatedData::object($data['php_refresh']),

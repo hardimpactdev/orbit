@@ -3,12 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceStepListAction;
-use App\Actions\Routes\ConvergeRouteAction;
-use App\Actions\Routes\ConvergeRouteTargetSetAction;
-use App\Actions\Routes\DestroyRouteAction;
-use App\Actions\Routes\UpdateRouteAction;
-use App\Data\Routes\SetRouteTargetsData;
-use App\Data\Routes\UpdateRouteData;
 use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
 use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
@@ -18,10 +12,8 @@ use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
-use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeAgentCommandRunner;
@@ -40,7 +32,7 @@ function cutoverDeployment(): Operation
 
 it('rejects the release when an execution dependency is missing or still PHP', function (string $missing): void {
     $definitions = OperationKinds::definitions();
-    foreach (['instance.clone', 'instance.synchronize_environment', 'route.converge', 'instance.sync_environment',
+    foreach (['route.converge', 'instance.sync_environment',
         'tool.manager_converge', 'process.install_instance_definitions', 'schedule.install_instance_definitions',
         'node.prepare_php_packages', 'process.restart_instance'] as $kind) {
         $definitions[$kind] = ['executor' => 'swamp'];
@@ -51,7 +43,7 @@ it('rejects the release when an execution dependency is missing or still PHP', f
     $definitions[$missing] = stdClass::class;
     expect(fn () => InstanceDeploymentAvailability::assertReleaseReady($definitions))->toThrow(LogicException::class, $missing);
 })->with(['process.restart_instance', 'process.install_instance_definitions', 'schedule.install_instance_definitions',
-    'node.prepare_php_packages', 'route.converge', 'instance.clone', 'instance.synchronize_environment']);
+    'node.prepare_php_packages', 'route.converge']);
 
 it('finishes failed or cancelled history from proven selection without a reachable Node', function (bool $activated, string $status): void {
     $operation = cutoverDeployment();
@@ -113,30 +105,6 @@ it('interrupts legacy Operations and history once at migration while preserving 
     expect(fn () => InstanceDeploymentIntent::admitted($operation))
         ->toThrow(fn (ResourceOperationException $failure) => expect($failure->errorCode)->toBe('deployment.interrupted'));
 })->with(['instance.deploy', 'instance.rollback'])->with(['queued', 'running', 'waiting']);
-
-it('refuses legacy production Route transitions before any mutation or Node call', function (string $caller): void {
-    [, $node, $project, $instance] = deployment_api_fixture();
-    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $node->id, 'domain' => 'cutover.example.test',
-        'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
-    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['status' => 'active']);
-    $before = $route->refresh()->getRawOriginal();
-    $agents = new FakeAgentCommandRunner;
-    app()->instance(AgentCommandRunner::class, $agents);
-    $call = match ($caller) {
-        'domain' => fn () => app(ConvergeRouteAction::class)->execute($route, 'changed.example.test'),
-        'update' => fn () => app(UpdateRouteAction::class)->execute($route, new UpdateRouteData(true, 'changed.example.test', false, null)),
-        'targets' => fn () => app(ConvergeRouteTargetSetAction::class)->execute($route, new SetRouteTargetsData([], [])),
-        'remove' => fn () => app(DestroyRouteAction::class)->executeForOperator($route, false),
-        'project-slug' => fn () => app(NativeProjectUpdateProjectionMutator::class)->preflightSlug($project, 'changed'),
-        'project-root' => fn () => app(NativeProjectUpdateProjectionMutator::class)->preflightRoot($project, 'changed'),
-    };
-
-    expect($call)->toThrow(fn (ResourceOperationException $failure) => expect($failure->errorCode)->toBe('operation.kind_unavailable'));
-    expect($route->refresh()->getRawOriginal())->toBe($before);
-    expect(Route::query()->count())->toBe(1);
-    expect($agents->calls)->toBe([]);
-})->with(['domain', 'update', 'targets', 'remove', 'project-slug', 'project-root']);
 
 it('keeps a newly activated Instance when the retained setup wait expires', function (): void {
     $instance = dev935_instance();

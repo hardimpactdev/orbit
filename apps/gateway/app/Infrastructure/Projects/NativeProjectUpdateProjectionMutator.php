@@ -9,7 +9,6 @@ use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
-use App\Domain\Instances\Environment\InstanceRouteExecutionCutover;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Routes\RouteProvenance;
@@ -40,7 +39,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function preflightSlug(Project $project, string $newSlug): array
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         $routes = [];
 
         foreach ($project->routes()->with(['targets.instance.node', 'generationBasisNode'])->orderBy('id')->get() as $route) {
@@ -73,7 +71,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function prepareSlug(Project $project, string $newSlug, array $inventory): array
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         $prepared = [];
 
         foreach ($this->rows($inventory['routes'] ?? null) as $proposal) {
@@ -117,7 +114,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function publishSlug(Project $project, string $newSlug, array $prepared, ?Closure $record = null): void
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         $record ??= static function (int $index, array $facts): void {};
 
         foreach ($this->rows($prepared['routes'] ?? null) as $index => $row) {
@@ -280,7 +276,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
      */
     public function rollbackSlug(Project $project, array $prepared): void
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->find(StoredValue::integer($row['replacement_id'] ?? null));
 
@@ -350,7 +345,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function preflightRoot(Project $project, string $newRoot): array
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         $instances = [];
 
         foreach ($project->instances as $instance) {
@@ -379,7 +373,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function publishRoot(Project $project, string $newRoot, array $prepared): void
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         foreach ($this->rows($prepared['instances'] ?? null) as $row) {
             $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
 
@@ -397,7 +390,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function rollbackRoot(Project $project, array $prepared): void
     {
-        InstanceRouteExecutionCutover::assertProject($project);
         $this->publishRoot($project, (string) $project->root, $prepared);
     }
 

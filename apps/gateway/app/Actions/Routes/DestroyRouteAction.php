@@ -8,7 +8,6 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceRouteExecutionCutover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -79,7 +78,6 @@ final readonly class DestroyRouteAction
 
     private function remove(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
     {
-        InstanceRouteExecutionCutover::assertRoute($route);
         $result = $this->removeRoute($route, $allowTracking, $offline, $offersOffline);
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(

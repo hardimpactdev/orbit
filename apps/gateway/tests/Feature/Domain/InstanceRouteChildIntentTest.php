@@ -146,3 +146,14 @@ it('derives a pending replacement web root from its Route parent for PHP prepara
     $runtime = app(InstancePhpRuntimeExecution::class)->plan($child)['runtime'];
     expect($runtime['configuration']['pool'])->toContain($instance->production_home.'/current/replacement');
 });
+
+it('publishes shared PHP limits before the Route pool configuration', function (): void {
+    [$child] = routeInstanceChild();
+    $child->forceFill(['status' => 'running', 'sequence' => 1])->save();
+    $execution = app(InstancePhpRuntimeExecution::class);
+    $execution->received($child, ['key' => 'php.plan'], $execution->plan($child));
+    $descriptors = $execution->context($child)['descriptors'];
+    expect(array_column($descriptors, 'key'))->toBe(['php.plan', 'child.php_packages', 'php.profile', 'php.converge', 'php.receipt']);
+    expect($descriptors[2]['name'])->toBe('php.configure-runtime')
+        ->and($descriptors[2]['input']['runtime_ini'])->toContain('post_max_size = 64M', 'upload_max_filesize = 64M');
+});

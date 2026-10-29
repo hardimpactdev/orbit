@@ -108,6 +108,7 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
                 ...$this->home($operation), 'name' => $candidate['name'], 'commit' => $candidate['commit'],
             ]);
             if ($intent['php']) {
+                $descriptors[] = $this->descriptor('php.profile', 'php_refresh.profile', 'php.configure-runtime', ValidatedData::object($intent['php_profile']));
                 $descriptors[] = $this->descriptor('php.converge', 'php_refresh.converge', 'php.converge-production-runtime', ValidatedData::object($intent['php_runtime']));
                 $descriptors[] = $this->descriptor('php.refresh', 'php_refresh', 'php.refresh-production-cache', ValidatedData::object($intent['php_refresh']));
             }
@@ -124,6 +125,12 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             $descriptors[] = $this->descriptor($key, $key, 'tool.prune-vp-store', [
                 'store' => $store, 'references' => $this->vp->references($operation->node_id ?? throw $this->unproven(), $store),
             ], true, false);
+        }
+        if ($intent['runtime_synchronous'] && $variant !== 'development') {
+            if ($variant === 'production') {
+                $descriptors[] = $this->runtimeDescriptor($operation, 'activation.runtime_definitions', 'install_definitions');
+            }
+            $descriptors[] = $this->runtimeDescriptor($operation, 'process_restart', 'restart');
         }
         foreach ($this->childPlan($operation) as $child) {
             $descriptors[] = ['key' => 'child.'.$child['key'], 'step' => $child['key'], 'transport' => 'gateway',
@@ -158,7 +165,7 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         if ($intent['needs_vp']) {
             $children[] = $child('vp_environment', 'instance.prepare_vp_environment', $input);
         }
-        if ($intent['variant'] === 'production') {
+        if ($intent['variant'] === 'production' && ! $intent['runtime_synchronous']) {
             $children[] = $child('activation.process_definitions', 'process.install_instance_definitions', $input);
             $children[] = $child('activation.schedule_definitions', 'schedule.install_instance_definitions', $input);
         }
@@ -166,10 +173,19 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             if ($intent['php']) {
                 $children[] = $child('php_refresh.packages', 'node.prepare_php_packages', ['versions' => [$intent['php_version']], 'profile' => 'app-prod']);
             }
-            $children[] = $child('process_restart', 'process.restart_instance', $input);
+            if (! $intent['runtime_synchronous']) {
+                $children[] = $child('process_restart', 'process.restart_instance', $input);
+            }
         }
 
         return $children;
+    }
+
+    /** @return Descriptor */
+    private function runtimeDescriptor(Operation $operation, string $step, string $action): array
+    {
+        return ['key' => $step, 'step' => $step, 'transport' => 'gateway', 'name' => 'instance.executor-runtime',
+            'input' => ['instance_id' => $operation->target_id, 'action' => $action], 'resumable' => false, 'required' => true];
     }
 
     public function childContext(Operation $parent): array
@@ -230,7 +246,7 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             if ($projection !== null && $instance->authoritativeRoute()?->id !== $projection) {
                 throw new ResourceOperationException('deployment.identity_changed', 'The admitted development Route changed before projection.', 409);
             }
-            foreach (['variant', 'project_id', 'repository', 'home', 'user', 'relative_root', 'application_suffix', 'served', 'shared_paths', 'php', 'php_version', 'php_runtime', 'php_refresh'] as $field) {
+            foreach (['variant', 'project_id', 'repository', 'home', 'user', 'relative_root', 'application_suffix', 'served', 'shared_paths', 'php', 'php_version', 'php_runtime', 'php_refresh', 'php_profile', 'runtime_synchronous'] as $field) {
                 if (($current[$field] ?? null) !== (InstanceDeploymentIntent::admitted($operation)[$field] ?? null)) {
                     throw new ResourceOperationException('deployment.identity_changed', 'The Instance ownership or runtime configuration changed after admission.', 409);
                 }
@@ -258,6 +274,13 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             }];
         }
         $key = $run['key'];
+        if ($key === 'php.profile') {
+            if (! is_bool($receipt['changed'] ?? null)) {
+                throw $this->invalidReceipt();
+            }
+
+            return ['changed' => $receipt['changed']];
+        }
         if ($key === 'php.refresh' && ($receipt['complete'] ?? false) !== true) {
             return ['error_code' => 'app-prod.php_cache_refresh_failed'];
         }

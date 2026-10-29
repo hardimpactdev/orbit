@@ -19,7 +19,7 @@ final class InstanceDeploymentAvailability
     public static function assertReleaseReady(?array $definitions = null): void
     {
         $definitions ??= OperationKinds::definitions();
-        $required = ['instance.deploy', 'instance.rollback', 'instance.synchronize_environment', 'instance.clone'];
+        $required = ['instance.deploy', 'instance.rollback'];
         foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime'] as $kind) {
             $definition = $definitions[$kind] ?? [];
             if (is_array($definition)) {
@@ -49,13 +49,18 @@ final class InstanceDeploymentAvailability
         }
         $required = [];
         if (($intent['variant'] ?? null) !== 'development') {
-            $required[] = 'process.restart_instance';
+            if (($intent['runtime_synchronous'] ?? false) !== true) {
+                $required[] = 'process.restart_instance';
+            }
             if (($intent['php'] ?? false) === true) {
                 $required[] = 'node.prepare_php_packages';
             }
         }
         if (($intent['variant'] ?? null) === 'production') {
-            $required = [...$required, 'instance.sync_environment', 'process.install_instance_definitions', 'schedule.install_instance_definitions'];
+            $required[] = 'instance.sync_environment';
+            if (($intent['runtime_synchronous'] ?? false) !== true) {
+                $required = [...$required, 'process.install_instance_definitions', 'schedule.install_instance_definitions'];
+            }
         }
         if (($intent['needs_vp'] ?? false) === true) {
             $required = [...$required, 'instance.prepare_vp_environment', 'tool.manager_converge'];

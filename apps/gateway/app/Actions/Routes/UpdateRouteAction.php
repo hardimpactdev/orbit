@@ -9,7 +9,6 @@ use App\Data\Routes\UpdateRouteData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceRouteExecutionCutover;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteDomain;
@@ -39,7 +38,6 @@ final readonly class UpdateRouteAction
 
     public function execute(Route $route, UpdateRouteData $data, bool $allowGenerated = false): Route
     {
-        InstanceRouteExecutionCutover::assertRoute($route);
         if (! $route->isApp()) {
             throw new ResourceOperationException(
                 errorCode: 'route.kind_unsupported',
