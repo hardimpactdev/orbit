@@ -10,10 +10,12 @@ use App\Actions\DatabaseServers\DestroyDatabaseServerAction;
 use App\Actions\DatabaseServers\ListDatabaseServersAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseServers\DatabaseServerData;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DatabaseServers\StoreDatabaseServerRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use Illuminate\Http\JsonResponse;
@@ -34,14 +36,10 @@ final class DatabaseServersController extends Controller
         ]);
     }
 
+    #[StartsOperation('database_server.create')]
     public function store(StoreDatabaseServerRequest $request, CreateDatabaseServerAction $action): JsonResponse
     {
-        $result = $action->execute($request->payload());
-
-        return response()->json([
-            'data' => DatabaseServerData::fromModel($result['server'])->toArray(),
-            'meta' => $this->meta($request),
-        ], $result['created'] ? 201 : 200);
+        return response()->json(['data' => OperationData::fromModel($action->execute($request->payload()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     public function show(Request $request, DatabaseServer $databaseServer): JsonResponse
@@ -61,26 +59,20 @@ final class DatabaseServersController extends Controller
         ]);
     }
 
-    public function close(Request $request, DatabaseServer $databaseServer, CloseDatabaseServerAction $action): JsonResponse
+    #[StartsOperation('database_server.close')]
+    public function close(Request $request, string $databaseServer, CloseDatabaseServerAction $action): JsonResponse
     {
-        return response()->json([
-            'data' => DatabaseServerData::fromModel($action->execute($databaseServer))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+        $server = DatabaseServer::query()->where('slug', $databaseServer)->firstOrFail();
+
+        return response()->json(['data' => OperationData::fromModel($action->execute($server))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    public function destroy(
-        Request $request,
-        DatabaseServer $databaseServer,
-        DestroyDatabaseServerAction $action,
-    ): JsonResponse {
-        $data = DatabaseServerData::fromModel($databaseServer)->toArray();
-        $action->execute($databaseServer);
+    #[StartsOperation('database_server.destroy')]
+    public function destroy(Request $request, string $databaseServer, DestroyDatabaseServerAction $action): JsonResponse
+    {
+        $server = DatabaseServer::query()->where('slug', $databaseServer)->firstOrFail();
 
-        return response()->json([
-            'data' => $data,
-            'meta' => $this->meta($request),
-        ]);
+        return response()->json(['data' => OperationData::fromModel($action->execute($server))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** @return array{request_id: string} */

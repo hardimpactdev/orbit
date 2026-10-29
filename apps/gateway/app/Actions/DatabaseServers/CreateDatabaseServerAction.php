@@ -4,44 +4,34 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseServers;
 
-use App\Actions\Processes\CreateProcessAction;
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
+use App\Domain\DatabaseServers\ValkeyAcl;
+use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyProcessAdoption;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Processes\ProcessRuntimeLease;
-use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
-use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use SensitiveParameter;
 
-/**
- * Creates a Database server. A MySQL server takes four steps: the record with a generated root password, the Docker
- * Node Process started with MYSQL_ROOT_PASSWORD, the wait for the root login, and the removal of the variable from the
- * Process. A Valkey server takes the record with a generated admin password, the ACL file in its volume, the Process,
- * and the wait for the admin login. An adoption of a Valkey Process takes the connection's password, replaces the
- * Process specification instead of creating one, and links the connection at the end. Each step leaves state that a
- * retry of the same request reads, so a retry continues from the first step that did not finish. A retry for an
- * active Valkey server repairs it to its records ({@see ConvergeValkeyServerAction}).
- */
+/** Validates and reserves server and Process intent; Swamp executes every Node step. */
 final readonly class CreateDatabaseServerAction
 {
     public const int READY_TIMEOUT_SECONDS = 120;
@@ -50,33 +40,26 @@ final readonly class CreateDatabaseServerAction
 
     public function __construct(
         private ProcessTargetResolver $targets,
-        private CreateProcessAction $processes,
-        private ProcessRuntimeLease $lease,
-        private ProcessRuntimeManager $runtime,
         private ProcessSpecification $specifications,
-        private DatabaseServerAdmin $admin,
-        private ValkeyServerAdmin $valkey,
         private ValkeyProcessAdoption $adoption,
-        private WriteValkeyAclFileAction $aclFile,
-        private ConvergeValkeyServerAction $converge,
+        private ValkeyServerAdmin $valkey,
+        private RecordDatabaseOperationAction $operations,
     ) {}
 
-    /** @return array{server: DatabaseServer, created: bool} */
-    public function execute(CreateDatabaseServerData $data): array
+    public function execute(CreateDatabaseServerData $data): Operation
     {
         $lock = Cache::lock('database-server:provision:'.$data->slug, 900);
         if (! $lock->get()) {
             throw new ResourceOperationException('database.server_in_use', 'Another server creation is in progress.', 409);
         }
         try {
-            return $this->provisionReserved($data);
+            return DB::transaction(fn (): Operation => $this->provisionReserved($data));
         } finally {
             $lock->release();
         }
     }
 
-    /** @return array{server: DatabaseServer, created: bool} */
-    private function provisionReserved(CreateDatabaseServerData $data): array
+    private function provisionReserved(CreateDatabaseServerData $data): Operation
     {
         $node = Node::query()->findOrFail($data->nodeId);
         $target = $this->targets->forNodeAdmission($node);
@@ -111,24 +94,79 @@ final readonly class CreateDatabaseServerAction
         // Only an explicit create/retry opts an existing server into private publication checks.
         $server->update(['private_endpoints_managed' => true]);
 
-        if ($server->status !== LifecycleStatus::Active) {
-            if ($server->driver === DatabaseDriver::Redis) {
-                $connection = $data->connection === null ? null : $this->adoption->connection($server, $data->connection);
-                $this->provisionValkey($server, $node, $target, $connection);
-            } else {
-                $this->provision($server, $node);
-            }
-        } elseif ($server->driver === DatabaseDriver::Redis) {
-            $this->converge->execute($server);
-        } else {
-            $this->provision($server, $node);
+        $process = $server->process;
+        $processData = $server->driver === DatabaseDriver::Redis
+            ? DatabaseServerProcess::valkeyData($server, $node, $process->name ?? $server->slug,
+                ($process === null ? null : DatabaseServerProcess::valkeyVolume($process)) ?? DatabaseServerProcess::volume($server->slug))
+            : DatabaseServerProcess::data($server, $node, $server->root_password);
+        $attributes = $this->specifications->attributes($processData, $target);
+        $initialize = $server->driver !== DatabaseDriver::Redis && ($process === null || DatabaseServerProcess::holdsRootPassword($process));
+        if (! $initialize) {
+            $attributes['runtime_config']['environment'] = [];
         }
-        $this->reconcilePublications($server, $node);
-        $server->load('process');
+        if ($process === null) {
+            $process = Process::query()->create([
+                'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => $server->slug,
+                ...$attributes, 'desired_state' => DesiredProcessState::Running, 'status' => LifecycleStatus::Provisioning,
+            ]);
+            $server->update(['process_id' => $process->id]);
+        }
+        $desired = clone $process;
+        $desired->fill($attributes);
+        $docker = new DockerProcessRenderer;
+        $container = fn (Process $record): array => ['name' => 'process.converge-container', 'input' => [
+            'process_id' => $record->id, 'container' => $docker->containerName($record), 'desired' => 'running',
+            'spec' => $docker->specHash($record, $target), ...$docker->containerInput($record, $target),
+        ], 'protected' => ['environment'], 'redactions' => [$server->root_password], 'finish_after_effect' => true];
+        $commands = [];
+        $rebuildAcl = $server->driver === DatabaseDriver::Redis && $this->needsAclRebuild($server);
+        if ($rebuildAcl) {
+            $commands['acl-file'] = ['name' => 'database.write-valkey-acl', 'input' => [
+                'volume' => DatabaseServerProcess::valkeyVolume($process) ?? DatabaseServerProcess::volume($server->slug),
+                'image' => DatabaseServerProcess::valkeyImage($server->tag), 'acl' => ValkeyAcl::file($server),
+            ], 'protected' => ['acl']];
+        }
+        $commands['container'] = $container($desired);
+        if ($rebuildAcl && $server->status === LifecycleStatus::Active) {
+            $commands['restart-acl'] = ['name' => 'process.control', 'input' => ['operation' => 'restart', 'process_id' => $process->id,
+                'runtime' => 'docker', 'name' => $docker->containerName($process), 'on_demand' => false]];
+        }
+        $server->setRelation('process', $process);
+        if ($initialize) {
+            $commands['initialize'] = DatabaseCommands::ready($server);
+            $desired->runtime_config = [...$desired->runtime_config, 'environment' => []];
+            $commands['remove-initialization-secret'] = $container($desired);
+        }
+        if ($server->driver === DatabaseDriver::Redis && $server->status === LifecycleStatus::Active) {
+            $commands['acl-readiness'] = DatabaseCommands::ready($server);
+            $commands['acl-converge'] = DatabaseCommands::valkey($server, 'converge', [
+                'users' => array_map(static fn ($user): array => ['name' => $user->name, 'rules' => $user->rules, 'hashes' => $user->passwordHashes], array_values(ValkeyAcl::users($server))),
+                'default_open' => $server->default_open,
+            ]);
+        }
+        $commands['database-apply'] = DatabaseCommands::ready($server);
 
-        $server->update(['failed_step' => null, 'error_code' => null]);
+        return $this->operations->execute('database_server.create', 'database_server', $server->id, $node->id,
+            ['server_id' => $server->id, 'driver' => $server->driver->value, 'created' => $reserved['created']], $commands,
+            ['server' => ['status' => 'active', 'failed_step' => null, 'error_code' => null],
+                'process' => ['runtime_config' => $desired->runtime_config, 'working_directory' => $desired->working_directory, 'restart_policy' => $desired->restart_policy], 'adopted_connection' => $data->connection]);
+    }
 
-        return ['server' => $server->refresh(), 'created' => $reserved['created']];
+    private function needsAclRebuild(DatabaseServer $server): bool
+    {
+        if ($server->status !== LifecycleStatus::Active) {
+            return true;
+        }
+        try {
+            if (! $this->valkey->acceptsAdminLogin($server) || $this->valkey->aclFile($server) !== DatabaseServerProcess::VALKEY_ACL_FILE) {
+                return true;
+            }
+            $default = $this->valkey->aclUsers($server)['default'] ?? null;
+
+            return $default === null || ! $default->sameAs(new ValkeyAclUser('default', ($server->default_open ? 'nopass ' : '').ValkeyAclUser::ADMIN_RULES, $default->passwordHashes));
+        } catch (ResourceOperationException) {
+            return true;
+        }
     }
 
     /**
@@ -196,202 +234,6 @@ final readonly class CreateDatabaseServerAction
         }
     }
 
-    private function provision(DatabaseServer $server, Node $node): void
-    {
-        $server->update([
-            'status' => $server->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Provisioning,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
-        $process = $server->process;
-
-        if (! $process instanceof Process || DatabaseServerProcess::holdsRootPassword($process)) {
-            $process = $this->step($server, 'process', fn (): Process => $this->processes->execute(
-                DatabaseServerProcess::data($server, $node, $server->root_password),
-            )['process']);
-            $server->update(['process_id' => $process->id]);
-            $server->setRelation('process', $process);
-
-            $this->step($server, 'readiness', fn () => $this->waitUntilReady($server));
-            $this->step($server, 'root_password_removal', fn () => $this->forgetRootPassword($process));
-        } elseif ($process->status !== LifecycleStatus::Active) {
-            $this->step($server, 'root_password_removal', fn () => $this->forgetRootPassword($process));
-        }
-
-        $this->step($server, 'readiness', fn () => $this->waitUntilReady($server));
-
-        $server->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-    }
-
-    /**
-     * The steps of a Valkey server: `acl_file`, `process`, and `readiness`. They run until the Process runs the server
-     * specification; a retry after a failed `process` step skips the ACL file that the attempt already wrote. An
-     * adoption links its connection last.
-     */
-    private function provisionValkey(DatabaseServer $server, Node $node, ProcessTarget $target, ?DatabaseConnection $connection): void
-    {
-        $aclFileWritten = $server->failed_step === 'process';
-
-        $server->update([
-            'status' => LifecycleStatus::Provisioning,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
-        // An adopted Process keeps its name and volume; a created one is named after the slug.
-        $process = $server->process;
-        $name = $process instanceof Process ? $process->name : $server->slug;
-        $volume = ($process instanceof Process ? DatabaseServerProcess::valkeyVolume($process) : null)
-            ?? DatabaseServerProcess::volume($server->slug);
-        $data = DatabaseServerProcess::valkeyData($server, $node, $name, $volume);
-        $attributes = $this->specifications->attributes($data, $target);
-
-        if (
-            ! $process instanceof Process
-            || $process->status !== LifecycleStatus::Active
-            || $process->desired_state !== DesiredProcessState::Running
-            || ! $this->specifications->matches($process, $attributes)
-        ) {
-            if (! $aclFileWritten) {
-                $this->step($server, 'acl_file', fn () => $this->aclFile->execute($server, $volume));
-            }
-
-            $process = $this->step($server, 'process', fn (): Process => $process instanceof Process
-                ? $this->replaceSpecification($process, $attributes)
-                : $this->processes->execute($data)['process']);
-            $server->update(['process_id' => $process->id]);
-            $server->setRelation('process', $process);
-        }
-
-        $this->step($server, 'readiness', fn () => $this->waitUntilReady($server));
-
-        DB::transaction(function () use ($server, $connection): void {
-            $connection?->update(['database_server_id' => $server->id]);
-            $server->update([
-                'status' => LifecycleStatus::Active,
-                'failed_step' => null,
-                'error_code' => null,
-            ]);
-        });
-    }
-
-    /**
-     * @template T
-     *
-     * @param  callable(): T  $operation
-     * @return T
-     */
-    private function step(DatabaseServer $server, string $step, callable $operation): mixed
-    {
-        try {
-            return $operation();
-        } catch (ResourceOperationException|ProcessOperationException $exception) {
-            $server->update([
-                'status' => $server->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Failed,
-                'failed_step' => $step,
-                'error_code' => $exception->errorCode,
-            ]);
-
-            throw $exception;
-        }
-    }
-
-    private function waitUntilReady(DatabaseServer $server): void
-    {
-        if ($server->driver === DatabaseDriver::Redis) {
-            if ($this->valkey->waitUntilReady($server, self::READY_TIMEOUT_SECONDS)) {
-                return;
-            }
-
-            throw self::startFailed($server);
-        }
-
-        if ($this->admin->waitUntilReady($server, self::READY_TIMEOUT_SECONDS)) {
-            return;
-        }
-
-        throw new ResourceOperationException(
-            errorCode: 'database.server_start_failed',
-            message: "Database server [{$server->slug}] did not accept the root login within ".self::READY_TIMEOUT_SECONDS.' seconds.',
-            status: 502,
-        );
-    }
-
-    /** A Valkey server whose `default` did not log in with the admin password in time. */
-    public static function startFailed(DatabaseServer $server): ResourceOperationException
-    {
-        return new ResourceOperationException(
-            errorCode: 'database.server_start_failed',
-            message: "Database server [{$server->slug}] did not accept the admin login within ".self::READY_TIMEOUT_SECONDS.' seconds.',
-            status: 502,
-        );
-    }
-
-    /** Remove MYSQL_ROOT_PASSWORD from the Process and recreate its container. The data volume keeps the password. */
-    private function forgetRootPassword(#[SensitiveParameter] Process $process): void
-    {
-        $this->recreate($process, static function (Process $fresh): array {
-            $runtimeConfig = $fresh->runtime_config;
-            $environment = is_array($runtimeConfig['environment'] ?? null) ? $runtimeConfig['environment'] : [];
-            unset($environment[DatabaseServerProcess::ROOT_PASSWORD_VARIABLE], $environment['POSTGRES_PASSWORD']);
-
-            return ['runtime_config' => [...$runtimeConfig, 'environment' => $environment]];
-        });
-    }
-
-    /**
-     * Replace an adopted Process's specification with the Valkey server specification and recreate its container. The
-     * Process keeps its ID, name, volume, and port. This is the server's own step, so the `process:update` refusal does
-     * not apply.
-     *
-     * @param  array<string, mixed>  $attributes
-     */
-    private function replaceSpecification(#[SensitiveParameter] Process $process, array $attributes): Process
-    {
-        return $this->recreate($process, static fn (): array => [
-            ...$attributes,
-            'desired_state' => DesiredProcessState::Running,
-        ]);
-    }
-
-    /**
-     * Change the Process record under its lease and converge its container again.
-     *
-     * @param  callable(Process): array<string, mixed>  $changes
-     */
-    private function recreate(#[SensitiveParameter] Process $process, callable $changes): Process
-    {
-        return $this->lease->run($process, function (Process $fresh) use ($changes): Process {
-            $fresh->fill([
-                ...$changes($fresh),
-                'status' => LifecycleStatus::Provisioning,
-                'failed_step' => null,
-                'error_code' => null,
-            ])->save();
-
-            try {
-                $this->runtime->converge($fresh);
-            } catch (ProcessOperationException $exception) {
-                $fresh->update([
-                    'status' => LifecycleStatus::Failed,
-                    'failed_step' => $exception->step,
-                    'error_code' => $exception->errorCode,
-                ]);
-
-                throw $exception;
-            }
-
-            $fresh->update(['status' => LifecycleStatus::Active]);
-
-            return $fresh;
-        });
-    }
-
     private function assertPortFree(Node $node, int $port): void
     {
         $instanceIds = Instance::query()->where('node_id', $node->id)->pluck('id')->all();
@@ -430,21 +272,5 @@ final readonly class CreateDatabaseServerAction
             message: "Database server [{$slug}] already exists with a different Node, driver, tag, port, or Process.",
             status: 409,
         );
-    }
-
-    private function reconcilePublications(DatabaseServer $server, Node $node): void
-    {
-        $process = $server->process;
-        if (! $process instanceof Process) {
-            return;
-        }
-        $containerPort = $server->driver->defaultPort() ?? 3306;
-        $ports = DatabaseServerProcess::publishedPorts($node, $server->port, $containerPort);
-        if (($process->runtime_config['ports'] ?? []) === $ports) {
-            return;
-        }
-        $this->step($server, 'publication', fn () => $this->recreate($process, static fn (Process $fresh): array => [
-            'runtime_config' => [...$fresh->runtime_config, 'ports' => $ports],
-        ]));
     }
 }
