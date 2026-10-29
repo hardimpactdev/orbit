@@ -30,6 +30,8 @@ Each operation admits only the selected manager's named commands and exact recor
 
 Node enrollment and role operations can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
 
+When a manager child descends from enrollment, the Nodes family's verified enrollment context selects the candidate account for that Node's recipe while preserving its stored prior account until activation. Other serving Nodes retain their own account.
+
 The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
 
 When the shared executor lacks Kit B child admission (`children`) or Kit C result schemas (`list_of`), Tools write kinds remain unregistered. Package writes and manager convergence refuse admission with `operation.kind_unavailable` (HTTP 503), without recording an Operation or running a Node command. Tool reads remain available.

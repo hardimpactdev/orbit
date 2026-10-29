@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tools;
 
 use App\Actions\Tools\ConvergeToolManagerAction;
+use App\Domain\Nodes\NodeEnrollmentContext;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -30,6 +31,6 @@ final readonly class ToolManagerChildAdmission implements OperationChildAdmissio
             throw new ResourceOperationException('operation.child_forbidden', 'The manager child requires a known manager and stored Node.', 422);
         }
 
-        return $this->converge->execute($node, $manager, $input['image_provides_manager']);
+        return $this->converge->execute(app(NodeEnrollmentContext::class)->forChild($parent, $node), $manager, $input['image_provides_manager']);
     }
 }
