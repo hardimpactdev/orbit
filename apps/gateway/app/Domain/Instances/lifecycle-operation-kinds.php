@@ -42,7 +42,7 @@ return (static function (): array {
     $children = [
         'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
         'rename' => ['route.update'],
-        'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.instance_runtime', 'schedule.instance_runtime', 'route.converge'],
+        'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.install_instance_definitions', 'schedule.install_instance_definitions', 'route.converge'],
         'register' => ['route.converge', 'instance.run_steps'],
         'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];

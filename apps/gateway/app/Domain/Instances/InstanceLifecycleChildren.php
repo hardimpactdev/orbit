@@ -141,8 +141,8 @@ final readonly class InstanceLifecycleChildren
             }
         }
         if ($this->ready($parent, 'clone-definitions') && $this->succeeded($parent, 'clone-environment-sync')) {
-            $children[] = $this->child($parent, 'clone-processes', 'process.instance_runtime', ['instance_id' => $id, 'action' => 'clone_install']);
-            $children[] = $this->child($parent, 'clone-schedules', 'schedule.instance_runtime', ['instance_id' => $id, 'action' => 'clone_install']);
+            $children[] = $this->child($parent, 'clone-processes', 'process.install_instance_definitions', ['instance_id' => $id]);
+            $children[] = $this->child($parent, 'clone-schedules', 'schedule.install_instance_definitions', ['instance_id' => $id]);
             if ($parent->input['route_id'] !== null && $this->succeeded($parent, 'clone-processes') && $this->succeeded($parent, 'clone-schedules')) {
                 $children[] = $this->child($parent, 'route-converge', 'route.converge', ['instance_id' => $id, 'route_id' => $parent->input['route_id']]);
             }

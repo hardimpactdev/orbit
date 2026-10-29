@@ -306,8 +306,8 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
                 $this->assertChild($operation, 'clone-sqlite', 'database.sqlite_seed');
             }
             $this->assertChild($operation, 'clone-environment-sync', 'instance.sync_environment');
-            $this->assertChild($operation, 'clone-processes', 'process.instance_runtime');
-            $this->assertChild($operation, 'clone-schedules', 'schedule.instance_runtime');
+            $this->assertChild($operation, 'clone-processes', 'process.install_instance_definitions');
+            $this->assertChild($operation, 'clone-schedules', 'schedule.install_instance_definitions');
             if ($input['route_id'] !== null) {
                 $this->assertChild($operation, 'route-converge', 'route.converge');
             }
