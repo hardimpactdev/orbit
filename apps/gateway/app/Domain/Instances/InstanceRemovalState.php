@@ -33,6 +33,7 @@ final readonly class InstanceRemovalState
     public function transition(Operation $operation, array $input): array
     {
         return match ($input['action']) {
+            'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach' => app(ProductionRemovalIntent::class)->transition($operation, ValidatedData::string($input['action'])),
             'removal-inspect' => $this->inspect($operation),
             'removal-revalidate' => $this->revalidate($operation),
             'removal-accept' => $this->accept($operation),
@@ -62,7 +63,9 @@ final readonly class InstanceRemovalState
     private function revalidate(Operation $operation): array
     {
         $intent = app(RemovalLifecycleExecution::class)->intent($operation);
-        if (InstanceRemoval::query()->whereKey($intent['removal_id'])->exists()) {
+        if (isset($intent['production_home'])) {
+            app(ProductionRemovalIntent::class)->validate($operation);
+        } elseif (InstanceRemoval::query()->whereKey($intent['removal_id'])->exists()) {
             $this->revalidateRetained($operation);
         } else {
             $instance = Instance::query()->findOrFail(ValidatedData::integer($intent['instance_id']));
@@ -84,6 +87,10 @@ final readonly class InstanceRemovalState
         $ids = ValidatedData::integerList(array_column(InstanceLifecycleInput::members($intent), 'instance_id'));
         app(ProcessAdmissionLock::class)->run($ids, function () use ($operation, $intent, $ids): void {
             DB::transaction(function () use ($operation, $intent, $ids): void {
+                $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+                if ($current->cancel_requested_at !== null) {
+                    throw new ResourceOperationException('operation.cancelled', 'Removal was cancelled before acceptance.', 409);
+                }
                 foreach (ValidatedData::integerList($intent['additional_route_ids']) as $routeId) {
                     app(InstanceLifecycleExecution::class)->assertChild($operation, "withdraw-extra-{$routeId}", 'route.withdraw');
                     $route = Route::query()->lockForUpdate()->find($routeId);
@@ -128,6 +135,11 @@ final readonly class InstanceRemovalState
         $intent = app(RemovalLifecycleExecution::class)->intent($operation);
         $member = InstanceRemovalMember::query()->where('instance_removal_id', $intent['removal_id'])->where('instance_id', $instanceId)->firstOrFail();
         if ($member->route_cleared_at !== null) {
+            return;
+        }
+        if ($member->environment === 'production') {
+            app(ProductionRemovalIntent::class)->clear($operation, $member);
+
             return;
         }
         $execution = app(InstanceLifecycleExecution::class);

@@ -2,9 +2,9 @@
 title: "Instance transfer"
 description: "How the Gateway moves one development Instance to another app-dev Node, keeps its ID, and recovers from a failed or interrupted move."
 covers:
-  - apps/gateway/app/Actions/Instances/TransferInstanceAction.php
+  - apps/gateway/app/Actions/Instances/StartInstanceTransferAction.php
   - apps/gateway/app/Domain/Instances/Transfer/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeInstanceTransferRuntime,RemoteInstanceTransferSource}.php
+  - apps/gateway/app/Domain/Instances/{TransferCompensation,TransferLifecycleExecution,InstanceTransferState}.php
   - apps/gateway/app/Http/Controllers/Api/InstanceTransfersController.php
   - apps/gateway/{app/Models/InstanceTransfer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
@@ -21,7 +21,9 @@ orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PA
 
 ## Request
 
-The CLI calls `POST /api/v1/instances/{instance}/transfer`.
+The CLI calls `POST /api/v1/instances/{instance}/transfer`. The Gateway validates and records immutable transfer intent, then returns HTTP 202 with an Operation. Swamp executes the transfer through keyed effects and one-Node child Operations. The CLI follows its steps and returns the final Operation receipt. An optional `Idempotency-Key` reuses admission after a lost response.
+
+Transfer admission requires the shared `archive_relay` capability. Until its protected binary relay and the destination and activation handlers are available, the Gateway returns `operation.kind_unavailable` before reserving a transfer or pausing the source.
 
 | Input | Meaning |
 | --- | --- |
@@ -59,7 +61,11 @@ When the request selects a SQLite file, the checkout archive excludes that file 
 
 Stopping Processes before the final checkout copy prevents their writes from being missed. Apart from the selected SQLite file, Orbit copies no database or data path.
 
-Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories. A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
+The environment child reads the source `.env` inside Gateway memory and imports missing keys into the [stored environment](/reference/environment-variables). It transactionally records the imported key names on the transfer before any destination write. Environment contents never enter descriptors or receipts.
+
+Transfer renders the destination path and domain and does not merge a testing environment. For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories.
+
+A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
 
 A Docker Process with a null working-directory override keeps null on the destination and uses its image default; null is neither a source path to relocate nor a reason to skip runtime cleanup. An existing explicit override such as `/app` stays explicit unless it points inside the source checkout.
 
@@ -87,20 +93,34 @@ A public Route with a web root cannot change Cluster, because transfer does not 
 
 ## Failure and retry
 
+An unconfirmed failure before cutover can recover by retrying the same Operation to read its original receipt. Orbit keeps both copies until the original effects have definite receipts. Successful rollback releases the destination Vite and SSR ports and keeps the source allocations.
+
 Cutover is the moment the destination becomes authoritative.
 
-- A failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
+After the Gateway commits cutover, cancellation returns `operation.cancel_refused` (409). It leaves the transfer and all child Operations untouched so activation and cleanup can finish forward. This also covers a lost reply from the cutover Gateway step.
+
+- A confirmed failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
 - It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
 - Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
-Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. An identical retry finishes that rollback before pausing and capturing the source again; it never resumes the old forward checkpoint. The Gateway clears the marker and resets the checkpoint in one write only after rollback finishes. Recovery uses the same Instance and Node locks as transfer. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
+Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. A new request, including an identical request, returns `instance.transfer_recovery_pending` while that marker remains; it cannot pause or capture the source again.
 
-Rollback abandons the transfer's SQLite seed before it restarts the source. It removes the owned source snapshot, unfinished destination incoming and candidate files, and seed records. A retry takes a fresh snapshot after pausing the source again, so writes committed after restoration reach the destination. If seed cleanup fails or its response is lost, the Gateway records `sqlite-seed` as incomplete recovery evidence and keeps the transfer open. An identical retry must confirm that cleanup before it captures the source again. Cleanup checks the recorded operation and file identities; it never removes a file that belongs to another operation.
+An existing nonterminal rollback Operation can resume with its recorded children. There is no automatic new-parent recovery from a terminal failed rollback. The Gateway clears the marker and resets the checkpoint only after proven rollback finishes. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
+
+After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent and restores the source runtime first. Only after proven source restoration may it abandon a recorded SQLite seed through `database.sqlite_seed_abandon` and discard the destination. An unavailable destination can delay cleanup but cannot delay source restoration. It then projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start.
+
+The source capture is nonresumable. After a lost reply, Swamp reads the original keyed agent receipt, even after cancellation. The Gateway projects its raw capture metadata and saves its safe result before compensation is eligible. It does not capture again. A running receipt keeps the parent running until the result is definite.
+
+If cancellation finds an unknown receipt for a capture already marked started, the parent may end cancelled with `rollback_pending: true`. The Gateway retains the original attempt in recovery evidence. The source stays paused and both checkouts remain: unknown does not prove the command never started. A new transfer request refuses with `instance.transfer_recovery_pending`; it cannot silently start another attempt. Recovery from that terminal pending state needs an effect fence or a dedicated owning recovery flow, which this gated slice does not enable.
+
+After capture, a Gateway step records the SQLite seed on the transfer parent before destination admission. The attempt identity comes from that Operation. The database owner retains the seed and its source intents while the parent is pending. Destination setup uses that exact descriptor. Rollback passes its recorded intent ID and its live compensation Operation to the database owner; it cannot select another attempt or cleanup path.
+
+Rollback abandons the transfer's SQLite seed before it restarts the source. It removes the owned source snapshot, unfinished destination incoming and candidate files, and seed records. A new transfer after proven restoration takes a fresh snapshot, so later source writes reach the destination. If seed cleanup is unconfirmed, the original child must settle before restoration; new requests remain blocked by pending recovery. Cleanup checks the recorded operation and file identities; it never removes a file that belongs to another operation.
 
 A transfer that fails before cutover is closed once rollback finishes. A new transfer request with any input, or `instance:destroy`, proceeds without a conflict from that closed transfer. Normal eligibility checks still apply.
 
-An unfinished transfer, including a failed transfer whose rollback is incomplete, stays open. A transfer that fails after cutover also stays open. Only the identical request resumes an open transfer and closes it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node. `route:destroy` also returns `instance.transfer_incomplete` for either Route while the transfer is open. This includes its destination replacement before cutover.
+An unfinished transfer, including a failed transfer whose rollback is incomplete, stays open. A transfer that fails after cutover also stays open. Only an identical request can resume an open transfer. If recovery is pending, even that request is refused. A different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. `route:destroy` also returns `instance.transfer_incomplete` for either Route while the transfer is open. This includes its destination replacement before cutover.
 
 If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then send a new transfer request if rollback has finished, or retry the identical request if the transfer is still open.
 
@@ -129,6 +149,7 @@ The Gateway returns these codes before or during a transfer.
 | `instance.destination_exists` | The destination path is occupied or unsafe. |
 | `route.domain_conflict` | Another Route owns the destination domain. |
 | `instance.transfer_retry_conflict` | A different request tried to resume an open transfer. |
+| `instance.transfer_recovery_pending` | Recorded rollback or uncertain capture recovery must finish before a new transfer attempt. |
 | `instance.transfer_failed` | The transfer failed before cutover and the source is authoritative. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
 | `instance.transfer_source_router_unknown` | The source Route has no Router, so Orbit cannot record one for the transfer. |

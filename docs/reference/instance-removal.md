@@ -3,8 +3,8 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
   - apps/gateway/app/Actions/{Instances/{DestroyInstanceAction,StartInstanceDestroyAction},DatabaseConnections/DropOwnedDatabasesAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,Removal/**}
-  - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,Removal/**}
+  - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RecordedProductionInstanceSourceRemoval,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/agent/{src/commands/{instances,instances_tests,source}.rs,contract/fixtures/repository-identity.json}
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
@@ -14,15 +14,15 @@ covers:
 
 # Instance removal
 
-Development removal on a workload Node returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
+Instance removal on a workload Node returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
 
 Removal on a Swamp executor Node stays synchronous through `DestroyInstanceAction`, including owned Process and Schedule cleanup. It returns HTTP 200 with the completed removal receipt and admits no Operation, so removal does not depend on the executor that it may stop.
 
-Production removal stays synchronous until its own Swamp cutover. That cutover follows the deployment and step-list, Process and Schedule, and Route child registrations.
-
-`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
+`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. Swamp composes the owning Route and runtime child Operations; a missing production PHP service is reported as a bounded resource failure.
 
 Swamp removal records an Operation before effects. Retained Gateway callers keep the synchronous `DestroyInstanceAction` and its removal receipt until their owning cutover composes removal as a child. They do not admit an Operation and wait under the caller's lease.
+
+Cancellation is refused with `operation.cancel_refused` once the Gateway accepts removal, including when the acceptance reply is lost. The accepted removal must finish or resume. A single-target production Route may remain `retiring` after its withdrawal succeeds. Detach and retry accept that state only with the exact successful withdrawal child recorded for the same removal; an unrelated or unfinished withdrawal cannot authorize it.
 
 Runtime cleanup uses the successful Gateway inventory receipt, with integer Process IDs and Schedule UUIDs. Swamp admits one recorded `process.destroy` or `schedule.destroy` child per record. The owning adapters accept only the lifecycle parent's recorded Instance and Node. Empty inventories need no child. Every recorded child must succeed and both owned runtime sets must be empty before database or home removal; a later record cannot be silently omitted.
 
@@ -34,7 +34,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 
 The CLI asks for default-No consent that names the Instance. `--yes` confirms without a prompt and is required for JSON and noninteractive calls. `--force` never gives consent.
 
-For development removal, the API returns HTTP 202 with the admitted `instance.destroy` Operation. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
+The API returns HTTP 202 with the admitted `instance.destroy` Operation. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
 
 ## Normal and forced removal
 
@@ -58,6 +58,10 @@ The Gateway checks everything before it changes anything. A failed check changes
 The Instance must be `active`, a development `source_resolved` workspace with no Route or exactly one pending or failed Route targeting only that Instance, or an [interrupted or failed development create](#pre-activation-removal) that never became active. A healthy `source_resolved` workspace cannot remove an active or shared Route. Its pending or failed Route, including a generated Cluster Route, is removed with its target in the same resumable operation. Production Instances do not qualify for this workspace rule, and normal dirty and unpublished-source checks still apply.
 
 An Instance already `removing` resumes its recorded removal. An active Instance first removes its [Routes with a web root](/reference/routes#serve-several-web-roots), each like `route:destroy`; a failure there stops before the Instance changes. An active `laravel-app` or `symfony-app` Instance must then have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+
+Before production Route withdrawal, the Gateway locks each admitted single-target Route and verifies its exact targets, placement, and production safety rules. It repeats this check when admitting the withdrawal child. A new co-target stops removal before any publication effect.
+
+Removing an already absent production home is successful convergence. The native command proves that the home, account, and source state are all gone, so a retry can continue to row deletion.
 
 An interrupted domain change or Project slug update can leave a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated) next to the Instance's own Route. That replacement does not count as a second Route. Once every check passes, removal abandons the change like `route:destroy` on the replacement. Then it removes the Instance with its own Route. A failure there stops before the Instance changes.
 
@@ -132,6 +136,10 @@ A checkout with registered worktrees needs `--force`. Then Orbit removes every w
 ### Teardown
 
 Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
+
+Its Gateway admission records the production account, home, source identity, Route target sets and affected Nodes without running a Node command. A shared Route loses only this Instance; proven `route.caddy_converge` children republish its remaining workloads, departing Node, Router and Ingress before cleanup continues. A final Route is withdrawn through `route.withdraw` before its record is deleted. Dedicated runtime cleanup must succeed before the home and account removal command can run. A shared production account refuses removal.
+
+Admission and the locked detach both check Route safety. A Route on an unclustered Node must be private, single-target, and on the Instance’s active app-prod Node. A clustered Route must have explicit provenance and contiguous targets on distinct active app-prod Nodes in that Cluster.
 
 Existing Gateway callers keep synchronous removal until their owning workflow composes an `instance.destroy` child. They do not admit an Operation and wait while holding a Route or task-workspace lock. The direct `instance:destroy` entrypoint uses the Swamp Operation.
 

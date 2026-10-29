@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
+use App\Models\InstanceTransfer;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Schedule;
@@ -29,7 +30,7 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             'required' => ['action', 'operation_id'], 'properties' => [
                 'action' => ['type' => 'string', 'enum' => [
                     'configuration', 'clone-checkpoint', 'activate', 'finish', 'clone-environment', 'clone-sqlite-intent', 'clone-sqlite-attach', 'clone-definitions', 'registration-activate',
-                    'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete',
+                    'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach', 'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete',
                     'transfer-cutover', 'transfer-finish', 'transfer-sqlite-intent', 'database-intent',
                 ]],
                 'operation_id' => ['type' => 'integer', 'minimum' => 1],
@@ -53,9 +54,11 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             'clone-environment' => $this->copyEnvironment($operation),
             'clone-sqlite-intent' => app(InstanceSqliteSeedIntent::class)->prepareClone($operation),
             'clone-sqlite-attach' => app(InstanceSqliteSeedIntent::class)->attachClone($operation),
+            'transfer-sqlite-intent' => app(InstanceSqliteSeedIntent::class)->prepareTransfer($operation),
             'clone-definitions' => $this->captureDefinitions($operation),
             'registration-activate' => $this->registrationActivate($operation, ValidatedData::integer($input['instance_id'])),
-            'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
+            'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach', 'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
+            'transfer-cutover', 'transfer-finish' => app(InstanceTransferState::class)->transition($operation, $input),
             'database-intent' => app(InstanceDatabaseIntent::class)->record($operation),
             'finish' => $this->finish($operation),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown lifecycle state transition.', 422),
@@ -144,6 +147,11 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
         } elseif ($operation->kind === 'instance.clone') {
             $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'clone_completed_at' => $instance->clone_completed_at ?? now(), 'failed_step' => null, 'error_code' => null]);
+        } elseif ($operation->kind === 'instance.transfer') {
+            $transfer = InstanceTransfer::query()->findOrFail(ValidatedData::string($operation->input['transfer_id']));
+            if ($transfer->cutover_at === null) {
+                throw new ResourceOperationException('operation.completion_unproven', 'The transfer has not cut over.', 409);
+            }
         }
         $result = ['lifecycle_complete' => true, 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'name' => $instance->name,
             'status' => $instance->refresh()->status->value, 'branch' => $instance->branch,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Domain\Instances\RemovalLifecycleExecution;
+use App\Domain\Instances\TransferLifecycleExecution;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,7 +24,8 @@ final class InstanceLifecycleContextController extends Controller
     {
         $input = match ($operation->kind) {
             'instance.destroy' => app(RemovalLifecycleExecution::class)->intent($operation),
-            'instance.create', 'instance.clone', 'instance.register', 'instance.rename' => $operation->input,
+            'instance.transfer_destination' => app(TransferLifecycleExecution::class)->intent($operation),
+            'instance.create', 'instance.clone', 'instance.register', 'instance.rename', 'instance.transfer', 'instance.transfer_rollback', 'instance.transfer_discard' => $operation->input,
             default => throw new ResourceOperationException('operation.execution_forbidden', 'The Operation is outside the lifecycle family.', 422),
         };
         $execution = $contract->execution($operation);

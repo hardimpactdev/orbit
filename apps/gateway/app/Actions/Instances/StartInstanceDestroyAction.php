@@ -15,6 +15,7 @@ use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRouteRemovalAdmission;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionRemovalIntent;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -86,8 +87,12 @@ final readonly class StartInstanceDestroyAction
         if ($detached) {
             app(InstanceRouteRemovalAdmission::class)->assertAllowed($parent, $instance, $force);
         }
-        if (! $instance->placedOnAppDev()) {
-            throw new ResourceOperationException('instance.production_refused', 'This lifecycle kind removes development Instances.', 409);
+        if ($instance->placedOnAppProd()) {
+            if ($instance->status !== InstanceState::Removing) {
+                $this->assertSupported($instance);
+            }
+
+            return app(ProductionRemovalIntent::class)->snapshot($instance, $force, $detached);
         }
         $account = $this->accounts->resolve($instance->node);
         $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
@@ -105,14 +110,14 @@ final readonly class StartInstanceDestroyAction
                     'source_root' => dirname((string) $member->checkout_path, 2),
                     'user' => $account->user, 'group' => $account->group,
                     'teardown_digest' => $this->teardownDigest($instance->project),
-                    'member_id' => $member->id,
+                    'member_id' => $member->id, 'route_node_id' => $member->route_id === null ? null : $this->routeNode(Route::query()->find($member->route_id)),
                 ];
             }
 
             return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
                 'name' => $instance->name, 'force' => $force, 'removal_id' => $removal->id, 'inventory_digest' => $removal->inventory_digest,
                 'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
-                'members' => $members, 'additional_route_ids' => [],
+                'members' => $members, 'additional_route_ids' => [], 'additional_routes' => [],
             ];
         }
         $this->assertSupported($instance);
@@ -132,7 +137,7 @@ final readonly class StartInstanceDestroyAction
             }
             $snapshots[] = [
                 'position' => $position, 'instance_id' => $member->id, 'project_id' => $member->project_id, 'node_id' => $member->node_id,
-                'route_id' => $route?->id, 'name' => $member->name, 'environment' => $member->defaultAppEnv(),
+                'route_id' => $route?->id, 'route_node_id' => $this->routeNode($route), 'name' => $member->name, 'environment' => $member->defaultAppEnv(),
                 'source_layout' => $inventory->layout, 'repository_identity' => $inventory->repositoryIdentity,
                 'checkout_path' => $inventory->checkoutPath, 'root' => $member->effectiveRoot(),
                 'branch' => $inventory->branch, 'starting_commit' => $member->starting_commit, 'source_commit' => $inventory->startingCommit,
@@ -152,13 +157,18 @@ final readonly class StartInstanceDestroyAction
             'name' => $instance->name, 'force' => $force, 'removal_id' => (string) Str::uuid(),
             'inventory_digest' => $this->inventoryDigest($instance->id, $force, $inventories),
             'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
-            'members' => $snapshots, 'additional_route_ids' => $additional,
+            'members' => $snapshots, 'additional_route_ids' => $additional, 'additional_routes' => array_map(fn (int $id): array => ['route_id' => $id, 'node_id' => $this->routeNode(Route::query()->findOrFail($id))], $additional),
         ];
     }
 
     private function teardownDigest(Project $project): string
     {
         return hash('sha256', json_encode(app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Teardown), JSON_THROW_ON_ERROR));
+    }
+
+    private function routeNode(?Route $route): ?int
+    {
+        return $route->node_id ?? $route?->cluster?->routerAssignment?->node_id;
     }
 
     private function assertSupported(Instance $instance): void

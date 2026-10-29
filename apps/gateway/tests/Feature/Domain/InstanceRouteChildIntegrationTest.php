@@ -51,7 +51,7 @@ it('composes the real no-Route withdrawal child and proves the empty PHP pool co
     $binding = ['transport' => 'instance_lifecycle', 'name' => 'instance.prepare-source-removal', 'step' => $key, 'input' => []];
     $parent = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $instance->id,
         'node_id' => $node->id, 'status' => 'running', 'worker' => 'parent', 'lock_key' => 'instance:'.$instance->id,
-        'input' => ['instance_id' => $instance->id, 'members' => [['instance_id' => $instance->id, 'route_id' => null, 'run_teardown' => false]]],
+        'input' => ['instance_id' => $instance->id, 'members' => [['instance_id' => $instance->id, 'route_id' => null, 'environment' => 'development', 'run_teardown' => false]]],
         'state' => ['lifecycle_bindings' => [$key => $binding], 'executor_runs' => [$key => [...$binding, 'result' => ['prepared' => true]]]]]);
     $parent->steps()->create(['name' => $key, 'position' => 0, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
     $child = DB::transaction(fn (): Operation => app(OperationChildren::class)->admit($parent, ['key' => 'withdraw-instance-'.$instance->id])['operation']);

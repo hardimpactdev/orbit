@@ -31,6 +31,7 @@ final readonly class InstanceLifecycleChildren
             'instance.register' => $this->register($parent),
             'instance.clone' => $this->clone($parent, $id),
             'instance.destroy' => $this->destroy($parent),
+            'instance.transfer' => $this->transfer($parent, $id),
             default => [],
         };
         $indexed = [];
@@ -168,10 +169,12 @@ final readonly class InstanceLifecycleChildren
                 $children[] = $this->steps($parent, "teardown-{$id}", $id, 'teardown', $member['teardown_digest']);
             }
             if ($this->ready($parent, "removal-{$id}-source-prepare")) {
-                if ($member['route_id'] !== null) {
-                    $children[] = $this->child($parent, "withdraw-{$id}", 'route.withdraw', ['route_id' => $member['route_id']]);
+                if ($member['route_id'] !== null && $member['environment'] !== 'production' && ($member['route_cleared_at'] ?? null) === null) {
+                    $children[] = $this->child($parent, "withdraw-{$id}", 'route.withdraw', ['route_id' => $member['route_id']], ValidatedData::integer($member['route_node_id']));
                 }
-                $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
+                if ($member['environment'] !== 'production') {
+                    $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
+                }
             }
             if ($this->ready($parent, "removal-{$id}-database-intent")
                 && app(InstanceRemovalRuntime::class)->succeeded($parent, $id)
@@ -187,7 +190,42 @@ final readonly class InstanceLifecycleChildren
         }
         if ($this->ready($parent, 'removal-revalidate')) {
             foreach (ValidatedData::integerList($input['additional_route_ids']) as $route) {
-                $children[] = $this->child($parent, "withdraw-extra-{$route}", 'route.withdraw', ['route_id' => $route]);
+                $projection = array_find(InstanceLifecycleInput::members(['members' => $input['additional_routes']]), static fn (array $entry): bool => $entry['route_id'] === $route);
+                $children[] = $this->child($parent, "withdraw-extra-{$route}", 'route.withdraw', ['route_id' => $route], ValidatedData::integer($projection['node_id'] ?? null));
+            }
+        }
+
+        return [...$children, ...app(ProductionRemovalIntent::class)->children($parent)];
+    }
+
+    /** @return list<ChildIntent> */
+    private function transfer(Operation $parent, int $id): array
+    {
+        $transfer = app(InstanceTransferState::class)->transfer($parent);
+        if ($parent->input['initial_completed'] === true) {
+            return [];
+        }
+        $children = [];
+        $destination = $transfer->destination_node_id;
+        $data = ['instance_id' => $id, 'transfer_id' => $transfer->id];
+        if (app(TransferCompensation::class)->eligible($parent)) {
+            return [$this->child($parent, 'transfer-rollback', 'instance.transfer_rollback', $data)];
+        }
+        if ($parent->cancel_requested_at !== null && $transfer->cutover_at === null) {
+            return [];
+        }
+        if ($transfer->cutover_at === null) {
+            $children[] = $this->child($parent, 'transfer-stop-source', 'process.instance_runtime', ['instance_id' => $id, 'action' => 'transfer_pause']);
+            if ($this->ready($parent, 'transfer-capture', 'transfer-sqlite-intent')) {
+                $children[] = $this->child($parent, 'transfer-destination', 'instance.transfer_destination', $data, $destination);
+            }
+        } else {
+            $children[] = $this->child($parent, 'transfer-activate-destination', 'instance.transfer_activate', $data, $destination);
+            if ($this->ready($parent, 'transfer-destination-activated')) {
+                $children[] = $this->child($parent, 'transfer-retire-source', 'route.retire_source', ['transfer_id' => $transfer->id]);
+                if ($this->succeeded($parent, 'transfer-retire-source')) {
+                    $children[] = $this->child($parent, 'transfer-retire-runtime', 'process.instance_runtime', ['instance_id' => $id, 'action' => 'transfer_retire_source']);
+                }
             }
         }
 
