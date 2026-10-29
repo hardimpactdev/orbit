@@ -54,6 +54,8 @@ final class RouteSwampGatewayFixture
     /** @var list<array<string, mixed>> */
     public array $requests = [];
 
+    public ?\Closure $beforeRequest = null;
+
     private string $buffer = '';
 
     private Node $worker;
@@ -184,6 +186,7 @@ final class RouteSwampGatewayFixture
             if (($body['input']['action'] ?? null) === 'open' && str_starts_with($body['input']['stage'] ?? '', 'await-')) {
                 $this->test->travel(35)->seconds();
             }
+            ($this->beforeRequest ?? static function (): void {})($message['method'], $message['path'], $body);
             $response = $this->request($message['method'], $message['path'], $body);
             $this->requests[] = ['method' => $message['method'], 'path' => $message['path'], 'action' => $body['input']['action'] ?? null, 'stage' => $body['input']['stage'] ?? null, 'status' => $response['status'], 'error' => $response['body']['error']['code'] ?? null];
             fwrite($this->pipes[0], json_encode($response, JSON_THROW_ON_ERROR)."\n");

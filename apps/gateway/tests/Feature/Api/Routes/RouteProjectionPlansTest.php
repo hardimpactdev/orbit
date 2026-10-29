@@ -619,9 +619,21 @@ it('recovers authoritative environment ownership by completing failed replacemen
     $fixture = new RouteSwampGatewayFixture($this);
     $operation = app(AdmitRouteOperationAction::class)->destroy($candidate);
     expect($operation->state['route_plan']['mode'])->toBe('withdraw_replacement');
+    $sawRollbackRecord = false;
+    $fixture->beforeRequest = function (string $method, string $path, array $body) use ($operation, $candidate, $contexts, &$sawRollbackRecord): void {
+        if (($body['input']['action'] ?? null) !== 'commit' || ($body['input']['stage'] ?? null) !== 'rollback-record') {
+            return;
+        }
+        expect($operation->fresh()->state['route_completed_stages']['rollback-certificates'])->toBeTrue()
+            ->and($candidate->fresh())->not->toBeNull()
+            ->and($this->route->fresh()->replaced_by_route_id)->toBe($candidate->id)
+            ->and(fn () => $contexts->resolve($this->instance->fresh(), true))->toThrow(ResourceOperationException::class);
+        $sawRollbackRecord = true;
+    };
     $fixture->run($operation);
 
-    expect($operation->fresh()->status->value)->toBe('succeeded')
+    expect($sawRollbackRecord)->toBeTrue()
+        ->and($operation->fresh()->status->value)->toBe('succeeded')
         ->and($candidate->fresh())->toBeNull()
         ->and($this->route->fresh()->status)->toBe(RouteStatus::Active)
         ->and($this->route->fresh()->replaced_by_route_id)->toBeNull()
