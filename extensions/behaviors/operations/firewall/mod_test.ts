@@ -25,21 +25,85 @@ class Fixture {
     },
     step_results: {},
   });
-  calls: { path: string; body: Record<string, unknown> }[] = [];
+  calls: {
+    method: string;
+    peer: number;
+    path: string;
+    body: Record<string, unknown>;
+  }[] = [];
+  peer = 12;
+  leasePeer: number | null = null;
+  leaseWorker: string | null = null;
+  leaseExpired = false;
+  noClaim = false;
+  claimableCount = 1;
   runs = 0;
   failAfterRun = false;
   cancelAtRun = false;
   failCompletion = false;
+  commitThenLoseCompletion = false;
+  queuedNext = false;
+  terminalResult: Record<string, unknown> | null = null;
+  terminalError: string | null = null;
   backend = "active";
   runReceipt: Record<string, unknown> | null = null;
   resources = new Map<string, Record<string, unknown>>();
-  http: Http = async (_method, path, raw) => {
-    const body = raw as Record<string, unknown>;
-    this.calls.push({ path, body });
+  http: Http = async (method, path, raw) => {
+    const body = (raw ?? {}) as Record<string, unknown>;
+    this.calls.push({ method, peer: this.peer, path, body });
     await Promise.resolve();
     let data: unknown = this.operation;
+    if (path === `/api/v1/operations/${this.operation.id}`) {
+      return {
+        status: 200,
+        body: {
+          data: {
+            ...this.operation,
+            result: this.terminalResult &&
+                Object.keys(this.terminalResult).length === 0
+              ? []
+              : this.terminalResult ?? this.runReceipt,
+            error_code: this.terminalError,
+          },
+        },
+      };
+    }
+    if (path.endsWith("/claimable")) {
+      assertEquals(method, "GET");
+      return {
+        status: 200,
+        body: {
+          data: {
+            kinds: [{
+              kind: this.operation.kind,
+              claimable: this.claimableCount,
+              oldest_at: "2026-10-29T00:00:00Z",
+            }],
+          },
+        },
+      };
+    }
     if (path.endsWith("/claim")) {
-      data = body.kind === this.operation.kind ? this.operation : null;
+      if (this.queuedNext && this.operation.status === "succeeded") {
+        this.operation = {
+          ...this.operation,
+          id: 8,
+          status: "running",
+          step_results: {},
+        };
+      }
+      if (
+        this.noClaim || body.kind !== this.operation.kind ||
+        this.leasePeer !== null && !this.leaseExpired &&
+          (this.peer !== this.leasePeer || body.worker !== this.leaseWorker)
+      ) data = null;
+      else {
+        this.leasePeer = this.peer;
+        this.leaseWorker = String(body.worker);
+        this.leaseExpired = false;
+      }
+    } else if (this.peer !== this.leasePeer) {
+      return { status: 409, body: { error: { code: "operation.lease_lost" } } };
     }
     if (path.endsWith("/run")) {
       if (!this.runReceipt) {
@@ -62,6 +126,13 @@ class Fixture {
     if (path.endsWith("/complete") && this.failCompletion) {
       this.failCompletion = false;
       throw new Error("Lost completion response");
+    }
+    if (path.endsWith("/complete") && this.commitThenLoseCompletion) {
+      this.operation.status = String(body.status);
+      this.terminalResult = body.result as Record<string, unknown>;
+      this.terminalError = body.error_code as string | null;
+      this.commitThenLoseCompletion = false;
+      throw new Error("Committed completion reply lost");
     }
     return { status: 200, body: { data } };
   };
@@ -91,14 +162,14 @@ class Fixture {
       },
     });
   }
-  execute() {
+  execute(worker = "run-1") {
     return firewall(() => this.http).methods.execute.execute({
-      operationId: this.operation.id,
-      worker: "run-1",
+      kind: this.operation.kind,
+      worker,
     }, this.context());
   }
 }
-Deno.test("runner claims each family kind with a stable workflow key", async () => {
+Deno.test("Services discovery is read-only and dispatches claimable kinds without ids or inputs", async () => {
   const f = new Fixture();
   const runner = operationRunner(
     () => f.http,
@@ -108,14 +179,32 @@ Deno.test("runner claims each family kind with a stable workflow key", async () 
         kinds: ["firewall.allow", "firewall.deny", "firewall.remove"],
       }]),
   );
-  const result = await runner.methods.claim.execute(
+  const before = structuredClone(f.operation);
+  f.peer = 17;
+  const result = await runner.methods.discover.execute(
     { worker: "workflow-7" },
     f.context(),
   );
-  assertEquals(result.claims.length, 1);
-  assertEquals(result.claims[0].worker, "workflow-7:firewall.allow");
-  assertEquals(result.claims[0].workflow, "operation-firewall");
-  assertEquals(f.calls.length, 3);
+  assertEquals(result.work.length, 1);
+  assertEquals(result.work[0].worker, "workflow-7:firewall.allow");
+  assertEquals(result.work[0].workflow, "operation-firewall");
+  assertEquals(result.work[0], {
+    workflow: "operation-firewall",
+    kind: "firewall.allow",
+    worker: "workflow-7:firewall.allow",
+  });
+  assertEquals(f.calls.map((c) => [c.method, c.path]), [[
+    "GET",
+    "/api/v1/operation-executor/claimable",
+  ]]);
+  assertEquals(f.operation, before);
+  assertEquals(f.leasePeer, null);
+  f.claimableCount = 0;
+  assertEquals(
+    (await runner.methods.discover.execute({ worker: "empty" }, f.context()))
+      .work,
+    [],
+  );
 });
 Deno.test("allow and deny converge exact recorded input and retain steps", async () => {
   for (const action of ["allow", "deny"] as const) {
@@ -173,7 +262,7 @@ Deno.test("restart after a lost completion reply replays its saved intent withou
   await assertRejects(() => f.execute(), Error, "Lost completion response");
   const count = f.calls.length;
   assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.calls.length, count + 1);
+  assertEquals(f.calls.length, count + 3);
   assertEquals(f.calls.at(-1)!.path.endsWith("/complete"), true);
   assertEquals(f.runs, 1);
 });
@@ -213,4 +302,103 @@ Deno.test("cancellation observed by the Gateway before invocation closes the ste
   assertEquals(f.runs, 0);
   assertEquals(f.calls.at(-2)!.body.status, "failed");
   assertEquals(f.calls.at(-1)!.body.error_code, "operation.cancelled");
+});
+
+Deno.test("the placed worker claims first and owns every effect and completion write", async () => {
+  const f = new Fixture();
+  await f.execute();
+  assertEquals(f.calls[0].path, "/api/v1/operation-executor/claim");
+  assertEquals(
+    f.calls.every((call) => call.method === "POST" && call.peer === 12),
+    true,
+  );
+  assertEquals(f.leasePeer, 12);
+  f.peer = 13;
+  const refused = await f.http(
+    "POST",
+    "/api/v1/operation-executor/7/heartbeat",
+    { worker: "run-1" },
+  );
+  assertEquals(refused.status, 409);
+});
+Deno.test("a lost race to claim causes no heartbeat, effect or completion", async () => {
+  const f = new Fixture();
+  f.noClaim = true;
+  assertEquals(await f.execute(), { claimed: false });
+  assertEquals(f.calls.length, 1);
+  assertEquals(f.calls[0].path, "/api/v1/operation-executor/claim");
+  assertEquals(f.runs, 0);
+});
+
+Deno.test("a committed completion with a lost reply never claims the next Operation", async () => {
+  const f = new Fixture();
+  f.commitThenLoseCompletion = true;
+  f.queuedNext = true;
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "Committed completion reply lost",
+  );
+  const count = f.calls.length;
+  assertEquals(await f.execute(), {
+    claimed: true,
+    operationId: 7,
+    status: "succeeded",
+  });
+  assertEquals(f.calls.slice(count).map((call) => [call.method, call.path]), [[
+    "GET",
+    "/api/v1/operations/7",
+  ]]);
+  assertEquals(f.operation.id, 7);
+  assertEquals(f.runs, 1);
+});
+Deno.test("a retry on another Node cannot claim another Operation or write the old lease", async () => {
+  const f = new Fixture();
+  f.failAfterRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost run response");
+  const claims = f.calls.filter((c) => c.path.endsWith("/claim")).length;
+  f.peer = 13;
+  await assertRejects(() => f.execute(), Error, "operation.lease_lost");
+  assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, claims);
+  assertEquals(f.runs, 1);
+});
+
+Deno.test("fresh discovery can reclaim an expired lease on a new Node without repeating the proven effect", async () => {
+  const f = new Fixture();
+  f.failAfterRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost run response");
+  f.peer = 13;
+  assertEquals(await f.execute("replacement"), { claimed: false });
+  f.leaseExpired = true;
+  assertEquals((await f.execute("replacement")).status, "succeeded");
+  assertEquals(f.leasePeer, 13);
+  assertEquals(f.runs, 1);
+  f.peer = 12;
+  assertEquals(
+    (await f.http("POST", "/api/v1/operation-executor/7/heartbeat", {
+      worker: "run-1",
+    })).status,
+    409,
+  );
+});
+
+Deno.test("committed cancellation reads the Gateway empty-array result without claiming new work", async () => {
+  const f = new Fixture();
+  f.operation.cancel_requested = true;
+  f.commitThenLoseCompletion = true;
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "Committed completion reply lost",
+  );
+  const count = f.calls.length;
+  assertEquals(await f.execute(), {
+    claimed: true,
+    operationId: 7,
+    status: "cancelled",
+  });
+  assertEquals(f.calls.slice(count).map((c) => c.path), [
+    "/api/v1/operations/7",
+  ]);
+  assertEquals(f.runs, 0);
 });

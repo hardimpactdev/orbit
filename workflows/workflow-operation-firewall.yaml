@@ -1,15 +1,18 @@
 id: 9249dbc7-f61a-4288-9e51-a10a3c0bfa1d
 name: operation-firewall
-description: Execute an admitted firewall allow, deny or remove Operation.
+description: Claim and execute a firewall kind within one placed worker invocation.
 labels: { pool: migration }
 queueTimeout: 300
 autoResume: true
 inputs:
   type: object
   properties:
-    operationId: { type: integer }
+    kind: {
+      type: string,
+      enum: [firewall.allow, firewall.deny, firewall.remove],
+    }
     worker: { type: string }
-  required: [operationId, worker]
+  required: [kind, worker]
 jobs:
   - name: firewall
     steps:
@@ -17,8 +20,8 @@ jobs:
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-firewall"
-          behaviorName: '${{ "operation-firewall-" + string(inputs.operationId) }}'
+          behaviorName: '${{ "operation-firewall-" + {"firewall.allow":"allow", "firewall.deny":"deny", "firewall.remove":"remove"}[inputs.kind] }}'
           methodName: execute
           inputs:
-            operationId: "${{ inputs.operationId }}"
+            kind: "${{ inputs.kind }}"
             worker: "${{ inputs.worker }}"

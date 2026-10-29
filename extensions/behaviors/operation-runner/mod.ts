@@ -56,10 +56,24 @@ export class ExecutorError extends Error {
 }
 export class Executor {
   constructor(private http: Http) {}
+  async operation(id: number): Promise<unknown> {
+    return await this.request("GET", `${id}`, undefined, "/api/v1/operations/");
+  }
+  async get(path: string): Promise<unknown> {
+    return await this.request("GET", path);
+  }
   async post(path: string, body: unknown): Promise<unknown> {
+    return await this.request("POST", path, body);
+  }
+  private async request(
+    method: "GET" | "POST",
+    path: string,
+    body?: unknown,
+    prefix = "/api/v1/operation-executor/",
+  ): Promise<unknown> {
     const response = await this.http(
-      "POST",
-      `/api/v1/operation-executor/${path}`,
+      method,
+      `${prefix}${path}`,
       body,
     );
     const envelope = z.object({ data: z.unknown() }).safeParse(response.body);
@@ -111,50 +125,58 @@ export function operationRunner(
     version: "2026.10.28.1",
     globalArguments: Globals,
     resources: {
-      claim: {
-        description: "Claim receipts for one runner workflow",
+      dispatch: {
+        description:
+          "Read-only discovery of registered kinds with claimable work",
         schema: z.object({
-          claims: z.array(
-            z.object({
-              workflow: z.string(),
-              operation_id: z.number().int().positive(),
-              worker: z.string(),
-            }),
-          ),
+          work: z.array(z.object({
+            workflow: z.string(),
+            kind: z.string(),
+            worker: z.string(),
+          })),
         }),
-        lifetime: "infinite",
-        garbageCollection: 10,
+        lifetime: "7d",
+        garbageCollection: 1,
       },
     },
     methods: {
-      claim: {
-        description:
-          "Claim one Operation per registered kind with a stable workflow identity",
+      discover: {
+        description: "Read claimable kind counts without claiming an Operation",
         arguments: z.object({ worker: z.string().min(1) }),
         execute: async (args: { worker: string }, ctx: Context) => {
+          const registered = await discover();
           const executor = new Executor(makeHttp(ctx));
-          const claims = [];
-          for (const registration of await discover()) {
-            for (const kind of registration.kinds) {
-              const value = await executor.post("claim", {
+          const available = z.object({
+            kinds: z.array(z.object({
+              kind: z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/),
+              claimable: z.number().int().nonnegative(),
+              oldest_at: z.iso.datetime({ offset: true }).nullable(),
+            })),
+          }).parse(await executor.get("claimable"));
+          if (
+            new Set(available.kinds.map((entry) => entry.kind)).size !==
+              available.kinds.length
+          ) {
+            throw new Error("Duplicate claimable kind");
+          }
+          const kinds = new Set(
+            available.kinds.filter((entry) => entry.claimable > 0).map((
+              entry,
+            ) => entry.kind),
+          );
+          const work = registered.flatMap((registration) =>
+            registration.kinds
+              .filter((kind) => kinds.has(kind))
+              .map((kind) => ({
+                workflow: registration.workflow,
                 kind,
                 worker: `${args.worker}:${kind}`,
-              });
-              if (value !== null) {
-                claims.push({
-                  workflow: registration.workflow,
-                  operation_id: Operation.parse(value).id,
-                  worker: `${args.worker}:${kind}`,
-                });
-              }
-            }
-          }
-          const handle = await ctx.writeResource(
-            "claim",
-            `claims-${args.worker}`,
-            { claims },
+              }))
           );
-          return { dataHandles: [handle], claims };
+          const handle = await ctx.writeResource("dispatch", "dispatch", {
+            work,
+          });
+          return { dataHandles: [handle], work };
         },
       },
     },

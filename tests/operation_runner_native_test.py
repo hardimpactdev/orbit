@@ -85,6 +85,17 @@ class OperationRunnerNativeTest(unittest.TestCase):
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(len(state["completions"]), 1)
 
+    def test_committed_completion_reply_loss_resumes_original_operation(self):
+        self.state["loseCompletionReply"] = True
+        self.save()
+        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.assertEqual(self.read()["operation"]["status"], "succeeded")
+        self.swamp("workflow", "resume", "operation-firewall", "--from", "execute")
+        state = self.read()
+        self.assertEqual(state["operation"]["id"], 7)
+        self.assertEqual(state["runs"], 1)
+        self.assertEqual(len(state["completions"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
