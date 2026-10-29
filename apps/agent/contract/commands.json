@@ -3008,6 +3008,20 @@
       ]
     },
     {
+      "name": "node.install-private-dns-listener",
+      "summary": "Install the private DNS listener release and units without publishing catalog data.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "node.private_dns_listener_invalid",
+        "node.private_dns_listener_failed"
+      ]
+    },
+    {
       "name": "node.bootstrap",
       "summary": "Install base packages and prepare managed SSH access, restoring retained Orbit DNS.",
       "mutates": true,

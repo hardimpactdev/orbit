@@ -1,0 +1,19 @@
+[Unit]
+Description=Orbit private DNS
+After=network-online.target wg-quick@orbit.service dnsmasq.service orbit-private-dns.socket
+Wants=network-online.target
+Requires=orbit-private-dns.socket
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/lib/orbit/private-dns/releases/RELEASE
+ExecStart="/usr/bin/php8.5" "/var/lib/orbit/private-dns/releases/RELEASE/serve.php" "--listen=10.0.0.1" "--port=53" "--catalog=/var/lib/orbit/private-dns/catalog.json" "--upstream=127.0.0.55:53"
+Sockets=orbit-private-dns.socket
+KillSignal=SIGTERM
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

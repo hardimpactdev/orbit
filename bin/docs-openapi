@@ -2155,6 +2155,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['201'] = envelope(ref('IssuedConnPairingData'), 'Immediate pairing URL when async is omitted or false. Cache-Control: no-store.')
             responses['202'] = envelope(ref('OperationData'), 'Accepted with async: true. Follow conn:operation:show, then conn:pairing:show.')
         elif starts_operation:
+            if route['name'] == 'node:converge':
+                responses['200'] = envelope(ref('NodeFootprintData'), 'Swamp executor Nodes converge synchronously without a worker or Operation.')
             responses['202'] = envelope(ref('OperationData'), 'Accepted. The operation is queued; follow it with `operation:show`.')
             responses['503'] = error_response('The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.')
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):

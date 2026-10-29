@@ -49,4 +49,8 @@ if (! OperationKinds::supports('list_of')) {
     unset($nodeKinds['node.prepare_php_packages']);
 }
 
+if (OperationKinds::supports('children') && OperationKinds::supports('children_settled') && OperationKinds::supports('list_of') && OperationKinds::supports('secret_outputs')) {
+    $nodeKinds['node.converge'] = require __DIR__.'/node-converge-kind.php';
+}
+
 return $nodeKinds;

@@ -8,7 +8,7 @@ use Orbit\Sdk\Requests\Fleet\ResumeFleetRolloutRequest;
 use Orbit\Sdk\Requests\Fleet\ShowFleetRolloutRequest;
 use Orbit\Sdk\Requests\Nodes\ConvergeNodeRequest;
 use Orbit\Sdk\Responses\Fleet\FleetRolloutStatusResponse;
-use Orbit\Sdk\Responses\Fleet\NodeFootprintResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -50,10 +50,10 @@ describe('fleet transport', function (): void {
     });
 
     it('reads a node converge', function (): void {
-        $result = fleet_fixture_send('nodes/node-converge/applied', new ConvergeNodeRequest(2));
+        $result = fleet_fixture_send('nodes/node-converge/queued', new ConvergeNodeRequest(2))->result;
 
-        expect($result)->toBeInstanceOf(NodeFootprintResponse::class)
-            ->and($result->artifacts)->toBe(['agent' => 'applied', 'caddy' => 'applied'])
-            ->and($result->changed)->toBeTrue();
+        expect($result)->toBeInstanceOf(OperationResponse::class)
+            ->and($result->kind)->toBe('node.converge')
+            ->and($result->status)->toBe('queued');
     });
 });

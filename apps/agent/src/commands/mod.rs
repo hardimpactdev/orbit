@@ -67,6 +67,7 @@ mod metrics_exporter;
 mod metrics_publication;
 mod metrics_runtime;
 mod node_bootstrap;
+mod node_dns_listener;
 mod node_identity;
 pub mod os_release;
 mod package_cache;
@@ -298,6 +299,7 @@ pub fn all() -> Vec<Entry> {
         entry::<cli::InstallCli>(),
         entry::<cli_update::SelfUpdate>(),
         entry::<os_release::ReadOsRelease>(),
+        entry::<node_dns_listener::Install>(),
         entry::<node_bootstrap::Bootstrap>(),
         entry::<macos_enrollment::Inspect>(),
         entry::<ssh_host_key::Scan>(),

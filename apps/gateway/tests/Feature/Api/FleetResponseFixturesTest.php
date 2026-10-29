@@ -72,19 +72,26 @@ describe('fleet response fixtures', function (): void {
         expect(FleetRollout::query()->sole()->nodes()->pluck('outcome')->map(static fn (FleetNodeOutcome $outcome): string => $outcome->value)->all())->toBe(['skipped', 'converged']);
     });
 
-    it('records a node converge that applied, then found nothing to change, and a refusal', function (): void {
+    it('records a queued node converge and an unsupported target refusal', function (): void {
         FleetFixtures::bind([new FakeFootprintArtifact('agent', 'agent-digest', changes: null), new FakeFootprintArtifact('caddy', 'caddy-digest')]);
         $node = FleetFixtures::node('app-dev', [RoleName::AppDev]);
         $operator = FleetFixtures::node('operator', managed: false);
 
-        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertOk(), 'nodes/node-converge/applied', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
-        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertOk()->assertJsonPath('data.changed', false), 'nodes/node-converge/unchanged', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
+        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertAccepted(), 'nodes/node-converge/queued', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
         record_fixture(
             $this->postJson("/api/v1/nodes/{$operator->id}/converge")->assertStatus(422)->assertJsonPath('error.code', 'node.converge_unsupported'),
             'nodes/node-converge/unsupported',
             ConvergeNodeRequest::class,
             'POST /api/v1/nodes/{node}/converge',
         );
+    });
+
+    it('records synchronous executor convergence that applies and then matches', function (): void {
+        FleetFixtures::bind([new FakeFootprintArtifact('agent', 'agent-digest', changes: null), new FakeFootprintArtifact('caddy', 'caddy-digest')]);
+        $node = FleetFixtures::node('app-dev', [RoleName::AppDev]);
+        config(['dependency_detection.services_node_id' => $node->id]);
+        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertOk(), 'nodes/node-converge/applied', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
+        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertOk()->assertJsonPath('data.changed', false), 'nodes/node-converge/unchanged', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
     });
 
     it('requires an active WireGuard peer', function (): void {

@@ -43,7 +43,7 @@ describe('fleet contract', function (): void {
         run_contract('fleet/fleet-rollout-resume/not-halted', 'fleet:rollout:resume', ['--json' => true], 'fleet/fleet-rollout-resume/not-halted.json', 1);
     });
 
-    it('renders node:converge applied, unchanged, and refused', function (string $case, int $exit): void {
+    it('renders synchronous executor node:converge applied, unchanged, and refused', function (string $case, int $exit): void {
         run_contract("nodes/node-converge/{$case}", 'node:converge', ['node' => '2'], "nodes/node-converge/{$case}.human.txt", $exit);
         run_contract("nodes/node-converge/{$case}", 'node:converge', ['node' => '2', '--json' => true], "nodes/node-converge/{$case}.json", $exit);
     })->with([['applied', 0], ['unchanged', 0], ['unsupported', 1]]);

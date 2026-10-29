@@ -7,6 +7,7 @@ use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Actions\Fleet\ConvergeNodeFootprintAction;
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\RepairNodeDnsAction;
+use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Firewall\StoreFirewallRuleData;
@@ -102,6 +103,7 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
             expect($exception->errorCode)->toBe('node.converge_unsupported')
                 ->and($exception->status)->toBe(422);
         });
+    expect(fn () => app(StartNodeConvergeAction::class)->execute($node))->toThrow(ResourceOperationException::class, 'Only an active, managed Linux Node');
     expect(fn () => app(RepairNodeDnsAction::class)->execute($node->name))
         ->toThrow(function (NodeProvisioningException $exception): void {
             expect($exception->errorCode)->toBe('node.dns_repair_operator_owned');

@@ -2,7 +2,7 @@ Converging Node footprint...
 
 ┌  Converge Node footprint
 │
-├  ● Converged Node footprint
+├  ● Node footprint request completed
 │
 └  Converged Node footprint.
 
