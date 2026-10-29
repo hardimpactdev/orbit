@@ -61,11 +61,11 @@ function nodeInstallerRunner(array $answers): array
 it('sends installer effect identity and original masks through protected stdin', function (): void {
     [$runner, $node, $transport, $pin] = nodeInstallerRunner([['replaced' => true]]);
 
-    $changed = $runner->installEffect($node, $pin, ['effect_key' => 'op-123.install', 'effect_metadata' => new EffectReceiptMetadata(['existing-connection-private'])]);
+    $changed = $runner->installEffect($node, $pin, ['effect_key' => 'op-123.install', 'effect_metadata' => new EffectReceiptMetadata(['existing-connection-private'], ['nonce' => '8d66ea16-8f73-44b1-a501-211a3e41cd78', 'created_at' => 1793232000])]);
 
     expect($changed)->toBeTrue();
     expect($transport->calls[0]['envelope']['input'])->toMatchArray(['sha256' => $pin, 'effect_key' => 'op-123.install']);
-    expect($transport->calls[0]['envelope']['effect_receipt'])->toBe(['redactions' => ['existing-connection-private']]);
+    expect($transport->calls[0]['envelope']['effect_receipt'])->toBe(['redactions' => ['existing-connection-private'], 'nonce' => '8d66ea16-8f73-44b1-a501-211a3e41cd78', 'created_at' => 1793232000]);
 });
 
 it('reads the original installer receipt with a staged binary without reinstalling or clearing failure state', function (): void {

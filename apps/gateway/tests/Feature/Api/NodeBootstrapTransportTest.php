@@ -115,7 +115,7 @@ it('does not accept bare or forged bootstrap completion', function (): void {
     ])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
 });
 
-it('recovers a lost bootstrap installer reply using only the existing connection identity', function (): void {
+it('recovers only the matching original bootstrap receipt using the existing connection identity', function (string $case): void {
     [$node, $operation, $body] = bootstrapOperation($this);
     $key = new HostKey('ssh-ed25519', 'public-key', $operation->input['bootstrap_fingerprint']);
     $scanner = Mockery::mock(HostKeyScanner::class);
@@ -138,17 +138,37 @@ it('recovers a lost bootstrap installer reply using only the existing connection
     $installer->shouldReceive('effectReceipt')->once()->withArgs(static fn (Node $target, string $pin, string $command, string $effectKey, SshConnection $connection): bool => $target->id === $node->id && $pin === $operation->input['agent_pin'] && $command === 'agent.install'
         && $effectKey === 'op-'.$operation->id.'.install' && $connection->identityFile === '/fake/existing-identity'
         && $connection->host === '192.0.2.10' && $connection->hostIdentity === $key->fingerprint
-    )->andReturn(['effect_key' => 'op-'.$operation->id.'.install', 'state' => 'succeeded', 'result' => ['replaced' => true],
-        'sanitized' => true, 'exit_code' => 0, 'finished_at' => '2026-10-29T00:00:00Z']);
+    )->andReturnUsing(static function () use ($operation, $case): array {
+        $identity = $operation->fresh()->state['executor_effect_identity'];
+
+        return ['effect_key' => 'op-'.$operation->id.'.install', 'state' => 'succeeded', 'result' => ['replaced' => true],
+            'sanitized' => $case !== 'unsanitized', 'effect_nonce' => $case === 'wrong nonce' ? '1d66ea16-8f73-44b1-a501-211a3e41cd78' : $identity['nonce'],
+            'effect_created_at' => $identity['created_at'] + ($case === 'wrong creation' ? 1 : 0),
+            'exit_code' => 0, 'finished_at' => '2026-10-29T00:00:00Z'];
+    });
     app()->instance(NodeOperationAgentInstaller::class, $installer);
 
-    $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)->assertStatus(502);
+    $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $before = $operation->fresh()->state;
+    expect($before['executor_runs']['install']['result'])->toBeNull();
+    if ($case !== 'matching') {
+        $this->getJson("/api/v1/operation-executor/{$operation->id}/receipts/install")
+            ->assertConflict()->assertJsonPath('error.code', $case === 'unsanitized' ? 'operation.receipt_unproven' : 'operation.execution_uncertain');
+        expect($operation->fresh()->state)->toBe($before);
+        $this->postJson("/api/v1/operation-executor/{$operation->id}/complete", [
+            'worker' => 'bootstrap-1', 'status' => 'succeeded', 'result' => ['installed' => true],
+        ])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+        expect($operation->fresh()->state)->toBe($before);
+
+        return;
+    }
     $this->getJson("/api/v1/operation-executor/{$operation->id}/receipts/install")->assertOk()
         ->assertJsonPath('data.state', 'succeeded')->assertJsonPath('data.result.installed', true)
         ->assertJsonPath('data.result.changed', true)->assertDontSee('/fake/existing-identity');
     $this->getJson("/api/v1/operation-executor/{$operation->id}/receipts/install")->assertOk();
+    expect($operation->fresh()->state['executor_effect_identity'])->toBe($before['executor_effect_identity']);
     expect(json_encode($operation->fresh()->state))->not->toContain('/fake/existing-identity');
-});
+})->with(['matching', 'wrong nonce', 'wrong creation', 'unsanitized']);
 
 it('refuses connection credentials when the Operation resource is another Node', function (): void {
     [, $operation, $body] = bootstrapOperation($this);
