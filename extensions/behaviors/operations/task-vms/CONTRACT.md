@@ -19,6 +19,11 @@ adapts its results through `OperationEffectTransport` and `AgentEffectReceipts`.
 It stores child identities and completed stages in native Swamp resources. A
 cancelled or expired parent settles admitted children before becoming terminal.
 
+Topology seed preparation has its own checkpoint before smoke deletion. Re-entry
+after deletion goes straight to seed finalization and promotion; it does not
+probe or reinstall the deleted guest. Lost replies reuse the original seed,
+smoke and cleanup child identities.
+
 ## Protected inputs
 
 | Source                         | Owner                                      | Use                                                      |

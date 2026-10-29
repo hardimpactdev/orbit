@@ -326,35 +326,42 @@ export async function buildImage(input: ImageIntent, effects: FamilyEffects) {
     await command("smoke-verify", "image.verify", input.recipe, true, "smoke");
   });
   await run("topology-seed", async () => {
-    state = await desired();
-    if (state.seed_ready !== true) {
-      if (state.seed_pending === true) {
-        await child("reset-seed-smoke", "task_vm.image_remove", {
-          vm: vm(true),
-          operation: { kind: "remove_instance" },
-        }, "topology-seed");
-        await child("seed-smoke-launch", "task_vm.image_launch", {
-          vm: vm(true),
-          operation: {
-            kind: "create_image",
-            image: fingerprint,
-            gateway_public_key: input.gateway_public_key,
-            cpus: input.cpus,
-            memory: input.memory,
-            disk: input.disk,
-            network: input.network,
-            builder: false,
-          },
-        }, "topology-seed");
-        await bootstrap(true, true);
+    const prepareSeed = async () => {
+      state = await desired();
+      if (state.seed_ready !== true) {
+        if (state.seed_pending === true) {
+          await child("reset-seed-smoke", "task_vm.image_remove", {
+            vm: vm(true),
+            operation: { kind: "remove_instance" },
+          }, "topology-seed");
+          await child("seed-smoke-launch", "task_vm.image_launch", {
+            vm: vm(true),
+            operation: {
+              kind: "create_image",
+              image: fingerprint,
+              gateway_public_key: input.gateway_public_key,
+              cpus: input.cpus,
+              memory: input.memory,
+              disk: input.disk,
+              network: input.network,
+              builder: false,
+            },
+          }, "topology-seed");
+          await bootstrap(true, true);
+        }
+        await child("topology-seed", "task_vm.image_seed", {
+          project: input.project,
+          pool: input.pool,
+          vm: guest(true).name,
+          size: "45GiB",
+          fingerprint,
+        });
       }
-      await child("topology-seed", "task_vm.image_seed", {
-        project: input.project,
-        pool: input.pool,
-        vm: guest(true).name,
-        size: "45GiB",
-        fingerprint,
-      });
+    };
+    if (effects.stage) {
+      await effects.stage("topology-seed-prepared", prepareSeed);
+    } else {
+      await prepareSeed();
     }
     await child("delete-smoke", "task_vm.image_remove", {
       vm: vm(true),

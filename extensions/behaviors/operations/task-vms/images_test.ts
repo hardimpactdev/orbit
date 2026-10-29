@@ -195,6 +195,49 @@ Deno.test("a partial topology seed gets a fresh smoke VM before resuming", async
     "seed-smoke-launch",
   ]);
 });
+Deno.test("seed finalization resumes after smoke deletion without probing the deleted guest", async () => {
+  const effects = new Effects();
+  effects.fingerprint = "c".repeat(64);
+  let guestPresent = true;
+  const child = effects.child.bind(effects);
+  effects.child = async (key, ...args) => {
+    const fresh = !effects.receipts.has(key);
+    try {
+      return await child(key, ...args);
+    } finally {
+      if (fresh && effects.receipts.has(key)) {
+        if (key === "topology-seed") effects.seedPending = true;
+        if (key === "reset-seed-smoke" || key === "delete-smoke") {
+          guestPresent = false;
+        }
+        if (key === "seed-smoke-launch") guestPresent = true;
+      }
+    }
+  };
+  const read = effects.read.bind(effects);
+  effects.read = (view) => {
+    if (view.endsWith("boot") && !guestPresent) {
+      return Promise.reject(new Error("The smoke guest no longer exists"));
+    }
+    return read(view);
+  };
+  const input = intent({
+    reuse_published: true,
+    resume_from: "topology-seed",
+  });
+  effects.lose = "topology-seed";
+  await assertRejects(() => buildImage(input, effects), Error, "lost reply");
+  effects.lose = "delete-smoke";
+  await assertRejects(() => buildImage(input, effects), Error, "lost reply");
+  assertEquals(guestPresent, false);
+  assertEquals(await buildImage(input, effects), {
+    ready: true,
+    fingerprint: "c".repeat(64),
+  });
+  const keys = effects.calls.map((call) => call.key);
+  assertEquals(keys.filter((key) => key === "seed-smoke-launch").length, 1);
+  assertEquals(keys.slice(-3), ["finish-seed", "promote", "prune"]);
+});
 Deno.test("a retained published image can retry pruning without rebuilding or repromoting", async () => {
   const effects = new Effects();
   effects.fingerprint = "c".repeat(64);
