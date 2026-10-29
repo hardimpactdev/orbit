@@ -152,11 +152,21 @@ final readonly class DevelopmentCaddyConfigRenderer
             return $this->analyticsTrackingHandler($site);
         }
 
-        if ($site->isLocalHttpProxy()) {
+        if ($site->isServiceHttpProxy()) {
+            $upstream = $site->localHttpUpstream;
+            $host = '';
+            $tls = '';
+            if ($site->managedTlsUpstream !== null) {
+                $upstream = 'https://'.$site->managedTlsUpstream;
+                $host = "\n    header_up Host {$site->domain}";
+                $root = self::ORBIT_ROOT_CA_PATH;
+                $tls = "\n        tls_server_name {$site->domain}\n        tls_trusted_ca_certs {$root}\n        versions 1.1";
+            }
+
             return <<<CADDY
-                reverse_proxy {$site->localHttpUpstream} {
+                reverse_proxy {$upstream} {{$host}
                     flush_interval -1
-                    transport http {
+                    transport http {{$tls}
                         read_timeout 1h
                         response_header_timeout 1h
                     }
