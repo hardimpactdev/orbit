@@ -757,3 +757,83 @@ Deno.test("cancellation kills a tool's descendants and closes inherited output p
     "descendant stdout must not hold the scan open",
   );
 });
+
+Deno.test("Composer funding metadata is excluded while private download URLs still fail", async () => {
+  const lock = {
+    packages: [{
+      name: "fixture/library",
+      version: "1.0.0",
+      funding: [{ type: "custom", url: "https://symfony.com/sponsor" }],
+      dist: {
+        type: "zip",
+        url: "https://api.github.com/repos/fixture/library/zipball/abc",
+      },
+    }],
+    "packages-dev": [],
+  };
+  const f = await fixture({
+    "composer.json": { require: { "fixture/library": "^1.0" } },
+    "composer.lock": lock,
+  });
+  try {
+    const tree = await serviceWorkspace(f.root);
+    try {
+      const sanitized = JSON.parse(
+        await Deno.readTextFile(`${tree.root}/composer.lock`),
+      );
+      assertEquals(sanitized.packages[0].funding, undefined);
+      assertEquals(sanitized.packages[0].dist, lock.packages[0].dist);
+    } finally {
+      await tree.close();
+    }
+    lock.packages[0].dist.url = "https://10.44.0.1/private.zip";
+    await Deno.writeTextFile(`${f.root}/composer.lock`, JSON.stringify(lock));
+    await command(f.root, "git", ["add", "composer.lock"]);
+    await assertRejects(
+      () => serviceWorkspace(f.root),
+      Error,
+      "unsupported_dependency_endpoint",
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("npm lock accepts registry peer alternatives but refuses an endpoint alternative", async () => {
+  const lock = {
+    packages: {
+      "node_modules/@tailwindcss/typography": {
+        version: "0.5.19",
+        peerDependencies: { tailwindcss: ">=3.0.0 || >=4.0.0 || insiders" },
+      },
+    },
+  };
+  const f = await fixture({ "package.json": {}, "package-lock.json": lock });
+  try {
+    const tree = await serviceWorkspace(f.root);
+    await tree.close();
+    for (
+      const endpoint of [
+        "https://10.44.0.1/pkg",
+        "git+https://github.com/org/pkg",
+        "file:../../etc",
+        "x.tgz",
+      ]
+    ) {
+      lock.packages["node_modules/@tailwindcss/typography"].peerDependencies
+        .tailwindcss = `>=3.0.0 || ${endpoint}`;
+      await Deno.writeTextFile(
+        `${f.root}/package-lock.json`,
+        JSON.stringify(lock),
+      );
+      await command(f.root, "git", ["add", "package-lock.json"]);
+      await assertRejects(
+        () => serviceWorkspace(f.root),
+        Error,
+        "unsupported_dependency_endpoint",
+      );
+    }
+  } finally {
+    await f.close();
+  }
+});

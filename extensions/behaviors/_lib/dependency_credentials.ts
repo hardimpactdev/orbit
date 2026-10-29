@@ -2,7 +2,11 @@ import { z } from "npm:zod@4";
 import { type DependencyProject } from "./dependency_projects.ts";
 import { repositoryIdentity } from "./dependency_results_schema.ts";
 import { type Http } from "./gateway_stage.ts";
-import { command, type CommandResult } from "./maintenance/io.ts";
+import {
+  command,
+  type CommandResult,
+  MaintenanceFailure,
+} from "./maintenance/io.ts";
 
 export type Diagnostic = {
   stage: "settings" | "token" | "git" | "gh" | "scan";
@@ -165,6 +169,9 @@ export async function credentialCommand(
     return result.stdout;
   } catch (error) {
     if (error instanceof CredentialFailure) throw error;
+    if (error instanceof MaintenanceFailure && error.exitCode === 127) {
+      throw fail(binary, `${binary}_executable_missing`, 127);
+    }
     throw commandFailure(binary, { code: 127, stdout: "", stderr: "" }, signal);
   } finally {
     await Deno.remove(home, { recursive: true });

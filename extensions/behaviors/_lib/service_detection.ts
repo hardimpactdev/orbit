@@ -471,7 +471,14 @@ export async function batchEvidence(
         links.push({
           group_id: Number(g.id),
           run_id: runId,
-          targets: target.targets,
+          targets: target.targets.map((
+            { path, manager, package: name, version },
+          ) => ({
+            path,
+            manager,
+            package: name,
+            version,
+          })),
         });
       }
       if (!urls.length) continue;

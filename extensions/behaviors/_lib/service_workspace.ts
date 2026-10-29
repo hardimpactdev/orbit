@@ -75,10 +75,14 @@ function dependencyValue(raw: string, file: string, root: string) {
 }
 function registrySelector(raw: string) {
   // npm interprets a bare *.tgz / *.tar.gz as a host file, even without a slash.
-  return raw.trim() === raw &&
-    (validRange(raw) !== null ||
-      (/^[a-zA-Z_][a-zA-Z0-9._-]*$/.test(raw) &&
-        !/\.(?:tgz|tar|tar\.gz)$/i.test(raw)));
+  if (raw === "") return true; // npm treats an empty registry spec as *.
+  return raw.trim() === raw && raw.split("||").every((alternative) => {
+    const selector = alternative.trim();
+    // Peer declarations can combine semver ranges and registry tags (e.g. insiders).
+    return selector.length > 0 && (validRange(selector) !== null ||
+      (/^[a-zA-Z_][a-zA-Z0-9._-]*$/.test(selector) &&
+        !/\.(?:tgz|tar|tar\.gz)$/i.test(selector)));
+  });
 }
 function inspect(
   value: unknown,
@@ -220,9 +224,20 @@ export async function serviceWorkspace(
         );
         await Deno.writeTextFile(file, JSON.stringify(safe));
       } else if (f.endsWith("composer.lock")) {
+        // Funding links describe a package; Composer never acquires code from them.
+        for (const section of ["packages", "packages-dev"]) {
+          if (data[section] === undefined) continue;
+          if (!Array.isArray(data[section])) {
+            throw new Error("invalid_composer_packages");
+          }
+          for (const packageRecord of data[section]) {
+            delete object(packageRecord, "Composer package").funding;
+          }
+        }
         inspect(data, (s, k) => {
           if (k === "url") publicUrl(s, composerHosts);
         });
+        await Deno.writeTextFile(file, JSON.stringify(data));
       } else if (f.endsWith("package.json")) {
         const safe = Object.fromEntries(
           Object.entries(data).filter(([k]) =>

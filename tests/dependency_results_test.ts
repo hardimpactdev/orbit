@@ -23,6 +23,7 @@ import {
 import { DependencyProjectSchema } from "../extensions/behaviors/_lib/dependency_projects.ts";
 import {
   batchEvidence,
+  BatchEvidenceSchema,
   reconcileDependencyIndex,
   resultStore,
 } from "../extensions/behaviors/_lib/service_detection.ts";
@@ -725,4 +726,56 @@ Deno.test("cancelled PR observation starts no Gateway or GitHub lookup", async (
   });
   assertEquals(calls, 0);
   assertEquals(evidence.pr.status, "unknown");
+});
+
+Deno.test("PR refresh projects real immutable batch targets into its publication contract", async () => {
+  const target = {
+    path: ".",
+    manager: "js",
+    package: "puppeteer",
+    version: "25.15.0",
+    purpose: "security",
+    advisories: ["1243066"],
+    advisoryUrls: ["https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"],
+  };
+  const ctx = {
+    definition: { name: "orbit-gateway" },
+    queryData: (q: string) =>
+      Promise.resolve(
+        q.includes('startsWith("package-')
+          ? [{ workItem: "tg-2195", targets: [target] }]
+          : q.includes('name == "owner"')
+          ? [{ runId: "batch-run" }]
+          : [],
+      ),
+    writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
+    runModel: () => Promise.resolve({ ok: true }),
+  };
+  const evidence = await batchEvidence(
+    project,
+    null,
+    ctx,
+    () =>
+      Promise.resolve({
+        status: 200,
+        body: {
+          data: [{
+            id: 2195,
+            project_id: 20,
+            status: "running",
+            pr_url: null,
+            watched_pr_url: null,
+          }],
+        },
+      }),
+  );
+  assertEquals(evidence.pr.status, "absent");
+  assertEquals(BatchEvidenceSchema.parse(evidence).links[0].targets, [{
+    path: ".",
+    manager: "js",
+    package: "puppeteer",
+    version: "25.15.0",
+  }]);
+  assertEquals(target.purpose, "security");
+  assertEquals(target.advisories, ["1243066"]);
 });

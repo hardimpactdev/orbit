@@ -262,3 +262,24 @@ Deno.test("Project settings failures are distinct from credential failures", asy
     await f.close();
   }
 });
+
+Deno.test("missing trusted gh is reported without retaining credential-bearing exceptions", async () => {
+  const root = await Deno.makeTempDir(), old = Deno.env.get("PATH")!;
+  try {
+    Deno.env.set("PATH", root);
+    const error = await assertRejects(
+      () => credentialCommand(root, "gh", ["--version"], credential()),
+      CredentialFailure,
+      "gh_executable_missing",
+    );
+    assertEquals(error.diagnostic, {
+      stage: "gh",
+      code: "gh_executable_missing",
+      exit_status: 127,
+    });
+    assert(!JSON.stringify(error).includes(credential().token));
+  } finally {
+    Deno.env.set("PATH", old);
+    await Deno.remove(root, { recursive: true });
+  }
+});
