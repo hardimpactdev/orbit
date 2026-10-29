@@ -19,6 +19,8 @@ final readonly class SyncVaultAction
 {
     public const int VerifyEveryMinutes = 60;
 
+    public const int UnclaimedAfterMinutes = 5;
+
     public function __construct(private VaultSettings $settings, private DatabaseCredentialCatalog $catalog, private StartVaultOperationAction $operations) {}
 
     public function execute(string $trigger = 'operator'): Operation
@@ -39,9 +41,18 @@ final readonly class SyncVaultAction
     /** A tick records at most one intent and skips an unchanged collection between hourly checks. */
     public function scheduled(): ?Operation
     {
+        $unfinished = Operation::query()->where('target_type', 'vault')
+            ->whereNotIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])
+            ->oldest('id')->first();
+        if ($unfinished instanceof Operation) {
+            if ($unfinished->started_at === null && $unfinished->created_at?->lessThanOrEqualTo(CarbonImmutable::now()->subMinutes(self::UnclaimedAfterMinutes))) {
+                $this->settings->recordError('vault.executor_unclaimed', 'Vault Operation '.$unfinished->id.' has not been claimed for five minutes. Check the placed integration worker.');
+            }
+
+            return null;
+        }
         $configuration = $this->settings->configuration();
-        if ($configuration === null || Operation::query()->where('target_type', 'vault')
-            ->whereIn('status', [OperationStatus::Queued->value, OperationStatus::Running->value])->exists()) {
+        if ($configuration === null) {
             return null;
         }
         $now = CarbonImmutable::now();

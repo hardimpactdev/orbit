@@ -24,7 +24,7 @@ final readonly class ShowVaultStatusAction
         $configuration = $this->settings->configuration();
 
         if ($configuration === null) {
-            return new VaultStatusData(false, null, null, null, null, 0, 0, [], null, null);
+            return new VaultStatusData(false, null, null, null, null, 0, 0, [], null, $this->settings->lastError());
         }
 
         $catalog = $this->catalog->build();

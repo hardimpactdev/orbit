@@ -63,7 +63,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The sync runs as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a placed Swamp integration worker. It skips every unfinished Operation, including one waiting for children. The command builds the wanted items from the database records and compares them with the published items it recorded:
 
 | Wanted item | Published item | Action |
 | --- | --- | --- |
@@ -84,9 +84,9 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 The collection belongs to Orbit. Do not add items with an `orbit.source` field by hand.
 
-One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with a failure while a run records an error.
+One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. If an Operation remains unclaimed for five minutes, the next tick records `vault.executor_unclaimed`, including its Operation ID, and exits with failure. Status exposes that error even when initial setup is still queued. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
-[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns the status when every change succeeded. When a change failed, it returns `vault.sync_failed` (502) with `failed`, the number of failed changes, and `first_error`, the code of the first failure. Only one run happens at a time.
+[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
 
 ## Status
 
@@ -116,7 +116,7 @@ All operations need access to the Gateway.
 | --- | --- | --- |
 | `GET` | `/api/v1/vault` | Show the status. |
 | `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns the status. |
-| `POST` | `/api/v1/vault/sync` | Run a sync now. Returns the status. |
+| `POST` | `/api/v1/vault/sync` | Record a sync Operation (202). |
 | `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns the status. |
 
 | Error | Status | When |
@@ -193,3 +193,5 @@ Setup, synchronization, and teardown record an Operation and return HTTP 202. Sw
 A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 
 Operation receipts carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
+
+Merge waits for orbit-swamp#75 to run `operation-integrations` on a placed worker. A queued Operation keeps the Vault target hold until a worker completes it or the operator cancels it; the scheduler never silently drops that intent.

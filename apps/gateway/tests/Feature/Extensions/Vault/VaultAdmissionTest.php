@@ -12,8 +12,10 @@ use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Setting;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Orbit\Extensions\Vault\Actions\SyncVaultAction;
 use Orbit\Extensions\Vault\Domain\VaultConfiguration;
 use Orbit\Extensions\Vault\Domain\VaultCredentials;
 use Orbit\Extensions\Vault\Domain\VaultException;
@@ -21,6 +23,7 @@ use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -242,4 +245,63 @@ it('removes the sync credential snapshot after proven ledger projection', functi
         'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => []]]));
 
     expect(Setting::query()->where('key', 'vault.operation.'.$operation->id)->exists())->toBeFalse();
+});
+
+it('skips every unfinished Vault Operation without admitting another or contacting Vaultwarden', function (string $status): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'fixture-secret', 'fixture-password', 'fixture-device'),
+        'fixture@example.test', 'fixture-org', 'Orbit', 'fixture-collection', 'Database'));
+    $operation = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => $status, 'input' => []]);
+
+    expect(app(SyncVaultAction::class)->scheduled())->toBeNull();
+
+    expect(Operation::query()->count())->toBe(1)->and($operation->fresh()->status->value)->toBe($status);
+    Http::assertNothingSent();
+})->with(['queued', 'running', 'waiting']);
+
+it('reports an unclaimed setup after five minutes without freeing its target hold', function (): void {
+    $this->freezeTime();
+    $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();
+    $operation = Operation::query()->sole();
+    $this->artisan('orbit:vault-sync')->assertSuccessful();
+    $this->getJson('/api/v1/vault')->assertJsonPath('data.last_error', null);
+    $this->travel(5)->minutes();
+
+    $this->artisan('orbit:vault-sync')->assertFailed();
+
+    $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.configured', false)
+        ->assertJsonPath('data.last_error.code', 'vault.executor_unclaimed');
+    expect(app(VaultSettings::class)->lastError()['message'])->toContain((string) $operation->id);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)->and(Operation::query()->count())->toBe(1);
+    $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    Http::assertNothingSent();
+});
+
+it('keeps a failure exit code until a later collection completion proves success', function (): void {
+    $settings = app(VaultSettings::class);
+    $settings->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'fixture-secret', 'fixture-password', 'fixture-device'),
+        'fixture@example.test', 'fixture-org', 'Orbit', 'fixture-collection', 'Database'));
+    $this->freezeTime();
+    $settings->recordSuccess(CarbonImmutable::now()->subHour());
+    $settings->recordError('vault.sync_failed', 'The collection could not be updated.');
+
+    $this->artisan('orbit:vault-sync')->assertFailed();
+
+    $operation = Operation::query()->sole();
+    $this->getJson('/api/v1/vault')->assertJsonPath('data.last_error.code', 'vault.sync_failed')
+        ->assertJsonPath('data.last_synced_at', now()->subHour()->toIso8601ZuluString());
+    app(VaultOperationCompletion::class)->complete($operation, OperationOutcome::succeeded(['data' => ['backend' => 'synced',
+        'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => []]]));
+    $operation->update(['status' => 'succeeded']);
+
+    $this->artisan('orbit:vault-sync')->assertSuccessful();
+    expect($settings->lastError())->toBeNull()->and($settings->lastSyncedAt())->toBe(now()->toIso8601ZuluString());
+    Http::assertNothingSent();
+});
+
+it('runs the collection and TLS boundary tests beside the shipped Python program', function (): void {
+    $process = new Process(['python3', '-I', resource_path('remote/vault/tests/test_collection.py')]);
+    $process->mustRun();
+
+    expect($process->getErrorOutput())->toContain('Ran 13 tests')->toContain('OK');
 });
