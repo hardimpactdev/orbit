@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\ClusterRouterController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -30,11 +31,11 @@ Route::middleware([
         ->whereNumber('cluster')
         ->whereNumber('node')
         ->name('cluster:node:remove');
-    Route::put('clusters/{cluster}/router/{node}', [ClustersController::class, 'setRouter'])
+    Route::put('clusters/{cluster}/router/{node}', [ClusterRouterController::class, 'set'])
         ->whereNumber('cluster')
         ->whereNumber('node')
         ->name('cluster:router:set');
-    Route::delete('clusters/{cluster}/router', [ClustersController::class, 'clearRouter'])
+    Route::delete('clusters/{cluster}/router', [ClusterRouterController::class, 'unset'])
         ->whereNumber('cluster')
         ->name('cluster:router:unset');
 });

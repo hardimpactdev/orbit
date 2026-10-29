@@ -56,7 +56,7 @@ final readonly class RouteTargetSetGuard
             return;
         }
 
-        unset($current['vacated_route_ids']);
+        unset($current['vacated_route_ids'], $current['preparation_operation_id']);
 
         if ($current !== $proposal->toIntent()) {
             $this->refuse(

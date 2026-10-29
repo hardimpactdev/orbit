@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
+use App\Domain\Routes\PhpPoolInputSource;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -31,6 +33,7 @@ final class RoutesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([PhpPoolInputSource::class], OperationSecretSource::class);
         $this->app->tag([RouteCaddySiteSource::class], NodeCaddySiteSource::class);
     }
 }

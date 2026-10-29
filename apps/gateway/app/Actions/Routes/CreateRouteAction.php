@@ -6,20 +6,12 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\RouteData;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Instances\DevelopmentRouteProjector;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionCloneRouteProjector;
-use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Instances\ProductionWebRootManager;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Routes\CustomProxyProcessListener;
-use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicProcessRouteIngress;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -34,7 +26,6 @@ use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -46,27 +37,16 @@ use App\Models\RouteTarget;
 use Closure;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 final readonly class CreateRouteAction
 {
     public function __construct(
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
-        private CustomProxyRouteProjector $customProxies,
         private ReservedPrivateHostname $reservedHostnames,
         private CustomProxyProcessListener $listeners = new CustomProxyProcessListener,
         private ?RecordEventBroadcaster $broadcaster = null,
-        private ?MetricsFleetReconciler $metrics = null,
-        private ?DevelopmentRouteProjector $developmentRoutes = null,
-        private ?ProductionRouteProjector $productionRoutes = null,
-        private ?ProductionCloneRouteProjector $productionCloneRoutes = null,
-        private ?DevelopmentProjectionOperationLock $projectionOwner = null,
-        private ?PublishPublicRouteAction $publishPublic = null,
-        private ?SynchronizeRouteWebRootUrlsAction $webRootUrls = null,
         private ?ProductionWebRootManager $productionWebRoots = null,
-        private ?InstanceEnvironmentOperationLock $environmentOperations = null,
-        private ?ProductionPhpRuntimeManager $productionPhp = null,
         private ?ProcessRuntimeLease $processLease = null,
     ) {}
 
@@ -80,22 +60,24 @@ final readonly class CreateRouteAction
     public function executeForRouteCreate(CreateRouteData $data): array
     {
         if ($data->isCustomProxy()) {
-            return $this->withProcessLease($data, fn (): array => ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(fn (): array => $this->run($data)));
+            return $this->withProcessLease($data, fn (): array => $this->run($data));
         }
-
         if ($data->instanceId === null || $data->projectId !== null || $data->nodeId !== null || $data->clusterId !== null) {
             throw new ResourceOperationException('route.scope_required', 'An app Route requires an Instance and no explicit Project or scope.');
         }
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail($data->instanceId);
+        $webRoot = RouteWebRoot::normalize($data->webRoot);
+        if ($instance->placedOnAppProd() && $webRoot !== null) {
+            RouteWebRoot::assertProductionLayout($instance, $webRoot);
+            ($this->productionWebRoots ?? app(ProductionWebRootManager::class))->assertServable($instance, $webRoot);
+        }
+        $result = $this->run(new CreateRouteData(domain: $data->domain, publication: $data->publication,
+            projectId: $instance->project_id, instanceId: $instance->id, webRoot: $data->webRoot), activating: true);
+        if (! $result['created'] && ! in_array($result['route']->status, [RouteStatus::Active, RouteStatus::Activating], true)) {
+            throw new ResourceOperationException('route.activation_unsupported', 'The existing Route is not active.', 409);
+        }
 
-        $operation = fn (): array => ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(
-            fn (): array => $this->activateExplicitRoute($data),
-        );
-        $instance = Instance::query()->with('node')->find($data->instanceId);
-
-        // A production Route changes the selected release, so it waits for a deployment or rollback.
-        return $instance instanceof Instance && $instance->placedOnAppProd()
-            ? ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run([$instance->id], $operation)
-            : $operation();
+        return $result;
     }
 
     /**
@@ -113,125 +95,11 @@ final readonly class CreateRouteAction
         return ($this->processLease ?? app(ProcessRuntimeLease::class))->run($process, $operation, wait: true);
     }
 
-    /** @return array{route: Route, created: bool} */
-    private function activateExplicitRoute(CreateRouteData $data): array
-    {
-        $instance = Instance::query()->with(['project', 'node'])->findOrFail($data->instanceId);
-
-        $webRoot = RouteWebRoot::normalize($data->webRoot);
-
-        if ($instance->placedOnAppProd() && $webRoot !== null) {
-            RouteWebRoot::assertProductionLayout($instance, $webRoot);
-            ($this->productionWebRoots ?? app(ProductionWebRootManager::class))->assertServable($instance, $webRoot);
-        }
-
-        $result = $this->run(new CreateRouteData(
-            domain: $data->domain,
-            publication: $data->publication,
-            projectId: $instance->project_id,
-            instanceId: $instance->id,
-            webRoot: $data->webRoot,
-        ), activating: true);
-
-        if (! $result['created']) {
-            if ($result['route']->status === RouteStatus::Active) {
-                return $result;
-            }
-
-            // Only this creation path stores Activating before touching the serving path.
-            // Older pending Routes remain unchanged and are not adopted on retry.
-            if ($result['route']->status !== RouteStatus::Activating) {
-                throw new ResourceOperationException('route.activation_unsupported', 'The existing Route is not active.', 409);
-            }
-        }
-
-        $route = $result['route'];
-        if ($instance->placedOnAppProd() && $route->hasWebRoot()) {
-            try {
-                $this->projectProduction($instance, $route);
-
-                if ($data->publication === RoutePublication::Public) {
-                    $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);
-                }
-            } catch (Throwable $exception) {
-                $this->failProductionWebRoot($instance, $route, $exception);
-
-                throw $exception;
-            }
-
-            $route->update(['status' => RouteStatus::Active]);
-
-            return ['route' => $route->refresh()->load('targets'), 'created' => $result['created']];
-        }
-
-        if ($instance->placedOnAppProd()) {
-            $this->projectProduction($instance, $route);
-        } else {
-            ($this->developmentRoutes ?? app(DevelopmentRouteProjector::class))->converge($instance, $route);
-
-            if ($route->hasWebRoot()) {
-                ($this->webRootUrls ?? app(SynchronizeRouteWebRootUrlsAction::class))->execute($instance);
-            }
-        }
-        if ($data->publication === RoutePublication::Public) {
-            $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);
-        }
-
-        $route->update(['status' => RouteStatus::Active]);
-
-        return ['route' => $route->refresh()->load('targets'), 'created' => $result['created']];
-    }
-
-    private function projectProduction(Instance $instance, Route $route): void
-    {
-        $projection = $this->productionRoutes ?? app(ProductionRouteProjector::class);
-        $projection->prepareCertificate($instance, $route);
-
-        if ($route->hasWebRoot()) {
-            // The selected release gets the web root's .env link and Caddy access, and its stable .env
-            // its APP_URL, before the pool of its directory starts.
-            ($this->productionWebRoots ?? app(ProductionWebRootManager::class))->prepare($instance, $route);
-            ($this->webRootUrls ?? app(SynchronizeRouteWebRootUrlsAction::class))->execute($instance);
-        }
-
-        $projection->prepareRuntime($instance, $route);
-        $projection->prepareFirewall($instance);
-        $steps = $this->productionCloneRoutes ?? app(ProductionCloneRouteProjector::class);
-        $steps->prepareWorkloadCaddy($instance, $route);
-        $steps->prepareRouterCertificate($instance, $route);
-        $steps->prepareRouteFirewall($instance, $route);
-        $steps->verifyWorkload($instance, $route);
-        $steps->prepareRouterCaddy($instance, $route);
-        $steps->prepareDns($route);
-    }
-
     /**
      * A production Route with a web root that fails to activate leaves the authoritative states, so no
      * deployment, pool, or Doctor expectation counts it, and its pool and site are withdrawn. Remove it
      * with `route:destroy`.
      */
-    private function failProductionWebRoot(Instance $instance, Route $route, Throwable $exception): void
-    {
-        $published = $route->refresh()->sites_published;
-        $route->update([
-            'status' => RouteStatus::Failed,
-            'sites_published' => false,
-            'failed_step' => 'projection',
-            'error_code' => property_exists($exception, 'errorCode') && is_string($exception->errorCode)
-                ? $exception->errorCode
-                : 'route.projection_failed',
-        ]);
-
-        try {
-            ($this->productionPhp ?? app(ProductionPhpRuntimeManager::class))->converge($instance->refresh());
-
-            if ($published) {
-                app(RemoteAppDevCaddyManager::class)->build($instance->node);
-            }
-        } catch (Throwable) {
-            // The original failure explains the request; the next converge withdraws the rest.
-        }
-    }
 
     /** @return array{route: Route, created: bool} */
     private function run(CreateRouteData $data, bool $activating = false): array
@@ -250,9 +118,6 @@ final readonly class CreateRouteAction
                 RouteData::fromModel($result['route'])->toArray(),
             );
 
-            if ($result['route']->publication === RoutePublication::Public) {
-                $this->metrics?->reconcile();
-            }
         }
 
         return $result;
@@ -423,28 +288,12 @@ final readonly class CreateRouteAction
                     'process_id' => $process?->id,
                     'upstream' => $upstream->url(),
                 ]);
+                $route->update(['status' => RouteStatus::Activating]);
 
                 return $route->load(['targets', 'customProxy']);
             });
         } catch (QueryException $exception) {
             throw $this->conflictFromCreateFailure($domain, null, $exception);
-        }
-
-        try {
-            $this->customProxies->converge($route);
-            $route->update(['status' => RouteStatus::Active]);
-        } catch (Throwable $exception) {
-            // A failed creation clears the publication record, so the next build withdraws the site.
-            $route->update([
-                'status' => RouteStatus::Failed,
-                'sites_published' => false,
-                'failed_step' => 'projection',
-                'error_code' => property_exists($exception, 'errorCode') && is_string($exception->errorCode)
-                    ? $exception->errorCode
-                    : 'route.projection_failed',
-            ]);
-
-            throw $exception;
         }
 
         return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => true];
@@ -498,9 +347,6 @@ final readonly class CreateRouteAction
                 throw $this->conflictFromCreateFailure($domain, null, $exception);
             }
         }
-        $route->publishSites();
-        $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);
-        $route->update(['status' => RouteStatus::Active]);
 
         return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => $created];
     }

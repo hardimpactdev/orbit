@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Routes\ClearRouteTargetAction;
-use App\Actions\Routes\ConvergeRouteTargetSetAction;
-use App\Actions\Routes\CreateRouteAction;
-use App\Actions\Routes\DestroyRouteAction;
+use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\ListRoutesAction;
-use App\Actions\Routes\SetRouteTargetAction;
 use App\Actions\Routes\ShowRouteAction;
-use App\Actions\Routes\UpdateRouteAction;
-use App\Data\Routes\RemovedRouteData;
+use App\Data\Operations\OperationData;
 use App\Data\Routes\RouteData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Routes\EmptyRouteRequest;
 use App\Http\Requests\Routes\RemoveRouteRequest;
 use App\Http\Requests\Routes\SetRouteTargetRequest;
@@ -46,17 +42,13 @@ final class RoutesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function store(StoreRouteRequest $request, CreateRouteAction $action): JsonResponse
+    #[StartsOperation('route.create')]
+    public function store(StoreRouteRequest $request, AdmitRouteOperationAction $action): JsonResponse
     {
-        $result = $action->executeForRouteCreate($request->payload());
+        $caller = $request->user();
+        $operation = $action->create($request->payload(), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
 
-        return response()->json(
-            [
-                'data' => RouteData::fromModel($result['route'])->toArray(),
-                'meta' => $this->meta($request),
-            ],
-            $result['created'] ? 201 : 200,
-        );
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
@@ -69,47 +61,45 @@ final class RoutesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function update(UpdateRouteRequest $request, Route $route, UpdateRouteAction $action): JsonResponse
+    #[StartsOperation('route.update')]
+    public function update(UpdateRouteRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
     {
-        return response()->json([
-            'data' => RouteData::fromModel($action->execute($route, $request->payload()))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+        $caller = $request->user();
+        $operation = $action->update(Route::query()->findOrFail($route), $request->payload(), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function setTarget(
-        SetRouteTargetRequest $request,
-        Route $route,
-        SetRouteTargetAction $action,
-        ConvergeRouteTargetSetAction $targetSet,
-    ): JsonResponse {
-        $updated = $request->isTargetSet()
-            ? $targetSet->execute($route, $request->payload())
-            : $action->execute($route, $request->instanceId());
+    #[StartsOperation('route.target_set')]
+    public function setTarget(SetRouteTargetRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
+    {
+        $caller = $request->user();
+        $operation = $request->isTargetSet()
+            ? $action->setTargets(Route::query()->findOrFail($route), $request->payload(), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'))
+            : $action->setTarget(Route::query()->findOrFail($route), $request->instanceId(), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
 
-        return response()->json([
-            'data' => RouteData::fromModel($updated)->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function clearTarget(EmptyRouteRequest $request, Route $route, ClearRouteTargetAction $action): JsonResponse
+    #[StartsOperation('route.target_unset')]
+    public function clearTarget(EmptyRouteRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
     {
-        return response()->json([
-            'data' => RouteData::fromModel($action->execute($route))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+        $caller = $request->user();
+        $operation = $action->clearTarget(Route::query()->findOrFail($route), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function destroy(RemoveRouteRequest $request, Route $route, DestroyRouteAction $action): JsonResponse
+    #[StartsOperation('route.destroy')]
+    public function destroy(RemoveRouteRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
     {
-        return response()->json([
-            'data' => RemovedRouteData::fromRemoval($action->executeForOperator($route, $request->offline()))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+        $caller = $request->user();
+        $operation = $action->destroy(Route::query()->findOrFail($route), $request->offline(), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** @return array{request_id: string} */

@@ -7,7 +7,6 @@ namespace App\Commands\Routes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
-use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 final class UpdateRouteCommand extends RouteCommand
 {
@@ -17,6 +16,7 @@ final class UpdateRouteCommand extends RouteCommand
         {--domain= : New explicit domain}
         {--publication= : New publication intent}
         {--web-root= : New web root inside the Instance checkout; empty to serve the Instance root}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -45,10 +45,6 @@ final class UpdateRouteCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $route = $this->sendWithProgress($connector, new UpdateRouteRequest($id, domain: $domain, publication: $publication, webRoot: $webRoot, clearWebRoot: $webRootProvided && $webRoot === null), RouteResponse::class, ['Update Route', 'Updating Route', 'Updated Route']);
-
-        return $route instanceof RouteResponse
-            ? $this->renderRoute($route)
-            : self::FAILURE;
+        return $this->startRouteOperation($repository, $connector, new UpdateRouteRequest($id, domain: $domain, publication: $publication, webRoot: $webRoot, clearWebRoot: $webRootProvided && $webRoot === null), 'Update Route');
     }
 }

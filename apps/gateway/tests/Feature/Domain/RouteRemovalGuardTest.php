@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\DestroyClusterAction;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
@@ -99,7 +98,7 @@ it('runs ownership and scope guards through destructive action entry points', fu
 
     expect(fn () => app(DestroyClusterAction::class)->execute($cluster))
         ->toThrow(ResourceOperationException::class, 'still scopes Routes')
-        ->and(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
+        ->and(fn () => $this->guard->assertRouterRemovable($cluster))
         ->toThrow(ResourceOperationException::class, 'require its Router');
 });
 

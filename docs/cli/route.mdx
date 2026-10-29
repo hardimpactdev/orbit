@@ -23,7 +23,7 @@ The [Routes reference](/reference/routes) describes the Route record, domain sel
 | [`route:target:unset`](#orbit-routetargetunset) | Clear the target. |
 | [`route:destroy`](#orbit-routedestroy) | Remove a Route. |
 
-Every command accepts `--json`. Route, Project, Instance, and Cluster arguments are numeric IDs. Human lists show a table with every target of a pool. `route:show` shows a detail tree with identity, scope, targets, publication, lifecycle, and replacement fields. Requests show progress while they wait.
+Every command accepts `--json`. Route, Project, Instance, and Cluster arguments are numeric IDs. Human lists show a table with every target of a pool. `route:show` shows a detail tree with identity, scope, targets, publication, lifecycle, and replacement fields. Writes record an Operation and return HTTP 202. Swamp executes its recorded intent. The CLI follows the Operation and shows its proven steps; `--json` returns the final Operation. Use `--idempotency-key=KEY` to replay the same admission after a lost reply. Read the resulting Route with `route:show`.
 
 ## orbit route:create
 

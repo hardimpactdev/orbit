@@ -102,6 +102,9 @@ final readonly class RequireNodeAccess
 
     private function isPublicProcessRoute(Request $request): bool
     {
+        if ($request->attributes->has('orbit.route_public_process')) {
+            return $request->attributes->getBoolean('orbit.route_public_process');
+        }
         $route = $request->route('route');
 
         return $route instanceof \App\Models\Route
