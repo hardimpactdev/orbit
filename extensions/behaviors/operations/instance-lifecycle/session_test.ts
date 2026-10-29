@@ -16,7 +16,7 @@ class Fixture {
     input: {
       checkout: "/apps/demo/proof",
       git_read: { $secret: "instance.lifecycle_git", id: 50 },
-    },
+    } as Receipt,
     required: true,
     resumable: true,
   };
@@ -403,4 +403,44 @@ Deno.test("an unknown cancelled capture ends with Gateway pending recovery witho
     f.calls.find((call) => call.body?.status === "failed")!.body.result,
     { error_code: "operation.cancelled", rollback_pending: true },
   );
+});
+
+Deno.test("cancelled removal closes its unaccepted Gateway step without replaying the transaction", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.cancelled = true;
+  f.descriptor = {
+    ...f.descriptor,
+    key: "removal-accept",
+    step: "removal-accept",
+    transport: "gateway",
+    name: "instance.lifecycle-state",
+    input: { action: "removal-accept", operation_id: 100 },
+  };
+  f.receiptKey = "op-100.removal-accept";
+  assertEquals(await f.session().run("removal-accept"), {
+    error_code: "operation.cancelled",
+  });
+  assertEquals(f.effects, 0);
+  assertEquals(f.calls.some((call) => call.path.endsWith("/run")), false);
+  assertEquals(
+    f.calls.find((call) => call.body?.status === "failed")!.body.error_code,
+    "operation.cancelled",
+  );
+});
+
+Deno.test("cancelled removal still leaves a native effect open without its receipt", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.cancelled = true;
+  f.descriptor.key = "removal-accept";
+  f.descriptor.step = "removal-accept";
+  f.receiptKey = "op-100.removal-accept";
+  f.uncertainReply = true;
+  await assertRejects(
+    () => f.session().run("removal-accept"),
+    ExecutorError,
+    "operation.execution_uncertain",
+  );
+  assertEquals(f.calls.some((call) => call.body?.status === "failed"), false);
 });

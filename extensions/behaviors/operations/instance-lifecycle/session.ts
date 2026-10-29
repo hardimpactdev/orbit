@@ -124,8 +124,17 @@ export class LifecycleSession implements Session {
       this.kind === "instance.transfer" && key === "transfer-capture" &&
       !descriptor.resumable && this.operation!.cancel_requested &&
       this.current().execution_context.result?.rollback_pending === true;
+    // The locked destroy cancel guard refuses cancellation once removal is accepted.
+    // Its accepted cancel request proves this DB transaction can no longer commit.
+    const cancelledAcceptance = recovered === null &&
+      this.kind === "instance.destroy" && this.operation!.cancel_requested &&
+      key === "removal-accept" && descriptor.transport === "gateway" &&
+      descriptor.name === "instance.lifecycle-state" &&
+      descriptor.input.action === "removal-accept";
     const result = pendingCancellation
       ? { error_code: "operation.cancelled", rollback_pending: true }
+      : cancelledAcceptance
+      ? { error_code: "operation.cancelled" }
       : recovered ?? z.record(z.string(), z.unknown()).parse(
         await this.executor.post(`${this.id}/run`, {
           worker: this.worker,
