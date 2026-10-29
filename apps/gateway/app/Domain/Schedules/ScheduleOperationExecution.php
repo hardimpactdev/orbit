@@ -59,6 +59,7 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
             'schedule.destroy' => app(ScheduleTargetResolver::class)->forRemoval($schedule),
             default => app(ScheduleTargetResolver::class)->forSchedule($schedule),
         };
+        app(ScheduleSwampSafety::class)->assertAllowed($target->node);
         if ($target->node->id !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Schedule Node changed after admission.', 409);
         }

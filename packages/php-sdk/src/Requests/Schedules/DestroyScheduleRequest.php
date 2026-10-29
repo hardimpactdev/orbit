@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Schedules;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
@@ -32,11 +32,12 @@ final class DestroyScheduleRequest extends GatewayRequest
         return '/api/v1/schedules/'.rawurlencode($this->scheduleId);
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): ScheduleMutationResponse
     {
-        return OperationResponse::fromGatewayData(
+        return ScheduleMutationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
+            $response->status(),
         );
     }
 }

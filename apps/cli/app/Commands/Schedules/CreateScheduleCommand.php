@@ -13,8 +13,8 @@ use Orbit\Sdk\Requests\Projects\CreateScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\InstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 
 final class CreateScheduleCommand extends ScheduleCommand
 {
@@ -122,14 +122,14 @@ final class CreateScheduleCommand extends ScheduleCommand
                 start: $this->option('no-start') === true ? false : null,
                 idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            OperationResponse::class,
+            ScheduleMutationResponse::class,
         );
 
-        if (! $schedule instanceof OperationResponse) {
+        if (! $schedule instanceof ScheduleMutationResponse) {
             return self::FAILURE;
         }
 
-        return $this->finishOperation($connector, $repository, $schedule, "Create Schedule [{$name}]");
+        return $this->finishMutation($connector, $repository, $schedule, "Create Schedule [{$name}]");
     }
 
     /** @return 'app'|'instance'|'node'|null */

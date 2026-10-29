@@ -72,7 +72,10 @@ it('recovers a lost manual-run reply through the target receipt without another 
     $schedule->update(['status' => 'active']);
     $response = $this->postJson('/api/v1/schedules/'.$schedule->id.'/run')->assertAccepted();
     $id = $response->json('data.id');
-    config(['dependency_detection.services_node_id' => $this->node->id]);
+    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $executor->accessibleNodes()->attach($this->node);
+    config(['dependency_detection.services_node_id' => $executor->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $executor->wireguard_ip]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'schedule-worker'])->assertOk();
     $agent = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agent);

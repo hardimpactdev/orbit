@@ -10,11 +10,23 @@ use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 
 abstract class ScheduleCommand extends GatewayCommand
 {
     use FollowsOperations;
+
+    protected function finishMutation(GatewayConnector $connector, GatewayConfigRepository $repository, ScheduleMutationResponse $response, string $title): int
+    {
+        if ($response->result instanceof OperationResponse) {
+            return $this->finishOperation($connector, $repository, $response->result, $title);
+        }
+
+        $this->renderSchedule($response->result);
+
+        return self::SUCCESS;
+    }
 
     protected function finishOperation(GatewayConnector $connector, GatewayConfigRepository $repository, OperationResponse $operation, string $title): int
     {

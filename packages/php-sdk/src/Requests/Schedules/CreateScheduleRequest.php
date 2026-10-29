@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Schedules;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -41,11 +41,12 @@ final class CreateScheduleRequest extends GatewayRequest implements HasBody
         return '/api/v1/schedules';
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): ScheduleMutationResponse
     {
-        return OperationResponse::fromGatewayData(
+        return ScheduleMutationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
+            $response->status(),
         );
     }
 

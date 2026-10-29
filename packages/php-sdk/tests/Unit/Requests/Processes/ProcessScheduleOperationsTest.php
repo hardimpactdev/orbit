@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -35,7 +36,7 @@ it('transports each Process and Schedule Operation and preserves its admission k
         $connector = new GatewayConnector('https://gateway.test');
         $connector->withMockClient($mock);
         $response = $connector->send($request)->dto();
-        if ($response instanceof ProcessMutationResponse) {
+        if ($response instanceof ProcessMutationResponse || $response instanceof ScheduleMutationResponse) {
             $response = $response->result;
         }
         expect($response)->toBeInstanceOf(OperationResponse::class)

@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
 use Orbit\Sdk\Responses\Schedules\ScheduleCompletionResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
 use Saloon\Enums\Method;
@@ -142,6 +143,9 @@ it('returns typed DTOs for the seven JSON envelopes', function (): void {
     foreach ($requests as [$request, $expectedClass, $response]) {
         $mock = new MockClient([MockResponse::make($response)]);
         $dto = schedule_request_connector($mock)->send($request)->dto();
+        if ($dto instanceof ScheduleMutationResponse) {
+            $dto = $dto->result;
+        }
 
         expect($dto)->toBeInstanceOf($expectedClass);
     }
