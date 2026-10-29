@@ -16,7 +16,15 @@ export const Operation = z.object({
   id: z.number().int().positive(),
   kind: z.string(),
   node_id: z.number().int().positive().nullable(),
-  input: z.record(z.string(), z.unknown()),
+  input: z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.record(z.string(), z.unknown()),
+  ),
+  parent_operation_id: z.number().int().positive().nullable().optional(),
+  child_key: z.string().nullable().optional(),
+  waiting_for: z.array(
+    z.object({ key: z.string(), id: z.number().int().positive() }),
+  ).default([]),
   status: z.string(),
   cancel_requested: z.boolean(),
   steps: z.array(z.object({ name: z.string(), status: z.string() })).default(
@@ -28,17 +36,55 @@ export const Operation = z.object({
       step: z.string(),
       transport: z.string(),
       name: z.string(),
-      input: z.record(z.string(), z.unknown()),
+      input: z.preprocess(
+        (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+        z.record(z.string(), z.unknown()),
+      ),
       resumable: z.boolean(),
       required: z.boolean(),
     })),
-    result: z.record(z.string(), z.unknown()).optional(),
+    result: z.preprocess(
+      (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+      z.record(z.string(), z.unknown()),
+    ).optional(),
   }).default({ descriptors: [] }),
   step_results: z.preprocess(
     (v) => Array.isArray(v) && v.length === 0 ? {} : v,
     z.record(z.string(), z.unknown()),
   ),
 });
+export const ChildReceipt = z.object({
+  id: z.number().int().positive(),
+  key: z.string(),
+  kind: z.string(),
+  node_id: z.number().int().positive().nullable(),
+  status: z.enum([
+    "queued",
+    "running",
+    "waiting",
+    "succeeded",
+    "failed",
+    "cancelled",
+  ]),
+  error_code: z.string().nullable(),
+  result: z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.record(z.string(), z.unknown()).nullable(),
+  ),
+});
+export const EffectReceipt = z.object({
+  effect_key: z.string(),
+  state: z.enum(["succeeded", "failed", "running", "unknown"]),
+  exit_code: z.number().int().nullable(),
+  result: z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.record(z.string(), z.unknown()).nullable(),
+  ),
+  finished_at: z.string().nullable(),
+});
+export type ClaimedOperation = z.infer<typeof Operation>;
+export type ChildOperationReceipt = z.infer<typeof ChildReceipt>;
+
 export type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
@@ -62,9 +108,6 @@ export class Executor {
   async get(path: string): Promise<unknown> {
     return await this.request("GET", path);
   }
-  async post(path: string, body: unknown): Promise<unknown> {
-    return await this.request("POST", path, body);
-  }
   private async request(
     method: "GET" | "POST",
     path: string,
@@ -85,6 +128,73 @@ export class Executor {
       );
     }
     return envelope.data.data;
+  }
+  post(path: string, body: unknown): Promise<unknown> {
+    return this.request("POST", path, body);
+  }
+  async claim(
+    kind: string,
+    worker: string,
+    operationId?: number,
+  ): Promise<ClaimedOperation | null> {
+    try {
+      const value = await this.post("claim", {
+        kind,
+        worker,
+        ...(operationId === undefined ? {} : { operation_id: operationId }),
+      });
+      return value === null ? null : Operation.parse(value);
+    } catch (error) {
+      if (
+        error instanceof ExecutorError &&
+        [
+          "operation.executor_invalid",
+          "operation.kind_unavailable",
+          "operation.child_unproven",
+        ].includes(error.code)
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  async child(
+    parentId: number,
+    worker: string,
+    key: string,
+  ): Promise<ClaimedOperation> {
+    return Operation.parse(
+      await this.post(`${parentId}/children`, { worker, key }),
+    );
+  }
+  async children(parentId: number): Promise<ChildOperationReceipt[]> {
+    return z.array(ChildReceipt).parse(
+      await this.request("GET", `${parentId}/children`),
+    );
+  }
+  async receipt(
+    operationId: number,
+    key: string,
+  ): Promise<z.infer<typeof EffectReceipt>> {
+    return EffectReceipt.parse(
+      await this.request(
+        "GET",
+        `${operationId}/receipts/${encodeURIComponent(key)}`,
+      ),
+    );
+  }
+  async wait(
+    parentId: number,
+    worker: string,
+    keys: string[],
+  ): Promise<ClaimedOperation> {
+    const operation = Operation.parse(
+      await this.post(`${parentId}/wait`, { worker, keys }),
+    );
+    if (operation.id !== parentId || operation.status !== "waiting") {
+      throw new ExecutorError("operation.outcome_unknown");
+    }
+    return operation;
   }
 }
 export async function registrations(

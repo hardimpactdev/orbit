@@ -37,7 +37,7 @@ jobs:
           deno lint extensions/behaviors/operation-runner extensions/behaviors/operations
           deno fmt --check tests/fixtures/operation-executor.ts
           deno lint tests/fixtures/operation-executor.ts
-          deno test --allow-read=. extensions/behaviors/operation-runner/secret_test.ts extensions/behaviors/operations/firewall/mod_test.ts
+          deno test --allow-read=. extensions/behaviors/operation-runner/secret_test.ts extensions/behaviors/operation-runner/children_test.ts extensions/behaviors/operations/firewall/mod_test.ts
       - name: Prepare isolated Swamp environment
         shell: bash
         run: |
