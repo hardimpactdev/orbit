@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeEnrollmentPolicy;
 use App\Domain\Nodes\NodeEnrollmentRoutes;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Nodes\NodeTaskVmLifecycleOwnership;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -58,6 +59,9 @@ final readonly class AdmitNodeEnrollmentOperationAction
         $node = Node::query()->where('name', $data->name)->lockForUpdate()->first() ?? new Node(['name' => $data->name]);
         if ($node->exists && app(ProcessSwampSafety::class)->requiresSynchronous($node)) {
             throw new ResourceOperationException('node.executor_dependency', 'Executor Nodes require synchronous enrollment recovery.', 409);
+        }
+        if ($data->taskVmId !== null || $this->idempotency->parent !== null) {
+            app(NodeTaskVmLifecycleOwnership::class)->enrollment($node, $data);
         }
         $spec = $this->policy->prepare($node, $data);
         $existed = $node->exists;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\NodeEnrollmentPlan;
+use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRoleBaselinePlan;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -65,4 +66,25 @@ it('does not select a provisioning VPN as a role DNS publisher', function (): vo
 
     expect(array_column($plan, 'kind'))->not->toContain('route.private_dns_publish');
     expect($vpn->refresh()->status)->toBe(LifecycleStatus::Provisioning);
+});
+
+it('omits executor network projections from enrollment removal and restore plans', function (): void {
+    $source = FleetFixtures::node('executor-plan-source');
+    $services = FleetFixtures::node('executor-plan-services');
+    $first = FleetFixtures::node('executor-plan-worker-one');
+    $second = FleetFixtures::node('executor-plan-worker-two');
+    $ordinary = FleetFixtures::node('executor-plan-ordinary');
+    config(['dependency_detection.services_node_id' => $services->id, 'operation_executor.worker_node_ids' => [$first->id, $second->id]]);
+    $plans = [
+        app(NodeEnrollmentPlan::class)->build($source, ['mode' => 'linux', 'roleless_operator' => true],
+            ['route_changes' => [], 'roles' => [], 'settings_provided' => false, 'task_vm_id' => null]),
+        app(NodeRemovalPlan::class)->build($source, true),
+        app(NodeRemovalPlan::class)->restore($source),
+    ];
+
+    foreach ($plans as $plan) {
+        $targets = array_column(array_values(array_filter($plan, static fn (array $step): bool => ($step['kind'] ?? null) === 'node.network_projection')), 'node_id');
+        expect($targets)->not->toContain($services->id, $first->id, $second->id);
+        expect($targets)->toContain($ordinary->id);
+    }
 });

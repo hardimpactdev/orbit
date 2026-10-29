@@ -10,7 +10,9 @@ use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -74,6 +76,10 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
     public function beforeRun(Operation $operation, array $run): void
     {
         $this->input($operation, $run);
+        if ($operation->kind === 'node.network_projection' && $run['transport'] === 'agent'
+            && app(ProcessSwampSafety::class)->requiresSynchronous(Node::query()->findOrFail($operation->node_id))) {
+            throw new ResourceOperationException('node.executor_dependency', 'Executor Nodes require synchronous network recovery.', 409);
+        }
         if ($run['key'] === 'node-lifecycle-result') {
             $this->result($operation);
         }

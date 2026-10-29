@@ -265,3 +265,29 @@ function wireguard_configuration_fixture(): array
 
     return [$settings, $peer, $gateway];
 }
+
+it('never reintroduces a departing peer during concurrent hub renders and restores it on rollback', function (): void {
+    $orbitHome = wireguard_configuration_home();
+    try {
+        [$settings, $departing, $hub] = wireguard_configuration_fixture();
+        $vpn = new VpnConfigurationRepository($settings, $orbitHome)->forPeer($departing);
+        $renderer = new WireGuardServerConfigRenderer;
+        $departing->update(['status' => 'removing']);
+        $arrival = Node::query()->create(['name' => 'enrolling-peer', 'public_ssh_host' => '192.0.2.50',
+            'wireguard_ip' => '10.44.0.50', 'wireguard_public_key' => 'ARRIVING_PUBLIC', 'status' => 'provisioning']);
+
+        foreach ([false, true] as $swamp) {
+            $rendered = $swamp
+                ? $renderer->renderForHub($hub, $vpn->serverAddress, $vpn->port, $vpn->serverPrivateKey, Node::query()->get())
+                : $renderer->render($vpn, Node::query()->get());
+            expect($rendered)->not->toContain('PublicKey = PEER_PUBLIC');
+            expect($rendered)->toContain('PublicKey = ARRIVING_PUBLIC');
+        }
+        expect($departing->fresh()->wireguard_public_key)->toBe('PEER_PUBLIC');
+        $departing->update(['status' => 'active']);
+        expect($renderer->render($vpn, Node::query()->get()))->toContain('PublicKey = PEER_PUBLIC', 'PublicKey = ARRIVING_PUBLIC');
+        $this->assertModelExists($arrival);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});

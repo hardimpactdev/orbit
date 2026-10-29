@@ -15,7 +15,7 @@ use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
 
-function networkProjectionFixture($test, string $phase = 'prune', ?string $owningKind = null): array
+function networkProjectionFixture($test, string $phase = 'prune', ?string $owningKind = null, bool $executor = false): array
 {
     $cluster = Cluster::query()->create(['name' => 'projection', 'state' => 'active']);
     $hub = FleetFixtures::node('projection-hub', [RoleName::Vpn]);
@@ -44,6 +44,14 @@ function networkProjectionFixture($test, string $phase = 'prune', ?string $ownin
         'input' => ['_node_plan' => [['type' => 'child', ...$intent, 'optional' => false]]], 'state' => ['child_intents' => [$intent]],
         'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
     expect(app(SwampOperationExecutor::class)->claim($parentKind, 'projection-parent', $worker->id, $parent->id)?->id)->toBe($parent->id);
+    if ($executor) {
+        config(['operation_executor.worker_node_ids' => [$router->id]]);
+        $test->postJson('/api/v1/operation-executor/'.$parent->id.'/children', ['worker' => 'projection-parent', 'key' => $intent['key']])
+            ->assertConflict()->assertJsonPath('error.code', 'node.executor_dependency');
+        expect($parent->children()->exists())->toBeFalse();
+
+        return [$parent, null, $router, $context, $other, $hub];
+    }
     $id = $test->postJson('/api/v1/operation-executor/'.$parent->id.'/children', ['worker' => 'projection-parent', 'key' => $intent['key']])
         ->assertAccepted()->json('data.id');
     $child = Operation::query()->findOrFail($id);
@@ -109,4 +117,18 @@ it('refuses a projection result until native firewall matching is proven', funct
         'name' => $step['name'], 'transport' => 'agent', 'input' => $step['input'], 'result' => ['matches' => false]]]]]);
 
     expect(fn () => app(NodeLifecycleOperationExecution::class)->result($child))->toThrow(ResourceOperationException::class);
+});
+
+it('refuses an executor target at network child admission', function (): void {
+    networkProjectionFixture($this, executor: true);
+});
+
+it('fences an already prepared projection if its serving Node becomes an executor', function (): void {
+    [, $child, $router] = networkProjectionFixture($this);
+    config(['operation_executor.worker_node_ids' => [$router->id]]);
+    $execution = app(NodeLifecycleOperationExecution::class);
+    $run = array_find($execution->context($child)['descriptors'], static fn (array $descriptor): bool => $descriptor['transport'] === 'agent');
+
+    expect(fn () => $execution->beforeRun($child, $run))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.executor_dependency'));
 });

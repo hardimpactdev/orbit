@@ -253,4 +253,8 @@ if (! OperationKinds::supports('children') || ! OperationKinds::supports('childr
     unset($nodeKinds['node.role_add'], $nodeKinds['node.role_converge'], $nodeKinds['node.role_remove'], $nodeKinds['node.role_relocate'], $nodeKinds['node.role_relocate_source'], $nodeKinds['node.role_relocate_target']);
 }
 
+if (! OperationKinds::supports('children')) {
+    unset($nodeKinds['node.enrollment_restore'], $nodeKinds['node.removal_restore'], $nodeKinds['node.network_converge']);
+}
+
 return [...$nodeKinds, ...require __DIR__.'/node-bootstrap-kinds.php'];
