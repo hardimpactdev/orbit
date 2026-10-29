@@ -51,6 +51,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         $descriptors = match ($operation->kind) {
             'instance.create' => $this->create($operation),
             'instance.rename' => [$this->inspect($operation, 'rename-inspect')],
+            'instance.register' => app(RegistrationLifecycleExecution::class)->descriptors($operation),
             'instance.destroy' => app(RemovalLifecycleExecution::class)->descriptors($operation),
             default => throw $this->forbidden(),
         };
@@ -133,6 +134,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             $this->proven($operation, $key);
         }
         match ($operation->kind) {
+            'instance.register' => app(RegistrationLifecycleExecution::class)->beforeRun($operation, $run),
             'instance.destroy' => app(RemovalLifecycleExecution::class)->beforeRun($operation, $run),
             default => null,
         };
@@ -187,6 +189,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         if (in_array($run['key'], ['source-profile', 'clone-source-profile'], true)) {
             return $this->classifyProfile($operation, $run['transport'] === 'gateway' ? ['kind' => 'none'] : $receipt);
         }
+        if ($operation->kind === 'instance.register') {
+            return app(RegistrationLifecycleExecution::class)->received($operation, $run, $receipt);
+        }
         if ($operation->kind === 'instance.destroy') {
             return app(RemovalLifecycleExecution::class)->received($operation, $run, $receipt);
         }
@@ -208,6 +213,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
+        if ($operation->kind === 'instance.register' && $outcome->status !== OperationStatus::Succeeded) {
+            app(RegistrationLifecycleExecution::class)->assertFailure($operation, $outcome);
+        }
         if ($outcome->status === OperationStatus::Succeeded) {
             $this->assertEvidence($operation);
             $this->proven($operation, 'lifecycle-finish');
@@ -272,6 +280,15 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             $this->assertStepList($operation, 'setup');
         } elseif ($operation->kind === 'instance.rename' && $input['domain'] !== null) {
             $this->assertChild($operation, 'route-update', 'route.update');
+        } elseif ($operation->kind === 'instance.register') {
+            foreach (InstanceLifecycleInput::members($input) as $member) {
+                if ($member['route_id'] !== null) {
+                    $this->assertChild($operation, 'route-'.ValidatedData::integer($member['instance_id']), 'route.converge');
+                }
+            }
+            if ($input['run_setup'] === true) {
+                $this->assertStepList($operation, 'setup');
+            }
         } elseif ($operation->kind === 'instance.destroy') {
             $intent = app(RemovalLifecycleExecution::class)->intent($operation);
             foreach (ValidatedData::integerList($intent['additional_route_ids']) as $route) {

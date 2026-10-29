@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Registration;
 
-use App\Models\Instance;
 use App\Models\Node;
 
 interface RegistrationSourceManager
@@ -19,17 +18,4 @@ interface RegistrationSourceManager
         RegistrationSourceFacts $facts,
         string $candidatePath,
     ): void;
-
-    public function relocate(Instance $instance, RegistrationSourceFacts $facts): void;
-
-    /** @param list<array{instance: Instance, facts: RegistrationSourceFacts}> $members */
-    public function relocateSet(array $members): void;
-
-    public function restoreOriginal(Instance $instance, RegistrationSourceFacts $facts): void;
-
-    public function prepareLaravelRollback(Instance $instance): void;
-
-    public function restoreLaravelConfiguration(Instance $instance): void;
-
-    public function discardLaravelRollback(Instance $instance): void;
 }

@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -42,6 +43,7 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
         return match ($input['action']) {
             'configuration' => ['written' => true],
             'activate' => $this->activate($operation),
+            'registration-activate' => $this->registrationActivate($operation, ValidatedData::integer($input['instance_id'])),
             'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
             'database-intent' => app(InstanceDatabaseIntent::class)->record($operation),
             'finish' => $this->finish($operation),
@@ -55,6 +57,18 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
         $this->state->activated($operation, true);
 
         return ['activated' => true];
+    }
+
+    /** @return array<string, mixed> */
+    private function registrationActivate(Operation $operation, int $id): array
+    {
+        if (! in_array($id, array_column(InstanceLifecycleInput::members($operation->input), 'instance_id'), true)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The Instance is outside the admitted registration set.', 422);
+        }
+        Instance::query()->whereKey($id)->update(['status' => InstanceState::Active, 'provisioning_step' => 'active',
+            'registration_completed_at' => now(), 'failed_step' => null, 'error_code' => null]);
+
+        return ['activated' => true, 'instance_id' => $id];
     }
 
     /** @return array<string, mixed> */
@@ -81,6 +95,9 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
         $result = ['lifecycle_complete' => true, 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'name' => $instance->name,
             'status' => $instance->refresh()->status->value, 'branch' => $instance->branch,
             'created' => $operation->input['created'] ?? false, 'name_converted_from' => $operation->input['name_converted_from'] ?? null];
+        if ($operation->kind === 'instance.register') {
+            $result['instance_ids'] = array_column(InstanceLifecycleInput::members($operation->input), 'instance_id');
+        }
 
         return $result;
     }

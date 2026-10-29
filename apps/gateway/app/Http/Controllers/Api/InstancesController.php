@@ -13,7 +13,6 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
-use App\Data\Instances\InstanceRegistrationData;
 use App\Data\Instances\InstanceRemovalData;
 use App\Data\Operations\OperationData;
 use App\Domain\Processes\ProcessSwampSafety;
@@ -60,25 +59,16 @@ final class InstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Caller)]
+    #[StartsOperation('instance.register')]
     public function register(RegisterInstanceRequest $request, RegisterInstanceAction $action): JsonResponse
     {
         $caller = $request->user();
         assert($caller instanceof Node);
-        $result = $action->execute($caller, $request->payload());
-        $request->attributes->set('orbit.instance_registration', $result['primary']);
-        $request->route()?->setParameter('instance', $result['primary']);
+        $operation = $action->execute($caller, $request->payload(), $request->attributes->getString('orbit.request_id'));
+        $primary = Instance::query()->findOrFail($operation->target_id);
+        $request->attributes->set('orbit.instance_registration', $primary);
 
-        return response()->json(
-            [
-                'data' => InstanceRegistrationData::fromModels(
-                    $result['project'],
-                    $result['primary'],
-                    $result['instances'],
-                    $result['name_converted_from'],
-                )->toArray(),
-                'meta' => $this->meta($request),
-            ],
-        );
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]

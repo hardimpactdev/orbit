@@ -21,6 +21,11 @@ return (static function (): array {
             $agent('instance.inspect-development-profile'), $url,
         ],
         'rename' => [$agent('instance.inspect-development-source')],
+        'register' => [
+            $agent('instance.relocate-registration-source'),
+            $agent('instance.laravel-registration-receipt'),
+            $agent('instance.inspect-development-profile'), $url,
+        ],
         'destroy' => [
             $agent('instance.prepare-source-removal'),
             $agent('instance.finalize-source-removal', $git),
@@ -30,6 +35,7 @@ return (static function (): array {
     $children = [
         'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
         'rename' => ['route.update'],
+        'register' => ['route.converge', 'instance.run_steps'],
         'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];
     $kinds = [];
