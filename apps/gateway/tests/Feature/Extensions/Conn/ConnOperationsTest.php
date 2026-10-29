@@ -293,3 +293,22 @@ it('refuses stale hydrated credentials or cleanup revisions before reading or re
     expect($command->run($operation, $input))->toBe(['error_code' => 'conn.environment_changed']);
     Http::assertNothingSent();
 });
+
+it('records an invalid clients read as a terminal inspection failure without revoking anything', function (): void {
+    $this->environment->update(['cleanup_version' => 1]);
+    Http::fake(['http://dev.test/api/auth/clients' => Http::response('<!doctype html><title>Conn</title>', 200, ['Content-Type' => 'text/html'])]);
+    $operation = conn_revocation_admit($this, cleanup: true);
+    $path = '/api/v1/operation-executor/'.$operation->id;
+    $run = ['worker' => 'conn-h', 'key' => 'revocation-inspect', 'transport' => 'gateway', 'name' => 'conn.revocation',
+        'input' => ['environment' => $operation->input['environment'], 'action' => 'inspect', 'id' => '']];
+    $result = $this->postJson($path.'/run', $run)->assertOk()->assertJsonPath('data.error_code', 'conn.response_invalid')->json('data');
+    $this->postJson($path.'/run', $run)->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($path.'/step', ['worker' => 'conn-h', 'key' => 'inspect.failed', 'name' => 'revocation-inspect',
+        'status' => 'failed', 'result' => $result, 'error_code' => 'conn.response_invalid'])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'conn-h', 'status' => 'failed', 'result' => $result,
+        'error_code' => 'conn.response_invalid'])->assertOk()->assertJsonPath('data.status', 'failed');
+    expect($operation->fresh()->lock_key)->toBeNull()
+        ->and($this->environment->fresh()->cleanup_completed_version)->toBe(0);
+    Http::assertSentCount(1);
+    Http::assertNotSent(static fn (HttpRequest $request): bool => $request->method() === 'POST');
+});
