@@ -328,7 +328,7 @@ A caller sends only the Node, the manager, the package name, and an optional ver
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). Use explicit [adoption](#adopt-a-tool) to take ownership.
 
-When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
+When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. Nonempty Homebrew version lists are validated one value at a time; a valid installed version remains verifiable during fleet recipe checks. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
 
 A new install records its Operation, installs the package, and reads the installed version. A success records the Tool as `installed` and reports `applied`. A package-phase failure retains a `failed` Tool, so the same command can retry it or removal can drop it. A manager failure creates no Tool. List Tools to find the retained record. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
