@@ -30,6 +30,8 @@ Package planning receives only the sanitized manifest/lockfile tree and the exis
 
 ## Failure states and diagnostics
 
+Treat the GitHub token as a bounded RFC 6750 bearer value, including signed tokens with periods and hyphens. Reject whitespace and control characters. Do not assume GitHub tokens contain only letters, digits and underscores.
+
 Capture Git/gh stderr privately and classify it into fixed codes: `token_missing`, `token_refused`, `token_unavailable`, `token_invalid`, `git_auth_failed`, `git_repository_unavailable`, `git_transport_failed`, `git_failed`, `gh_auth_failed`, `gh_lookup_failed`, `command_timeout`, or `command_aborted`. Unknown stderr maps to the generic command code. Settings preflight failures use `project_settings_unavailable`; unexpected scan failures use `scan_failed`. Never persist raw stderr, upstream messages, URLs containing credentials or token substrings. The bounded diagnostics resource records Project ID, run ID, stage, code and nullable exit status, including when the scan throws. Tests inject secret-bearing stderr to prove this boundary.
 
 Acquisition failures retain the existing `source_acquisition_failed` source outcome and last-good report pointers, with the detailed safe code in step output. PR failures publish `batch_pr.status: unknown`, a safe error code, and retained last-success time/value; they never prove absence or crash the workflow. Token failure before either operation yields both unavailable source and unknown PR evidence. Success still requires authoritative group/publish evidence and a successful GitHub lookup. The frozen v1 fixtures, limits and freshness rules stay unchanged.

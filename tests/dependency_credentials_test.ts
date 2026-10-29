@@ -55,6 +55,42 @@ Deno.test("token contract validates scope and expiry and safely classifies refus
     );
   }
 });
+Deno.test("signed GitHub App bearer tokens are accepted without exposing their value", async () => {
+  const signed = {
+    ...credential(),
+    token: "ghs_header.payload-with-hyphens.signature",
+  };
+  const actual = await dependencyCredential(
+    project,
+    () => Promise.resolve({ status: 200, body: { data: signed } }),
+  );
+  assertEquals(actual, signed);
+});
+Deno.test("bearer tokens reject whitespace controls and non-ASCII characters", async () => {
+  for (
+    const token of [
+      "ghs_value\n",
+      "ghs_\rvalue",
+      "ghs_ value",
+      "ghs_\tvalue",
+      "ghs_\0value",
+      "ghs_é",
+      "ghs_value?query",
+      "ghs_value=middle",
+    ]
+  ) {
+    await assertRejects(
+      () =>
+        dependencyCredential(project, () =>
+          Promise.resolve({
+            status: 200,
+            body: { data: { ...credential(), token } },
+          })),
+      CredentialFailure,
+      "token_invalid",
+    );
+  }
+});
 Deno.test("Git gets a host-bound askpass token without putting it in argv or the clone", async () => {
   const root = await Deno.makeTempDir(), old = Deno.env.get("PATH")!;
   try {

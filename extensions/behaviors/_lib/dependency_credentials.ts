@@ -23,7 +23,7 @@ const TokenSchema = z.strictObject({
   project_id: z.number().int().positive(),
   repository: z.string(),
   clone_url: z.string(),
-  token: z.string().min(1).max(4096).regex(/^[A-Za-z0-9_]+$/),
+  token: z.string().min(1).max(4096).regex(/^[A-Za-z0-9._~+\/-]+=*$/),
   expires_at: z.string().datetime(),
 });
 export type Credential = z.infer<typeof TokenSchema>;
