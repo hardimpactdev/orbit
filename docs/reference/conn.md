@@ -132,7 +132,7 @@ Registering again replaces the stored session. The job registers on each server 
 
 ## Pairing and revocation
 
-A device asks the Gateway for a pairing link to one registered T3 server. The Gateway calls `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
+A device asks the Gateway for a pairing link to one registered T3 server. Swamp invokes the keyed Gateway primitive for `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
 
 The device opens the returned `pairing_url` and pairs as it does today, but without a manual step. The link is one-time and short-lived, so the device pairs right away.
 
@@ -210,7 +210,9 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Pairing Operations
 
-Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path creates no Operation and stores no credential. Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Swamp executes the fixed Conn command through the Gateway executor. The Gateway resolves the stored environment session after checking the Operation's owner. A successful pairing stores its one-time credential encrypted on the pairing record through the executor's secret-output contract. Operation receipts contain safe identifiers and a stored-secret reference only.
+Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path admits the same Swamp Operation and waits for up to 30 seconds. Success returns the existing HTTP 201 shape and consumes the encrypted one-time credential. A timeout returns HTTP 504 with `conn.pairing_pending` and `details.operation_id`; follow that Operation rather than creating a second pairing. Failed or cancelled Operations return HTTP 502 with their error code and Operation ID. 
+
+Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Swamp executes the fixed Conn command through the Gateway executor. The Gateway resolves the stored environment session after checking the Operation's owner. A successful pairing stores its one-time credential encrypted on the pairing record through the executor's secret-output contract. Operation receipts contain safe identifiers and a stored-secret reference only.
 
 After creation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
 

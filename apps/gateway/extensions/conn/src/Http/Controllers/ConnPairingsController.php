@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
 use App\Data\Operations\OperationData;
+use App\Domain\Operations\AwaitOperation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Operations\StartsOperation;
@@ -43,20 +45,30 @@ final class ConnPairingsController extends Controller
     }
 
     #[StartsOperation('conn.pairing_create', bindCaller: true)]
-    public function store(IssueConnPairingRequest $request, ConnEnvironment $environment, IssueConnPairingAction $action): JsonResponse
+    public function store(IssueConnPairingRequest $request, ConnEnvironment $environment, IssueConnPairingAction $action, AwaitOperation $await): JsonResponse
     {
         $node = $request->user();
         assert($node instanceof Node, description: 'Authenticated peer must be a Node.');
 
-        if (! $request->boolean('async')) {
-            return response()->json(['data' => $action->execute($node, $environment)->toArray(),
-                'meta' => $this->meta($request)], 201)->header('Cache-Control', 'no-store');
+        $operation = $action->admit($node, $environment);
+        if ($request->boolean('async')) {
+            return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+        }
+        try {
+            $operation = $await->execute($operation, 30);
+        } catch (ResourceOperationException $error) {
+            if ($error->errorCode !== 'operation.await_timeout') {
+                throw $error;
+            }
+            throw new ResourceOperationException('conn.pairing_pending', 'Pairing is still running. Follow the existing Operation before creating another pairing.', 504,
+                details: ['operation_id' => $operation->id]);
+        }
+        if ($operation->status !== OperationStatus::Succeeded) {
+            throw new ResourceOperationException($operation->error_code ?? 'conn.pairing_cancelled', 'The pairing Operation did not succeed. Read its steps.', 502,
+                details: ['operation_id' => $operation->id]);
         }
 
-        return response()->json([
-            'data' => OperationData::fromModel($action->admit($node, $environment))->toArray(),
-            'meta' => $this->meta($request),
-        ], 202);
+        return $this->pairing($request, $environment, ConnPairing::query()->findOrFail($operation->target_id), 201);
     }
 
     #[StartsOperation('conn.pairing_revoke', bindCaller: true)]
@@ -72,6 +84,11 @@ final class ConnPairingsController extends Controller
     }
 
     public function show(Request $request, ConnEnvironment $environment, ConnPairing $pairing): JsonResponse
+    {
+        return $this->pairing($request, $environment, $pairing, 200);
+    }
+
+    private function pairing(Request $request, ConnEnvironment $environment, ConnPairing $pairing, int $status): JsonResponse
     {
         $caller = RequireActiveWireGuardPeer::activePeer($request);
         if (! $caller instanceof Node) {
@@ -99,7 +116,7 @@ final class ConnPairingsController extends Controller
         });
         abort_unless($issued instanceof IssuedConnPairingData, 409);
 
-        return response()->json(['data' => $issued->toArray(), 'meta' => $this->meta($request)])->header('Cache-Control', 'no-store');
+        return response()->json(['data' => $issued->toArray(), 'meta' => $this->meta($request)], $status)->header('Cache-Control', 'no-store');
     }
 
     /** @return array{request_id: string} */

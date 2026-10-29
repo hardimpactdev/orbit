@@ -7,7 +7,6 @@ namespace Orbit\Extensions\Vault\Actions;
 use Illuminate\Support\Facades\Config;
 use Orbit\Extensions\Vault\Data\VaultStatusData;
 use Orbit\Extensions\Vault\Domain\DatabaseCredentialCatalog;
-use Orbit\Extensions\Vault\Domain\VaultPlan;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
 
@@ -29,7 +28,15 @@ final readonly class ShowVaultStatusAction
 
         $catalog = $this->catalog->build();
         $published = VaultItem::query()->get();
-        $plan = VaultPlan::for($configuration, $catalog['items'], $published, Config::string('app.key'));
+        $fingerprints = [];
+        foreach ($catalog['items'] as $source => $item) {
+            $fingerprints[$source] = $item->fingerprint($configuration->organizationId, $configuration->collectionId, Config::string('app.key'));
+        }
+        $recorded = [];
+        foreach ($published as $item) {
+            $recorded[$item->source] = $item->fingerprint;
+        }
+        $pending = count(array_diff_assoc($fingerprints, $recorded)) + count(array_diff_key($recorded, $fingerprints));
 
         return new VaultStatusData(
             configured: true,
@@ -38,7 +45,7 @@ final readonly class ShowVaultStatusAction
             organization: ['id' => $configuration->organizationId, 'name' => $configuration->organizationName],
             collection: ['id' => $configuration->collectionId, 'name' => $configuration->collectionName],
             items: $published->count(),
-            pending: $plan->pending(),
+            pending: $pending,
             skipped: $catalog['skipped'],
             lastSyncedAt: $this->settings->lastSyncedAt(),
             lastError: $this->settings->lastError(),

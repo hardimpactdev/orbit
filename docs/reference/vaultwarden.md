@@ -99,7 +99,7 @@ One failed change does not stop the others. The run records its error, keeps tha
 | `email` | The Gateway account's email. |
 | `organization`, `collection` | Each an object with `id` and `name`. |
 | `items` | The number of published items. |
-| `pending` | The number of wanted items that are not published or not current. |
+| `pending` | The number of new or changed credential intents plus ledger records whose source no longer exists. This local count does not plan remote writes. |
 | `skipped` | Each source that gets no item: `source`, `slug`, `username`, and `reason` (`incomplete` or `password_unknown`). |
 | `last_synced_at` | When a run last finished without an error, or null. |
 | `last_error` | The `code` and `message` of the last failed run or item, or null. |

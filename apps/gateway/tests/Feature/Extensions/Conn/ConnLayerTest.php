@@ -11,7 +11,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
-use Orbit\Extensions\Conn\Models\ConnPairing;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 use Orbit\Extensions\Conn\Models\ConnProfileBinding;
 
@@ -739,47 +738,6 @@ describe('environment registration', function (): void {
 });
 
 describe('pairing', function (): void {
-    it('keeps the synchronous pairing reply without an Operation', function (bool $explicit): void {
-        Http::preventStrayRequests();
-        Http::fake([
-            CONN_LAYER_SERVER.'/api/auth/pairing-token' => Http::response([
-                'id' => 'link-1',
-                'credential' => 'device-pairing-token',
-                'label' => 'ignored',
-                'expiresAt' => '2026-10-08T12:05:00.000Z',
-            ]),
-        ]);
-        conn_layer_environment();
-
-        $response = $this->postJson('/api/v1/conn/environments/env-beast/pairings', $explicit ? ['async' => false] : [])
-            ->assertCreated()
-            ->assertJsonPath('data.pairing_url', CONN_LAYER_SERVER.'/pair#token=device-pairing-token')
-            ->assertJsonPath('data.pairing.environment_id', 'env-beast')
-            ->assertJsonPath('data.pairing.node_name', 'phone')
-            ->assertJsonPath('data.pairing.revoked_at', null);
-
-        $pairing = ConnPairing::query()->sole();
-        expect(Operation::query()->count())->toBe(0);
-        expect($pairing->credential)->toBeNull();
-        expect($pairing->pairing_link_id)->toBe('link-1')
-            ->and($pairing->client_label)->toStartWith('phone via Orbit ')
-            ->and($response->json('data.pairing.client_label'))->toBe($pairing->client_label);
-        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/pairing-token'
-            && $request->hasHeader('Authorization', 'Bearer admin-session-token')
-            && $request['label'] === $pairing->client_label
-            && in_array('access:read', $request['scopes'], true)
-            && in_array('access:write', $request['scopes'], true)
-            && ! in_array('review:write', $request['scopes'], true));
-
-        $this->getJson('/api/v1/conn/environments/env-beast/pairings')
-            ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonMissingPath('data.0.pairing_link_id')
-            ->assertJsonPath('data.0.client_label', $pairing->client_label);
-        expect(Activity::query()->where('command', 'conn:pairing:create')->value('caller_ip'))->toBe(CONN_LAYER_PHONE);
-        expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('device-pairing-token');
-    })->with([false, true]);
-
     it('refuses to mint with an expired admin session', function (): void {
         Http::preventStrayRequests();
         conn_layer_environment(['admin_session_expires_at' => Carbon::now()->subMinute()]);
@@ -788,16 +746,6 @@ describe('pairing', function (): void {
             ->assertStatus(409)
             ->assertJsonPath('error.code', 'conn.session_expired');
         $this->getJson('/api/v1/conn/environments')->assertJsonPath('data.0.status', 'session_expired');
-    });
-
-    it('reports an unreachable T3 server', function (): void {
-        Http::fake([CONN_LAYER_SERVER.'/*' => Http::failedConnection()]);
-        conn_layer_environment();
-
-        $this->postJson('/api/v1/conn/environments/env-beast/pairings')
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'conn.server_unreachable');
-        expect(ConnPairing::query()->count())->toBe(0);
     });
 
     it('answers 404 for an environment that never registered', function (): void {
