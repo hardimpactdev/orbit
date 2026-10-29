@@ -10,7 +10,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\DatabaseServer;
 use Closure;
-use Illuminate\Support\Sleep;
 use Predis\Client;
 use Throwable;
 
@@ -26,24 +25,7 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
 
     private const float READ_WRITE_TIMEOUT_SECONDS = 10.0;
 
-    private const int READY_POLL_SECONDS = 2;
-
     public function __construct(private CommandDeadline $deadline) {}
-
-    public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool
-    {
-        $deadline = now()->addSeconds($timeoutSeconds);
-
-        while (! $this->acceptsAdminLogin($server)) {
-            if (now()->greaterThanOrEqualTo($deadline)) {
-                return false;
-            }
-
-            Sleep::for(self::READY_POLL_SECONDS)->seconds();
-        }
-
-        return true;
-    }
 
     public function acceptsAdminLogin(DatabaseServer $server): bool
     {

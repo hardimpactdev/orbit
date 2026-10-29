@@ -101,26 +101,6 @@ final readonly class ValkeyProcessAdoption
         return ['process' => $process, 'connection' => $connection, 'port' => $port];
     }
 
-    /** The connection to link when an adoption finishes: the redis connection that holds the admin password. */
-    public function connection(DatabaseServer $server, string $connectionSlug): DatabaseConnection
-    {
-        $connection = DatabaseConnection::query()->where('slug', $connectionSlug)->first();
-
-        if (
-            ! $connection instanceof DatabaseConnection
-            || $connection->driver !== DatabaseDriver::Redis
-            || ($server->default_open ? filled($connection->password) : $connection->password !== $server->root_password)
-            || $connection->host !== $server->node->wireguard_ip
-            || ($connection->port ?? 6379) !== $server->port
-            || ! in_array($connection->username, [null, 'default'], true)
-            || ($connection->database_server_id !== null && $connection->database_server_id !== $server->id)
-        ) {
-            throw self::refused("Database connection [{$connectionSlug}] does not hold the admin password of Database server [{$server->slug}].");
-        }
-
-        return $connection;
-    }
-
     public static function assertUnowned(Process $process): void
     {
         $owner = DatabaseServer::query()->where('process_id', $process->id)->first();
