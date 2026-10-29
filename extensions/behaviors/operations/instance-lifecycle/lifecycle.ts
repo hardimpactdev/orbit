@@ -1,5 +1,10 @@
 import { z } from "npm:zod@4.4.3";
-import { type Failure, StepListResult } from "./contract.ts";
+import {
+  canRemoveAfterRollbackTeardown,
+  canRollbackSetup,
+  type Failure,
+  StepListResult,
+} from "./contract.ts";
 import type { Completion, Receipt, Session } from "./runtime.ts";
 export type { Child, Completion, Receipt, Session } from "./runtime.ts";
 
@@ -36,6 +41,18 @@ async function finish(s: Session): Promise<Receipt> {
   return await run(s, "lifecycle-finish");
 }
 
+async function route(
+  s: Session,
+  instanceId: number,
+  routeId: unknown,
+  key = "route-converge",
+): Promise<void> {
+  if (routeId === null || routeId === undefined) return;
+  await child(s, key, "route.converge", s.nodeId, {
+    route_id: z.number().int().positive().parse(routeId),
+    instance_id: instanceId,
+  });
+}
 async function steps(
   s: Session,
   phase: "setup" | "teardown",
@@ -65,6 +82,32 @@ async function steps(
 function list(input: Receipt, field: string): Receipt[] {
   return z.array(z.record(z.string(), z.unknown())).parse(input[field]);
 }
+async function removeFailedCreate(s: Session, id: number): Promise<void> {
+  await child(s, "rollback-removal", "instance.destroy", s.nodeId, {
+    instance_id: id,
+    force: true,
+  });
+}
+
+function mayCleanupRefusal(error: Refused): boolean {
+  if (
+    typeof error.result.outcome === "string" &&
+    !["failed", "missing"].includes(error.result.outcome)
+  ) return false;
+  return ![
+    "operation.cancelled",
+    "instance.lifecycle_busy",
+    "instance.source_busy",
+    "operation.execution_uncertain",
+    "operation.execution_busy",
+    "operation.execution_failed",
+    "operation.outcome_unknown",
+    "operation.receipt_unavailable",
+    "operation.child_unproven",
+    "operation.lease_lost",
+  ].includes(error.code);
+}
+
 async function rename(s: Session): Promise<Receipt> {
   await run(s, "rename-inspect");
   if (s.input.domain !== null) {
@@ -124,21 +167,31 @@ async function destroy(s: Session): Promise<Receipt> {
     );
     await run(s, `removal-${id}-route-clear`);
     await run(s, `removal-${id}-source-finalize`);
-    await run(s, `removal-${id}-runtime-intent`);
-    await child(
-      s,
-      `remove-processes-${id}`,
-      "process.instance_runtime",
-      s.nodeId,
-      { instance_id: id, action: "remove" },
-    );
-    await child(
-      s,
-      `remove-schedules-${id}`,
-      "schedule.instance_runtime",
-      s.nodeId,
-      { instance_id: id, action: "remove" },
-    );
+    const runtime = await run(s, `removal-${id}-runtime-intent`);
+    for (
+      const processId of z.array(z.number().int().positive()).parse(
+        runtime.process_ids,
+      )
+    ) {
+      await child(
+        s,
+        `remove-process-${id}-${processId}`,
+        "process.destroy",
+        s.nodeId,
+        { process_id: processId },
+      );
+    }
+    for (
+      const scheduleId of z.array(z.string().uuid()).parse(runtime.schedule_ids)
+    ) {
+      await child(
+        s,
+        `remove-schedule-${id}-${scheduleId}`,
+        "schedule.destroy",
+        s.nodeId,
+        { id: scheduleId },
+      );
+    }
     await child(
       s,
       `cleanup-instance-${id}`,
@@ -161,10 +214,214 @@ async function destroy(s: Session): Promise<Receipt> {
   return await finish(s);
 }
 
+async function create(s: Session): Promise<Receipt> {
+  const id = number(s.input, "instance_id");
+  const ownedActivation = s.input.initial_status !== "active";
+  if (
+    s.input.initial_status === "active" && s.input.first_setup_pending === false
+  ) {
+    await run(s, "source-inspect");
+    return await finish(s);
+  }
+  try {
+    if (ownedActivation) {
+      await run(s, "source-prepare");
+      await run(s, "source-inspect");
+      await run(s, "source-resolve");
+      await run(s, "source-profile");
+      await run(s, "source-configuration");
+      await child(
+        s,
+        "environment-sync",
+        "instance.sync_environment",
+        s.nodeId,
+        { instance_id: id },
+      );
+      await child(
+        s,
+        "vp-environment",
+        "instance.prepare_vp_environment",
+        s.nodeId,
+        { instance_id: id },
+      );
+      await route(s, id, s.input.route_id);
+      await run(s, "instance-activate");
+    } else {
+      await run(s, "source-inspect");
+    }
+  } catch (error) {
+    if (
+      error instanceof Refused && ownedActivation && mayCleanupRefusal(error)
+    ) {
+      await removeFailedCreate(s, id);
+    }
+    throw error;
+  }
+  try {
+    if (
+      s.input.database_server_id !== null ||
+      s.input.database_clone_source_id !== null
+    ) {
+      await run(s, "database-intent");
+      const kind = s.input.database_clone_source_id !== null
+        ? "database.clone"
+        : "database.create";
+      await child(s, "database", kind, s.nodeId, {
+        instance_id: id,
+      });
+      await child(
+        s,
+        "database-environment-sync",
+        "instance.sync_environment",
+        s.nodeId,
+        {
+          instance_id: id,
+        },
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof Refused && ownedActivation && mayCleanupRefusal(error)
+    ) {
+      await removeFailedCreate(s, id);
+    }
+    throw error;
+  }
+  const failure = await steps(s, "setup", id, s.input.setup_digest);
+  if (failure !== null) {
+    if (canRollbackSetup(failure, ownedActivation)) {
+      const teardown = await steps(
+        s,
+        "teardown",
+        id,
+        s.input.teardown_digest,
+        "rollback-teardown",
+      );
+      if (teardown?.outcome === "busy") {
+        throw new Refused(teardown.error_code, {
+          outcome: teardown.outcome,
+          instance_id: id,
+        });
+      }
+      if (canRemoveAfterRollbackTeardown(teardown)) {
+        await removeFailedCreate(s, id);
+      }
+    }
+    throw new Refused(failure.error_code, {
+      outcome: failure.outcome,
+      instance_id: id,
+    });
+  }
+  return await finish(s);
+}
+
+async function register(s: Session): Promise<Receipt> {
+  for (
+    const key of [
+      "registration-relocate-prepare",
+      "registration-relocate-cleanup",
+    ]
+  ) {
+    await run(s, key);
+  }
+  for (const member of list(s.input, "members")) {
+    const id = number(member, "instance_id");
+    let receiptPrepared = false;
+    try {
+      if (member.completed !== true) {
+        await run(s, `registration-${id}-receipt-prepare`);
+        receiptPrepared = true;
+        await run(s, `registration-${id}-profile`);
+        await run(s, `registration-${id}-configuration`);
+      }
+      await route(s, id, member.route_id, `route-${id}`);
+      if (member.completed !== true) {
+        await run(s, `registration-${id}-activate`);
+      }
+    } catch (error) {
+      if (
+        receiptPrepared && error instanceof Refused && mayCleanupRefusal(error)
+      ) {
+        await run(s, `registration-${id}-receipt-restore`);
+      }
+      throw error;
+    }
+    await run(s, `registration-${id}-receipt-discard`);
+  }
+  if (s.input.run_setup === true) {
+    const failure = await steps(
+      s,
+      "setup",
+      number(s.input, "instance_id"),
+      s.input.setup_digest,
+    );
+    if (failure) {
+      throw new Refused(failure.error_code, { outcome: failure.outcome });
+    }
+  }
+  return await finish(s);
+}
+
+async function clone(s: Session): Promise<Receipt> {
+  if (s.input.initial_completed === true) return await finish(s);
+  for (
+    const key of [
+      "clone-user",
+      "clone-source-prepare",
+      "clone-source-resolve",
+      "clone-source-profile",
+      "clone-caddy-access",
+      "clone-environment",
+    ]
+  ) {
+    await run(s, key);
+  }
+  if (s.input.sqlite_source_path !== null) {
+    const prepared = await run(s, "clone-sqlite-intent");
+    if (z.boolean().parse(prepared.seed_required)) {
+      await child(s, "clone-sqlite", "database.sqlite_seed", s.nodeId, {});
+    }
+    await run(s, "clone-sqlite-attach");
+  }
+  await child(
+    s,
+    "clone-environment-sync",
+    "instance.sync_environment",
+    s.nodeId,
+    {
+      instance_id: number(s.input, "instance_id"),
+    },
+  );
+  await run(s, "clone-definitions");
+  await child(
+    s,
+    "clone-processes",
+    "process.install_instance_definitions",
+    s.nodeId,
+    {
+      instance_id: number(s.input, "instance_id"),
+    },
+  );
+  await child(
+    s,
+    "clone-schedules",
+    "schedule.install_instance_definitions",
+    s.nodeId,
+    {
+      instance_id: number(s.input, "instance_id"),
+    },
+  );
+  await route(s, number(s.input, "instance_id"), s.input.route_id);
+  return await finish(s);
+}
+
 export async function lifecycle(s: Session): Promise<Completion> {
   try {
     const execute = {
+      "instance.create": create,
       "instance.rename": rename,
+      "instance.clone": clone,
+      "instance.register": register,
       "instance.destroy": destroy,
     }[s.kind];
     if (!execute) throw new Error("Wrong instance lifecycle kind");

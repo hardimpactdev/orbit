@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   type Child,
   lifecycle,
@@ -27,7 +27,13 @@ class Fixture implements Session {
   effects = new Map<string, number>();
   loseReply: string | null = null;
   run(key: string): Promise<Receipt> {
-    return this.effect(key, this.results.get(key) ?? { instance_id: 501 });
+    return this.effect(
+      key,
+      this.results.get(key) ??
+        (key.endsWith("-runtime-intent")
+          ? { process_ids: [], schedule_ids: [] }
+          : { instance_id: 501 }),
+    );
   }
   child(child: Child): Promise<Receipt> {
     this.children.push(child);
@@ -54,6 +60,116 @@ class Fixture implements Session {
   }
 }
 
+Deno.test("create activates its Route before its database and ordered setup", async () => {
+  const f = new Fixture();
+  f.input.database_server_id = 4;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls, [
+    "source-prepare",
+    "source-inspect",
+    "source-resolve",
+    "source-profile",
+    "source-configuration",
+    "environment-sync",
+    "vp-environment",
+    "route-converge",
+    "instance-activate",
+    "database-intent",
+    "database",
+    "database-environment-sync",
+    "setup",
+    "lifecycle-finish",
+  ]);
+  assertEquals(f.children.find((c) => c.key === "setup")!.input, {
+    instance_id: 501,
+    list: "setup",
+    source: "project",
+    configuration_digest: "a".repeat(64),
+  });
+  assertEquals(
+    f.children.find((c) => c.key === "database")!.kind,
+    "database.create",
+  );
+});
+
+Deno.test("an active completed create retry never runs setup again", async () => {
+  const f = new Fixture();
+  f.input.initial_status = "active";
+  f.input.first_setup_pending = false;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls, ["source-inspect", "lifecycle-finish"]);
+});
+
+Deno.test("busy and uncertain setup keep the activated checkout", async () => {
+  for (const outcome of ["busy", "unconfirmed", "cancelled"] as const) {
+    const f = new Fixture();
+    f.results.set("setup", {
+      outcome,
+      error_code: outcome === "cancelled"
+        ? "operation.cancelled"
+        : "instance.setup_step_failed",
+      failed_step: "install",
+    });
+    const result = await lifecycle(f);
+    assertEquals(
+      result.status,
+      outcome === "cancelled" ? "cancelled" : "failed",
+    );
+    assertEquals(f.calls.includes("rollback-teardown"), false);
+    assertEquals(f.calls.includes("rollback-removal"), false);
+  }
+});
+
+Deno.test("confirmed setup failure removes only the Instance this create activated", async () => {
+  for (const initialStatus of ["reserved", "active"]) {
+    const f = new Fixture();
+    f.input.initial_status = initialStatus;
+    f.results.set("setup", {
+      outcome: "missing",
+      error_code: "instance.setup_step_unavailable",
+      failed_step: "install",
+    });
+    const result = await lifecycle(f);
+    assertEquals(result.error_code, "instance.setup_step_unavailable");
+    assertEquals(
+      f.calls.includes("rollback-teardown"),
+      initialStatus === "reserved",
+    );
+    assertEquals(
+      f.calls.includes("rollback-removal"),
+      initialStatus === "reserved",
+    );
+  }
+});
+
+Deno.test("uncertain rollback teardown keeps the checkout and original setup failure", async () => {
+  const f = new Fixture();
+  f.results.set("setup", {
+    outcome: "failed",
+    error_code: "instance.setup_step_failed",
+    failed_step: "install",
+  });
+  f.results.set("rollback-teardown", {
+    outcome: "unconfirmed",
+    error_code: "instance.teardown_step_failed",
+    failed_step: "clean",
+  });
+  assertEquals((await lifecycle(f)).error_code, "instance.setup_step_failed");
+  assertEquals(f.calls.includes("rollback-removal"), false);
+});
+
+Deno.test("lost source, child and completion replies reuse keys without running their effects twice", async () => {
+  for (const key of ["source-prepare", "setup", "lifecycle-finish"]) {
+    const f = new Fixture();
+    f.loseReply = key;
+    await assertRejects(() => lifecycle(f), Error, "reply lost");
+    assertEquals(f.calls.includes("rollback-removal"), false);
+    assertEquals((await lifecycle(f)).status, "succeeded");
+    assertEquals(f.effects.get(key), 1);
+    assertEquals([...f.effects.values()].every((n) => n === 1), true);
+  }
+});
+
 Deno.test("rename waits for the Route child before it records branch or environment", async () => {
   const f = new Fixture();
   f.kind = "instance.rename";
@@ -61,6 +177,68 @@ Deno.test("rename waits for the Route child before it records branch or environm
   f.results.set("route-update", { error_code: "route.domain_conflict" });
   assertEquals((await lifecycle(f)).error_code, "route.domain_conflict");
   assertEquals(f.calls, ["rename-inspect", "route-update"]);
+});
+
+Deno.test("clone never runs development setup or teardown", async () => {
+  const f = new Fixture();
+  f.kind = "instance.clone";
+  f.input.candidate_node_id = 2;
+  f.input.candidate_id = 100;
+  f.input.sqlite_source_path = null;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.children.some((c) => c.kind === "instance.run_steps"), false);
+  assertEquals(f.children[0].kind, "instance.sync_environment");
+  assertEquals(f.children[0].node_id, f.nodeId);
+});
+
+Deno.test("clone attaches and synchronizes only a proven database-family SQLite seed", async () => {
+  const f = new Fixture();
+  f.kind = "instance.clone";
+  f.input.sqlite_source_path = "/srv/apps/source/database.sqlite";
+  f.results.set("clone-sqlite-intent", { prepared: true, seed_required: true });
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.children[0].kind, "database.sqlite_seed");
+  assertEquals(f.calls.slice(6, 10), [
+    "clone-sqlite-intent",
+    "clone-sqlite",
+    "clone-sqlite-attach",
+    "clone-environment-sync",
+  ]);
+});
+
+Deno.test("clone resumes a retained seed checkpoint without taking another snapshot", async () => {
+  const f = new Fixture();
+  f.kind = "instance.clone";
+  f.input.sqlite_source_path = "/srv/apps/source/database.sqlite";
+  f.results.set("clone-sqlite-intent", {
+    prepared: true,
+    seed_required: false,
+  });
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls.includes("clone-sqlite"), false);
+  assertEquals(f.calls.includes("clone-sqlite-attach"), true);
+});
+
+Deno.test("a refused SQLite seed preserves clone state before attachment or environment writes", async () => {
+  const f = new Fixture();
+  f.kind = "instance.clone";
+  f.input.sqlite_source_path = "/srv/apps/source/database.sqlite";
+  f.results.set("clone-sqlite-intent", { prepared: true, seed_required: true });
+  f.results.set("clone-sqlite", { error_code: "sqlite.seed_failed" });
+  assertEquals((await lifecycle(f)).error_code, "sqlite.seed_failed");
+  assertEquals(f.calls.includes("clone-sqlite-attach"), false);
+  assertEquals(f.calls.includes("clone-environment-sync"), false);
+});
+
+Deno.test("registration runs setup only when it was requested", async () => {
+  for (const requested of [false, true]) {
+    const f = new Fixture();
+    f.kind = "instance.register";
+    f.input.members = [{ instance_id: 501, route_id: 30 }];
+    f.input.run_setup = requested;
+    assertEquals((await lifecycle(f)).status, "succeeded");
+    assertEquals(f.calls.includes("setup"), requested);
+  }
 });
 
 Deno.test("teardown refusal stops removal before acceptance or Route withdrawal", async () => {
@@ -84,6 +262,127 @@ Deno.test("teardown refusal stops removal before acceptance or Route withdrawal"
   assertEquals(f.calls, ["removal-inspect", "teardown-501"]);
 });
 
+Deno.test("a confirmed registration failure restores its Laravel receipt before reporting the original refusal", async () => {
+  const f = new Fixture();
+  f.kind = "instance.register";
+  f.input.members = [{ instance_id: 501, route_id: 30 }];
+  f.results.set("registration-501-configuration", {
+    error_code: "app-dev.laravel_url_configuration_failed",
+  });
+  assertEquals(
+    (await lifecycle(f)).error_code,
+    "app-dev.laravel_url_configuration_failed",
+  );
+  assertEquals(f.calls.at(-1), "registration-501-receipt-restore");
+  assertEquals(f.calls.includes("registration-501-activate"), false);
+});
+
+Deno.test("cancelled, busy and unconfirmed registration effects retain their saved Laravel receipt", async () => {
+  for (
+    const code of [
+      "operation.cancelled",
+      "instance.source_busy",
+      "operation.execution_uncertain",
+    ]
+  ) {
+    const f = new Fixture();
+    f.kind = "instance.register";
+    f.input.members = [{ instance_id: 501, route_id: 30 }];
+    f.results.set("registration-501-configuration", { error_code: code });
+    assertEquals((await lifecycle(f)).error_code, code);
+    assertEquals(f.calls.includes("registration-501-receipt-restore"), false);
+    assertEquals(f.calls.includes("registration-501-receipt-discard"), false);
+  }
+});
+
+Deno.test("confirmed source refusal rolls back a new create, while busy and unknown replies retain it", async () => {
+  for (
+    const code of [
+      "instance.clone_failed",
+      "instance.source_busy",
+      "operation.cancelled",
+    ]
+  ) {
+    const f = new Fixture();
+    f.results.set("source-prepare", { error_code: code });
+    assertEquals((await lifecycle(f)).error_code, code);
+    assertEquals(
+      f.calls.includes("rollback-removal"),
+      code === "instance.clone_failed",
+    );
+    assertEquals(f.calls.includes("rollback-teardown"), false);
+  }
+  const f = new Fixture();
+  f.loseReply = "source-prepare";
+  await assertRejects(() => lifecycle(f), Error, "reply lost");
+  assertEquals(f.calls, ["source-prepare"]);
+});
+
+Deno.test("database failure removes only a create's own activation and does not run teardown", async () => {
+  for (const status of ["reserved", "active"]) {
+    const f = new Fixture();
+    f.input.initial_status = status;
+    f.input.database_server_id = 4;
+    f.results.set("database", { error_code: "instance.database_clone_failed" });
+    assertEquals(
+      (await lifecycle(f)).error_code,
+      "instance.database_clone_failed",
+    );
+    assertEquals(f.calls.includes("rollback-removal"), status === "reserved");
+    assertEquals(f.calls.includes("rollback-teardown"), false);
+    assertEquals(f.calls.includes("setup"), false);
+  }
+});
+
+Deno.test("busy rollback teardown keeps source and preserves its busy classification", async () => {
+  const f = new Fixture();
+  f.results.set("setup", {
+    outcome: "failed",
+    error_code: "instance.setup_step_failed",
+    failed_step: "install",
+  });
+  f.results.set("rollback-teardown", {
+    outcome: "busy",
+    error_code: "instance.lifecycle_busy",
+    failed_step: "clean",
+  });
+  assertEquals((await lifecycle(f)).error_code, "instance.lifecycle_busy");
+  assertEquals(f.calls.includes("rollback-removal"), false);
+});
+
+Deno.test("a completed clone retry only returns its final receipt", async () => {
+  const f = new Fixture();
+  f.kind = "instance.clone";
+  f.input.initial_completed = true;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls, ["lifecycle-finish"]);
+});
+
+Deno.test("clone installs captured Process and Schedule definitions stopped before Route projection", async () => {
+  const f = new Fixture();
+  f.kind = "instance.clone";
+  f.input.sqlite_source_path = null;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(
+    f.children.filter((c) => c.key.startsWith("clone-")).map((
+      c,
+    ) => [c.kind, c.input]),
+    [
+      ["instance.sync_environment", { instance_id: 501 }],
+      ["process.install_instance_definitions", {
+        instance_id: 501,
+      }],
+      ["schedule.install_instance_definitions", {
+        instance_id: 501,
+      }],
+    ],
+  );
+  assertEquals(
+    f.calls.indexOf("route-converge") > f.calls.indexOf("clone-schedules"),
+    true,
+  );
+});
+
 Deno.test("removal waits for Process and Schedule removal before shared Route cleanup", async () => {
   const f = new Fixture();
   f.kind = "instance.destroy";
@@ -98,8 +397,6 @@ Deno.test("removal waits for Process and Schedule removal before shared Route cl
     "removal-501-route-clear",
     "removal-501-source-finalize",
     "removal-501-runtime-intent",
-    "remove-processes-501",
-    "remove-schedules-501",
     "cleanup-instance-501",
     "removal-501-database-intent",
     "remove-databases-501",
@@ -138,12 +435,19 @@ Deno.test("database drop waits for workers and schedulers to close their connect
   const f = new Fixture();
   f.kind = "instance.destroy";
   f.input.members = [{ instance_id: 501, route_id: null, run_teardown: false }];
+  const scheduleId = "12345678-1234-4234-8234-123456789abc";
+  f.results.set("removal-501-runtime-intent", {
+    process_ids: [31, 32],
+    schedule_ids: [scheduleId],
+  });
   let workerConnected = true;
   let schedulerConnected = true;
   const child = f.child.bind(f);
   f.child = (intent) => {
-    if (intent.key === "remove-processes-501") workerConnected = false;
-    if (intent.key === "remove-schedules-501") schedulerConnected = false;
+    if (intent.key === "remove-process-501-32") workerConnected = false;
+    if (intent.key === `remove-schedule-501-${scheduleId}`) {
+      schedulerConnected = false;
+    }
     if (
       intent.key === "remove-databases-501" &&
       (workerConnected || schedulerConnected)
@@ -157,5 +461,64 @@ Deno.test("database drop waits for workers and schedulers to close their connect
     f.calls.indexOf("cleanup-instance-501") <
       f.calls.indexOf("remove-databases-501"),
     true,
+  );
+});
+
+Deno.test("database clone attachment is synchronized before setup", async () => {
+  const f = new Fixture();
+  f.input.database_clone_source_id = 385;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(
+    f.children.find((c) => c.key === "database")!.kind,
+    "database.clone",
+  );
+  assertEquals(
+    f.calls.indexOf("database-environment-sync") > f.calls.indexOf("database"),
+    true,
+  );
+  assertEquals(
+    f.calls.indexOf("setup") > f.calls.indexOf("database-environment-sync"),
+    true,
+  );
+});
+
+Deno.test("a refused per-record runtime removal stops before Route cleanup and database deletion", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input.members = [{ instance_id: 501, route_id: null, run_teardown: false }];
+  f.results.set("removal-501-runtime-intent", {
+    process_ids: [31, 32],
+    schedule_ids: [],
+  });
+  f.results.set("remove-process-501-31", {
+    error_code: "process.remove_failed",
+  });
+  assertEquals((await lifecycle(f)).error_code, "process.remove_failed");
+  assertEquals(f.calls.includes("remove-process-501-32"), false);
+  assertEquals(f.calls.includes("cleanup-instance-501"), false);
+  assertEquals(f.calls.includes("remove-databases-501"), false);
+});
+
+Deno.test("a lost per-record child reply reuses its exact key before continuing runtime cleanup", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input.members = [{ instance_id: 501, route_id: null, run_teardown: false }];
+  const scheduleId = "12345678-1234-4234-8234-123456789abc";
+  f.results.set("removal-501-runtime-intent", {
+    process_ids: [31],
+    schedule_ids: [scheduleId],
+  });
+  f.loseReply = "remove-process-501-31";
+  await assertRejects(() => lifecycle(f), Error, "reply lost");
+  assertEquals(f.calls.includes("cleanup-instance-501"), false);
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.effects.get("remove-process-501-31"), 1);
+  assertEquals(
+    f.children.find((entry) => entry.kind === "process.destroy")!.input,
+    { process_id: 31 },
+  );
+  assertEquals(
+    f.children.find((entry) => entry.kind === "schedule.destroy")!.input,
+    { id: scheduleId },
   );
 });

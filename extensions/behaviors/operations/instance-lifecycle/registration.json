@@ -1,7 +1,10 @@
 {
   "kinds": [
     "instance.rename",
-    "instance.destroy"
+    "instance.destroy",
+    "instance.create",
+    "instance.register",
+    "instance.clone"
   ],
   "workflow": "operation-instance-lifecycle"
 }
