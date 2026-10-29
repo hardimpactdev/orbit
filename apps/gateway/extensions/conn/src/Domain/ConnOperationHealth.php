@@ -17,7 +17,7 @@ final readonly class ConnOperationHealth
     /** @return Builder<Operation> */
     public function unclaimed(): Builder
     {
-        return Operation::query()->whereIn('kind', ['conn.pairing_create', 'conn.pairing_revoke'])
+        return Operation::query()->whereIn('kind', ['conn.pairing_create', 'conn.pairing_revoke', 'conn.gateway_sessions_revoke'])
             ->whereNotIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])
             ->whereNull('started_at')->where('created_at', '<=', Carbon::now()->subMinutes(self::UnclaimedAfterMinutes));
     }

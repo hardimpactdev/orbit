@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -656,43 +657,34 @@ describe('environment registration', function (): void {
             ->assertJsonPath('data.0.label', 'beast');
     });
 
-    it('replaces the session on re-registration and revokes the earlier Gateway sessions', function (): void {
-        conn_layer_fake_server([
-            CONN_LAYER_SERVER.'/api/auth/clients/revoke' => Http::response(['revoked' => true]),
-            CONN_LAYER_SERVER.'/api/auth/clients' => Http::response([
-                ['sessionId' => 'new', 'client' => ['label' => 'Orbit Gateway', 'deviceType' => 'bot'], 'current' => true],
-                ['sessionId' => 'old', 'client' => ['label' => 'Orbit Gateway', 'deviceType' => 'bot'], 'current' => false],
-                ['sessionId' => 'phone', 'client' => ['label' => 'iPhone', 'deviceType' => 'mobile'], 'current' => false],
-            ]),
-        ]);
+    it('replaces the encrypted session and records every registration for Swamp cleanup', function (): void {
+        conn_layer_fake_server();
         conn_layer_environment(['label' => 'old label', 'admin_session' => 'old-session']);
-
-        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.label', 'beast');
-
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.cleanup_pending', true);
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk()->assertJsonPath('data.cleanup_pending', true);
         expect(ConnEnvironment::query()->count())->toBe(1)
-            ->and(ConnEnvironment::query()->sole()->admin_session)->toBe('admin-session-token');
-        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke'
-            && $request['sessionId'] === 'old'
-            && $request->hasHeader('Authorization', 'Bearer admin-session-token'));
-        Http::assertNotSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke'
-            && in_array($request['sessionId'], ['new', 'phone'], true));
+            ->and(ConnEnvironment::query()->sole()->admin_session)->toBe('admin-session-token')
+            ->and(ConnEnvironment::query()->sole()->cleanup_version)->toBe(2);
+        Http::assertNotSent(static fn (HttpRequest $request): bool => $request->method() === 'POST');
+        expect(Operation::query()->count())->toBe(0);
     });
 
-    it('cleans intermediate Gateway sessions synchronously across repeated registrations', function (): void {
-        conn_layer_fake_server([
-            CONN_LAYER_SERVER.'/api/auth/clients/revoke' => Http::response(['revoked' => true]),
-            CONN_LAYER_SERVER.'/api/auth/clients' => Http::sequence()
-                ->push([['sessionId' => 'first-old', 'client' => ['label' => 'Orbit Gateway'], 'current' => false]])
-                ->push([['sessionId' => 'intermediate', 'client' => ['label' => 'Orbit Gateway'], 'current' => false]]),
-        ]);
-
-        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk();
-        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk();
-
-        foreach (['first-old', 'intermediate'] as $id) {
-            Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke' && $request['sessionId'] === $id);
-        }
-        expect(Operation::query()->count())->toBe(0);
+    it('validates a replacement session after taking the registration lock so a revoked candidate cannot be stored', function (): void {
+        conn_layer_environment(['admin_session' => 'existing-session']);
+        $locked = false;
+        DB::listen(function (QueryExecuted $query) use (&$locked): void {
+            if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'conn_environments')) {
+                $locked = true;
+            }
+        });
+        conn_layer_fake_server([CONN_LAYER_SERVER.'/.well-known/t3/environment' => Http::response(['environmentId' => 'env-beast', 'label' => 'beast', 'serverVersion' => '0.9.1']),
+            CONN_LAYER_SERVER.'/api/auth/session' => function () use (&$locked) {
+                // Candidate was revoked while waiting for cleanup's environment lock.
+                return Http::response($locked ? ['authenticated' => false] : ['authenticated' => true, 'scopes' => ['access:read', 'access:write'], 'expiresAt' => now()->addDay()->toIso8601String()]);
+            }]);
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertStatus(502)->assertJsonPath('error.code', 'conn.session_rejected');
+        expect(ConnEnvironment::query()->sole()->admin_session)->toBe('existing-session')
+            ->and(ConnEnvironment::query()->sole()->cleanup_version)->toBe(0);
     });
 
     it('refuses a URL that serves another environment before it sends the session', function (): void {

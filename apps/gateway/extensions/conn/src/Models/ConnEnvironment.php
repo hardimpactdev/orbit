@@ -21,6 +21,8 @@ use Illuminate\Support\Carbon;
  * @property string $admin_session
  * @property Carbon $admin_session_expires_at
  * @property Carbon $registered_at
+ * @property int $cleanup_version
+ * @property int $cleanup_completed_version
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node|null $node
@@ -38,7 +40,12 @@ final class ConnEnvironment extends Model
         'admin_session',
         'admin_session_expires_at',
         'registered_at',
+        'cleanup_version',
+        'cleanup_completed_version',
     ];
+
+    /** @var array<string, int> */
+    protected $attributes = ['cleanup_version' => 0, 'cleanup_completed_version' => 0];
 
     /** @var list<string> */
     #[\Override]
@@ -61,6 +68,8 @@ final class ConnEnvironment extends Model
     {
         return [
             'node_id' => 'integer',
+            'cleanup_version' => 'integer',
+            'cleanup_completed_version' => 'integer',
             'admin_session' => 'encrypted',
             'admin_session_expires_at' => 'datetime',
             'registered_at' => 'datetime',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
+use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
@@ -11,7 +12,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnOperationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 
-// Every active Node, phones and operator machines included, may use every endpoint; there are no grants yet.
+// Active peers use Conn directly; maintenance admission also requires Gateway access.
 Route::middleware([
     'api',
     RequireActiveWireGuardPeer::class,
@@ -34,6 +35,8 @@ Route::middleware([
         ->name('conn:profile:settings:patch');
     Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
     Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
+    Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])
+        ->middleware(RequireNodeAccess::class)->name('conn:environment:cleanup');
     Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
     Route::get('environments/{environment}/pairings/{pairing}', [ConnPairingsController::class, 'show'])->whereNumber('pairing')->name('conn:pairing:show');
     Route::post('environments/{environment}/pairings', [ConnPairingsController::class, 'store'])->name('conn:pairing:create');
