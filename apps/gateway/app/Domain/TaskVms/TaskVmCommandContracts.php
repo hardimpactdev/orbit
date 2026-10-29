@@ -229,7 +229,7 @@ final class TaskVmCommandContracts
                 'secrets' => ['github_token' => 'task_vm.package_cache_github'],
                 'input_schema' => ['type' => 'object', 'additionalProperties' => false, '$defs' => $schema['$defs'],
                     'required' => array_keys($properties), 'properties' => $properties]]],
-            'completion_contract' => ['step' => 'fill-package-cache', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache', 'result' => ['ready' => true]],
+            'completion_contract' => ['step' => 'fill-package-cache-batch', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache', 'result' => ['ready' => true]],
             'result_fields' => ['ready', 'error_code', ...$lists],
         ], 'task_vm.fill_package_cache' => [
             'executor' => 'swamp', 'completion' => TaskVmPackageCacheCompletion::class, 'runs' => [],

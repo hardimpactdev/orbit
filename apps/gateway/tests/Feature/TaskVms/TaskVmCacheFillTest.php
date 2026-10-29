@@ -80,6 +80,31 @@ it('records one bounded host fill and admits only its immutable batch keys', fun
     Queue::assertNothingPushed();
 });
 
+it('completes a Swamp batch from its exact proven step and projects the host inventory', function (): void {
+    $parent = cacheFillAdmission([cacheFillArtifact('verified')]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'cache-parent'])->assertOk();
+    $path = "/api/v1/operation-executor/{$parent->id}";
+    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-0'])->assertAccepted();
+    $child = $parent->children()->sole();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'cache-child'])->assertOk();
+    $hash = 'sha256-'.str_repeat('a', 64);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->andReturn(['hashes' => ['verified' => $hash], 'failures' => []]);
+    app()->instance(AgentCommandRunner::class, $runner);
+    $childPath = "/api/v1/operation-executor/{$child->id}";
+    $result = ['ready' => true, 'archive_ids' => ['verified'], 'archive_digests' => [$hash], 'failed_ids' => [], 'failure_reasons' => []];
+    $completion = ['worker' => 'cache-child', 'status' => 'succeeded', 'result' => $result];
+    $this->postJson($childPath.'/run', ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
+        'input' => Arr::only($child->input, ['host_node_id', 'artifacts', 'conflicts', 'max_bytes', 'github_token'])])->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($childPath.'/complete', $completion)->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    $this->postJson($childPath.'/step', ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch:finish', 'name' => 'fill-package-cache-batch', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($childPath.'/complete', $completion)->assertOk()->assertJsonPath('data.result', $result);
+    $this->postJson($childPath.'/complete', $completion)->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'succeeded', 'result' => ['ready' => true, 'skipped' => []]])->assertOk();
+    $this->assertDatabaseHas('package_cache_entries', ['host_node_id' => $parent->node_id, 'key' => 'verified', 'integrity' => $hash]);
+    expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeFalse();
+});
+
 it('projects partial archives only from proven child results and derives failed batch identities', function (): void {
     Log::spy();
     $parent = cacheFillAdmission([cacheFillArtifact('verified'), cacheFillArtifact('refused')]);
@@ -94,9 +119,9 @@ it('projects partial archives only from proven child results and derives failed 
     app()->instance(AgentCommandRunner::class, $runner);
     $childPath = "/api/v1/operation-executor/{$child->id}";
     $result = ['ready' => true, 'archive_ids' => ['verified'], 'archive_digests' => [$hash], 'failed_ids' => ['refused'], 'failure_reasons' => ['ChecksumMismatch']];
-    $this->postJson($childPath.'/run', ['worker' => 'cache-child', 'key' => 'fill-package-cache', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
+    $this->postJson($childPath.'/run', ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
         'input' => Arr::only($child->input, ['host_node_id', 'artifacts', 'conflicts', 'max_bytes', 'github_token'])])->assertOk()->assertJsonPath('data', $result);
-    $this->postJson($childPath.'/step', ['worker' => 'cache-child', 'key' => 'finish', 'name' => 'fill-package-cache', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($childPath.'/step', ['worker' => 'cache-child', 'key' => 'finish', 'name' => 'fill-package-cache-batch', 'status' => 'succeeded', 'result' => $result])->assertOk();
     $this->postJson($childPath.'/complete', ['worker' => 'cache-child', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed', 'result' => $result])->assertOk();
     $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed', 'result' => []])
         ->assertOk()->assertJsonPath('data.result.skipped.0.child_id', $child->id)->assertJsonPath('data.result.skipped.0.key', 'fill-0')
