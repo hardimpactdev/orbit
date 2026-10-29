@@ -99,6 +99,9 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
         }
         $receipt = $this->installer->effectReceipt($node, ValidatedData::string($operation->input['agent_pin'] ?? null), $run['name'], $run['effect_key'], $connection);
         if ($run['name'] === 'agent.install' && $receipt['state'] === 'succeeded') {
+            if (! is_bool($receipt['result']['replaced'] ?? null)) {
+                throw new ResourceOperationException('operation.receipt_unproven', 'The installer receipt has no original replacement result.', 409);
+            }
             $receipt['result'] = ['installed' => true, 'changed' => ($receipt['result']['replaced'] ?? null) === true,
                 'architecture' => $node->architecture, 'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
         }

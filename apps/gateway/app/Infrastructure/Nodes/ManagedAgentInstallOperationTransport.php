@@ -43,6 +43,9 @@ final readonly class ManagedAgentInstallOperationTransport implements OperationE
         $receipt = $this->agents->effectReceipt(Node::query()->findOrFail($operation->node_id),
             ValidatedData::string(ValidatedData::object($operation->input['_footprint'] ?? null)['agent_pin'] ?? null), $run['name'], $run['effect_key']);
         if ($receipt['state'] === 'succeeded') {
+            if (! is_bool($receipt['result']['replaced'] ?? null)) {
+                throw new ResourceOperationException('operation.receipt_unproven', 'The installer receipt has no original replacement result.', 409);
+            }
             $receipt['result'] = ['installed' => true, 'changed' => ($receipt['result']['replaced'] ?? null) === true];
         }
 

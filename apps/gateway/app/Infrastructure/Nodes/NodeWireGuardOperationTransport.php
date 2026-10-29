@@ -7,7 +7,6 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
@@ -59,15 +58,7 @@ final readonly class NodeWireGuardOperationTransport implements OperationEffectT
             $config = $this->renderer->renderForHub($hub, ValidatedData::string($configuration['address']),
                 ValidatedData::integer($configuration['port']), ValidatedData::string($configuration['private_key']), $peers->get());
             $this->files->put(rtrim($this->orbitHome, '/').'/generated/wireguard/orbit.conf', $config);
-            try {
-                $result = $this->agent->run($operation, $run, ['config' => $config]);
-            } catch (AgentCommandRefused $exception) {
-                return ['error_code' => match ($exception->errorCode) {
-                    'wireguard.hub_install_failed' => 'vpn.server_config_install_failed',
-                    'wireguard.hub_config_invalid' => 'vpn.server_config_invalid',
-                    default => 'vpn.server_start_failed',
-                }];
-            }
+            $result = $this->agent->run($operation, $run, ['config' => $config]);
 
             return isset($result['error_code']) ? $result : ['projected' => true];
         });

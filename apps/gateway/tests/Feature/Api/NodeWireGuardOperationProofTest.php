@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
@@ -99,3 +100,24 @@ it('keeps the Gateway-first, managed-peer and address guards', function (string 
     ['gateway', 'node.wireguard_key_gateway'], ['managed', 'node.wireguard_key_managed'],
     ['address', 'node.wireguard_ip_required'], ['unmanaged', ''],
 ]);
+
+it('preserves common native refusals for the shared uncertain-effect boundary', function (string $code): void {
+    $home = sys_get_temp_dir().'/orbit-node-wg-refusal-'.bin2hex(random_bytes(6));
+    $hub = FleetFixtures::node('wg-uncertain-hub', [RoleName::Vpn]);
+    $peer = FleetFixtures::node('wg-uncertain-peer');
+    $operation = (new Operation)->forceFill(['id' => 7, 'kind' => 'node.wireguard_hub_converge', 'node_id' => $hub->id,
+        'target_type' => 'node', 'target_id' => $hub->id, 'input' => ['context_node_id' => $peer->id]]);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $refusal = new AgentCommandRefused('wireguard.project-hub', $code, 'No proven result.', []);
+    $runner->shouldReceive('run')->once()->andThrow($refusal);
+    $transport = new NodeWireGuardOperationTransport(new OperationAgentTransport($runner, app(AgentContract::class), new AgentEffectReceipts($runner)),
+        new NodeWireGuardProjectionLock($home), new WireGuardServerConfigRenderer, new ProtectedFileWriter, $home);
+    try {
+        expect(fn () => $transport->run($operation, ['name' => 'wireguard.project-hub', 'effect_key' => 'op-7.hub-project',
+            'effect_metadata' => new EffectReceiptMetadata(['fixture-private-key'])],
+            ['configuration' => ['hub_id' => $hub->id, 'address' => $hub->wireguard_ip.'/24', 'port' => 51820, 'private_key' => 'fixture-private-key'], 'excluded_node_id' => null]))
+            ->toThrow(fn (AgentCommandRefused $error) => expect($error)->toBe($refusal));
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with(['agent.effect_conflict', 'agent.effect_unknown', 'agent.effect_receipt_unavailable']);
