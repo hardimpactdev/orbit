@@ -12,6 +12,9 @@ use std::{
 };
 
 const ROOT: &str = "/var/lib/orbit-agent/effects";
+const RETENTION: Duration = Duration::from_secs(30 * 86400);
+const PRUNE_INTERVAL: Duration = Duration::from_secs(86400);
+
 const MAX_RECEIPT: u64 = 16 * 1024 * 1024;
 
 fn refused(code: &str) -> Outcome {
@@ -83,6 +86,10 @@ struct Stored {
     running_until: Option<i64>,
     #[serde(default)]
     sanitized: bool,
+    #[serde(default)]
+    effect_nonce: Option<String>,
+    #[serde(default)]
+    effect_created_at: Option<i64>,
 }
 /// A reusable store. Tests and host-specific composition can supply a private directory.
 pub struct Store {
@@ -179,6 +186,109 @@ impl Store {
         }
         result.map_err(|_| refused("agent.effect_receipt_unavailable"))
     }
+    fn namespace(&self, create: bool, exclusive: bool) -> Result<Option<File>, Outcome> {
+        let guard = match OpenOptions::new()
+            .read(true)
+            .write(create)
+            .create(create)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(self.directory.join(".store.lock"))
+        {
+            Ok(file) => file,
+            Err(error) if !create && error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None)
+            }
+            Err(_) => return Err(refused("agent.effect_receipt_unavailable")),
+        };
+        let metadata = guard
+            .metadata()
+            .map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+        if !metadata.is_file()
+            || metadata.uid() != super::identity::effective_uid()
+            || metadata.mode() & 0o777 != 0o600
+            || metadata.nlink() != 1
+        {
+            return Err(refused("agent.effect_receipt_unavailable"));
+        }
+        match rustix::fs::flock(
+            &guard,
+            if exclusive {
+                rustix::fs::FlockOperation::NonBlockingLockExclusive
+            } else {
+                rustix::fs::FlockOperation::LockShared
+            },
+        ) {
+            Ok(()) => Ok(Some(guard)),
+            Err(rustix::io::Errno::WOULDBLOCK) if exclusive => Ok(None),
+            Err(_) => Err(refused("agent.effect_receipt_unavailable")),
+        }
+    }
+    /// Daily bounded pruning under an exclusive namespace guard. Receipt reads never prune.
+    fn prune(&self) -> Result<(), Outcome> {
+        let Some(guard) = self.namespace(true, true)? else {
+            return Ok(());
+        };
+        if guard
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_none_or(|age| age < PRUNE_INTERVAL)
+        {
+            return Ok(());
+        }
+        let mut removed = 0;
+        for entry in fs::read_dir(&self.directory)
+            .map_err(|_| refused("agent.effect_receipt_unavailable"))?
+        {
+            let entry = entry.map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            let Some((stem, extension)) = name.rsplit_once('.') else {
+                continue;
+            };
+            if stem.len() != 64
+                || !stem.bytes().all(|c| c.is_ascii_hexdigit())
+                || !matches!(extension, "json" | "lock")
+            {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(entry.path())
+                .map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+            if !metadata.is_file()
+                || metadata.uid() != super::identity::effective_uid()
+                || metadata.mode() & 0o777 != 0o600
+                || metadata.nlink() != 1
+            {
+                continue;
+            }
+            if metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age >= RETENTION)
+            {
+                fs::remove_file(entry.path())
+                    .map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+                removed += 1;
+                if removed >= 256 {
+                    break;
+                }
+            }
+        }
+        if removed < 256 {
+            guard
+                .set_modified(std::time::SystemTime::now())
+                .map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+        }
+        File::open(&self.directory)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| refused("agent.effect_receipt_unavailable"))
+    }
     fn locked<T>(
         &self,
         key: &str,
@@ -189,6 +299,8 @@ impl Store {
             return Err(refused("agent.effect_key_invalid"));
         }
         self.private(true)?;
+        self.prune()?;
+        let _namespace = self.namespace(true, false)?;
         let lock_path = self
             .directory
             .join(format!("{}.lock", digest(key.as_bytes())));
@@ -246,6 +358,22 @@ impl Store {
                         .map(|(key, item)| (text(key, masks), value(item, masks)))
                         .collect(),
                 ),
+                Value::Bool(boolean)
+                    if masks.contains(&boolean.to_string())
+                        || (boolean && masks.contains(&"1".to_string())) =>
+                {
+                    Value::String("[REDACTED]".into())
+                }
+                Value::Number(number)
+                    if masks.contains(&number.to_string())
+                        || masks.iter().any(|mask| {
+                            mask.parse::<f64>()
+                                .ok()
+                                .is_some_and(|value| Some(value) == number.as_f64())
+                        }) =>
+                {
+                    Value::String("[REDACTED]".into())
+                }
                 other => other,
             }
         }
@@ -262,6 +390,23 @@ impl Store {
             },
         })
     }
+    fn identity(context: &Context) -> Result<(&str, i64), Outcome> {
+        let (nonce, created_at) = context
+            .effect_identity()
+            .ok_or_else(|| refused("agent.effect_sanitization_required"))?;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        if nonce.len() != 36
+            || !nonce.bytes().all(|c| c.is_ascii_hexdigit() || c == b'-')
+            || created_at <= 0
+            || created_at > now + 300
+        {
+            return Err(refused("agent.effect_key_invalid"));
+        }
+        if now - created_at >= RETENTION.as_secs() as i64 {
+            return Err(refused("agent.effect_expired"));
+        }
+        Ok((nonce, created_at))
+    }
     pub fn execute(
         &self,
         command: &str,
@@ -270,9 +415,10 @@ impl Store {
         context: &Context,
         effect: impl FnOnce() -> Outcome,
     ) -> Outcome {
-        let result = self.locked(key, context, || {
+        let result = Self::identity(context).and_then(|(nonce, created_at)| self.locked(key, context, || {
             if let Some(stored) = self.load(key)? {
-                if stored.command != command || stored.fingerprint != fingerprint {
+                if stored.command != command || stored.fingerprint != fingerprint
+                    || stored.effect_nonce.as_deref() != Some(nonce) || stored.effect_created_at != Some(created_at) {
                     return Err(refused("agent.effect_conflict"));
                 }
                 if stored.response.is_some() && !stored.sanitized {
@@ -294,9 +440,15 @@ impl Store {
                 finished_at: None,
                 running_until: None,
                 sanitized: false,
+                effect_nonce: Some(nonce.into()),
+                effect_created_at: Some(created_at),
             };
             self.save(&stored)?;
-            let outcome = Self::sanitize(effect(), context)?;
+            let outcome = effect();
+            if matches!(&outcome, Outcome::Refused { code, .. } if super::COMMON_ERRORS.contains(&code.as_str())) {
+                return Self::sanitize(outcome, context);
+            }
+            let outcome = Self::sanitize(outcome, context)?;
             stored.sanitized = true;
             stored.result_digest = Some(digest(
                 &serde_json::to_vec(&outcome.to_json()).expect("JSON serializes"),
@@ -309,7 +461,7 @@ impl Store {
             stored.response = Some(outcome.clone());
             self.save(&stored)?;
             Ok(outcome)
-        });
+        }));
         result.unwrap_or_else(|error| error)
     }
     /// Reserve an external named program. Losing the reservation reply leaves an unknown intent.
@@ -321,9 +473,14 @@ impl Store {
         timeout: Duration,
         context: &Context,
     ) -> Result<Reservation, Outcome> {
+        let (nonce, created_at) = Self::identity(context)?;
         self.locked(key, context, || {
             if let Some(stored) = self.load(key)? {
-                if stored.command != command || stored.fingerprint != fingerprint {
+                if stored.command != command
+                    || stored.fingerprint != fingerprint
+                    || stored.effect_nonce.as_deref() != Some(nonce)
+                    || stored.effect_created_at != Some(created_at)
+                {
                     return Err(refused("agent.effect_conflict"));
                 }
                 return Ok(Reservation {
@@ -339,6 +496,8 @@ impl Store {
                 result_digest: None,
                 finished_at: None,
                 sanitized: false,
+                effect_nonce: Some(nonce.into()),
+                effect_created_at: Some(created_at),
                 running_until: Some(
                     time::OffsetDateTime::now_utc().unix_timestamp()
                         + timeout.as_secs().min(86400) as i64,
@@ -358,12 +517,15 @@ impl Store {
         result: Value,
         context: &Context,
     ) -> Result<Receipt, Outcome> {
+        let (nonce, created_at) = Self::identity(context)?;
         self.locked(key, context, || {
             let mut stored = self
                 .load(key)?
                 .ok_or_else(|| refused("agent.effect_unknown"))?;
             let outcome = Self::sanitize(Outcome::Ok(result), context)?;
             if stored.command != command
+                || stored.effect_nonce.as_deref() != Some(nonce)
+                || stored.effect_created_at != Some(created_at)
                 || stored.fingerprint != fingerprint
                 || stored.response.as_ref().is_some_and(|old| old != &outcome)
             {
@@ -407,6 +569,11 @@ impl Store {
         if !valid_key(key) {
             return Err(refused("agent.effect_key_invalid"));
         }
+        let _namespace = if self.private(false)? {
+            self.namespace(false, false)?
+        } else {
+            None
+        };
         let stored = if self.private(false)? {
             self.load(key)?
         } else {
@@ -440,6 +607,8 @@ impl Store {
                 effect_key: key.into(),
                 command: command.into(),
                 sanitized: stored.sanitized,
+                effect_nonce: stored.effect_nonce,
+                effect_created_at: stored.effect_created_at,
                 result: stored.response.as_ref().map(Outcome::to_json),
                 state: state.into(),
                 exit_code,
@@ -452,6 +621,8 @@ impl Store {
             command: command.into(),
             state: "unknown".into(),
             sanitized: false,
+            effect_nonce: None,
+            effect_created_at: None,
             exit_code: None,
             result: None,
             result_digest: None,
@@ -466,7 +637,10 @@ fn bound_fingerprint(command: &str, input: &Value, context: &Context) -> Result<
         .clone_binary_input()
         .map_err(|_| refused("agent.binary_input_invalid"))?;
     let Some(file) = file else {
-        return Ok(fingerprint(command, input));
+        return Ok(fingerprint(
+            command,
+            &json!({"input": input, "identity": context.effect_identity()}),
+        ));
     };
     let mut hash = Sha256::new();
     let mut buffer = [0; 65536];
@@ -483,7 +657,7 @@ fn bound_fingerprint(command: &str, input: &Value, context: &Context) -> Result<
     }
     Ok(fingerprint(
         command,
-        &json!({"input":input,"binary_sha256":super::run::hex(&hash.finalize())}),
+        &json!({"input":input,"identity":context.effect_identity(),"binary_sha256":super::run::hex(&hash.finalize())}),
     ))
 }
 
@@ -517,6 +691,8 @@ pub struct Receipt {
     pub effect_key: String,
     pub state: String,
     pub sanitized: bool,
+    pub effect_nonce: Option<String>,
+    pub effect_created_at: Option<i64>,
     pub exit_code: Option<i32>,
     pub result: Option<Value>,
     pub result_digest: Option<String>,
@@ -533,6 +709,9 @@ impl super::CommandError for ReceiptError {
             }
             Outcome::Refused { code, .. } if code == "agent.effect_sanitization_required" => {
                 "agent.effect_sanitization_required"
+            }
+            Outcome::Refused { code, .. } if code == "agent.effect_expired" => {
+                "agent.effect_expired"
             }
             Outcome::Refused { code, .. } if code == "agent.effect_unknown" => {
                 "agent.effect_unknown"

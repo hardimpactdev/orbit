@@ -23,14 +23,19 @@ final readonly class AgentEffectReceipts
         return EffectReceiptMetadata::fromRun($run)->attach([...$input, 'effect_key' => $run['effect_key']]);
     }
 
-    /** @return array{effect_key: string, state: string, result: array<string, mixed>|null, result_digest: string|null, sanitized: bool, exit_code: int|null, finished_at: string|null} */
+    public static function uncertain(string $code): bool
+    {
+        return in_array($code, app(AgentContract::class)->commonErrors(), true);
+    }
+
+    /** @return array{effect_key: string, state: string, result: array<string, mixed>|null, result_digest: string|null, sanitized: bool, effect_nonce: string|null, effect_created_at:int|null, exit_code: int|null, finished_at: string|null} */
     public function read(Node $node, string $command, string $effectKey, ?string $owner = null): array
     {
         return self::decode($this->runner->run($node, 'agent.effect-receipt', ['command' => $command, 'effect_key' => $effectKey, 'owner' => $owner]), $effectKey);
     }
 
     /** @param array<string, mixed> $receipt
-     * @return array{effect_key: string, state: string, result: array<string, mixed>|null, result_digest: string|null, sanitized: bool, exit_code: int|null, finished_at: string|null}
+     * @return array{effect_key: string, state: string, result: array<string, mixed>|null, result_digest: string|null, sanitized: bool, effect_nonce: string|null, effect_created_at:int|null, exit_code: int|null, finished_at: string|null}
      */
     public static function decode(array $receipt, string $effectKey): array
     {
@@ -49,7 +54,9 @@ final readonly class AgentEffectReceipts
                 : ['error_code' => ValidatedData::string(ValidatedData::object($response['error'] ?? [])['code'] ?? 'operation.execution_failed')];
         }
 
-        return ['effect_key' => $effectKey, 'state' => $state, 'result' => $result, 'sanitized' => ($receipt['sanitized'] ?? false) === true,
+        return ['effect_key' => $effectKey, 'state' => $state, 'result' => $result,
+            'effect_nonce' => ValidatedData::nullableString($receipt['effect_nonce'] ?? null),
+            'effect_created_at' => isset($receipt['effect_created_at']) ? ValidatedData::integer($receipt['effect_created_at']) : null, 'sanitized' => ($receipt['sanitized'] ?? false) === true,
             'result_digest' => ValidatedData::nullableString($receipt['result_digest'] ?? null),
             'exit_code' => isset($receipt['exit_code']) ? ValidatedData::integer($receipt['exit_code']) : null,
             'finished_at' => ValidatedData::nullableString($receipt['finished_at'] ?? null)];

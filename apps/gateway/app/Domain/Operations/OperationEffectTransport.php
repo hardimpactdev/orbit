@@ -19,7 +19,7 @@ interface OperationEffectTransport extends OperationTransport
     /**
      * @param  EffectRunInput  $run  Includes the Gateway-derived effect_key.
      * @param  array<string, mixed>  $input  Original references; payload sources remain unhydrated. Only OperationSecrets::connection may read existing connection authentication.
-     * @return array{effect_key: string, state: string, result: array<string, mixed>|null, sanitized: bool, exit_code: int|null, finished_at: string|null}
+     * @return array{effect_key: string, state: string, result: array<string, mixed>|null, sanitized: bool, effect_nonce: string|null, effect_created_at: int|null, exit_code: int|null, finished_at: string|null}
      */
     public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array;
 }
