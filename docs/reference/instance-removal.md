@@ -133,8 +133,8 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Remove [owned databases](#owned-databases) through their child Operation. For development, withdraw PHP-FPM, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent. For production, clear the serving link. |
-| `runtime_cleanup` | Remove Processes, Schedules, PHP-FPM, Caddy, and other runtime files, then remove the production user, home, and source state. See [Runtime cleanup](#runtime-cleanup). |
+| `source_finalization` | For development, withdraw PHP-FPM, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent. For production, clear the serving link. |
+| `runtime_cleanup` | Remove Processes, Schedules, PHP-FPM, Caddy, and other runtime files, then remove [owned databases](#owned-databases) through their child Operation before the production user, home, and source state. See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Delete the Instance record. |
 
 ### Runtime cleanup
@@ -182,7 +182,7 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 ### Owned databases
 
-Before source finalization, the `database.destroy_owned` child checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, connection records, and the checkout stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
+After proven Process, Schedule, and Route runtime cleanup, the `database.destroy_owned` child checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, connection records, and the Instance record stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
 
 The Gateway holds a lock on every server in the set through record deletion; an overlapping removal returns `database.server_in_use` (409) before changing anything. It fences every planned PostgreSQL database before the final blocker check and restores admission on refusal through the same recoverable journal.
 

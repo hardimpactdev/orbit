@@ -101,7 +101,7 @@ final readonly class RemovalLifecycleExecution
             $previous = match ($match[2]) {
                 'route-clear' => "removal-{$match[1]}-source-prepare",
                 'source-finalize' => "removal-{$match[1]}-route-clear",
-                'database-intent' => "removal-{$match[1]}-route-clear",
+                'database-intent' => "removal-{$match[1]}-runtime-intent",
                 'runtime-intent' => "removal-{$match[1]}-source-finalize",
                 'row-delete' => "removal-{$match[1]}-runtime-intent",
                 default => null,
@@ -109,7 +109,12 @@ final readonly class RemovalLifecycleExecution
             if ($previous !== null) {
                 $execution->proven($operation, $previous);
             }
-            if ($match[2] === 'source-finalize') {
+            if ($match[2] === 'database-intent') {
+                foreach (['remove-processes-' => 'process.instance_runtime', 'remove-schedules-' => 'schedule.instance_runtime', 'cleanup-instance-' => 'route.cleanup_instance'] as $prefix => $kind) {
+                    $execution->assertChild($operation, $prefix.$match[1], $kind);
+                }
+            }
+            if ($match[2] === 'row-delete') {
                 $execution->assertChild($operation, "remove-databases-{$match[1]}", 'database.destroy_owned');
             }
         }

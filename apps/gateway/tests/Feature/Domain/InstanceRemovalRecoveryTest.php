@@ -7,6 +7,7 @@ use App\Domain\Instances\InstanceRemovalState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Instances\RemovalLifecycleExecution;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -74,4 +75,21 @@ it('retains a started descriptor identity when later source state selects a Gate
     $this->member->update(['source_finalized_at' => now(), 'finalization_receipt' => str_repeat('d', 64)]);
 
     expect(($this->descriptor)())->toBe($descriptor);
+});
+
+it('refuses database preparation until runtime children have proven cleanup', function (): void {
+    $execution = app(InstanceLifecycleExecution::class);
+    foreach (['removal-accept', 'removal-'.$this->instance->id.'-runtime-intent'] as $key) {
+        $descriptor = $execution->descriptor($key, 'gateway', 'instance.lifecycle-state', ['action' => 'configuration', 'operation_id' => $this->operation->id]);
+        $state = $this->operation->state;
+        $state['lifecycle_bindings'][$key] = $descriptor;
+        $state['executor_runs'][$key] = [...$descriptor, 'result' => ['ready' => true]];
+        $this->operation->update(['state' => $state]);
+        $this->operation->steps()->create(['name' => $key, 'status' => 'succeeded', 'position' => $this->operation->steps()->count() + 1, 'sequence' => 1, 'resumable' => true]);
+    }
+    $run = ['worker' => 'recovery-worker', 'key' => 'removal-'.$this->instance->id.'-database-intent',
+        'transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'input' => []];
+    expect(fn () => app(RemovalLifecycleExecution::class)->beforeRun($this->operation, $run))
+        ->toThrow(ResourceOperationException::class);
+    expect($this->operation->refresh()->state)->not->toHaveKey('lifecycle_owned_databases');
 });

@@ -83,7 +83,9 @@ final readonly class InstanceLifecycleChildren
                 }
                 $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
             }
-            if ($this->ready($parent, "removal-{$id}-database-intent")) {
+            if ($this->ready($parent, "removal-{$id}-database-intent")
+                && $this->succeeded($parent, "remove-processes-{$id}") && $this->succeeded($parent, "remove-schedules-{$id}")
+                && $this->succeeded($parent, "cleanup-instance-{$id}")) {
                 $children[] = app(InstanceDatabaseIntent::class)->child($parent, "remove-databases-{$id}");
             }
             if ($this->ready($parent, "removal-{$id}-runtime-intent")) {
