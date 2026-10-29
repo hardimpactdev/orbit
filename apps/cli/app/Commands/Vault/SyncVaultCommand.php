@@ -7,12 +7,12 @@ namespace App\Commands\Vault;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
-use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 
 final class SyncVaultCommand extends VaultCommand
 {
     #[\Override]
-    protected $signature = 'vault:sync {--json : Return machine-readable JSON}';
+    protected $signature = 'vault:sync {--idempotency-key= : Reuse a key to retry this operation start}
+        {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Publish changes now and repair changed or missing items.';
@@ -25,20 +25,6 @@ final class SyncVaultCommand extends VaultCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new SyncVaultRequest,
-            VaultStatusResponse::class,
-            ['Sync vault', 'Publishing database credentials', 'Synced vault'],
-        );
-
-        if (! $response instanceof VaultStatusResponse) {
-            return self::FAILURE;
-        }
-
-        // The Gateway refuses a sync with failed changes; an error still recorded fails the run too.
-        $exit = $this->renderStatus($response, 'Vault sync finished.');
-
-        return $response->lastError === null ? $exit : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new SyncVaultRequest(is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Sync vault');
     }
 }
