@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Processes\ProcessSwampSafety;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Node;
@@ -58,7 +59,7 @@ final readonly class NodeRemovalPlan
             }
             $steps[] = $this->child('remove-residue-'.$target->id, 'route.offline_residue_clean', $target->id,
                 ['removed_node_id' => $node->id]);
-            if ($target->roles()->whereIn('role', [RoleName::Vpn, RoleName::Gateway])->exists()) {
+            if (PrivateDnsPublicationNodes::query()->whereKey($target->id)->exists()) {
                 $steps[] = $this->child('remove-dns-'.$target->id, 'route.private_dns_publish', $target->id,
                     ['reason' => 'node removal']);
             }
@@ -85,7 +86,7 @@ final readonly class NodeRemovalPlan
                 $steps[] = $this->child('restore-network-'.$target->id, 'node.network_projection', $target->id,
                     ['context_node_id' => $node->id, 'phase' => 'expand']);
             }
-            if ($target->roles()->whereIn('role', [RoleName::Vpn, RoleName::Gateway])->exists()) {
+            if (PrivateDnsPublicationNodes::query()->whereKey($target->id)->exists()) {
                 $steps[] = $this->child('restore-dns-'.$target->id, 'route.private_dns_publish', $target->id, ['reason' => 'node removal restored']);
             }
         }

@@ -78,6 +78,7 @@ it('declares cross-family children and uses null for historical orphan residue',
     $definitions['ai_router.collector_converge'] = $definitions['route.private_dns_publish'];
     app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
     [$node, $operation, , $command] = footprintPreparation(array_map(static fn (string $name) => new FakeFootprintArtifact($name, 'current'), ['caddy', 'private-dns', 'route-residue', 'ai-router']));
+    $node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
     $command->run($operation, $operation->input);
     $children = $operation->refresh()->input['_footprint']['children'];
 
@@ -167,17 +168,32 @@ it('refuses required collector preparation when its owning child kind is unavail
         ->and($operation->input)->not->toHaveKey('_footprint');
 });
 
-it('stages private DNS only in the Swamp plan for Gateway Nodes', function (): void {
+it('stages private DNS only for active VPN owners including a combined Gateway holder', function (array $roles, string $status, bool $stages): void {
     $artifact = new FakeFootprintArtifact('private-dns', 'listener-current', applies: false);
     [$node, $operation, $footprint, $command] = footprintPreparation([$artifact]);
-    $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    foreach ($roles as $role) {
+        $node->roles()->create(['role' => $role, 'status' => $status]);
+    }
     expect($footprint->expected($node)->artifacts)->not->toHaveKey('private-dns');
     expect($command->run($operation, $operation->input))->toBe(['prepared' => true]);
     $snapshot = $operation->fresh()->input['_footprint'];
-    expect($snapshot['payloads'])->toHaveKey('private-dns-listener')
-        ->and($snapshot['children']['private-dns']['kind'])->toBe('route.private_dns_publish')
-        ->and($footprint->expected($node)->artifacts)->not->toHaveKey('private-dns');
-});
+    if ($stages) {
+        expect($snapshot['payloads'])->toHaveKey('private-dns-listener');
+        expect($snapshot['children']['private-dns']['kind'])->toBe('route.private_dns_publish');
+    } else {
+        expect(array_column($snapshot['artifacts'], 'name'))->not->toContain('private-dns');
+        expect($snapshot['payloads'])->not->toHaveKey('private-dns-listener');
+        expect($snapshot['children'])->not->toHaveKey('private-dns');
+        expect($operation->state['child_intents'])->toBe([]);
+    }
+    expect($footprint->expected($node)->artifacts)->not->toHaveKey('private-dns');
+})->with([
+    [[RoleName::Gateway], 'active', false],
+    [[RoleName::Vpn], 'active', true],
+    [[RoleName::Vpn, RoleName::Gateway], 'active', true],
+    [[RoleName::Vpn], 'provisioning', false],
+    [[RoleName::Gateway], 'provisioning', false],
+]);
 
 it('captures ordered PHP inputs from the retained renderer and active Instance versions', function (array $roles, string $memory): void {
     [$node, $operation, , $command] = footprintPreparation([new FakeFootprintArtifact('php-runtime', 'current')]);
