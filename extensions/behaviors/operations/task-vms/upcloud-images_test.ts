@@ -167,3 +167,67 @@ Deno.test("image failure cleanup yields until its admitted template deletion set
     "operation.waiting",
   );
 });
+
+for (const lostReply of [null, "delete-builder", "delete-smoke"]) {
+  Deno.test(`UpCloud removal waits outside the delete primitive${lostReply ? ` after losing ${lostReply}` : ""}`, async () => {
+    const effects = new Effects();
+    const pending = new Map<string, "stopped" | null>();
+    const child = effects.child.bind(effects);
+    let lost = false;
+    const setPower = (slot: string, state: string | null) => {
+      if (slot === "builder") effects.power = state;
+      else effects.smokePower = state;
+    };
+    effects.child = async (...args) => {
+      const [key] = args;
+      const first = !effects.receipts.has(key);
+      const receipt = await child(...args);
+      if (first && (key.includes("hard-stop-") || key.startsWith("delete-"))) {
+        const slot = key.endsWith("builder") ? "builder" : "smoke";
+        setPower(slot, "maintenance");
+        pending.set(slot, key.startsWith("delete-") ? null : "stopped");
+      }
+      if (key === "promote") {
+        assertEquals(effects.power, null);
+        assertEquals(effects.smokePower, null);
+      }
+      if (key === lostReply && !lost) {
+        lost = true;
+        throw new ExecutorError("operation.outcome_unknown");
+      }
+      return receipt;
+    };
+    let waits = 0;
+    effects.wait = () => {
+      waits++;
+      for (const [slot, state] of pending) setPower(slot, state);
+      pending.clear();
+      return Promise.resolve();
+    };
+
+    if (lostReply) {
+      await assertRejects(
+        () => buildUpCloudImage(input(), effects),
+        ExecutorError,
+        "operation.outcome_unknown",
+      );
+      assertEquals(
+        effects.calls.some((call) => call.key.startsWith("cleanup-")),
+        false,
+      );
+    }
+    assertEquals(await buildUpCloudImage(input(), effects), {
+      ready: true,
+      template_uuid: "new-template",
+    });
+    assertEquals(waits, 4);
+    assertEquals(
+      effects.calls.filter((call) => call.key === "delete-builder").length,
+      1,
+    );
+    assertEquals(
+      effects.calls.filter((call) => call.key === "delete-smoke").length,
+      1,
+    );
+  });
+}

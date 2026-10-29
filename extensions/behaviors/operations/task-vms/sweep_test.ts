@@ -191,3 +191,53 @@ Deno.test("a refused clone deletion remains failed while other cleanup and obser
     "observe",
   ]);
 });
+
+Deno.test("UpCloud orphan deletion resumes its accepted request and waits for absence before observation", async () => {
+  const effects = new Effects();
+  const deletion = {
+    kind: "server",
+    name: "tvm-100",
+    uuid: "owned-server",
+    label: "orbit-task-vm",
+    value: "100",
+  };
+  let state: string | undefined = "started";
+  let lost = false;
+  const receipts = new Map<string, { ready: boolean }>();
+  effects.read = () =>
+    Promise.resolve({
+      deletions: [deletion],
+      server_states: state ? { "owned-server": state } : {},
+    });
+  effects.child = (key, kind, node, data) => {
+    assertEquals(node, 4);
+    if (!receipts.has(key)) {
+      effects.calls.push({ key, kind, input: data });
+      receipts.set(key, { ready: true });
+    }
+    if (kind === "task_vm.sweep_delete_upcloud" && !lost) {
+      lost = true;
+      state = "maintenance";
+      return Promise.reject(new ExecutorError("operation.outcome_unknown"));
+    }
+    if (key === "observe") assertEquals(state, undefined);
+    return Promise.resolve(receipts.get(key)!);
+  };
+  effects.wait = () => {
+    state = lost ? undefined : "stopped";
+    return Promise.resolve();
+  };
+
+  await assertRejects(
+    () => sweepHost(input("upcloud"), effects),
+    ExecutorError,
+    "operation.outcome_unknown",
+  );
+  assertEquals(effects.calls.some((call) => call.key === "observe"), false);
+  assertEquals(await sweepHost(input("upcloud"), effects), { ready: true });
+  assertEquals(effects.calls.map((call) => call.kind), [
+    "task_vm.sweep_stop_upcloud",
+    "task_vm.sweep_delete_upcloud",
+    "task_vm.sweep_observe",
+  ]);
+});
