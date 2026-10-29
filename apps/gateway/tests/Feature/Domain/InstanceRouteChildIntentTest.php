@@ -7,6 +7,7 @@ use App\Domain\Instances\Environment\EnvironmentSyncSecrets;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
@@ -41,6 +42,23 @@ it('renders the activating web-root pool before the Route becomes active', funct
     [$child, , , $instance] = routeInstanceChild();
     $runtime = app(InstancePhpRuntimeExecution::class)->plan($child)['runtime'];
     expect($runtime['mode'])->toBe('converge')->and($runtime['configuration']['pool'])->toContain($instance->production_home.'/current/other');
+});
+
+it('keeps full PHP configuration in Gateway state while returning a bounded plan receipt', function (): void {
+    [$child] = routeInstanceChild();
+    $child->forceFill(['status' => 'running', 'sequence' => 1])->save();
+    $execution = app(InstancePhpRuntimeExecution::class);
+    $plan = $execution->plan($child);
+    $configuration = str_repeat('synthetic-php-configuration', 80);
+    $plan['runtime']['configuration']['pool'] = $configuration;
+
+    $receipt = $execution->received($child, ['key' => 'php.plan'], $plan);
+    $public = app(OperationExecutionContract::class)->result($child, $receipt);
+
+    expect($public)->toBe(['prepared' => true, 'has_runtime' => true]);
+    expect($child->refresh()->state['php_plan']['runtime']['configuration']['pool'])->toBe($configuration);
+    $converge = array_find($execution->context($child)['descriptors'], static fn (array $descriptor): bool => $descriptor['key'] === 'php.converge');
+    expect($converge['input']['configuration']['pool'])->toBe($configuration);
 });
 
 it('uses admitted previous targets after association removal and withdraws the failed pool', function (): void {

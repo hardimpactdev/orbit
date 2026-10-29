@@ -80,9 +80,7 @@ $instanceExecutionKinds = [
             ['transport' => 'instance-deploy-agent', 'name' => 'php.converge-production-runtime', 'resumable' => true],
         ],
         'completion_contract' => ['step' => 'php_receipt', 'transport' => 'gateway', 'name' => 'instance.php-receipt', 'result' => ['confirmed' => true]],
-        'result_fields' => ['child_id', 'child_kind', 'child_status', 'runtime', 'runtime.mode', 'runtime.user', 'runtime.home', 'runtime.version', 'runtime.marker',
-            'runtime.configuration.main', 'runtime.configuration.pool', 'runtime.configuration.local_defaults', 'runtime.configuration.master_ini',
-            'runtime.configuration.unit', 'runtime.configuration.initial_pool', 'runtime.application', 'runtime.initial_application',
+        'result_fields' => ['child_id', 'child_kind', 'child_status', 'prepared', 'has_runtime',
             'published', 'instance_id', 'confirmed', 'no_op', 'error_code'],
     ],
     'instance.prepare_vp_environment' => [

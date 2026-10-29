@@ -24,6 +24,8 @@ Drain old PHP deploy workers before switching executors. The cutover migration e
 
 Completion derives the selected release from proven activation or previous-selection receipts. A lost Node connection does not prevent a failed or cancelled Operation from finishing its history row and releasing its Instance. Preparing a candidate alone never proves that it was selected.
 
+Public deploy log tails are at most 1 KiB and mark truncation; deployment history retains its bounded event stream. PHP preparation receipts report readiness flags. The Gateway keeps the full rendered PHP configuration in Operation state and binds it to the native command input. Operation results stay within the shared 256 KiB limit.
+
 Environment writes use `instance.sync_environment`, with protected material resolved in Gateway memory. Explicit production environment synchronization composes that child with config-cache refresh, PHP cache refresh and `process.restart_instance`; its Process-ID result requires the list-result capability. A failed refresh keeps the pending marker. Route preparation uses `instance.prepare_php_runtime` and `instance.prepare_served_web_roots` for admitted production targets before their associations become active. Route URL-only synchronization accepts the `synchronize-web-root-urls.rollback.<instance_id>` child key after the parent restores its stored web root.
 
 The `app-prod` role decides this layout. `APP_ENV` does not; see [Laravel mode](/reference/environment-variables#laravel-mode).

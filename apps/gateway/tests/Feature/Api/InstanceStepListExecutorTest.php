@@ -242,7 +242,9 @@ it('completes a development deployment with a proven best-effort warning without
     $agents->answer('instance.resolve-development-target', ['commit' => $commit])
         ->answer('instance.checkout-development-default', ['commit' => $commit]);
     app(ProjectDevelopmentDeployStepStore::class)->create($instance->project, new DevelopmentDeployStep('warm', 'false', required: false), null, null);
-    $agents->answer('instance.run-development-step', ['exit_code' => 42, 'timed_out' => false, 'output' => [], 'truncated' => false]);
+    $tail = str_repeat('λ', 800).' retained-tail';
+    $agents->answer('instance.run-development-step', ['exit_code' => 42, 'timed_out' => false,
+        'output' => [['stream' => 'stdout', 'value' => $tail]], 'truncated' => false]);
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.deploy', 'worker' => 'proof'])->assertOk();
     stepListRun($this, $operation, stepListDescriptor($this, $operation, 'source.resolve'));
@@ -250,6 +252,10 @@ it('completes a development deployment with a proven best-effort warning without
     stepListRun($this, $operation, stepListDescriptor($this, $operation, 'budget.before_activation.warm'));
     $descriptor = stepListDescriptor($this, $operation, 'before_activation.warm');
     $failed = stepListRun($this, $operation, $descriptor, false);
+    expect(strlen($failed['output_tail']))->toBeLessThanOrEqual(1024);
+    expect($failed['output_tail'])->toEndWith(' retained-tail');
+    expect(mb_check_encoding($failed['output_tail'], 'UTF-8'))->toBeTrue();
+    expect($failed['truncated'])->toBeTrue();
     $this->postJson('/api/v1/operation-executor/'.$operation->id.'/step', ['worker' => 'proof', 'key' => 'warm:failed',
         'name' => $descriptor['step'], 'status' => 'failed', 'result' => $failed, 'error_code' => 'deployment.step_failed'])->assertOk();
     $receipt = stepListRun($this, $operation, stepListDescriptor($this, $operation, 'verification'));
@@ -259,7 +265,7 @@ it('completes a development deployment with a proven best-effort warning without
         ->and(InstanceDeployment::query()->sole()->status)->toBe('succeeded');
     $events = InstanceDeployment::query()->sole()->events;
     $output = implode('', array_map(static fn (array $event): string => isset($event['value_base64']) ? base64_decode($event['value_base64']) : '', $events));
-    expect($output)->toContain('Best-effort step failed (exit 42): warm');
+    expect($output)->toContain('Best-effort step failed (exit 42): warm', $tail);
 });
 
 it('hydrates a protected Route URL boolean without persisting environment material or masking numeric receipts', function (bool $stored): void {

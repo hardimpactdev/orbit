@@ -319,7 +319,9 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         }
 
         if (is_array($receipt['output'] ?? null)) {
-            $receipt['output_tail'] = mb_scrub(substr(implode('', array_map(static fn (mixed $chunk): string => is_array($chunk) && is_string($chunk['value'] ?? null) ? $chunk['value'] : '', $receipt['output'])), -8000), 'UTF-8');
+            $output = mb_scrub(implode('', array_map(static fn (mixed $chunk): string => is_array($chunk) && is_string($chunk['value'] ?? null) ? $chunk['value'] : '', $receipt['output'])), 'UTF-8');
+            $receipt['output_tail'] = mb_strcut($output, -1024, 1024, 'UTF-8');
+            $receipt['truncated'] = ($receipt['truncated'] ?? false) === true || strlen($output) > 1024;
         }
 
         return $receipt;

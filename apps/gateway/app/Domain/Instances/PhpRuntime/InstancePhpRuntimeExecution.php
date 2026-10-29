@@ -96,7 +96,12 @@ final readonly class InstancePhpRuntimeExecution implements OperationCompletion,
             return $receipt;
         }
         if ($run['key'] === 'php.plan') {
+            if (! array_key_exists('runtime', $receipt) || ($receipt['runtime'] !== null && ! is_array($receipt['runtime']))) {
+                throw $this->unproven();
+            }
             $this->operations->change($operation, ['state' => [...($operation->state ?? []), 'php_plan' => $receipt]]);
+
+            return ['prepared' => true, 'has_runtime' => $receipt['runtime'] !== null];
         }
         if ($run['key'] === 'php.converge' && ! is_bool($receipt['published'] ?? null)) {
             throw $this->unproven();
