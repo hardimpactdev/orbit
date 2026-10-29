@@ -133,6 +133,7 @@ it('renders generated identity separately from preserved local defaults', functi
     $rendered = $initialRelease ? $renderer->render($identity, initialRelease: true) : $renderer->render($identity);
 
     expect($rendered->main)
+        ->toContain('process_control_timeout = 30s')
         ->toContain(
             'pid = /run/php/orbit-app-9.pid',
             'include = /etc/orbit/php-fpm/orbit-app-9/generated/pool.conf',

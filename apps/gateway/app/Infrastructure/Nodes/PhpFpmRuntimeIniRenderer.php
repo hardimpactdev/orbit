@@ -7,7 +7,7 @@ namespace App\Infrastructure\Nodes;
 use InvalidArgumentException;
 
 /**
- * Renders the Orbit-managed OPcache runtime for one PHP-FPM service.
+ * Renders the Orbit-managed settings shared by every PHP-FPM master of a version.
  *
  * OPcache shared memory belongs to the FPM master process, so sizing is a
  * per-version setting and cannot live in a pool. The file is published as a
@@ -43,6 +43,8 @@ final readonly class PhpFpmRuntimeIniRenderer
             ; Managed by Orbit for the {$profile} PHP-FPM runtime. Orbit rewrites this file during convergence.
             ; OPcache shared memory is allocated once per FPM master, so sizing lives here.
             ; Timestamp validation is a per-pool policy in /etc/php/*/fpm/pool.d.
+            post_max_size = 64M
+            upload_max_filesize = 64M
             opcache.enable = On
             opcache.memory_consumption = {$sizing['memory_consumption']}
             opcache.interned_strings_buffer = {$sizing['interned_strings_buffer']}

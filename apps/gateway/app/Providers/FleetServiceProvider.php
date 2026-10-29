@@ -34,6 +34,7 @@ use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PeerDnsFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
@@ -82,6 +83,7 @@ final class FleetServiceProvider extends ServiceProvider
             PeerDnsFootprintArtifact::class,
             PrivateDnsFootprintArtifact::class,
             RouteResidueFootprintArtifact::class,
+            PhpRuntimeFootprintArtifact::class,
             TmpfilesFootprintArtifact::class,
         ], NodeFootprintArtifact::class);
         $this->app->bind(

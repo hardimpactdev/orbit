@@ -103,6 +103,7 @@ impl Fixture {
             fail: BTreeMap::new(),
             cli_extra: String::new(),
             fpm_extra: String::new(),
+            ini_overrides: BTreeMap::new(),
             ping: true,
             pings: vec![],
             revive: false,
@@ -190,6 +191,7 @@ struct Fake {
     fail: BTreeMap<String, usize>,
     cli_extra: String,
     fpm_extra: String,
+    ini_overrides: BTreeMap<String, String>,
     ping: bool,
     pings: Vec<PathBuf>,
     revive: bool,
@@ -346,7 +348,13 @@ impl RecipeHost for Fake {
                 } else if a[1] == "-v" {
                     out.stdout = "PHP 8.5".into();
                 } else if a[1] == "-i" {
-                    out.stdout = format!("{}\nopcache.enable => On => On\nopcache.memory_consumption => 512 => 512\nopcache.interned_strings_buffer => 64 => 64\nopcache.max_accelerated_files => 65407 => 65407\nopcache.jit => disable => disable\nopcache.jit_buffer_size => 0 => 0\n", self.files.path("/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini").display());
+                    out.stdout = format!("{}\npost_max_size => 64M => 64M\nupload_max_filesize => 64M => 64M\nopcache.enable => On => On\nopcache.memory_consumption => 512 => 512\nopcache.interned_strings_buffer => 64 => 64\nopcache.max_accelerated_files => 65407 => 65407\nopcache.jit => disable => disable\nopcache.jit_buffer_size => 0 => 0\n", self.files.path("/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini").display());
+                    for (key, value) in &self.ini_overrides {
+                        out.stdout = out.stdout.replace(
+                            &format!("{key} => 64M => 64M"),
+                            &format!("{key} => {value} => {value}"),
+                        );
+                    }
                 } else {
                     assert_eq!(a[1], "-m");
                     let sapi = if executable.ends_with("/php8.5") {

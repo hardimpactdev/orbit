@@ -23,8 +23,9 @@ it('sends the rendered runtime of the recorded identity to converge it', functio
 
     $manager->converge($instance);
 
-    $input = $agents->calls[1]['input'];
-    expect($agents->commands())->toBe(['php.install-build', 'php.converge-production-runtime'])
+    expect($agents->calls[1]['input']['runtime_ini'])->toContain('post_max_size = 64M', 'upload_max_filesize = 64M');
+    $input = $agents->calls[2]['input'];
+    expect($agents->commands())->toBe(['php.install-build', 'php.configure-runtime', 'php.converge-production-runtime'])
         ->and($input)->toMatchArray([
             'mode' => 'converge', 'user' => $identity->user, 'home' => $identity->home, 'version' => '8.5',
             'marker' => $identity->marker(),
@@ -132,7 +133,7 @@ function php_runtime_commands(?Closure $configure = null): array
     ]);
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
     $instance->update($identity->attributes());
-    $agents = (new FakeAgentCommandRunner)->answer('php.install-build', PhpBuildAnswers::result());
+    $agents = (new FakeAgentCommandRunner)->answer('php.install-build', PhpBuildAnswers::result())->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
     if ($configure !== null) {
         $configure($agents);
     }

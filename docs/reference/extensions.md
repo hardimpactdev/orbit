@@ -118,7 +118,7 @@ The Node Caddy build renders core's sources first, then each `ContributedCaddySi
 
 A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
 
-The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
+The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Core owns the `php-runtime` artifact for [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits); it uses this existing interface and adds no plug-in point. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
 
 `ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. AI router publishes the collector Node's stored `wireguard_ip`.
 

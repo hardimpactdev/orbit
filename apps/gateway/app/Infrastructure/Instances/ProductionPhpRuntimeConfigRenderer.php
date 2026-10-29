@@ -20,6 +20,7 @@ final readonly class ProductionPhpRuntimeConfigRenderer
         $applicationDirectory = $identity->applicationDirectory($initialRelease);
         $main = <<<FPM
             [global]
+            process_control_timeout = 30s
             pid = /run/php/{$identity->user}.pid
             error_log = /var/log/php-fpm.log
             include = {$identity->generatedDirectory}/pool.conf
