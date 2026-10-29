@@ -4918,6 +4918,22 @@
       ]
     },
     {
+      "name": "package.prepare-account",
+      "summary": "Prepare the distinct unprivileged package account and private workspace parent.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "package.worker_invalid",
+        "package.account_invalid",
+        "package.workspace_unsafe",
+        "package.prepare_failed"
+      ]
+    },
+    {
       "name": "process.check-release",
       "summary": "Tell whether a production Process has a selected release.",
       "mutates": false,

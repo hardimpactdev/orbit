@@ -71,6 +71,7 @@ mod node_dns_listener;
 mod node_identity;
 pub mod os_release;
 mod package_cache;
+mod package_sandbox;
 pub mod peer_dns;
 pub mod php_build;
 mod php_fpm;
@@ -408,6 +409,7 @@ pub fn all() -> Vec<Entry> {
         entry::<schedules::ReadScheduleLogs>(),
         entry::<schedules::RemoveSchedule>(),
         entry::<accounts::LookupAccount>(),
+        entry::<package_sandbox::Prepare>(),
         entry::<processes::CheckRelease>(),
         entry::<processes::ReadStatus>(),
         entry::<processes::ControlProcess>(),
