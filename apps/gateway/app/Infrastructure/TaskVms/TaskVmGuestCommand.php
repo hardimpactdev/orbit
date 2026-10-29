@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmCommandContracts;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentSchemas;
@@ -29,7 +30,7 @@ final readonly class TaskVmGuestCommand implements OperationEffectTransport
     use TaskVmTransportSchema;
 
     public function __construct(private GuestAgentCommandRunner $agents, private TaskVmSettings $settings, private PiArtifactDelivery $artifacts,
-        private RecipeImageBuildSteps $eligibility, private RecipeLoader $recipes, private RecipeImageInput $recipesInput) {}
+        private RecipeImageBuildSteps $eligibility, private RecipeLoader $recipes, private RecipeImageInput $recipesInput, private AgentContract $contract) {}
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -108,7 +109,7 @@ final readonly class TaskVmGuestCommand implements OperationEffectTransport
         $input = ValidatedData::object($run['input']);
         $command = $input['command'] ?? null;
 
-        return is_string($command) && ! in_array($command, ['guest.cloud-init', 'guest.fingerprint', 'image.inspect-phase', ...TaskVmCommandContracts::SpecialGuestCommands], true);
+        return is_string($command) && ! in_array($command, TaskVmCommandContracts::SpecialGuestCommands, true) && $this->contract->command($command)->mutates;
     }
 
     /** @param array<string,mixed> $run
