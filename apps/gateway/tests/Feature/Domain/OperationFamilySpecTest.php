@@ -8,6 +8,14 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationCompletion;
 use App\Domain\Tools\ToolOperationExecution;
 
+it('reuses the kind registry across family admission checks', function (): void {
+    $kinds = app(OperationKinds::class);
+
+    expect(OperationFamilySpec::available('tool.install'))->toBeTrue()
+        ->and(OperationFamilySpec::available('tool.remove'))->toBeTrue()
+        ->and(app(OperationKinds::class))->toBe($kinds);
+});
+
 it('keeps every Tools command and completion contract unchanged', function (): void {
     $definitions = require app_path('Domain/Tools/operation-kinds.php');
 

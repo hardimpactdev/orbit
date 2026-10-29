@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -17,6 +18,12 @@ final readonly class ToolOperationCompletion implements OperationCompletion
 {
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
+        $installed = $outcome->result['installed_version'] ?? null;
+        if ($outcome->status === OperationStatus::Succeeded
+            && (($operation->kind === 'tool.remove' && $installed !== null)
+                || (in_array($operation->kind, ['tool.install', 'tool.update', 'tool.adopt'], true) && $installed === null))) {
+            throw new ResourceOperationException('operation.completion_unproven', 'The installed version does not fit the Tool operation.', 409);
+        }
         if ($operation->kind === 'tool.adopt' && $outcome->status !== OperationStatus::Succeeded) {
             return;
         }

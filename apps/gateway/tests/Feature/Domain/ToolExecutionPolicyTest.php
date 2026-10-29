@@ -70,6 +70,23 @@ it('keeps silent adoption and manager failures free of new Tool records', functi
     expect(Tool::query()->count())->toBe(0);
 })->with([['tool.package_already_installed', true], ['tool.manager_unavailable', false]]);
 
+it('refuses a successful result that contradicts the Tool verb before projecting state', function (string $verb, ?string $version): void {
+    $node = Node::query()->create(['name' => 'tools-result', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2']);
+    $manager = $node->toolManagers()->create(['name' => 'vp', 'status' => LifecycleStatus::Provisioning]);
+    $tool = $node->tools()->create(['tool_manager_id' => $manager->id, 'package' => 'is-number', 'status' => ToolStatus::Installed, 'installed_version' => '7.0.0']);
+    $operation = toolPolicyOperation($verb);
+    $operation->node_id = $node->id;
+    $operation->input = [...$operation->input, 'tool_id' => $tool->id];
+    toolPolicyReceipt($operation, 'manager-ready', 'tool.vp-version', ['version' => '1.0.0']);
+
+    expect(fn () => new ToolOperationCompletion()->complete($operation, OperationOutcome::succeeded(['installed_version' => $version])))
+        ->toThrow(ResourceOperationException::class, 'The installed version does not fit the Tool operation.');
+
+    $this->assertModelExists($tool);
+    expect($tool->fresh()->installed_version)->toBe('7.0.0')
+        ->and($manager->fresh()->status)->toBe(LifecycleStatus::Provisioning);
+})->with([['remove', '7.0.0'], ['install', null], ['update', null], ['adopt', null]]);
+
 it('projects only the selected proven package from a native inventory receipt', function (): void {
     $operation = toolPolicyOperation();
     $result = new ToolOperationExecution()->received($operation, ['name' => 'tool.vp-inventory', 'key' => 'package-before'], [
