@@ -84,7 +84,6 @@ final class OperationExecutorController extends Controller
     }
 
     /** @param array<string, mixed>|list<array<string,mixed>>|null $data */
-
     private function respond(ExecutorRequest $request, ?array $data): JsonResponse
     {
         return response()->json(['data' => $data, 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
