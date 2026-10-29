@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * @property list<array{database:string,operation_id:int,step:string,username:string,server_id:int,scope?:'prefix'}>|null $creation_receipts
+ * @property list<array{database:string,operation_id?:int,step?:string,activity_id?:int,username:string,server_id:int,scope?:'prefix'}>|null $creation_receipts
  * @property array{actor:string,reason:string,verified_at:string,databases:list<string>,prefix:?string,username:string,server_id:int,node_id:int,digest:string}|null $ownership_adoption
  * @property int $id
  * @property string $slug

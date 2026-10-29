@@ -78,7 +78,7 @@ it('queries a registered mysql connection as read-only by default and redacts au
         ->and($encoded)
         ->not->toContain(DATABASE_INSPECTION_SECRET)
         ->and($activity->properties?->get('input'))
-        ->toMatchArray(['write' => false]);
+        ->not->toHaveKey('password');
 });
 
 it('refuses write SQL without the write flag and executes it when gated', function (): void {
@@ -108,14 +108,11 @@ it('refuses write SQL without the write flag and executes it when gated', functi
         'sql' => 'DELETE FROM users',
         'write' => true,
     ])
-        ->assertOk()
-        ->assertJsonPath('data.write', true)
-        ->assertJsonPath('data.row_count', 1);
+        ->assertAccepted()
+        ->assertJsonPath('data.kind', 'database.write')
+        ->assertJsonPath('data.status', 'queued');
 
-    expect($executor->queries[0] ?? null)->toMatchArray([
-        'sql' => 'DELETE FROM users',
-        'write' => true,
-    ]);
+    expect($executor->queries)->toBe([]);
 });
 
 it('refuses stacked SQL statements', function (): void {

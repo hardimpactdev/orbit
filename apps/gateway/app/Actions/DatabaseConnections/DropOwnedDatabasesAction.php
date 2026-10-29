@@ -4,25 +4,75 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Models\DatabaseConnection;
-use App\Models\Operation;
+use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
+use Illuminate\Support\Facades\DB;
 
-/** Prepares the complete SQL removal set. Lifecycle composes and awaits the resulting Operations. */
+/**
+ * Drops every database an Instance owns and deletes its connection record: a database on a
+ * Database server with its test databases and unshared users, or a SQLite file. A database that
+ * is already gone counts as dropped. A database the Instance only has attached stays.
+ */
 final readonly class DropOwnedDatabasesAction
 {
-    public function __construct(private DropServerDatabaseAction $serverDatabases) {}
+    public function __construct(
+        private DropServerDatabaseAction $serverDatabases,
+        private InstanceSqliteCloner $sqlite,
+        private RecordEventBroadcaster $broadcaster,
+    ) {}
 
-    /** @return list<Operation> */
-    public function execute(int $instanceId): array
+    public function execute(int $instanceId): void
     {
-        $connections = DatabaseConnection::query()->with(['server', 'users'])
-            ->where('owner_instance_id', $instanceId)->whereNotNull('database_server_id')->orderBy('id')->get();
+        $connections = DatabaseConnection::query()
+            ->with(['server', 'ownerInstance.node'])
+            ->where('owner_instance_id', $instanceId)
+            ->orderBy('id')
+            ->get();
 
-        return $this->serverDatabases->executeMany(array_values($connections->all()));
+        $this->serverDatabases->dropSynchronously(array_values($connections->all()), function (DatabaseConnection $connection): void {
+            if ($connection->database_server_id === null) {
+                $this->drop($connection);
+            } else {
+                $this->deleteRecords($connection);
+            }
+        });
     }
 
-    public function drop(DatabaseConnection $connection): Operation
+    public function drop(DatabaseConnection $connection): void
     {
-        return $this->serverDatabases->execute($connection);
+        $deleteRecords = fn () => $this->deleteRecords($connection);
+
+        if ($connection->database_server_id !== null) {
+            $this->serverDatabases->dropSynchronously([$connection], static fn () => $deleteRecords());
+        } elseif ($connection->driver === DatabaseDriver::Sqlite && is_string($connection->path)) {
+            $owner = $connection->ownerInstance;
+
+            if ($owner instanceof Instance) {
+                $this->sqlite->remove($owner, $connection->path);
+            }
+        }
+
+        if ($connection->database_server_id === null) {
+            $deleteRecords();
+        }
+    }
+
+    private function deleteRecords(DatabaseConnection $connection): void
+    {
+        DB::transaction(static function () use ($connection): void {
+            DatabaseConnectionTarget::query()->where('database_connection_id', $connection->id)->delete();
+            $connection->delete();
+        });
+
+        $this->broadcaster->broadcast(
+            RecordEventType::DatabaseDeleted,
+            $connection->id,
+            ['id' => $connection->id, 'slug' => $connection->slug],
+        );
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -20,13 +21,7 @@ final readonly class DatabaseOwnership
         $names = [];
         $prefixes = [];
         foreach ($connection->creation_receipts ?? [] as $proof) {
-            $operation = Operation::query()->find($proof['operation_id']);
-            $run = $operation === null ? [] : ValidatedData::object(ValidatedData::object($operation->state['executor_runs'] ?? [])[$proof['step']] ?? []);
-            if ($operation === null || ! in_array($operation->kind, ['database.create', 'database.clone'], true)
-                || ($operation->input['connection_id'] ?? null) !== $connection->id || $operation->node_id !== $connection->server?->node_id
-                || $proof['username'] !== $connection->username || $proof['server_id'] !== $connection->database_server_id
-                || ($run['transport'] ?? null) !== 'agent' || ($run['name'] ?? null) !== 'database.server-admin'
-                || ($run['result'] ?? null) !== ['backend' => 'active']) {
+            if (! $this->proven($connection, $proof)) {
                 continue;
             }
             if (($proof['scope'] ?? null) === 'prefix') {
@@ -53,6 +48,31 @@ final readonly class DatabaseOwnership
         }
 
         return array_values(array_unique($names));
+    }
+
+    /** @param array{database:string,username:string,server_id:int,scope?:'prefix',activity_id?:int,operation_id?:int,step?:string} $proof */
+    private function proven(DatabaseConnection $connection, array $proof): bool
+    {
+        if ($proof['username'] !== $connection->username || $proof['server_id'] !== $connection->database_server_id) {
+            return false;
+        }
+        if (isset($proof['activity_id'])) {
+            $activity = Activity::query()->find($proof['activity_id']);
+            $properties = $activity?->properties?->toArray() ?? [];
+            unset($proof['activity_id']);
+
+            return $activity?->command === 'database:lifecycle:create' && $activity->status === 'succeeded'
+                && $activity->subject_type === DatabaseConnection::class && $activity->subject_id === $connection->id
+                && ($properties['connection_id'] ?? null) === $connection->id
+                && ($properties['node_id'] ?? null) === $connection->server?->node_id && ($properties['receipt'] ?? null) === $proof;
+        }
+        $operation = Operation::query()->find($proof['operation_id'] ?? null);
+        $run = $operation === null ? [] : ValidatedData::object(ValidatedData::object($operation->state['executor_runs'] ?? [])[$proof['step'] ?? ''] ?? []);
+
+        return $operation !== null && in_array($operation->kind, ['database.create', 'database.clone'], true)
+            && ($operation->input['connection_id'] ?? null) === $connection->id && $operation->node_id === $connection->server?->node_id
+            && ($run['transport'] ?? null) === 'agent' && ($run['name'] ?? null) === 'database.server-admin'
+            && ($run['result'] ?? null) === ['backend' => 'active'];
     }
 
     /** @param list<string> $names */

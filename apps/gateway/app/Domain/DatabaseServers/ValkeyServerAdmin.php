@@ -45,4 +45,7 @@ interface ValkeyServerAdmin
 
     /** Whether a client without a password can run a command. Only a `NOAUTH` reply to `PING` is false. */
     public function acceptsAnonymous(DatabaseServer $server): bool;
+
+    /** Retained removal deletes only an unshared ACL user and saves the ACL file. */
+    public function deleteUser(DatabaseServer $server, string $username): void;
 }

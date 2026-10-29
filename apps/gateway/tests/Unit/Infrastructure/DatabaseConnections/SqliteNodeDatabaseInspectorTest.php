@@ -38,15 +38,21 @@ it('sends the production owner and query intent to the native command', function
     ]);
 });
 
-it('keeps development inspection as the Node user and selects the write command only for authorized writes', function (bool $write, string $command): void {
-    $this->agents->answer($command, ['columns' => [], 'rows' => [], 'row_count' => 0, 'truncated' => false]);
+it('keeps development reads as the Node user', function (): void {
+    $this->agents->answer('database.query-sqlite', ['columns' => [], 'rows' => [], 'row_count' => 0, 'truncated' => false]);
 
-    expect($this->inspector->query($this->connection, 'SELECT 1', $write)->rows)->toBe([]);
+    expect($this->inspector->query($this->connection, 'SELECT 1', false)->rows)->toBe([]);
     expect($this->agents->calls[0])->toMatchArray([
-        'command' => $command,
+        'command' => 'database.query-sqlite',
         'input' => ['owner' => 'orbit', 'path' => $this->connection->path, 'sql' => 'SELECT 1'],
     ]);
-})->with([[false, 'database.query-sqlite'], [true, 'database.write-sqlite']]);
+});
+
+it('refuses direct development writes before invoking the agent', function (): void {
+    expect(fn () => $this->inspector->query($this->connection, 'UPDATE settings SET value = 1', true))
+        ->toThrow(ResourceOperationException::class, 'SQL writes run as database.write Operations.');
+    expect($this->agents->calls)->toBe([]);
+});
 
 it('maps native refusals without returning private details', function (string $refusal, string $expected): void {
     $this->agents->refuse('database.query-sqlite', $refusal, ['private' => 'private-remote-value']);

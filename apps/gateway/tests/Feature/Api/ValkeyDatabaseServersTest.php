@@ -91,7 +91,7 @@ describe('database:server:create --driver=redis', function (): void {
     it('refuses the slug of a server with another driver', function (): void {
         $this->postJson('/api/v1/database-servers', ['slug' => 'beast-db', 'node_id' => $this->dbNode->id, 'port' => 6379])
             ->assertAccepted()
-            ->assertJsonPath('data.driver', 'mysql');
+            ->assertJsonPath('data.kind', 'database_server.create');
 
         $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, ['slug' => 'beast-db', 'tag' => '8.4', 'port' => 6379]))
             ->assertConflict()
@@ -157,7 +157,7 @@ describe('the Process of a Valkey server', function (): void {
             ->assertJsonPath('error.code', 'process.required_by_database_server');
 
         expect($this->process->refresh()->getAttributes())->toBe($before)
-            ->and($this->runtime->convergedProcessIds)->toBe([$this->process->id]);
+            ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
 
 });
@@ -344,35 +344,15 @@ describe('database:server:create --process --connection', function (): void {
 });
 
 describe('database:server:create on an active Valkey server', function (): void {
-    beforeEach(function (): void {
+    it('refuses a repair while another server Operation holds the target', function (): void {
         $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertAccepted();
-        $this->postJson('/api/v1/database-connections', [
-            'slug' => 'gateway-queue',
-            'server' => 'beast-valkey',
-            'patterns' => ['orbit-gateway:*'],
-            'allow' => ['@list', 'eval'],
-        ])->assertAccepted();
-        $this->server = DatabaseServer::query()->sole();
-        $this->clientPassword = (string) DatabaseConnection::query()->where('slug', 'gateway-queue')->value('password');
-        $this->recorded = $this->valkey->users;
-        $this->valkey->calls = [];
-        $this->valkey->readyChecks = [];
-        $this->programs->runs = [];
-    });
+        DatabaseServer::query()->sole()->update(['status' => LifecycleStatus::Active]);
 
-    it('refuses a repair while another ACL change runs', function (): void {
-        $lock = Cache::lock('database-server:'.$this->server->id.':acl', 60);
-        expect($lock->get())->toBeTrue();
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'operation.target_busy');
 
-        try {
-            $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-                ->assertConflict()
-                ->assertJsonPath('error.code', 'database.server_in_use');
-        } finally {
-            $lock->release();
-        }
-
-        expect($this->valkey->calls)->toBe([])
+        expect($this->valkey->calls)->toBe(['login 10.44.0.80:6379'])
             ->and($this->programs->runs)->toBe([]);
     });
 });
