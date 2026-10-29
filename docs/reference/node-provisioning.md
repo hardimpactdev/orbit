@@ -688,7 +688,15 @@ The `.deb` on the GitHub release is the Caddy project's own build, and a digest 
 
 ### The footprint converge, not node:add
 
-After a Gateway release, a Node needs only what the Gateway renders from its own code and pins. `node:add` refuses a Node that owns Instances, and a role converge does far more than the Orbit footprint. So the footprint converge re-applies only the artifacts whose digest changed, and it never changes an Instance.
+`orbit node:converge <node>` records a `node.converge` Operation and returns its ID for a workload Node. Nodes configured as Services or executor workers keep synchronous convergence through the same command, returning HTTP 200 with the footprint result. They use the same executor-Node classification as Process controls. This recovery path requires no Swamp worker. Fleet children retain the declared Operation contract. Swamp re-applies one managed Linux Node's Gateway-rendered footprint. The input is `{force_artifacts: bool, first_visit: bool}`. The serving Node comes from the Operation. The Gateway records the plan, command payloads and optional child intents before effects. Child admission prepares this snapshot before the shared kit stamps its immutable input.
+
+Only changed artifacts run unless force or owned drift requires repair. A failed agent pin also forces agent repair. The four optional children are `route.caddy_converge`, `route.private_dns_publish`, `route.offline_residue_clean` and `ai_router.collector_converge`. Orphaned residue uses `{removed_node_id: null}`. Every recorded child must settle before successful completion; absent intents need no child. Results contain `artifacts: [{name, status, reason}]` and `skipped: [{child_id, key, kind, reason}]`. Skips contain verified failed children only.
+
+Caddy render or validation refusals and residue cleanup failures may be skipped. If Caddy refuses validation on the first visit and managed code changed, the footprint fails. An owned drift repair keeps the skip. Other child failures stop later artifacts. Completion derives its results from transport receipts and stamped children, then records only proven artifact digests.
+
+On VPN and Gateway Nodes, the footprint stages the private DNS listener release and units before publication. It restarts an active listener against its existing catalog. A fresh install stays inactive until the publication child atomically writes its first catalog and enables the socket. The footprint does not write DNS records itself.
+
+Agent configuration stores its returned hash through the encrypted Node owner store. Target receipts retain only a presence marker. A lost live reply leaves the run uncertain and cannot prove storage or completion. Use the [operator re-key command](/reference/node-agent#recover-a-lost-agent-secret-reply) to restore authentication, then cancel the uncertain Operation and start a fresh converge.
 
 ### A Mac needs no service role
 

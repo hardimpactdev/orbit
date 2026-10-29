@@ -206,6 +206,7 @@ final class Node extends Model
             'status' => LifecycleStatus::class,
             'public_ssh_port' => 'integer',
             'settings' => 'array',
+            'agent_secret_hash' => 'encrypted',
         ];
     }
 }

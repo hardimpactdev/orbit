@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Console\Commands\RekeyNodeAgentCommand;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
@@ -17,6 +18,9 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Operations\OperationSecretOutputStore;
+use App\Domain\Operations\OperationSecretSource;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
@@ -24,8 +28,10 @@ use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
+use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
@@ -51,8 +57,17 @@ final class NodesServiceProvider extends ServiceProvider
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
     ];
 
+    public function boot(): void
+    {
+        if ($this->app->runningInConsole()) {
+            $this->commands([RekeyNodeAgentCommand::class]);
+        }
+    }
+
     public function register(): void
     {
+        $this->app->bind(NodeOperationAgentInstaller::class, NativeAgentCommandRunner::class);
+        $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
         $this->app->singleton(
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(

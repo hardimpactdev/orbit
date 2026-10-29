@@ -376,6 +376,20 @@ The converge writes the secret file first, then installs the other files, restar
 
 One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
+### Recover a lost agent secret reply
+
+Swamp `agent.configure` returns its new hash only in the first live response. The Gateway stores it encrypted on the owning Node. The target receipt holds a presence marker and cannot recover that hash. If the live response is lost before storage, keep the uncertain Operation open and run this operator command on the Gateway:
+
+```bash
+php artisan orbit:node-agent-rekey <node-id> <operation-id>
+```
+
+Use the `node.converge` ID that owns the uncertain `footprint-agent` run. This command runs synchronously on the Gateway, including for Services and executor workers, and needs no live Swamp worker. Recovery requires its existing managed Linux Node, original configuration, started configure run with no result, and retained Node target hold. It takes the shared Operation attempt lease and Node agent lock. An active effect or different owner refuses recovery.
+
+The command starts a fresh unkeyed configure with that recorded configuration and a null previous hash. It encrypts the returned hash and records only the Node ID and recovery time. It prints no secret and leaves the original receipt uncertain. Cancel the old Operation through the normal API and start a fresh converge after recovery.
+
+If this recovery response is also lost, run the explicit operator command again. Repeating an acknowledged recovery is a no-op. A terminal or superseded Operation cannot authorize recovery; start a fresh normal converge after the target is free.
+
 ## Gateway view
 
 The Gateway keeps the latest state that each agent reports, so it can skip repeated SSH reads. A long-running Gateway process, the agent view subscriber, receives the reports. The view is only an input to reads.

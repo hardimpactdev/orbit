@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshConnection;
@@ -13,7 +15,7 @@ use JsonException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
-final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, GuestAgentCommandRunner, WorkspaceAgentCommandRunner
+final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, GuestAgentCommandRunner, NodeOperationAgentInstaller, WorkspaceAgentCommandRunner
 {
     public const string VersionMismatch = 'agent.version_mismatch';
 
@@ -126,12 +128,45 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         return $this->installPin($node, $this->transports->for($node), $this->delivery->pin($node), null);
     }
 
+    public function installEffect(Node $node, string $pin, #[\SensitiveParameter] array $run, ?SshConnection $connection = null): bool
+    {
+        $this->assertEffectPin($node, $pin);
+
+        return $this->installPin($node, $connection === null ? $this->transports->for($node) : $this->transports->over($node, $connection), $pin, null, $run);
+    }
+
+    public function effectReceipt(Node $node, string $pin, string $command, string $effectKey, ?SshConnection $connection = null): array
+    {
+        $this->assertEffectPin($node, $pin);
+        $transport = $connection === null ? $this->transports->for($node) : $this->transports->over($node, $connection);
+        $spec = $this->contract->command('agent.effect-receipt');
+        $deadline = microtime(true) + self::InstallWaitSeconds;
+        $candidate = $transport->stage($this->delivery->localFile($node, self::InstallWaitSeconds), max(0.0, $deadline - microtime(true)));
+        $outcome = $this->send($transport, $spec, $pin, ['command' => $command, 'effect_key' => $effectKey, 'owner' => null], $deadline, $candidate);
+        if (! $outcome['ok']) {
+            $error = $outcome['error'];
+            $this->assertKnown($spec, $error['code']);
+            throw new AgentCommandRefused($spec->name, $error['code'], $error['message'], $error['details']);
+        }
+
+        return AgentEffectReceipts::decode($outcome['data'], $effectKey);
+    }
+
+    private function assertEffectPin(Node $node, string $pin): void
+    {
+        if (preg_match('/\A[0-9a-f]{64}\z/D', $pin) !== 1 || ! hash_equals($this->delivery->pin($node), $pin)) {
+            throw new ResourceOperationException('node.agent_pin_unavailable', 'The admitted agent binary is not delivered by this Gateway release.', 409);
+        }
+    }
+
     /**
      * Installs the pinned binary from a staged candidate, which runs the installer itself. Download, staging, and the
      * installer share one deadline. Only a refusal the installer declares, other than a busy lock or too little time,
      * marks the pin as failed; any other outcome lets the next command try again.
+     *
+     * @param  array<string, mixed>|null  $run
      */
-    private function installPin(Node|AgentGuest $node, AgentTransport $transport, string $pin, ?float $deadline): bool
+    private function installPin(Node|AgentGuest $node, AgentTransport $transport, string $pin, ?float $deadline, #[\SensitiveParameter] ?array $run = null): bool
     {
         $installBy = microtime(true) + self::InstallWaitSeconds;
         if ($deadline !== null) {
@@ -151,7 +186,11 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             $file = $this->delivery->localFile($node, $left());
             $candidate = $transport->stage($file, $left());
             $left();
-            $outcome = $this->send($transport, $spec, $pin, ['candidate' => $candidate, 'sha256' => $pin], $installBy, $candidate);
+            $input = ['candidate' => $candidate, 'sha256' => $pin];
+            if ($run !== null) {
+                $input = AgentEffectReceipts::input($run, $input);
+            }
+            $outcome = $this->send($transport, $spec, $pin, $input, $installBy, $candidate);
         } catch (AgentRunnerFailure $failure) {
             // No answer proves the pin cannot install, so the next command tries again.
             throw $failure;

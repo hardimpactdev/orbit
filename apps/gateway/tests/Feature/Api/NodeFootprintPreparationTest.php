@@ -1,0 +1,150 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Fleet\FleetNodeVerification;
+use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Nodes\PrepareNodeAgentConfigurationCommand;
+use App\Domain\Nodes\PrepareNodeFootprintCommand;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\WireGuard\PeerDnsInspector;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\NodeFootprint as FootprintRecord;
+use App\Models\Operation;
+use Tests\Support\Fleet\FakeFootprintArtifact;
+use Tests\Support\Fleet\FleetFixtures;
+
+function footprintPreparation(array $artifacts, array $issues = [], bool $force = false): array
+{
+    $node = FleetFixtures::node('footprint-preparation');
+    $operation = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'input' => ['force_artifacts' => $force, 'first_visit' => false],
+        'status' => 'running', 'worker' => 'preparation-worker', 'sequence' => 1, 'attempts' => 1]);
+    $footprint = new NodeFootprint(app(AgentDelivery::class), $artifacts);
+    $verification = Mockery::mock(FleetNodeVerification::class);
+    $verification->shouldReceive('baseline')->andReturn($issues);
+    FleetFixtures::node('gateway', [RoleName::Gateway]);
+    $certificates = Mockery::mock(LeafCertificateSigner::class);
+    $certificates->shouldReceive('rootCertificate')->andReturn('public certificate');
+    app()->instance(LeafCertificateSigner::class, $certificates);
+    $agent = app(NodeAgentSshExecutor::class);
+    $dns = app(PeerDnsPolicy::class);
+    $inspector = app(PeerDnsInspector::class);
+    $command = new PrepareNodeFootprintCommand($footprint, $verification, $agent, $dns, $inspector, app(OperationStore::class), $artifacts);
+
+    return [$node, $operation, $footprint, $command];
+}
+
+it('prepares a matching footprint without any Node effect', function (): void {
+    $agent = new FakeFootprintArtifact('agent', 'current');
+    [$node, $operation, $footprint, $command] = footprintPreparation([$agent]);
+    FootprintRecord::query()->create(['node_id' => $node->id, 'digest' => 'old', 'artifacts' => [...$footprint->expected($node)->artifacts, 'retired' => 'old'], 'converged_at' => now()]);
+
+    expect($command->run($operation, $operation->input))->toBe(['prepared' => true]);
+    $snapshot = $operation->refresh()->input['_footprint'];
+    expect($snapshot['artifacts'])->toHaveCount(1)
+        ->and($snapshot['artifacts'][0]['required'])->toBeFalse()
+        ->and($snapshot['payloads'])->toBe([])
+        ->and($snapshot['children'])->toBe([])
+        ->and($agent->applied)->toBe([]);
+});
+
+it('forces matching artifacts for owned drift and recorded failed agent pins', function (array $issues, ?string $failedPin, bool $force): void {
+    $agent = new FakeFootprintArtifact('agent', 'current');
+    $caddy = new FakeFootprintArtifact('caddy', 'current');
+    [$node, $operation, $footprint, $command] = footprintPreparation([$agent, $caddy], $issues, $force);
+    $node->forceFill(['agent_failed_pin' => $failedPin])->save();
+    FootprintRecord::query()->create(['node_id' => $node->id, 'digest' => 'current', 'artifacts' => $footprint->expected($node)->artifacts, 'converged_at' => now()]);
+    $command->run($operation, $operation->input);
+    $snapshot = $operation->refresh()->input['_footprint'];
+    $required = array_column(array_filter($snapshot['artifacts'], static fn (array $item): bool => $item['required']), 'name');
+
+    expect($required)->toBe($force ? ['agent', 'caddy'] : ($failedPin !== null ? ['agent'] : ['caddy']))
+        ->and(array_column($snapshot['artifacts'], 'repair'))->toBe([true, true]);
+})->with([[['role.caddy_build_drift'], null, false], [[], 'failed-pin', false], [[], 'failed-pin', true]]);
+
+it('declares cross-family children and uses null for historical orphan residue', function (): void {
+    [$node, $operation, , $command] = footprintPreparation(array_map(static fn (string $name) => new FakeFootprintArtifact($name, 'current'), ['caddy', 'private-dns', 'route-residue', 'ai-router']));
+    $command->run($operation, $operation->input);
+    $children = $operation->refresh()->input['_footprint']['children'];
+
+    expect($operation->state['child_intents'])->toBe(array_map(
+        static fn (string $artifact, array $intent): array => ['key' => 'footprint-'.$artifact, ...$intent],
+        array_keys($children), array_values($children),
+    ));
+    expect($children)->toBe([
+        'caddy' => ['kind' => 'route.caddy_converge', 'node_id' => $node->id, 'input' => ['reason' => "node-footprint:{$operation->id}:caddy"]],
+        'private-dns' => ['kind' => 'route.private_dns_publish', 'node_id' => $node->id, 'input' => ['reason' => "node-footprint:{$operation->id}:private-dns"]],
+        'route-residue' => ['kind' => 'route.offline_residue_clean', 'node_id' => $node->id, 'input' => ['removed_node_id' => null]],
+        'ai-router' => ['kind' => 'ai_router.collector_converge', 'node_id' => $node->id, 'input' => []],
+    ]);
+});
+
+it('records an agent hash reference and keeps unrelated settings out of input', function (): void {
+    [$node, $operation, , $command] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    $node->update(['agent_secret_hash' => str_repeat('a', 64), 'settings' => ['t3' => ['token' => 'unrelated-private-token']]]);
+    $command->run($operation, $operation->input);
+    $snapshot = $operation->refresh()->input['_footprint'];
+
+    expect($snapshot['payloads']['agent']['secret_hash'])->toBe(['$secret' => 'node.agent_secret_hash', 'id' => $node->id])
+        ->and(json_encode($operation->input))->not->toContain(str_repeat('a', 64), 'unrelated-private-token');
+});
+
+it('keeps the first prepared snapshot on retry', function (): void {
+    $artifact = new FakeFootprintArtifact('tmpfiles', 'first');
+    [, $operation, , $command] = footprintPreparation([$artifact]);
+    $command->run($operation, $operation->input);
+    $snapshot = $operation->refresh()->input['_footprint'];
+    $artifact->digest = 'second';
+    $command->run($operation, $operation->input);
+
+    expect($operation->refresh()->input['_footprint'])->toBe($snapshot);
+});
+
+it('refuses an unsupported Node before probing or preparing payloads', function (): void {
+    [$node, $operation] = footprintPreparation([]);
+    $node->update(['platform' => 'macos']);
+    $verification = Mockery::mock(FleetNodeVerification::class);
+    $verification->shouldNotReceive('baseline');
+    $command = new PrepareNodeFootprintCommand(new NodeFootprint(app(AgentDelivery::class), []), $verification,
+        app(NodeAgentSshExecutor::class), app(PeerDnsPolicy::class), app(PeerDnsInspector::class), app(OperationStore::class), []);
+
+    expect(fn () => $command->run($operation, $operation->input))->toThrow(ResourceOperationException::class);
+});
+
+it('binds binary_changed from a proven install instead of trusting Swamp', function (bool $changed): void {
+    [, $operation, , $prepare] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    $prepare->run($operation, $operation->input);
+    $operation->update(['state' => [...$operation->state, 'executor_runs' => ['footprint-agent-install' => [
+        'transport' => 'node-agent', 'name' => 'agent.install', 'result' => ['installed' => true, 'changed' => $changed],
+    ]]]]);
+    $command = app(PrepareNodeAgentConfigurationCommand::class);
+
+    expect($command->run($operation, []))->toBe(['prepared' => true])
+        ->and($operation->refresh()->state['node_agent_configuration_changed'])->toBe($changed);
+})->with([true, false]);
+
+it('refuses forged, failed and wrong installer evidence', function (string $variant): void {
+    [, $operation, , $prepare] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    $prepare->run($operation, $operation->input);
+    $receipt = ['transport' => 'node-agent', 'name' => 'agent.install', 'result' => ['installed' => true, 'changed' => true]];
+    if ($variant === 'wrong_command') {
+        $receipt['name'] = 'something.else';
+    } elseif ($variant === 'wrong_transport') {
+        $receipt['transport'] = 'agent';
+    } elseif ($variant === 'failed') {
+        $receipt['result']['error_code'] = 'agent.install_failed';
+    } elseif ($variant === 'unproven') {
+        $receipt['result']['installed'] = false;
+    }
+    $state = $variant === 'forged_step' ? ['steps' => ['footprint-agent-install' => $receipt['result']]] : ['executor_runs' => ['footprint-agent-install' => $receipt]];
+    $operation->update(['state' => [...$operation->state, ...$state]]);
+
+    expect(fn () => app(PrepareNodeAgentConfigurationCommand::class)->run($operation, []))->toThrow(ResourceOperationException::class)
+        ->and($operation->refresh()->input['_footprint']['payloads']['agent'])->not->toHaveKey('binary_changed');
+})->with(['wrong_command', 'wrong_transport', 'failed', 'unproven', 'forged_step']);

@@ -103,7 +103,8 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             ->all());
     }
 
-    public function converge(Node $node): void
+    /** @return array{configuration: string, certificate: string, unit: string, checkouts: list<string>} */
+    public function configuration(Node $node): array
     {
         $this->guardLinuxPlatform($node);
         $gatewayAddress = $this->gatewayAddress();
@@ -140,6 +141,18 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             'WantedBy=multi-user.target',
             '',
         ]);
+
+        return ['configuration' => $configuration, 'certificate' => $certificate, 'unit' => $unit,
+            'checkouts' => $this->checkouts($node, $root)];
+    }
+
+    public function converge(Node $node): void
+    {
+        $input = $this->configuration($node);
+        $configuration = $input['configuration'];
+        $certificate = $input['certificate'];
+        $unit = $input['unit'];
+        $root = $this->instanceRoot($node);
 
         // Only one converge per Node runs at a time, so two converges cannot write different secrets
         // and store the other one's hash.
@@ -230,7 +243,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $node->forceFill($attributes)->syncOriginalAttributes(array_keys($attributes));
 
         if ($node->exists) {
-            Node::query()->whereKey($node->getKey())->update($attributes);
+            Node::query()->whereKey($node->getKey())->firstOrFail()->forceFill($attributes)->save();
         }
     }
 
