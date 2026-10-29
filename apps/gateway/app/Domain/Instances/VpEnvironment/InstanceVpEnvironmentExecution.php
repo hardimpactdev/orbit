@@ -29,7 +29,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         [$instance] = $this->material->target($operation);
         $descriptors = [$this->descriptor('vp.plan', 'vp_plan', 'gateway', 'instance.vp-plan', ['instance_id' => $instance->id])];
         $plan = $operation->state['vp_plan'] ?? null;
-        if (is_array($plan) && $plan['environment'] !== null) {
+        if (is_array($plan) && $plan['requirements'] !== null) {
             $descriptors[] = $this->descriptor('child.vp_manager', 'vp_manager', 'gateway', 'instance.child-receipt', ['child_key' => 'vp_manager']);
             $descriptors[] = $this->descriptor('vp.scope', 'vp_scope', 'instance-deploy-agent', 'tool.inspect-vp-scope', []);
             $descriptors[] = $this->descriptor('vp.version', 'vp_version', 'instance-deploy-agent', 'tool.vp-version', []);
@@ -58,7 +58,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         $plan = ValidatedData::object($parent->state['vp_plan'] ?? []);
         $children = [];
         $prepared = InstanceExecutionEvidence::result($parent, 'vp.plan');
-        if ($prepared !== null && ($plan['environment'] ?? null) !== null) {
+        if ($prepared !== null && ($plan['requirements'] ?? null) !== null) {
             $children[] = ['key' => 'vp_manager', 'kind' => 'tool.manager_converge', 'node_id' => $parent->node_id,
                 'input' => ['manager' => 'vp', 'image_provides_manager' => false]];
         }
@@ -101,7 +101,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
             if (! is_string($binary) || ! str_starts_with($binary, '/') || ! str_ends_with($binary, '/bin/vp')) {
                 throw $this->unproven();
             }
-            $environment = VpEnvironment::fromArray([...ValidatedData::object(ValidatedData::object($operation->state['vp_plan'] ?? [])['environment']), 'store' => dirname($binary, 2)]);
+            $environment = VpEnvironment::fromArray([...ValidatedData::object(ValidatedData::object($operation->state['vp_plan'] ?? [])['requirements']), 'store' => dirname($binary, 2)]);
             $this->operations->change($operation, ['state' => [...($operation->state ?? []), 'vp_environment' => $environment->record('checking')]]);
             $this->material->reference($operation, $environment, 'checking');
         }
@@ -145,7 +145,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         }
         $plan = ValidatedData::object($operation->state['vp_plan'] ?? []);
 
-        return ['confirmed' => true, 'instance_id' => $operation->target_id, 'no_op' => $plan['environment'] === null,
+        return ['confirmed' => true, 'instance_id' => $operation->target_id, 'no_op' => $plan['requirements'] === null,
             'vp_environment' => $this->environment($operation)?->input()];
     }
 

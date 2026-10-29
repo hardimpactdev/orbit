@@ -63,16 +63,16 @@ final readonly class InstanceVpEnvironmentMaterial
         return [$instance, $parent, $path];
     }
 
-    /** @return array{path:string,environment:array<string,string|null>|null} */
+    /** @return array{path:string,requirements:array<string,string|null>|null} */
     public function plan(Operation $operation): array
     {
         [$instance, $parent, $path] = $this->target($operation);
         if (! InstanceDeploymentIntent::admitted($parent)['needs_vp']) {
-            return ['path' => $path, 'environment' => null];
+            return ['path' => $path, 'requirements' => null];
         }
         $environment = $this->requirements($instance, $path);
 
-        return ['path' => $path, 'environment' => $environment?->record('checking')];
+        return ['path' => $path, 'requirements' => $environment?->record('checking')];
     }
 
     public function npmrc(Operation $operation): string
@@ -80,7 +80,7 @@ final readonly class InstanceVpEnvironmentMaterial
         [$instance, , $path] = $this->target($operation);
         $configuration = $this->read($instance, $path);
         $environment = new VpProjectRequirements()->resolve($configuration, '/unresolved');
-        $admitted = ValidatedData::object($operation->state['vp_plan'] ?? [])['environment'] ?? null;
+        $admitted = ValidatedData::object($operation->state['vp_plan'] ?? [])['requirements'] ?? null;
         if ($environment?->record('checking') !== $admitted) {
             throw $this->invalid();
         }

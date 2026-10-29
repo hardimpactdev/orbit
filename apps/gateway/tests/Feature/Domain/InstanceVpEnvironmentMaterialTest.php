@@ -6,10 +6,12 @@ use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
+use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentExecution;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -46,7 +48,7 @@ function instanceVpMaterialFixture(): array
 it('reads the proven candidate checkout and keeps registry settings out of the public plan', function (): void {
     [$child, , $instance, $agents] = instanceVpMaterialFixture();
     $plan = app(InstanceVpEnvironmentMaterial::class)->plan($child);
-    expect($plan['environment'])->toMatchArray(['vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager' => 'npm', 'package_manager_version' => '11.12.0'])
+    expect($plan['requirements'])->toMatchArray(['vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager' => 'npm', 'package_manager_version' => '11.12.0'])
         ->and(json_encode($plan))->not->toContain('synthetic-registry-token')
         ->and($agents->calls[0]['input'])->toBe(['path' => $plan['path'], 'user' => $instance->production_user])
         ->and($child->input)->toBe(['instance_id' => $instance->id])->and($child->state)->toBeNull();
@@ -88,6 +90,60 @@ it('admits the VP manager from a proven project plan without assuming an image s
     $this->assertDatabaseCount('operations', 3);
     $this->assertDatabaseCount('tools', 0);
     Queue::assertNothingPushed();
+});
+
+it('preserves public runtime pins through executor plan redaction and scope discovery', function (): void {
+    [$vp, $parent, $instance, $agents] = instanceVpMaterialFixture();
+    $parent->update(['started_at' => now()]);
+    $instance->node->update(['architecture' => 'x86_64']);
+    $vp->fill(['status' => 'queued', 'sequence' => 1]);
+    $vp->forceFill(['child_key' => 'vp_environment']);
+    $identity = ['parent_operation_id' => $parent->id, 'key' => 'vp_environment', 'kind' => $vp->kind,
+        'node_id' => $vp->node_id, 'target_type' => 'instance', 'target_id' => $instance->id,
+        'input' => $vp->input, 'run_constraints' => []];
+    $snapshot = ['intent' => [], 'admitted' => $identity];
+    $vp->forceFill(['child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    $agents->answer('tool.inspect-vp-scope', ['binary' => '/opt/orbit/vite-plus/bin/vp']);
+    $executor = app(SwampOperationExecutor::class);
+    $vp = $executor->claim($vp->kind, 'vp-worker', $instance->node_id, $vp->id);
+    $execution = app(InstanceVpEnvironmentExecution::class);
+    $run = function (string $key) use ($executor, $execution, $vp, $instance): array {
+        $descriptor = array_find($execution->context($vp->refresh())['descriptors'], fn (array $entry): bool => $entry['key'] === $key);
+        $result = $executor->run($vp, ['worker' => 'vp-worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))], $instance->node_id);
+        $executor->step($vp, ['worker' => 'vp-worker', 'key' => $key.':finish', 'name' => $descriptor['step'],
+            'status' => 'succeeded', 'result' => $result], $instance->node_id);
+
+        return $result;
+    };
+
+    $plan = $run('vp.plan');
+    $manager = DB::transaction(fn (): Operation => app(OperationChildren::class)->admit($vp->refresh(), ['key' => 'vp_manager'])['operation']);
+    $manager->update(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['version' => '0.3.3']]);
+    $run('child.vp_manager');
+    $run('vp.scope');
+
+    expect($plan['requirements'])->toMatchArray(['vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager_version' => '11.12.0']);
+    expect($vp->refresh()->state['vp_environment'])->toMatchArray(['store' => '/opt/orbit/vite-plus', 'vp_version' => '0.3.3', 'status' => 'checking']);
+    expect($instance->refresh()->getAttribute('vp_environment'))->toMatchArray(['store' => '/opt/orbit/vite-plus', 'node_version' => '24.22.0', 'status' => 'checking']);
+    expect(json_encode([$vp->toArray(), $plan]))->not->toContain('synthetic-registry-token', '[REDACTED]');
+    $agents->answer('tool.vp-version', ['version' => '0.3.3']);
+    $agents->answer('tool.inspect-vp-store', ['installed' => [false]]);
+    $agents->answer('tool.install-vp-environment', ['verified' => ['node' => 'verified', 'npm' => 'verified']]);
+    $agents->answer('tool.prune-vp-store', ['removed' => []]);
+    $run('vp.version');
+    $run('vp.inspect');
+    $run('vp.install');
+    $agents->answer('tool.inspect-vp-store', ['installed' => [true]]);
+    $run('vp.verify');
+    $run('vp.prune');
+    $receipt = $run('vp.receipt');
+    $executor->complete($vp, ['worker' => 'vp-worker', 'status' => 'succeeded', 'result' => $receipt], $instance->node_id);
+
+    expect($vp->refresh()->status->value)->toBe('succeeded');
+    expect($instance->refresh()->getAttribute('vp_environment')['status'])->toBe('active');
+    expect(json_encode($vp->toArray()))->not->toContain('synthetic-registry-token');
+    expect(array_column($agents->calls, 'command'))->toBe(['tool.read-vp-project', 'tool.inspect-vp-scope', 'tool.vp-version',
+        'tool.inspect-vp-store', 'tool.read-vp-project', 'tool.install-vp-environment', 'tool.inspect-vp-store', 'tool.prune-vp-store']);
 });
 
 it('refuses moving Project runtime requirements before any install', function (): void {
