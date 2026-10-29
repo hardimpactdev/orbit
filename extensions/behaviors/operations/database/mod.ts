@@ -22,6 +22,13 @@ export function database(
     version: "2026.10.28.1",
     globalArguments: Globals,
     resources: {
+      assignment: {
+        description:
+          "Bind this placed dispatch to its first claimed database Operation",
+        schema: z.object({ operation_id: z.number().int().positive() }),
+        lifetime: "7d",
+        garbageCollection: 1,
+      },
       receipt: {
         description: "Permanent database completion intent",
         schema: Completion,
@@ -47,17 +54,84 @@ export function database(
         description:
           "Execute admitted database commands and report proven results",
         arguments: z.object({
-          operationId: z.number().int().positive(),
-          worker: z.string(),
+          kind: z.enum(Kinds),
+          worker: z.string().min(1),
         }),
         execute: async (
-          args: { operationId: number; worker: string },
+          args: { kind: string; worker: string },
           ctx: Context,
         ) => {
           const http = makeHttp(ctx);
           const executor = new Executor(http);
-          const path = String(args.operationId);
+          const attempt = `assignment-${args.worker}`;
+          const assigned = await ctx.readResource(attempt);
+          let id: number;
+          if (assigned) {
+            id = z.object({ operation_id: z.number().int().positive() }).parse(
+              assigned,
+            ).operation_id;
+            const saved = await ctx.readResource(`operation-${id}`);
+            if (saved) {
+              const completion = Completion.parse(saved);
+              const outcome = z.object({
+                id: z.number().int(),
+                kind: z.string(),
+                status: z.string(),
+                result: z.preprocess(
+                  (value) =>
+                    Array.isArray(value) && value.length === 0 ? {} : value,
+                  Result.nullable(),
+                ),
+                error_code: z.string().nullable(),
+              }).parse(await executor.operation(id));
+              if (
+                ["succeeded", "failed", "cancelled"].includes(outcome.status)
+              ) {
+                const canonical = (value: Record<string, unknown>) =>
+                  JSON.stringify(
+                    Object.entries(value).sort(([a], [b]) =>
+                      a.localeCompare(b)
+                    ),
+                  );
+                if (
+                  outcome.id !== id || outcome.kind !== args.kind ||
+                  outcome.status !== completion.status ||
+                  outcome.error_code !== completion.error_code ||
+                  canonical(outcome.result ?? {}) !==
+                    canonical(completion.result)
+                ) {
+                  throw new Error("Unproven saved database completion");
+                }
+                return { status: completion.status };
+              }
+            }
+          } else {
+            const claimed = await executor.post("claim", {
+              kind: args.kind,
+              worker: args.worker,
+            });
+            if (claimed === null) return { status: "empty" };
+            const operation = Operation.parse(claimed);
+            if (operation.kind !== args.kind) {
+              throw new Error("Wrong claimed database kind");
+            }
+            id = operation.id;
+            await ctx.writeResource("assignment", attempt, {
+              operation_id: id,
+            });
+          }
+          const path = String(id);
           const resource = `operation-${path}`;
+          const heartbeat = await executor.post(`${path}/heartbeat`, {
+            worker: args.worker,
+          });
+          const operation = Operation.parse(heartbeat);
+          if (
+            operation.id !== id || operation.kind !== args.kind ||
+            !(Kinds as readonly string[]).includes(operation.kind)
+          ) {
+            throw new Error("Wrong database assignment");
+          }
           const saved = await ctx.readResource(resource);
           if (saved) {
             const completion = Completion.parse(saved);
@@ -66,13 +140,6 @@ export function database(
               ...completion,
             });
             return { status: completion.status };
-          }
-          const heartbeat = await executor.post(`${path}/heartbeat`, {
-            worker: args.worker,
-          });
-          const operation = Operation.parse(heartbeat);
-          if (!(Kinds as readonly string[]).includes(operation.kind)) {
-            throw new Error("Wrong database kind");
           }
           let plan = Plan.parse(
             z.object({ execution_context: z.unknown() }).parse(heartbeat)
@@ -237,7 +304,9 @@ export function database(
                     const pendingName = `${effectName}-pending`;
                     if (
                       await ctx.readResource(pendingName) &&
-                      ["agent", "remote_program"].includes(step.transport)
+                      ["agent", "remote_program", "database_removal"].includes(
+                        step.transport,
+                      )
                     ) {
                       const response = await http(
                         "GET",
@@ -323,23 +392,23 @@ export function database(
                   }
                 }
               }
-              const cleanupContext = await executor.post(`${path}/heartbeat`, {
-                worker: args.worker,
-              });
-              plan = Plan.parse(
-                z.object({ execution_context: z.unknown() }).parse(
-                  cleanupContext,
-                ).execution_context,
-              );
-              const cleanupError = await children("after");
-              if (cleanupError === "waiting") return { status: "waiting" };
-              if (cleanupError && completion.status === "succeeded") {
-                completion = {
-                  status: "failed",
-                  result: { error_code: cleanupError },
-                  error_code: cleanupError,
-                };
-              }
+            }
+            const cleanupContext = await executor.post(`${path}/heartbeat`, {
+              worker: args.worker,
+            });
+            plan = Plan.parse(
+              z.object({ execution_context: z.unknown() }).parse(
+                cleanupContext,
+              ).execution_context,
+            );
+            const cleanupError = await children("after");
+            if (cleanupError === "waiting") return { status: "waiting" };
+            if (cleanupError && completion.status === "succeeded") {
+              completion = {
+                status: "failed",
+                result: { error_code: cleanupError },
+                error_code: cleanupError,
+              };
             }
             const handle = await ctx.writeResource(
               "receipt",

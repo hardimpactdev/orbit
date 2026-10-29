@@ -13,6 +13,7 @@ export const Kinds = [
   "database.sqlite_export",
   "database.sqlite_cleanup",
   "database.sqlite_seed",
+  "database.sqlite_seed_abandon",
 ] as const;
 export const ErrorCode = z.string().regex(/^[a-z0-9_.-]+$/);
 export const Result = z.object({
@@ -30,7 +31,13 @@ export const Result = z.object({
 export const Descriptor = z.object({
   key: z.string().min(1),
   step: z.string().min(1),
-  transport: z.enum(["agent", "remote_program", "gateway", "database_sqlite"]),
+  transport: z.enum([
+    "agent",
+    "remote_program",
+    "gateway",
+    "database_sqlite",
+    "database_removal",
+  ]),
   name: z.string(),
   input: z.record(z.string(), z.unknown()),
   resumable: z.boolean(),

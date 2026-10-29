@@ -38,6 +38,7 @@ class Fixture {
   loseChild = false;
   childStatus = "succeeded";
   omitChildrenContext = false;
+  revealCleanupAfterFailure = false;
   receiptState: "succeeded" | "failed" | "running" | "unknown" | null = null;
   calls: { path: string; body: Record<string, unknown> }[] = [];
   receipts = new Map<string, Record<string, unknown>>();
@@ -49,6 +50,9 @@ class Fixture {
   loseCompletion = false;
   leaseLost = false;
   refusal: string | null = null;
+  seedBusy = false;
+  nullClaim = false;
+  finished: Record<string, unknown> | null = null;
   http: Http = async (_method, path, raw) => {
     await Promise.resolve();
     const body = raw as Record<string, unknown>;
@@ -60,9 +64,22 @@ class Fixture {
       ...this.operation,
       execution_context: {
         descriptors: this.descriptors,
-        ...(this.omitChildrenContext ? {} : { children: this.children }),
+        ...(this.omitChildrenContext ? {} : {
+          children: this.children.filter((child) =>
+            !this.revealCleanupAfterFailure || child.phase !== "after" ||
+            [...this.receipts.values()].some((result) => result.error_code)
+          ),
+        }),
       },
     };
+    if (path.endsWith("/claim") && this.nullClaim) data = null;
+    if (path === "/api/v1/operations/7") {
+      data = {
+        ...this.operation,
+        result: this.finished?.result ?? {},
+        error_code: this.finished?.error_code ?? null,
+      };
+    }
     if (path.includes("/receipts/")) {
       const key = decodeURIComponent(path.split("/").at(-1)!);
       const result = this.receipts.get(key);
@@ -96,6 +113,9 @@ class Fixture {
           throw new Error("Lost child admission reply");
         }
       } else data = this.childRows;
+    }
+    if (path.endsWith("/run") && this.seedBusy) {
+      return { status: 409, body: { error: { code: "sqlite.seed_busy" } } };
     }
     if (path.endsWith("/run")) {
       const key = String(body.key);
@@ -135,6 +155,8 @@ class Fixture {
     }
     if (path.endsWith("/complete")) {
       this.completions++;
+      this.finished = body;
+      this.operation.status = String(body.status);
       if (this.loseCompletion) {
         this.loseCompletion = false;
         throw new Error("Lost completion reply");
@@ -170,7 +192,7 @@ class Fixture {
   }
   execute(worker = "run-1") {
     return database(() => this.http).methods.execute.execute({
-      operationId: 7,
+      kind: this.operation.kind,
       worker,
     }, this.context());
   }
@@ -260,7 +282,7 @@ Deno.test("a lost step reply resumes its proven receipt without another Node cal
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.runs, 1);
 });
-Deno.test("a lost completion reply posts only the saved permanent completion intent", async () => {
+Deno.test("a lost completion reply confirms its saved terminal result without claiming again", async () => {
   const f = new Fixture();
   f.loseCompletion = true;
   await assertRejects(() => f.execute(), Error, "Lost completion reply");
@@ -304,7 +326,7 @@ Deno.test("unstructured diagnostic error codes cannot enter receipts", async () 
   const f = new Fixture();
   f.refusal = "SQL ERROR password=do-not-record";
   await assertRejects(() => f.execute());
-  assertEquals([...f.resources.values()], [{
+  assertEquals([...f.resources.values()], [{ operation_id: 7 }, {
     effect_key: "op-7.database-apply",
   }]);
   assertEquals(f.completions, 0);
@@ -493,4 +515,131 @@ Deno.test("the ordinary descriptor context carries eligible child keys and prove
     "database-complete",
     "cleanup",
   ]);
+});
+
+Deno.test("a failed target effect refreshes the plan and admits newly eligible source cleanup", async () => {
+  const f = new Fixture();
+  f.revealCleanupAfterFailure = true;
+  f.refusal = "database.query_failed";
+  f.children = [{
+    key: "source-cleanup",
+    kind: "database.sqlite_cleanup",
+    node_id: 3,
+    input: { intent_id: 12 },
+    phase: "after",
+  }];
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.childRows.map((row) => row.key), ["source-cleanup"]);
+  assertEquals(f.completions, 1);
+});
+Deno.test("uncertain locked removal reads its target receipt before dispatching again", async () => {
+  const f = new Fixture();
+  f.descriptors[0].transport = "database_removal";
+  f.loseRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost run reply");
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.runs, 1);
+  assertEquals(f.calls.some((call) => call.path.includes("/receipts/")), true);
+});
+
+Deno.test("seed abandonment drives source cleanup after a target cleanup refusal", async () => {
+  const f = new Fixture();
+  f.operation.kind = "database.sqlite_seed_abandon";
+  f.descriptors = [{
+    ...f.descriptors[0],
+    name: "instance.install-sqlite-seed",
+    input: { mode: "cleanup", operation: "recorded-attempt" },
+  }];
+  f.children = [{
+    key: "database.sqlite_cleanup.12",
+    kind: "database.sqlite_cleanup",
+    node_id: 3,
+    input: { intent_id: 12 },
+    phase: "after",
+  }];
+  f.revealCleanupAfterFailure = true;
+  f.refusal = "sqlite.seed_preflight_failed";
+  assertEquals((await f.execute()).status, "failed");
+  const target = f.calls.findIndex((call) => call.path.endsWith("/run"));
+  const source = f.calls.findIndex((call) =>
+    call.path.endsWith("/children") &&
+    call.body?.key === "database.sqlite_cleanup.12"
+  );
+  assertEquals(target >= 0 && source > target, true);
+  assertEquals(
+    f.resources.get("operation-7")!.error_code,
+    "sqlite.seed_preflight_failed",
+  );
+  assertEquals(f.calls[source].body, {
+    worker: "run-1",
+    key: "database.sqlite_cleanup.12",
+  });
+});
+
+Deno.test("busy seed refusal defers abandonment without a cleanup or terminal receipt", async () => {
+  const f = new Fixture();
+  f.operation.kind = "database.sqlite_seed_abandon";
+  f.descriptors = [{
+    ...f.descriptors[0],
+    name: "instance.install-sqlite-seed",
+    input: { mode: "cleanup", operation: "recorded-attempt" },
+  }];
+  f.children = [{
+    key: "database.sqlite_cleanup.12",
+    kind: "database.sqlite_cleanup",
+    node_id: 3,
+    input: { intent_id: 12 },
+    phase: "after",
+  }];
+  f.seedBusy = true;
+  await assertRejects(() => f.execute());
+  assertEquals(f.runs, 0);
+  assertEquals(f.completions, 0);
+  assertEquals(f.childRows.length, 0);
+  f.seedBusy = false;
+  assertEquals(
+    (await f.execute("retry-after-seed-finished")).status,
+    "succeeded",
+  );
+  assertEquals(f.runs, 1);
+  assertEquals(f.childRows.length, 1);
+});
+
+Deno.test("a null placed claim performs no database work", async () => {
+  const f = new Fixture();
+  f.nullClaim = true;
+  assertEquals((await f.execute()).status, "empty");
+  assertEquals(f.calls.map((call) => call.path), [
+    "/api/v1/operation-executor/claim",
+  ]);
+  assertEquals(f.resources.size, 0);
+  assertEquals(f.runs, 0);
+});
+Deno.test("a lost lease retry keeps its assignment and cannot select the next queued database", async () => {
+  const f = new Fixture();
+  f.loseRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost run reply");
+  assertEquals(f.resources.get("assignment-run-1"), { operation_id: 7 });
+  f.leaseLost = true;
+  await assertRejects(() => f.execute(), Error, "operation.lease_lost");
+  assertEquals(
+    f.calls.filter((call) => call.path.endsWith("/claim")).length,
+    1,
+  );
+  assertEquals(f.runs, 1);
+});
+Deno.test("a saved database completion requires the exact original terminal result", async () => {
+  const f = new Fixture();
+  await f.execute();
+  f.finished = { ...f.finished, result: { backend: "absent" } };
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "Unproven saved database completion",
+  );
+  assertEquals(
+    f.calls.filter((call) => call.path.endsWith("/claim")).length,
+    1,
+  );
+  assertEquals(f.completions, 1);
 });

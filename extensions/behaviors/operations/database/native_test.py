@@ -23,7 +23,10 @@ class DatabaseNativeTest(unittest.TestCase):
             family.write_text('import { fixtureHttp } from "./tests/native-executor.ts";\n' + family.read_text().replace('...database()', '...database(() => fixtureHttp)'))
             (repo / 'workflows').mkdir()
             for path in ROOT.glob('workflows/workflow-operation-*.yaml'):
-                shutil.copy(path, repo / 'workflows' / path.name)
+                text = path.read_text()
+                if path.name == 'workflow-operation-database.yaml':
+                    text = '\n'.join(line for line in text.splitlines() if not line.startswith(('labels:', 'queueTimeout:'))) + '\n'
+                (repo / 'workflows' / path.name).write_text(text)
             descriptor = {'key': 'database-apply', 'step': 'database-apply', 'transport': 'agent', 'name': 'database.server-admin',
                           'input': {'password': {'$secret': 'database.intent', 'id': 9}, 'sql': {'$secret': 'database.intent', 'id': 9}},
                           'resumable': True, 'required': True}

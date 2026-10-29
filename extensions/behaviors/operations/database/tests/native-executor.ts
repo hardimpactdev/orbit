@@ -7,6 +7,15 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
     execution_context: { descriptors: state.descriptors },
   };
   let lost = false;
+  if (path.endsWith("/claimable")) {
+    data = {
+      kinds: [{
+        kind: state.operation.kind,
+        claimable: state.operation.status === "succeeded" ? 0 : 1,
+        oldest_at: null,
+      }],
+    };
+  }
   if (path.endsWith("/claim")) {
     data = body.kind === state.operation.kind &&
         state.operation.status !== "succeeded"
@@ -50,6 +59,8 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
       state.completions++;
     }
     state.operation.status = body.status;
+    state.operation.result = body.result;
+    state.operation.error_code = body.error_code;
   }
   await Deno.writeTextFile("native-database.json", JSON.stringify(state));
   if (lost) throw new Error("Lost Node reply");
