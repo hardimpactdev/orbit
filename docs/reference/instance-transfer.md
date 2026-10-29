@@ -97,14 +97,16 @@ An unconfirmed failure before cutover recovers by retrying forward, or by retryi
 
 Cutover is the moment the destination becomes authoritative.
 
-- A failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
+- A confirmed failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
 - It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
 - Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
 Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. An identical retry finishes that rollback before pausing and capturing the source again; it never resumes the old forward checkpoint. The Gateway clears the marker and resets the checkpoint in one write only after rollback finishes. Recovery uses the same Instance and Node locks as transfer. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
 
-After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent, abandons any recorded SQLite seed through `database.sqlite_seed_abandon`, discards the destination, restores the source runtime, and projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start. The source capture is nonresumable. After a lost reply, Swamp reads the original keyed agent receipt, even after cancellation. The Gateway projects its raw capture metadata and saves its safe result before compensation is eligible. It does not capture again. A pending receipt keeps the parent running until the result is definite.
+After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent, abandons any recorded SQLite seed through `database.sqlite_seed_abandon`, discards the destination, restores the source runtime, and projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start.
+
+The source capture is nonresumable. After a lost reply, Swamp reads the original keyed agent receipt, even after cancellation. The Gateway projects its raw capture metadata and saves its safe result before compensation is eligible. It does not capture again. A pending receipt keeps the parent running until the result is definite.
 
 After capture, a Gateway step records the SQLite seed on the transfer parent before destination admission. The attempt identity comes from that Operation. The database owner retains the seed and its source intents while the parent is pending. Destination setup uses that exact descriptor. Rollback passes its recorded intent ID and its live compensation Operation to the database owner; it cannot select another attempt or cleanup path.
 
