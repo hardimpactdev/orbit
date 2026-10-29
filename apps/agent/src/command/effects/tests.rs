@@ -848,3 +848,22 @@ fn declared_paths_survive_secret_values_that_match_field_or_ancestor_names() {
         );
     }
 }
+
+#[test]
+fn a_null_secret_output_remains_recoverable_without_a_presence_marker() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let ctx = context().with_effect_secret_outputs(vec!["secret_hash".into()]);
+    let expected = Outcome::Ok(json!({"secret_hash":null,"restarted":true,"unclosed":[]}));
+    let live = store.execute("agent.configure", "op-42.configure", "input", &ctx, || {
+        expected.clone()
+    });
+    assert_eq!(live, expected);
+    let receipt = store.receipt("agent.configure", "op-42.configure").unwrap();
+    assert_eq!(receipt.result, Some(expected.to_json()));
+    assert!(receipt.sanitized);
+    let replay = store.execute("agent.configure", "op-42.configure", "input", &ctx, || {
+        panic!("must recover without repeating")
+    });
+    assert_eq!(replay, expected);
+}

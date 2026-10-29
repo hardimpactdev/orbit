@@ -59,29 +59,20 @@ final readonly class OperationSecretOutputs
     public function extract(Operation $operation, #[\SensitiveParameter] array $result): array
     {
         $values = [];
-        $booleans = [];
         $bytes = 0;
-        $collectBooleans = static function (mixed $value) use (&$collectBooleans, &$booleans): void {
-            if (is_bool($value)) {
-                $booleans[] = $value;
-            } elseif (is_array($value)) {
-                foreach ($value as $item) {
-                    $collectBooleans($item);
-                }
-            }
-        };
         foreach ($this->fields($operation) as $field) {
-            if (! Arr::has($result, $field['name'])) {
+            $entry = self::atPath($result, $field['name']);
+            if (! $entry['found']) {
                 continue;
             }
-            $value = Arr::get($result, $field['name']);
+            $value = $entry['value'];
             if ($value === ['$secret_output' => true]) {
                 throw new ResourceOperationException('operation.execution_uncertain', 'The target confirms an output but its value was not stored.', 409);
             }
             try {
                 $bytes += strlen(json_encode($value, JSON_THROW_ON_ERROR));
                 $protected = new OperationSecretValue($value);
-                if ($bytes > OperationResultFields::MaximumResultBytes || ($protected->requiresRedaction() && $protected->strings() === [])) {
+                if (self::containsBoolean($value) || $bytes > OperationResultFields::MaximumResultBytes || ($protected->requiresRedaction() && $protected->strings() === [])) {
                     $this->refuse();
                 }
                 $store = $this->store($field['store']);
@@ -92,20 +83,33 @@ final readonly class OperationSecretOutputs
             } catch (Throwable) {
                 $this->refuse();
             }
-            $collectBooleans($value);
             $values = [...$values, ...$protected->strings()];
             Arr::set($result, $field['name'], ['$secret' => $field['store'], 'id' => $owner]);
         }
 
-        $redactBooleans = static function (mixed $value) use (&$redactBooleans, $booleans): mixed {
-            if (is_bool($value) && in_array($value, $booleans, true)) {
-                return '[REDACTED]';
+        return ['result' => $result, 'values' => $values];
+    }
+
+    private static function containsBoolean(#[\SensitiveParameter] mixed $value): bool
+    {
+        return is_bool($value) || (is_array($value) && array_any($value, self::containsBoolean(...)));
+    }
+
+    /** Read the same segmented path as the agent's JSON pointer, ignoring literal dotted aliases.
+     * @param  array<string,mixed>  $result
+     * @return array{found:bool,value:mixed}
+     */
+    public static function atPath(#[\SensitiveParameter] array $result, string $path): array
+    {
+        $value = $result;
+        foreach (explode('.', $path) as $segment) {
+            if (! is_array($value) || ! array_key_exists($segment, $value)) {
+                return ['found' => false, 'value' => null];
             }
+            $value = $value[$segment];
+        }
 
-            return is_array($value) ? array_map($redactBooleans, $value) : $value;
-        };
-
-        return ['result' => array_map($redactBooleans, $result), 'values' => $values];
+        return ['found' => true, 'value' => $value];
     }
 
     /** @param array{name:string,secret:true,store:string} $field
@@ -129,8 +133,9 @@ final readonly class OperationSecretOutputs
     {
         $references = [];
         foreach (self::declarations($fields) as $field) {
-            if (Arr::has($result, $field['name'])) {
-                $references[$field['name']] = self::reference($field, Arr::get($result, $field['name']));
+            $entry = self::atPath($result, $field['name']);
+            if ($entry['found']) {
+                $references[$field['name']] = self::reference($field, $entry['value']);
             }
         }
 
