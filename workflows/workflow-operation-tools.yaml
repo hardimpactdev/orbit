@@ -1,13 +1,24 @@
 id: 774d24db-4bb9-4a5c-811d-ef19d16a3888
 name: operation-tools
-description: Execute an admitted Tool package or manager Operation.
+description: Claim and execute a Tool kind within one placed worker invocation.
+labels: { pool: migration }
+queueTimeout: 300
 autoResume: true
 inputs:
   type: object
   properties:
-    operationId: { type: integer }
+    kind: {
+      type: string,
+      enum: [
+        tool.install,
+        tool.update,
+        tool.remove,
+        tool.adopt,
+        tool.manager_converge,
+      ],
+    }
     worker: { type: string }
-  required: [operationId, worker]
+  required: [kind, worker]
 jobs:
   - name: tools
     steps:
@@ -15,8 +26,8 @@ jobs:
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-tools"
-          behaviorName: '${{ "operation-tools-" + string(inputs.operationId) }}'
+          behaviorName: '${{ "operation-tools-" + {"tool.install":"install", "tool.update":"update", "tool.remove":"remove", "tool.adopt":"adopt", "tool.manager_converge":"manager-converge"}[inputs.kind] }}'
           methodName: execute
           inputs:
-            operationId: "${{ inputs.operationId }}"
+            kind: "${{ inputs.kind }}"
             worker: "${{ inputs.worker }}"

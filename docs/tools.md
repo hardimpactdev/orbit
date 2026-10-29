@@ -20,6 +20,15 @@ verifies absence. Protected prerequisites cannot be adopted or removed. Scan
 stays in Orbit and reads Homebrew and Vite+ inventory without materializing
 managers or recording discovered packages as managed Tools.
 
+Services discovers claimable kinds without claiming an Operation. The Tools
+workflow takes `{kind, worker}` and runs in the migration worker pool. That
+placed worker claims the kind and records its first Operation ID in a durable
+assignment before effects. Claim, heartbeat, effect and completion writes use
+the same authenticated Node. A retry uses the recorded ID and never claims
+another Operation. After a lost completion reply, it reads and verifies the
+original terminal result or replays the saved completion under its existing
+lease. An expired lease requires a new dispatch; the stale retry stops.
+
 Each named effect has a stable Operation-local key. Swamp records intent before
 execution, resumes successful step receipts, and saves completion intent before
 posting it. A lost reply reuses its key. A lost lease stops the worker.

@@ -31,9 +31,16 @@ export function tools(
 ) {
   return {
     type: "@nckrtl/operation-tools",
-    version: "2026.10.28.1",
+    version: "2026.10.29.1",
     globalArguments: Globals,
     resources: {
+      assignment: {
+        description:
+          "Bind a dispatch retry to its first claimed Tool Operation before effects",
+        schema: z.object({ operation_id: z.number().int().positive() }),
+        lifetime: "7d",
+        garbageCollection: 1,
+      },
       receipt: {
         description: "Permanent completion intent for one Tool Operation",
         schema: Completion,
@@ -50,17 +57,93 @@ export function tools(
     methods: {
       execute: {
         description:
-          "Execute an admitted Tool package or manager operation using fixed named commands",
+          "Claim and execute one Tool Operation on the same placed worker Node",
         arguments: z.object({
-          operationId: z.number().int().positive(),
-          worker: z.string(),
+          kind: z.enum([
+            "tool.install",
+            "tool.update",
+            "tool.remove",
+            "tool.adopt",
+            "tool.manager_converge",
+          ]),
+          worker: z.string().min(1),
         }),
         execute: async (
-          args: { operationId: number; worker: string },
+          args: { kind: string; worker: string },
           ctx: Context,
         ) => {
           const executor = new Executor(makeHttp(ctx));
-          const path = String(args.operationId), resource = `operation-${path}`;
+          const attempt = `assignment-${args.worker}`;
+          const assigned = await ctx.readResource(attempt);
+          let operation: z.infer<typeof Operation>;
+          if (assigned) {
+            const id =
+              z.object({ operation_id: z.number().int().positive() }).parse(
+                assigned,
+              ).operation_id;
+            const saved = await ctx.readResource(`operation-${id}`);
+            if (saved) {
+              const completion = Completion.parse(saved);
+              const outcome = z.object({
+                id: z.number().int(),
+                kind: z.string(),
+                status: z.string(),
+                result: z.preprocess(
+                  (value) =>
+                    Array.isArray(value) && value.length === 0 ? {} : value,
+                  z.record(z.string(), z.unknown()).nullable(),
+                ),
+                error_code: z.string().nullable(),
+              }).parse(await executor.operation(id));
+              if (
+                ["succeeded", "failed", "cancelled"].includes(outcome.status)
+              ) {
+                const scalarResult = (value: Record<string, unknown>) =>
+                  JSON.stringify(
+                    Object.entries(value).sort(([a], [b]) =>
+                      a.localeCompare(b)
+                    ),
+                  );
+                if (
+                  outcome.id !== id || outcome.kind !== args.kind ||
+                  outcome.status !== completion.status ||
+                  outcome.error_code !== completion.error_code ||
+                  scalarResult(outcome.result ?? {}) !==
+                    scalarResult(completion.result)
+                ) {
+                  throw new Error("Unproven saved Tool completion");
+                }
+                return {
+                  claimed: true,
+                  operationId: id,
+                  status: completion.status,
+                };
+              }
+            }
+            // A retry never claims another Operation. An expired/lost lease is
+            // recovered by normal discovery and a new worker dispatch instead.
+            operation = Operation.parse(
+              await executor.post(`${id}/heartbeat`, { worker: args.worker }),
+            );
+            if (operation.id !== id) {
+              throw new Error("Wrong Tool assignment");
+            }
+          } else {
+            // Claim and every later write share this invocation's authenticated Node.
+            const claimed = await executor.post("claim", {
+              kind: args.kind,
+              worker: args.worker,
+            });
+            if (claimed === null) return { claimed: false };
+            operation = Operation.parse(claimed);
+            await ctx.writeResource("assignment", attempt, {
+              operation_id: operation.id,
+            });
+          }
+          if (operation.kind !== args.kind) {
+            throw new Error("Wrong claimed Tool kind");
+          }
+          const path = String(operation.id), resource = `operation-${path}`;
           const finish = async (completion: z.infer<typeof Completion>) => {
             const handle = await ctx.writeResource(
               "receipt",
@@ -71,7 +154,12 @@ export function tools(
               worker: args.worker,
               ...completion,
             });
-            return { dataHandles: [handle], status: completion.status };
+            return {
+              dataHandles: [handle],
+              claimed: true,
+              operationId: operation.id,
+              status: completion.status,
+            };
           };
           const saved = await ctx.readResource(resource);
           if (saved) {
@@ -80,20 +168,12 @@ export function tools(
               worker: args.worker,
               ...completion,
             });
-            return { status: completion.status };
+            return {
+              claimed: true,
+              operationId: operation.id,
+              status: completion.status,
+            };
           }
-          const operation = Operation.parse(
-            await executor.post(`${path}/heartbeat`, { worker: args.worker }),
-          );
-          if (
-            ![
-              "tool.install",
-              "tool.update",
-              "tool.remove",
-              "tool.adopt",
-              "tool.manager_converge",
-            ].includes(operation.kind)
-          ) throw new Error("Wrong tool kind");
           const input = Input.parse(operation.input),
             command = commands[input.manager];
           if (input.node_id !== operation.node_id) {

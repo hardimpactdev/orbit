@@ -1,21 +1,51 @@
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 // Disposable native workflow fixture. No real Gateway or Node is contacted.
-export const fixtureHttp: Http = async (_method, path, raw) => {
+export const fixtureHttp: Http = async (method, path, raw) => {
   const state = JSON.parse(await Deno.readTextFile("native-tools.json"));
-  const body = raw as Record<string, unknown>;
-  state.calls.push({ path, body });
+  const body = (raw ?? {}) as Record<string, unknown>;
+  state.calls.push({ method, path, body });
   let data: unknown = state.operation;
-  if (path.endsWith("/claim")) {
-    data =
-      body.kind === state.operation.kind && state.operation.status === "queued"
-        ? state.operation
-        : null;
-    if (data) state.operation.status = "running";
+  if (path === `/api/v1/operations/${state.operation.id}`) {
+    await Deno.writeTextFile("native-tools.json", JSON.stringify(state));
+    return {
+      status: 200,
+      body: {
+        data: {
+          ...state.operation,
+          result: state.completions[0]?.result ?? null,
+          error_code: state.completions[0]?.error_code ?? null,
+        },
+      },
+    };
+  }
+  if (path.endsWith("/claimable")) {
+    data = {
+      kinds: [{
+        kind: state.operation.kind,
+        claimable: state.operation.status === "queued" ? 1 : 0,
+        oldest_at: "2026-10-29T00:00:00Z",
+      }],
+    };
   }
   let lose = false;
-  if (path.endsWith("/heartbeat") && state.loseAdmission) {
-    state.loseAdmission = false;
+  if (path.endsWith("/claim")) {
+    data = body.kind === state.operation.kind &&
+        (state.operation.status === "queued" ||
+          state.operation.status === "running" && state.worker === body.worker)
+      ? state.operation
+      : null;
+    if (data) {
+      state.worker = body.worker;
+      state.operation.status = "running";
+    }
+    if (state.loseAdmission) {
+      state.loseAdmission = false;
+      lose = true;
+    }
+  }
+  if (path.endsWith("/step") && state.loseBeforeEffect) {
+    state.loseBeforeEffect = false;
     lose = true;
   }
   if (path.endsWith("/run")) {

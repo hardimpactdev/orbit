@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { parse } from "jsr:@std/yaml@1.0.11";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { type Context, Operation } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
@@ -25,9 +26,25 @@ class Fixture {
     },
     step_results: {},
   });
-  calls: { path: string; body: Record<string, unknown> }[] = [];
+  calls: {
+    method: string;
+    peer: number;
+    path: string;
+    body: Record<string, unknown>;
+  }[] = [];
   resources = new Map<string, Record<string, unknown>>();
   receipts = new Map<string, Record<string, unknown>>();
+  peer = 12;
+  leasePeer: number | null = null;
+  leaseWorker: string | null = null;
+  leaseExpired = false;
+  noClaim = false;
+  loseClaim = false;
+  loseAssignment = false;
+  commitThenLoseCompletion = false;
+  queuedNext = false;
+  terminalResult: Record<string, unknown> | null = null;
+  terminalError: string | null = null;
   installed: string | null = null;
   candidate = "7.0.0";
   block: string | null = null;
@@ -38,14 +55,57 @@ class Fixture {
   leaseLost = false;
   cancelAtRun = false;
   refuse: string | null = null;
-  http: Http = async (_method, path, raw) => {
-    const body = raw as Record<string, unknown>;
-    this.calls.push({ path, body });
+  http: Http = async (method, path, raw) => {
+    const body = (raw ?? {}) as Record<string, unknown>;
+    this.calls.push({ method, peer: this.peer, path, body });
     await Promise.resolve();
     if (this.leaseLost) {
       return { status: 409, body: { error: { code: "operation.lease_lost" } } };
     }
     let data: unknown = this.operation;
+    if (path === `/api/v1/operations/${this.operation.id}`) {
+      return {
+        status: 200,
+        body: {
+          data: {
+            ...this.operation,
+            result: this.terminalResult &&
+                Object.keys(this.terminalResult).length === 0
+              ? []
+              : this.terminalResult,
+            error_code: this.terminalError,
+          },
+        },
+      };
+    }
+    if (path.endsWith("/claim")) {
+      if (this.queuedNext && this.operation.status === "succeeded") {
+        this.operation = {
+          ...this.operation,
+          id: 12,
+          status: "running",
+          step_results: {},
+        };
+      }
+      if (
+        this.noClaim || body.kind !== this.operation.kind ||
+        this.leasePeer !== null && !this.leaseExpired &&
+          (this.peer !== this.leasePeer || body.worker !== this.leaseWorker)
+      ) data = null;
+      else {
+        this.leasePeer = this.peer;
+        this.leaseWorker = String(body.worker);
+        this.leaseExpired = false;
+        if (this.loseClaim) {
+          this.loseClaim = false;
+          throw new Error("Lost claim reply");
+        }
+      }
+    } else if (
+      this.peer !== this.leasePeer || body.worker !== this.leaseWorker
+    ) {
+      return { status: 409, body: { error: { code: "operation.lease_lost" } } };
+    }
     if (path.endsWith("/run")) {
       const key = String(body.key);
       if (!this.receipts.has(key)) {
@@ -81,6 +141,13 @@ class Fixture {
       this.loseCompletion = false;
       throw new Error("Lost completion reply");
     }
+    if (path.endsWith("/complete") && this.commitThenLoseCompletion) {
+      this.operation.status = String(body.status);
+      this.terminalResult = body.result as Record<string, unknown>;
+      this.terminalError = body.error_code as string | null;
+      this.commitThenLoseCompletion = false;
+      throw new Error("Committed completion reply lost");
+    }
     return { status: 200, body: { data } };
   };
   context(): Context {
@@ -105,20 +172,81 @@ class Fixture {
       ) => {
         const handle = await write(spec, name, value);
         this.resources.set(name, structuredClone(value));
+        if (spec === "assignment" && this.loseAssignment) {
+          this.loseAssignment = false;
+          throw new Error("Lost assignment write reply");
+        }
         return handle;
       },
     });
   }
-  execute() {
+  execute(worker = "run-11") {
     return tools(() => this.http).methods.execute.execute({
-      operationId: 11,
-      worker: "run-11",
+      kind: this.operation.kind,
+      worker,
     }, this.context());
   }
   complete() {
     return this.calls.filter((c) => c.path.endsWith("/complete")).at(-1)!.body;
   }
 }
+
+Deno.test("the placed workflow accepts dispatcher kind and worker for every registered Tool kind", async () => {
+  const workflow = parse(
+    await Deno.readTextFile("workflows/workflow-operation-tools.yaml"),
+  ) as {
+    labels: Record<string, string>;
+    inputs: { required: string[]; properties: { kind: { enum: string[] } } };
+    jobs: {
+      steps: {
+        task: { inputs: Record<string, string>; behaviorName: string };
+      }[];
+    }[];
+  };
+  const registration = JSON.parse(
+    await Deno.readTextFile(
+      "extensions/behaviors/operations/tools/registration.json",
+    ),
+  );
+  assertEquals(workflow.labels, { pool: "migration" });
+  assertEquals(workflow.inputs.required, ["kind", "worker"]);
+  assertEquals(workflow.inputs.properties.kind.enum, registration.kinds);
+  assertEquals(workflow.jobs[0].steps[0].task.inputs, {
+    kind: "${{ inputs.kind }}",
+    worker: "${{ inputs.worker }}",
+  });
+  assertEquals(
+    workflow.jobs[0].steps[0].task.behaviorName.includes("operationId"),
+    false,
+  );
+  for (const kind of registration.kinds) {
+    assertEquals(
+      tools().methods.execute.arguments.safeParse({ kind, worker: "dispatch" })
+        .success,
+      true,
+    );
+  }
+  assertEquals(
+    tools().methods.execute.arguments.safeParse({
+      operationId: 11,
+      worker: "dispatch",
+    }).success,
+    false,
+  );
+});
+
+Deno.test("manager convergence claims its kind and returns only manager readiness", async () => {
+  for (const manager of ["apt", "vp", "composer"]) {
+    const f = new Fixture();
+    f.operation.kind = "tool.manager_converge";
+    f.operation.input.manager = manager;
+    delete f.operation.input.package;
+    assertEquals((await f.execute()).status, "succeeded");
+    assertEquals(f.calls[0].body.kind, "tool.manager_converge");
+    assertEquals(f.complete().result, { version: "1.0.0" });
+    assertEquals(f.mutations, 0);
+  }
+});
 
 Deno.test("installs through each exact manager and omits a transport target", async () => {
   for (
@@ -254,6 +382,7 @@ Deno.test("lost Node reply resumes the same effect key and recorded receipts", a
   await assertRejects(() => f.execute(), Error, "Lost Node reply");
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.mutations, 1);
+  assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, 1);
   assertEquals(
     f.calls.filter((c) =>
       c.path.endsWith("/run") && c.body.key === "package-mutate"
@@ -261,13 +390,144 @@ Deno.test("lost Node reply resumes the same effect key and recorded receipts", a
     ["package-mutate", "package-mutate"],
   );
 });
-Deno.test("lost completion reply replays saved completion intent without any other call", async () => {
+Deno.test("the placed worker claims and records its assignment before effects", async () => {
+  const f = new Fixture();
+  assertEquals((await f.execute()).operationId, 11);
+  assertEquals(f.calls[0].path, "/api/v1/operation-executor/claim");
+  assertEquals(f.calls[0].body, { kind: "tool.install", worker: "run-11" });
+  assertEquals(
+    f.calls.every((c) => c.method === "POST" && c.peer === 12),
+    true,
+  );
+  assertEquals(f.resources.get("assignment-run-11"), { operation_id: 11 });
+});
+Deno.test("a lost claim race performs no effects or assignment", async () => {
+  const f = new Fixture();
+  f.noClaim = true;
+  assertEquals(await f.execute(), { claimed: false });
+  assertEquals(f.calls.length, 1);
+  assertEquals(f.resources.size, 0);
+  assertEquals(f.mutations, 0);
+});
+Deno.test("a lost claim reply replays the same worker before any effect", async () => {
+  const f = new Fixture();
+  f.loseClaim = true;
+  await assertRejects(() => f.execute(), Error, "Lost claim reply");
+  assertEquals(f.resources.size, 0);
+  assertEquals(f.mutations, 0);
+  assertEquals((await f.execute()).operationId, 11);
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/claim")).map((c) => c.body),
+    [
+      { kind: "tool.install", worker: "run-11" },
+      { kind: "tool.install", worker: "run-11" },
+    ],
+  );
+  assertEquals(f.mutations, 1);
+});
+Deno.test("a lost assignment write reply retries the stored ID before effects without claiming again", async () => {
+  const f = new Fixture();
+  f.loseAssignment = true;
+  await assertRejects(() => f.execute(), Error, "Lost assignment write reply");
+  assertEquals(f.calls.length, 1);
+  assertEquals(f.mutations, 0);
+  assertEquals((await f.execute()).operationId, 11);
+  assertEquals(f.calls[1].path, "/api/v1/operation-executor/11/heartbeat");
+  assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, 1);
+});
+Deno.test("a committed completion with a lost reply reads its original ID without claiming queued work", async () => {
+  const f = new Fixture();
+  f.commitThenLoseCompletion = true;
+  f.queuedNext = true;
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "Committed completion reply lost",
+  );
+  const count = f.calls.length;
+  assertEquals(await f.execute(), {
+    claimed: true,
+    operationId: 11,
+    status: "succeeded",
+  });
+  assertEquals(f.calls.slice(count).map((c) => [c.method, c.path]), [[
+    "GET",
+    "/api/v1/operations/11",
+  ]]);
+  assertEquals(f.operation.id, 11);
+  assertEquals(f.mutations, 1);
+});
+Deno.test("a committed cancellation tolerates the Gateway empty-array result without new claims", async () => {
+  const f = new Fixture();
+  f.operation.cancel_requested = true;
+  f.commitThenLoseCompletion = true;
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "Committed completion reply lost",
+  );
+  assertEquals(await f.execute(), {
+    claimed: true,
+    operationId: 11,
+    status: "cancelled",
+  });
+  assertEquals(f.mutations, 0);
+  assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, 1);
+});
+Deno.test("a saved completion must match the original Gateway terminal evidence", async () => {
+  for (const field of ["kind", "status", "result", "error_code"]) {
+    const f = new Fixture();
+    f.commitThenLoseCompletion = true;
+    await assertRejects(
+      () => f.execute(),
+      Error,
+      "Committed completion reply lost",
+    );
+    if (field === "kind") f.operation.kind = "tool.remove";
+    if (field === "status") f.operation.status = "failed";
+    if (field === "result") {
+      f.terminalResult = { installed_version: "8.0.0", block: null };
+    }
+    if (field === "error_code") f.terminalError = "tool.install_failed";
+    await assertRejects(
+      () =>
+        tools(() => f.http).methods.execute.execute({
+          kind: "tool.install",
+          worker: "run-11",
+        }, f.context()),
+      Error,
+      "Unproven saved Tool completion",
+    );
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, 1);
+  }
+});
+Deno.test("a retry on another peer cannot claim new work or write the old lease", async () => {
+  const f = new Fixture();
+  f.loseRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost Node reply");
+  f.peer = 13;
+  await assertRejects(() => f.execute(), Error, "operation.lease_lost");
+  assertEquals(f.calls.filter((c) => c.path.endsWith("/claim")).length, 1);
+  assertEquals(f.mutations, 1);
+});
+Deno.test("a fresh dispatch recovers an expired lease without repeating the proven effect", async () => {
+  const f = new Fixture();
+  f.loseRun = true;
+  await assertRejects(() => f.execute(), Error, "Lost Node reply");
+  f.peer = 13;
+  assertEquals(await f.execute("replacement"), { claimed: false });
+  f.leaseExpired = true;
+  assertEquals((await f.execute("replacement")).status, "succeeded");
+  assertEquals(f.leasePeer, 13);
+  assertEquals(f.mutations, 1);
+});
+Deno.test("lost completion reply replays saved completion after reading and heartbeating its original ID", async () => {
   const f = new Fixture();
   f.loseCompletion = true;
   await assertRejects(() => f.execute(), Error, "Lost completion reply");
   const count = f.calls.length;
   assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.calls.length, count + 1);
+  assertEquals(f.calls.length, count + 3);
   assertEquals(f.mutations, 1);
 });
 Deno.test("an expired lease stops before any new command", async () => {
