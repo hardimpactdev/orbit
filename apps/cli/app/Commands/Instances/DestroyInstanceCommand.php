@@ -4,26 +4,25 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
-use App\Support\Console\ProgressState;
-use App\Support\GatewayFailureRenderer;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceRemovalProgressResponse;
-use Orbit\Sdk\Responses\Instances\InstanceRemovalResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DestroyInstanceCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'instance:destroy
         {instance : Numeric instance ID}
         {--yes : Confirm removal without prompting}
         {--force : Delete dirty or unpublished source after identity checks}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -53,7 +52,7 @@ final class DestroyInstanceCommand extends GatewayCommand
             }
             $isProduction = $existing->productionHome !== null;
             $effect = $isProduction
-                ? 'remove its Route and runtime while retaining production content'
+                ? 'delete its production content, Route and runtime'
                 : 'delete its owned development source, Route and runtime';
             if ($this->option('force') === true && ! $isProduction) {
                 $effect .= ', including dirty or unpublished work and registered linked worktrees';
@@ -63,83 +62,18 @@ final class DestroyInstanceCommand extends GatewayCommand
             }
         }
 
-        $progress = $this->progressDisplay('Remove Instance');
-        $progress->admit('remove', 'Remove Instance', 'Removing Instance', 'Removed Instance');
-        try {
-            $response = $progress->during('remove', fn (): object => $this->sendOrThrow(
-                $connector,
-                new DestroyInstanceRequest(
-                    $instanceId,
-                    force: $this->option('force') === true ? true : null,
-                ),
-                InstanceRemovalResponse::class,
-            ));
-        } catch (GatewayApiException $exception) {
-            $this->renderRemovalFailure($exception);
-
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new DestroyInstanceRequest(
+            $instanceId,
+            force: $this->option('force') === true ? true : null,
+            idempotencyKey: $this->stringOption('idempotency-key'),
+        ), OperationResponse::class);
 
-        $progress->complete('remove', ProgressState::Success);
-        $progress->finish('Instance removed.');
-
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("Instance [{$response->removal->name}] removed.");
-        $this->writeProgress($response->removal);
-        $this->writeHumanMessage("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
-    }
-
-    private function renderRemovalFailure(GatewayApiException $exception): void
-    {
-        $value = $exception->details()['removal'] ?? null;
-        $progress = null;
-
-        if (is_array($value)) {
-            $removalData = [];
-            foreach ($value as $key => $item) {
-                if (is_string($key)) {
-                    $removalData[$key] = $item;
-                }
-            }
-
-            $progress = InstanceRemovalProgressResponse::fromGatewayData($removalData);
-        }
-
-        $code = $exception->errorCode() ?? 'gateway.request_failed';
-        $details = GatewayFailureRenderer::safeDetails($code, $exception->details());
-
-        GatewayFailureRenderer::write(
-            $this,
-            $code,
-            $exception->getMessage(),
-            $exception->requestId(),
-            details: $progress instanceof InstanceRemovalProgressResponse
-                ? [...$details, 'removal' => $progress->toArray()]
-                : $details,
-        );
-
-        if ($this->option('json') !== true && $progress instanceof InstanceRemovalProgressResponse) {
-            $this->writeProgress($progress);
-        }
-    }
-
-    private function writeProgress(InstanceRemovalProgressResponse $progress): void
-    {
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Removal: {$progress->name}", [
-            'ID' => $progress->id,
-            'Mode' => $progress->force ? 'forced' : 'normal',
-            'Status' => $progress->status,
-            'Progress' => "{$progress->completed}/{$progress->total} completed; {$progress->remaining} remaining",
-            'Current step' => $progress->currentStep,
-            'Failed step' => $progress->failedStep,
-            'Error code' => $progress->errorCode,
-        ]));
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Remove Instance', 'Instance removal')
+            : self::FAILURE;
     }
 }

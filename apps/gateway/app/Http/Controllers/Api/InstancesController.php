@@ -5,23 +5,25 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\CreateInstanceAction;
-use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\ShowInstanceAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Instances\InstanceRegistrationData;
-use App\Data\Instances\InstanceRemovalData;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Instances\RegisterInstanceRequest;
 use App\Http\Requests\Instances\RemoveInstanceRequest;
 use App\Http\Requests\Instances\RenameInstanceRequest;
 use App\Http\Requests\Instances\StoreInstanceRequest;
 use App\Http\Requests\Instances\UpdateInstanceRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
@@ -115,15 +117,26 @@ final class InstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[StartsOperation('instance.destroy')]
     public function destroy(
         RemoveInstanceRequest $request,
-        Instance $instance,
-        DestroyInstanceAction $action,
+        int $instance,
+        StartInstanceDestroyAction $action,
     ): JsonResponse {
+        $operation = $action->execute(Instance::query()->findOrFail($instance), $request->force(),
+            $this->caller($request), $request->attributes->getString('orbit.request_id'));
+
         return response()->json([
-            'data' => InstanceRemovalData::fromModel($action->execute($instance, $request->force()))->toArray(),
+            'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], 202);
+    }
+
+    private function caller(Request $request): ?string
+    {
+        $caller = RequireActiveWireGuardPeer::activePeer($request);
+
+        return $caller instanceof Node ? 'node:'.$caller->id : null;
     }
 
     /** @return array{request_id: string} */

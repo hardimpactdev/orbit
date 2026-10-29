@@ -13,10 +13,4 @@ interface DevelopmentInstanceSourceRemoval
         bool $force,
         bool $inspectContent = true,
     ): InstanceSourceInventory;
-
-    public function remove(
-        Instance $instance,
-        InstanceSourceInventory $inventory,
-        bool $force,
-    ): void;
 }

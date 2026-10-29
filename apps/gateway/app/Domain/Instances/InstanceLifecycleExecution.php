@@ -49,6 +49,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     {
         $descriptors = match ($operation->kind) {
             'instance.rename' => [$this->inspect($operation, 'rename-inspect')],
+            'instance.destroy' => app(RemovalLifecycleExecution::class)->descriptors($operation),
             default => throw $this->forbidden(),
         };
         $descriptors[] = $this->descriptor('lifecycle-finish', 'gateway', 'instance.lifecycle-state', [
@@ -122,6 +123,10 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         foreach ($prerequisites as $key) {
             $this->proven($operation, $key);
         }
+        match ($operation->kind) {
+            'instance.destroy' => app(RemovalLifecycleExecution::class)->beforeRun($operation, $run),
+            default => null,
+        };
     }
 
     /** @param RunInput $run
@@ -172,6 +177,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         if (in_array($run['key'], ['source-profile', 'clone-source-profile'], true)) {
             return $this->classifyProfile($operation, $run['transport'] === 'gateway' ? ['kind' => 'none'] : $receipt);
+        }
+        if ($operation->kind === 'instance.destroy') {
+            return app(RemovalLifecycleExecution::class)->received($operation, $run, $receipt);
         }
 
         return $receipt;
@@ -238,6 +246,28 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         $input = $operation->input;
         if ($operation->kind === 'instance.rename' && $input['domain'] !== null) {
             $this->assertChild($operation, 'route-update', 'route.update');
+        } elseif ($operation->kind === 'instance.destroy') {
+            $intent = app(RemovalLifecycleExecution::class)->intent($operation);
+            foreach (ValidatedData::integerList($intent['additional_route_ids']) as $route) {
+                $this->assertChild($operation, "withdraw-extra-{$route}", 'route.withdraw');
+            }
+            foreach (InstanceLifecycleInput::members($intent) as $member) {
+                if (($member['row_deleted_at'] ?? null) !== null) {
+                    continue;
+                }
+                $id = ValidatedData::integer($member['instance_id']);
+                if ($member['run_teardown'] === true) {
+                    $this->assertStepList($operation, "teardown-{$id}");
+                }
+                if ($member['route_id'] !== null) {
+                    $this->assertChild($operation, "withdraw-{$id}", 'route.withdraw');
+                }
+                $this->assertChild($operation, "withdraw-instance-{$id}", 'route.withdraw_instance');
+                $this->assertChild($operation, "remove-databases-{$id}", 'database.destroy_owned');
+                $this->assertChild($operation, "remove-processes-{$id}", 'process.instance_runtime');
+                $this->assertChild($operation, "remove-schedules-{$id}", 'schedule.instance_runtime');
+                $this->assertChild($operation, "cleanup-instance-{$id}", 'route.cleanup_instance');
+            }
         }
     }
 

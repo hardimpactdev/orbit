@@ -2,8 +2,8 @@
 title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
-  - apps/gateway/app/Actions/{Instances/DestroyInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,Removal/**}
+  - apps/gateway/app/Actions/{Instances/{DestroyInstanceAction,StartInstanceDestroyAction,AwaitInstanceRemovalAction},DatabaseConnections/DropOwnedDatabasesAction}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,Removal/**}
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/agent/{src/commands/{instances,instances_tests,source}.rs,contract/fixtures/repository-identity.json}
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
@@ -16,11 +16,17 @@ covers:
 
 `instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
 
+Swamp removal records an Operation before effects. Retained Gateway callers admit through the owning Instance action, commit admission, then await that exact Operation through `AwaitOperation`. They return the removal receipt only after the Operation succeeds and its result matches the admitted Instance and completed removal. A failure, cancellation, incomplete result, or timeout stops dependent cleanup. A caller timeout leaves the Operation running.
+
+When a Route changes its targets, it admits removal as `instance.destroy` with `{instance_id, force:true}`. The Instance admission checks the parent's stored removed set and placement, completed publication stages, and proven Gateway commit receipts. It can then remove the deliberately detached Instance without requiring its old Route association. The request cannot supply a detached flag or select another Instance or Node.
+
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
 ```
 
 The CLI asks for default-No consent that names the Instance. `--yes` confirms without a prompt and is required for JSON and noninteractive calls. `--force` never gives consent.
+
+The API returns HTTP 202 with the admitted `instance.destroy` Operation. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
 
 ## Normal and forced removal
 
@@ -127,8 +133,8 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | For development, withdraw PHP-FPM, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent. For production, clear the serving link. |
-| `runtime_cleanup` | Remove Processes, Schedules, PHP-FPM, Caddy, and other runtime files. Drop [owned databases](#owned-databases), then remove the production user, home, and source state. See [Runtime cleanup](#runtime-cleanup). |
+| `source_finalization` | Remove [owned databases](#owned-databases) through their child Operation. For development, withdraw PHP-FPM, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent. For production, clear the serving link. |
+| `runtime_cleanup` | Remove Processes, Schedules, PHP-FPM, Caddy, and other runtime files, then remove the production user, home, and source state. See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Delete the Instance record. |
 
 ### Runtime cleanup
@@ -176,7 +182,7 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 ### Owned databases
 
-`runtime_cleanup` first checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, and connection records stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
+Before source finalization, the `database.destroy_owned` child checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, connection records, and the checkout stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
 
 The Gateway holds a lock on every server in the set through record deletion; an overlapping removal returns `database.server_in_use` (409) before changing anything. It fences every planned PostgreSQL database before the final blocker check and restores admission on refusal through the same recoverable journal.
 

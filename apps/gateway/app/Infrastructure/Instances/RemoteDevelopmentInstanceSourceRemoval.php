@@ -6,7 +6,6 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -38,7 +37,7 @@ use InvalidArgumentException;
 final readonly class RemoteDevelopmentInstanceSourceRemoval implements DevelopmentInstanceSourceFinalizer, DevelopmentInstanceSourceRemoval
 {
     /**
-     * The refusals with which `instance.inspect-source` and `instance.remove-source` name the identity check that
+     * The refusals with which `instance.inspect-source` name the identity check that
      * failed ([Node agent](/reference/node-agent#commands)).
      *
      * @var array<string, InstanceSourceMismatch>
@@ -247,92 +246,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         );
     }
 
-    public function remove(
-        Instance $instance,
-        InstanceSourceInventory $inventory,
-        bool $force,
-    ): void {
-        $this->lock->synchronized(
-            $instance->node_id,
-            fn () => $this->removeLocked($instance, $inventory, $force),
-        );
-    }
-
-    private function removeLocked(
-        Instance $instance,
-        InstanceSourceInventory $inventory,
-        bool $force,
-    ): void {
-        $context = $this->context($instance);
-
-        if (
-            $inventory->instanceId !== $instance->id
-            || $inventory->layout !== InstanceSourceLayout::Checkout->value
-            || $inventory->repositoryIdentity !== $context['repositoryIdentity']
-            || $inventory->checkoutPath !== $instance->checkout_path
-            || $inventory->root !== $context['root']->value
-            || $inventory->branch !== $context['branch']
-        ) {
-            $this->invalidEvidence($instance, $force);
-        }
-
-        if ($inventory->linkedWorktreePaths !== [$instance->checkout_path]) {
-            $this->mismatch($instance, InstanceSourceMismatch::Worktrees, 'app-instance-source-remove');
-        }
-
-        $groupingDirectory = $this->boundaries
-            ->instanceGroupingDirectory($instance)
-            ->value;
-        $this->runRefusable(
-            $instance,
-            'instance.remove-source',
-            [
-                'checkout' => $inventory->checkoutPath,
-                'root' => $inventory->root,
-                'grouping_directory' => $groupingDirectory,
-                'user' => $context['user'],
-                'group' => $context['group'],
-                'branch' => $inventory->branch ?? '',
-                'commit' => $inventory->startingCommit,
-                'source_identity' => $inventory->sourceIdentity,
-                'repository_identity' => $inventory->repositoryIdentity,
-                'force' => $force,
-                'own_units' => self::ownUnits($instance),
-                'git_read' => $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
-            ],
-            step: 'app-instance-source-remove',
-            force: $force,
-        );
-    }
-
-    public function prepare(
-        InstanceRemovalMember $member,
-        ?InstanceSourceRevalidationExpectation $expectation = null,
-    ): void {
-        $this->lock->synchronized($member->node_id, function () use ($member, $expectation): void {
-            $this->inspectRecordedLocked($member, InstanceSourceRevalidationState::Present, $expectation);
-            [$node, $user, $group, $root] = $this->memberContext($member);
-            $this->runStep(
-                $node,
-                'instance.prepare-source-removal',
-                [
-                    'root' => $root->value,
-                    'operation' => $member->instance_removal_id,
-                    'member' => (string) $member->id,
-                    'digest' => $member->source_digest,
-                    'user' => $user,
-                    'group' => $group,
-                    'checkout' => (string) $member->checkout_path,
-                    'common_repository' => (string) $member->common_repository_path,
-                    'layout' => $member->source_layout,
-                    'source_identity' => (string) $member->source_identity,
-                ],
-                step: 'app-instance-removal-prepare',
-                errorCode: 'instance.remove_refused',
-            );
-        });
-    }
-
     public function revalidate(
         InstanceRemovalMember $member,
         ?InstanceSourceRevalidationExpectation $expectation = null,
@@ -387,86 +300,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $member->node_id,
             fn (): InstanceSourceInventory => $this->inspectRecordedLocked($member, $state, $expectation),
         );
-    }
-
-    public function finalize(
-        InstanceRemovalMember $member,
-        ?InstanceSourceRevalidationExpectation $expectation = null,
-    ): string {
-        return $this->lock->synchronized($member->node_id, function () use ($member, $expectation): string {
-            $state = $this->revalidationStateLocked($member);
-            $receipt = $this->receipt($member);
-
-            if ($state === InstanceSourceRevalidationState::Completed) {
-                return $receipt;
-            }
-
-            if ($state === InstanceSourceRevalidationState::ReceiptPendingCleanup) {
-                $receiptStructure = $this->receiptStructureStateLocked($member);
-
-                if ($receiptStructure === 'incomplete') {
-                    return $this->cleanupReceiptLocked($member, $receipt);
-                }
-            }
-
-            $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
-            [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
-            $removal = $member->removal()->firstOrFail();
-            $instance = Instance::query()->findOrFail($member->instance_id);
-            $failedCreation = ! $member->runtime_published
-                && ($inventory->sourceIdentity === 'absent'
-                    || $instance->registration_request_id === null
-                    && InstanceCreationRecovery::isPreActivation($instance, removing: true));
-            $result = $this->runStep(
-                $node,
-                'instance.finalize-source-removal',
-                [
-                    'checkout' => (string) $member->checkout_path,
-                    'root' => $root->value,
-                    'common_repository' => (string) $member->common_repository_path,
-                    'layout' => $member->source_layout,
-                    'branch' => $member->branch ?? '',
-                    'operation' => $member->instance_removal_id,
-                    'member' => (string) $member->id,
-                    'digest' => $member->source_digest,
-                    'receipt' => $receipt,
-                    'force' => $removal->force || $failedCreation,
-                    'user' => $user,
-                    'group' => $group,
-                    'source_identity' => (string) $member->source_identity,
-                    'origin' => $inventory->origin,
-                    'worktrees' => base64_encode($inventory->worktreeInventory),
-                    'commit' => (string) $member->source_commit,
-                    'grouping_directory' => $groupingDirectory,
-                    'unresolved' => $member->starting_commit === null && ! $member->runtime_published,
-                    'independent_worktree' => $this->independentForcedWorktree($member),
-                    'own_units' => self::ownUnits($instance),
-                    'git_read' => $failedCreation ? GitReadEnvironment::none() : $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
-                ],
-                step: 'app-instance-source-finalization',
-                errorCode: 'instance.removal_incomplete',
-            );
-
-            if (($result['state'] ?? null) === 'cross_device') {
-                throw AgentStep::failed($node, 'app-instance-source-finalization', 'instance.removal_incomplete', 'App development', new CommandResult(
-                    exitCode: 1,
-                    stdout: json_encode(['state' => 'cross_device'], JSON_THROW_ON_ERROR)."\n",
-                    stderr: "cross-device: the checkout [{$member->checkout_path}] is on another filesystem than the removal state; Orbit does not move a checkout across a mount.\n",
-                    durationMs: 0,
-                    truncated: false,
-                ));
-            }
-
-            if (($result['receipt'] ?? null) !== $receipt) {
-                throw new RuntimeConvergenceException(
-                    step: 'app-instance-source-finalization',
-                    errorCode: 'instance.finalization_evidence_invalid',
-                    message: 'Instance removal returned invalid finalization evidence.',
-                );
-            }
-
-            return $receipt;
-        });
     }
 
     private function inspectRecordedLocked(
@@ -608,41 +441,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 'The linked-worktree inventory changed after removal acceptance.',
             );
         }
-    }
-
-    private function cleanupReceiptLocked(InstanceRemovalMember $member, string $receipt): string
-    {
-        [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
-        $result = $this->runStep(
-            $node,
-            'instance.clean-removal-receipt',
-            [
-                'checkout' => (string) $member->checkout_path,
-                'root' => $root->value,
-                'common_repository' => (string) $member->common_repository_path,
-                'layout' => $member->source_layout,
-                'operation' => $member->instance_removal_id,
-                'member' => (string) $member->id,
-                'digest' => $member->source_digest,
-                'receipt' => $receipt,
-                'user' => $user,
-                'group' => $group,
-                'source_identity' => (string) $member->source_identity,
-                'grouping_directory' => $groupingDirectory,
-            ],
-            step: 'app-instance-source-finalization',
-            errorCode: 'instance.removal_incomplete',
-        );
-
-        if (($result['receipt'] ?? null) !== $receipt) {
-            throw new RuntimeConvergenceException(
-                step: 'app-instance-source-finalization',
-                errorCode: 'instance.finalization_evidence_invalid',
-                message: 'Instance removal returned invalid finalization evidence.',
-            );
-        }
-
-        return $receipt;
     }
 
     private function receiptStructureStateLocked(InstanceRemovalMember $member): string

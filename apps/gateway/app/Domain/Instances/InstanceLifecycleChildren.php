@@ -27,6 +27,7 @@ final readonly class InstanceLifecycleChildren
         }
         $children = match ($parent->kind) {
             'instance.rename' => $this->rename($parent),
+            'instance.destroy' => $this->destroy($parent),
             default => [],
         };
         $indexed = [];
@@ -58,6 +59,48 @@ final readonly class InstanceLifecycleChildren
         return $parent->input['domain'] !== null && $this->ready($parent, 'rename-inspect')
             ? [$this->child($parent, 'route-update', 'route.update', ['route_id' => $parent->input['route_id'], 'domain' => $parent->input['domain']])]
             : [];
+    }
+
+    /** @return list<ChildIntent> */
+    private function destroy(Operation $parent): array
+    {
+        $input = app(RemovalLifecycleExecution::class)->intent($parent);
+        if (! isset($input['members'])) {
+            return [];
+        }
+        $children = [];
+        foreach (InstanceLifecycleInput::members($input) as $member) {
+            $id = ValidatedData::integer($member['instance_id']);
+            if (($member['row_deleted_at'] ?? null) !== null) {
+                continue;
+            }
+            if ($member['run_teardown'] === true && $this->ready($parent, 'removal-inspect')) {
+                $children[] = $this->steps($parent, "teardown-{$id}", $id, 'teardown', $member['teardown_digest']);
+            }
+            if ($this->ready($parent, "removal-{$id}-source-prepare")) {
+                if ($member['route_id'] !== null) {
+                    $children[] = $this->child($parent, "withdraw-{$id}", 'route.withdraw', ['route_id' => $member['route_id']]);
+                }
+                $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
+            }
+            if ($this->ready($parent, "removal-{$id}-database-intent")) {
+                $children[] = app(InstanceDatabaseIntent::class)->child($parent, "remove-databases-{$id}");
+            }
+            if ($this->ready($parent, "removal-{$id}-runtime-intent")) {
+                $children[] = $this->child($parent, "remove-processes-{$id}", 'process.instance_runtime', ['instance_id' => $id, 'action' => 'remove']);
+                $children[] = $this->child($parent, "remove-schedules-{$id}", 'schedule.instance_runtime', ['instance_id' => $id, 'action' => 'remove']);
+                if ($this->succeeded($parent, "remove-processes-{$id}") && $this->succeeded($parent, "remove-schedules-{$id}")) {
+                    $children[] = $this->child($parent, "cleanup-instance-{$id}", 'route.cleanup_instance', ['instance_id' => $id]);
+                }
+            }
+        }
+        if ($this->ready($parent, 'removal-revalidate')) {
+            foreach (ValidatedData::integerList($input['additional_route_ids']) as $route) {
+                $children[] = $this->child($parent, "withdraw-extra-{$route}", 'route.withdraw', ['route_id' => $route]);
+            }
+        }
+
+        return $children;
     }
 
     public function succeeded(Operation $parent, string $key): bool
@@ -163,5 +206,12 @@ final readonly class InstanceLifecycleChildren
     private function child(Operation $parent, string $key, string $kind, array $input, ?int $node = null): array
     {
         return ['key' => $key, 'kind' => $kind, 'node_id' => $node ?? $parent->node_id, 'input' => $input];
+    }
+
+    /** @return ChildIntent */
+    private function steps(Operation $parent, string $key, int $id, string $phase, mixed $digest): array
+    {
+        return $this->child($parent, $key, 'instance.run_steps', ['instance_id' => $id, 'source' => 'project',
+            'list' => $phase, 'configuration_digest' => ValidatedData::string($digest)]);
     }
 }

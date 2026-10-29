@@ -156,6 +156,21 @@ final readonly class ServingNodeResolver
             return [Node::query()->findOrFail($instance->node_id)];
         }
 
+        if ($request->route()?->getName() === 'instance:destroy' && ($id = $this->positiveInteger($instance)) !== null) {
+            $record = Instance::query()->find($id);
+            if ($record !== null) {
+                return [Node::query()->findOrFail($record->node_id)];
+            }
+            $key = $request->header('Idempotency-Key');
+            $receipt = is_string($key) && $key !== ''
+                ? Operation::query()->where('kind', 'instance.destroy')->where('idempotency_key', $key)
+                    ->where('target_type', 'instance')->where('target_id', $id)->first() : null;
+            if ($receipt?->node_id !== null && ($receipt->input['instance_id'] ?? null) === $id) {
+                return [Node::query()->findOrFail($receipt->node_id)];
+            }
+            throw (new ModelNotFoundException)->setModel(Instance::class, [$id]);
+        }
+
         $nodeId = $this->positiveInteger($request->input('node_id'));
 
         if ($nodeId === null) {

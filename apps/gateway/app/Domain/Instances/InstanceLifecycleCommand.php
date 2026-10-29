@@ -6,7 +6,9 @@ namespace App\Domain\Instances;
 
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\InstanceRemoval;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Named Gateway state transitions. It never invokes a Node transport. */
 final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
@@ -39,6 +41,7 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
 
         return match ($input['action']) {
             'configuration' => ['written' => true],
+            'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
             'finish' => $this->finish($operation),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown lifecycle state transition.', 422),
         };
@@ -48,6 +51,15 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
     private function finish(Operation $operation): array
     {
         app(InstanceLifecycleExecution::class)->assertEvidence($operation);
+        if ($operation->kind === 'instance.destroy') {
+            $intent = app(RemovalLifecycleExecution::class)->intent($operation);
+            $removal = InstanceRemoval::query()->findOrFail(ValidatedData::string($intent['removal_id']));
+            if ($removal->members()->whereNull('row_deleted_at')->exists()) {
+                throw new ResourceOperationException('operation.completion_unproven', 'The admitted removal set is incomplete.', 409);
+            }
+
+            return ['lifecycle_complete' => true, 'instance_id' => $intent['instance_id'], 'removal_id' => $removal->id, 'status' => 'completed', 'total' => $removal->total, 'completed' => $removal->total, 'remaining' => 0];
+        }
         $instance = $this->state->instance($operation);
         if ($operation->kind === 'instance.rename') {
             $source = app(InstanceLifecycleExecution::class)->proven($operation, 'rename-inspect');

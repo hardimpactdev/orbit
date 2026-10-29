@@ -72,6 +72,7 @@ Route::middleware([
         ->whereNumber('instance')
         ->name('instance:transfer');
     Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
+        ->whereNumber('instance')
         ->name('instance:destroy');
     Route::post('instances/{instance}/setup', [InstanceSetupController::class, 'store'])
         ->whereNumber('instance')
