@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceSqliteSeedIntent;
 use App\Domain\Instances\TransferCompensation;
@@ -122,7 +123,7 @@ it('refuses a fabricated rollback child and any parent effect after cancellation
     expect($this->root->refresh()->status->value)->toBe('running');
 });
 
-it('retains a recorded SQLite attempt on the transfer parent and prepares rollback from that exact intent', function (): void {
+it('retains the recorded SQLite attempt and blocks rollback cleanup until its seed and export settle', function (string $busyIntent): void {
     $this->stop->update(['status' => 'succeeded']);
     $path = $this->instance->checkout_path.'/database.sqlite';
     $this->transfer->update(['sqlite_source_path' => $path]);
@@ -161,4 +162,29 @@ it('retains a recorded SQLite attempt on the transfer parent and prepares rollba
     expect($source->parent_operation_id)->toBe($rollback->id)->and($source->node_id)->toBe($this->transfer->source_node_id);
     expect($this->root->refresh()->state['executor_lease_node_id'])->toBe($this->peer);
     expect(json_encode($result))->not->toContain($path, 'intent_id', 'seed_attempt', 'state_dir');
-});
+
+    $this->executor->step($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'rollback-record.finish',
+        'name' => 'rollback-record', 'status' => 'succeeded', 'result' => $result], $this->peer);
+    $child = $this->executor->child($rollback, ['worker' => 'seed-rollback-worker', 'key' => 'transfer-abandon-sqlite'], $this->peer)['operation'];
+    expect($child->input['intent_id'])->toBe($abandon->id)->and($child->parent_operation_id)->toBe($rollback->id);
+    $busyId = $busyIntent === 'seed' ? $intent->id : $intent->payload['commands']['prepare-target']['export_intent_id'];
+    $busyRecord = DatabaseExecutionIntent::recorded($busyId);
+    $inflight = Operation::query()->create(['kind' => $busyIntent === 'seed' ? 'database.sqlite_seed' : 'database.sqlite_export',
+        'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $busyRecord->node_id,
+        'input' => ['intent_id' => $busyId], 'status' => 'running']);
+    $execution = app(DatabaseOperationExecution::class);
+    $descriptor = $execution->context($child)['descriptors'][0];
+    $run = ['worker' => 'seed-cleanup-worker', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'],
+        'name' => $descriptor['name'], 'input' => $descriptor['input']];
+
+    expect(fn () => $execution->beforeRun($child, $run))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('sqlite.seed_busy');
+    });
+    expect(array_column(app(TransferCompensation::class)->childContext($rollback)['children'], 'key'))
+        ->toBe(['transfer-abandon-sqlite']);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'node_id' => $this->transfer->source_node_id]);
+
+    $inflight->update(['status' => 'failed']);
+    $execution->beforeRun($child, $run);
+    expect($child->refresh()->state['executor_runs'] ?? [])->toBe([]);
+})->with(['seed' => ['seed'], 'source export' => ['export']]);
