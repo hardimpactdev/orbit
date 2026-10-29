@@ -1,0 +1,22 @@
+id: db23a0cf-d815-42eb-b769-4323db8133fe
+name: operation-task-vms
+description: Execute a fixed task VM effect from its admitted Operation.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    operationId: { type: integer }
+    worker: { type: string }
+  required: [operationId, worker]
+jobs:
+  - name: task-vm
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-task-vms'
+          behaviorName: '${{ "operation-task-vm-" + string(inputs.operationId) }}'
+          methodName: execute
+          inputs:
+            operationId: '${{ inputs.operationId }}'
+            worker: '${{ inputs.worker }}'
