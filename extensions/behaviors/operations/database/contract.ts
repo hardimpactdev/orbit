@@ -11,7 +11,6 @@ export const Kinds = [
   "database.clone",
   "database.destroy_owned",
   "database.sqlite_export",
-  "database.sqlite_cleanup",
   "database.sqlite_seed",
   "database.sqlite_seed_abandon",
 ] as const;
