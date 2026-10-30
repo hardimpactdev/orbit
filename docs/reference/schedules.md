@@ -120,9 +120,11 @@ An existing file at an owned path must be a regular file with the expected owner
 
 ## Direct Swamp control
 
-The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map selects `polled` (the default) or `direct` independently for `schedule.enable` and `schedule.run`. Each intent keeps its admitted `schedule_control_writer` through rollback. The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts `operation-schedule-control` after commit and alone binds its root run ID. Worker reads refuse until that binding exists. The Gateway exposes only the admitted Schedule UUID, runtime user and working directory, then projects bounded status and results. The Node-local action uses no Gateway relay.
+The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map selects `polled` (the default) or `direct` independently for `schedule.enable`, `schedule.run`, and standalone `schedule.destroy`. Each intent keeps its admitted `schedule_control_writer` through rollback. The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts `operation-schedule-control` after commit and alone binds its root run ID. Worker reads refuse until that binding exists. The Gateway exposes the admitted Schedule UUID, agent digest and typed control or removal input, then projects bounded status and results. The Node-local action uses no Gateway relay.
 
-Keep both kinds polled until the approved thin privilege boundary exists and dev/canary proof verifies start-response/first-read ordering, Node placement and the action. Keep the worker unit unchanged. Swamp places the action exactly on `orbit-node-<admitted Node ID>` with native defaults and no fallback. After takeover, prove production before removing the previous path. Schedule destroy remains with its Instance-removal caller for its later slice.
+Keep each kind polled until dev/canary proof verifies start-response/first-read ordering, Node placement and the action. The worker runs as the configured Node user and invokes the pinned local agent with passwordless `sudo -n`. The step refuses a symlink, an untrusted binary owner or mode, and an agent digest different from the admitted digest. Command time and output are bounded; raw command output is never projected.
+
+Swamp places the action exactly on `orbit-node-<admitted Node ID>` with native defaults and no fallback. After takeover, prove production before removing the previous path. Schedules removed by an Instance child Operation keep the polled writer until the parent moves to one native workflow.
 
 ## Timer state
 

@@ -309,3 +309,11 @@ A successful `process.restart_instance` result contains `process_ids`, a bounded
 
 
 The runtime family reads target receipts before remote effects. A lost restart reply is recovered from its original keyed receipt. A proven pre-start refusal leaves the same key available; an uncertain restart stays pending until its receipt is known. Process completion requires a recorded `process.runtime_ready` check, which verifies every required agent step and any Caddy child. This check changes no Node state. Instance composition waits for each recorded runtime child before its own ready step.
+
+## Direct Process controls
+
+The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map can select `direct` for standalone `process.start`, `process.stop`, `process.restart`, and `process.destroy`. The default remains `polled`. This slice covers systemd and Docker Processes without a Vite traffic plan; Instance child Operations keep their original writer. Each admitted Operation preserves its selected writer and delivered agent digest.
+
+The Gateway starts `operation-process-control` directly and binds its native run ID. The exact Node worker reads safe admitted input through the shared direct Operation endpoint. It checks a selected production release when required, invokes the local agent with passwordless sudo, and reads runtime state. Native agent ownership checks protect the selected unit or container. The step validates the admitted digest and binary ownership, limits time and output, and returns only a typed ready/state result or error code. The Gateway projects lifecycle and desired state without checking old keyed receipts or scheduling children.
+
+Keep each writer polled until actual dev/canary action proof. Prove production success before deleting the replaced executor. Vite traffic preparation, create/update specifications, and Instance composition remain in their existing path until their own conversion.

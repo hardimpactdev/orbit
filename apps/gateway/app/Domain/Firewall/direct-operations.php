@@ -9,6 +9,7 @@ $intent = [
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'firewall_writer',
     'projection' => FirewallIntentProjection::class,
+    'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null],
 ];
 
 return [

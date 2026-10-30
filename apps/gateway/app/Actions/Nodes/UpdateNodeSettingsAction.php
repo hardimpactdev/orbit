@@ -57,13 +57,15 @@ final readonly class UpdateNodeSettingsAction
             $account = $this->accounts->resolve($node);
             $root = $this->validator->validateEffective($normalized, $node, $account);
 
+            $direct = app(DirectOperation::class)->writer('node.settings', [], $node->id) === 'direct';
+
             return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
-                ...(app(DirectOperation::class)->writer('node.settings') === 'direct' ? ['agent_pin' => app(AgentDelivery::class)->pin($node)] : []),
+                ...($direct ? ['agent_pin' => app(AgentDelivery::class)->pin($node)] : []),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'root' => $root->value, 'user' => $account->user, 'group' => $account->group,
                 'create_missing' => $create, 'settings' => $this->normalizer->stored($normalized),
                 'settings_patch' => ['apps' => $patch->hasApps, 'task_vms' => $patch->hasTaskVms],
-            ], 'operator', $requestId);
+            ], 'operator', $requestId, expectedWriter: $direct ? 'direct' : 'polled');
         });
     }
 
