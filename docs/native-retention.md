@@ -1,0 +1,13 @@
+# Native Swamp retention
+
+Swamp owns retention. Gateway Operations store projected JSON results, not Swamp data-version handles. A completed native run's historical `dataArtifacts` are history, not permanent pins. Operation completion receipts contain the result itself; recovering a completion reads the latest named receipt rather than an old output's artifact handle.
+
+Enable `autoGc: true` to enforce each resource's declared lifetime and version policy. Enable `garbageCollection.automatic` with `retention: 30d`, matching the native manual run-GC default. Leave outputs and evaluated snapshots unset so they follow that duration. Leave bookkeeping unset to retain Swamp's native 24-hour grace. These two automatic switches are explicit opt-ins; they are not enabled by default in a new Swamp repository.
+
+Do not set `garbageCollection.data`. That option deletes every sufficiently old version, including a behavior's latest state. Native version collection already removes superseded versions according to each resource's policy without imposing a global age cutoff on current receipts, factory state, or dependency publications. Immutable dependency reports have their own names; their exact-version pointers do not require retaining unrelated resource history.
+
+Use `swamp data gc --dry-run --json` and `swamp run gc --dry-run --json` to preview the backlog. Use `swamp data gc --force --json` for the initial native resource-policy collection. Native automatic history collection uses its own 100-item batches, hourly interval and five-minute serve budget. Do not add an Orbit collector, reference graph, batch loop or scheduler for this work.
+
+Before the first live collection, verify the datastore backup and current durable receipt contents. After collection, compare the receipt hashes and run a real Operation. Historical output handles may stop resolving according to their native resource policy; that is expected. Current required evidence must be a retained resource, not an assumption that every historical native output lives forever.
+
+The pinned runtime manual defines [resource GC and history retention](https://github.com/swamp-club/swamp/blob/1602a6172fe5002133a56e8b2da31e90f3fb8b04/design/surfaces/repo.md#retention). Its default automatic switches are off; enabling them addresses the measured datastore inode growth. No native pass reads or changes Orbit's old planner checkpoint.

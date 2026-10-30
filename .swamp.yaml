@@ -7,10 +7,8 @@ defaultVault: default
 gitignoreManaged: true
 telemetryDisabled: true
 
-# Native metadata retention; omit data to preserve exact receipt versions.
+# Native resource policies trim versions; never age out current state.
+autoGc: true
 garbageCollection:
   automatic: true
-  workflowRuns: 7d
-  evaluatedSnapshots: 1h
-  outputs: 1h
-  bookkeeping: 1h
+  retention: 30d

@@ -64,9 +64,11 @@ class OperationSchedulesTest(unittest.TestCase):
                     self.assertEqual(definitions[name]['type'], model_type)
                     self.assertIn('@swamp/method-summary', definitions[name]['reports']['skip'])
 
-    def test_retention_bounds_metadata_without_collecting_receipt_data(self):
-        policy = yaml.safe_load((ROOT / '.swamp.yaml').read_text())['garbageCollection']
-        self.assertEqual(policy, {'automatic': True, 'workflowRuns': '7d', 'evaluatedSnapshots': '1h', 'outputs': '1h', 'bookkeeping': '1h'})
+    def test_native_retention_uses_resource_policies_and_thirty_day_history(self):
+        marker = yaml.safe_load((ROOT / '.swamp.yaml').read_text())
+        policy = marker['garbageCollection']
+        self.assertTrue(marker['autoGc'])
+        self.assertEqual(policy, {'automatic': True, 'retention': '30d'})
         self.assertNotIn('data', policy)
 
     def test_native_four_same_kind_claims_enter_before_any_finishes(self):
