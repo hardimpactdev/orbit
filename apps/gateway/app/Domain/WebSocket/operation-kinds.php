@@ -6,7 +6,7 @@ use App\Domain\WebSocket\WebSocketOperationCompletion;
 
 return (static function (): array {
     $kinds = [];
-    foreach (['app_create', 'app_destroy', 'app_rotate'] as $verb) {
+    foreach (['app_destroy', 'app_rotate'] as $verb) {
         $kinds['websocket.'.$verb] = [
             'executor' => 'swamp', 'completion' => WebSocketOperationCompletion::class,
             'runs' => [['resumable' => true,
@@ -22,8 +22,10 @@ return (static function (): array {
         ];
     }
 
-    $kinds['websocket.sync'] = ['executor' => 'swamp',
-        'result_fields' => ['outcome', 'data.backend', 'data.error_code', 'error_code']];
+    foreach (['sync', 'app_create'] as $verb) {
+        $kinds['websocket.'.$verb] = ['executor' => 'swamp',
+            'result_fields' => ['outcome', 'data.backend', 'data.error_code', 'error_code']];
+    }
 
     return $kinds;
 })();

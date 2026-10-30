@@ -33,6 +33,7 @@ afterEach(function (): void {
  * Records the WebSocket app responses that the CLI replays for `websocket:app:*` and `instance:websocket:*`.
  */
 it('records the websocket app and attachment responses', function (): void {
+    fake_websocket_registry_start();
     $this->travelTo(Carbon::parse('2026-01-01T00:00:00Z'));
     Http::preventStrayRequests();
     DB::table('websocket_registry')->update(['epoch' => '22222222-2222-4222-8222-222222222222']);
