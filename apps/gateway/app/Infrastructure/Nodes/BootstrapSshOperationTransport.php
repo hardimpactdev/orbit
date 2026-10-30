@@ -190,7 +190,7 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
         if (! is_string($identity) || $identity === '') {
             throw $this->forbidden();
         }
-        if ($operation->kind === 'node.network_converge') {
+        if ($operation->kind === 'node.network_converge' && $operation->parent?->kind === 'node.add') {
             if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
                 throw $this->forbidden();
             }

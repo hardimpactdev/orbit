@@ -3,16 +3,20 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\NodeNetworkOperationExecution;
+use App\Domain\Nodes\NodeWireGuardOperationCompletion;
 use App\Domain\Nodes\PrepareNodeNetworkCommand;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\BootstrapSshOperationTransport;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
+use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
@@ -181,7 +185,6 @@ it('uses native peer-key proof for the bound hub child through the executor API'
     app()->instance(HostKeyScanner::class, $scanner);
     $known = Mockery::mock(KnownHostsStore::class);
     $known->shouldReceive('put')->once()->with($operation->input['bootstrap_host'], 22, $hostKey);
-    $known->shouldReceive('put')->once()->with($peer->wireguard_ip, 22, $hostKey);
     $known->shouldReceive('path')->andReturn('/fixture/known-hosts');
     app()->instance(KnownHostsStore::class, $known);
     $keys = Mockery::mock(SshKeyProvider::class);
@@ -261,3 +264,62 @@ it('refuses an unverified bootstrap key before changing the WireGuard SSH pin', 
     $input = [...$descriptor['input'], 'bootstrap_identity' => '/fixture/identity'];
     expect(fn () => app(BootstrapSshOperationTransport::class)->run($operation, $descriptor, $input))->toThrow(ResourceOperationException::class);
 });
+
+it('pins the WireGuard alias only for a network child of enrollment', function (?string $parentKind): void {
+    $operation = networkProofOperation();
+    if ($parentKind !== null) {
+        $parent = Operation::query()->create(['kind' => $parentKind, 'target_type' => 'node', 'target_id' => $operation->node_id,
+            'node_id' => $operation->node_id, 'status' => 'running', 'input' => []]);
+        $operation->forceFill(['parent_operation_id' => $parent->id])->save();
+    }
+    Node::query()->findOrFail($operation->node_id)->update(['ssh_host_fingerprint' => $operation->input['bootstrap_fingerprint']]);
+    $descriptor = app(NodeNetworkOperationExecution::class)->context($operation)['descriptors'][1];
+    $descriptor['effect_metadata'] = new EffectReceiptMetadata([]);
+    $descriptor['effect_key'] = 'op-'.$operation->id.'.'.$descriptor['key'];
+    $key = new HostKey('ssh-ed25519', 'verified-key', $operation->input['bootstrap_fingerprint']);
+    $scanner = Mockery::mock(HostKeyScanner::class);
+    $scanner->shouldReceive('scan')->once()->andReturn($key);
+    app()->instance(HostKeyScanner::class, $scanner);
+    $known = Mockery::mock(KnownHostsStore::class);
+    $known->shouldReceive('put')->once()->with($operation->input['bootstrap_host'], 22, $key);
+    if ($parentKind === 'node.add') {
+        $known->shouldReceive('put')->once()->with(Node::query()->findOrFail($operation->node_id)->wireguard_ip, 22, $key);
+    }
+    $known->shouldReceive('path')->andReturn('/fixture/known-hosts');
+    app()->instance(KnownHostsStore::class, $known);
+    $runner = Mockery::mock(AdmissionAgentRunner::class);
+    $runner->shouldReceive('runOver')->once()->andReturn(['public_key' => $operation->input['_network']['existing_key']]);
+    app()->instance(AdmissionAgentRunner::class, $runner);
+
+    expect(app(BootstrapSshOperationTransport::class)->run($operation, $descriptor, [...$descriptor['input'], 'bootstrap_identity' => '/fixture/identity']))
+        ->toBe(['public_key' => $operation->input['_network']['existing_key']]);
+})->with(['enrollment' => 'node.add', 'role change' => 'node.role_add', 'standalone' => null]);
+
+it('removes only a successfully rolled back WireGuard SSH alias', function (string $kind, string $outcome, bool $removed): void {
+    $operation = networkProofOperation();
+    $operation->update(['kind' => $kind]);
+    $address = Node::query()->findOrFail($operation->node_id)->wireguard_ip;
+    $home = sys_get_temp_dir().'/network-rollback-pins-'.bin2hex(random_bytes(6));
+    $known = new KnownHostsRepository($home.'/known_hosts');
+    try {
+        $known->put($address, 22, new HostKey('ssh-ed25519', 'PEER', 'SHA256:peer'));
+        $known->put('192.0.2.250', 2222, new HostKey('ssh-ed25519', 'BOOTSTRAP', 'SHA256:bootstrap'));
+        $result = match ($outcome) {
+            'succeeded' => OperationOutcome::succeeded(),
+            'failed' => OperationOutcome::failed('vpn.peer_rollback_failed'),
+            'cancelled' => OperationOutcome::cancelled(),
+        };
+        $completion = new NodeWireGuardOperationCompletion($known);
+        $completion->complete($operation, $result);
+        $completion->complete($operation, $result);
+
+        expect(file_get_contents($known->path()))->toBe(($removed ? '' : $address." ssh-ed25519 PEER\n")."[192.0.2.250]:2222 ssh-ed25519 BOOTSTRAP\n");
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with([
+    'rollback succeeded' => ['node.network_rollback', 'succeeded', true],
+    'rollback failed' => ['node.network_rollback', 'failed', false],
+    'rollback cancelled' => ['node.network_rollback', 'cancelled', false],
+    'network retained' => ['node.network_converge', 'succeeded', false],
+]);
