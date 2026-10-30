@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -18,6 +19,7 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\RecipeImagePruning;
 use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Models\Node;
 use App\Models\Operation;
@@ -145,6 +147,11 @@ function recipeImageDirectIntent(string $kind = 'task_vm.image_finish_seed'): ar
         $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'promote', 'effect_key' => 'promote'];
     }
 
+    if ($kind === 'task_vm.image_prune') {
+        $build->update(['promoted_at' => now()]);
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'prune', 'effect_key' => 'prune'];
+    }
+
     return [$build, $parent, $input];
 }
 
@@ -168,6 +175,9 @@ it('admits the image effect directly and projects its phase once without Gateway
     if ($kind === 'task_vm.image_promote') {
         $safe += ['project' => 'orbit-tasks', 'operation' => ['kind' => 'promote', 'alias' => TaskVmHost::BaseImage, 'fingerprint' => IMAGE_NEW]];
     }
+    if ($kind === 'task_vm.image_prune') {
+        $safe += app(RecipeImagePruning::class)->input($build);
+    }
     expect($projection->input($child)['intent'])->toEqual($safe);
     $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true, ...(in_array($kind, ['task_vm.image_publish', 'task_vm.image_promote'], true) ? ['fingerprint' => IMAGE_NEW] : [])]];
     $projection->apply($child, $outcome);
@@ -180,8 +190,8 @@ it('admits the image effect directly and projects its phase once without Gateway
     expect(app(OperationChildren::class)->requireSucceeded($parent, $key)->id)->toBe($child->id)
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
-    expect(array_find($steps, static fn (array $step): bool => ($input['phase'] === 'promote' ? $step['step'] === 'promote' : $step['program'] === 'base:'.$input['phase']))['operations'][$key])->toBe($child->id);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch', 'task_vm.image_promote']);
+    expect(array_find($steps, static fn (array $step): bool => (in_array($input['phase'], ['promote', 'prune'], true) ? $step['step'] === $input['phase'] : $step['program'] === 'base:'.$input['phase']))['operations'][$key])->toBe($child->id);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch', 'task_vm.image_promote', 'task_vm.image_prune']);
 
 it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
     [$build, , $input] = recipeImageDirectIntent($kind);
@@ -362,7 +372,7 @@ it('refuses a polled image writer after the execution contract is deleted', func
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch', 'task_vm.image_promote']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch', 'task_vm.image_promote', 'task_vm.image_prune']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
@@ -462,3 +472,47 @@ it('fences an unowned running PHP image attempt and starts Swamp from stock', fu
     'promotion' => [TaskVmImageBuildStep::Promote, null],
     'pruning' => [TaskVmImageBuildStep::Prune, null],
 ]);
+
+it('admits only the promoted host-local pruning snapshot and keeps recorded protected images', function (): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_prune');
+    $image = static fn (string $alias, string $pin): array => ['project' => 'orbit-tasks', 'alias' => $alias, 'fingerprint' => str_repeat($pin, 64), 'type' => 'virtual-machine'];
+    $record = static fn (string $pin, string $state, array $images, ?string $promoted): TaskVmImageBuild => TaskVmImageBuild::query()->create([
+        'host_node_id' => $build->host_node_id, 'recipe_identity' => 'sha256:'.str_repeat($pin, 64), 'state' => $state, 'images' => $images, 'promoted_at' => $promoted,
+    ]);
+    $old = $record('a', 'failed', ['base' => $image('old-base', 'a'), 'app-dev' => $image('old-app-dev', 'b')], now()->subDays(2)->toISOString());
+    $previous = $record('d', 'succeeded', ['base' => $image('previous-base', 'd'), 'gateway' => $image('previous-gateway', 'e')], now()->subDay()->toISOString());
+    $build->update(['state' => TaskVmImageBuildState::Succeeded]);
+    $running = $record('f', 'running', ['base' => $image('running-base', 'f'), 'operator' => $image('running-operator', 'b')], null);
+    $foreign = Node::query()->create(['name' => 'recipe-foreign', 'status' => 'active', 'public_ssh_host' => '192.0.2.8']);
+    TaskVmImageBuild::query()->create(['host_node_id' => $foreign->id, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'state' => 'failed', 'images' => ['base' => $image('foreign-base', 'a')]]);
+    $projection = app(TaskVmIncusProjection::class);
+    $command = app(RecipeImagePruning::class)->input($build)['operation'];
+    expect($command['obsolete_aliases'])->toContain('old-base', 'old-app-dev', 'previous-gateway', RecipeImageBuilds::alias(TaskVmHost::BaseImage, $old->recipe_identity, 'base', $old->id))
+        ->not->toContain('candidate', 'previous-base', 'running-base', 'running-operator', 'foreign-base');
+    expect($command['protected_fingerprints'])->toEqualCanonicalizing([IMAGE_NEW, str_repeat('d', 64), str_repeat('f', 64), str_repeat('b', 64)])
+        ->and($command['retired_aliases'])->toEqualCanonicalizing(['old-app-dev', 'previous-gateway']);
+    $running->delete();
+    $build->update(['state' => TaskVmImageBuildState::Running]);
+    $admitted = $projection->admitImage('task_vm.image_prune', $build->id, $build->host_node_id, $input);
+    $command = $admitted['operation'];
+    $operation = new Operation(['kind' => 'task_vm.image_prune', 'target_type' => 'task_vm_image', 'target_id' => $build->id, 'node_id' => $build->host_node_id, 'input' => $admitted]);
+    $old->delete();
+    $previous->delete();
+    expect($projection->input($operation)['intent']['operation'])->toBe($command);
+    foreach ([['project' => 'operator'], ['operation' => [...$command, 'obsolete_aliases' => ['operator-image']]], ['operation' => [...$command, 'protected_fingerprints' => []]]] as $change) {
+        expect(fn () => $projection->admitImage('task_vm.image_prune', $build->id, $build->host_node_id, [...$input, ...$change]))->toThrow(ResourceOperationException::class);
+    }
+    $build->update(['promoted_at' => null]);
+    expect(fn () => $projection->admitImage('task_vm.image_prune', $build->id, $build->host_node_id, $input))->toThrow(ResourceOperationException::class);
+});
+
+it('refuses oversized pruning snapshots rather than truncating protected fingerprints', function (): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_prune');
+    $build->update(['state' => TaskVmImageBuildState::Succeeded]);
+    $images = [];
+    for ($index = 0; $index < 1025; $index++) {
+        $images['protected-'.$index] = ['fingerprint' => hash('sha256', (string) $index), 'alias' => 'protected-'.$index];
+    }
+    TaskVmImageBuild::query()->create(['host_node_id' => $build->host_node_id, 'recipe_identity' => 'sha256:'.str_repeat('f', 64), 'state' => TaskVmImageBuildState::Running, 'images' => $images]);
+    expect(fn () => app(RecipeImagePruning::class)->input($build))->toThrow(ResourceOperationException::class, 'bounded input');
+});

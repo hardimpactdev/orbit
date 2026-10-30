@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\TaskVmImageBuild;
@@ -56,9 +57,14 @@ final readonly class RecipeImagePruning
         $obsolete = array_values(array_unique($obsolete));
         $retired = array_values(array_filter($obsolete, static fn (string $alias): bool => array_any(self::RetiredProfiles, static fn (string $profile): bool => str_ends_with($alias, '-'.$profile))));
 
+        $protected = array_values(array_unique($protected));
+        if (count($obsolete) > 512 || count($protected) > 1024) {
+            throw new ResourceOperationException('task_vm.image_prune_too_large', 'The image pruning snapshot exceeds its bounded input.', 422);
+        }
+
         return ['project' => $host->project, 'operation' => [
             'kind' => 'prune', 'pool' => $host->pool, 'obsolete_aliases' => $obsolete,
-            'retired_aliases' => $retired, 'protected_fingerprints' => array_values(array_unique($protected)),
+            'retired_aliases' => $retired, 'protected_fingerprints' => $protected,
         ]];
     }
 }
