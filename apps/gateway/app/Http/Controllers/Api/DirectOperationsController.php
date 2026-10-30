@@ -40,7 +40,7 @@ final class DirectOperationsController extends Controller
 
     public function githubToken(DirectOperationRequest $request, Operation $operation, IssueDirectGitHubTokenAction $action): JsonResponse
     {
-        $issued = $action->handle($operation);
+        $issued = $action->handle($operation, $request->peerNodeId());
         $grant = $issued['grant'];
 
         return $this->respond($request, [

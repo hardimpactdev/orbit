@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\GitHub\IssueDirectGitHubTokenAction;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -67,6 +69,19 @@ it('returns fresh exact-scope credentials privately without changing public resu
             ->assertJsonPath('data.token', 'ephemeral-sentinel')->assertJsonPath('data.repository', 'hardimpactdev/orbit')
             ->assertJsonPath('data.permissions', ['contents' => 'write', 'pull_requests' => 'write'])
             ->assertJsonPath('data.expires_at', $this->reply['expires_at']);
+    }
+    $activities = Activity::query()->where('command', 'operation:github:mint')->get();
+    expect($activities)->toHaveCount(2);
+    foreach ($activities as $activity) {
+        expect($activity->subject_type)->toBe(Operation::class)
+            ->and($activity->subject_id)->toBe($this->operation->id)
+            ->and($activity->status)->toBe('succeeded')
+            ->and($activity->properties->toArray())->toBe([
+                'operation_id' => $this->operation->id, 'run_id' => $this->runId,
+                'caller_node_id' => $this->worker->id, 'repository' => 'hardimpactdev/orbit',
+                'permissions' => ['contents' => 'write', 'pull_requests' => 'write'],
+                'expires_at' => $this->reply['expires_at'],
+            ]);
     }
     Http::assertSentCount(4);
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.github.com/app/installations/7/access_tokens'
@@ -164,3 +179,13 @@ it('rejects unsafe checked-in grants before they can mint', function (array $def
     [['repository' => 'hardimpactdev/orbit', 'permissions' => ['checks' => 'write']]],
     [['repository' => 'hardimpactdev/orbit', 'permissions' => [], 'url' => 'https://other.test']],
 ]);
+
+it('refreshes stale cancellation and terminal state before minting', function (bool $cancel): void {
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Operation::query()->whereKey($this->operation->id)->update($cancel
+        ? ['cancel_requested_at' => now()] : ['status' => OperationStatus::Succeeded]);
+    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id))
+        ->toThrow(ResourceOperationException::class);
+    Http::assertNothingSent();
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+})->with([true, false]);
