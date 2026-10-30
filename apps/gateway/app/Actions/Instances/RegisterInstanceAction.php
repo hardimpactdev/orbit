@@ -552,13 +552,14 @@ final readonly class RegisterInstanceAction
         foreach ($facts as $fact) {
             $instance = Instance::query()
                 ->where('node_id', $node->id)
-                ->where('registration_original_path', $fact->path)
+                ->where(static fn ($query) => $query->where('registration_original_path', $fact->path)->orWhere('checkout_path', $fact->path))
                 ->first();
+            $adopting = $instance instanceof Instance && $instance->registration_request_id === null;
 
             $explicitName = $fact === $primary && $data->instanceName !== null
                 ? DefaultInstanceName::resolve($project, $data->instanceName)
                 : null;
-            $name = $instance instanceof Instance && $instance->registration_request_id !== null
+            $name = $instance instanceof Instance
                 ? $this->retainedInstanceName($instance, $explicitName)
                 : $this->instanceName($project, $fact, $explicitName);
             $destination = $roots->append($project->slug, $name);
@@ -593,11 +594,16 @@ final readonly class RegisterInstanceAction
                     $this->destinationGuard->assertUnoccupied($node, $destination);
                 }
             } else {
-                $this->assertRetryRequest(
-                    $instance,
-                    $fact === $primary,
-                    $data->includeWorktrees,
-                );
+                if ($adopting) {
+                    if ($instance->status !== InstanceState::SourceResolved
+                        || ! Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
+                            ->where('target_id', $instance->id)->where('node_id', $node->id)
+                            ->whereIn('status', ['failed', 'cancelled'])->exists()) {
+                        throw $this->conflict('instance.registration_conflict', 'Only resolved source from an ended create can be adopted.');
+                    }
+                } else {
+                    $this->assertRetryRequest($instance, $fact === $primary, $data->includeWorktrees);
+                }
                 $this->assertRetry(
                     $instance,
                     $project,
@@ -618,6 +624,7 @@ final readonly class RegisterInstanceAction
                 'destination' => $destination,
                 'instance' => $instance,
                 'primary' => $fact === $primary,
+                'adopting' => $adopting,
                 'routeDomain' => $routeIntent['domain'],
                 'routeProvenance' => $routeIntent['provenance'],
                 'backfillRouteIntent' => $routeIntent['backfill'],
@@ -632,6 +639,13 @@ final readonly class RegisterInstanceAction
                 $instance = $proposal['instance'];
 
                 if ($instance instanceof Instance) {
+                    if ($proposal['adopting']) {
+                        $instance->update([
+                            'branch' => $fact->branch, 'branch_override' => $fact->branch, 'starting_commit' => $fact->commit,
+                            ...$this->registrationEvidence($fact, $requestId, $proposal['primary'], $data->includeWorktrees,
+                                ['domain' => $proposal['routeDomain'], 'provenance' => $proposal['routeProvenance']]),
+                        ]);
+                    }
                     if ($proposal['backfillRouteIntent']) {
                         $instance->update([
                             'registration_route_domain' => $proposal['routeDomain'],
