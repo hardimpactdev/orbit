@@ -9,7 +9,7 @@ use App\Domain\Tools\ToolOperationExecution;
 
 return (static function (): array {
     $kinds = [];
-    foreach (['update', 'remove', 'adopt', 'manager_converge'] as $verb) {
+    foreach (['remove', 'adopt', 'manager_converge'] as $verb) {
         $commands = ['tool.apt-version', 'tool.composer-version', 'tool.vp-version', 'tool.homebrew-version'];
         $map = [];
         foreach (['apt', 'composer', 'vp', 'brew', 'brew-cask'] as $manager) {
@@ -32,11 +32,9 @@ return (static function (): array {
             if ($verb === 'remove') {
                 $map[$manager.':version'] = $version;
             }
-            if (in_array($verb, ['update', 'remove'], true)) {
-                $commands[] = $prefix.$verb;
-                if ($verb !== 'remove') {
-                    $commands[] = $prefix.'candidate';
-                } elseif (in_array($manager, ['apt', 'vp', 'composer'], true)) {
+            if ($verb === 'remove') {
+                $commands[] = $prefix.'remove';
+                if (in_array($manager, ['apt', 'vp', 'composer'], true)) {
                     $commands[] = $prefix.'removal-plan';
                 }
             }
@@ -54,6 +52,7 @@ return (static function (): array {
 
     return [
         'tool.install' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
+        'tool.update' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
         ...OperationFamilySpec::compile([
             'requires' => ['children', 'list_of'],
             'completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,

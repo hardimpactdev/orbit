@@ -75,7 +75,7 @@ it('projects manager refusal without synthesizing Gateway executor state', funct
 });
 
 it('requires direct install without legacy discovery or claims and retains immutable ownership', function (): void {
-    foreach (['tool.update', 'tool.remove', 'tool.adopt', 'tool.manager_converge'] as $kind) {
+    foreach (['tool.remove', 'tool.adopt', 'tool.manager_converge'] as $kind) {
         expect(app(DirectOperation::class)->writer($kind))->toBe('polled');
     }
     $direct = app(DirectOperation::class);
@@ -195,7 +195,7 @@ it('selects only proven APT root intents and keeps other managers Nodes children
         expect($direct->writer($kind, ['manager' => 'apt', 'node_id' => 209], 210))->toBe('polled');
         expect($direct->writer($kind, [], 209))->toBe('polled');
     }
-    foreach (['tool.update', 'tool.remove'] as $kind) {
+    foreach (['tool.remove'] as $kind) {
         expect($direct->writer($kind, ['manager' => 'apt'], 209))->toBe('polled');
     }
     $idempotency = app(OperationIdempotency::class);
