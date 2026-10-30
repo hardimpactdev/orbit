@@ -91,7 +91,7 @@ export async function prepareStorage(
 
 const Args = DirectArgs.extend({
   kind: z.literal("node.settings"),
-  node_id: z.number().int().positive(),
+  node_id: z.literal(209),
 });
 const Result = z.union([
   z.object({ prepared: z.literal(true) }).strict(),
@@ -105,7 +105,7 @@ export function settings(
 ) {
   return {
     type: "@nckrtl/node-settings",
-    version: "2026.10.30.2",
+    version: "2026.10.30.3",
     globalArguments: Globals,
     methods: {
       execute: {

@@ -1,12 +1,12 @@
 id: b100f60c-b164-4036-8881-17e603ba3901
 name: operation-node-settings
 description: Prepare one admitted Node apps root through the shared direct boundary.
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: { pool: migration }
 vaults: []
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, enum: [209] }
     kind: { type: string, enum: [node.settings] }
   required: [operation_id, node_id, kind]
 jobs:

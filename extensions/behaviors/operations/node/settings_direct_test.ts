@@ -12,7 +12,7 @@ const input = {
 };
 const args = {
   operation_id: 7,
-  node_id: 9,
+  node_id: 209 as const,
   kind: "node.settings" as const,
   run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
 };
@@ -22,7 +22,7 @@ const context = {
 function fixture() {
   const operation = {
     id: 7,
-    node_id: 9,
+    node_id: 209,
     kind: "node.settings",
     status: "queued",
     input,
@@ -110,4 +110,10 @@ Deno.test("uncertain local result fails natively without projecting false succes
   );
   assertEquals(f.calls.length, 2);
   assertEquals((f.calls.at(-1)!.body as { status: string }).status, "running");
+});
+
+Deno.test("migration canary refuses another admitted Node", () => {
+  const schema = settings().methods.execute.arguments;
+  assertEquals(schema.safeParse(args).success, true);
+  assertEquals(schema.safeParse({ ...args, node_id: 9 }).success, false);
 });

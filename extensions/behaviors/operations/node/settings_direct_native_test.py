@@ -41,11 +41,11 @@ class SettingsNative(unittest.TestCase):
         });'''))
         (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-node-settings.yaml'
-        # Local harness only. Live source retains exact worker placement and unit.
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith('target:')) + '\n')
+        # Local harness only. Live source retains migration placement and its unit.
+        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith(('target:', 'labels:'))) + '\n')
         self.apps = self.repo / 'apps'
         self.state = {'calls': [], 'lose': False, 'bound': True, 'actions': 0, 'operation': {
-            'id':7, 'node_id':9, 'kind':'node.settings', 'status':'queued', 'result':None, 'cancel_requested':False,
+            'id':7, 'node_id':209, 'kind':'node.settings', 'status':'queued', 'result':None, 'cancel_requested':False,
             'input': {'agent_pin': hashlib.sha256(Path('/usr/local/bin/orbit-agent').read_bytes()).hexdigest(),
             'storage': {'root': str(self.apps), 'user': pwd.getpwuid(os.getuid()).pw_name,
                 'group': grp.getgrgid(os.getgid()).gr_name, 'create_missing': True}}}}
@@ -66,7 +66,7 @@ class SettingsNative(unittest.TestCase):
 
     def run_workflow(self, success=True):
         self.cli('workflow', 'validate', 'operation-node-settings')
-        result = self.cli('workflow', 'run', 'operation-node-settings', '--input', '{"operation_id":7,"node_id":9,"kind":"node.settings"}', success=success)
+        result = self.cli('workflow', 'run', 'operation-node-settings', '--input', '{"operation_id":7,"node_id":209,"kind":"node.settings"}', success=success)
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def test_creates_and_projects_real_apps_root(self):
