@@ -22,6 +22,7 @@ Route::middleware([
     Route::get('fleet/recipe-pr/plan', [FleetMaintenanceController::class, 'recipePrPlan'])->name('fleet:recipe-pr:plan');
     Route::post('fleet/recipe-pr', [FleetMaintenanceController::class, 'recipePr'])->name('fleet:recipe-pr');
     Route::get('fleet/peer-dns/targets', [FleetMaintenanceController::class, 'peerDnsTargets'])->name('fleet:peer-dns:targets');
+    Route::get('fleet/peer-dns/plan', [FleetMaintenanceController::class, 'peerDnsPlan'])->name('fleet:peer-dns:plan');
     Route::post('fleet/nodes/{node}/recipe', [FleetRecipesController::class, 'store'])->name('fleet:recipe:converge');
     Route::post('fleet/nodes/{node}/peer-dns', [FleetPeerDnsController::class, 'store'])->name('fleet:peer-dns:reconcile');
     Route::get('fleet/rollout', [FleetRolloutsController::class, 'show'])
