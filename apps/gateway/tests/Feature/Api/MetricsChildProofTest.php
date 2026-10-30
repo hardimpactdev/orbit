@@ -148,6 +148,9 @@ it('refuses compensation when the serving snapshot boundary is not successful', 
 })->with(['running', 'failed']);
 
 it('captures a Caddy restoration child only after same-parent same-Node service restoration settles', function (string $status): void {
+    $fleet = $this->parent->input['fleet'];
+    $fleet[0]['caddy'] = true;
+    $this->parent->update(['input' => [...$this->parent->input, 'fleet' => $fleet]]);
     registerMetricsCompensationContract();
     foreach (metricsChildIntents($this->parent) as $intent) {
         recordMetricsChild($this->parent, $intent);
@@ -225,8 +228,11 @@ it('requires a proven restore refusal before accepting rollback failure', functi
 });
 
 it('requires service and Caddy restoration before cancellation can finish', function (): void {
+    $fleet = $this->parent->input['fleet'];
+    $fleet[0]['caddy'] = true;
+    $this->parent->update(['input' => [...$this->parent->input, 'fleet' => $fleet]]);
     $node = $this->nodes[0];
-    $input = ['address' => '10.44.0.'.$node->id, 'metrics_address' => $this->parent->input['metrics_address'], 'instance_ids' => [], 'caddy' => false, 'fpm' => false];
+    $input = ['address' => '10.44.0.'.$node->id, 'metrics_address' => $this->parent->input['metrics_address'], 'instance_ids' => [], 'caddy' => true, 'fpm' => false];
     $sourceKey = 'service-snapshot-'.$node->id;
     $snapshot = recordMetricsChild($this->parent, ['key' => $sourceKey, 'kind' => 'metrics.service_snapshot', 'node_id' => $node->id, 'input' => $input]);
     recordMetricsChild($this->parent, ['key' => 'service-apply-'.$node->id, 'kind' => 'metrics.service_converge', 'node_id' => $node->id, 'input' => $input]);
@@ -338,6 +344,9 @@ it('offers complete rollback and settles after an interrupted service mutation',
 })->with(['node.lock_lost', 'operation.lease_lost', 'operation.cancelled']);
 
 it('refuses success and exposes rollback when local service recovery is interrupted', function (string $component, string $error): void {
+    $fleet = $this->parent->input['fleet'];
+    $fleet[0]['caddy'] = true;
+    $this->parent->update(['input' => [...$this->parent->input, 'fleet' => $fleet]]);
     $this->parent->update(['input' => [...$this->parent->input, 'fleet' => [$this->parent->input['fleet'][0]]]]);
     $nodeId = $this->nodes[0]->id;
     for ($stage = 0; $stage < 20; $stage++) {
@@ -368,3 +377,67 @@ it('refuses success and exposes rollback when local service recovery is interrup
     expect($keys)->toContain('cadvisor-restore-'.$nodeId, 'node_exporter-restore-'.$nodeId);
     $execution->assertCompletion($this->parent, OperationOutcome::failed('metrics.rollback_failed'));
 })->with(['service-restore', 'service-caddy-restore'])->with(['node.lock_lost', 'operation.lease_lost', 'operation.cancelled']);
+
+it('never admits service Caddy children for a fleet member without managed Caddy', function (): void {
+    $fleet = $this->parent->input['fleet'];
+    $fleet[0]['caddy'] = true;
+    $this->parent->update(['input' => [...$this->parent->input, 'fleet' => $fleet]]);
+    for ($stage = 0; $stage < 20; $stage++) {
+        $created = 0;
+        foreach (metricsChildIntents($this->parent) as $intent) {
+            if (! $this->parent->children()->where('child_key', $intent['key'])->exists()) {
+                expect($intent['key'])->not->toBe('service-caddy-'.$this->nodes[1]->id);
+                recordMetricsChild($this->parent, $intent);
+                $created++;
+            }
+        }
+        if ($created === 0) {
+            break;
+        }
+    }
+
+    app(MetricsFleetExecution::class)->assertCompletion($this->parent, OperationOutcome::succeeded(['backend' => 'active']));
+    expect($this->parent->children()->where('child_key', 'service-caddy-'.$this->nodes[0]->id)->exists())->toBeTrue();
+    $runtime = $this->parent->children()->where('child_key', 'metrics-runtime')->sole();
+    expect($runtime->input['service_node_ids'])->toBe(array_column($fleet, 'node_id'));
+    $this->parent->children()->where('child_key', 'service-caddy-'.$this->nodes[0]->id)->delete();
+    expect(fn () => app(MetricsFleetExecution::class)->assertCompletion($this->parent, OperationOutcome::succeeded(['backend' => 'active'])))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('accepts service restoration without Caddy proof on a Node without managed Caddy', function (): void {
+    $node = $this->nodes[0];
+    $input = ['address' => '10.44.0.'.$node->id, 'metrics_address' => $this->parent->input['metrics_address'], 'instance_ids' => [], 'caddy' => false, 'fpm' => false];
+    $sourceKey = 'service-snapshot-'.$node->id;
+    $snapshot = recordMetricsChild($this->parent, ['key' => $sourceKey, 'kind' => 'metrics.service_snapshot', 'node_id' => $node->id, 'input' => $input]);
+    recordMetricsChild($this->parent, ['key' => 'service-apply-'.$node->id, 'kind' => 'metrics.service_converge', 'node_id' => $node->id, 'input' => $input]);
+    $this->parent->update(['cancel_requested_at' => now()]);
+    $key = 'service-restore-'.$node->id;
+    recordMetricsChild($this->parent, ['key' => $key, 'kind' => 'metrics.service_restore', 'node_id' => $node->id,
+        'input' => [...$input, 'source_operation_id' => $snapshot->id, 'source_key' => $sourceKey, 'restore_key' => $key]]);
+
+    expect(array_column(metricsChildIntents($this->parent), 'kind'))->not->toContain('metrics.service_caddy_restore');
+    app(MetricsFleetExecution::class)->assertCompletion($this->parent, OperationOutcome::cancelled());
+});
+
+it('settles local service recovery without Caddy for a Node without managed Caddy', function (): void {
+    $key = 'service-apply-'.$this->nodes[1]->id;
+    for ($stage = 0; $stage < 20; $stage++) {
+        $created = 0;
+        foreach (metricsChildIntents($this->parent) as $intent) {
+            expect($intent['kind'])->not->toBe('route.caddy_converge')->not->toBe('metrics.service_caddy_restore');
+            if (! $this->parent->children()->where('child_key', $intent['key'])->exists()) {
+                recordMetricsChild($this->parent, $intent, $intent['key'] === $key ? 'failed' : 'succeeded', $intent['key'] === $key ? 'metrics.service_failed' : null);
+                $created++;
+            }
+        }
+        if ($created === 0) {
+            break;
+        }
+    }
+
+    app(MetricsFleetExecution::class)->assertCompletion($this->parent, OperationOutcome::succeeded(['backend' => 'active']));
+    expect($this->parent->children()->where('child_key', 'service-restore-'.$this->nodes[1]->id)->exists())->toBeTrue();
+    $runtime = $this->parent->children()->where('child_key', 'metrics-runtime')->sole();
+    expect($runtime->input['service_node_ids'])->toBe([$this->nodes[0]->id]);
+});
