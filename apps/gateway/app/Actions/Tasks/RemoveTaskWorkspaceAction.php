@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Actions\TaskVms\DeleteTaskVmAction;
+use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceRemover;
@@ -27,7 +28,6 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\TaskVms\TaskVmWorker;
-use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -166,7 +166,7 @@ final readonly class RemoveTaskWorkspaceAction
      * A task VM holds one group's workspace, and its checkout may live on a workspace volume that goes with the VM.
      * So the VM goes instead of the checkout: the Project's teardown runs in the guest while it is ready, unless an
      * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the VM is deleted and the
-     * workspace records are forgotten offline. The queued `DestroyTaskVm` removes the Node.
+     * workspace records are forgotten offline. Swamp proves provider deletion and removes the Node through its owning child.
      */
     private function removeWithTaskVm(Instance $instance, TaskVm $vm): void
     {
@@ -178,7 +178,7 @@ final readonly class RemoveTaskWorkspaceAction
             app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
         app(DeleteTaskVmAction::class)->execute($vm);
-        DestroyTaskVm::dispatch($vm->id);
+        app(StartTaskVmLifecycleOperationAction::class)->execute($vm->id, 'destroy');
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */

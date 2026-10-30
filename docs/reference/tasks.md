@@ -1242,6 +1242,8 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 Teardown steps run before the workspace and task VM are destroyed. Recorded approved work is preserved through the existing removal push contract. Cleanup does not choose new task work or merge a PR.
 
+Task VM Node cleanup records `task_vm.destroy` and returns. Swamp proves provider absence, removes any remaining workspace records, admits the owning `node.remove` child, and only then marks the VM destroyed. Already queued `DestroyTaskVm` jobs record the same intent; they perform no VM or Node work and never wait for completion. Workspace teardown, preservation and the retained provider deletion still run before this admission; their separate caller cutover remains pending.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.
