@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
+use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
@@ -38,6 +39,9 @@ final readonly class AdmitTaskVmChildAction
             $vm = TaskVm::query()->findOrFail($parent->target_id);
 
             return app(StartTaskVmIncusEffectAction::class)->execute($vm, substr($kind, strlen('task_vm.incus_')));
+        }
+        if ($kind === 'task_vm.image_finish_seed') {
+            $input = app(TaskVmIncusProjection::class)->admitSeed($parent->target_id, $node, $input);
         }
         if ($kind === 'task_vm.prepare_runtime') {
             if (in_array($parent->kind, ['task_vm.provision', 'task_vm.enroll'], true)) {

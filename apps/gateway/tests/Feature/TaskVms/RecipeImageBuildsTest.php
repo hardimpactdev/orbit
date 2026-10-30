@@ -3,12 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
+use App\Domain\TaskVms\TaskVmIncusProjection;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -17,6 +22,7 @@ use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 require_once __DIR__.'/../../Support/FakeIncusImageHost.php';
@@ -85,6 +91,74 @@ function recipeImageCurrent(string $document): void
     file_put_contents($directory.'/orbit/apps/gateway/resources/machine-software/recipe.json', $document);
     config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
 }
+
+/** @return array{TaskVmImageBuild, Operation, array<string,mixed>} */
+function recipeImageSeedIntent(): array
+{
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $build->update(['images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'candidate', 'fingerprint' => IMAGE_NEW, 'type' => 'virtual-machine']], 'image_fingerprint' => IMAGE_NEW]);
+    $parent = Operation::query()->where('kind', 'task_vm.image_build')->sole();
+    $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'topology-seed', 'effect_key' => 'finish-seed',
+        'location' => ['project' => 'orbit-tasks', 'pool' => 'orbit-tasks'], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => IMAGE_NEW]];
+
+    return [$build, $parent, $input];
+}
+
+it('admits seed finalization directly and projects its phase once without Gateway execution', function (): void {
+    [$build, $parent] = recipeImageSeedIntent();
+    $socket = new FakeRoutePublicationSocket;
+    $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-vm-incus', 'runId' => $run]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
+    $child = app(OperationChildren::class)->admit($parent, ['key' => 'finish-seed'])['operation'];
+    expect(DirectOperation::owns($child))->toBeTrue()->and($child->node_id)->toBe($build->host_node_id)
+        ->and($child->state['swamp_run_id'])->toBe($run)->and($child->worker)->toBeNull()->and($child->attempts)->toBe(0);
+    $projection = app(TaskVmIncusProjection::class);
+    expect($projection->input($child)['intent'])->toEqual([
+        'build_id' => $build->id, 'attempt' => $build->attempt,
+        'location' => ['project' => 'orbit-tasks', 'pool' => 'orbit-tasks'], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => IMAGE_NEW],
+    ]);
+    $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true]];
+    $projection->apply($child, $outcome);
+    $steps = $build->fresh()->steps;
+    $this->travel(30)->seconds();
+    $projection->apply($child->fresh(), $outcome);
+    expect(app(OperationChildren::class)->requireSucceeded($parent, 'finish-seed')->id)->toBe($child->id)
+        ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
+    expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['operations']['finish-seed'])->toBe($child->id);
+});
+
+it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change): void {
+    [$build, , $input] = recipeImageSeedIntent();
+    $nodeId = $build->host_node_id;
+    match ($change) {
+        'host' => $nodeId++,
+        'candidate' => $input['operation']['fingerprint'] = str_repeat('d', 64),
+        'project' => $input['location']['project'] = 'operator-owned',
+        'pool' => $input['location']['pool'] = 'operator-owned',
+        'variant' => $input['operation'] = ['kind' => 'remove', 'name' => 'operator-owned'],
+        'attempt' => $input['attempt']++,
+        'phase' => $input['phase'] = 'publish',
+        'key' => $input['effect_key'] = 'delete-seed',
+        'cleanup' => $build->forceFill(['cleanup_started_at' => now()])->save(),
+        'finished' => $build->update(['state' => 'succeeded']),
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitSeed($build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', 'task_vm.image_finish_seed')->count())->toBe(0);
+})->with(['host', 'candidate', 'project', 'pool', 'variant', 'attempt', 'phase', 'key', 'cleanup', 'finished']);
+
+it('refuses a polled seed writer after the execution contract is deleted', function (): void {
+    [, $parent] = recipeImageSeedIntent();
+    config(['swamp.direct_writers' => ['task_vm.image_finish_seed' => 'polled']]);
+    expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'finish-seed']))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
+    expect(Operation::query()->where('kind', 'task_vm.image_finish_seed')->count())->toBe(0);
+});
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);

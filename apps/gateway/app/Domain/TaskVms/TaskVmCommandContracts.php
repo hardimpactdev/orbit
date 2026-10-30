@@ -269,7 +269,6 @@ final class TaskVmCommandContracts
             'image_remove' => ['incus.vm', ['vm', 'operation']], 'image_launch' => ['incus.vm', ['vm', 'operation']],
             'image_metadata' => ['incus.image', ['project', 'operation']], 'image_publish' => ['incus.image', ['project', 'operation']],
             'image_seed' => ['incus.build-topology-seed', ['project', 'pool', 'vm', 'size', 'fingerprint']],
-            'image_finish_seed' => ['incus.volume', ['location', 'operation']],
         ] as $verb => [$command, $fields]) {
             $schema = self::agentInput($command);
             $properties = ValidatedData::object($schema['properties']);
@@ -282,6 +281,7 @@ final class TaskVmCommandContracts
             $kinds['task_vm.'.$verb] = self::imageDefinition($verb, 'task_vm.image-host', ['build_id'], [], ['type' => 'object', 'additionalProperties' => false,
                 'required' => ['build_id'], 'properties' => ['build_id' => ['type' => 'integer', 'minimum' => 1]]]);
         }
+        $kinds['task_vm.image_finish_seed'] = ['executor' => 'swamp', 'admission' => TaskVmChildAdmission::class, 'result_fields' => ['ready', 'error_code']];
         foreach (['guest_install' => 'agent.install-guest', 'guest_pi_upload' => 'pi.upload-guest'] as $verb => $command) {
             $kinds['task_vm.'.$verb] = self::imageDefinition($verb, 'task_vm.guest', $verb === 'guest_install' ? ['guest'] : ['guest', 'parameters_json'],
                 $verb === 'guest_install' ? ['command' => $command, 'parameters_json' => '{}'] : ['command' => $command], self::guestInput($command));

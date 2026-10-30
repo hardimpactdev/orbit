@@ -1255,6 +1255,8 @@ Gateway records its bounded result; it adds no execution queue, retry or wait.
 Deletion still requires the owning destruction intent and model-key revocation
 before admission. A worker for another Node cannot execute the action.
 
+`task_vm.image_finish_seed` uses the same direct workflow. Admission records the active image attempt, candidate fingerprint, project, pool and agent digest. The owning Node runs `incus.volume` with the fixed `finish_seed` operation and the existing 180-second command deadline. Only the exact candidate seed name confirms success. The Gateway projects that result onto the image phase. The writer defaults to `direct`; selecting `polled` refuses admission because its old executor is removed. Roll back this cutover by reverting its PR.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.

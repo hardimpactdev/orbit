@@ -43,7 +43,7 @@ return (static function (): array {
             $definition['cancel_guard'] = TaskVmDestroyCancelGuard::class;
         }
         $localKinds = ['task_vm.model_issue', 'task_vm.model_revoke', 'task_vm.runtime_confirm', 'task_vm.image_phase_confirm'];
-        if (! OperationKinds::supports('receipts') && ! in_array($kind, $localKinds, true)) {
+        if (isset($definition['runs']) && ! OperationKinds::supports('receipts') && ! in_array($kind, $localKinds, true)) {
             unset($kinds[$kind]);
 
             continue;
