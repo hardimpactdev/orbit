@@ -22,7 +22,9 @@ Domain, publication and web-root updates use the Route admission action. They re
 
 Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. It validates and reloads Caddy locally with sudo, then reports the result. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
-Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds retain their existing executor until their owning conversion.
+Private DNS publication uses `operation-route-publication` on its active VPN owner. The native publication method reads the current requester catalog under the same Node publication lock, validates it with dnsmasq, and installs it atomically before activating the listener. It verifies the loaded digest and a DNS response, and restores the previous files and service state on refusal. The Gateway supplies public data and projects the result; it does not publish DNS.
+
+Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds retain their existing executor until their owning conversion.
 
 A Route has one of three kinds. The kind never changes.
 

@@ -1,7 +1,6 @@
 <?php
 
 declare(strict_types=1);
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\RoutePublicationProjection;
 use App\Domain\Routes\RouteVerificationProjection;
 
@@ -14,7 +13,7 @@ $publication = [
 
 return [
     'route.caddy_converge' => [...$publication, 'workflow' => 'operation-route-caddy'],
-    'route.private_dns_publish' => [...$publication, 'primitive' => DirectRoutePublication::class],
+    'route.private_dns_publish' => $publication,
     ...array_fill_keys(RouteVerificationProjection::Kinds, [
         'workflow' => 'operation-route-verification',
         'writer_config' => 'swamp.direct_writers',

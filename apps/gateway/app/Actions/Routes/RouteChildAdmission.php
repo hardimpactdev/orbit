@@ -9,11 +9,11 @@ use App\Data\Routes\UpdateRouteData;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Routes\AnalyticsRouteParentCommand;
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicationProjection;
 use App\Domain\Routes\RouteVerificationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -61,7 +61,7 @@ final readonly class RouteChildAdmission implements OperationChildAdmission
                 if (in_array($kind, RouteVerificationProjection::Kinds, true)) {
                     $operation = app(StartRouteVerificationAction::class)->execute($kind, $node, $input, $parent);
                 } elseif (in_array($kind, ['route.caddy_converge', 'route.private_dns_publish', 'route.offline_residue_clean'], true)) {
-                    if (DirectRoutePublication::handles($kind) && app(DirectOperation::class)->writer($kind) !== 'direct') {
+                    if (in_array($kind, RoutePublicationProjection::Kinds, true) && app(DirectOperation::class)->writer($kind) !== 'direct') {
                         throw new ResourceOperationException('operation.kind_unavailable', 'Route publication requires its direct Swamp writer.', 409);
                     }
                     $operation = $this->operations->execute($kind, $kind === 'route.offline_residue_clean' ? 'node_route_residue' : 'node_route_projection', $node->id,

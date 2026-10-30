@@ -7,7 +7,6 @@ namespace App\Domain\Routes;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationEffectTransport;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\RemotePrograms\KeyedRemoteProgramRunner;
@@ -17,7 +16,7 @@ use App\Models\Operation;
 use SensitiveParameter;
 
 /** One fixed root program. It receives rendered data, never caller program source. */
-final readonly class PrivateDnsTransport implements OperationEffectTransport, RoutePublicationPrimitive
+final readonly class PrivateDnsTransport implements OperationEffectTransport
 {
     public function __construct(private KeyedRemoteProgramRunner $programs, private RemoteProgramCatalog $catalog, private DevelopmentProjectionOperationLock $lock, private DevelopmentDnsConfigRenderer $renderer) {}
 
@@ -42,18 +41,6 @@ final readonly class PrivateDnsTransport implements OperationEffectTransport, Ro
 
             return ['outcome' => $result->outcome, 'data' => $result->data];
         });
-    }
-
-    public function publish(Operation $operation, #[SensitiveParameter] array $input): array
-    {
-        $node = Node::query()->findOrFail($operation->node_id);
-
-        if (! $this->current($input)) {
-            return ['error_code' => 'private_dns.plan_stale'];
-        }
-        $result = app(RemoteProgramRunner::class)->run($node, $this->catalog->program('route.publish-dns', user: 'root'), $input);
-
-        return ['outcome' => $result->outcome, 'data' => $result->data];
     }
 
     /** @param array<string, mixed> $input */

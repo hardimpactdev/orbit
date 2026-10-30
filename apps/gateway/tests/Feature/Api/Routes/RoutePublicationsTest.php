@@ -7,7 +7,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -152,16 +151,38 @@ it('refuses an unproven success invalid stage and another run before projection'
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
-it('publishes DNS only on an active VPN owner using the unkeyed fixed program', function (): void {
+it('renders fresh public DNS data only for an active VPN owner without a Gateway effect', function (): void {
     $this->operation->update(['kind' => 'route.private_dns_publish']);
     $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(fn ($node, $program, $input): bool => $node->id === $this->node->id
-        && $program->name === 'route.publish-dns' && array_keys($input) === ['records', 'catalog'])
-        ->andReturn(new ProgramResult('published', ['ready' => true, 'digest' => str_repeat('b', 64)], ''));
+    $runner->shouldNotReceive('run');
     app()->instance(RemoteProgramRunner::class, $runner);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+    $role = $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $first = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input.dns_publication');
+    expect($first['node_id'])->toBe($this->node->id)
+        ->and($first['digest'])->toBe(hash('sha256', $first['catalog']));
+    expect(json_decode($first['catalog'], true))->toHaveKey('requesters');
+    $this->node->update(['wireguard_ip' => '10.44.0.99']);
+    $next = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input.dns_publication');
+    expect($next['catalog'])->not->toBe($first['catalog'])
+        ->and($next['digest'])->not->toBe($first['digest']);
     $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
+    expect($this->operation->fresh()->input)->toBe(['reason' => 'private proof']);
+    $role->update(['status' => LifecycleStatus::Failed]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+    expect($this->agents->calls)->toBe([]);
+});
+
+it('projects DNS success only with a confirmed catalog digest and filters diagnostics', function (): void {
     $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.ready', true);
+    $this->operation->update(['kind' => 'route.private_dns_publish']);
+    $body = [...$this->body, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'];
+    foreach ([['ready' => true], ['ready' => true, 'outcome' => 'refused'], ['ready' => true, 'outcome' => 'published', 'data' => ['ready' => true, 'digest' => 'invalid']]] as $result) {
+        $this->postJson($this->path.'/result', [...$body, 'result' => $result])->assertUnprocessable();
+    }
+    $result = ['outcome' => 'published', 'data' => ['ready' => true, 'digest' => str_repeat('b', 64)], 'ready' => true];
+    $this->postJson($this->path.'/result', [...$body, 'result' => [...$result, 'stdout' => 'PRIVATE']])->assertOk()->assertJsonPath('data.result', $result)->assertDontSee('PRIVATE');
+    expect($this->agents->calls)->toBe([]);
 });
 
 it('submits once after commit and records a native run without acquiring a target hold', function (): void {

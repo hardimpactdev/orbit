@@ -19,8 +19,8 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationTransport;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
-use App\Domain\Routes\RoutePublicationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -221,6 +221,19 @@ final class RouteSwampGatewayFixture
 
             return $claimed;
         }
+        if (preg_match('~/fixture/route-(caddy|dns)/(\d+)$~', $path, $publication)) {
+            $operation = Operation::query()->findOrFail((int) $publication[2]);
+            try {
+                $result = $publication[1] === 'caddy'
+                    ? $this->agents->run(Node::query()->findOrFail($operation->node_id), 'caddy.publish', $body['input'])
+                    : app(RouteFixtureDnsTransport::class)->run($operation, [], $body);
+            } catch (AgentCommandRefused $refused) {
+                $result = ['error_code' => $refused->errorCode,
+                    ...($refused->errorCode === 'caddy.publication_failed' && ($refused->details['stage'] ?? null) === 'validate' ? ['stage' => 'validate'] : [])];
+            }
+
+            return ['status' => 200, 'body' => ['data' => $result]];
+        }
         if (preg_match('~/fixture/route-verification/(\d+)$~', $path, $probe)) {
             return ['status' => 200, 'body' => ['data' => $this->foreign->run(Operation::query()->findOrFail((int) $probe[1]), ['proof' => 'ready'])]];
         }
@@ -334,7 +347,7 @@ final class RouteSwampGatewayFixture
     }
 }
 
-final readonly class RouteFixtureDnsTransport implements OperationTransport, RoutePublicationPrimitive
+final readonly class RouteFixtureDnsTransport implements OperationTransport
 {
     public function __construct(private ?\Closure $publish = null) {}
 
@@ -344,11 +357,6 @@ final readonly class RouteFixtureDnsTransport implements OperationTransport, Rou
     }
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
-    {
-        return $this->publish($operation, $input);
-    }
-
-    public function publish(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if ($this->publish !== null) {
             try {
