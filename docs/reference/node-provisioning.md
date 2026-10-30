@@ -47,6 +47,8 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
 
+For a `node.network_converge` child of `node.add`, the Swamp network transport records the verified bootstrap host key for the Node’s WireGuard address before checking private SSH. This replaces a stale pin when an address is reused, while fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes. A successful `node.network_rollback` removes the WireGuard pin and preserves other host entries. The private `agent.status` check is read-only and resumable after a lost response; peer publication keeps its original keyed receipt.
+
 `node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.

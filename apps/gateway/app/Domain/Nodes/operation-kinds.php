@@ -195,7 +195,7 @@ $nodeKinds['node.network_converge'] = [
                     ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity'])),
             'secrets' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity'],
         ], ['wireguard.prepare-peer-key', 'wireguard.publish-peer', 'wireguard.rollback-peer']),
-        ['transport' => 'agent', 'name' => 'agent.status', 'input_values' => []],
+        ['transport' => 'agent', 'name' => 'agent.status', 'input_values' => [], 'resumable' => true],
         ['transport' => 'agent', 'name' => 'firewall.rules', 'bind' => ['desired' => 'input._network.trust.desired',
             'remove' => 'input._network.trust.remove', 'enable' => 'input._network.trust.enable']],
     ],

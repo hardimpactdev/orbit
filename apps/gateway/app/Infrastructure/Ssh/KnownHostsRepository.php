@@ -28,6 +28,16 @@ final readonly class KnownHostsRepository implements KnownHostsStore
 
     public function put(string $host, int $port, HostKey $key): void
     {
+        $this->update($host, $port, $key);
+    }
+
+    public function remove(string $host, int $port): void
+    {
+        $this->update($host, $port, null);
+    }
+
+    private function update(string $host, int $port, ?HostKey $key): void
+    {
         if ($host === '' || preg_match('/\s/', $host) === 1) {
             throw new InvalidArgumentException('SSH host names cannot contain whitespace.');
         }
@@ -110,7 +120,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         }
     }
 
-    private function replace(string $host, int $port, HostKey $key): void
+    private function replace(string $host, int $port, ?HostKey $key): void
     {
         $directory = dirname($this->path);
         $hostLabel = $port === 22 ? $host : "[{$host}]:{$port}";
@@ -119,7 +129,9 @@ final readonly class KnownHostsRepository implements KnownHostsStore
             $lines,
             static fn (string $line): bool => ! str_starts_with($line, $hostLabel.' '),
         ));
-        $lines[] = "{$hostLabel} {$key->type} {$key->value}";
+        if ($key !== null) {
+            $lines[] = "{$hostLabel} {$key->type} {$key->value}";
+        }
 
         $candidatePath = tempnam(
             directory: $directory,
@@ -130,7 +142,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
             throw new RuntimeException("Could not create SSH host keys candidate [{$this->path}].");
         }
 
-        $contents = implode(PHP_EOL, $lines).PHP_EOL;
+        $contents = $lines === [] ? '' : implode(PHP_EOL, $lines).PHP_EOL;
 
         try {
             if (realpath(dirname($candidatePath)) !== realpath($directory)) {
