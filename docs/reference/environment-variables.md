@@ -82,6 +82,10 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 Route plans use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. Instance lifecycle and deployment parents use `{instance_id}`. The Gateway stamps parent ancestry and fixes the Instance and Node. Callers cannot supply a mode, a path, environment contents or parent metadata. Existing synchronous environment commands and retained deploy callers keep their current execution path until their owning cutover. An explicit synchronous `env:sync` refuses with `env.operation_busy` while an Instance deploy or rollback is queued, running or waiting. Stored updates and imports remain available.
 
+A new development create seeds its encrypted Instance values before admitting the environment child. The agent reads the application directory’s committed `.env.example` from the exact resolved commit, with a 128 KiB limit; a missing template starts with empty defaults. The Gateway parses that protected output, keeps existing stored values, adds the Project name and development mode, binds `APP_URL` to the reserved Route, and creates a missing Laravel `APP_KEY` or Symfony `APP_SECRET`. Retries preserve stored keys.
+
+The template is neither a Project-wide setting nor setup-step output. The seed does not import the workload `.env` or wait for setup to produce it. Template contents stay out of Operation results and Swamp resources.
+
 When a development create reaches `source_resolved`, its environment child can synchronize the Instance before activation. The Gateway checks the owning create Operation, its preparation ID, Project, Node, checkout and reserved Route. That parent stays running or waits for its child. Rendering and receipt projection re-check the same owner; public environment commands still require an active Instance.
 
 Swamp executes preparation, the main environment write, managed testing-file merge, additional Route URL writes and final verification in that order. URL-only web-root stages, including rollback stages, leave the main environment and testing files alone. Removed targets remain owned through the Route's admitted previous-target set. Each required write needs its original keyed receipt and a matching successful step before the child can succeed.
@@ -218,7 +222,7 @@ When a step fails before the new slug is published, the Gateway restores the sto
 
 The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key.
 
-Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. When development provisioning creates a missing Laravel `.env`, it writes the non-empty stored key, or generates one for that file only when neither the store nor `.env.example` has a key. It does not store the generated key. Import the file to keep it in stored configuration. See [Laravel application URL](/domains/applications#laravel-application-url). Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
+Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. Swamp development create stores a missing Laravel `APP_KEY` before synchronizing the first `.env`, so a retry keeps the same key. Retained synchronous provisioning writes the non-empty stored key, or generates one for the file only when neither the store nor `.env.example` has a key; import that file to keep its generated key in stored configuration. See [Laravel application URL](/domains/applications#laravel-application-url). Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
 
 ## Errors
 

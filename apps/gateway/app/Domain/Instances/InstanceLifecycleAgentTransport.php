@@ -8,6 +8,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationSecretOutputTransport;
 use App\Domain\Operations\OperationTransportInput;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
@@ -17,7 +18,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Holds the existing source/environment locks across fresh validation and one admitted agent invocation. */
-final readonly class InstanceLifecycleAgentTransport implements OperationEffectTransport, OperationTransportInput
+final readonly class InstanceLifecycleAgentTransport implements OperationEffectTransport, OperationSecretOutputTransport, OperationTransportInput
 {
     public function __construct(
         private AppDevSourceOperationLock $sources,

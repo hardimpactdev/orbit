@@ -3334,6 +3334,21 @@
       ]
     },
     {
+      "name": "instance.read-development-environment-template",
+      "summary": "Read the committed environment template of the resolved development source.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instance.source_invalid",
+        "instance.source_busy",
+        "instance.git_failed"
+      ]
+    },
+    {
       "name": "instance.inspect-registration-source",
       "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
       "mutates": false,
