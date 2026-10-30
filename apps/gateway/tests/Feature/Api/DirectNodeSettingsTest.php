@@ -7,10 +7,11 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -28,7 +29,8 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->gateway = $gateway;
     $this->node = Node::query()->forceCreate(['id' => 209, 'name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'settings' => ['apps' => ['path' => '/srv/old']]]);
-    $this->input = ['agent_pin' => str_repeat('a', 64), 'root' => '/srv/new', 'user' => 'orbit', 'group' => 'orbit', 'create_missing' => true,
+    $this->input = ['agent_pin' => str_repeat('a', 64), 'root' => '/srv/new', 'user' => 'orbit', 'create_missing' => true,
+        'protected_roots' => ['/etc'], 'managed_checkouts' => [],
         'settings' => ['apps' => ['path' => '/srv/new']], 'settings_patch' => ['apps' => true, 'task_vms' => false]];
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->operation = Operation::query()->create(['kind' => 'node.settings', 'target_type' => 'node', 'target_id' => $this->node->id,
@@ -37,12 +39,25 @@ beforeEach(function (): void {
     $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/result';
     $this->body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z',
         'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['prepared' => true]];
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
+    ]]];
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['swamp.run_token' => 'fake.token']);
+
 });
 
-it('keeps the old writer by default', function (): void {
+it('defaults every admitted Node to direct and rejects the removed writer before admission', function (): void {
     $op = app(StartOperationAction::class)->execute('node.settings', 'node', $this->node->id, $this->node->id, $this->input, 'test', null);
-    expect($op->state['node_settings_writer'])->toBe('polled');
-    expect($op->lock_key)->toBe('node:'.$this->node->id);
+    expect($op->state['node_settings_writer'])->toBe('direct')->and($op->lock_key)->toBeNull()
+        ->and($op->worker)->toBeNull()->and($op->attempts)->toBe(0)
+        ->and(app(OperationKinds::class)->directOnly('node.settings'))->toBeTrue();
+    $before = Operation::query()->count();
+    config(['swamp.direct_writers' => ['node.settings' => 'polled']]);
+    expect(fn () => app(StartOperationAction::class)->execute('node.settings', 'node', $this->node->id, $this->node->id, $this->input, 'test', null))
+        ->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe($before);
 });
 
 it('binds only the Gateway start response and refuses first reads until bound', function (): void {
@@ -90,14 +105,6 @@ it('rejects wrong runs unproven success input overrides and family relays', func
     $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/primitive', ['run_id' => $this->run])->assertUnprocessable();
 });
 
-it('keeps direct settings out of claims and old intents claimable after a switch', function (): void {
-    config(['swamp.direct_writers' => ['node.settings' => 'direct']]);
-    $claim = ['kind' => 'node.settings', 'worker' => 'old', 'operation_id' => $this->operation->id];
-    $this->postJson('/api/v1/operation-executor/claim', $claim)->assertOk()->assertJsonPath('data', null);
-    $this->operation->update(['state' => ['node_settings_writer' => 'polled']]);
-    $this->postJson('/api/v1/operation-executor/claim', $claim)->assertOk()->assertJsonPath('data.id', $this->operation->id);
-});
-
 it('allows an approved worker only for its admitted Node', function (): void {
     $this->node->accessibleNodes()->attach($this->gateway);
     config(['operation_executor.worker_node_ids' => [$this->node->id]]);
@@ -107,7 +114,10 @@ it('allows an approved worker only for its admitted Node', function (): void {
     $this->getJson('/api/v1/direct-operations/'.$this->operation->id.'?run_id='.$this->run)->assertForbidden();
 });
 
-it('captures the agent pin with direct owning admission and exposes only safe input', function (): void {
+it('captures safe intent without a Gateway account lookup install or Node effect', function (): void {
+    $agents = Mockery::mock(AgentCommandRunner::class);
+    $agents->shouldNotReceive('run', 'install');
+    app()->instance(AgentCommandRunner::class, $agents);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->worker->accessibleNodes()->attach($this->node);
     $resolver = Mockery::mock(ManagedUserAccountResolver::class);
@@ -125,24 +135,8 @@ it('captures the agent pin with direct owning admission and exposes only safe in
     expect(array_keys(app(NodeSettingsProjection::class)->input($operation)))->toBe(['agent_pin', 'storage']);
 });
 
-it('keeps foreign Nodes and parent admissions polled when the kind switch is direct', function (): void {
-    config(['swamp.direct_writers' => ['node.settings' => 'direct']]);
-    $other = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    $direct = app(DirectOperation::class);
-    expect($direct->writer('node.settings', [], 209))->toBe('direct');
-    expect($direct->writer('node.settings', [], $other->id))->toBe('polled');
-    $op = app(StartOperationAction::class)->execute('node.settings', 'node', $other->id, $other->id, $this->input, 'test', null);
-    expect($op->state['node_settings_writer'])->toBe('polled');
-    expect($op->lock_key)->toBe('node:'.$other->id);
-    app(OperationIdempotency::class)->parent = $this->operation;
-    expect($direct->writer('node.settings', [], 209))->toBe('polled');
-    config(['swamp.direct_writers' => ['node.settings' => 'polled']]);
-    app(OperationIdempotency::class)->parent = null;
-    expect($direct->writer('node.settings', [], 209))->toBe('polled');
-});
-
-it('admits foreign Node settings without preparing a direct agent pin', function (): void {
-    $node = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+it('admits other Node settings directly with their own agent pin', function (): void {
+    $node = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->worker->accessibleNodes()->attach($node);
     $resolver = Mockery::mock(ManagedUserAccountResolver::class);
@@ -151,7 +145,31 @@ it('admits foreign Node settings without preparing a direct agent pin', function
     config(['swamp.direct_writers' => ['node.settings' => 'direct']]);
     $response = $this->patchJson('/api/v1/nodes/'.$node->id.'/settings', ['apps' => ['path' => '/srv/new']])->assertAccepted();
     $operation = Operation::findOrFail($response->json('data.id'));
-    expect($operation->state['node_settings_writer'])->toBe('polled');
-    expect($operation->input)->not->toHaveKey('agent_pin');
-    expect($operation->lock_key)->toBe('node:'.$node->id);
+    expect($operation->state['node_settings_writer'])->toBe('direct');
+    expect($operation->input['agent_pin'])->toBe(app(AgentDelivery::class)->pin($node));
+    expect($operation->lock_key)->toBeNull();
+    expect($this->socket->sent[0]['payload']['inputs']['node_id'])->toBe($node->id);
+});
+
+it('preserves a task VM patch made after the apps intent was admitted', function (): void {
+    $host = ['cidr' => '10.251.77.0/24', 'max_vms' => 4];
+    $this->node->update(['settings' => ['apps' => ['path' => '/srv/old'], 'task_vms' => $host]]);
+    $this->postJson($this->path, $this->body)->assertOk();
+    expect($this->node->fresh()->settings['apps'])->toBe(['path' => '/srv/new'])
+        ->and($this->node->fresh()->settings['task_vms'])->toMatchArray($host);
+});
+
+it('clears the apps override only after preparing the managed default', function (): void {
+    $this->operation->update(['input' => [...$this->input, 'root' => null, 'settings' => null]]);
+    $this->postJson($this->path, $this->body)->assertOk();
+    expect($this->node->fresh()->settings)->toBeNull();
+});
+
+it('refuses unsupported storage platforms before recording an execution intent', function (): void {
+    $this->node->update(['platform' => 'macos']);
+    $this->worker->accessibleNodes()->attach($this->node);
+    $count = Operation::query()->count();
+    $this->patchJson('/api/v1/nodes/'.$this->node->id.'/settings', ['apps' => ['path' => '/srv/new']])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'node.settings_platform_unsupported');
+    expect(Operation::query()->count())->toBe($count)->and($this->socket->sent)->toBe([]);
 });

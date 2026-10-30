@@ -13,9 +13,12 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeToolManagerMaterializer;
 
 function fake_storage_preparer(): NodeStorageRootPreparer
@@ -248,49 +251,25 @@ describe('node storage settings', function (): void {
         'shared state' => '/srv/shared/gateway-storage',
     ]);
 
-    it('rejects an apps root inside the worktree default hidden control path', function (): void {
+    it('admits home-dependent checks without probing the Node or storing the requested root', function (string $path): void {
         $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
+            'name' => 'app-dev', 'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10', 'user' => 'orbit',
+            'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.3',
         ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/home/orbit/.orbit/worktrees/instances'],
-            ])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.settings_path_protected');
-
-    });
-
-    it('rejects an apps root that is a descendant of the worktree default', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/home/orbit/.orbit/worktrees/extra'],
-            ])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.settings_path_protected');
-
-    });
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+        $socket = new FakeRoutePublicationSocket;
+        $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        ]]];
+        app()->instance(WebSocketClient::class, $socket);
+        config(['swamp.run_token' => 'fake.token']);
+        $agents = Mockery::mock(AgentCommandRunner::class);
+        $agents->shouldNotReceive('run', 'install');
+        app()->instance(AgentCommandRunner::class, $agents);
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => $path]])->assertAccepted();
+        expect($node->refresh()->settings)->toBeNull();
+    })->with(['/home/orbit/.orbit/worktrees/instances', '/home/orbit/.orbit/worktrees/extra']);
 
     it('rejects list settings at every HTTP boundary without changing stored intent', function (
         string $method,

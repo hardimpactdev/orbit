@@ -3,7 +3,7 @@ title: "Node settings"
 description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
-  - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Domain/Nodes/NodeSettingsOperationCompletion,Providers/TaskVmServiceProvider}.php
+  - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -16,13 +16,19 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that must inspect or prepare an apps root records a `node.settings` Operation and returns HTTP 202. Swamp runs the existing `node.prepare-storage-root` command. The Gateway stores the settings only after successful execution.
+A settings change that must inspect or prepare an apps root records a `node.settings` Operation and returns HTTP 202. Swamp reads the actual managed account locally, validates the requested root, and runs the existing `node.prepare-storage-root` command. The Gateway stores the settings only after successful execution.
 
-Set each kind in the `ORBIT_SWAMP_DIRECT_WRITERS` JSON map. Its default, `{}`, selects the previous polled Swamp path. Setting `node.settings` to `direct` starts `operation-node-settings` after the intent commits. The direct workflow runs the fixed storage action with `sudo -n` as the configured Node user and sends a bounded result to the Gateway. It uses native behavior locking and recovery, with no Gateway claim, lease, target hold, child Operation or effect receipt. Each intent keeps its writer selection through later setting changes.
+The Gateway starts `operation-node-settings` directly after the intent commits. The workflow runs the fixed storage action with `sudo -n` as the configured Node user and sends a bounded result to the Gateway. Swamp owns placement, behavior locking and recovery. The Gateway uses no claim, lease, target hold, child Operation or effect receipt for this kind.
 
-The direct writer currently admits only root requests for Node 209, matching the workflow’s migration placement. Other Nodes and child requests keep the polled Swamp writer. The empty writer map remains the default. Set `node.settings` to `polled` to roll back new admissions. Each Operation retains its admitted writer. Exact Node placement follows per-Node worker enrollment.
+The shared `ORBIT_SWAMP_DIRECT_WRITERS` map defaults to `{}`. This kind defaults to `direct`; an explicit `polled` value refuses new admission because that execution path has been removed. Rollback reverts the owning conversion. Each intent retains its admitted writer.
 
-Keep the old path until production proof succeeds for all of its callers. Workers use the configured Node user’s existing passwordless sudo. The fixed local action checks the admitted binary digest, validates real directory components and ownership, enforces a 30-second command budget, and returns no raw output. Cancel and recover through native Swamp tooling. Only the Gateway start response binds the native run ID; the worker reads no input or result before that binding. A failed or cancelled Operation preserves the previous settings.
+Each step targets `orbit-node-<node_id>` with the same Node label. Node 209 uses its existing `swamp209-migration-a` worker with label `node: "209"`. There is no fallback to another Node. Release the full-kind switch only after the affected workers are ready. If the canary needs released code, canary a safe target immediately after release and revert on failure.
+
+Workers use the configured Node user’s existing passwordless sudo. The fixed local action checks the admitted binary digest, validates real directory components and ownership, enforces a 30-second command budget, and returns no raw output. Cancel and recover through native Swamp tooling. Only the Gateway start response binds the native run ID; workers cannot read input or project results before that binding. A failed or cancelled Operation preserves the previous settings.
+
+Gateway admission checks path grammar and recorded protected paths. Swamp resolves the actual managed home and group before checking home-dependent restrictions. A request for a hidden control path in that home returns HTTP 202 and then fails without changing settings. Clearing an override uses the actual home’s `apps` directory. The Gateway performs no account lookup, agent install or filesystem action during admission.
+
+An action on an apps root requires Linux. Other platforms refuse before recording an execution intent.
 
 State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
@@ -112,7 +118,7 @@ A new development Instance checkout is `<apps-root>/<project-slug>/<instance-nam
 
 ## Validation
 
-The Gateway checks the path before it stores it. A path must:
+The Gateway checks path grammar and recorded exclusions before admission. Swamp checks the actual account and filesystem before settings are stored. A path must:
 
 - be absolute and normalized: not `/`, with no trailing or repeated `/`, no `.` or `..` part, and no control character;
 - not be the managed user's home or an ancestor of it;
@@ -121,7 +127,7 @@ The Gateway checks the path before it stores it. A path must:
 - not be inside a hidden directory of the managed user's home; and
 - not equal, or lie inside, an existing Instance checkout on the Node.
 
-The Gateway then checks the path on the Node with the agent's `node.prepare-storage-root`. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
+Swamp then checks the path locally with the agent's `node.prepare-storage-root`. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
 
 An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
 
@@ -140,6 +146,7 @@ The Gateway refuses an invalid value without changing the stored setting.
 
 | Code | Condition |
 | --- | --- |
+| `node.settings_platform_unsupported` | An apps-root action requires a Linux Node. |
 | `node.settings_invalid` | The object has an unknown member, is not an object, or a patch has no supported member. |
 | `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
 | `node.settings_path_protected` | The path overlaps a protected path. |
