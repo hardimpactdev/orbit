@@ -255,3 +255,9 @@ The SQL, the path, and the token travel on protected standard input, so they nev
 The Gateway exposes no cleanup primitive or relay. Swamp owns execution and recovery; the Gateway projects its bounded result. Direct cleanup has no Gateway claim, lease, target hold, keyed receipt or Node lock. Legacy parents can still admit cleanup through its owning intent hook; cleanup itself creates no child Operation.
 
 Clone snapshots are removed as the configured Node user after owner, mode and symlink checks. Root-owned seed state uses the fixed pinned `instance.prepare-sqlite-seed` sudo command in cleanup mode. Every step targets its admitted Node with a matching Node label. Node 209 temporarily uses its existing migration worker; another Node's local cleanup never runs there. No worker unit or privilege change is part of this kind's cutover.
+
+### Direct SQL writes
+
+`database:query --write` starts `operation-database-write` directly. SQLite runs the pinned sudo agent as its admitted file owner on the file’s Node. MySQL and PostgreSQL writes run a fixed local PDO program on the admitted Gateway Node, preserving external-connection reachability. SQL, DSN, username and password stay in the shared private-material callback and protected stdin. 
+
+Native apply and projection are separate steps; projection recovery reads the saved safe row count without repeating SQL. If apply starts but saves no outcome, native resume refuses another SQL call before reading private material. Inspect and settle that exact Operation before issuing another write. Projection-only recovery uses the saved native outcome. Read-only inspection remains a Gateway read.

@@ -6,8 +6,15 @@ use App\Domain\DatabaseServers\DatabaseCleanupProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
+use App\Domain\DatabaseServers\DatabaseWriteProjection;
 
-return ['database_server.close' => [
+return ['database.write' => [
+    'workflow' => 'operation-database-write',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'database_write_writer',
+    'projection' => DatabaseWriteProjection::class,
+    'private_material' => ['password' => 'database.intent', 'sql' => 'database.intent', 'dsn' => 'database.intent', 'username' => 'database.intent'],
+], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'database_server_close_writer',

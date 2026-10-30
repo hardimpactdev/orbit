@@ -122,17 +122,20 @@ it('keeps registration and reads in Orbit', function (): void {
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('admits a protected SQLite write with a nonresumable effect', function (): void {
+it('admits a protected SQLite write without a Gateway execution path', function (): void {
     $node = databaseAdmissionNode($this);
     DatabaseConnection::query()->create(['slug' => 'throwaway', 'driver' => 'sqlite', 'node_id' => $node->id, 'path' => '/tmp/throwaway.sqlite']);
 
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-write', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     $this->postJson('/api/v1/database-connections/throwaway/query', ['sql' => 'CREATE TABLE sample (id integer)', 'write' => true])
         ->assertAccepted()->assertJsonPath('data.kind', 'database.write');
 
     $command = DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply'];
     expect($command['name'])->toBe('database.write-sqlite');
-    expect($command['resumable'])->toBeFalse();
-    expect(Operation::query()->sole()->input)->not->toHaveKey('sql');
+    expect(Operation::query()->sole()->input['sql'])->toBe(['$secret' => 'database.intent', 'id' => DatabaseExecutionIntent::query()->sole()->id]);
 });
 
 it('retries failed database creation with its reserved credentials and immutable intent', function (): void {

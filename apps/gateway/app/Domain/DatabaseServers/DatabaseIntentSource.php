@@ -45,7 +45,7 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
         $intent = DatabaseExecutionIntent::recorded($id);
         if ($key === '' && DirectOperation::owns($operation)
             && in_array($parameter, match ($operation->kind) {
-                'database_user.create' => ['password', 'sql'], 'database_server.close' => ['password'], default => []
+                'database_user.create' => ['password', 'sql'], 'database_server.close' => ['password'], 'database.write' => ['password', 'sql', 'dsn', 'username'], default => []
             }, true)) {
             $key = 'database-apply';
         }
