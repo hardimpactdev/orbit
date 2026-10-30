@@ -3704,6 +3704,20 @@
       ]
     },
     {
+      "name": "database.cleanup-sqlite",
+      "summary": "Clean up one admitted SQLite snapshot without copy or seed installation.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "database.sqlite_cleanup_refused",
+        "database.sqlite_cleanup_failed"
+      ]
+    },
+    {
       "name": "instance.read-sqlite-snapshot",
       "summary": "Stream a verified private SQLite snapshot to the Gateway.",
       "mutates": false,

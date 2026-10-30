@@ -93,6 +93,7 @@ pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
 pub mod source;
+pub mod sqlite_cleanup;
 pub mod sqlite_copy;
 mod sqlite_query;
 pub mod sqlite_seed;
@@ -343,6 +344,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
         entry::<sqlite_copy::CopySqlite>(),
+        entry::<sqlite_cleanup::CleanupSqlite>(),
         entry::<sqlite_transfer::ReadSnapshot>(),
         entry::<sqlite_transfer::ReceiveSnapshot>(),
         entry::<sqlite_query::Query>(),

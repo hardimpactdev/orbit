@@ -27,6 +27,14 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 `swamp.start-worker` starts a task VM worker through fixed systemd runtime files and protected stdin input after its workspace is ready. `swamp.stop-worker` stops that service and its children, then removes its runtime unit. Worker command errors use the `swamp.*` namespace; the Gateway reports task-operation failures as `tasks.*`. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell. [Task worker enrollment](/reference/tasks#optional-swamp-worker) owns their credential lifetime.
 
+## SQLite snapshot cleanup capability
+
+`database.cleanup-sqlite` is a Linux root-required, cleanup-only command. Its `clone` variant accepts only the admitted `/tmp/orbit-sqlite-clone-<32 lowercase hex>` directory. It rejects symlinks, root ownership and non-private directories. It derives the directory owner's UID and deletes the snapshot as that non-root owner. It accepts no account, executable, argv or copy mode. The helper can also clean up directly when it already runs as that owner.
+
+The `seed` variant binds the target Instance, source base, snapshot operation and root-private state directory. It fixes the existing seed primitive to cleanup mode and preserves its ownership, inode and recorded-path checks. It exposes no preparation or installation operation. Result output is only `backend: absent` or a fixed refusal code.
+
+Ordinary command registration does not add this capability to the local socket catalogue. That addition and its scratch socket/identity proof require the separately reviewed boundary follow-up before any per-Node deployment or canary. The worker unit and its permissions stay unchanged.
+
 ## Package-tool account boundary
 
 `package.prepare-account` creates the fixed Linux system account `orbit-swamp-package`. It creates `/var/lib/orbit-swamp-package/jobs` under root ownership with mode 0700. Its typed input names a worker account that must already exist and must not be root. Package and worker UIDs must differ. The package account has its own primary group, no supplementary groups, `/nonexistent` as home and `/usr/sbin/nologin` as shell. UID and GID come from the Node's system-account allocator; they are returned by the command, never fixed fleet-wide.
