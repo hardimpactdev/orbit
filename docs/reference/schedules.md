@@ -118,6 +118,12 @@ Create validates the input and the target first. Then Swamp calls `schedule.inst
 
 An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, Rust restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
 
+## Direct Swamp control
+
+The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map selects `polled` (the default) or `direct` independently for `schedule.enable` and `schedule.run`. Each intent keeps its admitted `schedule_control_writer` through rollback. The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts `operation-schedule-control` after commit and alone binds its root run ID. Worker reads refuse until that binding exists. The Gateway exposes only the admitted Schedule UUID, runtime user and working directory, then projects bounded status and results. The Node-local action uses no Gateway relay.
+
+Keep both kinds polled until the approved thin privilege boundary exists and dev/canary proof verifies start-response/first-read ordering, Node placement and the action. Keep the worker unit unchanged. Swamp places the action exactly on `orbit-node-<admitted Node ID>` with native defaults and no fallback. After takeover, prove production before removing the previous path. Schedule destroy remains with its Instance-removal caller for its later slice.
+
 ## Timer state
 
 Production Schedules require a selected release. Each execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active.
