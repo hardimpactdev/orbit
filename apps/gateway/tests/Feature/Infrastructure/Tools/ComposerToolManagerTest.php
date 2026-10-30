@@ -9,7 +9,6 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Tools\ComposerToolManager;
-use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -86,22 +85,11 @@ describe(ComposerToolManager::class, function (): void {
         'oversized' => [str_repeat('v', times: 128).'/'.str_repeat('p', times: 127), false],
     ]);
 
-    it('passes the active Doctor budget to the agent and restores the default', function (): void {
-        $agent = new FakeAgentCommandRunner()->answer('tool.composer-version', ['version' => 'Composer 2.9.0']);
-        $budget = new ToolCommandBudget;
-        $manager = new ComposerToolManager(new SemverVersionNormalizer, $agent, $budget);
-        $budget->limit(15.0, fn (): string => $manager->managerVersion(composer_tool_node()));
-        $manager->managerVersion(composer_tool_node());
-        expect($agent->deadlines)->toBe([15.0, null]);
-    });
-
     it('rejects malformed typed responses', function (string $method, string $command, array $output): void {
         [$manager, $agent] = composer_tool_manager();
         $agent->answerMalformed($command, $output);
         expect(fn () => $manager->$method(composer_tool_node()))->toThrow(ToolManagerException::class);
     })->with([
-        ['managerVersion', 'tool.composer-version', ['version' => null]],
-        ['managerVersion', 'tool.composer-version', ['version' => 1]],
         ['installedInventory', 'tool.composer-inventory', []],
         ['installedInventory', 'tool.composer-inventory', ['packages' => ['vendor/package' => '1.0.0']]],
         ['installedInventory', 'tool.composer-inventory', ['packages' => [['name' => 1, 'version' => '1.0.0']]]],
@@ -124,7 +112,7 @@ describe(ComposerToolManager::class, function (): void {
         expect(fn () => $inventory->versionFor('vendor/duplicate'))->toThrow(ToolManagerException::class);
         expect(fn () => $inventory->versionFor('vendor/unreadable'))->toThrow(ToolManagerException::class);
         $agent->answer('tool.composer-inventory', ['packages' => []]);
-        expect($manager->installedVersion(composer_tool_node(), 'vendor/package'))->toBeNull();
+        expect($manager->installedInventory(composer_tool_node())->versionFor('vendor/package'))->toBeNull();
         expect($agent->commands())->toBe(['tool.composer-inventory', 'tool.composer-inventory']);
     });
 

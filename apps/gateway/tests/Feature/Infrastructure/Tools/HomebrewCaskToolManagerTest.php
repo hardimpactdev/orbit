@@ -64,9 +64,8 @@ describe(HomebrewCaskToolManager::class, function (): void {
             ->and(Tool::query()->where('package', 'docker')->count())->toBe(2);
     });
 
-    it('reads the native manager version and preserves absence and ambiguous inventories', function (): void {
+    it('preserves absence and ambiguous inventories', function (): void {
         [$manager, $agent] = cask_manager();
-        expect($manager->managerVersion(cask_node()))->toBe('Homebrew 4.6.15');
         $agent->answer('tool.homebrew-cask-inventory', ['packages' => [
             ['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false],
             ['name' => 'ambiguous', 'versions' => ['1.0', '2.0'], 'unverifiable' => false],
@@ -77,7 +76,7 @@ describe(HomebrewCaskToolManager::class, function (): void {
         expect(fn () => $inventory->versionFor('ambiguous'))->toThrow(ToolManagerException::class);
         expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
         $agent->refuse('tool.homebrew-cask-inventory', 'tool.homebrew_output_invalid');
-        expect(fn () => $manager->installedVersion(cask_node(), 'font-hack'))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->installedInventory(cask_node())->versionFor('font-hack'))->toThrow(ToolManagerException::class);
     });
 
 });

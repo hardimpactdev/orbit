@@ -43,7 +43,7 @@ final readonly class OperationStore
             throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
         }
 
-        $writer = app(DirectOperation::class)->writer($kind);
+        $writer = app(DirectOperation::class)->writer($kind, $input, $nodeId);
         $lockKey = $writer === 'direct' ? null : self::lockKey($targetType, $targetId);
         $parent = $this->idempotency->parent;
         if ($parent !== null) {

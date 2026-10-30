@@ -65,16 +65,14 @@ describe(HomebrewToolManager::class, function (): void {
     it('maps native inventory refusals instead of reporting absent packages', function (string $code): void {
         [$manager, $ssh, $agent] = homebrew_tool_manager([]);
         $agent->refuse('tool.homebrew-formula-inventory', $code);
-        expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'ripgrep'))
+        expect(fn () => $manager->installedInventory(homebrew_tool_node())->versionFor('ripgrep'))
             ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe('installed-version'));
         expect($ssh->commands)->toBe([]);
     })->with(['tool.homebrew_operation_failed', 'tool.homebrew_output_invalid']);
 
-    it('normalizes versions in the Gateway and keeps the native manager version', function (): void {
-        [$manager, , $agent] = homebrew_tool_manager([]);
-        $agent->answer('tool.homebrew-version', ['version' => 'Homebrew 4.6.15']);
-        expect($manager->managerVersion(homebrew_tool_node('macos')))->toBe('Homebrew 4.6.15')
-            ->and($manager->normalizeVersion('v0.9'))->toBe('0.9.0')
+    it('normalizes observed versions in the Gateway', function (): void {
+        [$manager] = homebrew_tool_manager([]);
+        expect($manager->normalizeVersion('v0.9'))->toBe('0.9.0')
             ->and($manager->normalizeVersion('head'))->toBeNull();
     });
 });

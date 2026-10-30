@@ -7,6 +7,7 @@ use App\Actions\Tools\ConvergeToolManagerAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerIntent;
@@ -28,7 +29,7 @@ beforeEach(function (): void {
     $this->worker->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->forceCreate(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'id' => 209, 'name' => 'private-dev', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
     $this->input = ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq', 'version_constraint' => null, 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64'];
     $this->operation = Operation::query()->create(['kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'state' => ['tool_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => $this->input]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -170,10 +171,49 @@ it('admits direct package and manager intents with immutable account pin and rec
     expect($operation->input['materialize'])->toBe(['user' => 'orbit']);
     expect($operation->input)->not->toHaveKeys(['materialize_command', 'materialize_fields']);
     expect($operation->lock_key)->toBeNull();
-    $manager = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::Composer);
-    expect($manager->input['materialize'])->toBe(['user' => 'orbit']);
+    $manager = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::Apt);
+    expect($manager->input)->not->toHaveKey('materialize');
     expect($manager->input)->not->toHaveKeys(['materialize_command', 'materialize_fields']);
     expect($manager->state['tool_writer'])->toBe('direct');
     $this->node->update(['user' => 'changed']);
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.user', 'orbit');
+});
+
+it('selects only proven APT root intents and keeps other managers Nodes children and privileged kinds polled', function (): void {
+    config(['swamp.direct_writers' => ['tool.adopt' => 'direct', 'tool.manager_converge' => 'direct']]);
+    $direct = app(DirectOperation::class);
+    foreach (['tool.adopt', 'tool.manager_converge'] as $kind) {
+        expect($direct->writer($kind, ['manager' => 'apt'], 209))->toBe('direct');
+        foreach (['vp', 'composer', 'brew', 'brew-cask'] as $manager) {
+            expect($direct->writer($kind, ['manager' => $manager], 209))->toBe('polled');
+        }
+        expect($direct->writer($kind, ['manager' => 'apt', 'node_id' => 209], 210))->toBe('polled');
+        expect($direct->writer($kind, [], 209))->toBe('polled');
+    }
+    foreach (['tool.install', 'tool.update', 'tool.remove', 'firewall.allow', 'firewall.deny', 'firewall.remove'] as $kind) {
+        expect($direct->writer($kind, ['manager' => 'apt'], 209))->toBe('polled');
+    }
+    $idempotency = app(OperationIdempotency::class);
+    $idempotency->parent = $this->operation;
+    expect($direct->writer('tool.manager_converge', ['manager' => 'apt', 'parent_operation_id' => null], 209))->toBe('polled');
+});
+
+it('admits APT adoption directly while recording other managers as polled and retaining rollback per intent', function (): void {
+    config(['swamp.direct_writers' => ['tool.adopt' => 'direct', 'tool.manager_converge' => 'direct'], 'swamp.run_token' => 'fixture-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
+    $apt = app(StartToolOperationAction::class)->execute('adopt', 209, 'apt', 'jq', null);
+    expect($apt->state['tool_writer'])->toBe('direct');
+    expect($apt->lock_key)->toBeNull();
+    expect($apt->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($socket->sent)->toHaveCount(1);
+    $other = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::Composer);
+    expect($other->state['tool_writer'])->toBe('polled');
+    expect($other->input)->toHaveKeys(['materialize_command', 'materialize_fields'])->not->toHaveKey('agent_sha256');
+    expect($socket->sent)->toHaveCount(1);
+    config(['swamp.direct_writers' => ['tool.adopt' => 'polled', 'tool.manager_converge' => 'polled']]);
+    expect(DirectOperation::owns($apt->fresh()))->toBeTrue();
+    expect(app(DirectOperation::class)->writer('tool.adopt', ['manager' => 'apt'], 209))->toBe('polled');
 });
