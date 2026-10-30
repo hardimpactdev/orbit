@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $direct = ['database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
+    $direct = ['database_server.destroy' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $direct;
     }
@@ -26,8 +26,6 @@ return (static function (): array {
     $container = ['transport' => 'agent', 'name' => 'process.converge-container', 'input_fields' => [], 'input_values' => [],
         'secrets' => ['environment' => 'database.intent']];
     $acl = ['transport' => 'agent', 'name' => 'database.write-valkey-acl', 'input_fields' => [], 'input_values' => [], 'secrets' => ['acl' => 'database.intent']];
-    $serverAbsent = ['transport' => 'gateway', 'name' => 'database.server-absent', 'input_fields' => [], 'input_values' => []];
-    $remove = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => [], 'input_values' => []];
     $pdo = ['transport' => 'remote_program', 'name' => 'database.write', 'input_fields' => [], 'input_values' => [],
         'secrets' => ['password' => 'database.intent', 'sql' => 'database.intent'],
         'input_schema' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['dsn', 'username', 'password', 'sql'],
@@ -43,7 +41,6 @@ return (static function (): array {
     $kinds = [];
     foreach ([
         'database_server.create' => [$container, $acl, $ready, $valkey, $control],
-        'database_server.destroy' => [$remove, $serverAbsent],
         'database_server.close' => [$valkey],
         'database.create' => [$sql, $valkey],
         'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],

@@ -135,17 +135,6 @@ it('admits a protected SQLite write with a nonresumable effect', function (): vo
     expect(Operation::query()->sole()->input)->not->toHaveKey('sql');
 });
 
-it('admits removal of a failed server with no Process through a proven Gateway read', function (): void {
-    $node = databaseAdmissionNode($this);
-    $server = DatabaseServer::query()->create(['slug' => 'failed-server', 'driver' => 'mysql', 'node_id' => $node->id,
-        'tag' => '8.4', 'port' => 3306, 'root_password' => 'synthetic-admin-password', 'status' => 'failed']);
-
-    $this->deleteJson('/api/v1/database-servers/failed-server')->assertAccepted()->assertJsonPath('data.kind', 'database_server.destroy');
-    $intent = DatabaseExecutionIntent::query()->sole();
-    expect($intent->payload['commands']['database-apply'])->toMatchArray(['transport' => 'gateway', 'name' => 'database.server-absent']);
-    $this->assertModelExists($server);
-});
-
 it('retries failed database creation with its reserved credentials and immutable intent', function (): void {
     $node = databaseAdmissionNode($this);
     $server = databaseAdmissionServer($node);
