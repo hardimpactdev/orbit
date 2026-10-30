@@ -20,6 +20,7 @@ describe('MCP tool manifest', function (): void {
         'agent:realtime:auth',
         'agent:workspaces',
         'agent:log-streams',
+        'agent:operation:step',
         'websocket:registry:snapshot',
         'websocket:runtime:boot',
         'websocket:runtime:report',
@@ -37,6 +38,11 @@ describe('MCP tool manifest', function (): void {
     ];
 
     $signature = static fn (string $method, string $path): string => $method.' '.preg_replace('/\{[^}]+\}/', '{}', '/'.ltrim($path, '/'));
+
+    it('keeps private app-user material out of operator MCP tools', function (): void {
+        $paths = array_map(static fn ($definition): string => $definition->path, ToolManifest::default()->definitions());
+        expect($paths)->not->toContain('/api/v1/agent/operations/{operation}/step');
+    });
 
     it('offers a tool for every API operation', function () use ($excluded, $signature): void {
         $tools = array_map(

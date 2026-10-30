@@ -652,7 +652,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'agent:operation:step', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 INTERNAL.update({'task-vm-executor:runtime', 'task-vm-executor:lifecycle', 'task-vm-executor:image', 'task-vm-executor:upcloud-image', 'task-vm-executor:sweep'})
 INTERNAL.update({'observation:plan', 'observation:observe', 'observation:inspect', 'observation:signals', 'observation:maintain'})
 DEFINITION_ROUTES = {
@@ -723,6 +723,7 @@ SUMMARIES = {
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
     'agent:workspaces': "List the task checkouts the agent watches",
+    'agent:operation:step': "Read private material for an admitted app-user step",
     'agent:log-streams': "List the live log streams the agent reads",
     'instance:log-stream:create': 'Open a live Instance log stream', 'instance:log-stream:renew': 'Renew a live Instance log stream', 'instance:log-stream:destroy': 'Close a live Instance log stream',
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
@@ -781,6 +782,7 @@ DESCRIPTIONS = {
     'gateway:release:auto:disable': 'Turns automatic Gateway releases off. A release that already runs finishes.',
     'gateway:release:auto:resume': 'Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
+    'agent:operation:step': "Only the Operation's exact Node may read this bounded no-store material using its existing agent secret and WireGuard identity. Requires a bound, current direct intent and an admitted step and command digest. Changed or missing commands refuse. No control-plane exemption, Activity, cache or public result contains this material. See /reference/node-agent#admitted-app-user-steps.",
     'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
     'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
     'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channels. The Gateway signs member `agent.{id}` on `presence-node.{id}` or `presence-node-logs.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
@@ -2171,10 +2173,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if route['name'] == 'project:document:create':
             responses.pop('200', None)
             responses['201'] = envelope(ref('DocumentEntryData'), 'Created.')
-    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'):
+    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'agent:operation:step'):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
     if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).')
+    elif route['name'] == 'agent:operation:step':
+        responses['403'] = error_response('The caller is not the Operation Node, is not an active WireGuard peer, or carries an invalid Node agent secret. The control-plane Node has no exemption.')
+        responses['409'] = error_response('The current direct app-user step or its bounded private material is not admitted (`instance.step_not_admitted`).')
     elif route['name'] == 'project:dependency-read-token':
         responses['403'] = error_response('Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`).')
     elif route['name'] == 'agent:realtime:auth':
