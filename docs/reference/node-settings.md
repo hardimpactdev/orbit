@@ -16,7 +16,13 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that must inspect or prepare an apps root records a `node.settings` Operation and returns HTTP 202. Swamp runs the existing `node.prepare-storage-root` command. The Gateway stores the settings only after a proven successful receipt. A failed or cancelled Operation preserves the previous settings. State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
+A settings change that must inspect or prepare an apps root records a `node.settings` Operation and returns HTTP 202. Swamp runs the existing `node.prepare-storage-root` command. The Gateway stores the settings only after successful execution.
+
+Set each kind in the `ORBIT_SWAMP_DIRECT_WRITERS` JSON map. Its default, `{}`, selects the previous polled Swamp path. Setting `node.settings` to `direct` starts `operation-node-settings` after the intent commits. The direct workflow runs the fixed storage action on the admitted Node worker and sends a bounded result to the Gateway. It uses native behavior locking and recovery, with no Gateway claim, lease, target hold, child Operation or effect receipt. Each intent keeps its writer selection through later setting changes.
+
+Keep `polled` until dev proof succeeds; the Node must have its own enrolled worker before selecting `direct`. Keep the old path until production proof succeeds. Local actions that need root wait for the approved thin privilege boundary. Keep the existing worker unit. Cancel and recover through native Swamp tooling. Only the Gateway start response binds the native run ID; the worker reads no input or result before that binding. A failed or cancelled Operation preserves the previous settings.
+
+State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
 ## Set the apps root
 
