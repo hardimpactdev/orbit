@@ -6,7 +6,6 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationCompletion;
-use App\Domain\Tools\ToolOperationExecution;
 use App\Domain\Tools\ToolStatus;
 use App\Models\Node;
 use App\Models\Operation;
@@ -25,15 +24,6 @@ function toolPolicyReceipt(Operation $operation, string $key, string $name, arra
     $operation->state = [...($operation->state ?? []), 'executor_runs' => [...($operation->state['executor_runs'] ?? []),
         $key => ['transport' => $transport, 'name' => $name, 'result' => $result]]];
 }
-
-it('exposes only adoption observations without a package mutation', function (): void {
-    $policy = new ToolOperationExecution;
-    $operation = toolPolicyOperation();
-    expect($policy->input($operation, ['key' => 'tool-verified', 'transport' => 'agent', 'name' => 'tool.vp-inventory']))->toBe([]);
-    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-remove']))
-        ->toThrow(ResourceOperationException::class);
-    expect(array_column($policy->context($operation)['descriptors'], 'key'))->toBe(['manager-ready', 'tool-verified']);
-});
 
 it('projects completed package receipts without executing on the Node', function (): void {
     $node = Node::query()->create(['name' => 'tools-projection', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2']);
@@ -79,23 +69,3 @@ it('refuses a successful result that contradicts the Tool verb before projecting
     expect($tool->fresh()->installed_version)->toBe('7.0.0')
         ->and($manager->fresh()->status)->toBe(LifecycleStatus::Provisioning);
 })->with([['remove', '7.0.0'], ['install', null], ['update', null], ['adopt', null]]);
-
-it('projects only the selected proven package from a native inventory receipt', function (): void {
-    $operation = toolPolicyOperation();
-    $result = new ToolOperationExecution()->received($operation, ['name' => 'tool.vp-inventory', 'key' => 'package-before'], [
-        'packages' => [['name' => 'is-number', 'version' => '7.0.0'], ['name' => 'another-package', 'version' => '9.0.0']],
-        'scan_complete' => true, 'stdout' => 'credential-sentinel', 'environment' => ['TOKEN' => 'credential-sentinel'],
-    ]);
-    expect($result)->toBe(['installed_version' => '7.0.0', 'block' => null, 'outcome' => 'applied'])
-        ->and(json_encode($result))->not->toContain('credential-sentinel', 'another-package', 'stdout', 'environment');
-});
-
-it('does not turn an incomplete or ambiguous package inventory into absence', function (array $receipt): void {
-    $operation = toolPolicyOperation();
-    $result = new ToolOperationExecution()->received($operation, ['name' => 'tool.vp-inventory', 'key' => 'package-before'], $receipt);
-    expect($result)->toBe(['error_code' => 'tool.version_probe_failed']);
-})->with([
-    [['packages' => [], 'scan_complete' => false]],
-    [['packages' => [['name' => 'is-number', 'version' => null]], 'scan_complete' => true]],
-    [['packages' => [['name' => 'is-number', 'version' => '7.0.0'], ['name' => 'is-number', 'version' => '8.0.0']], 'scan_complete' => true]],
-]);

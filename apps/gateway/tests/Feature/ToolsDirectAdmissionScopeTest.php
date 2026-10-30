@@ -8,6 +8,7 @@ use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -24,7 +25,7 @@ it('stamps only proven root APT intents on Node 209 as direct', function (string
     expect($operation->node_id)->toBe(209);
     expect($operation->parent_operation_id)->toBeNull();
     expect($operation->lock_key)->toBeNull();
-})->with(['tool.manager_converge', 'tool.adopt']);
+})->with(['tool.manager_converge']);
 
 it('keeps missing or unsupported admitted scope values polled', function (string $kind, ?int $node, array $input): void {
     if ($node !== null) {
@@ -43,21 +44,19 @@ it('keeps missing or unsupported admitted scope values polled', function (string
     'manager case' => ['tool.manager_converge', 209, ['manager' => 'APT']],
     'manager whitespace' => ['tool.manager_converge', 209, ['manager' => 'apt ']],
     'manager wrong type' => ['tool.manager_converge', 209, ['manager' => true]],
-    'adopt foreign Node' => ['tool.adopt', 210, ['manager' => 'apt', 'tool_status' => 'installed']],
-    'adopt foreign manager' => ['tool.adopt', 209, ['manager' => 'composer', 'tool_status' => 'installed']],
-    'new adoption' => ['tool.adopt', 209, ['manager' => 'apt', 'tool_status' => null]],
-    'failed Tool retry' => ['tool.adopt', 209, ['manager' => 'apt', 'tool_status' => 'failed']],
-    'missing Tool state' => ['tool.adopt', 209, ['manager' => 'apt']],
+
 ]);
 
-it('takes Node identity from admission rather than spoofed input', function (): void {
-    scopedToolNode(210);
-    config(['swamp.direct_writers' => ['tool.adopt' => 'direct']]);
-    $operation = scopedToolStore('tool.adopt', 210, ['manager' => 'apt', 'tool_status' => 'installed', 'node_id' => 209, 'parent_operation_id' => null]);
-
-    expect($operation->node_id)->toBe(210);
-    expect($operation->state['tool_writer'])->toBe('polled');
-});
+it('refuses foreign missing or child targets for each converted Tool kind', function (string $kind): void {
+    scopedToolNode(209);
+    $direct = app(DirectOperation::class);
+    expect($direct->writer($kind, ['manager' => 'vp'], 209))->toBe('direct');
+    expect(fn () => $direct->writer($kind, ['node_id' => 209], 210))->toThrow(ResourceOperationException::class);
+    expect(fn () => $direct->writer($kind))->toThrow(ResourceOperationException::class);
+    app(OperationIdempotency::class)->parent = new Operation()->forceFill(['id' => 1]);
+    expect(fn () => $direct->writer($kind, ['parent_operation_id' => null], 209))->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseCount('operations', 0);
+})->with(['tool.install', 'tool.update', 'tool.remove', 'tool.adopt']);
 
 it('takes parent identity from the child admission context before the row is stamped', function (string $kind): void {
     scopedToolNode(209);
@@ -70,7 +69,7 @@ it('takes parent identity from the child admission context before the row is sta
 
     expect($operation->parent_operation_id)->toBe($parent->id);
     expect($operation->state['tool_writer'])->toBe('polled');
-})->with(['tool.manager_converge', 'tool.adopt']);
+})->with(['tool.manager_converge']);
 
 it('keeps the admitted writer through declaration changes and idempotent replay', function (string $writer): void {
     scopedToolNode(209);
@@ -111,7 +110,7 @@ it('admits the scoped manager through its owner with the pinned agent', function
     expect($socket->sent)->toHaveCount(1);
 });
 
-it('admits only existing installed package adoption through its owner as direct', function (bool $existing): void {
+it('admits existing and new package ownership directly through the owning action', function (bool $existing): void {
     $node = scopedToolNode(209);
     $node->toolManagers()->create(['name' => 'apt', 'status' => 'active']);
     if ($existing) {
@@ -121,9 +120,9 @@ it('admits only existing installed package adoption through its owner as direct'
     config(['swamp.direct_writers' => ['tool.adopt' => 'direct']]);
     $operation = app(StartToolOperationAction::class)->execute('adopt', $node->id, 'apt', 'gh', null);
 
-    expect($operation->state['tool_writer'])->toBe($existing ? 'direct' : 'polled');
-    expect(array_key_exists('agent_sha256', $operation->input))->toBe($existing);
-    expect($socket->sent)->toHaveCount($existing ? 1 : 0);
+    expect($operation->state['tool_writer'])->toBe('direct');
+    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($node));
+    expect($socket->sent)->toHaveCount(1);
 })->with(['existing installed package' => true, 'new ownership' => false]);
 
 it('refuses prepared input for another writer before recording or starting an Operation', function (string $configured, string $prepared): void {
