@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Routes\DirectRoutePublication;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Infrastructure\Routes\StartRoutePublicationRun;
 use App\Jobs\ReadOperation;
 use App\Jobs\RunOperation;
 use App\Models\Operation;
@@ -13,6 +15,7 @@ use Illuminate\Queue\DatabaseQueue;
 use Illuminate\Queue\Jobs\InspectedJob;
 use Illuminate\Queue\RedisQueue;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use LogicException;
 
@@ -54,6 +57,11 @@ final readonly class OperationDispatcher
 
     public function dispatch(Operation $operation): void
     {
+        if (DirectRoutePublication::handles($operation->kind)) {
+            DB::afterCommit(static fn () => app(StartRoutePublicationRun::class)->start($operation));
+
+            return;
+        }
         if (app(OperationExecutors::class)->swamp($operation->kind)) {
             return;
         }

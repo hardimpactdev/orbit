@@ -18,11 +18,14 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationTransport;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
+use App\Domain\Routes\RoutePublicationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use RuntimeException;
 use Tests\TestCase;
@@ -63,6 +66,8 @@ final class RouteSwampGatewayFixture
     public function __construct(private TestCase $test, bool $nativeChildren = false, private bool $httpRuns = false)
     {
         Event::fake([RecordBroadcast::class]);
+        config(['swamp.run_token' => 'fixture.fake']);
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
         RouteForeignChildKinds::register(simulateNodeChildren: ! $nativeChildren);
         $this->foreign = new RouteForeignChildProof;
         app()->instance(RouteForeignChildProof::class, $this->foreign);
@@ -172,7 +177,7 @@ final class RouteSwampGatewayFixture
                 throw new RuntimeException('Could not start the Swamp fixture.');
             }
         }
-        fwrite($this->pipes[0], json_encode(['kind' => $operation->kind, 'worker' => 'fixture-'.$operation->id.'-'.++$this->dispatches,
+        fwrite($this->pipes[0], json_encode(['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'run_id' => $operation->state['swamp_run_id'] ?? (string) Str::uuid(), 'kind' => $operation->kind, 'worker' => 'fixture-'.$operation->id.'-'.++$this->dispatches,
             'foreign' => (app(OperationKinds::class)->definition($operation->kind)['completion'] ?? null) === RouteForeignChildCompletion::class], JSON_THROW_ON_ERROR)."\n");
         while (($line = fgets($this->pipes[1])) !== false) {
             $message = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
@@ -210,6 +215,17 @@ final class RouteSwampGatewayFixture
             unset($this->claims[(int) $heartbeat[1]]);
 
             return $claimed;
+        }
+        if (str_contains($path, '/route-publications/')) {
+            if (str_ends_with($path, '/publish') && preg_match('~/route-publications/(\d+)~', $path, $match)) {
+                $direct = Operation::query()->findOrFail((int) $match[1]);
+                if ((app(OperationKinds::class)->definition($direct->kind)['completion'] ?? null) === RouteForeignChildCompletion::class) {
+                    return ['status' => 200, 'body' => ['data' => $this->foreign->run($direct, ['proof' => 'ready'])]];
+                }
+            }
+            $response = $method === 'GET' ? $this->test->getJson($path) : $this->test->postJson($path, $body);
+
+            return ['status' => $response->status(), 'body' => $response->json()];
         }
         $executor = app(SwampOperationExecutor::class);
         try {
@@ -298,7 +314,7 @@ final class RouteSwampGatewayFixture
     }
 }
 
-final readonly class RouteFixtureDnsTransport implements OperationTransport
+final readonly class RouteFixtureDnsTransport implements OperationTransport, RoutePublicationPrimitive
 {
     public function __construct(private ?\Closure $publish = null) {}
 
@@ -308,6 +324,11 @@ final readonly class RouteFixtureDnsTransport implements OperationTransport
     }
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
+    {
+        return $this->publish($operation, $input);
+    }
+
+    public function publish(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if ($this->publish !== null) {
             try {

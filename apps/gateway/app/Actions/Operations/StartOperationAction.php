@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Throwable;
@@ -55,6 +56,12 @@ final readonly class StartOperationAction
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $supersedes);
 
         if (! $operation->wasRecentlyCreated) {
+            return $operation;
+        }
+
+        if (DirectRoutePublication::handles($kind)) {
+            $this->dispatcher->dispatch($operation);
+
             return $operation;
         }
 

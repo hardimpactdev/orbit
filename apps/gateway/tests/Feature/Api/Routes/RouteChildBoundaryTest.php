@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -13,8 +14,11 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 it('admits only the open Route phase, yields to its stamped child and finishes only after canonical proof', function (): void {
+    config(['swamp.run_token' => 'fixture.fake']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     $gateway = Node::query()->create(['name' => 'gateway-child', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $services = Node::query()->create(['name' => 'services-child', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.17', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
@@ -50,13 +54,11 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $run('stage-commit.host-withdraw', ['action' => 'commit', 'stage' => 'host-withdraw'])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
     $this->postJson($path.'/wait', ['worker' => 'parent-one', 'keys' => [$key]])->assertOk()->assertJsonPath('data.status', 'waiting');
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data', null);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child['kind'], 'worker' => 'child', 'operation_id' => $child['id']])->assertOk()->assertJsonPath('data.id', $child['id']);
-    $childPath = '/api/v1/operation-executor/'.$child['id'];
-    $this->postJson($childPath.'/run', ['worker' => 'child', 'key' => 'prepare', 'transport' => 'gateway', 'name' => 'route.caddy-prepare', 'input' => $child['input']])->assertOk();
-    $descriptor = $this->postJson($childPath.'/heartbeat', ['worker' => 'child'])->assertOk()->json('data.execution_context.descriptors.1');
-    $result = $this->postJson($childPath.'/run', ['worker' => 'child', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))])->assertOk()->json('data');
-    $this->postJson($childPath.'/step', ['worker' => 'child', 'key' => 'publish-proof', 'name' => 'caddy-publish', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($childPath.'/complete', ['worker' => 'child', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $childPath = '/api/v1/route-publications/'.$child['id'];
+    $runId = Operation::query()->findOrFail($child['id'])->state['swamp_run_id'];
+    $result = $this->postJson($childPath.'/publish', ['run_id' => $runId])->assertOk()->json('data');
+    $this->postJson($childPath.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'result' => $result,
+        'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'])->assertOk();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data.id', $parent->id);
     $run('stage-commit.host-withdraw', ['action' => 'commit', 'stage' => 'host-withdraw'], 'parent-two')->assertOk();
     $run('stage-open.host-certificate-remove', ['action' => 'open', 'stage' => 'host-certificate-remove'], 'parent-two')->assertOk();

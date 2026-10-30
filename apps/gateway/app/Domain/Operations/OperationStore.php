@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\OperationStep;
@@ -43,13 +44,13 @@ final readonly class OperationStore
             throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
         }
 
-        $lockKey = self::lockKey($targetType, $targetId);
+        $lockKey = DirectRoutePublication::handles($kind) ? null : self::lockKey($targetType, $targetId);
         $parent = $this->idempotency->parent;
         if ($parent !== null) {
             if ($this->idempotency->childIntent === null || $kind !== $this->idempotency->childIntent['kind'] || $nodeId !== $this->idempotency->childIntent['node_id']) {
                 throw new ResourceOperationException('operation.child_forbidden', 'The owning admission changed the bound kind or Node.', 422);
             }
-            $holder = Operation::query()->where('lock_key', $lockKey)->lockForUpdate()->first();
+            $holder = $lockKey === null ? null : Operation::query()->where('lock_key', $lockKey)->lockForUpdate()->first();
             $ancestor = $parent;
             while ($holder !== null && $ancestor !== null) {
                 if ($holder->id === $ancestor->id && ! $ancestor->status->terminal()) {
