@@ -41,9 +41,9 @@ beforeEach(function (): void {
         'result' => ['outcome' => 'succeeded', 'data' => ['backend' => 'applied'], 'secret' => 'private-sentinel']];
 });
 
-it('selects direct sync by default and binds root starts before exposing safe input', function (): void {
+it('selects direct registry kinds by default and binds root starts before exposing safe input', function (): void {
     foreach (['websocket.sync', 'websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate'] as $kind) {
-        expect(app(DirectOperation::class)->writer($kind))->toBe(in_array($kind, ['websocket.sync', 'websocket.app_create', 'websocket.app_destroy'], true) ? 'direct' : null);
+        expect(app(DirectOperation::class)->writer($kind))->toBe('direct');
     }
     $this->operation->update(['state' => ['websocket_registry_writer' => 'direct']]);
     $this->getJson($this->path.'?run_id='.$this->run)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
@@ -220,4 +220,54 @@ it('refuses deleted app-destroy polling without deleting the app', function (): 
         ->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
     expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
     expect(WebSocketApp::query()->where('name', 'refused-disposable')->exists())->toBeTrue();
+});
+
+it('confirms rotation directly without transferring or rotating credentials twice', function (): void {
+    app(ChangeWebSocketRegistryAction::class)->execute('create', 'direct-disposable', $this->gateway->id, 'seed-rotate');
+    $app = WebSocketApp::query()->where('name', 'direct-disposable')->sole();
+    $secret = $app->secret;
+    $generation = $app->credential_generation;
+    $response = $this->withHeader('Idempotency-Key', 'direct-rotate')->postJson('/api/v1/websocket-apps/direct-disposable/rotate')->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->kind)->toBe('websocket.app_rotate')->and($operation->state['websocket_registry_writer'])->toBe('direct');
+    expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
+    expect($app->refresh()->credential_generation)->toBe($generation + 1)->and($app->secret)->not->toBe($secret);
+    $rotated = $app->secret;
+    $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
+        'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
+    ])->assertDontSee($secret)->assertDontSee($rotated);
+    WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-rotate',
+        'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
+    $this->postJson($path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertDontSee($rotated);
+    $this->postJson('/api/v1/websocket-apps/direct-disposable/rotate')->assertAccepted()->assertJsonPath('data.id', $operation->id);
+    expect($app->refresh()->secret)->toBe($rotated)->and($app->credential_generation)->toBe($generation + 1);
+    Http::assertNothingSent();
+});
+
+it('refuses deleted app-rotate polling without changing credentials or recording intent', function (): void {
+    app(ChangeWebSocketRegistryAction::class)->execute('create', 'refused-disposable', $this->gateway->id, 'seed-refused-rotate');
+    $app = WebSocketApp::query()->where('name', 'refused-disposable')->sole();
+    $secret = $app->secret;
+    $generation = $app->credential_generation;
+    $registry = WebSocketRegistryOperation::query()->count();
+    config(['swamp.direct_writers' => ['websocket.app_rotate' => 'polled']]);
+    $this->withHeader('Idempotency-Key', 'refused-rotate')->postJson('/api/v1/websocket-apps/refused-disposable/rotate')
+        ->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
+    expect($app->refresh()->secret)->toBe($secret)->and($app->credential_generation)->toBe($generation);
+});
+
+it('rejects a forged applied result after the admitted app change is superseded', function (): void {
+    app(ChangeWebSocketRegistryAction::class)->execute('create', 'superseded-disposable', $this->gateway->id, 'seed-superseded');
+    $response = $this->withHeader('Idempotency-Key', 'superseded-rotate')->postJson('/api/v1/websocket-apps/superseded-disposable/rotate')->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
+    app(ChangeWebSocketRegistryAction::class)->execute('rotate', 'superseded-disposable', $this->gateway->id, 'superseding-rotate');
+    WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-superseded',
+        'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'websocket.registry_superseded');
+    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
