@@ -261,11 +261,16 @@ it('admits registration setup using the parent digest after its primary member a
         'executor_runs' => [$key => [...$descriptor, 'result' => ['activated' => true, 'instance_id' => $instance->id]]]]]);
     $parent->steps()->create(['name' => $key, 'position' => 1, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
 
+    config(['swamp.run_token' => 'fixture.shared.token']);
+    $socket = new \Tests\Support\FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-setup-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(\App\Infrastructure\AgentView\WebSocketClient::class, $socket);
     $path = '/api/v1/operation-executor/'.$parent->id.'/children';
-    $id = $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup'])->assertAccepted()
+    $response = $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup']);
+    $id = $response->assertAccepted()
         ->assertJsonPath('data.kind', 'instance.run_steps')->assertJsonPath('data.parent_operation_id', $parent->id)
         ->assertJsonPath('data.input', ['instance_id' => $instance->id, 'source' => 'project', 'list' => 'setup',
-            'configuration_digest' => $parent->input['setup_digest']])->json('data.id');
+            'configuration_digest' => $parent->input['setup_digest'], ...app(\App\Actions\Instances\StartInstanceStepListAction::class)->appStepAdmission($instance, \App\Domain\Projects\LifecyclePhase::Setup)])->json('data.id');
 
     $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup'])->assertOk()->assertJsonPath('data.id', $id);
     expect(Operation::query()->where('kind', 'instance.run_steps')->count())->toBe(1);

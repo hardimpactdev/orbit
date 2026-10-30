@@ -32,17 +32,17 @@ beforeEach(function (): void {
         'state' => ['instance_step_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
 });
 
-it('keeps direct setup default polled and excludes parent and teardown intents', function (): void {
+it('selects direct for the complete kind and refuses the deleted polled writer', function (): void {
     $direct = app(DirectOperation::class);
-    expect($direct->writer('instance.run_steps', ['list' => 'setup']))->toBe('polled');
-    config(['swamp.direct_writers' => ['instance.run_steps' => 'direct']]);
     expect($direct->writer('instance.run_steps', ['list' => 'setup']))->toBe('direct')
-        ->and($direct->writer('instance.run_steps', ['list' => 'teardown']))->toBe('polled');
+        ->and($direct->writer('instance.run_steps', ['list' => 'teardown']))->toBe('direct');
+    config(['swamp.direct_writers' => ['instance.run_steps' => 'polled']]);
+    expect(fn () => $direct->writer('instance.run_steps'))->toThrow(ResourceOperationException::class);
 });
 
 it('returns only bound target release and command digests', function (): void {
     $input = app(InstanceSetupProjection::class)->input($this->operation);
-    expect($input)->toBe(['instance_id' => $this->instance->id, 'project_id' => $this->instance->project_id, 'release' => 'admitted',
+    expect($input)->toBe(['instance_id' => $this->instance->id, 'list' => 'setup', 'project_id' => $this->instance->project_id, 'execution' => app(StartInstanceStepListAction::class)->appStepAdmission($this->instance, LifecyclePhase::Setup)['execution'],
         'steps' => [['name' => 'install', 'command_digest' => hash('sha256', 'private setup program'), 'timeout_seconds' => 30]]])
         ->and(json_encode($input))->not->toContain('private setup program');
 });
@@ -89,7 +89,7 @@ it('keeps terminal read and replay available after current setup changes', funct
     $this->postJson($path.'/result', $body)->assertOk();
     ProjectLifecycleStep::query()->where('project_id', $this->instance->project_id)->update(['command' => 'changed after completion']);
     $this->instance->update(['checkout_path' => '/changed/after/completion']);
-    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()->assertJsonPath('data.status', 'succeeded')->assertJsonPath('data.input.release', 'admitted');
+    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()->assertJsonPath('data.status', 'succeeded')->assertJsonPath('data.input.execution.directory', $this->instance->production_home.'/releases/admitted');
     $this->postJson($path.'/result', $body)->assertOk();
 });
 
@@ -97,7 +97,7 @@ it('projects an app setup failure to the Instance', function (): void {
     $this->instance->update(['first_setup_pending' => true]);
     app(InstanceSetupProjection::class)->apply($this->operation, [
         'run_id' => $this->operation->state['swamp_run_id'], 'status' => 'failed', 'started_at' => now()->subSecond()->toISOString(), 'finished_at' => now()->toISOString(),
-        'result' => ['error_code' => 'instance.setup_step_failed', 'failed_step' => 'install'], 'error_code' => 'instance.setup_step_failed',
+        'result' => ['instance_id' => $this->instance->id, 'outcome' => 'failed', 'error_code' => 'instance.setup_step_failed', 'failed_step' => 'setup.install'], 'error_code' => 'instance.setup_step_failed',
     ]);
     expect($this->instance->fresh()->first_setup_pending)->toBeTrue()->and($this->instance->fresh()->failed_step)->toBe('setup')->and($this->instance->fresh()->error_code)->toBe('instance.setup_step_failed');
 });
@@ -117,5 +117,5 @@ it('refuses the first unbound read and admits it only after the matching Gateway
     app()->instance(WebSocketClient::class, $socket);
     app(StartSwampRun::class)->start($this->operation);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe($runId);
-    $this->getJson($path)->assertOk()->assertJsonPath('data.input.release', 'admitted');
+    $this->getJson($path)->assertOk()->assertJsonPath('data.input.execution.directory', $this->instance->production_home.'/releases/admitted');
 });

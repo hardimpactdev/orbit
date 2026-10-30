@@ -9,6 +9,13 @@ use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Queue;
 
+beforeEach(function (): void {
+    config(['swamp.run_token' => 'fixture.shared.token']);
+    $socket = new \Tests\Support\FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-setup-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(\App\Infrastructure\AgentView\WebSocketClient::class, $socket);
+});
+
 it('records setup intent and returns a keyed Operation without dispatching PHP', function (): void {
     $instance = dev935_instance();
     $instance->node->accessibleNodes()->attach($instance->node_id);
@@ -22,7 +29,7 @@ it('records setup intent and returns a keyed Operation without dispatching PHP',
             'instance_id' => $instance->id,
             'source' => 'project', 'list' => 'setup',
             'configuration_digest' => hash('sha256', '[]'),
-            'project_id' => $instance->project_id, 'release_directory' => $instance->checkout_path, 'steps' => [],
+            ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup),
         ]);
     Queue::assertNothingPushed();
 });
