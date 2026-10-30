@@ -114,3 +114,9 @@ retains exact `orbit-node-ID` placement. This is explicit placement, with no
 fallback to another Node. Remove the209exception when lane21enrolls its exact
 per-Node identity. The canary owns a future-dated timer whose command is
 `/usr/bin/true`; it changes no serving unit.
+
+A local agent that fails its admitted build or ownership preflight returns
+`operation.agent_invalid` before sudo starts. The native action projects that
+bounded refusal as a failed Operation. Errors after the command starts keep
+their existing uncertainty behavior. The workflow never replaces an admitted
+digest with the current binary digest.

@@ -34,16 +34,21 @@ export async function localAgent(
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const binary = "/usr/local/bin/orbit-agent";
-  const file = await Deno.lstat(binary);
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    await Deno.readFile(binary),
-  );
-  const pin = Array.from(
-    new Uint8Array(digest),
-    (byte) => byte.toString(16).padStart(2, "0"),
-  ).join("");
-  assertAgent(file, pin, admittedDigest);
+  try {
+    const file = await Deno.lstat(binary);
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      await Deno.readFile(binary),
+    );
+    const pin = Array.from(
+      new Uint8Array(digest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    assertAgent(file, pin, admittedDigest);
+  } catch {
+    // No command has started, so this refusal is safe to project as terminal.
+    return { error_code: "operation.agent_invalid" };
+  }
   const deadline = Budgets[name];
   const bounded = AbortSignal.timeout(deadline);
   const process = new Deno.Command("/usr/bin/sudo", {
