@@ -11,10 +11,15 @@ claims work, heartbeats, creates child Operations, saves keyed effect receipts
 or waits in PHP. Native Swamp recovery can repeat cleanup after a lost reply;
 cleanup must converge an already absent snapshot.
 
-Load this source before deploying the dormant Gateway branch. A dedicated native
-run/read token must grant only this workflow. Token provisioning and shared-host
-loading require the orchestrator. No credential or grant is changed by these
-files.
+The Gateway shared direct boundary supplies
+`GET /api/v1/direct-operations/{operation}?run_id=UUID`, `POST .../primitive`
+and `POST .../result`. The primitive receives only `run_id`; it cannot select a
+command, endpoint, Node or input. Families add no controller or token transport.
+
+Load this source before deploying the dormant Gateway branch. The orchestrator
+extends the one shared `ORBIT_SWAMP_RUN_TOKEN` grant to this workflow. This
+source creates no token or grant. The shared helper and the Databases
+intent/result handler must be deployed before this workflow is enabled.
 
 Prove both clone-directory and seed-snapshot cleanup on a disposable development
 target before selecting direct. Keep the previous workflow and Gateway adapters

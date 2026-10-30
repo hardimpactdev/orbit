@@ -45,7 +45,7 @@ export function cleanup(
         arguments: Args,
         execute: async (args: z.infer<typeof Args>, ctx: Context) => {
           const http = makeHttp(ctx);
-          const path = `/api/v1/database-cleanups/${args.operation_id}`;
+          const path = `/api/v1/direct-operations/${args.operation_id}`;
           const call = async (
             method: "GET" | "POST",
             suffix: string,
@@ -87,7 +87,7 @@ export function cleanup(
             status = "cancelled";
           } else {
             result = Record.parse(
-              await call("POST", "/cleanup", { run_id: args.run_id }),
+              await call("POST", "/primitive", { run_id: args.run_id }),
             );
             const code = result.error_code;
             if (

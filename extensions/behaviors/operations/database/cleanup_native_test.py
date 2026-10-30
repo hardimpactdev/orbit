@@ -55,7 +55,7 @@ class DatabaseCleanupNative(unittest.TestCase):
         state=self.read()
         self.assertEqual(state['cleanups'],1)
         self.assertEqual(state['operation']['status'],'succeeded')
-        self.assertTrue(all('/database-cleanups/' in call for call in state['calls']))
+        self.assertTrue(all('/direct-operations/' in call for call in state['calls']))
         self.assertFalse(any('claim' in call or 'heartbeat' in call or 'receipts' in call for call in state['calls']))
 
     def test_native_retry_after_lost_terminal_projection_does_not_repeat_effect(self):

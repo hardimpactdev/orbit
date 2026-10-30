@@ -30,7 +30,7 @@ class Fixture {
       if (method === "GET") {
         return { status: 200, body: { data: this.operation } };
       }
-      if (path.endsWith("/cleanup")) {
+      if (path.endsWith("/primitive")) {
         if (this.loseCleanup) {
           this.loseCleanup = false;
           throw new Error("lost cleanup reply");
@@ -58,10 +58,10 @@ Deno.test("native Database cleanup uses one stored Node and no claim lease recei
   const f = new Fixture();
   assertEquals(await f.execute(), { status: "succeeded" });
   assertEquals(f.calls.map((call) => call.path), [
-    `/api/v1/database-cleanups/17?run_id=${args.run_id}`,
-    "/api/v1/database-cleanups/17/result",
-    "/api/v1/database-cleanups/17/cleanup",
-    "/api/v1/database-cleanups/17/result",
+    `/api/v1/direct-operations/17?run_id=${args.run_id}`,
+    "/api/v1/direct-operations/17/result",
+    "/api/v1/direct-operations/17/primitive",
+    "/api/v1/direct-operations/17/result",
   ]);
   assertEquals(f.calls[2].body, { run_id: args.run_id });
   assertEquals(f.calls[3].body.result, f.result);
@@ -83,7 +83,7 @@ Deno.test("native retry after lost terminal projection reads the committed resul
   await assertRejects(() => f.execute(), Error, "lost completion reply");
   assertEquals(await f.execute(), { status: "succeeded" });
   assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/cleanup")).length,
+    f.calls.filter((call) => call.path.endsWith("/primitive")).length,
     1,
   );
 });
@@ -95,7 +95,7 @@ Deno.test("uncertain cleanup escapes for native step recovery without inventing 
   assertEquals(f.calls.length, 3);
   assertEquals(await f.execute(), { status: "succeeded" });
   assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/cleanup")).length,
+    f.calls.filter((call) => call.path.endsWith("/primitive")).length,
     2,
   );
 });
@@ -104,7 +104,7 @@ Deno.test("cancelled intent makes no Node call and projects its native outcome",
   const f = new Fixture();
   f.operation.cancel_requested = true;
   assertEquals(await f.execute(), { status: "cancelled" });
-  assertEquals(f.calls.some((call) => call.path.endsWith("/cleanup")), false);
+  assertEquals(f.calls.some((call) => call.path.endsWith("/primitive")), false);
 });
 
 Deno.test("unproven or malformed cleanup refuses terminal success", async () => {
@@ -121,4 +121,38 @@ Deno.test("unproven or malformed cleanup refuses terminal success", async () => 
       1,
     );
   }
+});
+
+Deno.test("fixed cleanup refuses with its bounded code and native run fails", async () => {
+  const f = new Fixture();
+  f.result = { error_code: "instance.sqlite_copy_refused" };
+  await assertRejects(() => f.execute(), Error, "instance.sqlite_copy_refused");
+  assertEquals(f.calls.at(-1)!.body.status, "failed");
+  assertEquals(f.calls.at(-1)!.body.error_code, "instance.sqlite_copy_refused");
+  await assertRejects(() => f.execute(), Error, "instance.sqlite_copy_refused");
+  assertEquals(
+    f.calls.filter((call) => call.path.endsWith("/primitive")).length,
+    1,
+  );
+});
+
+Deno.test("shared boundary refusal returns to native recovery without terminal projection", async () => {
+  const f = new Fixture();
+  const http: Http = (method, path, body) =>
+    path.endsWith("/primitive")
+      ? Promise.resolve({
+        status: 409,
+        body: { error: { code: "operation.run_mismatch" } },
+      })
+      : f.http(method, path, body);
+  await assertRejects(
+    () => cleanup(() => http).methods.cleanup.execute(args, ctx),
+    Error,
+    "request did not succeed",
+  );
+  assertEquals(f.operation.status, "running");
+  assertEquals(
+    f.calls.filter((call) => call.path.endsWith("/result")).length,
+    1,
+  );
 });
