@@ -8,15 +8,18 @@ import {
 import { Globals } from "../../operation-runner/mod.ts";
 
 export const Storage = z.object({
-  root: z.string().startsWith("/"),
-  user: z.string().min(1),
-  group: z.string().min(1),
+  root: z.string().regex(/^\/(?:[^/\0\r\n]+\/)*[^/\0\r\n]+$/).refine(
+    (path) =>
+      path.split("/").slice(1).every((part) => part !== "." && part !== ".."),
+  ),
+  user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
+  group: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
   create_missing: z.boolean(),
 }).strict();
 export const Prepare = z.object({
   agent_pin: z.string().regex(/^[a-f0-9]{64}$/),
   storage: Storage,
-});
+}).strict();
 type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 
 /** One fixed local primitive; no SSH, receipt, installation or retry protocol. */
@@ -35,7 +38,9 @@ export async function prepareStorage(
     stdin: "piped",
     stdout: "piped",
     stderr: "null",
-    signal,
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(35000)])
+      : AbortSignal.timeout(35000),
   }).spawn();
   const writer = child.stdin.getWriter();
   try {
@@ -105,7 +110,7 @@ export function settings(
 ) {
   return {
     type: "@nckrtl/node-settings",
-    version: "2026.10.30.3",
+    version: "2026.10.30.4",
     globalArguments: Globals,
     methods: {
       execute: {

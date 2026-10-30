@@ -20,20 +20,26 @@ The filesystem action is convergent. Native recovery after an uncertain reply
 can repeat its check. Raw agent output is bounded in memory and never persisted.
 There are no custom receipt resources, retention overrides or data-version pins.
 
-Keep this kind polled while proving the Node 209 canary. Lane 16 extends the
-existing run credential for this workflow with run-and-status access only and
-records the change in `FLEET-CHANGES`; the orchestrator pre-approved these
-workflow extensions. The root action still needs the approved thin privilege
-boundary. A dev/canary run must prove start-binding/first-read ordering and the
-final projection before takeover. A run cancelled before the action can prove
-ordering without calling root; it does not prove storage success. Preserve the
-current worker unit. This source changes no live privilege, credentials, grants,
-enrollment or writer selection. Use native Swamp cancellation/recovery tooling.
+Workers run as the Node's configured system user and use that user's existing
+passwordless sudo. The fixed local command receives the admitted agent digest
+and a 30-second budget. The agent refuses a different binary digest, symlinked
+path components, invalid ownership or a root writable by other accounts. The
+workflow limits its own transport to 35 seconds and bounds stdout to 16 KiB in
+memory; stderr is discarded. No raw output is persisted.
 
-Admit the Node 209 canary with a process-local writer override; keep the
-persisted map polled. Do not enable the kind across the fleet while the canary
-accepts only Node 209. After exact Node placement and dev proof, select
-`node.settings: direct` reversibly in the shared map.
-After production success, delete the replaced settings path and tests. Existing
-polled intents retain their original writer. Nodes + Fleet remains unfinished
-until its other kinds move and its total Gateway diff is negative.
+The Gateway's per-kind switch is currently scoped to root Node 209 requests,
+matching this workflow's placement. Other Nodes and child admissions keep their
+polled writer. The default map remains empty. A process-local direct canary must
+succeed before the persisted switch changes; normal production success then
+permits deletion of the path it replaced. Native cancellation proof alone is
+insufficient. Setting `node.settings: polled` reverses new admissions; each
+existing intent keeps its writer. The old path stays for callers outside the
+proven scope until their exact-Node workers are live and proven.
+
+The Node 209 binding canary (Operation 4756) projected cancellation without a
+root call. The real sudo canary (5136) checked the existing `/home/orbit/apps`
+root and projected `prepared: true`. It took 1.277 seconds from owning admission
+to start acknowledgement; no old-path action latency baseline is available.
+No worker unit, sudo policy, grant, token or package sandbox change is part of
+this source slice. Nodes + Fleet remains unfinished until its other kinds move
+and its total Gateway diff is negative.

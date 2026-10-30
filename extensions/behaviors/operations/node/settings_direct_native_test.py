@@ -106,5 +106,24 @@ class SettingsNative(unittest.TestCase):
         self.assertEqual(self.read()['actions'], 1)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
+    def test_wrong_admitted_digest_never_creates_root(self):
+        self.state['operation']['input']['agent_pin'] = '0' * 64
+        self.save()
+        self.run_workflow(success=False)
+        self.assertFalse(self.apps.exists())
+        self.assertEqual(self.read()['operation']['status'], 'running')
+        self.assertFalse(any(c['body']['status'] == 'succeeded' for c in self.read()['calls']))
+
+    def test_symlinked_component_is_refused_without_touching_destination(self):
+        real = self.repo / 'real'
+        real.mkdir()
+        link = self.repo / 'link'
+        link.symlink_to(real, target_is_directory=True)
+        self.state['operation']['input']['storage']['root'] = str(link / 'apps')
+        self.save()
+        self.run_workflow(success=False)
+        self.assertFalse((real / 'apps').exists())
+        self.assertEqual(self.read()['calls'][-1]['body']['error_code'], 'node.settings_root_failed')
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
-import { settings } from "./settings.ts";
+import { Prepare, settings } from "./settings.ts";
 
 const input = {
   agent_pin: "a".repeat(64),
@@ -116,4 +116,34 @@ Deno.test("migration canary refuses another admitted Node", () => {
   const schema = settings().methods.execute.arguments;
   assertEquals(schema.safeParse(args).success, true);
   assertEquals(schema.safeParse({ ...args, node_id: 9 }).success, false);
+});
+
+Deno.test("admitted storage rejects path traversal, controls, and command-shaped fields", () => {
+  for (
+    const root of [
+      "relative",
+      "/",
+      "/srv//apps",
+      "/srv/../apps",
+      "/srv/./apps",
+      "/srv/apps\n",
+    ]
+  ) {
+    assertEquals(
+      Prepare.safeParse({ ...input, storage: { ...input.storage, root } })
+        .success,
+      false,
+    );
+  }
+  assertEquals(
+    Prepare.safeParse({ ...input, command: "foreign" }).success,
+    false,
+  );
+  assertEquals(
+    Prepare.safeParse({
+      ...input,
+      storage: { ...input.storage, user: "orbit;id" },
+    }).success,
+    false,
+  );
 });
