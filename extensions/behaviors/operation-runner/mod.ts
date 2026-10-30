@@ -207,16 +207,24 @@ export function operationDiscovery(
     ),
 ) {
   const Kind = z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/);
+  const batchSize = 8;
+  const perKind = 4;
   return {
     type: "@nckrtl/operation-discovery",
-    version: "2026.10.30.1",
+    version: "2026.10.30.2",
     globalArguments: Globals,
     resources: {
       dispatch: {
         description:
           "Latest claimable kinds for one independently scheduled family",
         schema: z.object({
-          work: z.array(z.object({ kind: Kind, worker: z.string() })),
+          work: z.array(
+            z.object({
+              kind: Kind,
+              slot: z.number().int().min(0).max(batchSize - 1),
+              worker: z.string(),
+            }),
+          ).max(batchSize),
         }),
         lifetime: "7d",
         garbageCollection: 1,
@@ -251,14 +259,32 @@ export function operationDiscovery(
             new Set(available.kinds.map((entry) => entry.kind)).size !==
               available.kinds.length
           ) throw new Error("Duplicate claimable kind");
-          const claimable = new Set(
-            available.kinds.filter((entry) => entry.claimable > 0).map((
-              entry,
-            ) => entry.kind),
+          // Counts are hints. Only the placed invocation claims an Operation.
+          // One slot per kind first prevents a busy kind starving siblings.
+          const allowed = new Set(args.kinds);
+          const candidates = available.kinds.filter((entry) =>
+            allowed.has(entry.kind) && entry.claimable > 0
+          ).sort((a, b) =>
+            (a.oldest_at ?? "9999").localeCompare(b.oldest_at ?? "9999") ||
+            args.kinds.indexOf(a.kind) - args.kinds.indexOf(b.kind)
           );
-          const work = args.kinds.filter((kind) => claimable.has(kind)).map((
-            kind,
-          ) => ({ kind, worker: `${args.worker}:${kind}` }));
+          const work: { kind: string; slot: number; worker: string }[] = [];
+          for (
+            let round = 0;
+            round < perKind && work.length < batchSize;
+            round++
+          ) {
+            for (const entry of candidates) {
+              if (work.length === batchSize) break;
+              if (entry.claimable <= round) continue;
+              const slot = work.length;
+              work.push({
+                kind: entry.kind,
+                slot,
+                worker: `${args.worker}:${entry.kind}:${slot}`,
+              });
+            }
+          }
           const handle = await ctx.writeResource("dispatch", args.family, {
             work,
           });

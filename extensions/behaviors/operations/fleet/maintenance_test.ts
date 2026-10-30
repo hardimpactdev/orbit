@@ -10,6 +10,7 @@ class MaintenanceFixture {
   statuses = new Map<number, string>();
   loseAdmission = false;
   failPr = false;
+  dnsDigest = "a".repeat(64);
   targets = [{
     node_id: 3,
     window: true,
@@ -42,8 +43,9 @@ class MaintenanceFixture {
     await Promise.resolve();
     this.calls.push({ method, path, body, key });
     let data: unknown = {};
-    if (path.endsWith("/peer-dns/targets")) data = [2];
-    else if (path.endsWith("/recipe-pr/plan")) {
+    if (path.endsWith("/peer-dns/plan")) {
+      data = [{ node_id: 2, configuration_digest: this.dnsDigest }];
+    } else if (path.endsWith("/recipe-pr/plan")) {
       if (this.failPr) throw new Error("fleet.github_unavailable");
       data = { status: "ready", date: "20261028", pulls: [] };
     } else if (path.endsWith("/recipe/plan")) data = this.recipe;
@@ -127,4 +129,56 @@ Deno.test("catch-up visits retain five-minute spacing", async () => {
   assertEquals(f.writes("/api/v1/fleet/nodes/3/rollout").length, 0);
   await f.tick("2026-10-28T02:05:00Z");
   assertEquals(f.writes("/api/v1/fleet/nodes/3/rollout").length, 1);
+});
+
+Deno.test("unchanged peer DNS admits exactly 24 hourly Operations across a full day", async () => {
+  const f = new MaintenanceFixture();
+  for (let minute = 0; minute < 1440; minute++) {
+    await f.tick(new Date(Date.UTC(2026, 9, 30, 0, minute)).toISOString());
+    for (const value of f.resources.values()) {
+      if (typeof value.id === "number") f.statuses.set(value.id, "succeeded");
+    }
+  }
+  assertEquals(f.writes("/api/v1/fleet/nodes/2/peer-dns").length, 24);
+});
+
+Deno.test("a changed policy admits in the same hour, but waits for active work", async () => {
+  const f = new MaintenanceFixture();
+  const path = "/api/v1/fleet/nodes/2/peer-dns";
+  await f.tick();
+  f.dnsDigest = "b".repeat(64);
+  await f.tick("2026-10-28T02:01:00Z");
+  assertEquals(f.writes(path).length, 1);
+  f.statuses.set(f.resources.get("dns-2")!.id as number, "succeeded");
+  await f.tick("2026-10-28T02:02:00Z");
+  assertEquals(f.writes(path).length, 2);
+  f.statuses.set(f.resources.get("dns-2")!.id as number, "succeeded");
+  await f.tick("2026-10-28T02:03:00Z");
+  assertEquals(f.writes(path).length, 2);
+});
+
+Deno.test("a lost peer DNS admission is replayed across hourly and policy changes", async () => {
+  const f = new MaintenanceFixture();
+  const path = "/api/v1/fleet/nodes/2/peer-dns";
+  f.loseAdmission = true;
+  await f.tick("2026-10-28T02:59:00Z");
+  f.dnsDigest = "b".repeat(64);
+  await f.tick("2026-10-28T03:00:00Z");
+  const writes = f.writes(path);
+  assertEquals(writes.length, 2);
+  assertEquals(writes[0].key, writes[1].key);
+  f.statuses.set(f.resources.get("dns-2")!.id as number, "succeeded");
+  await f.tick("2026-10-28T03:01:00Z");
+  assertEquals(f.writes(path).length, 3);
+});
+
+Deno.test("failed hourly work retries with a fresh key; success does not", async () => {
+  const f = new MaintenanceFixture();
+  const path = "/api/v1/fleet/nodes/2/peer-dns";
+  await f.tick();
+  f.statuses.set(f.resources.get("dns-2")!.id as number, "failed");
+  await f.tick("2026-10-28T02:01:00Z");
+  const writes = f.writes(path);
+  assertEquals(writes.length, 2);
+  assertEquals(writes[0].key === writes[1].key, false);
 });

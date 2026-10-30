@@ -1,11 +1,11 @@
 id: 611f677a-01ac-4d78-8677-36747ee90bd5
 name: operation-routes
-description: Claim and execute one Route kind on the same worker Node.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "0,10,20,30,40,50 * * * * *"
+  schedule: "0,30 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-routes'
-          behaviorName: "operation-routes"
+          behaviorName: '${{ "operation-routes-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.kind }}'
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: '${{ self.work.kind }}'
+            worker: '${{ self.work.worker }}'

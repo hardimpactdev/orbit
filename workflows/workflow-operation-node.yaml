@@ -1,11 +1,11 @@
 id: 04dac56c-8670-44b3-a29c-f337710ebdc4
 name: operation-node
-description: Claim and execute Node settings, footprint or PHP package preparation on one placed worker.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "8,18,28,38,48,58 * * * * *"
+  schedule: "8,38 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-node"
-          behaviorName: '${{ {"node.prepare_php_packages": "operation-node-php-packages", "node.settings": "operation-node-settings", "node.converge": "operation-node-converge", "node.bootstrap_probe": "operation-node-bootstrap-probe", "node.bootstrap_install": "operation-node-bootstrap-install", "node.add": "operation-node-add", "node.remove": "operation-node-remove", "node.removal_begin": "operation-node-removal-begin", "node.removal_restore": "operation-node-removal-restore", "node.network_projection": "operation-node-network-projection", "node.bootstrap_host": "operation-node-bootstrap-host", "node.bootstrap_verify": "operation-node-bootstrap-verify", "node.macos_inspect": "operation-node-macos-inspect", "node.enrollment_begin": "operation-node-enrollment-begin", "node.enrollment_activate": "operation-node-enrollment-activate", "node.enrollment_commit": "operation-node-enrollment-commit", "node.enrollment_restore": "operation-node-enrollment-restore", "node.enrollment_settings": "operation-node-enrollment-settings", "node.role_add": "operation-node-role-add", "node.role_converge": "operation-node-role-converge", "node.role_remove": "operation-node-role-remove", "node.role_relocate": "operation-node-role-relocate", "node.role_relocate_source": "operation-node-role-relocate-source", "node.role_relocate_target": "operation-node-role-relocate-target", "node.network_converge": "operation-node-network-converge", "node.network_rollback": "operation-node-network-rollback", "node.wireguard_hub_converge": "operation-node-wireguard-hub-converge"}[self.kind] }}'
+          behaviorName: '${{ "operation-node-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: "${{ self.kind }}"
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: "${{ self.work.kind }}"
+            worker: '${{ self.work.worker }}'

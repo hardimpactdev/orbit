@@ -1,10 +1,10 @@
 id: 92c89a8c-6487-42f5-a70e-d67be3921b28
 name: operation-dependency-merge
-description: Execute a disabled-by-default app dependency squash admission through the Gateway.
+description: Claim a bounded batch of this family on its placed workers.
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "2,12,22,32,42,52 * * * * *"
+  schedule: "2 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -21,15 +21,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-dependency-merge'
-          behaviorName: operation-dependency-merge
+          behaviorName: '${{ "operation-dependency-merge-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.kind }}'
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: '${{ self.work.kind }}'
+            worker: '${{ self.work.worker }}'

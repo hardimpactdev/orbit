@@ -1,11 +1,11 @@
 id: 8e7a8caf-625c-422e-8b08-3ff8d2de4e3b
 name: operation-integrations
-description: Claim and execute an integration Operation on one placed worker.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "7,17,27,37,47,57 * * * * *"
+  schedule: "7 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-integrations'
-          behaviorName: operation-integrations
+          behaviorName: '${{ "operation-integrations-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.kind }}'
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: '${{ self.work.kind }}'
+            worker: '${{ self.work.worker }}'

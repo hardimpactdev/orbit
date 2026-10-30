@@ -1,11 +1,11 @@
 id: 774d24db-4bb9-4a5c-811d-ef19d16a3888
 name: operation-tools
-description: Claim and execute a Tool kind within one placed worker invocation.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "2,12,22,32,42,52 * * * * *"
+  schedule: "2,32 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-tools"
-          behaviorName: '${{ "operation-tools-" + {"tool.install":"install", "tool.update":"update", "tool.remove":"remove", "tool.adopt":"adopt", "tool.manager_converge":"manager-converge"}[self.kind] }}'
+          behaviorName: '${{ "operation-tools-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: "${{ self.kind }}"
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: "${{ self.work.kind }}"
+            worker: '${{ self.work.worker }}'

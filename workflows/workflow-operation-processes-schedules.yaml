@@ -1,11 +1,11 @@
 id: 957148f7-6f7a-4f69-923c-636e1289b34d
 name: operation-processes-schedules
-description: Claim and execute Process and Schedule runtime work on its placed worker.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "9,19,29,39,49,59 * * * * *"
+  schedule: "9,39 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-processes-schedules"
-          behaviorName: '${{ "operation-processes-schedules-" + {"process.create":"process-create","process.destroy":"process-destroy","process.update":"process-update","process.start":"process-start","process.stop":"process-stop","process.restart":"process-restart","schedule.create":"schedule-create","schedule.destroy":"schedule-destroy","schedule.enable":"schedule-enable","schedule.run":"schedule-run","process.install_instance_definitions":"process-install-defs","schedule.install_instance_definitions":"schedule-install-defs","process.restart_instance":"process-restart-instance"}[self.kind] }}'
+          behaviorName: '${{ "operation-processes-schedules-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: "${{ self.kind }}"
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: "${{ self.work.kind }}"
+            worker: '${{ self.work.worker }}'

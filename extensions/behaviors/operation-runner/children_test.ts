@@ -154,7 +154,8 @@ Deno.test("waiting parent is dispatched again only when read-only discovery repo
     }, ctx)).work,
     [{
       kind: "test.parent",
-      worker: "tick-b:test.parent",
+      slot: 0,
+      worker: "tick-b:test.parent:0",
     }],
   );
   assertEquals(Operation.parse(operation(1)).node_id, null);

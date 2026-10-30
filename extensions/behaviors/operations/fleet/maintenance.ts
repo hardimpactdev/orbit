@@ -12,6 +12,7 @@ const Admission = z.object({
   body: z.record(z.string(), z.unknown()),
   id: z.number().int().positive().nullable(),
   attempt: z.number().int().nonnegative(),
+  generation: z.string().optional(),
 });
 export const MaintenanceReceipt = Admission;
 export async function maintenance(
@@ -53,6 +54,7 @@ export async function maintenance(
     path: string,
     body: Record<string, unknown>,
     retry: boolean,
+    generation?: string,
   ) => {
     const saved = await ctx.readResource(name);
     let intent = saved ? Admission.parse(saved) : null;
@@ -60,7 +62,10 @@ export async function maintenance(
       const observed = await request("GET", `/api/v1/operations/${intent.id}`);
       if (observed === null) return;
       const status = Status.parse(observed).status;
-      if (!Terminal.has(status) || (!retry && status === "succeeded")) return;
+      if (
+        !Terminal.has(status) ||
+        (!retry && status === "succeeded" && intent.generation === generation)
+      ) return;
       intent = null;
     }
     if (!intent) {
@@ -71,6 +76,7 @@ export async function maintenance(
         key: `fleet:${name}:${args.tick}:${attempt}`,
         id: null,
         attempt,
+        ...(generation === undefined ? {} : { generation }),
       };
       await ctx.writeResource("maintenance", name, intent);
     }
@@ -103,20 +109,24 @@ export async function maintenance(
     await independently(async () => {
       await request("GET", "/api/v1/gateway/desired-fleet-state");
     });
-    await independently(async () => {
-      const targets = z.array(z.number().int().positive()).parse(
-        await request("GET", "/api/v1/fleet/peer-dns/targets"),
-      );
-      for (const id of targets) {
-        await admit(
-          `dns-${id}`,
-          `/api/v1/fleet/nodes/${id}/peer-dns`,
-          {},
-          true,
-        );
-      }
-    });
   }
+  await independently(async () => {
+    const targets = z.array(z.object({
+      node_id: z.number().int().positive(),
+      configuration_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    })).parse(await request("GET", "/api/v1/fleet/peer-dns/plan"));
+    for (const target of targets) {
+      await admit(
+        `dns-${target.node_id}`,
+        `/api/v1/fleet/nodes/${target.node_id}/peer-dns`,
+        {},
+        false,
+        `${target.configuration_digest}:${
+          Math.floor(at.getTime() / 3_600_000)
+        }`,
+      );
+    }
+  });
   await independently(async () => {
     const prPlan = z.object({
       status: z.string(),

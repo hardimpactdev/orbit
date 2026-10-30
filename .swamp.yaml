@@ -7,9 +7,10 @@ defaultVault: default
 gitignoreManaged: true
 telemetryDisabled: true
 
-# Use the receipt-aware compactor; native global GC cannot follow our receipts.
+# Native metadata retention; omit data to preserve exact receipt versions.
 garbageCollection:
-  automatic: false
+  automatic: true
   workflowRuns: 7d
-  evaluatedSnapshots: 7d
-  outputs: 7d
+  evaluatedSnapshots: 1d
+  outputs: 1d
+  bookkeeping: 1h

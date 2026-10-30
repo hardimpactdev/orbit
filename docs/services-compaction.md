@@ -101,11 +101,7 @@ Keep room for a fresh backup as well. The current maintenance helper requires fr
 
 Do not make compaction a new unattended schedule. Repeat it through an approved maintenance window based on free space and current growth. Keep `UPSTREAM-RETENTION.md` as a local draft; do not file it. Retiring the inactive online planner and its checkpoint is a separate later cleanup PR.
 
-The repository declares seven-day workflow/output retention. Native automatic global GC remains disabled: it does not know which finished child runs our
-live receipts reference. Do not substitute a broad `data gc`, `run gc`,
-`data prune`, `behavior delete` or a recursive directory deletion. None can
-express this receipt-protection rule. `swamp datastore compact` only vacuums
-its SQLite catalog; it does not reclaim these version/history files.
+Native automatic metadata GC is enabled: workflow runs keep seven days, finished evaluated snapshots and method outputs keep one day. Native collectors retain unfinished runs and their snapshots. Ended native bookkeeping uses a one-hour grace; live work and referenced tokens remain protected by the native collector. The `data` retention key stays absent, so this policy never collects the exact data versions that receipts reference. Keep the receipt-aware offline compactor for data version cleanup. Do not substitute `data gc`, `data prune`, `behavior delete` or a recursive directory deletion for protected data compaction. Native `run gc` handles only run metadata, snapshots and outputs; see [serve liveness](serve-liveness.md) for its backup-first emergency procedure. `swamp datastore compact` only vacuums its SQLite catalog; it does not reclaim version/history files.
 
 ## Saturation correction (2026-10-28)
 
@@ -126,7 +122,7 @@ A budget yield publishes `partial: true` and succeeds with its actual removal co
 
 Deletion uses native version APIs, catalog batches of at most 100 candidates, an 80-second work budget and a 5,000-path pass cap. Finished, unreferenced history older than seven days is pruned with its owned logs and evaluated snapshots; deferred cleanup records survive a restart. The `progress` resource reports phase, work units and actual removed versions/paths. Keep the checkpoint index across budget yields. Removing it merely restarts planning; it never authorizes deletion.
 
-Upstream guidance: [Swamp repository retention](https://github.com/swamp-club/swamp/blob/main/design/surfaces/repo.md#retention) uses bounded batches and resumes at batch boundaries. [swamp-club#3178](https://github.com/swamp-club/swamp/pull/3178) fixes native cleanup cost and bounds automatic passes; it is already in the installed runtime. The newest checked release, `963e0d28`, changes remote datastore recovery and does not fix this extension's full-history YAML planner. Native `automatic: true` remains unsuitable here: it cannot follow Orbit's durable receipt references to finished runs and exact versions. No runtime upgrade or broader retention policy is needed for this correction.
+Upstream guidance: [Swamp repository retention](https://github.com/swamp-club/swamp/blob/main/design/surfaces/repo.md#retention) uses bounded batches and resumes at batch boundaries. [swamp-club#3178](https://github.com/swamp-club/swamp/pull/3178) fixes native cleanup cost and bounds automatic passes; it is already in the installed runtime. The newest checked release, `963e0d28`, changes remote datastore recovery and does not fix this extension's full-history YAML planner. Native automatic **data** retention remains unsuitable: it cannot follow Orbit's exact version references. Automatic metadata retention is enabled with no `data` key. No runtime upgrade or broader retention policy is needed for this correction.
 
 ### Indexed version-reference lookups
 

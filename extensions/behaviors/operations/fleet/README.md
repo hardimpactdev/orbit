@@ -31,21 +31,33 @@ keeps that Operation and never claims a different one.
   the shared `/wait` primitive. The Gateway reads proven child results for Caddy
   skips.
 
-Both Fleet workflows run on the `migration` worker pool, with a 300-second queue
-timeout. Maintenance uses the Gateway endpoints available to configured executor
-peers; it does not call the Services-only claimable discovery endpoint. The
-shared operation runner keeps that discovery on Services. Native recovery tests
+Both Fleet workflows run on the `migration` worker pool on Node 209. The family
+executor has a 60-second queue timeout and claims a bounded batch each 30-second
+tick; maintenance retains its 300-second queue timeout. Each family reads its
+own claimable summary on the configured orchestrator Node. Native recovery tests
 use local copies with placement removed; deployed workflows keep their worker
 labels.
 
-The maintenance workflow runs each minute. It refreshes desired state and peer
-DNS every five minutes, opens daily PRs after 03:00 Amsterdam, and admits
-ordered recipe and rollout visits. Catch-up visits wait five minutes.
-App-dev-only Nodes may start anytime; shared and production Nodes start from
-03:00 inclusive to 06:00 exclusive Europe/Amsterdam. An effect already running
-may finish later. The Gateway checks current roles and its own clock before
-every later run. Restricted re-entry with steps and no saved completion fails
-with `fleet.visit_interrupted`, except for a durable Gateway-proven wait on the
+The maintenance workflow runs each minute. It refreshes desired fleet state
+every five minutes and reads `/api/v1/fleet/peer-dns/plan` each minute. The
+Gateway returns Node ids and SHA-256 digests of the effective DNS server, peer
+public key and sorted routing domains, without contacting peers or admitting
+Operations. Peer DNS is admitted when this digest changes, plus once per UTC
+hour for host drift. Active work is awaited; failed work retries; a lost
+admission reply reuses its saved key even across a policy or hour change. With
+unchanged policy and successful work, admission falls from 288 to 24 Operations
+per Node per day. The nine managed live targets therefore fall from 2,592 to 216
+Operations/day (91.7% fewer), plus changed-policy admissions and retries. This
+is a steady-state projection; outages and queueing reduced the observed prior 24
+hours to 1,132.
+
+Maintenance opens daily PRs after 03:00 Amsterdam and admits ordered recipe and
+rollout visits. Catch-up visits wait five minutes. App-dev-only Nodes may start
+anytime; shared and production Nodes start from 03:00 inclusive to 06:00
+exclusive Europe/Amsterdam. An effect already running may finish later. The
+Gateway checks current roles and its own clock before every later run.
+Restricted re-entry with steps and no saved completion fails with
+`fleet.visit_interrupted`, except for a durable Gateway-proven wait on the
 parent’s own footprint child. The Gateway records an inherited `fleet.window`
 constraint for automatic recipe and rollout children. Its check uses current
 target roles before hydration and dispatch. After that child settles, the
@@ -91,3 +103,7 @@ pinned Swamp parent and family workflows, then resume in another process after a
 lost effect or completion reply. Live proof follows deployment on the
 orchestrator's designated dev Node; record its Operation id, steps, results and
 deployed SHAs.
+
+Roll out the paired Gateway peer-DNS plan endpoint before this maintenance
+behavior. Existing target-list reads remain a projection of the same plan. No
+new authority, standing credential or Node access is added.

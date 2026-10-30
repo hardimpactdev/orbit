@@ -1,11 +1,11 @@
 id: 7dfea1f8-75c3-48b1-8987-271d3f590d27
 name: operation-instance-deploy
-description: Claim and execute Instance deployment and Project step-list work on one placed Node.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "5,15,25,35,45,55 * * * * *"
+  schedule: "5,35 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-instance-deploy'
-          behaviorName: '${{ "operation-instance-deploy-" + {"instance.deploy":"deploy","instance.rollback":"rollback","instance.sync_environment":"sync-environment","instance.run_steps":"run-steps","instance.prepare_vp_environment":"prepare-vp-environment","instance.prepare_php_runtime":"prepare-php-runtime","instance.repair_projection":"repair-projection","instance.prepare_served_web_roots":"prepare-served-web-roots","instance.synchronize_environment":"synchronize-environment"}[self.kind] }}'
+          behaviorName: '${{ "operation-instance-deploy-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.kind }}'
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: '${{ self.work.kind }}'
+            worker: '${{ self.work.worker }}'

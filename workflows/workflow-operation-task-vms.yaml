@@ -1,11 +1,11 @@
 id: db23a0cf-d815-42eb-b769-4323db8133fe
 name: operation-task-vms
-description: Claim and execute one task VM Operation on its placed worker.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "1,11,21,31,41,51 * * * * *"
+  schedule: "1,31 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-task-vms'
-          behaviorName: operation-task-vms
+          behaviorName: '${{ "operation-task-vms-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.kind }}'
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: '${{ self.work.kind }}'
+            worker: '${{ self.work.worker }}'

@@ -1,11 +1,11 @@
 id: f494f606-0050-446e-a025-25b6c160578c
 name: operation-fleet
-description: Claim and execute one Fleet kind in the same worker invocation.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "4,14,24,34,44,54 * * * * *"
+  schedule: "4,34 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-fleet"
-          behaviorName: '${{ "operation-fleet-" + {"fleet.peer_dns":"peer-dns", "fleet.recipe":"recipe", "fleet.rollout":"rollout", "fleet.recipe_pr":"recipe-pr", "fleet.cli_converge":"cli-converge"}[self.kind] }}'
+          behaviorName: '${{ "operation-fleet-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: "${{ self.kind }}"
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: "${{ self.work.kind }}"
+            worker: '${{ self.work.worker }}'

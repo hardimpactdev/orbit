@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Swamp independently every minute
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=orbit-swamp-liveness.service
+
+[Install]
+WantedBy=timers.target

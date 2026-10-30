@@ -16,7 +16,6 @@ SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
 
 
 class OperationSchedulesTest(unittest.TestCase):
-
     def test_every_resolved_behavior_name_fits_swamp_limit(self):
         # Swamp rejects definition names over 64 characters at run time, not at load.
         import re
@@ -26,6 +25,62 @@ class OperationSchedulesTest(unittest.TestCase):
                 for suffix in re.findall(r':"([^"]+)"', mapping):
                     with self.subTest(workflow=path.name, name=prefix + suffix):
                         self.assertLessEqual(len(prefix + suffix), 64)
+
+    def test_every_batch_slot_name_fits_the_native_definition_limit(self):
+        import re
+        for path in ROOT.glob('workflows/workflow-operation-*.yaml'):
+            workflow = yaml.safe_load(path.read_text())
+            name = workflow['jobs'][1]['steps'][0]['task']['behaviorName']
+            prefix = re.fullmatch(r'\$\{\{ "([^"]+)" \+ string\(self.work.slot\) \}\}', name)
+            self.assertIsNotNone(prefix, name)
+            for slot in range(8):
+                with self.subTest(family=workflow['name'], slot=slot):
+                    self.assertLessEqual(len(prefix[1] + str(slot)), 64)
+
+    def test_retention_bounds_metadata_without_collecting_receipt_data(self):
+        policy = yaml.safe_load((ROOT / '.swamp.yaml').read_text())['garbageCollection']
+        self.assertEqual(policy, {'automatic': True, 'workflowRuns': '7d', 'evaluatedSnapshots': '1d', 'outputs': '1d', 'bookkeeping': '1h'})
+        self.assertNotIn('data', policy)
+
+    def test_native_four_same_kind_claims_enter_before_any_finishes(self):
+        with tempfile.TemporaryDirectory(prefix='operation-batch-native-') as temp:
+            repo = Path(temp)
+            shutil.copy(ROOT / '.swamp.yaml', repo)
+            extensions = repo / 'extensions/behaviors'
+            for folder in ('automatic-deploy', 'operation-runner'):
+                shutil.copytree(ROOT / 'extensions/behaviors' / folder, extensions / folder)
+            discovery = extensions / 'operation-runner/mod.ts'
+            discovery.write_text(discovery.read_text().replace('...operationDiscovery()', '''...operationDiscovery(() => async () => ({status:200,body:{data:{kinds:[
+{kind:"fleet.peer_dns",claimable:4,oldest_at:null}]}}}))'''))
+            folder = extensions / 'operations/fleet'
+            folder.mkdir(parents=True)
+            (folder / 'mod.ts').write_text('''import {z} from "npm:zod@4.4.3";
+export const behavior={type:"@nckrtl/operation-fleet",version:"2026.10.30.1",
+resources:{receipt:{description:"Parallel claim proof",schema:z.object({worker:z.string()}),lifetime:"1d",garbageCollection:1}},
+methods:{execute:{description:"Require four concurrent invocations",arguments:z.object({kind:z.string(),worker:z.string()}),execute:async(args,ctx)=>{
+await Deno.mkdir("entered",{recursive:true});
+await Deno.writeTextFile("entered/"+args.worker.split(":").at(-1),args.worker);
+for(let i=0;;i++){
+let count=0;for await(const _ of Deno.readDir("entered"))count++;
+if(count===4)break;
+if(i===200)throw new Error("batch_serialized_by_model_lock");
+await new Promise(r=>setTimeout(r,20));
+}
+return {dataHandles:[await ctx.writeResource("receipt","proof",{worker:args.worker})]};}}}};
+''')
+            (repo / 'workflows').mkdir()
+            source = (ROOT / 'workflows/workflow-operation-fleet.yaml').read_text()
+            source = '\n'.join(line for line in source.splitlines() if not line.startswith('labels:')) + '\n'
+            (repo / 'workflows/workflow-operation-fleet.yaml').write_text(source)
+            env = {k: v for k, v in os.environ.items() if not k.startswith('SWAMP_SERVER_') and k not in ('SWAMP_SERVE_URL', 'SWAMP_REPO_DIR')}
+            env.update(SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
+            result = subprocess.run([SWAMP, 'workflow', 'run', 'operation-fleet', '--json'], cwd=repo, env=env,
+                                    capture_output=True, text=True, timeout=40)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            workers = [p.read_text() for p in (repo / 'entered').iterdir()]
+            self.assertEqual(len(set(workers)), 4)
+            self.assertEqual({w.rsplit(':', 1)[1] for w in workers}, {'0', '1', '2', '3'})
+
     def test_every_registered_family_has_an_independent_placed_schedule(self):
         self.assertFalse((ROOT / 'workflows/workflow-operation-runner.yaml').exists())
         self.assertFalse((ROOT / 'workflows/workflow-operation-dispatch.yaml').exists())
@@ -39,8 +94,8 @@ class OperationSchedulesTest(unittest.TestCase):
                 self.assertTrue(workflow['autoResume'])
                 self.assertEqual(workflow['queueTimeout'], 60)
                 seconds = list(map(int, workflow['trigger']['schedule'].split()[0].split(',')))
-                self.assertEqual(len(seconds), 6)
-                self.assertEqual([b - a for a, b in zip(seconds, seconds[1:])], [10] * 5)
+                self.assertIn(len(seconds), (1, 2))
+                self.assertEqual([b - a for a, b in zip(seconds, seconds[1:])], [30] * (len(seconds) - 1))
                 if workflow['name'] != 'operation-dependency-merge':
                     self.assertEqual(workflow['labels'], {'pool': 'migration'})
                 discover, execute = workflow['jobs']
@@ -50,7 +105,7 @@ class OperationSchedulesTest(unittest.TestCase):
                 self.assertEqual(task['inputs']['family'], workflow['name'])
                 self.assertEqual(task['behaviorName'], workflow['name'] + '-discovery')
                 self.assertEqual(execute['dependsOn'], [{'job': 'discover', 'condition': {'type': 'succeeded'}}])
-                self.assertEqual(execute['steps'][0]['task']['inputs']['kind'], '${{ self.kind }}')
+                self.assertEqual(execute['steps'][0]['task']['inputs']['kind'], '${{ self.work.kind }}')
                 self.assertNotIn('type: workflow', yaml.safe_dump(workflow))
 
     def test_pinned_native_loader_validates_all_family_workflows(self):

@@ -1,11 +1,11 @@
 id: 11b7c12d-2dfb-4516-a025-31cd8f1b0010
 name: operation-database
-description: Claim and execute one database kind within one placed worker invocation.
+description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "1,11,21,31,41,51 * * * * *"
+  schedule: "1 * * * * *"
 jobs:
   - name: discover
     steps:
@@ -22,15 +22,15 @@ jobs:
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
     steps:
-      - name: execute-${{ self.kind }}
+      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
-          item: kind
-          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
+          item: work
+          in: "${{ steps.discover.outputs.work }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-database'
-          behaviorName: '${{ "operation-database-" + {"database_server.create":"server-create", "database_server.destroy":"server-destroy", "database_server.close":"server-close", "database.create":"create", "database.destroy":"destroy", "database_user.create":"user-create", "database.clone":"clone", "database.destroy_owned":"destroy-owned", "database.sqlite_export":"sqlite-export", "database.sqlite_cleanup":"sqlite-cleanup", "database.sqlite_seed":"sqlite-seed", "database.sqlite_seed_abandon":"sqlite-seed-abandon", "database.write":"write"}[self.kind] }}'
+          behaviorName: '${{ "operation-database-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.kind }}'
-            worker: '${{ run.id + ":" + self.kind }}'
+            kind: '${{ self.work.kind }}'
+            worker: '${{ self.work.worker }}'

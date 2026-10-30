@@ -183,10 +183,11 @@ Deno.test("Family discovery is read-only and selects only its own kinds without 
     f.context(),
   );
   assertEquals(result.work.length, 1);
-  assertEquals(result.work[0].worker, "workflow-7:firewall.allow");
+  assertEquals(result.work[0].worker, "workflow-7:firewall.allow:0");
   assertEquals(result.work[0], {
     kind: "firewall.allow",
-    worker: "workflow-7:firewall.allow",
+    slot: 0,
+    worker: "workflow-7:firewall.allow:0",
   });
   assertEquals(f.calls.map((c) => [c.method, c.path]), [[
     "GET",
