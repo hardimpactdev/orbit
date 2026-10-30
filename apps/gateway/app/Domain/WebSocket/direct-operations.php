@@ -11,4 +11,4 @@ $registry = [
     'projection' => DirectWebSocketProjection::class,
 ];
 
-return ['websocket.sync' => $registry, 'websocket.app_create' => $registry];
+return ['websocket.sync' => $registry, 'websocket.app_create' => $registry, 'websocket.app_destroy' => $registry];

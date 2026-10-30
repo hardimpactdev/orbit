@@ -231,7 +231,7 @@ it('binds each registry kind to its admitted identity and rejects unlisted effec
     $operation->state = ['executor_runs' => ['probe' => ['transport' => 'remote_program', 'name' => 'websocket.registry-applied', 'result' => $result]]];
     $contract->assertStep($operation, 'reverb-registry-applied', $result);
     expect($contract->result($operation, [...$result, 'secret' => 'must-not-survive', 'stdout' => 'must-not-survive']))->toBe($result);
-})->with(['destroy', 'rotate']);
+})->with(['rotate']);
 
 it('rechecks the current boot before completing a proven registry Operation', function (): void {
     $registry = app(ChangeWebSocketRegistryAction::class)->execute('create', 'alpha', $this->gateway->id, 'boot-proof');

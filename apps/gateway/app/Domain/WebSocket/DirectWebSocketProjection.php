@@ -64,7 +64,7 @@ final readonly class DirectWebSocketProjection implements DirectOperationProject
     private function assertKind(Operation $operation): void
     {
         if (! DirectOperation::owns($operation) || $operation->node_id === null
-            || ! in_array($operation->kind, ['websocket.sync', 'websocket.app_create'], true)) {
+            || ! in_array($operation->kind, ['websocket.sync', 'websocket.app_create', 'websocket.app_destroy'], true)) {
             throw new ResourceOperationException('operation.direct_invalid', 'A Node-bound WebSocket registry Operation is required.', 422);
         }
     }
