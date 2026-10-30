@@ -77,7 +77,6 @@ export class FamilyDriver implements FamilyEffects {
     if (saved) {
       id = z.object({ id: z.number().int().positive() }).parse(saved).id;
     } else {
-      this.checkDeadline();
       const intentName = `child-intent-${this.operationId}-${key}`;
       if (!await this.ctx.readResource(intentName)) {
         await this.ctx.writeResource("childIntent", intentName, { key });
@@ -105,14 +104,9 @@ export class FamilyDriver implements FamilyEffects {
         };
       }
       if (child.status === "failed" || child.status === "cancelled") {
-        this.checkDeadline();
         throw new ChildFailed(child.error_code ?? "operation.cancelled");
       }
-      if (Date.now() / 1000 >= this.deadline) {
-        await this.request("POST", `operations/${id}/cancel`, {});
-        await this.yieldFor([key], false);
-      }
-      await this.yieldFor([key]);
+      await this.yieldFor([key], false);
     }
   }
 

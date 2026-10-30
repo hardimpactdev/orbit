@@ -142,3 +142,18 @@ proof unlocks the stored `node-removal` / `node.remove` descriptor. Final VM
 cleanup requires owning Node removal proof. The descriptor preserves the
 original Node ID after foreign keys are cleared. A VM with no recorded Node
 never queries or deletes unrelated workspace records with a null Node.
+
+## Child lifetime and observation waits
+
+A VM parent does not cancel a progressing child because the parent's observation
+budget elapsed. Child admission and waiting follow the stamped child to its
+terminal result, including Node enrollment and Process creation. Later child
+admissions remain allowed after a long Node enrollment. Explicit parent
+cancellation still settles all children before the parent completes.
+
+The family's existing `deadline_at` bounds its own provider and runtime
+observation waits. It is not an outer deadline for child composition. The family
+workflow has `queueTimeout: 60` and `autoResume: true`; a child wait yields the
+invocation and leaves the Operation durably waiting in the Gateway. Gateway
+no-progress assistance and the five-attempt cap catch stalls. There is no
+additional parent safety deadline.

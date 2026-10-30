@@ -183,30 +183,74 @@ Deno.test("parent cancellation first settles every admitted child", async () => 
     keys: ["provider-create"],
   });
 });
-Deno.test("an expired parent cancels and waits for its child before becoming terminal", async () => {
+Deno.test("a progressing child outlives the parent's observation budget without cancellation", async () => {
   const fixture = new Fixture();
-  fixture.resources.set("child-7-runtime", { id: 56 });
+  fixture.resources.set("child-7-node-enrollment", { id: 56 });
   const driver = () =>
-    new FamilyDriver(
-      7,
-      "parent-worker",
-      1,
-      fixture.context(),
-      fixture.http,
-      "task_vm.runtime_timeout",
+    new FamilyDriver(7, "parent-worker", 1, fixture.context(), fixture.http);
+  for (const status of ["queued", "running", "waiting"]) {
+    fixture.status = status;
+    await assertRejects(
+      () => driver().child("node-enrollment", "node.add", 3, {}),
+      FamilyWaiting,
     );
+  }
+  assertEquals(
+    fixture.calls.some((call) => call.path.endsWith("/cancel")),
+    false,
+  );
+  fixture.status = "succeeded";
+  assertEquals(await driver().child("node-enrollment", "node.add", 3, {}), {
+    ready: true,
+    effect_finished_at: "2026-10-28T12:00:00Z",
+  });
+});
+
+Deno.test("later child admission is allowed after the parent's observation budget elapsed", async () => {
+  const fixture = new Fixture();
+  const driver = new FamilyDriver(
+    7,
+    "parent-worker",
+    1,
+    fixture.context(),
+    fixture.http,
+  );
   await assertRejects(
-    () => driver().child("runtime", "task_vm.prepare_runtime", 3, {}),
+    () => driver.child("runtime", "task_vm.prepare_runtime", 3, {}),
     FamilyWaiting,
   );
   assertEquals(
-    fixture.calls.some((call) => call.path.endsWith("operations/56/cancel")),
-    true,
+    fixture.calls.find((call) => call.path.endsWith("/children"))?.body,
+    {
+      worker: "parent-worker",
+      key: "runtime",
+    },
   );
-  fixture.status = "cancelled";
+  assertEquals(
+    fixture.calls.some((call) => call.path.endsWith("/cancel")),
+    false,
+  );
   await assertRejects(
-    () => driver().child("runtime", "task_vm.prepare_runtime", 3, {}),
+    () => driver.wait(),
     ExecutorError,
     "task_vm.runtime_timeout",
+  );
+});
+
+Deno.test("an expired parent preserves its child's terminal failure instead of replacing it with a timeout", async () => {
+  const fixture = new Fixture();
+  fixture.resources.set("child-7-node-enrollment", { id: 56 });
+  fixture.status = "cancelled";
+  const driver = new FamilyDriver(
+    7,
+    "parent-worker",
+    1,
+    fixture.context(),
+    fixture.http,
+  );
+  await assertRejects(
+    () => driver.child("node-enrollment", "node.add", 3, {}),
+    ExecutorError,
+    "operation.cancelled",
   );
 });
