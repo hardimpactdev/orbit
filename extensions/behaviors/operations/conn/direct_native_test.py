@@ -1,28 +1,26 @@
 """Pinned native DAG regression proof. Live credential review/canaries are separate."""
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
-class DirectConnPairingNative(unittest.TestCase):
+class DirectConnPairingNative(NativeTestCase):
+    native_timeout = 50
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='conn-vault-native-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
+        super().setUp()
         self.secret = 'private-sentinel-' + uuid.uuid4().hex
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/conn']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, self.repo / 'extensions/behaviors' / family)
+        self.secrets = (self.secret,)
+        self.native_env['ORBIT_PRIVATE_TEST_SENTINEL'] = self.secret
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/conn')
         p = self.repo / 'extensions/behaviors/operations/conn/mod.ts'
         p.write_text('import { fixtureHttp, fixtureT3 } from "./direct_native_fixture.ts";\n'+p.read_text().replace('...connDirect()', '...connDirect(() => fixtureHttp, fixtureT3)'))
-        (self.repo/'workflows').mkdir()
         for family in ['conn']:
             p = ROOT/f'workflows/workflow-operation-{family}-direct.yaml'
             # Local action regressions omit placement; the separate test below exercises it unchanged.
@@ -32,16 +30,6 @@ class DirectConnPairingNative(unittest.TestCase):
         self.save()
     def save(self): (self.repo/'native-direct.json').write_text(json.dumps(self.state))
     def read(self): return json.loads((self.repo/'native-direct.json').read_text())
-    def cli(self,*args,success=True):
-        env=dict(os.environ,SWAMP_NO_UPDATE_CHECK='1',SWAMP_NO_TELEMETRY='1',ORBIT_PRIVATE_TEST_SENTINEL=self.secret)
-        for key in ['SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT']:
-            env.pop(key,None)
-        result=subprocess.run([SWAMP,*args,'--json'],cwd=self.repo,env=env,text=True,capture_output=True,timeout=50)
-        self.assertEqual(result.returncode==0,success,result.stdout+result.stderr)
-        self.assertNotIn(self.secret,result.stdout+result.stderr)
-        for path in self.repo.rglob('*'):
-            if path.is_file(): self.assertNotIn(self.secret.encode(),path.read_bytes(),str(path))
-        return result
     def run_workflow(self,kind,success=True):
         self.state['operation']['kind']=kind
         self.state['operation']['status']='queued'

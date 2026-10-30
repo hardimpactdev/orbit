@@ -1,31 +1,26 @@
 """Native direct Incus DAG/recovery fixture. Never contacts a fleet Node or sudo."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
 
-class DirectIncusNative(unittest.TestCase):
+class DirectIncusNative(NativeTestCase):
+    native_timeout = 50
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='incus-direct-native-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        for family in ['automatic-deploy', 'operation-runner', 'operations/task-vms', 'operations/_lib']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, self.repo / 'extensions/behaviors' / family)
+        super().setUp()
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/task-vms', 'operations/_lib')
         module = self.repo / 'extensions/behaviors/operations/task-vms/incus_direct.ts'
         module.write_text('import {fixtureHttp, fixtureAction} from "./incus_native_fixture.ts";\n' + module.read_text().replace('...incusDirect()', '...incusDirect(() => fixtureHttp, fixtureAction)'))
-        (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-task-vm-incus.yaml'
         self.assertIn('target: \'${{ "orbit-node-" + string(inputs.node_id) }}\'', source.read_text())
         # Disposable local DAG proof only. The live source keeps exact Node placement.
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.strip().startswith('target:')) + '\n')
+        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.strip().startswith(('target:', 'labels:'))) + '\n')
         self.state = {'operation': {'id': 7, 'node_id': 13, 'kind': 'task_vm.incus_start', 'status': 'queued', 'result': None, 'cancel_requested': False, 'input': {'agent_sha256': 'a' * 64, 'intent': {'task_vm_id': 5, 'vm': {'project': 'orbit-tasks', 'name': 'tvm-5', 'cidr': '10.251.77.0/24'}, 'operation': {'kind': 'start'}}}}, 'calls': [], 'actions': [], 'bound': True}
         self.save()
 
@@ -34,13 +29,6 @@ class DirectIncusNative(unittest.TestCase):
 
     def read(self):
         return json.loads((self.repo / 'incus-direct-fixture.json').read_text())
-
-    def cli(self, *args, success=True):
-        env = {k: v for k, v in os.environ.items() if k not in ['SWAMP_SERVE_URL', 'SWAMP_SERVER_URL', 'SWAMP_SERVER_TOKEN', 'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT']}
-        env.update(SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, env=env, capture_output=True, text=True, timeout=50)
-        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
-        return result
 
     def run_workflow(self, success=True):
         result = self.cli('workflow', 'run', 'operation-task-vm-incus', '--input', 'operation_id=7', '--input', 'node_id=13', '--input', 'kind=' + self.state['operation']['kind'], success=success)

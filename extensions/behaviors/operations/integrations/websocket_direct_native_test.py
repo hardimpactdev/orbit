@@ -1,23 +1,18 @@
 """Exercise the actual direct registry workflow with a disposable API boundary."""
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get('SWAMP_BIN', shutil.which('swamp') or 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
-class WebSocketDirectNative(unittest.TestCase):
+class WebSocketDirectNative(NativeTestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='websocket-direct-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, self.repo / 'extensions/behaviors' / family)
+        super().setUp()
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib')
         target = self.repo / 'extensions/behaviors/operations/integrations'
         target.mkdir()
         for name in ['websocket_direct.ts', 'websocket_direct_native_fixture.ts']:
@@ -29,7 +24,6 @@ class WebSocketDirectNative(unittest.TestCase):
         self.assertIn('target: swamp209-migration-a', workflow)
         self.assertIn('labels: { node: "209" }', workflow)
         self.assertNotIn('queueTimeout:', workflow)
-        (self.repo / 'workflows').mkdir()
         # Placement is removed only in this disposable fixture.
         (self.repo / 'workflows/workflow-operation-websocket-registry.yaml').write_text('\n'.join(
             line for line in workflow.splitlines() if not line.strip().startswith(('target:', 'labels:'))) + '\n')
@@ -39,13 +33,6 @@ class WebSocketDirectNative(unittest.TestCase):
         self.save()
     def save(self): (self.repo / 'native-websocket.json').write_text(json.dumps(self.state))
     def read(self): return json.loads((self.repo / 'native-websocket.json').read_text())
-    def cli(self, *args, success=True):
-        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        for key in ['SWAMP_SERVER_URL', 'SWAMP_SERVE_URL', 'SWAMP_SERVER_TOKEN', 'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT']:
-            env.pop(key, None)
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, env=env, capture_output=True, text=True, timeout=60)
-        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
-        return result
     def run_workflow(self, success=True):
         result = self.cli('workflow', 'run', 'operation-websocket-registry', '--input', 'operation_id=71', '--input', 'node_id=14', '--input', 'kind=' + self.state['operation']['kind'], success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']

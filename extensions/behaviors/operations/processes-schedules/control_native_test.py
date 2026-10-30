@@ -1,28 +1,21 @@
 """Native Swamp direct-boundary recovery tests. Placement is removed only for the local fixture."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ['SWAMP_BIN']
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
-class ScheduleNative(unittest.TestCase):
+class ScheduleNative(NativeTestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='schedule-native-', dir=os.environ.get('TMPDIR'))
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
+        super().setUp()
         for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules']:
             shutil.copytree(ROOT/'extensions/behaviors'/family, self.repo/'extensions/behaviors'/family)
         module = self.repo/'extensions/behaviors/operations/processes-schedules/control.ts'
         module.write_text('import {http, action} from "./control_native_fixture.ts";\n'+module.read_text().replace('export const behavior = scheduleControl();', 'export const behavior = scheduleControl(() => http, action);'))
         source = ROOT/'workflows/workflow-operation-schedule-control.yaml'
         text = '\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('labels:', 'target:')))+'\n'
-        (self.repo/'workflows').mkdir()
         (self.repo/'workflows'/source.name).write_text(text)
         self.state = {'operation': {'id': 17, 'node_id': 9, 'kind': 'schedule.run', 'status': 'queued', 'cancel_requested': False, 'result': None,
             'input': {'agent_sha256': 'a'*64, 'id': '9a067a27-c2ce-45c5-83f5-735e03dc5b2f', 'user': 'orbit', 'working_directory': '/home/orbit'}}, 'actions': 0, 'calls': []}
@@ -33,14 +26,6 @@ class ScheduleNative(unittest.TestCase):
 
     def read(self):
         return json.loads((self.repo/'schedule-native.json').read_text())
-
-    def cli(self, *args, success=True):
-        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        for key in ['SWAMP_SERVER_URL', 'SWAMP_SERVE_URL', 'SWAMP_SERVER_TOKEN', 'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT']:
-            env.pop(key, None)
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, env=env, text=True, capture_output=True, timeout=60)
-        self.assertEqual(result.returncode == 0, success, result.stdout+result.stderr)
-        return result
 
     def run_workflow(self, success=True):
         result = self.cli('workflow', 'run', 'operation-schedule-control', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=schedule.run', success=success)

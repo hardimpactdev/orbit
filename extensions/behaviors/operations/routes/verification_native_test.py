@@ -1,28 +1,21 @@
 """Pinned native Route verification workflow; Gateway and local probe are disposable fakes."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get('SWAMP_BIN', shutil.which('swamp') or 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
 
-class VerificationNative(unittest.TestCase):
+class VerificationNative(NativeTestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='orbit-route-verification-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
+        super().setUp()
         behavior = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/routes']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/routes')
         module = behavior / 'operations/routes/verification.ts'
         module.write_text('import {fixtureHttp,fixtureVerify} from "./verification_native_fixture.ts";\n' + module.read_text().replace('export const behavior = verification();', 'export const behavior = verification(() => fixtureHttp, fixtureVerify);'))
-        (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-route-verification.yaml'
         self.assertIn('labels: { pool: migration }', source.read_text())
         self.assertNotIn('target:', source.read_text())
@@ -37,17 +30,6 @@ class VerificationNative(unittest.TestCase):
 
     def read(self):
         return json.loads((self.repo / 'native-verification.json').read_text())
-
-    def cli(self, *args, success=True):
-        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        for key in ('SWAMP_SERVER_URL', 'SWAMP_SERVE_URL', 'SWAMP_SERVER_TOKEN', 'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT'):
-            env.pop(key, None)
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, env=env, capture_output=True, text=True, timeout=60)
-        if success:
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        else:
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        return result
 
     def run_workflow(self, success=True):
         result = self.cli('workflow', 'run', 'operation-route-verification', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=route.workload_verify', success=success)

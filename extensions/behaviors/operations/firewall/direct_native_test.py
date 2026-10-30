@@ -1,27 +1,22 @@
 """Pinned native direct Firewall DAG and checkpoint recovery; no fleet changes."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
-class DirectFirewallNative(unittest.TestCase):
+class DirectFirewallNative(NativeTestCase):
+    native_timeout = 50
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='firewall-direct-native-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
+        super().setUp()
         behavior = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/firewall']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/firewall')
         direct = behavior / 'operations/firewall/direct.ts'
         direct.write_text('import {fixtureHttp, fixtureRule} from "./direct_native_fixture.ts";\n' + direct.read_text().replace('...directFirewall()', '...directFirewall(() => fixtureHttp, fixtureRule)'))
-        (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-firewall-direct.yaml'
         # Unit DAG proof only: live worker placement is a separate canary gate.
         text = '\n'.join(line for line in source.read_text().splitlines() if 'labels:' not in line and not line.strip().startswith('target:')) + '\n'
@@ -34,14 +29,6 @@ class DirectFirewallNative(unittest.TestCase):
 
     def read(self):
         return json.loads((self.repo/'native-firewall.json').read_text())
-
-    def cli(self, *args, success=True):
-        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        for key in ('SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT'):
-            env.pop(key,None)
-        result = subprocess.run([SWAMP,*args,'--json'],cwd=self.repo,env=env,text=True,capture_output=True,timeout=50)
-        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
-        return result
 
     def run_workflow(self, success=True):
         result = self.cli('workflow','run','operation-firewall-direct','--input','operation_id=17','--input','node_id=209','--input','kind='+self.state['operation']['kind'],success=success)
