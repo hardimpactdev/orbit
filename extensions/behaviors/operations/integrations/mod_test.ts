@@ -308,7 +308,7 @@ Deno.test("Vault refuses wrong backend and retains machine-readable failure", as
 });
 Deno.test("Reverb waits for fresh process reports and resumes a completed pending probe with a new read key", async () => {
   const f = new Fixture();
-  f.operation.kind = "websocket.app_create";
+  f.operation.kind = "websocket.app_rotate";
   f.operation.input = {
     registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
   };
@@ -662,7 +662,7 @@ Deno.test("Vault failed collection deletion or write cannot complete as a succes
 });
 
 Deno.test("all registry mutations use only the admitted read probe and preserve it after a lost reply", async () => {
-  for (const verb of ["app_create", "app_destroy", "app_rotate"]) {
+  for (const verb of ["app_destroy", "app_rotate"]) {
     const f = new Fixture();
     f.operation.kind = `websocket.${verb}`;
     f.operation.input = {
@@ -732,7 +732,7 @@ Deno.test("cancellation before a registry probe stops observation and preserves 
 Deno.test("a superseded result between probe and completion ends failed across saved-intent re-entry", async () => {
   for (const reentry of [false, true]) {
     const f = new Fixture();
-    f.operation.kind = "websocket.app_create";
+    f.operation.kind = "websocket.app_rotate";
     f.operation.input = {
       registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
     };

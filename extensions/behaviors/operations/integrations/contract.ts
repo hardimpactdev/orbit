@@ -102,7 +102,6 @@ export function invocation(
   }
   if (
     [
-      "websocket.app_create",
       "websocket.app_destroy",
       "websocket.app_rotate",
     ].includes(kind)

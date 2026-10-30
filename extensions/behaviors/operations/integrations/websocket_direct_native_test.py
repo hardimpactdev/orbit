@@ -47,7 +47,7 @@ class WebSocketDirectNative(unittest.TestCase):
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
     def run_workflow(self, success=True):
-        result = self.cli('workflow', 'run', 'operation-websocket-registry', '--input', 'operation_id=71', '--input', 'node_id=14', '--input', 'kind=websocket.sync', success=success)
+        result = self.cli('workflow', 'run', 'operation-websocket-registry', '--input', 'operation_id=71', '--input', 'node_id=14', '--input', 'kind=' + self.state['operation']['kind'], success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
     def test_actual_workflow_confirms_without_any_gateway_execution(self):
         self.run_workflow()
@@ -56,6 +56,12 @@ class WebSocketDirectNative(unittest.TestCase):
         self.assertEqual(state['operation']['result'], {'outcome': 'succeeded', 'data': {'backend': 'applied'}})
         self.assertEqual(state['registryReads'], 1)
         self.assertFalse(any('/primitive' in path or 'claim' in path or 'receipt' in path for path in state['calls']))
+    def test_actual_workflow_confirms_app_create_without_replaying_registry_mutation(self):
+        self.state['operation']['kind'] = 'websocket.app_create'; self.save()
+        self.run_workflow()
+        self.assertEqual(self.read()['operation']['status'], 'succeeded')
+        self.assertEqual(self.read()['registryReads'], 1)
+        self.assertFalse(any('/websocket-apps' in path for path in self.read()['calls']))
     def test_unbound_or_foreign_run_reads_no_registry_and_can_resume_after_binding(self):
         self.state['bound'] = False; self.save()
         self.run_workflow(success=False)

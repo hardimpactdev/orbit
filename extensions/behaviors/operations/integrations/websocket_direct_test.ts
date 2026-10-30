@@ -24,6 +24,7 @@ class Fixture {
   calls: { method: string; path: string; body?: unknown }[] = [];
   operation = {
     ...args,
+    kind: args.kind as string,
     id: 71,
     status: "queued",
     input: { registry_operation_id: id, epoch: "epoch-1", revision: 7 },
@@ -66,13 +67,14 @@ class Fixture {
       Object.assign(this.operation, body);
       return { status: 200, body: { data: this.operation } };
     });
-  run() {
+  run(kind: "websocket.sync" | "websocket.app_create" = "websocket.sync") {
+    this.operation.kind = kind;
     return websocketRegistry(() => this.http, () => this.clock, () => {
       this.clock += this.increment;
       this.onWait?.();
       return Promise.resolve();
     })
-      .methods.confirm.execute(args, ctx);
+      .methods.confirm.execute({ ...args, kind }, ctx);
   }
 }
 
@@ -157,4 +159,22 @@ Deno.test("WebSocket cancellation in the final bounded delay wins over timeout",
   };
   assertEquals(await f.run(), { status: "cancelled" });
   assertEquals(f.operation.status, "cancelled");
+});
+
+Deno.test("WebSocket app creation confirms its existing revision without transferring credentials or replaying a mutation", async () => {
+  const f = new Fixture();
+  assertEquals(await f.run("websocket.app_create"), { status: "succeeded" });
+  assertEquals(f.operation.result, {
+    outcome: "succeeded",
+    data: { backend: "applied" },
+  });
+  assertEquals(
+    f.calls.every((call) =>
+      call.method === "GET" || call.path.endsWith("/result")
+    ),
+    true,
+  );
+  const reads = f.reads;
+  await f.run("websocket.app_create");
+  assertEquals(f.reads, reads);
 });

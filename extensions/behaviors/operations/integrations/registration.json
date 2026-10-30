@@ -7,7 +7,6 @@
     "vault.setup",
     "vault.sync",
     "vault.teardown",
-    "websocket.app_create",
     "websocket.app_destroy",
     "websocket.app_rotate",
     "conn.pairing_create",
