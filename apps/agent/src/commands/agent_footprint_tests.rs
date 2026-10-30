@@ -80,6 +80,15 @@ fn input(secret_hash: Option<String>) -> ConfigureInput {
     }
 }
 
+#[test]
+fn worker_opt_in_uses_a_boolean_without_an_extra_node_identity() {
+    assert!(!worker_enabled("gateway_url = 'https://gateway.orbit'\n").unwrap());
+    assert!(worker_enabled("swamp_worker = true\n").unwrap());
+    for value in ["0", "-1", "'71'", "[]"] {
+        assert!(worker_enabled(&format!("swamp_worker = {value}\n")).is_err());
+    }
+}
+
 fn hash(secret: &str) -> String {
     format!("{:x}", Sha256::digest(secret.as_bytes()))
 }

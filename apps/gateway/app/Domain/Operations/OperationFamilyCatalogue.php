@@ -23,7 +23,7 @@ final readonly class OperationFamilyCatalogue
             throw new LogicException('The pinned agent contract is missing.');
         }
         $agent = new AgentContract($path);
-        $names = $agent->names();
+        $names = $agent->operationNames();
         sort($names);
         $gateway = $this->gateway->names();
         sort($gateway);

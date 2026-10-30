@@ -16,6 +16,18 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
+### Per-Node Swamp worker
+
+The operator selects Nodes through `swamp_workers.nodes`, which ships empty. Agent converge installs the pinned Swamp binary through the recipe installer and prepares the non-root `orbit-swamp-worker` account. The Gateway refuses unsupported architecture, task VM Nodes and hosts, including Nodes with `task_vms` settings. Linux is the first platform. macOS stays disabled pending its account and sandbox proof.
+
+The Gateway checks selected workers every two minutes over existing pinned SSH, without reconverging the agent. It calls `swamp.start-worker` with the Node profile. That profile shares the task worker's runtime unit and credential handling, uses native systemd start limits, and drains through SIGTERM without killing active steps. Due credentials drain before replacement; a stopped worker recovers on the next check. A reboot loses the runtime unit and credentials, then the next check reissues them. Private home and machine cache under `/var/lib/orbit-node-worker` survive. Normal agent converge removes the runtime unit when the Node leaves the rollout. Agent removal uses the same stop path.
+
+The issuer on Node 209 accepts only IDs in root-owned `/etc/orbit/swamp-issuer/nodes.json`. It uses root-only operator and Swamp-club credentials to mint native 24-hour, single-machine enrollment and worker-access tokens. Only operator issuance may read the audited `orbit-worker-enrollment` vault. Its new key reaches only serve through a service credential. `orbit-node-access` is not bootstrapped or used. Native authentication needs retained vault secrets for reconnect. Package tools must use a separate UID and cannot read serve keys, credentials or memory.
+
+Workers trust the Orbit root CA over WireGuard to `wss://swamp.orbit`. Keep serve `--dispatch-env-allow=,`. Families must select the exact admitted Node without fallback and declare only its needed vault references. No family consumer is registered here. Rotation starts after 20 hours; steps and scheduler delays can exhaust the remaining four hours and hit native expiry. The target accepts five minutes of clock skew. Tokens stay out of arguments, job payloads, Activity, Operations, receipts and diagnostics.
+
+The issuer plan is approved in principle for Sabre (Node 12), after this code merges and the Node 209 package boundary proves isolation. Exact grants and vault custody require approval before application, including encrypted recovery and denied task mint/revoke proofs. Verify Sabre has no task VM row or host settings, then report RAM/CPU/disk before Tools cutover. Production installs and grant changes need separate approval.
+
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.

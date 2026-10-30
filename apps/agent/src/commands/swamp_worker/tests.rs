@@ -1,6 +1,6 @@
 use super::super::recipe::{Failure, Output as CommandOutput};
 use super::*;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 struct Sandbox(std::path::PathBuf);
 impl Drop for Sandbox {
     fn drop(&mut self) {
@@ -10,6 +10,7 @@ impl Drop for Sandbox {
 struct Fake {
     calls: Vec<Invocation>,
     active: bool,
+    state: Option<&'static str>,
     fail_start: bool,
     fail_stop: bool,
 }
@@ -32,7 +33,11 @@ impl Host for Fake {
         }
         Ok(CommandOutput {
             code,
-            stdout: "sensitive diagnostic".into(),
+            stdout: if call.argv.get(1).is_some_and(|v| v == "show") {
+                self.state.unwrap_or("inactive").into()
+            } else {
+                "sensitive diagnostic".into()
+            },
             stderr: "sensitive diagnostic".into(),
             signal: None,
             truncated: false,
@@ -63,6 +68,8 @@ fn fixture() -> (Sandbox, Files, Account, Input, Fake) {
         home: root.join("home/orbit"),
     };
     let input = Input {
+        node: false,
+        expires_at: None,
         enrollment_id: "startup-2074".into(),
         workspace: root.join("home/orbit/work").display().to_string(),
         orchestrator_url: "wss://swamp.orbit".into(),
@@ -79,6 +86,7 @@ fn fixture() -> (Sandbox, Files, Account, Input, Fake) {
         Fake {
             calls: vec![],
             active: false,
+            state: None,
             fail_start: false,
             fail_stop: false,
         },
@@ -313,4 +321,87 @@ fn validates_the_server_credential_before_replacing_a_worker() {
     assert!(start(&files, &mut host, &account, &input).is_err());
     assert!(host.calls.is_empty());
     assert!(!files.path(SERVER_TOKEN).exists());
+}
+
+#[test]
+fn node_profile_reuses_native_start_stop_with_private_credentials_and_start_limits() {
+    let (_guard, files, mut account, mut input, mut host) = fixture();
+    account.name = super::super::node_worker::USER.into();
+    input.server_token_required = true;
+    input.server_token = Some("node-access.abcdefghijklmnop".into());
+    start(&files, &mut host, &account, &input).unwrap();
+    let text = fs::read_to_string(files.path(UNIT_PATH)).unwrap();
+    for required in [
+        "User=orbit-swamp-worker",
+        "StartLimitBurst=3",
+        "ExitType=cgroup",
+        "SendSIGKILL=no",
+        "TimeoutStopSec=infinity",
+        "StandardOutput=null",
+        "--concurrency=1",
+    ] {
+        assert!(text.contains(required));
+    }
+    assert_eq!(
+        fs::metadata(files.path(TOKEN)).unwrap().mode() & 0o777,
+        0o600
+    );
+    input.enrollment_token = None;
+    input.server_token = None;
+    start(&files, &mut host, &account, &input).unwrap();
+    assert!(files.path(TOKEN).exists());
+    stop(&files, &mut host).unwrap();
+    assert!(!files.path(TOKEN).exists());
+    assert!(!files.path(SERVER_TOKEN).exists());
+    assert!(!files.path(UNIT_PATH).exists());
+}
+
+#[test]
+fn node_lifecycle_checks_native_state_without_polling_and_refuses_stale_delivery() {
+    use super::super::node_worker::{lifecycle::converge, EXPIRY};
+    let now = time::OffsetDateTime::now_utc();
+    for (state, fresh, present, started, drained, action) in [
+        ("active", true, true, true, false, "none"),
+        ("active", false, true, false, false, "stop"),
+        ("deactivating", false, true, false, false, "none"),
+        ("inactive", true, true, true, false, "start"),
+        ("failed", true, true, false, true, "stop"),
+        ("inactive", false, false, false, true, "none"),
+    ] {
+        let (_guard, files, _, mut input, mut host) = fixture();
+        let token = input.enrollment_token.take();
+        host.state = Some(state);
+        if present {
+            files
+                .publish_root(&files.path(UNIT_PATH), b"User=orbit-swamp-worker\n")
+                .unwrap();
+        }
+        if fresh {
+            let expiry = (now + time::Duration::hours(24))
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap();
+            fs::write(files.path(EXPIRY), expiry).unwrap();
+            fs::set_permissions(files.path(EXPIRY), fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let status = converge(&files, &mut host, &input, now.unix_timestamp()).unwrap();
+        assert_eq!((status.started, status.drained), (started, Some(drained)));
+        let observed = host
+            .calls
+            .iter()
+            .find_map(|c| {
+                c.argv
+                    .get(1)
+                    .filter(|v| ["start", "stop"].contains(&v.as_str()))
+            })
+            .map(String::as_str)
+            .unwrap_or("none");
+        assert_eq!(observed, action);
+        input.enrollment_token = token;
+        input.expires_at = Some(
+            now.format(&time::format_description::well_known::Rfc3339)
+                .unwrap(),
+        );
+        host.state = Some("inactive");
+        assert!(converge(&files, &mut host, &input, now.unix_timestamp()).is_err());
+    }
 }

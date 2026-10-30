@@ -33,6 +33,23 @@ final class AgentContract
         return $this->commands()[$name] ?? throw new LogicException("The agent contract has no command [{$name}].");
     }
 
+    private const array OperatorOnly = ['swamp.issue-node-worker'];
+
+    public function operationCommand(string $name): AgentCommandSpec
+    {
+        if (in_array($name, self::OperatorOnly, true)) {
+            throw new LogicException('Operator-only command.');
+        }
+
+        return $this->command($name);
+    }
+
+    /** @return list<string> */
+    public function operationNames(): array
+    {
+        return array_values(array_diff($this->names(), self::OperatorOnly));
+    }
+
     /** @return list<string> */
     public function commonErrors(): array
     {

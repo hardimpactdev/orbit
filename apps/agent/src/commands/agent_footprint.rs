@@ -227,6 +227,7 @@ pub struct ConfigureAgent;
 
 impl Command for ConfigureAgent {
     const NAME: &'static str = "agent.configure";
+    const RESOURCES: &'static [&'static str] = &["swamp-worker"];
     const SUMMARY: &'static str =
         "Write the agent's secret, configuration, CA, and unit, and restart it when they change.";
     const MUTATES: bool = true;
@@ -241,19 +242,30 @@ impl Command for ConfigureAgent {
     }
 
     fn run(input: ConfigureInput, context: &Context) -> Result<Configured, FootprintError> {
-        configure(
+        let worker = worker_enabled(&input.configuration)?;
+        let configured = configure(
             &Files::system(),
             &mut Native,
             &input,
             lock::answer_by(context.deadline()).min(Instant::now() + UPDATE_WAIT),
-        )
+        )?;
+        super::node_worker::configure_native(context, worker).map_err(|_| failed("node-worker"))?;
+        Ok(configured)
     }
+}
+
+fn worker_enabled(configuration: &str) -> Result<bool, FootprintError> {
+    let value: toml::Value = toml::from_str(configuration).map_err(|_| failed("node-worker"))?;
+    value.get("swamp_worker").map_or(Ok(false), |v| {
+        v.as_bool().ok_or_else(|| failed("node-worker"))
+    })
 }
 
 pub struct RemoveAgent;
 
 impl Command for RemoveAgent {
     const NAME: &'static str = "agent.remove";
+    const RESOURCES: &'static [&'static str] = &["swamp-worker"];
     const SUMMARY: &'static str =
         "Stop the observer and remove the agent's binary, unit, and files.";
     const MUTATES: bool = true;
@@ -268,6 +280,8 @@ impl Command for RemoveAgent {
     }
 
     fn run(_: RemoveInput, context: &Context) -> Result<Removed, FootprintError> {
+        super::node_worker::configure_native(context, false)
+            .map_err(|_| failed("node-worker-stop"))?;
         remove(
             &Files::system(),
             &mut Native,

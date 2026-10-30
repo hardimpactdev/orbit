@@ -17,6 +17,8 @@ final readonly class OperationAgentTransport implements OperationEffectTransport
 
     public function schema(Operation $operation, array $run): array|bool
     {
+        $this->contract->operationCommand($run['name']);
+
         return AgentSchemas::inputSchema($run['name']);
     }
 
@@ -32,7 +34,7 @@ final readonly class OperationAgentTransport implements OperationEffectTransport
 
     public function effectful(Operation $operation, array $run): bool
     {
-        $command = $this->contract->command($run['name']);
+        $command = $this->contract->operationCommand($run['name']);
 
         return $command->mutates;
     }
@@ -40,7 +42,7 @@ final readonly class OperationAgentTransport implements OperationEffectTransport
     public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
         $node = (Node::query()->find($operation->node_id) ?? throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409));
-        $command = $this->contract->command($run['name']);
+        $command = $this->contract->operationCommand($run['name']);
         $owner = $command->privilege($node->platform) === 'account' ? $node->user : null;
 
         return $this->receipts->read($node, $run['name'], $run['effect_key'], $owner);
