@@ -6,7 +6,6 @@ use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 
 require_once __DIR__.'/../../Support/ServerDatabaseFixtures.php';
 require_once __DIR__.'/../../Support/DatabaseCreationProofs.php';
@@ -230,34 +229,14 @@ describe('managed PostgreSQL test databases', function (): void {
 
 });
 
-describe('managed database removal preflight', function (): void {
-    it('refuses PostgreSQL blockers without dropping the recorded pool', function (string $blocker): void {
-        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
-        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])->assertAccepted();
-        DatabaseConnectionTarget::query()->delete();
-        $this->admin->rows['SELECT DISTINCT blocker'] = [$blocker];
+describe('managed database removal admission', function (): void {
+    it('refuses a system database before a remote probe or direct start', function (string $driver, string $database): void {
+        $this->server->update(['driver' => $driver]);
+        DatabaseConnection::query()->create(['slug' => 'system', 'driver' => $driver, 'database_server_id' => $this->server->id, 'database' => $database, 'username' => 'owner']);
         $this->admin->statements = [];
-
-        $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
-            ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', [$blocker]);
-
-        expect($this->admin->sql())->not->toContain('DROP DATABASE', 'DROP ROLE');
-        $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
-    })->with(['app', 'app_test', 'app_test_test_2', 'outside']);
-
-    it('refuses MySQL sessions and external definers before dropping anything', function (): void {
-        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug])->assertAccepted();
-        databaseCreatedProof(DatabaseConnection::query()->where('slug', 'app')->sole());
-        $this->admin->statements = [];
-        $this->admin->rows['SELECT DISTINCT blocker'] = ['app', 'external'];
-
-        $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
-            ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app', 'external']);
-
-        expect($this->admin->sql())->not->toContain('DROP DATABASE', 'DROP USER');
-        $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
-    });
-
+        $this->deleteJson('/api/v1/database-connections/system')->assertUnprocessable()
+            ->assertJsonPath('error.code', 'database.system_database');
+        expect($this->admin->statements)->toBe([]);
+        $this->assertDatabaseHas('database_connections', ['slug' => 'system']);
+    })->with([['mysql', 'mysql'], ['pgsql', 'postgres']]);
 });
-
-describe('MySQL removal against a real server', function (): void {})->group('privileged');

@@ -7,6 +7,7 @@ namespace App\Actions\DatabaseConnections;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
+use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
@@ -119,6 +120,12 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
+            if ($ownerInstanceId !== null && $connection->owner_instance_id !== $ownerInstanceId) {
+                throw new ResourceOperationException('database.ownership_unproven', 'The connection belongs to a different Instance.', 409);
+            }
+            if ($server->driver !== DatabaseDriver::Redis) {
+                app(DatabaseDestroySafety::class)->assertNames($connection->database === null ? [] : [$connection->database], $connection->test_database === null ? [] : [$connection->test_database]);
+            }
             if ($connection->targets()->exists() && ($ownerInstanceId === null || $connection->owner_instance_id !== $ownerInstanceId)) {
                 throw new ResourceOperationException('database.connection_attached', 'Detach the connection before removal.', 409);
             }
@@ -130,6 +137,7 @@ final readonly class DropServerDatabaseAction
                 $names = array_values(array_unique([...$names, ...$this->ownership->mysqlNames($connection)]));
                 $this->ownership->assertMysqlNames($connection, $names);
             }
+            app(DatabaseDestroySafety::class)->assertNames($names);
             $prefix = $server->driver === DatabaseDriver::Mysql ? $connection->test_database : null;
             $prefixOwned = $prefix !== null && $this->ownership->ownsMysqlPrefix($connection, $prefix);
             $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => [], 'owners' => [], 'by_connection' => [], 'records' => [], 'inventories' => [], 'prefixes' => []];
@@ -204,14 +212,10 @@ final readonly class DropServerDatabaseAction
             $server = $group['server'];
             $databases = array_values(array_unique($group['databases']));
             $users = array_values(array_unique($group['users']));
-            if ($server->driver === DatabaseDriver::Redis) {
-                $command = DatabaseCommands::valkey($server, 'remove', ['usernames' => array_values(array_diff($users, ['default', '']))], 'absent');
-            } else {
-                $sql = $server->driver === DatabaseDriver::Pgsql
-                    ? (new PostgresStatements)->dropFencedDatabases($databases, $users, $group['owners'])
-                    : implode('', array_map($this->statements->dropDatabase(...), $databases)).implode('', array_map($this->statements->dropUser(...), $users));
-                $command = DatabaseCommands::sql($server, $sql, 'absent', expectEmpty: true, refusal: 'database.in_use');
-            }
+            $sql = $server->driver === DatabaseDriver::Pgsql
+                ? (new PostgresStatements)->dropFencedDatabases($databases, $users, $group['owners'])
+                : implode('', array_map($this->statements->dropDatabase(...), $databases)).implode('', array_map($this->statements->dropUser(...), $users));
+            $command = DatabaseCommands::sql($server, $sql, 'absent', expectEmpty: true, refusal: 'database.in_use');
             $command['finish_after_effect'] = true;
             $commands = ['database-apply' => $command];
             if ($server->driver === DatabaseDriver::Pgsql) {

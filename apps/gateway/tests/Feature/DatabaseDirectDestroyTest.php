@@ -2,14 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Actions\DatabaseConnections\CreateDatabaseUserAction;
+use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
+use App\Data\DatabaseConnections\CreateDatabaseUserData;
+use App\Data\DatabaseConnections\CreateServerDatabaseData;
+use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -73,3 +81,71 @@ it('admits one parent legacy server batch with each ordered inventory query grou
     $sql = DatabaseExecutionIntent::recorded($prepared[0]->input['intent_id'])->payload['commands']['database-apply']['input']['inventory_sql'];
     expect($sql)->toContain('ORDER BY SCHEMA_NAME) UNION (SELECT')->not->toContain('ORDER BY SCHEMA_NAME UNION');
 });
+
+it('refuses system names and sweeping test prefixes at removal admission', function (string $name, ?string $prefix): void {
+    $this->connection->update(['database' => $name, 'test_database' => $prefix]);
+    expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$this->connection]))
+        ->toThrow(ResourceOperationException::class, 'System databases and prefixes cannot be removed.');
+    $this->assertModelExists($this->connection);
+})->with([
+    ['mysql', null], ['sys', null], ['performance_schema', null], ['information_schema', null],
+    ['postgres', null], ['template0', null], ['template_custom', null], ['MySQL', null],
+    ['proof', 'm'], ['proof', 's'], ['proof', 'performance_'], ['proof', 'information_'],
+    ['proof', 'p'], ['proof', 'tem'], ['proof', 'template_other'],
+]);
+
+it('refuses previously admitted unsafe names and prefixes at the direct read boundary', function (string $field, array $values): void {
+    $intent = DatabaseExecutionIntent::recorded($this->operation->input['intent_id']);
+    $payload = $intent->payload;
+    $payload['admission']['input'][$field] = $values;
+    $intent->update(['payload' => $payload]);
+    $this->operation->update(['input' => [...$this->operation->input, $field => $values]]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable()->assertJsonPath('error.code', 'database.system_database');
+    $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable()->assertJsonPath('error.code', 'database.system_database');
+})->with([
+    ['databases', ['mysql']], ['databases', ['sys']], ['databases', ['performance_schema']],
+    ['databases', ['information_schema']], ['databases', ['postgres']], ['databases', ['template0']],
+    ['owned_prefixes', ['m']], ['owned_prefixes', ['s']], ['owned_prefixes', ['template']],
+]);
+
+it('refuses attached connections and a mismatched Instance owner before removal', function (): void {
+    $project = Project::query()->create(['name' => 'Removal proof', 'slug' => 'removal-proof', 'repository_url' => 'https://example.test/proof.git', 'default_branch' => 'main']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'dev', 'environment' => 'development', 'checkout_path' => '/srv/proof/dev', 'status' => 'active']);
+    $this->connection->targets()->create(['instance_id' => $instance->id, 'prefix' => 'DB', 'network' => 'private']);
+    expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$this->connection]))
+        ->toThrow(ResourceOperationException::class, 'Detach the connection before removal.');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+    $this->connection->targets()->delete();
+    expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$this->connection], $instance->id))
+        ->toThrow(ResourceOperationException::class, 'The connection belongs to a different Instance.');
+    $intent = DatabaseExecutionIntent::recorded($this->operation->input['intent_id']);
+    $payload = $intent->payload;
+    $payload['admission']['input']['owner_instance_id'] = $instance->id;
+    $intent->update(['payload' => $payload]);
+    $this->operation->update(['input' => [...$this->operation->input, 'owner_instance_id' => $instance->id]]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+});
+
+it('refuses reservations and user creation throughout an unfinished server removal', function (string $status): void {
+    $this->operation->update(['status' => $status]);
+    $project = Project::query()->create(['name' => 'Reservation proof', 'slug' => 'reservation-proof', 'repository_url' => 'https://example.test/proof.git', 'default_branch' => 'main']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'dev', 'environment' => 'development', 'checkout_path' => '/srv/proof/dev', 'status' => 'active']);
+    expect(fn () => app(CreateServerDatabaseAction::class)->reserve($this->server, 'new', 'new', $instance, 'operator'))
+        ->toThrow(ResourceOperationException::class, 'Database removal is unfinished on this server.');
+    expect(fn () => app(CreateServerDatabaseAction::class)->prepare(new CreateServerDatabaseData('new', $this->server->slug, null), 'operator'))
+        ->toThrow(ResourceOperationException::class, 'Database removal is unfinished on this server.');
+    expect(fn () => app(CreateDatabaseUserAction::class)->execute($this->connection, new CreateDatabaseUserData('reader', 'private-reader', true), 'operator'))
+        ->toThrow(ResourceOperationException::class, 'Database removal is unfinished on this server.');
+    $this->assertDatabaseCount('database_connections', 1);
+    $this->assertDatabaseCount('database_users', 0);
+})->with(['queued', 'running', 'waiting']);
+
+it('permits new intents after a terminal removal and isolates the server target', function (string $status): void {
+    $this->operation->update(['status' => $status]);
+    app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
+    $this->operation->update(['status' => 'running', 'target_id' => $this->server->id + 1]);
+    app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
+    $this->operation->update(['target_id' => $this->server->id, 'target_type' => 'instance']);
+    app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
+    expect(true)->toBeTrue();
+})->with(['succeeded', 'failed', 'cancelled']);

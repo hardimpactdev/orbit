@@ -38,8 +38,11 @@ it('adopts an existing MySQL connection from live grants and attributes the proo
         ->not->toContain('CREATE ', 'ALTER ', 'DROP ', 'GRANT ');
     $this->admin->rows['SCHEMATA'] = ['legacy_app_test_1', 'legacy_app_test_23'];
     $prepared = app(DropServerDatabaseAction::class)->prepareMany([$connection])[0];
-    $sql = DatabaseExecutionIntent::recorded($prepared->input['intent_id'])->payload['commands']['database-apply']['input']['sql'];
-    expect($sql)->toContain('DROP DATABASE IF EXISTS `legacy_app`', 'DROP DATABASE IF EXISTS `legacy_app_test_23`');
+    expect($prepared->input['databases'])->toBe(['legacy_app', 'legacy_app_test_1']);
+    expect($prepared->input['owned_prefixes'])->toBe(['legacy_app_test']);
+    $command = DatabaseExecutionIntent::recorded($prepared->input['intent_id'])->payload['commands']['database-apply']['input'];
+    expect($command['sql'])->toBe('');
+    expect($command['inventory_sql'])->toContain('SCHEMATA', 'legacy');
     expect(fn () => app(DatabaseOwnership::class)->assertMysqlNames($connection, ['legacyXapp_test_1']))
         ->toThrow(ResourceOperationException::class);
 });

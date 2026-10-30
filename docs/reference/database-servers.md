@@ -258,6 +258,8 @@ Valkey create and repair still use the fixed `database.valkey` program on the se
 
 ## Remove a database
 
+Gateway admission and the Node workflow refuse system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres`, and every `template*` name), including an owned prefix that could match one. PostgreSQL drops must exactly match the admitted database list. While a `database.destroy` Operation targets a server and is not terminal, Orbit refuses new database reservations and user creation on that server with `database.server_in_use`. This is an intent check; it does not acquire a lock or wait.
+
 `database:destroy` of a connection on a MySQL server drops the database, every database covered by its proven test prefix, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
 The Gateway records immutable ownership and unshared-user intent without live probes or execution locks. The admitted Node inventories and preflights the removal set before any drop. PostgreSQL serializes journal and drop work with its server advisory lock. Native cleanup restores admission after a failed drop, including cooperative cancellation. An uncertain effect with no saved native outcome refuses replay; inspect and settle that exact Operation before another removal request.

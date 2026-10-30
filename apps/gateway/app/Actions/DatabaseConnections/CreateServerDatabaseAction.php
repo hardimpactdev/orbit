@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
+use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
@@ -268,6 +269,8 @@ final readonly class CreateServerDatabaseAction
     /** @param array<string,mixed> $attributes */
     public function reserve(DatabaseServer $server, string $slug, string $database, Instance $instance, ?string $createdBy, array $attributes = []): DatabaseConnection
     {
+        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
+
         return $this->lock->run([$server->id], fn (): DatabaseConnection => $this->reserveLocked($server, $slug, $database, $instance, $createdBy, $attributes));
     }
 
@@ -488,6 +491,7 @@ final readonly class CreateServerDatabaseAction
 
     private function assertActive(DatabaseServer $server): void
     {
+        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
         if ($server->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException(
                 errorCode: 'database.server_inactive',

@@ -149,7 +149,8 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `database.server_in_use` | 409 | Another managed database removal holds a server in the planned set. Retry when it finishes. |
+| `database.server_in_use` | 409 | A database removal is unfinished on the server. New reservations and user creation must wait until it is terminal. |
+| `database.system_database` | 422 | A system database or an overlapping test prefix cannot be removed. |
 | `database.in_use` | 409 | A session or dependency blocks managed database removal. Nothing is dropped. |
 | `database.server_missing` | 404 | No server has that slug. |
 | `database.server_inactive` | 409 | The server is not active yet. |

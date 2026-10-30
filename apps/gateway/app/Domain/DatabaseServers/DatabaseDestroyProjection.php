@@ -24,6 +24,7 @@ final readonly class DatabaseDestroyProjection implements DirectOperationProject
     {
         $intent = $this->intent($operation);
         $input = $operation->input;
+        app(DatabaseDestroySafety::class)->assertNames(ValidatedData::stringList($input['databases']), ValidatedData::stringList($input['owned_prefixes']));
         if (! $operation->status->terminal()) {
             $server = DatabaseServer::query()->find($operation->target_id);
             if ($server === null || $server->node_id !== $operation->node_id || $server->driver->value !== ($input['driver'] ?? null)
@@ -39,8 +40,12 @@ final readonly class DatabaseDestroyProjection implements DirectOperationProject
                 $connection = DatabaseConnection::query()->find($id);
                 if ($connection === null || $connection->database_server_id !== $server->id
                     || $connection->only(['database', 'test_database', 'test_processes', 'username', 'owner_instance_id']) !== ($records[$id] ?? null)
+                    || (($input['owner_instance_id'] ?? null) !== null && $connection->owner_instance_id !== $input['owner_instance_id'])
                     || ($connection->targets()->exists() && (($input['owner_instance_id'] ?? null) === null || $connection->owner_instance_id !== $input['owner_instance_id']))) {
                     $this->invalid();
+                }
+                if ($server->driver->value !== 'redis') {
+                    app(DatabaseDestroySafety::class)->assertNames($connection->database === null ? [] : [$connection->database], $connection->test_database === null ? [] : [$connection->test_database]);
                 }
                 foreach (ValidatedData::stringList($input['owned_prefixes']) as $prefix) {
                     if ($connection->test_database === $prefix && ! app(DatabaseOwnership::class)->ownsMysqlPrefix($connection, $prefix)) {
