@@ -1244,6 +1244,12 @@ Teardown steps run before the workspace and task VM are destroyed. Recorded appr
 
 Task VM Node cleanup records `task_vm.destroy` and returns. Swamp proves provider absence, removes any remaining workspace records, admits the owning `node.remove` child, and only then marks the VM destroyed. Already queued `DestroyTaskVm` jobs record the same intent; they perform no VM or Node work and never wait for completion. Workspace teardown, preservation and the retained provider deletion still run before this admission; their separate caller cutover remains pending.
 
+### Direct lifecycle acknowledgement
+
+`task_vm.lifecycle_intent` uses the direct Swamp writer. Swamp acknowledges the admitted task VM identity through `operation-task-vms` on the Node 209 control worker. This stage changes no VM state, contacts no provider and runs no Node command. It uses the existing workflow grant and has no credential material. The Gateway validates the target and bounded result; the old lifecycle transport cannot run this kind. An explicit `polled` writer is refused. The owning cutover is reversed with a revert PR.
+
+The scheduled workflow continues to discover the other Task VM kinds. A direct acknowledgement skips discovery and execution of that batch. Incus effects remain placed on their owning host worker.
+
 ### Direct Incus VM effects
 
 Incus create, start, stop and delete also declare the direct Swamp workflow
