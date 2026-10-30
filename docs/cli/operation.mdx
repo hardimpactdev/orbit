@@ -1,6 +1,6 @@
 ---
 title: "operation"
-description: "List, show, and cancel the long operations that the Gateway runs on its queue, such as an Instance deploy or rollback."
+description: "List, show, resume, and cancel the long operations that the Gateway runs on its queue, such as an Instance deploy or rollback."
 covers:
   - apps/cli/app/Commands/Operations/**
   - apps/cli/app/Support/Operations/**
@@ -17,6 +17,7 @@ When a deploy command follows an operation, it shows live output from the Node a
 | [`operation:list`](#orbit-operationlist) | List the newest operations. |
 | [`operation:show`](#orbit-operationshow) | Show one operation with its steps and their output. |
 | [`operation:cancel`](#orbit-operationcancel) | Ask one operation to stop. |
+| [`operation:resume`](#orbit-operationresume) | Resume an Operation stopped at its reclaim limit. |
 
 Every command accepts `--json`. A production deploy and a rollback include a `process_restart` step. The progress tree labels it `Restart Processes`, `Restarting Processes`, or `Restarted Processes` as its state changes. A rollback's `rollback` step reads `Find retained release`, `Finding retained release`, or `Found retained release`.
 
@@ -76,5 +77,24 @@ The command returns the record at once and does not wait for the operation to st
 
 ```bash
 orbit operation:cancel 42
+orbit operation:show 42
+```
+
+## orbit operation:resume
+
+Resume a Swamp Operation parked with `operation.reclaim_limit`. This resets attempts to zero once for that stop, clears the reclaim-limit flag and queues the same Operation. It preserves intent, steps, receipts and the target hold. Activity records the caller, Operation and outcome. The command returns at once; follow execution with `operation:show`.
+
+```bash
+orbit operation:resume <operation> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `operation` | yes | Numeric operation ID. |
+
+The command prints the returned Operation; JSON returns that same record with its steps. A repeated request after reset, an Operation without reclaim-limit assistance, terminal work, a non-Swamp kind or a pending cancellation fails with `operation.not_resumable` and changes nothing. The command uses the same serving-Node access rule as `operation:cancel`.
+
+```bash
+orbit operation:resume 42
 orbit operation:show 42
 ```

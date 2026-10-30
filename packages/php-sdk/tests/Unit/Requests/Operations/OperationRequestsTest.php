@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
+use Orbit\Sdk\Requests\Operations\ResumeOperationRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
@@ -192,6 +193,7 @@ describe('operation requests', function (): void {
             [new ListOperationsRequest, Method::GET, '/api/v1/operations', []],
             [new ListOperationsRequest('running', 'instance.deploy', 'instance', 17), Method::GET, '/api/v1/operations', ['status' => 'running', 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17]],
             [new CancelOperationRequest(42), Method::POST, '/api/v1/operations/42/cancel', []],
+            [new ResumeOperationRequest(42), Method::POST, '/api/v1/operations/42/resume', []],
         ])->each(static function ($case): void {
             [$request, $method, $path, $query] = $case->value;
             expect($request->getMethod())->toBe($method)
@@ -200,6 +202,8 @@ describe('operation requests', function (): void {
         });
 
         expect((string) new CancelOperationRequest(42)->body())->toBe('{}')
+            ->and((string) new ResumeOperationRequest(42)->body())->toBe('{}')
+            ->and(static fn () => new ResumeOperationRequest(0))->toThrow(InvalidArgumentException::class)
             ->and(static fn () => new ShowOperationRequest(0))->toThrow(InvalidArgumentException::class)
             ->and(static fn () => new ShowOperationRequest(1, -1))->toThrow(InvalidArgumentException::class);
     });
@@ -231,6 +235,18 @@ describe('operation requests', function (): void {
             ->and($operation->steps[0]->output)->toBe("boom\n")
             ->and($operation->toArray()['steps'][0]['name'])->toBe('before_activation.migrate')
             ->and(json_encode($operation->toArray()['input']))->toBe('{}');
+    });
+
+    it('returns the resumed Operation with its request ID', function (): void {
+        $mock = new MockClient([
+            ResumeOperationRequest::class => MockResponse::make(['data' => operation_payload(['status' => 'queued', 'attempts' => 0]),
+                'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']]),
+        ]);
+        $response = operation_connector($mock)->send(new ResumeOperationRequest(42))->dto();
+        expect($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->id)->toBe(42)->and($response->status)->toBe('queued')->and($response->attempts)->toBe(0)
+            ->and($response->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a846');
+        $mock->assertSentCount(1);
     });
 
     it('lists operations without steps', function (): void {

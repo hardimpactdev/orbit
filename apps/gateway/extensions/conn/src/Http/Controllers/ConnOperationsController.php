@@ -8,7 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Http\Controllers\Api\OperationsController;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
-use App\Http\Requests\Operations\CancelOperationRequest;
+use App\Http\Requests\Operations\EmptyOperationRequest;
 use App\Http\Requests\Operations\ShowOperationRequest;
 use App\Models\Node;
 use App\Models\Operation;
@@ -28,7 +28,7 @@ final class ConnOperationsController extends Controller
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
 
-    public function cancel(CancelOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
+    public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
         $this->assertOwner($request, $operation);
 

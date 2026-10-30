@@ -9,8 +9,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
-/** A cancel takes an empty JSON object. */
-final class CancelOperationRequest extends FormRequest
+/** Operation mutations take an empty JSON object. */
+final class EmptyOperationRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array

@@ -101,7 +101,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `resolve`, `rollback`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `ai-router` | `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
-| `operation` | `cancel` | The CLI asks a running [operation](/reference/operations) to stop. `operation:list` and `operation:show` read operations. |
+| `operation` | `cancel`, `resume` | The CLI asks a running [operation](/reference/operations) to stop, or resumes one parked at its reclaim limit. `operation:list` and `operation:show` read operations. |
 | `node` | `converge`, `relocate`, `rename` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |

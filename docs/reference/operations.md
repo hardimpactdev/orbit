@@ -516,4 +516,10 @@ The Gateway runs `orbit:operations-check` every minute for every registered Swam
 
 The primary code appears in `operation:show` assistance, including owner-checked family reads. Existing execution proof assistance takes priority, followed by unclaimed work, no progress and reclaim churn. Activity records each health change once and records recovery once. Health checks never execute, cancel or release an Operation. Terminal work clears its computed assistance.
 
-A Swamp Operation has at most five execution attempts. After the fifth lease expires, the next claim parks it as `waiting` with `operation.reclaim_limit` assistance and keeps its target hold and receipts. Replaying a live claim or resuming a proven child wait spends no additional attempt. Read-only discovery can dispatch one final claim to park exhausted work; it does not change the Operation itself. Recovery or cancellation must use the normal proof-aware path.
+A Swamp Operation has at most five execution attempts. After the fifth lease expires, the next claim parks it as `waiting` with `operation.reclaim_limit` assistance and keeps its target hold and receipts. Replaying a live claim or resuming a proven child wait spends no additional attempt. Read-only discovery can dispatch one final claim to park exhausted work; it does not change the Operation itself.
+
+### Resume after the reclaim limit
+
+An operator can resume this parked Operation with `orbit operation:resume <id>` (`POST /api/v1/operations/{operation}/resume`, empty JSON object). Under the Operation lock, resume resets attempts to zero, clears reclaim-limit assistance and queues the same Operation for Swamp. It preserves intent, steps, receipts and the target hold. Activity records the caller, Operation and outcome. Resume returns the Operation with its steps and never waits for execution.
+
+A repeated request after the reset, another assistance code, a terminal Operation, a non-Swamp kind or a pending cancellation returns HTTP 409 `operation.not_resumable` without changing the Operation. Each new reclaim-limit stop needs an explicit operator resume; there is no automatic reset. Cancellation still uses the normal proof-aware path.

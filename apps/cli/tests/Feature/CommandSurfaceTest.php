@@ -172,6 +172,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:wireguard-key',
         'operation:cancel',
         'operation:list',
+        'operation:resume',
         'operation:show',
         'process:create',
         'process:destroy',
@@ -866,6 +867,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],
         'operation:cancel' => [['operation'], ['json' => false]],
+        'operation:resume' => [['operation'], ['json' => false]],
         'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'json' => false]],
         'operation:show' => [['operation'], ['json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'postgres-process' => null, 'clickhouse-process' => null, 'json' => false]],
@@ -1310,6 +1312,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:wireguard-key' => [['node' => '1', 'public-key' => base64_encode(str_repeat('n', 32))], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],
         'operation:cancel' => [['operation' => '1'], ...$profileMissing],
+        'operation:resume' => [['operation' => '1'], ...$profileMissing],
         'operation:list' => [[], ...$profileMissing],
         'operation:show' => [['operation' => '1'], ...$profileMissing],
         'process:create' => [
