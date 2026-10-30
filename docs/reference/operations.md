@@ -560,6 +560,8 @@ Read input comes only from the projection hook, never automatically from raw int
 | `GET /api/v1/direct-operations/{operation}?run_id=UUID` | Safe admitted input, status, result and cancellation request |
 | `POST /api/v1/direct-operations/{operation}/result` | Run ID, status, timestamps, bounded result and error code |
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
+| `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
+| `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 
