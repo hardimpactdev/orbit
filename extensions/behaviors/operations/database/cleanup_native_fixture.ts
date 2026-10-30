@@ -1,0 +1,44 @@
+/** Fake Gateway in a disposable native Swamp repository. */
+export async function fixtureHttp(method: string, path: string, raw?: unknown) {
+  const state = JSON.parse(
+    await Deno.readTextFile("native-database-cleanup.json"),
+  );
+  const id = path.match(/database-cleanups\/(\d+)/)?.[1];
+  const operation = state.operations ? state.operations[id!] : state.operation;
+  const body = raw as Record<string, unknown>;
+  state.calls.push(path);
+  const save = () =>
+    Deno.writeTextFile("native-database-cleanup.json", JSON.stringify(state));
+  if (method === "GET") {
+    await save();
+    return { status: 200, body: { data: operation } };
+  }
+  if (path.endsWith("/cleanup")) {
+    if (state.events) {
+      state.events.push(`start-${id}`);
+      await save();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      state.events.push(`end-${id}`);
+    }
+    state.cleanups++;
+    await save();
+    if (state.loseCleanup) {
+      state.loseCleanup = false;
+      await save();
+      throw new Error("lost cleanup reply");
+    }
+    return {
+      status: 200,
+      body: { data: { backend: "absent" } },
+    };
+  }
+  operation.status = body.status;
+  operation.result = body.result ?? null;
+  await save();
+  if (state.loseCompletion && body.status === "succeeded") {
+    state.loseCompletion = false;
+    await save();
+    throw new Error("lost completion reply");
+  }
+  return { status: 200, body: { data: operation } };
+}

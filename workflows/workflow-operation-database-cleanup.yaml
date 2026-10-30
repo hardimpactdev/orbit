@@ -1,0 +1,27 @@
+id: 48d7426d-54e7-44cf-b1bf-0706b5a874f5
+name: operation-database-cleanup
+description: Clean up one admitted SQLite snapshot directly, without discovery or claims.
+labels: { pool: migration }
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: {
+      type: string,
+      enum: [database.sqlite_cleanup],
+    }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: cleanup
+    steps:
+      - name: cleanup
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-cleanup"
+          behaviorName: '${{ "database-cleanup-node-" + string(inputs.node_id) }}'
+          methodName: cleanup
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
