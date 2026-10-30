@@ -3,6 +3,7 @@ import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import {
   type Context,
   Executor,
+  ExecutorError,
   Globals,
   Operation,
 } from "../../operation-runner/mod.ts";
@@ -249,7 +250,13 @@ export function integrations(
             }
           }
           const effect = invocation(operation.kind, operation.input);
-          const runKey = effect.step;
+          const probe =
+            Object.keys(operation.step_results).filter((name) =>
+              name.startsWith("reverb-probe-")
+            ).length;
+          const runKey = effect.pending
+            ? `${effect.step}:${probe}`
+            : effect.step;
           let heartbeatError: unknown;
           const timer = setInterval(() => {
             executor.post(`${path}/heartbeat`, { worker: args.worker }).catch(
@@ -296,6 +303,17 @@ export function integrations(
                   }, started),
                 );
                 if (heartbeatError) throw heartbeatError;
+                if (effect.pending?.(result)) {
+                  await executor.post(`${path}/step`, {
+                    worker: args.worker,
+                    key: `reverb-probe-${probe}`,
+                    name: `reverb-probe-${probe}`,
+                    status: "succeeded",
+                    result,
+                    output: "Waiting for current Reverb process reports\n",
+                  });
+                  throw new Error("websocket.registry_pending");
+                }
                 const error = effect.error(result);
                 if (!error && !effect.prove(result)) {
                   throw new Error("integration.outcome_unproven");
@@ -356,7 +374,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(sort(value));
 }
 
-/** Persist completion before projecting it, so a lost reply reuses the saved result. */
+/** A successful read can be superseded before the Gateway's final fresh-state check. */
 async function finish(
   executor: Executor,
   operation: z.infer<typeof Operation>,
@@ -364,11 +382,35 @@ async function finish(
   ctx: Context,
   completion: z.infer<typeof Completion>,
 ) {
-  const handle = await ctx.writeResource(
+  let handle = await ctx.writeResource(
     "receipt",
     `operation-${operation.id}`,
     completion,
   );
-  await executor.post(`${operation.id}/complete`, { worker, ...completion });
+  try {
+    await executor.post(`${operation.id}/complete`, { worker, ...completion });
+  } catch (error) {
+    if (
+      !(error instanceof ExecutorError) ||
+      error.code !== "websocket.registry_superseded" ||
+      completion.status !== "succeeded" ||
+      ![
+        "websocket.app_rotate",
+      ].includes(operation.kind)
+    ) {
+      throw error;
+    }
+    completion = {
+      status: "failed",
+      result: { error_code: "websocket.registry_superseded" },
+      error_code: "websocket.registry_superseded",
+    };
+    handle = await ctx.writeResource(
+      "receipt",
+      `operation-${operation.id}`,
+      completion,
+    );
+    await executor.post(`${operation.id}/complete`, { worker, ...completion });
+  }
   return { dataHandles: [handle], status: completion.status };
 }

@@ -13,7 +13,6 @@ const Args = DirectArgs.extend({
     "websocket.sync",
     "websocket.app_create",
     "websocket.app_destroy",
-    "websocket.app_rotate",
   ]),
   node_id: z.number().int().positive(),
 });
