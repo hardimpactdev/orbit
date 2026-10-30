@@ -52,13 +52,16 @@ class PackageBoundary(unittest.TestCase):
             raise AssertionError('Native tests require a disposable host without the package runtime/account')
         if cls.created_runtime:
             root('/usr/bin/python3', '-I', '-c', '''import json,os,pathlib,shutil,sys
-p=pathlib.Path(sys.argv[1]);p.mkdir(parents=True,mode=0o755)
+# Exercise runner defaults without letting umask define the trusted fixture.
+os.umask(0o002)
+p=pathlib.Path(sys.argv[1]);p.mkdir(parents=True,mode=0o755);p.chmod(0o755)
 shutil.copyfile(sys.argv[2],p/'node');os.chmod(p/'node',0o755)
 # Test a real setuid sudo binary even on systems whose /usr/bin/sudo
 # symlink targets /etc/alternatives outside the package root.
 shutil.copyfile(pathlib.Path('/usr/bin/sudo').resolve(),p/'sudo');os.chmod(p/'sudo',0o4755)
 (p/'native-test-owner').write_text(sys.argv[3])
 (p/'network-deny.json').write_text(json.dumps({'public_addresses':['80.47.233.206','2001:db8::209']}))
+(p/'network-deny.json').chmod(0o644)
 ''', RUNTIME, cls.node, str(cls.path))
         # Trusted fixture runner starts the real typed command under the same
         # native-host lifetime used by production, with a synthetic credential.
@@ -80,6 +83,18 @@ sys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr);sys.exit(r.r
         cls.runner = runner
         cls.source = Path('/run') / ('orbit-package-proof-' + uuid.uuid4().hex)
         root('/usr/bin/python3', '-I', '-c', "import pathlib,sys;p=pathlib.Path(sys.argv[1]);p.mkdir(mode=0o700);(p/'key').write_text('SYNTHETIC_NOT_A_TOKEN');(p/'key').chmod(0o600)", cls.source)
+        # Fixed, non-secret preflight makes a runner mismatch an actionable failure.
+        metadata = root('/usr/bin/python3', '-I', '-c', """import ipaddress,json,os,pathlib,stat,subprocess,sys
+p=pathlib.Path(sys.argv[1]);m=(p/'network-deny.json').stat()
+r=subprocess.run(['/usr/sbin/ip','-j','address','show'],capture_output=True,text=True,check=True)
+interfaces=json.loads(r.stdout)
+assert all(isinstance(v.get('addr_info'),list) for v in interfaces),'ip_addr_info_missing'
+for interface in interfaces:
+ for info in interface['addr_info']:ipaddress.ip_address(info['local'])
+assert (m.st_uid,m.st_gid,stat.S_IMODE(m.st_mode),m.st_nlink)==(0,0,0o644,1),'unsafe_fixture_network_policy'
+print(json.dumps({'runtime_mode':oct(stat.S_IMODE(p.stat().st_mode)),'policy_mode':oct(stat.S_IMODE(m.st_mode)),'ip_interfaces':len(interfaces),'systemd_version':subprocess.check_output(['/usr/bin/systemctl','--version'],text=True).splitlines()[0]}))
+""", RUNTIME)
+        print('Native package fixture preflight: '+metadata.stdout.strip(), flush=True)
         cls.call({'session': False, 'worker_user': pwd.getpwuid(os.getuid()).pw_name})
         cls.package_uid = pwd.getpwnam(USER).pw_uid
         # Real synthetic files in PID1's host filesystem: the package unit is
@@ -172,6 +187,22 @@ print(json.dumps(created))
             self.assertEqual(reply['error']['code'],'package.isolation_unavailable')
             self.assertFalse((STATE/'jobs'/job).exists())
         finally:root('/usr/bin/mv',hidden,RUNTIME)
+
+    def test_c_writable_network_policy_refuses_before_package_code(self):
+        job = self.job()
+        policy = RUNTIME / 'network-deny.json'
+        root('/usr/bin/chmod', '0664', policy)
+        try:
+            reply = self.call({'action':'run','job':job,'tool':'node','cwd':'.',
+                               'args':['-e',"require('fs').writeFileSync('package.json','package-code-reached')"],
+                               'files':{'package.json':'{}'}}, expect_error=True)
+            self.assertEqual(reply['error']['code'], 'package.isolation_unavailable')
+            content = root('/usr/bin/python3', '-I', '-c',
+                           'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text())',
+                           STATE/'jobs'/job/'root/work/package.json').stdout.strip()
+            self.assertEqual(content, '{}', 'package code ran with writable network policy')
+        finally:
+            root('/usr/bin/chmod', '0644', policy)
 
     def test_missing_native_host_unit_refuses(self):
         job=uuid.uuid4().hex
