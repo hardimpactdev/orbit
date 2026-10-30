@@ -49,9 +49,9 @@ Deno.test("update uses the owned container, preserves environment, and verifies 
   const result = await updateRuntime(
     await input(),
     environment,
-    async (call) => {
+    (call) => {
       calls.push(call);
-      return {};
+      return Promise.resolve({});
     },
   );
   assertEquals(calls.map((c) => c.name), [
@@ -75,17 +75,20 @@ Deno.test("same version checks health without replacing the container", async ()
   i.after = i.before;
   i.version = i.previous_version;
   const calls: NodeCall[] = [];
-  await updateRuntime(i, environment, async (c) => {
+  await updateRuntime(i, environment, (c) => {
     calls.push(c);
-    return {};
+    return Promise.resolve({});
   });
   assertEquals(calls.map((c) => c.name), ["http.await-healthy"]);
 });
 Deno.test("agent health refusal projects restored state without a second mutation", async () => {
   const calls: NodeCall[] = [];
-  const result = await updateRuntime(await input(), environment, async (c) => {
+  const result = await updateRuntime(await input(), environment, (c) => {
     calls.push(c);
-    return { error_code: "process.health_failed", restored: true };
+    return Promise.resolve({
+      error_code: "process.health_failed",
+      restored: true,
+    });
   });
   assertEquals(calls.length, 1);
   assertEquals(result, {
@@ -95,9 +98,9 @@ Deno.test("agent health refusal projects restored state without a second mutatio
 });
 Deno.test("failed agent recovery is explicit and never issues another mutation", async () => {
   let count = 0;
-  const result = await updateRuntime(await input(), environment, async () => {
+  const result = await updateRuntime(await input(), environment, () => {
     count++;
-    return { error_code: "process.recovery_required" };
+    return Promise.resolve({ error_code: "process.recovery_required" });
   });
   assertEquals(count, 1);
   assertEquals(result, {
@@ -110,9 +113,9 @@ Deno.test("stale vault environment refuses before Node effects", async () => {
   const result = await updateRuntime(await input(), {
     ...environment,
     SECRET_KEY_BASE: "changed",
-  }, async () => {
+  }, () => {
     count++;
-    return {};
+    return Promise.resolve({});
   });
   assertEquals(count, 0);
   assertEquals(result, {
@@ -124,9 +127,9 @@ Deno.test("transport uncertainty stays in native recovery instead of issuing a s
   let count = 0;
   await assertRejects(
     () =>
-      updateRuntime(awaitedInput, environment, async () => {
+      updateRuntime(awaitedInput, environment, () => {
         count++;
-        throw new Error("uncertain");
+        return Promise.reject(new Error("uncertain"));
       }),
     Error,
     "uncertain",
@@ -139,10 +142,10 @@ Deno.test("running projection is re-read before effects and terminal replay make
   let status = "queued";
   let calls = 0;
   let reads = 0;
-  const behavior = analyticsUpdate(() => async (method, _path, body) => {
+  const behavior = analyticsUpdate(() => (method, _path, body) => {
     if (method === "POST") status = (body as { status: string }).status;
     else reads++;
-    return {
+    return Promise.resolve({
       status: 200,
       body: {
         data: {
@@ -161,10 +164,10 @@ Deno.test("running projection is re-read before effects and terminal replay make
           input: status === "queued" ? {} : i,
         },
       },
-    };
-  }, async () => {
+    });
+  }, () => {
     calls++;
-    return {};
+    return Promise.resolve({});
   });
   const args = {
     operation_id: 12,
@@ -187,11 +190,11 @@ Deno.test("stale runtime refusal leaves the newer Process healthy and makes no r
   const result = await updateRuntime(
     await input(),
     environment,
-    async (call) => {
+    (call) => {
       count++;
       assertEquals(call.input.expected_spec, "a".repeat(64));
       assertEquals(call.input.expected_running, true);
-      return { error_code: "process.spec_changed" };
+      return Promise.resolve({ error_code: "process.spec_changed" });
     },
   );
   assertEquals(count, 1);

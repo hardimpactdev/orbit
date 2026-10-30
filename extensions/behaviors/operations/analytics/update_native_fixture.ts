@@ -3,7 +3,7 @@ const path = "update-native.json";
 const read = () => JSON.parse(Deno.readTextFileSync(path));
 const save = (state: unknown) =>
   Deno.writeTextFileSync(path, JSON.stringify(state));
-export async function http(method: string, _path: string, body?: unknown) {
+export function http(method: string, _path: string, body?: unknown) {
   const state = read();
   if (method === "POST") {
     const report = body as { status: string; result?: unknown };
@@ -12,11 +12,11 @@ export async function http(method: string, _path: string, body?: unknown) {
     if (state.loseProjection && report.status === "succeeded") {
       state.loseProjection = false;
       save(state);
-      throw new Error("lost committed projection reply");
+      return Promise.reject(new Error("lost committed projection reply"));
     }
   }
   save(state);
-  return {
+  return Promise.resolve({
     status: 200,
     body: {
       data: {
@@ -24,7 +24,7 @@ export async function http(method: string, _path: string, body?: unknown) {
         input: state.operation.status === "queued" ? {} : state.operation.input,
       },
     },
-  };
+  });
 }
 export async function invoke(call: NodeCall) {
   const state = read();
