@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Routes;
 
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Operations\DirectOperation;
 use App\Http\Requests\Operations\ExecutorRequest;
 use App\Models\Operation;
 
@@ -35,9 +35,8 @@ final class RoutePublicationRequest extends ExecutorRequest
     {
         parent::authorize();
         $operation = $this->route('operation');
-        $runId = $operation instanceof Operation ? ($operation->state['swamp_run_id'] ?? null) : null;
-        if ($runId !== null && $runId !== $this->input('run_id')) {
-            throw new ResourceOperationException('route.run_mismatch', 'This status belongs to another Swamp run.', 409);
+        if ($operation instanceof Operation) {
+            app(DirectOperation::class)->assertRun($operation, is_string($this->input('run_id')) ? $this->input('run_id') : '');
         }
 
         return true;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
@@ -23,18 +24,12 @@ final readonly class DirectRoutePublication
 
     public static function writer(string $kind): string
     {
-        $writers = config('swamp.route_publication_writers', []);
-        $writer = is_array($writers) ? ($writers[$kind] ?? 'polled') : null;
-        if (! in_array($writer, ['polled', 'direct'], true)) {
-            throw new ResourceOperationException('route.writer_invalid', 'Select polled or direct for the Route publication writer.', 503);
-        }
-
-        return $writer;
+        return app(DirectOperation::class)->writer($kind) ?? 'polled';
     }
 
     public static function owns(Operation $operation): bool
     {
-        return self::handles($operation->kind) && ($operation->state['route_publication_writer'] ?? 'polled') === 'direct';
+        return self::handles($operation->kind) && DirectOperation::owns($operation);
     }
 
     public function assertOperation(Operation $operation): void

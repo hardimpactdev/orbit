@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
@@ -119,7 +118,7 @@ final readonly class SwampOperationExecutor
 
     private function eligible(Operation $candidate, bool $flagAssistance): bool
     {
-        if (DirectRoutePublication::owns($candidate)) {
+        if (DirectOperation::owns($candidate)) {
             return false;
         }
         if (($candidate->state['executor_assistance'] ?? null) === ['error_code' => 'operation.reclaim_limit']) {
@@ -662,7 +661,7 @@ final readonly class SwampOperationExecutor
 
     private function assertPolledKind(Operation $operation): void
     {
-        if (DirectRoutePublication::owns($operation)) {
+        if (DirectOperation::owns($operation)) {
             throw new ResourceOperationException('operation.executor_invalid', 'Route publications run directly in Swamp and have no executor claim.', 422);
         }
     }

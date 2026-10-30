@@ -524,3 +524,13 @@ A Swamp Operation has at most five execution attempts. After the fifth lease exp
 An operator can resume this parked Operation with `orbit operation:resume <id>` (`POST /api/v1/operations/{operation}/resume`, empty JSON object). Under the Operation lock, resume resets attempts to zero, clears reclaim-limit assistance and queues the same Operation for Swamp. It preserves intent, steps, receipts and the target hold. Activity records the caller, Operation and outcome. Resume returns the Operation with its steps and never waits for execution.
 
 A repeated request after the reset, another assistance code, a terminal Operation, a non-Swamp kind or a pending cancellation returns HTTP 409 `operation.not_resumable` without changing the Operation. Each new reclaim-limit stop needs an explicit operator resume; there is no automatic reset. Cancellation still uses the normal proof-aware path.
+
+## Direct Swamp starts
+
+Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampOperation` sends one native `workflow.run` request after intent commits and records its run ID. It uses the declaration's configured scoped credential. A lost start response stays uncertain; the Gateway does not poll, retry or claim work. Inspect native run history before submitting again.
+
+A declaration names the workflow, writer configuration path, immutable writer-state field, and token configuration path. Routes retain their existing per-kind settings and `route_publication_writer` field. Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
+
+On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
+
+Prove the new path end to end on a dev or canary target before changing its per-kind writer. Rollback selects the previous Swamp path for new intents; admitted Operations retain their writer. Delete the old path only after production success. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.

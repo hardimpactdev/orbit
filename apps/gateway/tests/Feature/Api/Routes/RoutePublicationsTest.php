@@ -13,7 +13,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Routes\StartRoutePublicationRun;
+use App\Infrastructure\Swamp\StartSwampOperation;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -126,7 +126,7 @@ it('keeps an uncertain native submission visible and never retries or reports a 
     $socket = new FakeRoutePublicationSocket(false);
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
-    expect(fn () => app(StartRoutePublicationRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(StartSwampOperation::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     expect($socket->sent)->toHaveCount(1);
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
     expect($this->operation->fresh()->attempts)->toBe(0);
