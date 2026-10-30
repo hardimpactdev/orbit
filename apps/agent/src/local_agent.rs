@@ -1,4 +1,4 @@
-//! One socket-activated, typed root action. No observer, Gateway connection or shell.
+//! One socket-activated, typed root action. No observer or caller-selected executable.
 #[cfg(any(target_os = "linux", test))]
 use crate::command::{run, Command, CommandError, Context, Outcome, Platform, Privilege};
 #[cfg(any(target_os = "linux", test))]
@@ -49,7 +49,7 @@ fn invoke<C: Command>(input: &RawValue) -> Outcome {
     }
 }
 #[cfg(any(target_os = "linux", test))]
-fn dispatch(frame: &[u8], host: &run::Host) -> Outcome {
+fn dispatch(frame: &[u8], host: &run::Host, _started: std::time::Instant) -> Outcome {
     let Ok(request) = serde_json::from_slice::<Request>(frame) else {
         return refused("agent.envelope_invalid");
     };
@@ -70,6 +70,18 @@ fn dispatch(frame: &[u8], host: &run::Host) -> Outcome {
     match request.command.as_str() {
         "instance.prepare-served-web-roots" => {
             invoke::<crate::commands::production::PrepareServedWebRoots>(&request.input)
+        }
+        #[cfg(target_os = "linux")]
+        "instance.run-step" => {
+            let Ok(input) = serde_json::from_str(request.input.get()) else {
+                return refused("agent.invalid_input");
+            };
+            match crate::commands::deploy_step::local::run(input, _started) {
+                Ok(output) => serde_json::to_value(output)
+                    .map(Outcome::Ok)
+                    .unwrap_or_else(|_| refused("agent.local_reply_invalid")),
+                Err(code) => refused(code),
+            }
         }
         _ => refused("agent.local_action_forbidden"),
     }
@@ -98,6 +110,7 @@ fn reply(outcome: Outcome) -> Vec<u8> {
 
 #[cfg(target_os = "linux")]
 pub fn main() -> i32 {
+    let started = std::time::Instant::now();
     use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::net::UnixStream;
     let Some(worker) = crate::command::identity::passwd(WORKER).filter(|p| p.uid != 0) else {
@@ -152,7 +165,7 @@ pub fn main() -> i32 {
         return 74;
     }
     let outcome = match frame(&stream) {
-        Ok(value) => dispatch(&value, &run::Host::current()),
+        Ok(value) => dispatch(&value, &run::Host::current(), started),
         Err(()) => refused("agent.envelope_invalid"),
     };
     if stream.write_all(&reply(outcome)).is_err() {
@@ -190,7 +203,11 @@ mod tests {
             json!({"command":"instance.prepare-served-web-roots","agent_sha256":"a".repeat(64),"input":{},"executable":"/bin/sh"}),
         ] {
             assert!(matches!(
-                dispatch(&serde_json::to_vec(&value).unwrap(), &host),
+                dispatch(
+                    &serde_json::to_vec(&value).unwrap(),
+                    &host,
+                    std::time::Instant::now()
+                ),
                 Outcome::Refused { .. }
             ));
         }

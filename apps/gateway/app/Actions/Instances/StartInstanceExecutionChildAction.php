@@ -46,6 +46,15 @@ final readonly class StartInstanceExecutionChildAction
             default => app(InstancePhpRuntimeExecution::class)->plan($candidate),
         };
 
+        if ($candidate->kind === 'instance.run_steps' && ($candidate->input['list'] ?? null) === 'setup') {
+            $instance = app(InstanceStepListExecution::class)->instance($candidate);
+            $admitted = app(StartInstanceStepListAction::class)->localAdmission($instance);
+            if ($admitted['configuration_digest'] !== $intent['input']['configuration_digest']) {
+                throw $this->invalid();
+            }
+            $intent['input'] += $admitted;
+        }
+
         return $this->operations->execute($intent['kind'], 'instance', $id, $intent['node_id'], $intent['input'], $parent->triggered_by, null);
     }
 

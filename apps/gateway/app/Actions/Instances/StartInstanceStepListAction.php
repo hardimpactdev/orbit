@@ -23,6 +23,20 @@ final readonly class StartInstanceStepListAction
         return hash('sha256', json_encode($this->steps->ordered($project, $phase), JSON_THROW_ON_ERROR));
     }
 
+    /** @return array{configuration_digest:string,step_digests:array<string,string>,release_directory:string,project_id:int,repository:string} */
+    public function localAdmission(Instance $instance): array
+    {
+        $digests = [];
+        $steps = $this->steps->ordered($instance->project, LifecyclePhase::Setup);
+        foreach ($steps as $step) {
+            $digests[$step->name] = hash('sha256', $step->command);
+        }
+
+        return ['configuration_digest' => hash('sha256', json_encode($steps, JSON_THROW_ON_ERROR)),
+            'step_digests' => $digests, 'release_directory' => $instance->checkout_path,
+            'project_id' => $instance->project_id, 'repository' => $instance->project->repository_url];
+    }
+
     public function execute(Instance $instance, LifecyclePhase $phase, string $triggeredBy, ?string $requestId): Operation
     {
         $instance->refresh()->loadMissing('project');
@@ -33,7 +47,9 @@ final readonly class StartInstanceStepListAction
         return $this->operations->execute('instance.run_steps', 'instance', $instance->id, $instance->node_id, [
             'instance_id' => $instance->id,
             'source' => 'project', 'list' => $phase->value,
-            'configuration_digest' => $this->configurationDigest($instance->project, $phase),
+            ...($phase === LifecyclePhase::Setup ? $this->localAdmission($instance) : [
+                'configuration_digest' => $this->configurationDigest($instance->project, $phase),
+            ]),
         ], $triggeredBy, $requestId);
     }
 }

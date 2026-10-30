@@ -22,6 +22,8 @@ it('records setup intent and returns a keyed Operation without dispatching PHP',
             'instance_id' => $instance->id,
             'source' => 'project', 'list' => 'setup',
             'configuration_digest' => hash('sha256', '[]'),
+            'step_digests' => [], 'release_directory' => $instance->checkout_path,
+            'project_id' => $instance->project_id, 'repository' => $instance->project->repository_url,
         ]);
     Queue::assertNothingPushed();
 });
@@ -33,5 +35,7 @@ it('keeps Project commands out of admitted setup input and uses one digest rule'
     $admission = app(StartInstanceStepListAction::class);
     $operation = $admission->execute($instance, LifecyclePhase::Setup, 'operator', null);
     expect($operation->input['configuration_digest'])->toBe($admission->configurationDigest($instance->project, LifecyclePhase::Setup))
+        ->and($operation->input['step_digests'])->toBe(['install' => hash('sha256', 'synthetic-private-script')])
+        ->and($operation->input['release_directory'])->toBe($instance->checkout_path)
         ->and(json_encode($operation->input))->not->toContain('synthetic-private-script');
 });

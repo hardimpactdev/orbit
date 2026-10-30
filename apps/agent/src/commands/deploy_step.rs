@@ -2,6 +2,9 @@
 //! each line of its output on the deploy operation's Reverb channel while it runs. The result carries the output for
 //! the deployment record. Without Reverb the step still runs; only the live lines are missing.
 
+#[cfg(target_os = "linux")]
+pub(crate) mod local;
+
 use super::production::valid_name;
 use super::source::{canonical, is_real_directory};
 use crate::command::{identity, Command, Context, Platform, Privilege};

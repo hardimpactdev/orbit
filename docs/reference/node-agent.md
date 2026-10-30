@@ -57,9 +57,9 @@ Persistent Node workers share `swamp.start-worker` and `swamp.stop-worker` with 
 
 Node converge installs `orbit-agent-local.socket` for an opted-in per-Node worker. The root-owned socket uses `/run/orbit-agent/local.sock`, mode `0660`, group `orbit-swamp-worker` and systemd `Accept=yes`. Each connection starts the pinned agent in `serve-local` mode. The observer keeps its outbound-only contract.
 
-The service checks Linux `SO_PEERCRED` against the exact worker UID before reading input. It accepts one newline JSON frame with `command`, `agent_sha256` and typed `input`. The closed local catalogue starts with `instance.prepare-served-web-roots`; it never exposes all agent commands. The binary digest must match the admitted Node pin. The existing primitive validates its paths and owner/layout state. This boundary does not add transactional effects or stronger path-race guarantees to that primitive.
+The service checks Linux `SO_PEERCRED` against the exact worker UID before reading input. It accepts one newline JSON frame with `command`, `agent_sha256` and typed `input`. The closed local catalogue contains `instance.prepare-served-web-roots` and the [admitted app-user step](#admitted-app-user-steps); it never exposes all agent commands. The binary digest must match the admitted Node pin. The existing primitive validates its paths and owner/layout state. This boundary does not add transactional effects or stronger path-race guarantees to that primitive.
 
-Input is bounded to 64 KiB and the typed reply to 16 KiB. The compiled command timeout bounds the service. The reply socket is private and closes on child exec; inherited standard streams point to `/dev/null`. Output contains the typed result or a fixed refusal, with no raw stdout, stderr or input in journals. There is no shell, executable selection, binary stream, effect key or caller-selected transport path. The socket owns only local privilege admission; Swamp owns execution policy.
+Input is bounded to 64 KiB and the typed reply to 16 KiB. The shared service and client each have a 310-second ceiling. The reply socket is private and closes on child exec; inherited standard streams point to `/dev/null`. Output contains the typed result or a fixed refusal, with no raw stdout, stderr or input in journals. There is no caller-selected shell, executable, binary stream, effect key or transport path. The socket owns only local privilege admission; Swamp owns execution policy.
 
 ### Worker and package access
 
@@ -716,3 +716,14 @@ The WireGuard address alone does not tell the agent apart from other users on th
 ### The hash is stored last
 
 Storing a new hash before the agent restarts would refuse the running agent if the restart fails, while the file would match the record. Doctor would then report nothing. Storing it last keeps the running agent accepted and leaves a mismatch that Doctor reports.
+
+
+### Admitted app-user steps
+
+The separate `instance.run-step` local catalogue entry accepts only `{operation, step, digest}` inside the shared socket frame. It reads step material through the existing agent-secret-authenticated Gateway channel. Only the Operation's exact Node can read that private material; the control-plane peer has no exemption. A current direct, running, noncancelled intent and matching admitted command digest are required. Changed or missing programs refuse. The response is bounded, private and `no-store`, with no activity or public result record.
+
+The account is `orbit-app-<ProjectID>`, derived from the admitted Instance. The caller selects no account, release directory, program, environment or timeout. The root handler verifies the root-owned release layout and opens real app-owned directories without following links. It starts fixed Bash as the app UID in the admitted release, with cleared supplementary groups and environment, the admitted Instance values and fixed account variables. A sealed private script descriptor is the only extra inherited descriptor; worker and agent credentials and the socket descriptor stay in the root process.
+
+A fresh process group stops at the admitted timeout. Output uses the shared credential redactor before exact value redaction and retains at most 2 KiB. Incomplete or oversized lines are discarded; pipe cleanup has a bound.
+
+The shared client and service remain at 310 seconds. Steps above the supported 300-second action ceiling, or with insufficient time remaining after material lookup, refuse before execution. No timeout is shortened and no family override is added. The entry is source-only until independent security review approves it. Setup targets stay on their prior path until they have a release layout owned by the canonical app account. This adds no live socket, writer, grant or privilege change.
