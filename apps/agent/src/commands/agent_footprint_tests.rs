@@ -72,6 +72,7 @@ fn soon() -> Instant {
 fn input(secret_hash: Option<String>) -> ConfigureInput {
     ConfigureInput {
         secret_hash,
+        allow_secret_rotation: true,
         configuration: "gateway = \"https://gateway.orbit\"\n".into(),
         certificate: "-----BEGIN CERTIFICATE-----\n".into(),
         unit: "[Service]\nExecStart=/usr/local/bin/orbit-agent observe\n".into(),
@@ -443,4 +444,32 @@ fn configure_secret_hash_is_live_once_and_never_saved_in_effect_receipts() {
         repeated["secret_hash"],
         serde_json::json!({"$secret_output":true})
     );
+}
+
+#[test]
+fn direct_configure_refuses_rotation_without_changing_files_or_units() {
+    let mut sandbox = Sandbox::new();
+    let mut direct = input(None);
+    direct.allow_secret_rotation = false;
+    assert_eq!(
+        sandbox.configure(&direct),
+        Err(FootprintError::SecretMismatch {})
+    );
+    assert!(!sandbox.path(SECRET_PATH).exists());
+    assert!(sandbox.host.calls.is_empty());
+    let initial = sandbox.configure(&input(None)).unwrap();
+    let secret = sandbox.secret();
+    let inode = sandbox.inode(SECRET_PATH);
+    sandbox.host.calls.clear();
+    direct.secret_hash = Some(hash("a-different-owner-secret"));
+    assert_eq!(
+        sandbox.configure(&direct),
+        Err(FootprintError::SecretMismatch {})
+    );
+    assert_eq!(sandbox.secret(), secret);
+    assert_eq!(sandbox.inode(SECRET_PATH), inode);
+    assert!(sandbox.host.calls.is_empty());
+    direct.secret_hash = Some(initial.secret_hash);
+    assert!(!sandbox.configure(&direct).unwrap().restarted);
+    assert_eq!(sandbox.inode(SECRET_PATH), inode);
 }
