@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Gateway\GatewayQueue;
-use App\Domain\Routes\DirectRoutePublication;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Routes\StartRoutePublicationRun;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\ReadOperation;
 use App\Jobs\RunOperation;
 use App\Models\Operation;
@@ -57,8 +56,8 @@ final readonly class OperationDispatcher
 
     public function dispatch(Operation $operation): void
     {
-        if (DirectRoutePublication::owns($operation)) {
-            DB::afterCommit(static fn () => app(StartRoutePublicationRun::class)->start($operation));
+        if (DirectOperation::owns($operation)) {
+            DB::afterCommit(static fn () => app(StartSwampRun::class)->start($operation));
 
             return;
         }

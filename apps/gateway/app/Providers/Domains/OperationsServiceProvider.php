@@ -6,6 +6,7 @@ namespace App\Providers\Domains;
 
 use App\Console\Commands\CheckOperationHealthCommand;
 use App\Console\Scheduling\GatewaySchedule;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use Illuminate\Console\Scheduling\Schedule;
@@ -24,6 +25,7 @@ final class OperationsServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(OperationKinds::class);
+        $this->app->singleton(DirectOperation::class);
         $this->app->scoped(OperationIdempotency::class);
     }
 }

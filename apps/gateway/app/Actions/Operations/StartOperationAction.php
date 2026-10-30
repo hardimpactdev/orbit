@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationDispatcher;
 use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStore;
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Throwable;
@@ -59,7 +59,7 @@ final readonly class StartOperationAction
             return $operation;
         }
 
-        if (DirectRoutePublication::owns($operation)) {
+        if (DirectOperation::owns($operation)) {
             $this->dispatcher->dispatch($operation);
 
             return $operation;

@@ -217,8 +217,8 @@ final class RouteSwampGatewayFixture
 
             return $claimed;
         }
-        if (str_contains($path, '/route-publications/')) {
-            if (str_ends_with($path, '/publish') && preg_match('~/route-publications/(\d+)~', $path, $match)) {
+        if (str_contains($path, '/direct-operations/')) {
+            if (str_ends_with($path, '/primitive') && preg_match('~/direct-operations/(\d+)~', $path, $match)) {
                 $direct = Operation::query()->findOrFail((int) $match[1]);
                 if ((app(OperationKinds::class)->definition($direct->kind)['completion'] ?? null) === RouteForeignChildCompletion::class) {
                     return ['status' => 200, 'body' => ['data' => $this->foreign->run($direct, ['proof' => 'ready'])]];

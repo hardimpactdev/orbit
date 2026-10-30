@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\OperationStep;
@@ -44,7 +43,7 @@ final readonly class OperationStore
             throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
         }
 
-        $writer = DirectRoutePublication::handles($kind) ? DirectRoutePublication::writer($kind) : null;
+        $writer = app(DirectOperation::class)->writer($kind);
         $lockKey = $writer === 'direct' ? null : self::lockKey($targetType, $targetId);
         $parent = $this->idempotency->parent;
         if ($parent !== null) {
@@ -80,7 +79,7 @@ final readonly class OperationStore
                     'lock_key' => $lockKey,
                     'input' => $input,
                     'state' => ['executor_target' => ['node_id' => $nodeId, 'target_type' => $targetType, 'target_id' => $targetId],
-                        ...($writer === null ? [] : ['route_publication_writer' => $writer])],
+                        ...app(DirectOperation::class)->stamp($kind, $writer)],
                     'status' => OperationStatus::Queued,
                     'sequence' => 1,
                     'attempts' => 0,
