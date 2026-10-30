@@ -111,6 +111,25 @@ it('binds a Node worker credential request to its own Operation Node', function 
     Http::assertSentCount(2);
 });
 
+it('limits the control-plane mint exception to the active Gateway intent', function (string $target): void {
+    $foreign = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
+    $this->operation->update(['node_id' => $target === 'null' ? null : $foreign->id]);
+
+    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+
+    Http::assertNothingSent();
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+})->with(['foreign workload Node', 'null']);
+
+it('refuses the control-plane mint exception after the Gateway role ends', function (): void {
+    $this->gateway->roles()->update(['status' => LifecycleStatus::Failed]);
+
+    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id))
+        ->toThrow(ResourceOperationException::class, 'This Node cannot mint for the Operation Node.');
+
+    Http::assertNothingSent();
+});
+
 it('refuses an unknown peer and missing Gateway access', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.50'])->postJson($this->path, $this->body)->assertForbidden();
     $this->worker->accessibleNodes()->detach();

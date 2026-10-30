@@ -7,6 +7,7 @@ namespace App\Actions\GitHub;
 use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\GitHub\HttpGitHubApi;
@@ -17,13 +18,19 @@ use Illuminate\Support\Str;
 
 final readonly class IssueDirectGitHubTokenAction
 {
-    public function __construct(private DirectOperation $direct, private GitHubAppStore $store, private HttpGitHubApi $github) {}
+    public function __construct(private DirectOperation $direct, private GitHubAppStore $store, private HttpGitHubApi $github, private NodeAccessAuthorizer $nodes) {}
 
     /** @return array{grant: GitHubTokenGrant, credential: GitHubAccessToken} */
     public function handle(Operation $operation, int $callerNodeId): array
     {
         $operation->refresh();
         $grant = $this->direct->githubTokenGrant($operation);
+        $gatewayNodeId = $this->nodes->activeGatewayId();
+        $controlPlaneCaller = in_array(config('dependency_detection.services_node_id'), [$callerNodeId, (string) $callerNodeId], true);
+        if ($operation->node_id !== $callerNodeId
+            && (! $controlPlaneCaller || $gatewayNodeId === null || $operation->node_id !== $gatewayNodeId)) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'This Node cannot mint for the Operation Node.', 403);
+        }
         if ($operation->status->terminal() || $operation->cancel_requested_at !== null) {
             throw new ResourceOperationException('operation.github_token_forbidden', 'This intent no longer permits a GitHub credential.', 409);
         }
