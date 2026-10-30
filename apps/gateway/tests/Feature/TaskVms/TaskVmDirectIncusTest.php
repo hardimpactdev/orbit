@@ -66,8 +66,7 @@ it('captures the owning host digest and binds the root before its first admitted
     DB::commit();
     $this->getJson($path)->assertOk()->assertJsonPath('data.input.agent_sha256', $this->pin)->assertJsonPath('data.input.intent.task_vm_id', $this->vm->id);
     expect(array_keys(app(TaskVmIncusProjection::class)->input($op->fresh())))->toBe(['agent_sha256', 'intent']);
-    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-task-vm-incus', 'inputs' => ['operation_id' => $op->id, 'kind' => 'task_vm.incus_start', 'node_id' => $this->host->id],
-        'runtimeTags' => ['orbit_start_key' => 'operation:'.$op->id]])
+    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-task-vm-incus', 'inputs' => ['operation_id' => $op->id, 'kind' => 'task_vm.incus_start', 'node_id' => $this->host->id]])
         ->and($op->fresh()->lock_key)->toBeNull()->and($op->fresh()->worker)->toBeNull()->and($op->fresh()->attempts)->toBe(0);
 });
 
