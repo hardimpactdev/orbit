@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
+use App\Domain\Fleet\RecipePrFailure;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
@@ -44,10 +45,14 @@ final readonly class RefreshNightlyRecipePullRequestAction
                     $this->refresh($http, $repository, $pull->number, $pull->headRef, $main, $content);
                 } catch (Throwable) {
                     $this->alerts->halted('Nightly recipe PR '.$pull->url.' could not be recovered. Inspect GitHub before retrying.', incident: RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'refresh_failed'));
+                    throw new RecipePrFailure;
                 }
             }
+        } catch (RecipePrFailure $error) {
+            throw $error;
         } catch (Throwable) {
             $this->alerts->halted('Nightly recipe recovery could not read GitHub. No further recovery was attempted.', incident: RecipeMaintenanceAlerts::repositoryIncident('github_refresh_failed'));
+            throw new RecipePrFailure;
         }
     }
 

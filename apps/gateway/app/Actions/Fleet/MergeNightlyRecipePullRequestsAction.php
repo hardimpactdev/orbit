@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
+use App\Domain\Fleet\RecipePrFailure;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubListedPullRequest;
@@ -43,18 +44,13 @@ final readonly class MergeNightlyRecipePullRequestsAction
         if ($credentials === null || $repository === null) {
             return;
         }
-        $retrySeconds = RetireNightlyRecipePullRequestsAction::RetrySeconds;
         $scope = 'machine-recipe:nightly-merge:'.$repository->owner.'/'.$repository->name;
-        if (Cache::has($scope.':retry')) {
-            return;
-        }
         try {
             $pulls = $this->github->openPullRequests($token, $repository);
         } catch (Throwable) {
-            Cache::put($scope.':retry', true, $retrySeconds);
-            $this->alerts->haltedOnce("Nightly recipe PRs could not be read; retrying in {$retrySeconds} seconds. No automatic merge was attempted.", RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
+            $this->alerts->haltedOnce('Nightly recipe PRs could not be read. No automatic merge was attempted.', RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
 
-            return;
+            throw new RecipePrFailure;
         }
         $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
             ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
@@ -70,17 +66,15 @@ final readonly class MergeNightlyRecipePullRequestsAction
             $pulls = $this->retire->execute($http, $repository, $pulls, $author, $this->contents->read($http, 'main'), $number);
             $pulls = array_values(array_filter($pulls, static fn (GitHubListedPullRequest $pull): bool => $pull->number === $number && $pull->headSha === $expectedHead));
         } catch (Throwable) {
-            Cache::put($scope.':retry', true, $retrySeconds);
-            $this->alerts->haltedOnce("Nightly recipe main snapshot could not be read; retrying in {$retrySeconds} seconds.", RecipeMaintenanceAlerts::repositoryIncident('main_snapshot_failed'));
+            $this->alerts->haltedOnce('Nightly recipe main snapshot could not be read. The action did not converge.', RecipeMaintenanceAlerts::repositoryIncident('main_snapshot_failed'));
 
-            return;
+            throw new RecipePrFailure;
         }
         foreach ($pulls as $pull) {
             $artifactUpdate = preg_match('/\Anightly\/artifacts-[0-9a-f]{12}\z/', $pull->headRef) === 1;
             $blockedHeadKey = $this->blockedHeadKey($repository, $pull->number);
             $blocked = Cache::get($blockedHeadKey);
-            $retryKey = $scope.':retry:'.$pull->number.':'.$pull->headSha;
-            if ((is_array($blocked) && ($blocked['sha'] ?? null) === $pull->headSha) || Cache::has($retryKey)) {
+            if (is_array($blocked) && ($blocked['sha'] ?? null) === $pull->headSha) {
                 continue;
             }
             try {
@@ -109,9 +103,6 @@ final readonly class MergeNightlyRecipePullRequestsAction
                         }
                         if ($artifactUpdate) {
                             $current = $this->artifactPatch($http, $files, $parent, $pull->headSha, $pull->headRef);
-                            if ($current === null) {
-                                continue;
-                            }
                             if (! $current) {
                                 $this->metadata($http->get($path)->throw()->json(), $pull->headSha, $pull->headRef, $repository, $author);
                                 $http->patch($path, ['state' => 'closed'])->throw();
@@ -137,13 +128,15 @@ final readonly class MergeNightlyRecipePullRequestsAction
                 }
                 $merged = $this->github->mergePullRequest($token, $repository, $pull->number, $pull->headSha);
                 if (! $merged->merged) {
-                    Cache::put($retryKey, true, $retrySeconds);
-                    $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] merge refused (GitHub HTTP {$merged->status}): {$merged->message}. Recheck the PR and branch protection; retrying in {$retrySeconds} seconds.", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_refused'));
+                    $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] merge refused (GitHub HTTP {$merged->status}): {$merged->message}. Recheck the PR and branch protection. The action did not converge.", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_refused'));
+                    throw new RecipePrFailure(! in_array($merged->status, [405, 409, 422], true));
                 }
+            } catch (RecipePrFailure $error) {
+                throw $error;
             } catch (Throwable $error) {
-                Cache::put($retryKey, true, $retrySeconds);
                 $reason = $error instanceof RequestException || $error instanceof ConnectionException ? 'GitHub request failed.' : $error->getMessage();
-                $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] could not be completed; retrying in {$retrySeconds} seconds. {$reason}", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_retry'));
+                $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] could not be completed. The action did not converge. {$reason}", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_retry'));
+                throw new RecipePrFailure;
             }
         }
     }
@@ -161,7 +154,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
             'Only the recipe snapshot, Ubuntu pins, or authenticated artifact pins may change.');
     }
 
-    private function artifactPatch(PendingRequest $http, mixed $files, string $parent, string $head, string $branch): ?bool
+    private function artifactPatch(PendingRequest $http, mixed $files, string $parent, string $head, string $branch): bool
     {
         $this->require(is_array($files) && array_is_list($files) && count($files) === 1
             && data_get($files, '0.filename') === OpenNightlyRecipePullRequestAction::Path && data_get($files, '0.status') === 'modified',
@@ -175,10 +168,6 @@ final readonly class MergeNightlyRecipePullRequestsAction
         $key = 'machine-recipe:artifact-proof:'.hash('sha256', $parent.$head.$before.$after);
         $latest = Cache::get($key);
         if (! is_string($latest)) {
-            // Failures cool down too; network outages and incomplete builds must not rerun each minute.
-            if (! Cache::add($key.':attempt', true, 3600)) {
-                return null;
-            }
             $latest = $this->artifacts->indexes($before);
             $this->loader->decode($latest);
             if ($latest !== $before) {

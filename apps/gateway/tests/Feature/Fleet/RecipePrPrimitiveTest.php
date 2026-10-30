@@ -3,10 +3,15 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
+use App\Actions\Fleet\RecipePrPlanAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Fleet\RecipePrCommand;
+use App\Domain\Fleet\RecipePrFailure;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Models\Node;
 use App\Models\Operation;
@@ -58,6 +63,7 @@ function recipePrMergeHttp(array $evidence, array $overrides = [], bool $repeat 
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_nightly_merge']),
         $base.'/pulls?*' => Http::response([$evidence['pr']]),
+        $base.'/git/ref/heads/main' => Http::response(['object' => ['sha' => str_repeat('a', 40)]]),
         $base.'/pulls/99' => $repeat ? Http::response($evidence['pr']) : Http::sequence()->push($evidence['pr'])->push($evidence['final'])->whenEmpty(Http::response($evidence['pr'])),
         $base.'/pulls/99/commits?*' => Http::response($evidence['commits']),
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
@@ -161,8 +167,87 @@ it('retires a stale nightly before checks or merge even on a merge tick', functi
         : Http::response($evidence['pr']);
     recipePrMergeHttp($evidence, $overrides);
 
-    app(MergeNightlyRecipePullRequestsAction::class)->execute(99, 'ghs_nightly_merge', str_repeat('b', 40));
+    if ($stale === 'retirement-failed') {
+        expect(fn () => app(MergeNightlyRecipePullRequestsAction::class)->execute(99, 'ghs_nightly_merge', str_repeat('b', 40)))
+            ->toThrow(RecipePrFailure::class);
+    } else {
+        app(MergeNightlyRecipePullRequestsAction::class)->execute(99, 'ghs_nightly_merge', str_repeat('b', 40));
+    }
 
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PATCH' && $request['state'] === 'closed');
     Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/check-runs') || str_ends_with($request->url(), '/merge'));
 })->with(['main-reached', 'newer-open', 'retirement-failed']);
+
+it('projects genuine check observations for native PR convergence without writing GitHub', function (string $fault): void {
+    $evidence = recipePrMergeEvidence();
+    match ($fault) {
+        'pending' => $evidence['runs'][0]['status'] = 'in_progress',
+        'failed' => $evidence['runs'][0]['conclusion'] = 'failure',
+        'spoofed' => $evidence['runs'][0]['app']['slug'] = 'other-app',
+        'missing' => $evidence['runs'] = [],
+        default => null,
+    };
+    recipePrMergeHttp($evidence);
+    $gateway = FleetFixtures::node('gateway-plan', [RoleName::Gateway]);
+    app(GatewayServingHost::class)->remember($gateway);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25', [], null, null, null, []));
+
+    $result = app(RecipePrPlanAction::class)->execute();
+
+    expect($result['pulls'][0]['checks'])->toBe(match ($fault) {
+        'pending' => 'pending', 'failed', 'spoofed' => 'failed', 'missing' => 'missing', default => 'passed',
+    });
+    expect($result['pulls'][0]['checks_revision'])->toMatch('/^[a-f0-9]{64}$/');
+    Http::assertNotSent(static fn (Request $request): bool => in_array($request->method(), ['PATCH', 'PUT'], true)
+        || ($request->method() === 'POST' && ! str_ends_with($request->url(), '/access_tokens')));
+})->with(['passed', 'pending', 'failed', 'spoofed', 'missing']);
+
+it('reports transient recipe merge failures separately from definite refusal', function (int $httpStatus): void {
+    $evidence = recipePrMergeEvidence();
+    $evidence['merge_status'] = $httpStatus;
+    recipePrMergeHttp($evidence);
+    $gateway = FleetFixtures::node('gateway-verdict', [RoleName::Gateway]);
+    app(GatewayServingHost::class)->remember($gateway);
+    $operation = new Operation(['kind' => 'fleet.recipe_pr', 'node_id' => $gateway->id, 'input' => [
+        'action' => 'merge', 'variant' => 'snapshot', 'date' => now('Europe/Amsterdam')->format('Ymd'),
+        'pull_number' => 99, 'head_sha' => str_repeat('b', 40),
+    ]]);
+
+    $result = app(RecipePrCommand::class)->run($operation, [...$operation->input, 'token' => 'ghs_nightly_merge']);
+
+    expect($result)->toBe($httpStatus !== 405
+        ? ['error_code' => 'fleet.recipe_pr_retryable']
+        : ['completed' => true, 'outcome' => 'refused']);
+})->with([503, 403, 405]);
+
+it('retries artifact inspection after an index failure without a Gateway cooldown', function (): void {
+    $evidence = recipePrMergeEvidence();
+    $document = json_decode($evidence['before'], true, flags: JSON_THROW_ON_ERROR);
+    $document['tools']['incus']['artifacts']['amd64']['sha256'] = str_repeat('b', 64);
+    $evidence['after'] = json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+    $artifacts = new class extends RecipeArtifactsBump
+    {
+        public int $calls = 0;
+
+        public function indexes(string $recipe): string
+        {
+            if (++$this->calls === 1) {
+                throw new RuntimeException('Temporary index outage');
+            }
+
+            return $recipe;
+        }
+    };
+    $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.$artifacts->fingerprint($evidence['after']);
+    $evidence['final'] = $evidence['pr'];
+    recipePrMergeHttp($evidence, [], true);
+    app()->instance(RecipeArtifactsBump::class, $artifacts);
+
+    expect(fn () => app(MergeNightlyRecipePullRequestsAction::class)->execute(99, 'ghs_nightly_merge', str_repeat('b', 40)))
+        ->toThrow(RecipePrFailure::class);
+    app(MergeNightlyRecipePullRequestsAction::class)->execute(99, 'ghs_nightly_merge', str_repeat('b', 40));
+
+    expect($artifacts->calls)->toBe(2);
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99') && $request['state'] === 'closed');
+    Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'PUT');
+});

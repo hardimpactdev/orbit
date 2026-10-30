@@ -79,6 +79,8 @@ final readonly class RecipePrCommand implements OperationGatewayCommand
                     $this->refresh->execute(ValidatedData::string($head), $content, $number, $token, $pull->headSha);
                 }
             }
+        } catch (RecipePrFailure $failure) {
+            return $failure->retryable ? ['error_code' => 'fleet.recipe_pr_retryable'] : ['completed' => true, 'outcome' => 'refused'];
         } catch (NightlyRecipePendingDeployment) {
             return ['error_code' => 'fleet.recipe_pending_deployment'];
         }

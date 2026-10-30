@@ -917,6 +917,9 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 ## Fleet rollout
 
+Recipe PR maintenance is driven by Swamp. Each action is admitted once per exact PR head and observed check revision. Pending checks create no merge Operation. A successful `checked` result stays settled until its evidence changes; a failed Operation may retry. When GitHub refuses a merge under its repository rules, maintenance waits for changed evidence or an explicit operator action. The Gateway returns read-only check observations and records intent.
+
+
 After each verified Gateway release, the Gateway brings every managed workload Node to the same release, one Node at a time. Each Node runs [`orbit self-update`](/reference/self-update), the same command an operator runs on a Mac. A fleet failure never rolls the Gateway back. [`fleet`](/cli/fleet) shows and resumes the rollout.
 
 ### Turn it on

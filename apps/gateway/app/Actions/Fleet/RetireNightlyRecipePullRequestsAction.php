@@ -5,17 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
+use App\Domain\Fleet\RecipePrFailure;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubRepository;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /** One terminal rule for App nightlies, independent of checks, evidence, or merge refusals. */
 final readonly class RetireNightlyRecipePullRequestsAction
 {
-    public const int RetrySeconds = 300;
-
     public function __construct(private NightlyRecipeContents $contents, private RecipeMaintenanceAlerts $alerts) {}
 
     /**
@@ -36,10 +34,6 @@ final readonly class RetireNightlyRecipePullRequestsAction
             if ($snapshot === null || $pull->authorLogin !== $author) {
                 $remaining[] = $pull;
 
-                continue;
-            }
-            $key = 'machine-recipe:retire-retry:'.$repository->owner.'/'.$repository->name.':'.$pull->number.':'.$pull->headSha;
-            if (Cache::has($key)) {
                 continue;
             }
             try {
@@ -69,10 +63,9 @@ final readonly class RetireNightlyRecipePullRequestsAction
                     // Closing already ended the PR. A comment failure must not re-run retirement.
                 }
             } catch (Throwable) {
-                Cache::put($key, true, self::RetrySeconds);
-                $retrySeconds = self::RetrySeconds;
-                $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] retirement failed; retrying in {$retrySeconds} seconds.",
+                $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] retirement failed. The action did not converge.",
                     RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'retirement_failed'));
+                throw new RecipePrFailure;
             }
         }
 
