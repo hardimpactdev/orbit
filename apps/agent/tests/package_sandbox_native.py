@@ -1,6 +1,6 @@
 """Required real systemd/package boundary tests (also run by CI). Run as a normal sudo-capable user.
 
-ORBIT_PACKAGE_AGENT=target/debug/orbit-agent ORBIT_PACKAGE_NODE=/path/to/node \
+ORBIT_PACKAGE_AGENT=target/debug/orbit-agent ORBIT_PACKAGE_NODE=/path/to/node ORBIT_PACKAGE_NPM=/path/to/npm \
 python3 -B -m unittest discover -s tests -p package_sandbox_native.py -v
 
 Uses synthetic credentials only. Creates missing test prerequisites and removes
@@ -37,6 +37,8 @@ class PackageBoundary(unittest.TestCase):
         cls.binary = Path(AGENT).resolve()
         cls.digest = hashlib.sha256(cls.binary.read_bytes()).hexdigest()
         cls.node = Path(os.environ.get('ORBIT_PACKAGE_NODE') or shutil.which('node')).resolve()
+        cls.npm = Path(os.environ['ORBIT_PACKAGE_NPM']).resolve()
+        assert (cls.npm/'package.json').is_file() and (cls.npm/'bin/npm-cli.js').is_file(),'npm_fixture_missing'
         cls.temp = tempfile.TemporaryDirectory(prefix='package-native-')
         cls.path = Path(cls.temp.name)
         cls.jobs = []
@@ -56,13 +58,14 @@ class PackageBoundary(unittest.TestCase):
 os.umask(0o002)
 p=pathlib.Path(sys.argv[1]);p.mkdir(parents=True,mode=0o755);p.chmod(0o755)
 shutil.copyfile(sys.argv[2],p/'node');os.chmod(p/'node',0o755)
+shutil.copytree(sys.argv[4],p/'npm')
 # Test a real setuid sudo binary even on systems whose /usr/bin/sudo
 # symlink targets /etc/alternatives outside the package root.
 shutil.copyfile(pathlib.Path('/usr/bin/sudo').resolve(),p/'sudo');os.chmod(p/'sudo',0o4755)
 (p/'native-test-owner').write_text(sys.argv[3])
 (p/'network-deny.json').write_text(json.dumps({'public_addresses':['80.47.233.206','2001:db8::209']}))
 (p/'network-deny.json').chmod(0o644)
-''', RUNTIME, cls.node, str(cls.path))
+''', RUNTIME, cls.node, str(cls.path), cls.npm)
         # Trusted fixture runner starts the real typed command under the same
         # native-host lifetime used by production, with a synthetic credential.
         runner = cls.path / 'host.py'
@@ -293,6 +296,16 @@ https.get('https://registry.npmjs.org/-/ping',r=>{report.registry=r.statusCode;r
         self.assertEqual(report['secretEnv'], [])
         self.assertEqual(report['registry'], 200)
         self.assertTrue(all(g == report['gid'] for g in report['groups']))
+
+    def test_npm_uses_separate_empty_protected_config_scopes(self):
+        job=self.job()
+        result=self.call({'action':'run','job':job,'tool':'npm','cwd':'.','args':['config','get','registry'],'files':{'package.json':'{"name":"fixture","version":"1.0.0"}'}})
+        self.assertEqual(result['code'],0,result['stderr'])
+        self.assertEqual(result['stdout'].strip(),'https://registry.npmjs.org/')
+        script="const fs=require('fs');const paths=[process.env.npm_config_userconfig,process.env.npm_config_globalconfig];console.log(JSON.stringify({distinct:paths[0]!==paths[1],protected:paths.every(p=>{const s=fs.statSync(p);return s.uid===0&&(s.mode&0o022)===0&&fs.readFileSync(p,'utf8')==='';})}));"
+        result=self.run_node(job,script)
+        self.assertEqual(result['code'],0,result['stderr'])
+        self.assertEqual(json.loads(result['stdout']),{'distinct':True,'protected':True})
 
     def test_host_wildcard_service_is_unreachable_but_public_registry_is_allowed(self):
         interfaces=json.loads(subprocess.check_output(['/usr/sbin/ip','-j','address','show'],text=True))
