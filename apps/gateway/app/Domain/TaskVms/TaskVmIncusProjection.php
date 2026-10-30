@@ -14,6 +14,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
+use App\Infrastructure\TaskVms\RecipeImagePruning;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
@@ -34,6 +35,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         'task_vm.image_publish' => ['project', 'operation'],
         'task_vm.image_launch' => ['vm', 'operation'],
         'task_vm.image_promote' => ['project', 'operation'],
+        'task_vm.image_prune' => ['project', 'operation'],
     ];
 
     /** @param array<string,mixed> $input
@@ -50,6 +52,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             'task_vm.image_metadata' => ['prepare', 'metadata'],
             'task_vm.image_publish' => ['publish', 'publish'],
             'task_vm.image_promote' => ['promote', 'promote'],
+            'task_vm.image_prune' => ['prune', 'prune'],
             'task_vm.image_launch' => match ($input['effect_key'] ?? null) {
                 'launch' => ['launch', 'launch'], 'launch-smoke' => ['smoke', 'launch-smoke'], 'seed-smoke-launch' => ['topology-seed', 'seed-smoke-launch'],
                 default => throw new ResourceOperationException('operation.execution_forbidden', 'The image launch is not declared.', 422),
@@ -69,10 +72,14 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             || ((in_array($kind, ['task_vm.image_seed', 'task_vm.image_finish_seed'], true) || ($kind === 'task_vm.image_launch' && $key !== 'launch')) && (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The effect must belong to this active image attempt.', 422);
         }
+        if ($kind === 'task_vm.image_prune' && $build->promoted_at === null) {
+            throw new ResourceOperationException('operation.completion_unproven', 'The image must be promoted before pruning.', 409);
+        }
         $expected = match ($kind) {
             'task_vm.image_finish_seed' => ['location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => $fingerprint]],
             'task_vm.image_seed' => ['project' => $host->project, 'pool' => $host->pool, 'vm' => $build->builder_vm_name.'-smoke', 'size' => TaskVmVolumes::SeedSize, 'fingerprint' => $fingerprint],
             'task_vm.image_metadata' => ['project' => $host->project, 'operation' => ['kind' => 'prepare_metadata', 'name' => $build->builder_vm_name]],
+            'task_vm.image_prune' => app(RecipeImagePruning::class)->input($build),
             'task_vm.image_promote' => ['project' => $host->project, 'operation' => ['kind' => 'promote', 'alias' => $host->imageAlias, 'fingerprint' => $build->image_fingerprint]],
             'task_vm.image_publish' => ['project' => $host->project, 'operation' => ['kind' => 'publish', 'name' => $build->builder_vm_name,
                 'alias' => $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id),
@@ -82,7 +89,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
                     'gateway_public_key' => app(SshKeyProvider::class)->publicKey(), 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk, 'network' => $host->network, 'builder' => $key === 'launch']],
             'task_vm.image_remove' => ['vm' => ['project' => $host->project, 'name' => $build->builder_vm_name.(in_array($key, ['reset-builder', 'delete-builder'], true) ? '' : '-smoke'), 'cidr' => $host->cidr], 'operation' => ['kind' => 'remove_instance']],
         };
-        if ($kind === 'task_vm.image_promote') {
+        if (in_array($kind, ['task_vm.image_promote', 'task_vm.image_prune'], true)) {
             $input += $expected;
         }
         if (Arr::sortRecursive(Arr::only($input, array_keys($expected))) !== Arr::sortRecursive($expected)) {
