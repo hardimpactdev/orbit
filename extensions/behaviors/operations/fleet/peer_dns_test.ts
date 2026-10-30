@@ -277,3 +277,20 @@ Deno.test("an already terminal or cancelled intent performs no local action", as
     assertEquals(f.calls.length, 0);
   }
 });
+
+Deno.test("aborted malformed readonly output is safe cancellation but an uncertain write is not", async () => {
+  const readonly = new Fixture();
+  readonly.beforeInspect = () => readonly.controller.abort();
+  readonly.inspectReply = { malformed: true };
+  assertEquals(await readonly.run(), { status: "cancelled" });
+  assertEquals(readonly.projections.at(-1)?.result, {});
+
+  const mutation = new Fixture();
+  mutation.observed.state = "drift";
+  mutation.afterRepair = () => {
+    mutation.controller.abort();
+    throw new Error("Uncertain write");
+  };
+  await assertRejects(() => mutation.run(), Error, "Uncertain write");
+  assertEquals(mutation.projections.map((body) => body.status), ["running"]);
+});
