@@ -82,6 +82,10 @@ it('records keyed peer DNS intent without PHP execution and lists only eligible 
         ->and(Operation::query()->sole()->status)->toBe(OperationStatus::Queued)
         ->and($agents->calls)->toBe([]);
     Queue::assertNothingPushed();
+    expect(Operation::query()->sole()->lock_key)->toBe('peer_dns:'.$node->id);
+    $this->withHeader('Idempotency-Key', 'peer-dns-other-request')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')
+        ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy')
+        ->assertJsonPath('error.details.operation_id', Operation::query()->sole()->id);
     $this->withoutHeader('Idempotency-Key')->postJson('/api/v1/fleet/nodes/'.$gateway->id.'/peer-dns')->assertUnprocessable()->assertJsonPath('error.code', 'vpn.peer_dns_unmanaged');
 });
 

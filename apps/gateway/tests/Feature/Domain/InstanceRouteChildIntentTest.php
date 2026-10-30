@@ -11,6 +11,7 @@ use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\Node;
@@ -181,9 +182,10 @@ it('reuses the primary application environment when a diagnostic Route repeats i
     expect($intent['served'])->toBe([]);
 })->with(['public', 'apps/site/public'])->with([false, true]);
 
-it('admits and replays the package grandchild of a compensating Route PHP runtime', function (): void {
+it('admits Route PHP packages alongside peer DNS without sharing the Node hold', function (bool $dnsFirst): void {
     [, $parent, $route, $instance] = routeInstanceChild();
-    $instance->node->update(['ssh_host_fingerprint' => 'SHA256:fixture']);
+    $instance->node->update(['ssh_host_fingerprint' => 'SHA256:fixture', 'wireguard_public_key' => str_repeat('A', 43).'=']);
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.44.0.1');
     $route->update(['status' => 'failed', 'failed_step' => 'prepare-web-root', 'error_code' => 'instance.release_invalid']);
     $intent = ['key' => 'rollback-php', 'kind' => 'instance.prepare_php_runtime', 'node_id' => $instance->node_id,
         'input' => ['instance_id' => $instance->id]];
@@ -203,14 +205,27 @@ it('admits and replays the package grandchild of a compensating Route PHP runtim
     $this->postJson($path.'/step', ['worker' => 'proof', 'key' => 'php.plan:finish', 'name' => 'php_plan',
         'status' => 'succeeded', 'result' => $plan])->assertOk();
 
+    $admitDns = fn () => $this->withHeader('Idempotency-Key', 'route-package-peer-dns')
+        ->postJson('/api/v1/fleet/nodes/'.$instance->node_id.'/peer-dns')->assertAccepted()->json('data.id');
+    $dnsId = $dnsFirst ? $admitDns() : null;
+    $this->withoutHeader('Idempotency-Key');
+
     $id = $this->postJson($path.'/children', ['worker' => 'proof', 'key' => 'php_packages'])
         ->assertAccepted()->assertJsonPath('data.kind', 'node.prepare_php_packages')
         ->assertJsonPath('data.target_type', 'node')->assertJsonPath('data.target_id', $instance->node_id)->json('data.id');
     $this->postJson($path.'/children', ['worker' => 'proof', 'key' => 'php_packages'])->assertOk()->assertJsonPath('data.id', $id);
+    $dnsId ??= $admitDns();
+    $dns = Operation::query()->findOrFail($dnsId);
+    expect($dns->target_type)->toBe('peer_dns')->and($dns->target_id)->toBe($instance->node_id)
+        ->and($dns->status->value)->toBe('queued')->and($dns->attempts)->toBe(0);
+    $this->withoutHeader('Idempotency-Key')->call('POST', '/api/v1/operations/'.$dnsId.'/cancel',
+        server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertOk()->assertJsonPath('data.status', 'cancelled');
+    expect(Operation::query()->where('lock_key', 'node:'.$instance->node_id)->value('id'))->toBe($id);
     $packages = Operation::query()->findOrFail($id);
     expect($packages->parent_operation_id)->toBe($child->id)->and($packages->input['versions'])->toBe(['8.5'])
         ->and($packages->input['profile'])->toBe('app-prod')->and($packages->input['_php_packages']['fpm'])->toBe('none')
         ->and($child->children()->count())->toBe(1)->and($agents->calls)->toBe([]);
     $this->postJson($path.'/children', ['worker' => 'proof', 'key' => 'php_packages', 'input' => ['versions' => ['8.4'], 'profile' => 'app-prod']])
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
-});
+})->with(['DNS admitted first' => true, 'packages admitted first' => false]);
