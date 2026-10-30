@@ -6,10 +6,14 @@ import {
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
+import { type Discard, discard, discardDestination } from "./direct_discard.ts";
 
 const Args = DirectArgs.extend({
   kind: z.literal("instance.rename"),
   node_id: z.number().int().positive(),
+});
+const LifecycleArgs = Args.extend({
+  kind: z.enum(["instance.rename", "instance.transfer_discard"]),
 });
 const Source = z.object({
   repository: z.string().min(1),
@@ -33,6 +37,7 @@ const Result = z.union([
   z.object({ source_verified: z.literal(true), branch: z.string().nullable() })
     .strict(),
   z.object({ error_code: Code }).strict(),
+  z.object({ discarded: z.literal(true) }).strict(),
 ]);
 type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 type Inspect = (input: z.infer<typeof Input>) => Promise<unknown>;
@@ -138,12 +143,30 @@ export function lifecycleDirect(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   inspect: Inspect = inspectSource,
+  remove: Discard = discardDestination,
 ) {
   return {
     type: "@nckrtl/instance-lifecycle-direct",
-    version: "2026.10.30.2",
+    version: "2026.10.30.3",
     globalArguments: Globals,
     methods: {
+      execute: {
+        description: "Execute the admitted lifecycle action on its exact Node",
+        arguments: LifecycleArgs,
+        execute: async (args: z.infer<typeof LifecycleArgs>, ctx: Context) => {
+          LifecycleArgs.parse(args);
+          return await directOperation(
+            args,
+            new GatewayOperation(makeHttp(ctx), args),
+            (input) =>
+              args.kind === "instance.rename"
+                ? rename(input, inspect)
+                : discard(input, remove),
+            (result) => Result.parse(result),
+            ctx.signal,
+          );
+        },
+      },
       bindingCanary: {
         description:
           "Prove the bound Gateway read and projection without a Node action",

@@ -1,24 +1,24 @@
 id: a2ac2abb-17bf-4936-802e-995b004773aa
 name: operation-instance-lifecycle-direct
-description: Canary direct branch recording on the existing migration workers.
-labels: { pool: migration }
+description: Direct lifecycle actions on the admitted Node worker.
 vaults: []
 writes: true
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
     node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [instance.rename] }
+    kind: { type: string, enum: [instance.rename, instance.transfer_discard] }
   required: [operation_id, node_id, kind]
 jobs:
-  - name: rename
+  - name: lifecycle
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
     steps:
       - name: inspect
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-lifecycle-direct'
           behaviorName: '${{ "instance-lifecycle-node-" + string(inputs.node_id) }}'
-          methodName: bindingCanary
+          methodName: execute
           inputs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'

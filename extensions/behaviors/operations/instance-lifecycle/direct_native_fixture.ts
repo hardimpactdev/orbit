@@ -42,3 +42,14 @@ export async function fixtureInspect(input: unknown) {
   save(state);
   return state.agent;
 }
+
+export async function fixtureDiscard(input: unknown) {
+  await Promise.resolve();
+  const state = read();
+  if (JSON.stringify(input) !== JSON.stringify(state.operation.input)) {
+    throw new Error("Discard input changed");
+  }
+  state.discards = (state.discards ?? 0) + 1;
+  save(state);
+  return state.agent;
+}

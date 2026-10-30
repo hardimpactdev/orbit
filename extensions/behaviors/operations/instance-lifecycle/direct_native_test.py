@@ -26,13 +26,13 @@ class DirectRenameNative(unittest.TestCase):
             shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
         dest = behavior / 'operations/instance-lifecycle'
         dest.mkdir()
-        for name in ['direct.ts', 'direct_native_fixture.ts']:
+        for name in ['direct.ts', 'direct_discard.ts', 'direct_native_fixture.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/instance-lifecycle' / name, dest / name)
         module = dest / 'direct.ts'
-        module.write_text('import {fixtureHttp, fixtureInspect} from "./direct_native_fixture.ts";\n' + module.read_text().replace('...lifecycleDirect(),', '...lifecycleDirect(() => fixtureHttp, fixtureInspect),'))
+        module.write_text('import {fixtureHttp, fixtureInspect, fixtureDiscard} from "./direct_native_fixture.ts";\n' + module.read_text().replace('...lifecycleDirect(),', '...lifecycleDirect(() => fixtureHttp, fixtureInspect, fixtureDiscard),'))
         (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-instance-lifecycle-direct.yaml'
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().replace('methodName: bindingCanary', 'methodName: rename').splitlines() if not line.startswith(('target:', 'labels:')))+'\n')
+        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('target:', 'labels:')))+'\n')
         self.state = {'bound': True, 'calls': [], 'inspections': 0,
                       'operation': {'id': 17, 'kind': 'instance.rename', 'node_id': 9,
                                     'status': 'queued', 'result': None, 'cancel_requested': False,
@@ -62,7 +62,7 @@ class DirectRenameNative(unittest.TestCase):
 
     def run_workflow(self, success=True):
         self.cli('workflow', 'validate', 'operation-instance-lifecycle-direct')
-        result = self.cli('workflow', 'run', 'operation-instance-lifecycle-direct', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=instance.rename', success=success)
+        result = self.cli('workflow', 'run', 'operation-instance-lifecycle-direct', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=' + self.state['operation']['kind'], success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
         if not success:
             self.cli('report', 'get', '@swamp/workflow-summary', '--workflow', 'operation-instance-lifecycle-direct')
@@ -93,11 +93,34 @@ class DirectRenameNative(unittest.TestCase):
 
     def test_migration_canary_projects_a_refusal_without_a_local_action(self):
         workflow = self.repo / 'workflows/workflow-operation-instance-lifecycle-direct.yaml'
-        workflow.write_text(workflow.read_text().replace('methodName: rename', 'methodName: bindingCanary'))
+        workflow.write_text(workflow.read_text().replace('methodName: execute', 'methodName: bindingCanary'))
         self.run_workflow(success=False)
         self.assertEqual(self.read()['inspections'], 0)
         self.assertEqual(self.read()['operation']['status'], 'failed')
         self.assertEqual(self.read()['operation']['result'], {'error_code': 'instance.node_action_unavailable'})
+
+    def discard_intent(self):
+        self.state['operation']['kind'] = 'instance.transfer_discard'
+        self.state['operation']['input'] = {'agent_sha256': 'a' * 64, 'destination': '/srv/apps/example/proof'}
+        self.state['agent'] = {'ok': True, 'data': {}}
+        self.save()
+
+    def test_discard_uses_native_workflow_with_only_recorded_destination(self):
+        self.discard_intent()
+        self.run_workflow()
+        state = self.read()
+        self.assertEqual(state['discards'], 1)
+        self.assertEqual(state['inspections'], 0)
+        self.assertEqual(state['operation']['result'], {'discarded': True})
+
+    def test_discard_lost_projection_resumes_without_repeating_cleanup(self):
+        self.discard_intent()
+        self.state['loseCompletion'] = True
+        self.save()
+        self.run_workflow(success=False)
+        self.cli('workflow', 'resume', 'operation-instance-lifecycle-direct', '--run', self.run_id, '--from', 'inspect')
+        self.assertEqual(self.read()['discards'], 1)
+        self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
     def test_cancelled_intent_does_not_inspect(self):
         self.state['operation']['cancel_requested'] = True

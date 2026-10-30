@@ -1,14 +1,31 @@
-# Direct branch recording canary
+# Direct lifecycle actions
 
-`operation-instance-lifecycle-direct` handles branch-only `instance.rename`.
-Until per-Node workers exist, its canary uses the existing Node 209 workers with
-`pool=migration`, as authorized by the orchestrator. Exact placement on
-`orbit-node-<admittedNodeId>` follows with per-Node workers. The canary proves
-the Gateway start-response binding before the first worker read, running
-projection and terminal projection. Its `bindingCanary` method then refuses with
-`instance.node_action_unavailable` without calling any local agent. It cannot
-prove checkout inspection or justify writer takeover. The `rename` method is
-reserved for exact-Node placement when per-Node workers exist.
+The direct workflow places each action on `orbit-node-<admittedNodeId>` with no
+fallback. It handles branch-only `instance.rename` and destination-only
+`instance.transfer_discard`. Discard calls the installed pinned agent's fixed
+`instance.transfer-source` command with `operation: discard` through
+`/usr/bin/sudo -n`. The agent drops to the Node account for this account effect.
+Only the recorded destination is removed. Its 600-second native command budget
+and bounded typed reply apply. Raw stdout/stderr are never projected. Missing
+destinations succeed. Unknown outcomes throw for native Swamp recovery.
+Cancellation before the command skips it; an in-flight command finishes and
+projects its result.
+
+Transfer stays gated on its missing destination and activation handlers. Adding
+discard does not open it. These definitions switch no live writer. Prove each
+action on its target before takeover, then remove the replaced executor and
+execution tests.
+
+# Binding proof
+
+`operation-instance-lifecycle-direct` handles branch-only `instance.rename`. The
+previous canary used the existing Node 209 workers with `pool=migration`, as
+authorized by the orchestrator. It proved the Gateway start-response binding
+before the first worker read, running projection and terminal projection. Its
+`bindingCanary` method then refuses with `instance.node_action_unavailable`
+without calling any local agent. It cannot prove checkout inspection or justify
+writer takeover. The `rename` method now requires exact-Node placement and a
+live worker.
 
 It uses the shared direct Operation read/result protocol and the existing
 read-only account agent command. It changes no HEAD, files or origin. Repository
