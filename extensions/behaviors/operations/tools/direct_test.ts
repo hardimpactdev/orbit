@@ -126,6 +126,86 @@ Deno.test("direct policy preserves all five kinds across the closed manager regi
   }
 });
 
+Deno.test("direct adoption keeps package policy and never mutates or materializes", async () => {
+  for (
+    const block of [
+      null,
+      "protected",
+      "dependency",
+      "unsupported_source",
+      "unsupported_artifact",
+      "bottle_unavailable",
+      "version_unreadable",
+      "authorization_required",
+    ]
+  ) {
+    for (const manager of ["brew", "brew-cask"]) {
+      const f = new Fixture("tool.adopt", manager);
+      const invoke = f.invoke;
+      f.invoke = (name, input) =>
+        name.endsWith("-adoption")
+          ? Promise.resolve({ installed_version: f.installed, block })
+          : invoke(name, input);
+      const result = await f.execute();
+      assertEquals(
+        result.outcome.error_code,
+        block === null ? null : "tool.adoption_unsupported",
+      );
+      assertEquals(f.mutations(), []);
+      assertEquals(
+        f.calls.some((call) => /materialize|candidate/.test(call.name)),
+        false,
+      );
+    }
+  }
+  for (
+    const [installed, roots, error] of [
+      ["1.0.0", ["vendor/package"], null],
+      ["1.0.0", ["other/root"], "tool.adoption_unsupported"],
+      [null, ["vendor/package"], "tool.package_absent"],
+    ] as const
+  ) {
+    const f = new Fixture("tool.adopt", "composer");
+    f.installed = installed;
+    const invoke = f.invoke;
+    f.invoke = (name, input) =>
+      name === "tool.inspect-composer-scope"
+        ? Promise.resolve({ roots: [...roots] })
+        : invoke(name, input);
+    assertEquals((await f.execute()).outcome.error_code, error);
+    assertEquals(f.mutations(), []);
+    assertEquals(
+      f.calls.some((call) => /materialize|candidate/.test(call.name)),
+      false,
+    );
+  }
+  for (
+    const code of [
+      "tool.composer_scope_absent",
+      "tool.composer_scope_conflict",
+      "tool.composer_scope_unreadable",
+    ]
+  ) {
+    const f = new Fixture("tool.adopt", "composer");
+    const invoke = f.invoke;
+    f.invoke = (name, input) =>
+      name === "tool.inspect-composer-scope"
+        ? Promise.resolve({ error_code: code })
+        : invoke(name, input);
+    assertEquals(
+      (await f.execute()).outcome.error_code,
+      code.endsWith("unreadable")
+        ? "tool.version_probe_failed"
+        : "tool.manager_unavailable",
+    );
+    assertEquals(f.mutations(), []);
+    assertEquals(
+      f.calls.some((call) => call.name.endsWith("-inventory")),
+      false,
+    );
+  }
+});
+
 Deno.test("silent adoption remains refused while native resume reconciles an uncertain install", async () => {
   const existing = new Fixture();
   existing.installed = "1.0.0";

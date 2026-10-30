@@ -251,8 +251,10 @@ Deno.test("the retained polling workflow discovers only the registered Tool kind
     ),
   );
   assertEquals(workflow.jobs[0].steps[0].task.inputs.kinds, registration.kinds);
-  assertEquals(registration.kinds, ["tool.adopt", "tool.manager_converge"]);
-  for (const kind of ["tool.install", "tool.update", "tool.remove"]) {
+  assertEquals(registration.kinds, ["tool.manager_converge"]);
+  for (
+    const kind of ["tool.install", "tool.update", "tool.remove", "tool.adopt"]
+  ) {
     assertEquals(
       tools().methods.execute.arguments.safeParse({ kind, worker: "dispatch" })
         .success,
@@ -327,145 +329,6 @@ Deno.test("same managed install verifies the live version without changing it", 
   f.operation.input.tool_id = 8;
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.mutations, 0);
-});
-Deno.test("adoption records only an accepted live package and never materializes", async () => {
-  for (
-    const block of [
-      null,
-      "protected",
-      "dependency",
-      "unsupported_source",
-      "authorization_required",
-    ]
-  ) {
-    const f = new Fixture();
-    f.operation.kind = "tool.adopt";
-    f.installed = "7.0.0";
-    f.block = block;
-    assertEquals(
-      (await f.execute()).status,
-      block === null ? "succeeded" : "failed",
-    );
-    assertEquals(f.mutations, 0);
-    assertEquals(
-      f.calls.some((c) => String(c.body.name).includes("materialize")),
-      false,
-    );
-  }
-});
-Deno.test("Homebrew formula and cask adoption preserve native policy facts and fixed macOS input", async () => {
-  for (const manager of ["brew", "brew-cask"]) {
-    for (
-      const block of [
-        null,
-        "protected",
-        "dependency",
-        "unsupported_source",
-        "unsupported_artifact",
-        "bottle_unavailable",
-        "version_unreadable",
-        "authorization_required",
-      ]
-    ) {
-      const f = new Fixture();
-      f.operation.kind = "tool.adopt";
-      Object.assign(f.operation.input, {
-        manager,
-        platform: "macos",
-        architecture: "arm64",
-        package: "font-hack",
-      });
-      f.installed = "3.003";
-      f.block = block;
-
-      assertEquals(
-        (await f.execute()).status,
-        block === null ? "succeeded" : "failed",
-      );
-      assertEquals(f.mutations, 0);
-      const runs = f.calls.filter((c) => c.path.endsWith("/run"));
-      assertEquals(runs.map((c) => c.body.name), [
-        "tool.homebrew-version",
-        manager === "brew"
-          ? "tool.homebrew-formula-adoption"
-          : "tool.homebrew-cask-adoption",
-      ]);
-      assertEquals(runs[1].body.input, {
-        package: "font-hack",
-        architecture: "arm64",
-      });
-      assertEquals(
-        f.complete().error_code,
-        block === null ? null : "tool.adoption_unsupported",
-      );
-    }
-  }
-});
-Deno.test("absent adoption fails without creating a host effect", async () => {
-  const f = new Fixture();
-  f.operation.kind = "tool.adopt";
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.complete().error_code, "tool.package_absent");
-});
-Deno.test("Composer adoption reads roots and inventory without selecting candidates or mutating packages", async () => {
-  for (
-    const [pkg, version, code] of [
-      ["laravel/pint", "1.20.0", null],
-      ["symfony/console", "7.1.0", "tool.adoption_unsupported"],
-      ["vendor/absent", null, "tool.package_absent"],
-    ] as const
-  ) {
-    const f = new Fixture();
-    f.operation.kind = "tool.adopt";
-    Object.assign(f.operation.input, { manager: "composer", package: pkg });
-    f.composerRoots = ["php", "ext-json", "legacy/Uppercase", "laravel/pint"];
-    f.installed = version;
-
-    assertEquals(
-      (await f.execute()).status,
-      code === null ? "succeeded" : "failed",
-    );
-    assertEquals(f.complete().error_code, code);
-    assertEquals(f.mutations, 0);
-    assertEquals(
-      f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.name),
-      [
-        "tool.composer-version",
-        "tool.inspect-composer-scope",
-        "tool.composer-inventory",
-      ],
-    );
-  }
-});
-Deno.test("Composer scope refusals stop adoption before inventory and package effects", async () => {
-  for (
-    const code of [
-      "tool.composer_scope_absent",
-      "tool.composer_scope_conflict",
-      "tool.composer_scope_unreadable",
-    ]
-  ) {
-    const f = new Fixture();
-    f.operation.kind = "tool.adopt";
-    Object.assign(f.operation.input, {
-      manager: "composer",
-      package: "vendor/package",
-    });
-    f.scopeRefusal = code;
-
-    assertEquals((await f.execute()).status, "failed");
-    assertEquals(
-      f.complete().error_code,
-      code.endsWith("unreadable")
-        ? "tool.version_probe_failed"
-        : "tool.manager_unavailable",
-    );
-    assertEquals(f.mutations, 0);
-    assertEquals(
-      f.calls.some((c) => c.body.name === "tool.composer-inventory"),
-      false,
-    );
-  }
 });
 Deno.test("APT and Composer reject unavailable or malformed candidates before installation", async () => {
   for (const manager of ["apt", "composer"]) {

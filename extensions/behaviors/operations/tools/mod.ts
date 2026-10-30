@@ -57,7 +57,6 @@ export function tools(
           "Claim and execute one Tool Operation on the same placed worker Node",
         arguments: z.object({
           kind: z.enum([
-            "tool.adopt",
             "tool.manager_converge",
           ]),
           worker: z.string().min(1),

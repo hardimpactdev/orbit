@@ -1,6 +1,5 @@
 {
   "kinds": [
-    "tool.adopt",
     "tool.manager_converge"
   ],
   "workflow": "operation-tools"
