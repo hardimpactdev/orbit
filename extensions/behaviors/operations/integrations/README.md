@@ -1,11 +1,13 @@
 # Integration Operations
 
 The Gateway records intent and validates every command and child. This family
-executes Reverb registry changes, Vault collection changes, AI router,
-Analytics, Metrics, Conn pairing effects, and the integration children of Node
-role changes.
+executes Reverb registry changes, Vault collection changes, AI router, Analytics
+role changes, Metrics, Conn pairing effects, and the integration children of
+Node role changes.
 
-`registration.json` lists the kinds. Family discovery skips a kind while its
+`registration.json` lists the polled kinds. Analytics retains only
+`analytics.role_converge` and `analytics.role_remove`; version updates use
+`operation-analytics-update-direct`. Family discovery skips a kind while its
 required Gateway capability is unavailable. Vault and Metrics list contracts
 need C; pairing creation needs H. No family implements a substitute for these
 shared contracts.
