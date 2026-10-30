@@ -550,10 +550,15 @@ final readonly class RegisterInstanceAction
         $destinations = [];
 
         foreach ($facts as $fact) {
-            $instance = Instance::query()
+            $matches = Instance::query()
                 ->where('node_id', $node->id)
                 ->where(static fn ($query) => $query->where('registration_original_path', $fact->path)->orWhere('checkout_path', $fact->path))
-                ->first();
+                ->orderBy('id')
+                ->get();
+            if ($matches->count() > 1) {
+                throw $this->conflict('instance.registration_evidence_invalid', 'Several Instances identify the requested source path.');
+            }
+            $instance = $matches->first();
             $adopting = $instance instanceof Instance && $instance->registration_request_id === null;
 
             $explicitName = $fact === $primary && $data->instanceName !== null
@@ -595,6 +600,14 @@ final readonly class RegisterInstanceAction
                 }
             } else {
                 if ($adopting) {
+                    $creating = Operation::query()->where('kind', 'instance.create')->whereIn('status', ['queued', 'running', 'waiting'])
+                        ->where(static fn ($query) => $query
+                            ->where(static fn ($target) => $target->where('target_type', 'instance')->where('target_id', $instance->id))
+                            ->orWhere(static fn ($placement) => $placement->where('node_id', $node->id)->where('input->checkout', $fact->path)))
+                        ->exists();
+                    if ($creating) {
+                        throw $this->conflict('instance.registration_conflict', 'A create still owns the Instance or source path.');
+                    }
                     if ($instance->status !== InstanceState::SourceResolved
                         || ! Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
                             ->where('target_id', $instance->id)->where('node_id', $node->id)
