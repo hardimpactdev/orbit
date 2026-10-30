@@ -190,6 +190,12 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
         if (! is_string($identity) || $identity === '') {
             throw $this->forbidden();
         }
+        if ($operation->kind === 'node.network_converge') {
+            if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+                throw $this->forbidden();
+            }
+            $this->knownHosts->put($node->wireguard_ip, 22, $key);
+        }
         $connection = new SshConnection(host: $host, user: $user, port: $port,
             identityFile: $identity, knownHostsFile: $this->knownHosts->path(),
             proxyJump: NodeSshJump::connection($node, $identity, $this->knownHosts->path()),

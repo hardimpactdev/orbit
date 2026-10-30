@@ -9,6 +9,8 @@ use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Nodes\BootstrapSshOperationTransport;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -178,7 +180,8 @@ it('uses native peer-key proof for the bound hub child through the executor API'
     $scanner->shouldReceive('scan')->once()->with($operation->input['bootstrap_host'], 22, null)->andReturn($hostKey);
     app()->instance(HostKeyScanner::class, $scanner);
     $known = Mockery::mock(KnownHostsStore::class);
-    $known->shouldReceive('put')->once();
+    $known->shouldReceive('put')->once()->with($operation->input['bootstrap_host'], 22, $hostKey);
+    $known->shouldReceive('put')->once()->with($peer->wireguard_ip, 22, $hostKey);
     $known->shouldReceive('path')->andReturn('/fixture/known-hosts');
     app()->instance(KnownHostsStore::class, $known);
     $keys = Mockery::mock(SshKeyProvider::class);
@@ -209,4 +212,52 @@ it('uses native peer-key proof for the bound hub child through the executor API'
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
+});
+
+it('retries the private status read after a lost transport response without replaying publication', function (): void {
+    $operation = networkProofOperation();
+    networkProofRun($operation, 'network-key', ['public_key' => $operation->input['_network']['existing_key']]);
+    networkProofHub($operation);
+    networkProofRun($operation, 'network-publish', ['public_key' => $operation->input['_network']['existing_key']]);
+    $operation->update(['status' => 'queued']);
+    $gateway = FleetFixtures::node('retry-gateway', [RoleName::Gateway]);
+    $services = FleetFixtures::node('retry-services');
+    $services->accessibleNodes()->attach($gateway);
+    config(['dependency_detection.services_node_id' => $services->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $calls = 0;
+    $runner->shouldReceive('run')->twice()->andReturnUsing(function ($node, $name, $input) use (&$calls, $operation): array {
+        expect($node->id)->toBe($operation->node_id)->and($name)->toBe('agent.status')->and($input)->toBe([]);
+        if (++$calls === 1) {
+            throw new RuntimeException('Lost read response.');
+        }
+
+        return ['architecture' => 'x86_64'];
+    });
+    app()->instance(AgentCommandRunner::class, $runner);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'node.network_converge', 'worker' => 'read-retry'])->assertOk();
+    $descriptor = array_find(app(NodeNetworkOperationExecution::class)->context($operation->refresh())['descriptors'], fn ($d) => $d['key'] === 'network-private-ssh');
+    $body = ['worker' => 'read-retry', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => (object) $descriptor['input']];
+    $path = '/api/v1/operation-executor/'.$operation->id.'/run';
+    $this->postJson($path, $body)->assertStatus(502)->assertJsonPath('error.code', 'operation.execution_failed');
+    $this->postJson($path, $body)->assertOk()->assertJsonPath('data.architecture', 'x86_64');
+    $this->postJson($path, $body)->assertOk()->assertJsonPath('data.architecture', 'x86_64');
+    expect($operation->fresh()->state['executor_runs']['network-publish']['result']['public_key'])->toBe($operation->input['_network']['existing_key']);
+});
+
+it('refuses an unverified bootstrap key before changing the WireGuard SSH pin', function (): void {
+    $operation = networkProofOperation();
+    $descriptor = app(NodeNetworkOperationExecution::class)->context($operation)['descriptors'][1];
+    $scanner = Mockery::mock(HostKeyScanner::class);
+    $scanner->shouldReceive('scan')->once()->andReturn(new HostKey('ssh-ed25519', 'foreign-public-key', 'SHA256:'.str_repeat('B', 43)));
+    app()->instance(HostKeyScanner::class, $scanner);
+    $known = Mockery::mock(KnownHostsStore::class);
+    $known->shouldNotReceive('put');
+    app()->instance(KnownHostsStore::class, $known);
+    $runner = Mockery::mock(AdmissionAgentRunner::class);
+    $runner->shouldNotReceive('runOver');
+    app()->instance(AdmissionAgentRunner::class, $runner);
+    $input = [...$descriptor['input'], 'bootstrap_identity' => '/fixture/identity'];
+    expect(fn () => app(BootstrapSshOperationTransport::class)->run($operation, $descriptor, $input))->toThrow(ResourceOperationException::class);
 });
