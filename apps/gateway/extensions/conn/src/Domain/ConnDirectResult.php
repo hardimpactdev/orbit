@@ -12,6 +12,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
+use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
 /** Safe Conn state and domain result validation. No T3 calls or secret writes. */
@@ -25,10 +27,14 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
         if ($pairings->count() !== count($ids)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The admitted pairing owner changed.', 422);
         }
+        if (! $operation->status->terminal() && $operation->kind === 'conn.gateway_sessions_revoke'
+            && ConnEnvironment::query()->findOrFail($operation->target_id)->cleanup_version !== $operation->input['cleanup_version']) {
+            throw new ResourceOperationException('conn.environment_changed', 'The cleanup revision changed.', 409);
+        }
         $pairing = $operation->kind === 'conn.pairing_create' ? $pairings->sole() : null;
 
         return ['action' => substr($operation->kind, 5),
-            'labels' => $pairings->pluck('client_label')->all(),
+            'labels' => $operation->kind === 'conn.gateway_sessions_revoke' ? [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL] : $pairings->pluck('client_label')->all(),
             'links' => $pairings->pluck('pairing_link_id')->filter()->values()->all(),
             'pairing_id' => $pairing?->id, 'issue_started' => $pairing?->issue_started_at !== null, 'issued' => $pairing !== null && $pairing->credential !== null,
             'pairing_link_id' => $pairing?->pairing_link_id, 'expires_at' => $pairing?->expires_at?->toIso8601String()];
