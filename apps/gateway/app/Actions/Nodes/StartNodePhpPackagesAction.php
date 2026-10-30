@@ -25,9 +25,9 @@ final readonly class StartNodePhpPackagesAction
         if (! OperationKinds::supports('list_of')) {
             throw new ResourceOperationException('operation.kind_unavailable', 'PHP package children require enforced list results.', 409);
         }
-        if ($this->identity->parent === null || ! in_array($this->identity->parent->kind, ['instance.deploy', 'instance.rollback'], true)
+        if ($this->identity->parent === null || ! in_array($this->identity->parent->kind, ['instance.deploy', 'instance.rollback', 'instance.prepare_php_runtime'], true)
             || $this->identity->parent->node_id !== $node->id || $this->identity->kind !== 'node.prepare_php_packages') {
-            throw new ResourceOperationException('operation.child_forbidden', 'PHP package preparation requires the deploy or rollback child admission.', 422);
+            throw new ResourceOperationException('operation.child_forbidden', 'PHP package preparation requires its owning deployment or Route runtime child admission.', 422);
         }
         if ($node->platform !== 'linux' || ! $this->eligibility->isManagedForObservation($node)
             || ! in_array($node->status, [LifecycleStatus::Active, LifecycleStatus::Failed], true)) {
