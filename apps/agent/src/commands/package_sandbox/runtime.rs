@@ -200,6 +200,14 @@ fn stage(root: &Path, files: &BTreeMap<String, String>, a: &Account) -> Result<(
         "nameserver 1.1.1.1\nnameserver 8.8.8.8\noptions timeout:2 attempts:2\n",
     )
     .map_err(|_| Error::Failed {})?;
+    // npm refuses one path loaded as two configuration scopes. Both files
+    // are empty, root-owned and outside the package-writable directories.
+    for name in ["npm-user.npmrc", "npm-global.npmrc"] {
+        let path = root.join("etc").join(name);
+        fs::write(&path, b"").map_err(|_| Error::Failed {})?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
+            .map_err(|_| Error::Failed {})?;
+    }
     let php = fs::canonicalize("/usr/bin/php").map_err(|_| Error::Unavailable {})?;
     if !php.starts_with("/usr/bin") {
         return Err(Error::Unavailable {});
@@ -304,8 +312,8 @@ format!("IPAddressDeny=0.0.0.0/8 127.0.0.0/8 ::/128 ::1/128 169.254.0.0/16 fe80:
         ("COMPOSER_CACHE_DIR", "/cache/composer"),
         ("COMPOSER_NO_INTERACTION", "1"),
         ("COMPOSER_ALLOW_SUPERUSER", "0"),
-        ("npm_config_userconfig", "/dev/null"),
-        ("npm_config_globalconfig", "/dev/null"),
+        ("npm_config_userconfig", "/etc/npm-user.npmrc"),
+        ("npm_config_globalconfig", "/etc/npm-global.npmrc"),
         ("npm_config_cache", "/cache/npm"),
         ("npm_config_ignore_scripts", "true"),
         ("npm_config_registry", "https://registry.npmjs.org/"),

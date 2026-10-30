@@ -43,6 +43,8 @@ Linux x86_64 requires systemd 257 or later (`PrivatePIDs`), `openat2`, cgroup-v2
 
 Network filters deny loopback, private fleet endpoints, CGNAT (`100.64.0.0/10`) and every assigned host address, including global IPv6. Root-owned `network-deny.json` in the runtime directory names additional public or NAT addresses as `{"public_addresses":["80.47.233.206"]}`; missing or unsafe metadata refuses execution. `SocketBindDeny=any` blocks listeners, and the trusted guard proves that both IPv4 and IPv6 bind calls fail.
 
+npm uses distinct, empty, root-owned user and global configuration files inside the package root. No host npm configuration is mounted.
+
 Only the active PHP version’s `/etc/php/<version>/cli` configuration is copied into the private root, with selected INI links resolved; pool configuration stays outside the job. Unsupported platforms refuse; there is no execution as `orbit` fallback.
 
 Every package command belongs to the calling native host service's lifetime. Cancellation stops the entire package cgroup, including `setsid` descendants. Before staging, export or removal, the root launcher stops and verifies the previous package cgroup. File transfer uses directory descriptors and rejects symlinks, magic links and hard links. The dedicated UID has no supplementary groups or sudo rule. The managed `orbit` administrator still needs its existing root command authority; it never runs package code.

@@ -200,11 +200,23 @@ jobs:
           name: agent-delivery-linux
           path: ${{ runner.temp }}/agent-delivery
       - name: Install native fixture tools
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes nodejs php-cli iproute2 sudo python3
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes php-cli iproute2 sudo python3
+      - name: Prepare pinned Node and npm fixture
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, io, os, pathlib, tarfile, urllib.request
+          data = urllib.request.urlopen('https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz', timeout=60).read()
+          assert hashlib.sha256(data).hexdigest() == '6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6'
+          destination = pathlib.Path(os.environ['RUNNER_TEMP']) / 'package-toolchain'
+          destination.mkdir()
+          with tarfile.open(fileobj=io.BytesIO(data), mode='r:xz') as archive:
+              archive.extractall(destination, filter='data')
+          PYTHON
       - name: Prove the package boundary and refusal paths
         env:
           ORBIT_PACKAGE_AGENT: ${{ runner.temp }}/agent-delivery/orbit-agent-linux-x86_64
-          ORBIT_PACKAGE_NODE: /usr/bin/node
+          ORBIT_PACKAGE_NODE: ${{ runner.temp }}/package-toolchain/node-v24.22.1-linux-x64/bin/node
+          ORBIT_PACKAGE_NPM: ${{ runner.temp }}/package-toolchain/node-v24.22.1-linux-x64/lib/node_modules/npm
         run: |
           chmod +x "$ORBIT_PACKAGE_AGENT"
           python3 -B -m unittest discover -s apps/agent/tests -p package_sandbox_native.py -v
