@@ -60,6 +60,23 @@ pub fn arguments(
     arguments
 }
 
+// The root/package services are siblings managed by systemd, not children of
+// the CLI's process group. Bind them to the native host service explicitly so
+// SIGKILL or worker cancellation cannot leave package execution behind.
+fn package_host(membership: &str) -> Option<String> {
+    let unit = membership
+        .lines()
+        .find_map(|line| line.strip_prefix("0::/system.slice/"))?;
+    let id = unit
+        .strip_prefix("orbit-swamp-host-")?
+        .strip_suffix(".service")?;
+    (id.len() == 32
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+    .then(|| unit.to_owned())
+}
+
 /// Runs the same envelope under a transient service and returns its one result.
 #[allow(clippy::too_many_arguments)]
 pub fn launch(
@@ -76,8 +93,32 @@ pub fn launch(
         return outcome;
     }
     let unit = unit_name(command);
+    let mut args = arguments(executable, command, budget, &unit, user, locks);
+    if command == "package.session" {
+        let parent = std::fs::read_to_string("/proc/self/cgroup")
+            .ok()
+            .and_then(|value| package_host(&value));
+        let Some(parent) = parent else {
+            return Outcome::refused(
+                "package.isolation_unavailable",
+                "Package execution requires a managed native host lifetime.",
+                json!({}),
+            );
+        };
+        let at = args
+            .iter()
+            .position(|v| v == "--")
+            .expect("fixed systemd argument separator");
+        args.splice(
+            at..at,
+            [
+                format!("--property=BindsTo={parent}"),
+                format!("--property=After={parent}"),
+            ],
+        );
+    }
     let child = Command::new("/usr/bin/systemd-run")
-        .args(arguments(executable, command, budget, &unit, user, locks))
+        .args(args)
         .env_clear()
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
         .stdin(Stdio::piped())
@@ -174,6 +215,23 @@ pub fn parse_result(output: &str) -> Option<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_lifetime_cannot_bind_a_general_service_or_an_escaped_unit() {
+        let unit = "orbit-swamp-host-0123456789abcdef0123456789abcdef.service";
+        assert_eq!(
+            package_host(&format!("0::/system.slice/{unit}\n")),
+            Some(unit.into())
+        );
+        for invalid in [
+            "0::/system.slice/swamp-serve.service",
+            "0::/system.slice/orbit-swamp-host-x.service",
+            "0::/user.slice/orbit-swamp-host-0123456789abcdef0123456789abcdef.service",
+            "0::/system.slice/orbit-swamp-host-0123456789abcdef0123456789abcdef.service/child",
+        ] {
+            assert!(package_host(invalid).is_none());
+        }
+    }
 
     #[test]
     fn a_missing_boot_bus_is_pending_but_an_invalid_bus_is_not() {
