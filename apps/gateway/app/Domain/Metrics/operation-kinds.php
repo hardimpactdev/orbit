@@ -16,7 +16,7 @@ use App\Domain\Operations\OperationKinds;
 return (static function (): array {
     $kinds = [];
     foreach (['node_exporter' => 'metrics.node-exporter', 'cadvisor' => 'metrics.cadvisor'] as $component => $command) {
-        foreach (['converge', 'remove'] as $action) {
+        foreach ($component === 'node_exporter' ? ['remove'] : ['converge', 'remove'] as $action) {
             $kinds['metrics.'.$component.'_'.$action] = [
                 'executor' => 'swamp',
                 'completion' => MetricsOperationCompletion::class,
@@ -34,6 +34,8 @@ return (static function (): array {
             ];
         }
     }
+
+    $kinds['metrics.node_exporter_converge'] = ['executor' => 'swamp', 'result_fields' => ['changed', 'error_code']];
 
     foreach (['node_exporter' => 'metrics.node-exporter', 'cadvisor' => 'metrics.cadvisor'] as $component => $command) {
         foreach (['snapshot', 'restore'] as $action) {
