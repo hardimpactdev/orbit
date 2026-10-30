@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,6 +21,7 @@ use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
@@ -87,7 +89,8 @@ final readonly class StartToolOperationAction
                 OperationFamilySpec::assertAvailable('tool.'.$verb);
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
-                    'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package,
+                    'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
+                    ...(app(DirectOperation::class)->writer('tool.'.$verb) === 'direct' ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint, 'constraint_intervals' => $this->intervals->for($constraint),
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
@@ -96,7 +99,7 @@ final readonly class StartToolOperationAction
                     'intent_only' => $intentOnly,
                     'completion_variant' => $managerName.':'.$variant,
                     'protected_packages' => $protected,
-                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name()) : []),
+                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name(), direct: app(DirectOperation::class)->writer('tool.install') === 'direct') : []),
                 ], 'operator', request()->attributes->getString('orbit.request_id'));
             });
         } catch (ResourceOperationException $error) {

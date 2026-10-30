@@ -13,7 +13,7 @@ final readonly class ToolManagerIntent
     public function __construct(private VpToolManager $vp) {}
 
     /** @return array<string, mixed> */
-    public function input(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false): array
+    public function input(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false, bool $direct = false): array
     {
         if ($node->platform !== 'linux' || $imageProvidesManager) {
             return [];
@@ -28,6 +28,10 @@ final readonly class ToolManagerIntent
             return [];
         }
         $input = $manager === ToolManagerName::Vp ? $this->vp->materializeInput($node) : ['user' => $node->user];
+
+        if ($direct) {
+            return ['materialize' => $input];
+        }
 
         return [...$input, 'materialize_command' => $command, 'materialize_fields' => array_keys($input)];
     }
