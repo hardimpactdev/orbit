@@ -12,6 +12,7 @@ use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Operations\OperationData;
 use App\Data\Schedules\ScheduleData;
+use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleSwampSafety;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -83,7 +84,7 @@ final class SchedulesController extends Controller
         Schedule $schedule,
         RunScheduleAction $action,
     ): JsonResponse {
-        if ($this->synchronous($schedule)) {
+        if ($this->synchronous($schedule, 'run')) {
             return $this->scheduleResponse($request, $action->execute($schedule));
         }
 
@@ -123,7 +124,7 @@ final class SchedulesController extends Controller
     ): JsonResponse {
         $record = Schedule::query()->findOrFail($schedule);
         $request->route()?->setParameter('schedule', $record);
-        if ($this->synchronous($record)) {
+        if ($this->synchronous($record, 'destroy')) {
             return $this->scheduleResponse($request, $action->execute($record));
         }
 
@@ -138,16 +139,17 @@ final class SchedulesController extends Controller
         Schedule $schedule,
         ActivateScheduleAction $action,
     ): JsonResponse {
-        if ($this->synchronous($schedule)) {
+        if ($this->synchronous($schedule, 'enable')) {
             return $this->scheduleResponse($request, $action->execute($schedule));
         }
 
         return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
-    private function synchronous(Schedule $schedule): bool
+    private function synchronous(Schedule $schedule, string $verb): bool
     {
-        return $this->safety->requiresSynchronous($this->targets->forInspection($schedule)->node);
+        return ! app(ScheduleOperationAdmission::class)->direct($verb)
+            && $this->safety->requiresSynchronous($this->targets->forInspection($schedule)->node);
     }
 
     private function scheduleResponse(Request $request, #[SensitiveParameter] Schedule $schedule): JsonResponse

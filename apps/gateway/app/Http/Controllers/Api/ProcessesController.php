@@ -14,6 +14,7 @@ use App\Actions\Processes\StopProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
 use App\Data\Operations\OperationData;
 use App\Data\Processes\ProcessData;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -65,7 +66,7 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.update')]
     public function update(UpdateProcessRequest $request, Process $process, UpdateProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
+        if ($this->synchronous($process, 'update')) {
             return $this->processResponse($request, $action->execute($process, $request->updates()));
         }
 
@@ -75,7 +76,7 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.start')]
     public function start(Request $request, Process $process, StartProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
+        if ($this->synchronous($process, 'start')) {
             return $this->processResponse($request, $action->execute($process));
         }
 
@@ -85,7 +86,7 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.stop')]
     public function stop(Request $request, Process $process, StopProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
+        if ($this->synchronous($process, 'stop')) {
             return $this->processResponse($request, $action->execute($process));
         }
 
@@ -95,7 +96,7 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.restart')]
     public function restart(Request $request, Process $process, RestartProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
+        if ($this->synchronous($process, 'restart')) {
             return $this->processResponse($request, $action->execute($process));
         }
 
@@ -125,7 +126,7 @@ final class ProcessesController extends Controller
     public function destroy(Request $request, string $process, DestroyProcessAction $action): JsonResponse
     {
         $record = Process::query()->findOrFail($process);
-        if ($this->synchronous($record)) {
+        if ($this->synchronous($record, 'destroy')) {
             $request->route()?->setParameter('process', $record);
             $data = ProcessData::fromModel($record, 'absent')->toArray();
             $action->execute($record);
@@ -136,9 +137,10 @@ final class ProcessesController extends Controller
         return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }
 
-    private function synchronous(Process $process): bool
+    private function synchronous(Process $process, string $verb): bool
     {
-        return $this->safety->requiresSynchronous($this->targets->forInspection($process)->node);
+        return ! app(ProcessOperationAdmission::class)->direct($process, $verb)
+            && $this->safety->requiresSynchronous($this->targets->forInspection($process)->node);
     }
 
     private function processResponse(Request $request, #[SensitiveParameter] Process $process, int $status = 200): JsonResponse

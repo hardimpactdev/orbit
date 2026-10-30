@@ -5,7 +5,10 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessRuntimeLease;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -87,3 +90,19 @@ it('projects only a typed native refusal without changing desired state', functi
     expect($this->process->fresh()->desired_state->value)->toBe('stopped');
     expect($this->process->fresh()->error_code)->toBe('process.start_failed');
 });
+
+it('uses the selected direct writer on worker Nodes without PHP execution or runtime locks', function (string $verb): void {
+    config(['swamp.direct_writers' => ['process.'.$verb => 'direct'], 'operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ProcessRuntimeManager::class, Mockery::mock(ProcessRuntimeManager::class));
+    app()->instance(ProcessRuntimeLease::class, Mockery::mock(ProcessRuntimeLease::class));
+    app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class));
+    $path = '/api/v1/processes/'.$this->process->id;
+    $response = $verb === 'destroy' ? $this->deleteJson($path) : $this->postJson($path.'/'.$verb);
+    $id = $response->assertAccepted()->assertJsonPath('data.kind', 'process.'.$verb)->json('data.id');
+    $admitted = Operation::query()->findOrFail($id);
+    expect($admitted->state['process_control_writer'])->toBe('direct');
+    expect($admitted->state['swamp_run_id'])->toBe($this->runId);
+    expect($admitted->lock_key)->toBeNull();
+    expect($admitted->worker)->toBeNull();
+    expect($this->socket->sent)->toHaveCount(1);
+})->with(['start', 'stop', 'restart', 'destroy']);

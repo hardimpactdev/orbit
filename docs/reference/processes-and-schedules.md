@@ -312,7 +312,7 @@ The runtime family reads target receipts before remote effects. A lost restart r
 
 ## Direct Process controls
 
-The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map can select `direct` for standalone `process.start`, `process.stop`, `process.restart`, and `process.destroy`. The default remains `polled`. This slice covers systemd and Docker Processes without a Vite traffic plan; Instance child Operations keep their original writer. Each admitted Operation preserves its selected writer and delivered agent digest.
+The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map can select `direct` for standalone `process.start`, `process.stop`, `process.restart`, and `process.destroy`. The default remains `polled`. This slice covers systemd and Docker Processes without a Vite traffic plan; Instance child Operations keep their original writer. Each admitted Operation preserves its selected writer and delivered agent digest. An explicitly selected direct writer also applies on worker Nodes. It bypasses synchronous PHP execution, Gateway runtime leases and remote readiness probes. Polled kinds retain their current recovery path.
 
 The Gateway starts `operation-process-control` directly and binds its native run ID. The exact Node worker reads safe admitted input through the shared direct Operation endpoint. It checks a selected production release when required, invokes the local agent with passwordless sudo, and reads runtime state. Native agent ownership checks protect the selected unit or container. The step validates the admitted digest and binary ownership, limits time and output, and returns only a typed ready/state result or error code. The Gateway projects lifecycle and desired state without checking old keyed receipts or scheduling children.
 

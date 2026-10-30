@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -151,3 +152,17 @@ it('keeps Instance child removals polled while standalone destroy can select dir
     app(OperationIdempotency::class)->parent = $this->operation;
     expect(app(DirectOperation::class)->writer('schedule.destroy'))->toBe('polled');
 });
+
+it('uses the selected direct Schedule writer on worker Nodes without PHP execution', function (string $verb): void {
+    config(['swamp.direct_writers' => ['schedule.'.$verb => 'direct'], 'operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
+    $path = '/api/v1/schedules/'.$this->schedule->id;
+    $response = $verb === 'destroy' ? $this->deleteJson($path) : $this->postJson($path.'/run');
+    $id = $response->assertAccepted()->assertJsonPath('data.kind', 'schedule.'.$verb)->json('data.id');
+    $admitted = Operation::query()->findOrFail($id);
+    expect($admitted->state['schedule_control_writer'])->toBe('direct');
+    expect($admitted->state['swamp_run_id'])->toBe($this->runId);
+    expect($admitted->lock_key)->toBeNull();
+    expect($this->socket->sent)->toHaveCount(1);
+})->with(['run', 'destroy']);

@@ -39,9 +39,9 @@ All Schedules for one Instance or Node share an Operation hold. A concurrent mut
 
 Retained Gateway callers keep the synchronous Schedule actions and native runtime manager until their owning lane cuts over. Clone and deployment definition installation use this path. They do not admit or await Schedule Operations.
 
-When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create, run, enable and destroy use the synchronous PHP actions too. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry. The other mutations return HTTP 200 with Schedule data. They admit no Operation, so a maintenance command can stop serve without removing the Process API's synchronous recovery path.
+When a Schedule targets the configured Swamp Services Node or an executor worker Node, polled HTTP create, run, enable and destroy use the synchronous PHP actions too. An explicitly selected direct control uses its native workflow on that Node. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry. The other mutations return HTTP 200 with Schedule data. They admit no Operation, so a maintenance command can stop serve without removing the Process API's synchronous recovery path.
 
-Direct Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
+Polled Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
 
 ## Fields
 
