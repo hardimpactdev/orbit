@@ -125,6 +125,9 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
 
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
         }
+        if ($inspection->workerState === 'failed') {
+            $issues[] = new DoctorIssueData(NodeDoctorIssueCode::WorkerFailed, DoctorIssueKind::Drift, 'node', $node->id, $node->name, 'The Swamp Node worker failed. Inspect its systemd journal and credentials.', expected: 'active', observed: 'failed');
+        }
         $dnsPolicy = app(PeerDnsPolicy::class);
         if ($dnsPolicy->manages($node)) {
             try {

@@ -14,6 +14,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeWorkerEnrollment;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\WireGuard\PeerDnsInspector;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
@@ -21,6 +23,9 @@ use App\Models\Instance;
 use App\Models\NodeFootprint as FootprintRecord;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskVm;
+use Illuminate\Support\Facades\Cache;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -51,7 +56,10 @@ it('freezes worker installation only for the operator-selected Node', function (
     $command->run($operation, $operation->input);
 
     $configuration = $operation->refresh()->input['_footprint']['payloads']['agent']['configuration'];
-    expect(str_contains($configuration, 'swamp_worker = true'))->toBe($enabled);
+    expect(str_contains($configuration, '[swamp_worker]'))->toBe($enabled);
+    if ($enabled) {
+        expect($configuration)->toContain("node_id = {$node->id}", 'user = '.json_encode($node->user, JSON_THROW_ON_ERROR));
+    }
 })->with([true, false]);
 
 it('prepares a matching footprint without any Node effect', function (): void {
@@ -228,3 +236,35 @@ it('captures ordered PHP inputs from the retained renderer and active Instance v
         ]);
     }
 })->with([[[RoleName::AppDev], '512'], [[RoleName::AppProd], '256'], [[RoleName::AppProd, RoleName::AppDev], '512']]);
+
+it('permits a selected task VM host but excludes the task VM Node', function (): void {
+    [$node] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    config(['swamp_workers.nodes' => [$node->id]]);
+    $node->update(['user' => 'nckrtl', 'settings' => ['task_vms' => ['max_vms' => 6]]]);
+    $rollout = app(NodeWorkerRollout::class);
+    expect($rollout->allows($node))->toBeTrue();
+    $project = Project::query()->create(['name' => 'Worker task', 'slug' => 'worker-task', 'repository_url' => 'git@github.com:acme/worker-task.git']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Task worker', 'brief' => 'Task worker', 'status' => 'backlog']);
+    $guest = FleetFixtures::node('worker-guest');
+    TaskVm::query()->create(['group_id' => $group->id, 'node_id' => $guest->id, 'host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-worker', 'wireguard_ip' => $guest->wireguard_ip, 'state' => 'ready']);
+    config(['swamp_workers.nodes' => [$node->id, $guest->id]]);
+    expect($rollout->allows($node))->toBeTrue()->and($rollout->allows($guest))->toBeFalse();
+});
+
+it('stages Node worker credentials outside intent and re-delivers only for the admitted Node', function (): void {
+    [$node, $operation, $footprint, $command] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    config(['swamp_workers.nodes' => [$node->id]]);
+    $source = app(NodeWorkerEnrollment::class);
+    $credentials = ['enrollment_token' => 'orbit-node-'.$node->id.'.privateEnrollmentSentinel', 'server_token' => 'orbit-node-'.$node->id.'-access.privateServerSentinel'];
+    $reference = $source->stage($node, $credentials);
+    $operation->update(['input' => [...$operation->input, '_worker_enrollment' => $reference]]);
+    FootprintRecord::query()->create(['node_id' => $node->id, 'digest' => 'old', 'artifacts' => $footprint->expected($node)->artifacts, 'converged_at' => now()]);
+    $command->run($operation, ['force_artifacts' => false, 'first_visit' => false]);
+    $snapshot = $operation->refresh()->input['_footprint'];
+    expect($snapshot['artifacts'][0]['required'])->toBeTrue()->and($snapshot['payloads']['agent']['worker_credentials'])->toBe(['$secret' => 'node.worker_credentials', 'id' => $node->id]);
+    expect(json_encode($operation->toArray(), JSON_THROW_ON_ERROR))->not->toContain('privateEnrollmentSentinel', 'privateServerSentinel');
+    expect($source->resolve($operation, $node->id, 'footprint-agent', 'worker_credentials')->value)->toBe($credentials);
+    expect(fn () => $source->resolve($operation, $node->id + 1, 'footprint-agent', 'worker_credentials'))->toThrow(ResourceOperationException::class);
+    Cache::flush();
+    expect(fn () => $source->resolve($operation, $node->id, 'footprint-agent', 'worker_credentials'))->toThrow(ResourceOperationException::class);
+});

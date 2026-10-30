@@ -172,6 +172,9 @@ fn installs_configures_verifies_and_repeats_both_exporters() {
         assert!(text.contains("Restart=always\nRestartSec=2\n"));
         if kind == Kind::Exporter {
             assert!(text.contains("--web.listen-address=10.44.0.4:9100"));
+            assert!(text.contains(
+                "--collector.systemd --collector.systemd.unit-include=orbit-node-worker[.]service"
+            ));
         } else {
             assert!(text.contains("--listen_ip=10.44.0.4 --port=9102 --store_container_labels=false --docker_only=false"));
             assert!(text.contains("--disable_metrics=sched,percpu,memory_numa,cpuLoad,diskIO,disk,network,tcp,advtcp,udp,app,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,oom_event,pressure"));

@@ -56,13 +56,20 @@ pub const JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30)
 /// A session that stayed joined this long starts the backoff again.
 pub const HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(60);
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeWorkerConfig {
+    pub node_id: u64,
+    pub user: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub gateway_url: String,
     pub gateway_address: IpAddr,
     #[serde(default)]
-    pub swamp_worker: bool,
+    pub swamp_worker: Option<NodeWorkerConfig>,
 }
 impl Config {
     pub fn load() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {

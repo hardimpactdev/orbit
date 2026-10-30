@@ -51,7 +51,7 @@ Every package command belongs to the calling native host service's lifetime. Can
 
 The native package-boundary CI job runs the real delivered agent on systemd. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
 
-Persistent Node workers share `swamp.start-worker` and `swamp.stop-worker` with task VMs. The Node profile requires the root-owned converge opt-in and runs as its dedicated non-root account. `swamp.issue-node-worker` alone mints the protected 24-hour pair on the Linux issuer; it is excluded from the compiler and Operation transports and refuses keyed effects. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for activation gates.
+Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. Task VM workers retain `swamp.start-worker` and `swamp.stop-worker`. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
 
 ## Where it runs
 
