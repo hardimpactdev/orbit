@@ -99,11 +99,6 @@ final readonly class StartProcessAction
 
     public function admit(Process $process, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        $admission = app(ProcessOperationAdmission::class);
-        if ($admission->direct($process, 'start')) {
-            return $admission->execute($process, 'start', caller: $caller, requestId: $requestId);
-        }
-
         $admit = fn (): Operation => DB::transaction(fn (): Operation => $this->lease->run($process, function (Process $fresh) use ($caller, $requestId): Operation {
             $this->runtime->assertCanStart($fresh);
 

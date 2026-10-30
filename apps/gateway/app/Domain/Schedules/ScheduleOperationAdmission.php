@@ -45,11 +45,6 @@ final readonly class ScheduleOperationAdmission
         });
     }
 
-    public function direct(string $verb): bool
-    {
-        return app(DirectOperation::class)->writer('schedule.'.$verb) === 'direct';
-    }
-
     /** @return array<string, mixed> */
     public function inputFor(Schedule $schedule, string $verb, bool $cascade = false, ?Node $caller = null, bool $created = false): array
     {
@@ -58,7 +53,7 @@ final readonly class ScheduleOperationAdmission
             'destroy' => $this->targets->forRemoval($schedule),
             default => $this->targets->forSchedule($schedule),
         };
-        if (! $this->direct($verb)) {
+        if ($verb !== 'run') {
             app(ScheduleSwampSafety::class)->assertAllowed($target->node);
         }
         $input = ['id' => $schedule->id, 'node_id' => $target->node->id, 'caller_node_id' => $caller?->id, 'created' => $created];

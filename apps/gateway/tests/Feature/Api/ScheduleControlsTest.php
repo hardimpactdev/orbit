@@ -77,21 +77,6 @@ it('checks shared start-response and first-read ordering without a family token 
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
-it('keeps previous work claimable through the shared per-kind switch and rollback', function (): void {
-    $start = app(StartOperationAction::class);
-    $input = ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit'];
-    config(['swamp.direct_writers' => []]);
-    $old = $start->execute('schedule.run', 'node_schedules', $this->node->id, $this->node->id, $input, 'test', null);
-    expect($old->state['schedule_control_writer'])->toBe('polled');
-    config(['swamp.direct_writers' => ['schedule.run' => 'direct']]);
-    expect(app(DirectOperation::class)->writer('schedule.enable'))->toBe('polled');
-    $direct = $start->execute('schedule.run', 'node_schedules', $this->node->id, $this->node->id, $input, 'test', null);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $old->id])->assertOk()->assertJsonPath('data.id', $old->id);
-    config(['swamp.direct_writers' => []]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
-    expect($this->socket->sent)->toHaveCount(1);
-});
-
 it('restricts Node workers to their admitted Node and preserves the control-plane peer', function (): void {
     $own = Node::query()->create(['name' => 'schedule-owner', 'public_ssh_host' => '192.0.2.10', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.10']);
     $foreign = Node::query()->create(['name' => 'schedule-foreign', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.11']);
@@ -153,16 +138,14 @@ it('keeps Instance child removals polled while standalone destroy can select dir
     expect(app(DirectOperation::class)->writer('schedule.destroy'))->toBe('polled');
 });
 
-it('uses the selected direct Schedule writer on worker Nodes without PHP execution', function (string $verb): void {
-    config(['swamp.direct_writers' => ['schedule.'.$verb => 'direct'], 'operation_executor.worker_node_ids' => [$this->node->id]]);
+it('admits manual runs directly on a worker Node without PHP runtime execution', function (): void {
+    config(['swamp.direct_writers' => ['schedule.run' => 'direct'], 'operation_executor.worker_node_ids' => [$this->node->id]]);
     app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
     app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
-    $path = '/api/v1/schedules/'.$this->schedule->id;
-    $response = $verb === 'destroy' ? $this->deleteJson($path) : $this->postJson($path.'/run');
-    $id = $response->assertAccepted()->assertJsonPath('data.kind', 'schedule.'.$verb)->json('data.id');
+    $id = $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertAccepted()->assertJsonPath('data.kind', 'schedule.run')->json('data.id');
     $admitted = Operation::query()->findOrFail($id);
     expect($admitted->state['schedule_control_writer'])->toBe('direct');
     expect($admitted->state['swamp_run_id'])->toBe($this->runId);
     expect($admitted->lock_key)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
-})->with(['run', 'destroy']);
+});

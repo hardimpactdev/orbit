@@ -86,7 +86,7 @@ final readonly class DestroyProcessAction
 
     public function admit(Process $process, bool $removedByOwningRole = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        $remove = function (Process $fresh) use ($removedByOwningRole, $caller, $requestId): Operation {
+        return DB::transaction(fn (): Operation => $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole, $caller, $requestId): Operation {
             if (! $removedByOwningRole) {
                 foreach ($this->guards as $guard) {
                     $guard->assertRemovable($fresh);
@@ -102,9 +102,6 @@ final readonly class DestroyProcessAction
             }
 
             return app(ProcessOperationAdmission::class)->execute($fresh, 'destroy', caller: $caller, requestId: $requestId);
-        };
-
-        return DB::transaction(fn (): Operation => app(ProcessOperationAdmission::class)->direct($process, 'destroy')
-            ? $remove($process) : $this->lease->run($process, $remove));
+        }));
     }
 }

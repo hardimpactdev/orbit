@@ -46,11 +46,6 @@ final readonly class ProcessOperationAdmission
         });
     }
 
-    public function direct(Process $process, string $verb): bool
-    {
-        return app(DirectOperation::class)->writer('process.'.$verb, ['vite' => $process->isVpDev() ? ['instance_id' => $process->owner_id] : null]) === 'direct';
-    }
-
     /** @return array<string, mixed> */
     public function inputFor(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null): array
     {
@@ -59,9 +54,7 @@ final readonly class ProcessOperationAdmission
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        if (! $this->direct($process, $verb)) {
-            app(ProcessSwampSafety::class)->assertAllowed($target->node);
-        }
+        app(ProcessSwampSafety::class)->assertAllowed($target->node);
         if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
             $instance = $target->instance;
             if ($instance !== null) {

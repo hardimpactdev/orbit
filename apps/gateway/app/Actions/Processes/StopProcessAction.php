@@ -75,11 +75,6 @@ final readonly class StopProcessAction
 
     public function admit(Process $process, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        $admission = app(ProcessOperationAdmission::class);
-        if ($admission->direct($process, 'stop')) {
-            return $admission->execute($process, 'stop', caller: $caller, requestId: $requestId);
-        }
-
         $admit = fn (): Operation => DB::transaction(fn (): Operation => $this->lease->run($process, function (Process $fresh) use ($caller, $requestId): Operation {
             return app(ProcessOperationAdmission::class)->execute($fresh, 'stop', caller: $caller, requestId: $requestId);
         }));

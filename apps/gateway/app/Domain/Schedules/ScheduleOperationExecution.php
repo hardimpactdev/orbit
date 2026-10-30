@@ -23,7 +23,7 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
         return match ($verb) {
             'create' => ['id', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'command', 'calendar', 'timeout_seconds', 'desired'],
             'destroy' => ['id', 'group', 'cascade'],
-            'enable', 'run' => ['id', 'user', 'working_directory'],
+            'enable' => ['id', 'user', 'working_directory'],
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Schedule action.', 422),
         };
     }
@@ -32,13 +32,13 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
     {
         $verb = substr($operation->kind, strlen('schedule.'));
         $command = match ($verb) {
-            'create' => 'install', 'destroy' => 'remove', 'enable' => 'activate', 'run' => 'run',
+            'create' => 'install', 'destroy' => 'remove', 'enable' => 'activate',
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Schedule action.', 422),
         };
         $key = 'schedule-'.$command;
 
         return ['descriptors' => [['key' => $key, 'step' => $key, 'transport' => 'agent', 'name' => 'schedule.'.$command,
-            'input' => Arr::only($operation->input, self::fields($verb)), 'resumable' => $verb !== 'run', 'required' => true]]];
+            'input' => Arr::only($operation->input, self::fields($verb)), 'resumable' => true, 'required' => true]]];
     }
 
     public function input(Operation $operation, array $run): array

@@ -13,8 +13,6 @@ interface ScheduleRuntimeManager
 
     public function activate(Schedule $schedule): void;
 
-    public function run(Schedule $schedule): void;
-
     public function logs(Schedule $schedule, int $lines): ScheduleLogsData;
 
     /** Returns false only when standalone removal must wait for an active command. */
