@@ -6,7 +6,10 @@ inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
     node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [schedule.enable, schedule.run] }
+    kind: {
+      type: string,
+      enum: [schedule.enable, schedule.run, schedule.destroy],
+    }
   required: [operation_id, node_id, kind]
 jobs:
   - name: node

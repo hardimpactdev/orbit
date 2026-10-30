@@ -25,7 +25,7 @@ class ScheduleNative(unittest.TestCase):
         (self.repo/'workflows').mkdir()
         (self.repo/'workflows'/source.name).write_text(text)
         self.state = {'operation': {'id': 17, 'node_id': 9, 'kind': 'schedule.run', 'status': 'queued', 'cancel_requested': False, 'result': None,
-            'input': {'id': '9a067a27-c2ce-45c5-83f5-735e03dc5b2f', 'user': 'orbit', 'working_directory': '/home/orbit'}}, 'actions': 0, 'calls': []}
+            'input': {'agent_sha256': 'a'*64, 'id': '9a067a27-c2ce-45c5-83f5-735e03dc5b2f', 'user': 'orbit', 'working_directory': '/home/orbit'}}, 'actions': 0, 'calls': []}
         self.save()
 
     def save(self):

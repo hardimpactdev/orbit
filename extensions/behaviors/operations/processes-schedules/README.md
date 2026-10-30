@@ -62,3 +62,20 @@ The placed family claims its own kind, persists an assignment before effects,
 and keeps retries bound to that Operation. Native tests remove placement labels
 only inside their disposable local repository. They prove DAG and receipt
 recovery, while deployed worker placement needs the live verification.
+
+## Direct Schedule controls
+
+`operation-schedule-control` handles `schedule.enable`, `schedule.run` and
+standalone `schedule.destroy` through the shared direct Operation boundary. It
+reads the Gateway-admitted input after root-run binding, then runs the fixed
+local agent command with `sudo -n` as the configured Node user. It verifies the
+admitted agent digest, root ownership, regular file and safe permissions first.
+Native command deadlines are15/45/60seconds and output is capped at16KiB. Only a
+typed ready result or error code reaches Gateway projection. No root socket or
+broker is used. Placement stays exactly `orbit-node-<admitted node_id>`.
+
+Each writer defaults to polled until actual dev/canary action proof. Instance
+removal child Schedule Operations retain the old writer until their parent
+moves. The earlier209pre-cancelled canaries proved binding/read/projection only;
+their temporary migration placement was restored live in main e830a3d.
+Production success must precede deletion of the replaced Gateway executor.
