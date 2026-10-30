@@ -44,7 +44,8 @@ final readonly class OperationStore
             throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
         }
 
-        $lockKey = DirectRoutePublication::handles($kind) ? null : self::lockKey($targetType, $targetId);
+        $writer = DirectRoutePublication::handles($kind) ? DirectRoutePublication::writer($kind) : null;
+        $lockKey = $writer === 'direct' ? null : self::lockKey($targetType, $targetId);
         $parent = $this->idempotency->parent;
         if ($parent !== null) {
             if ($this->idempotency->childIntent === null || $kind !== $this->idempotency->childIntent['kind'] || $nodeId !== $this->idempotency->childIntent['node_id']) {
@@ -63,7 +64,7 @@ final readonly class OperationStore
         $superseded = null;
 
         try {
-            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $lockKey, $input, $triggeredBy, $requestId, $supersedes, &$superseded): Operation {
+            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $lockKey, $input, $triggeredBy, $requestId, $supersedes, $writer, &$superseded): Operation {
                 $holder = $lockKey === null || $supersedes === [] ? null : Operation::query()->where('lock_key', $lockKey)->whereIn('kind', $supersedes)->first();
                 $now = Carbon::now();
                 $superseded = $holder instanceof Operation
@@ -78,7 +79,8 @@ final readonly class OperationStore
                     'node_id' => $nodeId,
                     'lock_key' => $lockKey,
                     'input' => $input,
-                    'state' => ['executor_target' => ['node_id' => $nodeId, 'target_type' => $targetType, 'target_id' => $targetId]],
+                    'state' => ['executor_target' => ['node_id' => $nodeId, 'target_type' => $targetType, 'target_id' => $targetId],
+                        ...($writer === null ? [] : ['route_publication_writer' => $writer])],
                     'status' => OperationStatus::Queued,
                     'sequence' => 1,
                     'attempts' => 0,

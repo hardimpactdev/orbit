@@ -57,7 +57,7 @@ final readonly class OperationDispatcher
 
     public function dispatch(Operation $operation): void
     {
-        if (DirectRoutePublication::handles($operation->kind)) {
+        if (DirectRoutePublication::owns($operation)) {
             DB::afterCommit(static fn () => app(StartRoutePublicationRun::class)->start($operation));
 
             return;

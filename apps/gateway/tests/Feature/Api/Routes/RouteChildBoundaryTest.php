@@ -17,6 +17,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 
 it('admits only the open Route phase, yields to its stamped child and finishes only after canonical proof', function (): void {
+    config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'direct']]);
     config(['swamp.run_token' => 'fixture.fake']);
     app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     $gateway = Node::query()->create(['name' => 'gateway-child', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);

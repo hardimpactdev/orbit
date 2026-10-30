@@ -59,7 +59,7 @@ final readonly class StartOperationAction
             return $operation;
         }
 
-        if (DirectRoutePublication::handles($kind)) {
+        if (DirectRoutePublication::owns($operation)) {
             $this->dispatcher->dispatch($operation);
 
             return $operation;

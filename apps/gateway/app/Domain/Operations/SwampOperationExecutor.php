@@ -36,7 +36,7 @@ final readonly class SwampOperationExecutor
 
     public function claim(string $kind, string $worker, int $nodeId, ?int $operationId = null): ?Operation
     {
-        if (! $this->executors->swamp($kind) || DirectRoutePublication::handles($kind)) {
+        if (! $this->executors->swamp($kind)) {
             throw new ResourceOperationException('operation.executor_invalid', 'This kind is not executed by Swamp.', 422);
         }
 
@@ -44,6 +44,9 @@ final readonly class SwampOperationExecutor
             $operation = Operation::query()->where('kind', $kind)->when($operationId !== null, fn ($query) => $query->whereKey($operationId))->where('status', OperationStatus::Running->value)
                 ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)
                 ->where('updated_at', '>', Carbon::now()->subSeconds(self::LeaseSeconds))->first();
+            if ($operation !== null) {
+                $this->assertPolledKind($operation);
+            }
             $replaying = $operation !== null;
             if ($operation === null) {
                 foreach ($this->claimCandidates($kind, $operationId, true) as $candidate) {
@@ -81,7 +84,7 @@ final readonly class SwampOperationExecutor
     {
         $kinds = [];
         foreach (OperationKinds::names() as $kind) {
-            if (! $this->executors->swamp($kind) || DirectRoutePublication::handles($kind)) {
+            if (! $this->executors->swamp($kind)) {
                 continue;
             }
             $candidates = $this->claimCandidates($kind);
@@ -116,6 +119,9 @@ final readonly class SwampOperationExecutor
 
     private function eligible(Operation $candidate, bool $flagAssistance): bool
     {
+        if (DirectRoutePublication::owns($candidate)) {
+            return false;
+        }
         if (($candidate->state['executor_assistance'] ?? null) === ['error_code' => 'operation.reclaim_limit']) {
             return false;
         }
@@ -656,7 +662,7 @@ final readonly class SwampOperationExecutor
 
     private function assertPolledKind(Operation $operation): void
     {
-        if (DirectRoutePublication::handles($operation->kind)) {
+        if (DirectRoutePublication::owns($operation)) {
             throw new ResourceOperationException('operation.executor_invalid', 'Route publications run directly in Swamp and have no executor claim.', 422);
         }
     }

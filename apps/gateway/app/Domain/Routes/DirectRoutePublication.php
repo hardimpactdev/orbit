@@ -21,9 +21,25 @@ final readonly class DirectRoutePublication
         return in_array($kind, self::Kinds, true);
     }
 
+    public static function writer(string $kind): string
+    {
+        $writers = config('swamp.route_publication_writers', []);
+        $writer = is_array($writers) ? ($writers[$kind] ?? 'polled') : null;
+        if (! in_array($writer, ['polled', 'direct'], true)) {
+            throw new ResourceOperationException('route.writer_invalid', 'Select polled or direct for the Route publication writer.', 503);
+        }
+
+        return $writer;
+    }
+
+    public static function owns(Operation $operation): bool
+    {
+        return self::handles($operation->kind) && ($operation->state['route_publication_writer'] ?? 'polled') === 'direct';
+    }
+
     public function assertOperation(Operation $operation): void
     {
-        if (! self::handles($operation->kind) || $operation->node_id === null) {
+        if (! self::owns($operation) || $operation->node_id === null) {
             throw new ResourceOperationException('route.publication_invalid', 'A Node-bound Route publication is required.', 422);
         }
     }

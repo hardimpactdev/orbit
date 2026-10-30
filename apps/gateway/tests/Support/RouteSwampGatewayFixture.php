@@ -18,6 +18,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationTransport;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
+use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\RoutePublicationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -66,7 +67,7 @@ final class RouteSwampGatewayFixture
     public function __construct(private TestCase $test, bool $nativeChildren = false, private bool $httpRuns = false)
     {
         Event::fake([RecordBroadcast::class]);
-        config(['swamp.run_token' => 'fixture.fake']);
+        config(['swamp.run_token' => 'fixture.fake', 'swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
         app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
         RouteForeignChildKinds::register(simulateNodeChildren: ! $nativeChildren);
         $this->foreign = new RouteForeignChildProof;
@@ -177,7 +178,7 @@ final class RouteSwampGatewayFixture
                 throw new RuntimeException('Could not start the Swamp fixture.');
             }
         }
-        fwrite($this->pipes[0], json_encode(['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'run_id' => $operation->state['swamp_run_id'] ?? (string) Str::uuid(), 'kind' => $operation->kind, 'worker' => 'fixture-'.$operation->id.'-'.++$this->dispatches,
+        fwrite($this->pipes[0], json_encode(['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'run_id' => $operation->state['swamp_run_id'] ?? (string) Str::uuid(), 'kind' => $operation->kind, 'direct' => DirectRoutePublication::owns($operation), 'worker' => 'fixture-'.$operation->id.'-'.++$this->dispatches,
             'foreign' => (app(OperationKinds::class)->definition($operation->kind)['completion'] ?? null) === RouteForeignChildCompletion::class], JSON_THROW_ON_ERROR)."\n");
         while (($line = fgets($this->pipes[1])) !== false) {
             $message = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
