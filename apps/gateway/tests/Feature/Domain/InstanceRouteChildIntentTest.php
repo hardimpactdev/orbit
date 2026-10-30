@@ -8,12 +8,16 @@ use App\Domain\Instances\Environment\EnvironmentSyncSecrets;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
 
 function routeInstanceChild(string $kind = 'instance.prepare_php_runtime'): array
 {
@@ -176,3 +180,37 @@ it('reuses the primary application environment when a diagnostic Route repeats i
     $intent = app(InstanceDeploymentIntent::class)->snapshot($instance);
     expect($intent['served'])->toBe([]);
 })->with(['public', 'apps/site/public'])->with([false, true]);
+
+it('admits and replays the package grandchild of a compensating Route PHP runtime', function (): void {
+    [, $parent, $route, $instance] = routeInstanceChild();
+    $instance->node->update(['ssh_host_fingerprint' => 'SHA256:fixture']);
+    $route->update(['status' => 'failed', 'failed_step' => 'prepare-web-root', 'error_code' => 'instance.release_invalid']);
+    $intent = ['key' => 'rollback-php', 'kind' => 'instance.prepare_php_runtime', 'node_id' => $instance->node_id,
+        'input' => ['instance_id' => $instance->id]];
+    $parent->update(['state' => ['route_active_stage' => 'rollback-initial-php',
+        'route_plan' => ['node_ids' => [$instance->node_id], 'stages' => ['rollback-initial-php' => [$intent]]]]]);
+    $child = DB::transaction(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'rollback-php']))['operation'];
+    $caller = Node::query()->whereHas('roles', fn ($query) => $query->where('role', 'gateway'))->firstOrFail();
+    config(['dependency_detection.services_node_id' => $caller->id, 'operation_executor.worker_node_ids' => []]);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'worker' => 'proof', 'operation_id' => $child->id])
+        ->assertOk()->assertJsonPath('data.id', $child->id);
+    $path = '/api/v1/operation-executor/'.$child->id;
+    $plan = $this->postJson($path.'/run', ['worker' => 'proof', 'key' => 'php.plan', 'transport' => 'gateway',
+        'name' => 'instance.php-plan', 'input' => ['instance_id' => $instance->id]])->assertOk()->json('data');
+    $this->postJson($path.'/step', ['worker' => 'proof', 'key' => 'php.plan:finish', 'name' => 'php_plan',
+        'status' => 'succeeded', 'result' => $plan])->assertOk();
+
+    $id = $this->postJson($path.'/children', ['worker' => 'proof', 'key' => 'php_packages'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'node.prepare_php_packages')
+        ->assertJsonPath('data.target_type', 'node')->assertJsonPath('data.target_id', $instance->node_id)->json('data.id');
+    $this->postJson($path.'/children', ['worker' => 'proof', 'key' => 'php_packages'])->assertOk()->assertJsonPath('data.id', $id);
+    $packages = Operation::query()->findOrFail($id);
+    expect($packages->parent_operation_id)->toBe($child->id)->and($packages->input['versions'])->toBe(['8.5'])
+        ->and($packages->input['profile'])->toBe('app-prod')->and($packages->input['_php_packages']['fpm'])->toBe('none')
+        ->and($child->children()->count())->toBe(1)->and($agents->calls)->toBe([]);
+    $this->postJson($path.'/children', ['worker' => 'proof', 'key' => 'php_packages', 'input' => ['versions' => ['8.4'], 'profile' => 'app-prod']])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+});
