@@ -18,6 +18,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -149,3 +150,43 @@ it('permits new intents after a terminal removal and isolates the server target'
     app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
     expect(true)->toBeTrue();
 })->with(['succeeded', 'failed', 'cancelled']);
+
+it('refuses removal admission while database or user creation is unfinished on the server', function (string $kind, string $status): void {
+    $this->operation->update(['kind' => $kind, 'status' => $status]);
+    $count = DatabaseExecutionIntent::query()->count();
+
+    expect(fn () => app(DropServerDatabaseAction::class)->execute($this->connection))
+        ->toThrow(ResourceOperationException::class, 'Database creation is unfinished on this server.');
+    expect(DatabaseExecutionIntent::query()->count())->toBe($count);
+    $this->assertModelExists($this->connection);
+})->with(['database.create', 'database_user.create'])->with(['queued', 'running', 'waiting']);
+
+it('allows removal after terminal creation and ignores another server or target type', function (string $kind): void {
+    $this->operation->update(['kind' => $kind]);
+    foreach (['succeeded', 'failed', 'cancelled'] as $status) {
+        $this->operation->update(['status' => $status]);
+        expect(app(DropServerDatabaseAction::class)->prepareMany([$this->connection]))->toHaveCount(1);
+    }
+    $this->operation->update(['status' => 'running', 'target_id' => $this->server->id + 1]);
+    expect(app(DropServerDatabaseAction::class)->prepareMany([$this->connection]))->toHaveCount(1);
+    $this->operation->update(['target_id' => $this->server->id, 'target_type' => 'instance']);
+    expect(app(DropServerDatabaseAction::class)->prepareMany([$this->connection]))->toHaveCount(1);
+})->with(['database.create', 'database_user.create']);
+
+it('checks unfinished removal inside the reservation transaction before recording a connection', function (): void {
+    $project = Project::query()->create(['name' => 'Atomic reservation', 'slug' => 'atomic-reservation', 'repository_url' => 'https://example.test/proof.git', 'default_branch' => 'main']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'dev', 'environment' => 'development', 'checkout_path' => '/srv/proof/dev', 'status' => 'active']);
+    $baseline = DB::transactionLevel();
+    $levels = [];
+    DB::listen(function ($query) use (&$levels): void {
+        if (str_starts_with($query->sql, 'select') && in_array('database.destroy', $query->bindings, true)) {
+            $levels[] = DB::transactionLevel();
+        }
+    });
+
+    expect(fn () => app(CreateServerDatabaseAction::class)->reserve($this->server, 'new', 'new', $instance, 'operator'))
+        ->toThrow(ResourceOperationException::class, 'Database removal is unfinished on this server.');
+    expect($levels)->not->toBeEmpty();
+    expect(min($levels))->toBeGreaterThan($baseline);
+    $this->assertDatabaseCount('database_connections', 1);
+});

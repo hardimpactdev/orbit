@@ -43,6 +43,15 @@ final readonly class DatabaseDestroySafety
         }
     }
 
+    public function assertAcceptsDestroy(DatabaseServer $server): void
+    {
+        if (Operation::query()->whereIn('kind', ['database.create', 'database_user.create'])->where('target_type', 'database_server')
+            ->where('target_id', $server->id)
+            ->whereNotIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])->exists()) {
+            throw new ResourceOperationException('database.server_in_use', 'Database creation is unfinished on this server.', 409);
+        }
+    }
+
     private function refuseSystemDatabase(): never
     {
         throw new ResourceOperationException('database.system_database', 'System databases and prefixes cannot be removed.', 422);

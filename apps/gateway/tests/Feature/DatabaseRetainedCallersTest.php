@@ -39,6 +39,38 @@ it('creates and removes an Instance database synchronously with durable password
         ->and(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
 
+it('refuses system names and test prefixes before retained lifecycle probes or effects', function (string $driver, string $database, ?string $prefix): void {
+    $this->server->update(['driver' => $driver]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'unsafe-retained', 'driver' => $driver, 'database_server_id' => $this->server->id,
+        'database' => $database, 'test_database' => $prefix, 'username' => 'unsafe_owner', 'owner_instance_id' => $this->instance->id]);
+    $this->admin->statements = [];
+
+    expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
+        ->toThrow(ResourceOperationException::class, 'System databases and prefixes cannot be removed.');
+
+    $this->assertModelExists($connection);
+    expect($this->admin->statements)->toBe([]);
+    expect(Operation::query()->count())->toBe(0);
+})->with([
+    ['mysql', 'mysql', null], ['mysql', 'sys', null], ['mysql', 'performance_schema', null], ['mysql', 'information_schema', null],
+    ['mysql', 'safe', 'm'], ['mysql', 'safe', 's'], ['pgsql', 'postgres', null], ['pgsql', 'template0', null], ['pgsql', 'template_other', null],
+]);
+
+it('refuses retained removal while same-server database or user creation is unfinished', function (string $driver, string $kind): void {
+    $this->server->update(['driver' => $driver]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'retained-busy', 'driver' => $driver, 'database_server_id' => $this->server->id,
+        'database' => 'retained_busy', 'username' => 'retained_owner', 'owner_instance_id' => $this->instance->id]);
+    Operation::query()->create(['kind' => $kind, 'target_type' => 'database_server', 'target_id' => $this->server->id,
+        'node_id' => $this->server->node_id, 'status' => 'running', 'input' => []]);
+    $this->admin->statements = [];
+
+    expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
+        ->toThrow(ResourceOperationException::class, 'Database creation is unfinished on this server.');
+
+    $this->assertModelExists($connection);
+    expect($this->admin->statements)->toBe([]);
+})->with(['mysql', 'pgsql', 'redis'])->with(['database.create', 'database_user.create']);
+
 it('does not accept a synchronous creation receipt for a changed recorded identity', function (): void {
     $connection = app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'retained', 'retained', $this->instance, null);
     $connection->update(['username' => 'somebody_else']);

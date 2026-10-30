@@ -70,6 +70,11 @@ final readonly class DropServerDatabaseAction
     {
         $serverIds = array_values(array_filter(array_map(static fn (DatabaseConnection $connection): ?int => $connection->database_server_id, $connections)));
         $this->removalLock->run($serverIds, function () use ($connections, $afterDrop): void {
+            foreach ($connections as $connection) {
+                if ($connection->server !== null) {
+                    app(DatabaseDestroySafety::class)->assertAcceptsDestroy($connection->server);
+                }
+            }
             $managed = array_values(array_filter($connections, static fn (DatabaseConnection $connection): bool => $connection->server !== null && $connection->server->driver !== DatabaseDriver::Redis));
             $prepared = $this->prepareLocked($managed, null);
             try {
@@ -120,6 +125,7 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
+            app(DatabaseDestroySafety::class)->assertAcceptsDestroy($server);
             if ($ownerInstanceId !== null && $connection->owner_instance_id !== $ownerInstanceId) {
                 throw new ResourceOperationException('database.ownership_unproven', 'The connection belongs to a different Instance.', 409);
             }
@@ -189,9 +195,11 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
+            app(DatabaseDestroySafety::class)->assertNames($connection->database === null ? [] : [$connection->database], $connection->test_database === null ? [] : [$connection->test_database]);
             $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => [], 'owners' => [], 'by_connection' => []];
             $groups[$server->id]['connections'][] = $connection->id;
             $names = $this->databases($connection, $server);
+            app(DatabaseDestroySafety::class)->assertNames($names);
             if ($server->driver === DatabaseDriver::Mysql) {
                 $this->ownership->assertMysqlNames($connection, $names);
             }

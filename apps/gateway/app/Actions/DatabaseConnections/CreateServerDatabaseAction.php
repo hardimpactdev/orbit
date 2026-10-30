@@ -266,12 +266,9 @@ final readonly class CreateServerDatabaseAction
      *
      * @param  array<string, mixed>  $attributes
      */
-    /** @param array<string,mixed> $attributes */
     public function reserve(DatabaseServer $server, string $slug, string $database, Instance $instance, ?string $createdBy, array $attributes = []): DatabaseConnection
     {
-        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
-
-        return $this->lock->run([$server->id], fn (): DatabaseConnection => $this->reserveLocked($server, $slug, $database, $instance, $createdBy, $attributes));
+        return DB::transaction(fn (): DatabaseConnection => $this->lock->run([$server->id], fn (): DatabaseConnection => $this->reserveLocked($server, $slug, $database, $instance, $createdBy, $attributes)));
     }
 
     /** @param array<string,mixed> $attributes */

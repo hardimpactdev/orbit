@@ -9,9 +9,9 @@ use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseServers\DatabaseChildAdmission;
+use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseOperationCompletion;
-use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
@@ -94,17 +94,14 @@ it('refuses a planned MySQL login that becomes shared before execution', functio
     databaseCreatedProof($connection);
     $prepared = app(DropServerDatabaseAction::class)->prepareMany([$connection])[0];
     $operation = new Operation(['kind' => $prepared->kind, 'target_type' => $prepared->targetType,
-        'target_id' => $prepared->targetId, 'node_id' => $prepared->nodeId, 'input' => $prepared->input]);
+        'target_id' => $prepared->targetId, 'node_id' => $prepared->nodeId, 'status' => 'queued', 'input' => [...$prepared->input, 'agent_sha256' => str_repeat('a', 64)]]);
     $other = DatabaseConnection::query()->create(['slug' => 'new-database', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'new_database', 'username' => $additionalUser ? 'another_user' : 'a_user']);
     if ($additionalUser) {
         DatabaseUser::query()->create(['database_connection_id' => $other->id, 'username' => 'a_user', 'privileges' => 'SELECT']);
     }
     $this->admin->statements = [];
-    $execution = app(DatabaseOperationExecution::class);
-    $descriptor = $execution->context($operation)['descriptors'][0];
-
-    expect(fn () => $execution->beforeRun($operation, ['worker' => 'proof', ...$descriptor]))
+    expect(fn () => app(DatabaseDestroyProjection::class)->input($operation))
         ->toThrow(ResourceOperationException::class, 'now belongs to another connection');
 
     expect($this->admin->statements)->toBe([]);
