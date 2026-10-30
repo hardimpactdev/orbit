@@ -14,7 +14,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
 
-/** Kit v2 Gateway-only sources. Secret bytes never enter the Operation or Swamp. */
+/** Owner-bound private sources. Bytes never enter public intent or native arguments. */
 final readonly class ProcessOperationSecrets implements OperationSecretSource
 {
     public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private DockerProcessRenderer $docker, private ManagedUserAccountResolver $accounts, private string $source) {}
@@ -43,13 +43,19 @@ final readonly class ProcessOperationSecrets implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The secret reference does not belong to this Process.', 422);
         }
 
-        if ($this->source === 'process.unit_content') {
+        $installation = $this->source === 'process.installation';
+        if ($installation && (! in_array($operation->kind, ['process.create', 'process.update'], true)
+            || ($operation->input['runtime'] ?? null) !== $process->runtime->value)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The installation runtime does not match its intent.', 422);
+        }
+
+        if ($this->source === 'process.unit_content' || ($installation && $process->runtime === ProcessRuntime::Systemd)) {
             $value = $this->systemd->render($process, $target, $target->certificateScope === null ? null : $this->accounts->resolve($target->node));
             if (! hash_equals(ValidatedData::string($operation->input['content_hash']), hash('sha256', $value))) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process unit changed after admission.', 422);
             }
 
-            return new OperationSecretValue($value, (new OperationSecretValue($process->runtime_config))->strings());
+            return new OperationSecretValue($installation ? ['runtime' => 'systemd', 'content' => $value] : $value, (new OperationSecretValue($process->runtime_config))->strings());
         }
         if (! hash_equals(ValidatedData::string($operation->input['spec']), $this->docker->specHash($process, $target))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process definition changed after admission.', 422);
@@ -57,6 +63,7 @@ final readonly class ProcessOperationSecrets implements OperationSecretSource
 
         $value = match ($this->source) {
             'process.unit_content' => $this->systemd->render($process, $target, $target->certificateScope === null ? null : $this->accounts->resolve($target->node)),
+            'process.installation' => ['runtime' => 'docker', 'spec' => $operation->input['spec'], 'definition' => $this->docker->containerInput($process, $target)],
             'process.environment' => $this->docker->containerInput($process, $target)['environment'],
             'process.command' => $this->docker->containerInput($process, $target)['command'],
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Process secret source.', 422),

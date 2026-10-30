@@ -335,3 +335,11 @@ The Caddy method reads the bound Process intent after acquiring its native publi
 Ordinary process restart records one direct intent and runs the native Process DAG on its admitted Node. A Vite restart suspends traffic, stops its owned runtime, writes the admitted environment and publishes Caddy in the same root run. It then starts that runtime and proves its owned listener ready. Restart preserves the existing hibernation wake policy; only an explicit start marks traffic awake. A Process without Vite uses its local restart primitive and returns bounded runtime status.
 
 The kind requires its direct writer. Its old polled discovery, claim/run contract, Gateway readiness proof and admission lease are removed together. The Gateway retains the existing synchronous executor-Node recovery exception. Rollback is a revert PR.
+
+### Native installation input
+
+A native Process installation step receives only the admitted Process ID, owned artifact name, runtime, desired state, agent digest and content or container-spec digest. The shared private-material callback supplies rendered systemd unit content or the complete Docker definition. The `process.installation` source checks the recorded Process, Node, runtime and admitted digest before returning those bytes.
+
+A parent native DAG selects its own admitted material and calls the local installation export; it starts no child Operation and projects only its root result. When a Process changes runtime, the local action removes its recorded artifact from the previous runtime. It stages and conditionally activates systemd or converges Docker, then reads bounded status. Command and environment bytes stay inside the callback and sudo stdin.
+
+Ordinary Process creation records one direct intent and uses the same native root for Vite preparation, canonical Caddy publication, installation and readiness. Its old Gateway run descriptors, receipt proof and admission lease are removed. Executor-Node recovery keeps its synchronous creation path. Rollback is a revert PR.
