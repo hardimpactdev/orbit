@@ -81,7 +81,7 @@ class Fixture {
   smokeWorkflow = ".github/workflows/production-smoke.yml";
   context(): Context & ProjectConfigContext {
     const test = createModelTestContext();
-    return {
+    const context: Context & ProjectConfigContext = {
       ...test,
       globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "fixture" },
       runModel: () => {
@@ -102,6 +102,7 @@ class Fixture {
         return Promise.resolve({ name });
       },
     };
+    return Object.assign(context, { invokeModel: context.runModel });
   }
   run() {
     return dependencyMerge(() => this.http).methods.execute.execute({
