@@ -13,7 +13,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** Captures the validated probe once; the Node worker performs it. */
+/** Captures the validated probe once; the control worker performs the network check. */
 final readonly class StartRouteVerificationAction
 {
     public function __construct(private StartOperationAction $operations, private RouteNodeEffectCommand $plans, private AgentDelivery $agents) {}
@@ -28,15 +28,15 @@ final readonly class StartRouteVerificationAction
         }
         $draft = new Operation(['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
         $draft->parent_operation_id = $parent?->id;
-        $plan = $this->plans->prepare($draft);
-        $protocol = ($plan['skip'] ?? false) === true ? 'skip' : match ($plan['command'] ?? null) {
+        $plan = $this->plans->networkVerification($draft);
+        $protocol = match ($plan['command']) {
             'route.verify-certificate' => 'tls',
             'route.verify-http' => 'http',
             default => throw new \LogicException('Route verification needs a fixed probe.'),
         };
 
         return $this->operations->execute($kind, 'route_effect', ValidatedData::integer($input['route_id']), $node->id,
-            [...$input, 'verification' => ['protocol' => $protocol, 'probe' => $plan['input'] ?? null, 'agent_sha256' => $this->agents->pin($node)]],
+            [...$input, 'verification' => ['protocol' => $protocol, 'probe' => $plan['input'], 'agent_sha256' => $this->agents->pin($node)]],
             $parent === null ? 'operator' : $parent->triggered_by, $parent?->request_id);
     }
 }

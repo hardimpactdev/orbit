@@ -152,6 +152,32 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
         return ['command' => 'route.verify-certificate', 'input' => ['address' => $override->routerAddress, 'port' => 443, 'domain' => $route->domain]];
     }
 
+    /**
+     * Network checks run on the control workers; placement validation stays shared with the retained path.
+     *
+     * @return array{command: string, input: array<string, mixed>}
+     */
+    public function networkVerification(Operation $operation): array
+    {
+        if (! in_array($operation->kind, RouteVerificationProjection::Kinds, true)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'A Route network verification is required.', 422);
+        }
+        $plan = $this->prepare($operation);
+        if (($plan['command'] ?? null) === 'route.verify-http') {
+            return ['command' => 'route.verify-http', 'input' => ValidatedData::object($plan['input'])];
+        }
+        $route = Route::query()->findOrFail(ValidatedData::integer($operation->input['route_id']));
+        $target = $operation->kind === 'route.workload_verify'
+            ? Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']))->node
+            : $this->sites->routerNode($route);
+        $address = $target->wireguard_ip;
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {
+            throw new ResourceOperationException('route.workload_address_missing', 'Network verification requires its stored WireGuard endpoint.', 409);
+        }
+
+        return ['command' => 'route.verify-certificate', 'input' => ['address' => $address, 'port' => 443, 'domain' => $route->domain]];
+    }
+
     /** @return array<string, mixed> */
     private function roleFirewall(Node $node, RoleName $role): array
     {
