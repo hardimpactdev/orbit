@@ -12,12 +12,15 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 /** @return array{Node, Node, Node} */
 function fleetPeerDnsNodes($test): array
@@ -52,22 +55,32 @@ function fleetDnsProof(): array
         'dns' => 'Link 2 (orbit): 10.44.0.1', 'domains' => 'Link 2 (orbit): ~orbit', 'default_route' => 'Link 2 (orbit): no', 'uplink' => true];
 }
 
+beforeEach(function (): void {
+    app()->instance(AgentDelivery::class, new AgentDelivery(__DIR__.'/../../Fixtures/fleet-agent-delivery.json', sys_get_temp_dir()));
+    $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-fleet-peer-dns', 'runId' => $this->run,
+    ]]];
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['swamp.run_token' => 'fixture.direct', 'swamp.direct_writers' => []]);
+});
+
 function fleetDnsOperation($test): Operation
 {
     [, $node] = fleetPeerDnsNodes($test);
     $response = $test->withHeader('Idempotency-Key', 'peer-dns-proof')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertAccepted();
-    $operation = Operation::query()->findOrFail($response->json('data.id'));
-    $test->withoutHeader('Idempotency-Key')->postJson('/api/v1/operation-executor/claim', ['kind' => 'fleet.peer_dns', 'worker' => 'proof'])->assertOk();
 
-    return $operation;
+    return Operation::query()->findOrFail($response->json('data.id'));
 }
 
-function fleetDnsRun(Operation $operation): array
+function fleetDnsProjection($test, string $status = 'succeeded'): array
 {
-    return ['worker' => 'proof', 'key' => 'peer-dns-verify', 'transport' => 'agent', 'name' => 'wireguard.inspect-peer-dns', 'input' => ['server' => $operation->input['server']]];
+    return ['run_id' => $test->run, 'status' => $status, 'started_at' => '2026-10-30T12:00:00.000Z',
+        'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => fleetDnsProof()];
 }
 
-it('records keyed peer DNS intent without PHP execution and lists only eligible targets', function (): void {
+it('starts keyed peer DNS intent directly without a Gateway execution lock and lists eligible targets', function (): void {
     Queue::fake();
     [$gateway, $node] = fleetPeerDnsNodes($this);
     $agents = new FakeAgentCommandRunner;
@@ -87,11 +100,22 @@ it('records keyed peer DNS intent without PHP execution and lists only eligible 
         ->and(Operation::query()->sole()->status)->toBe(OperationStatus::Queued)
         ->and($agents->calls)->toBe([]);
     Queue::assertNothingPushed();
-    expect(Operation::query()->sole()->lock_key)->toBe('peer_dns:'.$node->id);
-    $this->withHeader('Idempotency-Key', 'peer-dns-other-request')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')
-        ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy')
-        ->assertJsonPath('error.details.operation_id', Operation::query()->sole()->id);
+    expect(Operation::query()->sole()->lock_key)->toBeNull();
+    expect(Operation::query()->sole()->state)->toHaveKeys(['peer_dns_writer', 'swamp_run_id']);
+    expect(Operation::query()->sole()->attempts)->toBe(0);
+    expect($this->socket->sent)->toHaveCount(1);
+    $this->withHeader('Idempotency-Key', 'peer-dns-other-request')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertAccepted();
     $this->withoutHeader('Idempotency-Key')->postJson('/api/v1/fleet/nodes/'.$gateway->id.'/peer-dns')->assertUnprocessable()->assertJsonPath('error.code', 'vpn.peer_dns_unmanaged');
+});
+
+it('refuses an operator selection of the deleted peer DNS writer before admission', function (): void {
+    [, $node] = fleetPeerDnsNodes($this);
+    config(['swamp.direct_writers' => ['fleet.peer_dns' => 'polled']]);
+
+    $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertServiceUnavailable()
+        ->assertJsonPath('error.code', 'operation.writer_invalid');
+    $this->assertDatabaseCount('operations', 0);
+    expect($this->socket->sent)->toBe([]);
 });
 
 it('changes the peer DNS digest only when the effective admitted policy changes', function (): void {
@@ -135,78 +159,50 @@ it('denies fleet maintenance reads without Services identity', function (): void
         ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 });
 
-it('refuses other targets commands transports schema and changed admitted policy before execution', function (string $fault): void {
+it('accepts the exact bound native policy without an execution receipt and replays idempotently', function (): void {
     $operation = fleetDnsOperation($this);
-    $data = fleetDnsRun($operation);
-    match ($fault) {
-        'target' => $data['node_id'] = $operation->node_id + 1,
-        'agent' => $data['name'] = 'cli.self-update',
-        'remote' => [$data['transport'], $data['name']] = ['remote_program', 'peer-dns'],
-        'schema' => $data['input']['server'] = 42,
-        'intent' => $data['input']['server'] = '10.44.0.90',
-    };
-
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', $data)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
-})->with(['target', 'agent', 'remote', 'schema', 'intent']);
-
-it('requires recorded proof and the exact admitted DNS policy before successful completion', function (string $fault): void {
-    $operation = fleetDnsOperation($this);
-    $result = fleetDnsProof();
-    if ($fault === 'wrong-policy') {
-        $result['domains'] = 'Link 2 (orbit): ~.';
-    }
-    if ($fault !== 'bare') {
-        if ($fault !== 'forged') {
-            $agents = new FakeAgentCommandRunner;
-            $agents->answer('wireguard.inspect-peer-dns', $result);
-            app()->instance(AgentCommandRunner::class, $agents);
-            $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', fleetDnsRun($operation))->assertOk();
-        }
-        $step = $this->postJson('/api/v1/operation-executor/'.$operation->id.'/step', ['worker' => 'proof', 'key' => 'verify:finish',
-            'name' => 'peer-dns-verify', 'status' => 'succeeded', 'result' => $result]);
-        if ($fault === 'forged') {
-            $step->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-        } else {
-            $step->assertOk();
-        }
-    }
-
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/complete', ['worker' => 'proof', 'status' => 'succeeded', 'result' => $result])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-})->with(['bare', 'forged', 'wrong-policy']);
-
-it('reuses a proven Node receipt across keyed retries and records one completion', function (): void {
-    $operation = fleetDnsOperation($this);
-    $agents = new FakeAgentCommandRunner;
-    $agents->answer('wireguard.inspect-peer-dns', fleetDnsProof());
-    app()->instance(AgentCommandRunner::class, $agents);
+    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
     foreach (range(1, 2) as $_) {
-        $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', fleetDnsRun($operation))->assertOk();
+        $this->postJson($path, fleetDnsProjection($this))->assertOk()->assertJsonPath('data.status', 'succeeded');
     }
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/step', ['worker' => 'proof', 'key' => 'verify:finish',
-        'name' => 'peer-dns-verify', 'status' => 'succeeded', 'result' => fleetDnsProof()])->assertOk();
-    foreach (range(1, 2) as $_) {
-        $this->postJson('/api/v1/operation-executor/'.$operation->id.'/complete', ['worker' => 'proof', 'status' => 'succeeded', 'result' => fleetDnsProof()])
-            ->assertOk()->assertJsonPath('data.status', 'succeeded');
-    }
-    expect($agents->calls)->toHaveCount(1);
+    expect($operation->fresh()->result)->toBe(fleetDnsProof());
+    expect($operation->fresh()->worker)->toBeNull();
+    expect($operation->fresh()->attempts)->toBe(0);
+    expect($operation->fresh()->state)->not->toHaveKey('executor_runs');
 });
 
-it('redacts secret-bearing run step output and completion values before persistence', function (): void {
+it('refuses changed policies missing uplink wrong runs and execution overrides', function (string $fault): void {
     $operation = fleetDnsOperation($this);
-    $secret = 'ghp_'.str_repeat('a', 36);
-    $exposed = $secret;
-    $agents = new FakeAgentCommandRunner;
-    $agents->answer('wireguard.inspect-peer-dns', [...fleetDnsProof(), 'state' => $exposed, 'credential' => $secret, 'environment' => ['TOKEN' => $secret]]);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $response = $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', fleetDnsRun($operation))->assertOk();
-    expect($response->getContent())->not->toContain($secret, 'credential', 'environment');
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/step', ['worker' => 'proof', 'key' => 'failure', 'name' => 'peer-dns-verify',
-        'status' => 'failed', 'error_code' => 'vpn.peer_dns_reconcile_failed', 'result' => ['state' => $exposed], 'output' => $exposed])->assertOk();
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/complete', ['worker' => 'proof', 'status' => 'failed',
-        'error_code' => 'vpn.peer_dns_reconcile_failed', 'result' => ['state' => $exposed, 'credential' => $secret]])->assertOk();
-    expect(json_encode($operation->refresh()->toArray()))->not->toContain($secret)
-        ->and($operation->steps()->sole()->output)->not->toContain($secret);
+    $data = fleetDnsProjection($this);
+    match ($fault) {
+        'policy' => $data['result']['domains'] = 'Link 2 (orbit): ~.',
+        'uplink' => $data['result']['uplink'] = false,
+        'run' => $data['run_id'] = 'fabd4059-fb6c-49d8-940e-01ae58aa3f38',
+        'node' => $data['node_id'] = $operation->node_id + 1,
+        'command' => $data['command'] = 'wireguard.repair-peer-dns',
+    };
+    $response = $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', $data);
+    $fault === 'run' ? $response->assertConflict() : $response->assertUnprocessable();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
+})->with(['policy', 'uplink', 'run', 'node', 'command']);
+
+it('projects bounded refusal and cancellation without retaining raw diagnostics', function (string $status): void {
+    $operation = fleetDnsOperation($this);
+    $data = [...fleetDnsProjection($this, $status), 'result' => []];
+    if ($status === 'failed') {
+        $data['error_code'] = 'vpn.peer_dns_uplink_missing';
+        $data['result'] = ['error_code' => $data['error_code'], 'state' => 'raw diagnostic'];
+    }
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', $data)->assertOk();
+    expect($operation->fresh()->result)->toBe($status === 'failed' ? ['error_code' => 'vpn.peer_dns_uplink_missing'] : []);
+})->with(['failed', 'cancelled']);
+
+it('deletes peer DNS claims receipts and Gateway primitive execution', function (): void {
+    $operation = fleetDnsOperation($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'fleet.peer_dns', 'worker' => 'retired'])->assertUnprocessable();
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/primitive', ['run_id' => $this->run])->assertUnprocessable();
+    expect(app(OperationKinds::class)->directOnly('fleet.peer_dns'))->toBeTrue();
+    expect(app(OperationKinds::class)->definition('fleet.peer_dns'))->not->toHaveKeys(['runs', 'completion_contract', 'completion']);
 });
 
 it('refuses both fleet admission routes to an access-authorized peer that is not an executor', function (string $effect): void {
