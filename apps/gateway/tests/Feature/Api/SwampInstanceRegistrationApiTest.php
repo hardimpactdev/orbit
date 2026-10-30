@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\CreateRouteAction;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\InstanceDestinationGuard;
@@ -82,6 +83,81 @@ it('reserves adopted source and Route intent and replays admission without execu
     expect($route->domain)->toBe('registration.test')->and($route->status->value)->toBe('pending');
     expect(json_encode(Activity::query()->where('command', 'instance:register')->firstOrFail()->toArray()))->not->toContain('/work/registration');
 })->with([false, true]);
+
+it('adopts the current worktree of a resolved ended create without reserving another Instance', function (string $createStatus): void {
+    $path = '/srv/apps/registration/feature';
+    $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
+        'name' => 'feature', 'source_layout' => 'worktree', 'checkout_path' => $path, 'branch' => 'feature',
+        'starting_commit' => str_repeat('b', 40), 'source_prepare_id' => 'prepared-create', 'status' => 'source_resolved',
+        'first_setup_pending' => true]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($instance, null);
+    Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $this->node->id, 'status' => $createStatus, 'input' => ['instance_id' => $instance->id]]);
+    $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts($path, 'feature-work', InstanceSourceLayout::Worktree)]);
+    $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
+
+    $id = $this->postJson('/api/v1/instances/register', ['source_path' => $path, 'project_id' => $this->project->id,
+        'instance_name' => 'feature', 'setup' => true])->assertAccepted()->assertJsonPath('data.target_id', $instance->id)->json('data.id');
+
+    expect(Instance::query()->count())->toBe(1);
+    expect($instance->refresh()->branch)->toBe('feature-work')->and($instance->branch_override)->toBe('feature-work')
+        ->and($instance->starting_commit)->toBe(str_repeat('a', 40))->and($instance->source_prepare_id)->toBe('prepared-create')
+        ->and($instance->registration_original_path)->toBe($path)->and($instance->first_setup_pending)->toBeTrue();
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['members'][0])->toMatchArray(['instance_id' => $instance->id, 'original_path' => $path,
+        'checkout' => $path, 'branch' => 'feature-work', 'commit' => str_repeat('a', 40)]);
+    $descriptor = app(RegistrationLifecycleExecution::class)->descriptors($operation)[0];
+    expect($descriptor['input']['operation'])->toBe('adopt');
+    expect($instance->routes()->sole()->id)->toBe($route->id);
+})->with(['failed', 'cancelled']);
+
+it('refuses adoption outside resolved source from an ended create without changing the Instance', function (string $status, ?string $createStatus, string $requestedName): void {
+    $path = '/srv/apps/registration/feature';
+    $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
+        'name' => 'feature', 'source_layout' => 'worktree', 'checkout_path' => $path, 'branch' => 'feature',
+        'starting_commit' => str_repeat('b', 40), 'source_prepare_id' => 'prepared-create', 'status' => $status]);
+    if ($createStatus !== null) {
+        Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $this->node->id, 'status' => $createStatus, 'input' => ['instance_id' => $instance->id]]);
+    }
+    $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts($path, 'feature-work', InstanceSourceLayout::Worktree)]);
+    $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => $path, 'instance_name' => $requestedName])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->branch)->toBe('feature')->and($instance->starting_commit)->toBe(str_repeat('b', 40))
+        ->and($instance->registration_request_id)->toBeNull()->and($instance->status->value)->toBe($status);
+    expect(Instance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(0)
+        ->and(Operation::query()->where('kind', 'instance.register')->count())->toBe(0);
+})->with([
+    'active Instance' => ['active', 'cancelled', 'feature'],
+    'unresolved source' => ['reserved', 'cancelled', 'feature'],
+    'no ended create' => ['source_resolved', null, 'feature'],
+    'running create' => ['source_resolved', 'running', 'feature'],
+    'changed name' => ['source_resolved', 'failed', 'renamed'],
+]);
+
+it('refuses to adopt a checkout owned by another Project', function (): void {
+    $path = '/srv/apps/registration/feature';
+    $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'type' => 'laravel-app', 'root' => 'public',
+        'repository_url' => 'https://github.com/example/other.git', 'default_branch' => 'main']);
+    $instance = Instance::query()->create(['project_id' => $other->id, 'node_id' => $this->node->id,
+        'name' => 'feature', 'source_layout' => 'worktree', 'checkout_path' => $path, 'branch' => 'feature',
+        'starting_commit' => str_repeat('b', 40), 'status' => 'source_resolved']);
+    Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $this->node->id, 'status' => 'cancelled', 'input' => ['instance_id' => $instance->id]]);
+    $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts($path, 'feature-work', InstanceSourceLayout::Worktree)]);
+    $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => $path, 'project_id' => $this->project->id])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->project_id)->toBe($other->id)->and($instance->branch)->toBe('feature')
+        ->and($instance->registration_request_id)->toBeNull();
+    expect(Instance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(0)
+        ->and(Operation::query()->where('kind', 'instance.register')->count())->toBe(0);
+});
 
 it('preflights every adopted worktree before reserving the bounded member set', function (): void {
     $facts = [swamp_registration_facts(), swamp_registration_facts('/work/feature', 'feature', InstanceSourceLayout::Worktree)];
