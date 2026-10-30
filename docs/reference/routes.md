@@ -781,10 +781,8 @@ Route Operations request `metrics.reconcile` with an empty input only when their
 
 Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
 
-### Direct publication rollout
+### Direct dispatch
 
-The direct publication path starts `operation-route-publication` after intent commits. Swamp serializes the complete publication on its Node, owns retries and projects run results back through the Gateway. Direct Operations use no discovery, claim, lease, heartbeat, target hold, keyed effect receipt or Gateway Node lock. The previous Swamp path remains available during rollout.
+`route.caddy_converge`, `route.private_dns_publish`, `route.workload_verify` and `route.public_verify` each have one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
 
-`ORBIT_ROUTE_CADDY_WRITER` and `ORBIT_ROUTE_PRIVATE_DNS_WRITER` select `polled` (the previous Swamp workflow, default) or `direct` (native `operation-route-publication`). Each admitted Operation stores its selected writer. Changing the setting affects only new Operations; existing work completes through its original path. Invalid values refuse admission. Rollback selects `polled` for new work, never a PHP executor.
-
-Load both workflows and deploy the dormant Gateway endpoints first. After the live cutover Operations finish, admit a private dev canary through the normal owning action with a request-local direct setting; verify its native run and projected result before changing the shared per-kind setting. Prove production success before deleting the previous Swamp path. Approval and signal permissions implied by the native run grant are inert: this workflow contains no approval or signal-wait steps. Adding either requires checking the credential grant again.
+These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.

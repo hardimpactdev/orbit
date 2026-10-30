@@ -67,7 +67,7 @@ final class RouteSwampGatewayFixture
     public function __construct(private TestCase $test, bool $nativeChildren = false, private bool $httpRuns = false)
     {
         Event::fake([RecordBroadcast::class]);
-        config(['swamp.direct_writers' => ['route.workload_verify' => 'direct', 'route.public_verify' => 'direct'], 'swamp.run_token' => 'fixture.fake', 'swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
+        config(['swamp.direct_writers' => [], 'swamp.run_token' => 'fixture.fake']);
         $socket = new FakeRoutePublicationSocket;
         $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
             'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
