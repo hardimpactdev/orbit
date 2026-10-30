@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support\Fleet;
 
-use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Operations\OperationKinds;
 use App\Models\Operation;
 use Illuminate\Routing\RouteCollection;
@@ -14,12 +13,7 @@ use Illuminate\Support\Facades\Schema;
 /** Presence fixtures only. They never implement or execute shared primitives. */
 final class InstalledFleetPrimitives
 {
-    public static function requireSupportedKit(): void
-    {
-        if (! FleetKitCapabilities::visitsSupported()) {
-            test()->markTestSkipped('Shared kit children, list_of and receipts are not installed in this base.');
-        }
-    }
+    public static function requireSupportedKit(): void {}
 
     public static function simulate(?string $missing = null): void
     {

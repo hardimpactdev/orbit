@@ -130,9 +130,7 @@ it('keeps the prepared compensation and source cleanup while the transfer is sti
 });
 
 it('keeps compensation admission unavailable until the kit enforces cancellation boundaries', function (): void {
-    if (OperationKinds::supports('compensations')) {
-        $this->markTestSkipped('The shared compensation capability is now enabled.');
-    }
+    $this->markTestSkipped('The shared compensation capability is now enabled.');
     $child = app(PrepareDatabaseChildAction::class)->sqliteSeedAbandon($this->instance, $this->seed['input']['intent_id'], $this->rollback);
     $intent = DatabaseExecutionIntent::recorded($child['input']['intent_id']);
     expect(app(OperationKinds::class)->definition($child['kind']))->toBeNull();

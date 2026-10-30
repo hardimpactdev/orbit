@@ -6,7 +6,6 @@ use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\SwampOperationExecutor;
@@ -98,9 +97,6 @@ it('rejects a forged step and requires the recorded named run before projecting 
 });
 
 it('selects the copy allowlist variant before validating protected parameters', function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
     $operation = databaseContractOperation();
     $operation->kind = 'database.clone';
     $intent = DatabaseExecutionIntent::query()->findOrFail($operation->input['intent_id']);
@@ -123,9 +119,6 @@ it('refuses invented metadata on failed completion', function (): void {
 });
 
 it('runs through shared hydration and stores only references and redacted receipts', function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
     $operation = databaseContractOperation();
     $operation->update(['kind' => 'database_user.create']);
     $agents = new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => '']);

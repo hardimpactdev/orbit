@@ -155,8 +155,7 @@ it('relays verified bytes privately and replays the keyed receipt without transp
     expect($this->agents->commands())->toBe(['instance.transfer-source', 'instance.read-transfer-archive', 'instance.materialize-transfer'])
         ->and($this->envelope['nonce'])->toBe($this->destination->fresh()->state['executor_effect_identity']['nonce'])
         ->and($this->sink->write('closed'))->toBeFalse()
-        ->and(json_encode($this->destination->fresh()->state))->not->toContain('private archive')
-        ->and(OperationKinds::supports('archive_relay'))->toBeTrue();
+        ->and(json_encode($this->destination->fresh()->state))->not->toContain('private archive');
 });
 
 it('refuses corrupted streams before destination dispatch and closes staging', function (): void {

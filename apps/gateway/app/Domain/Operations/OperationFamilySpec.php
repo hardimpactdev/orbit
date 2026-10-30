@@ -23,17 +23,14 @@ final class OperationFamilySpec
     }
 
     /**
-     * @param  array{completion: class-string<OperationCompletion>, execution: class-string<OperationFamilyExecution>, transport: string, done_step: string, variant: string, requires?: list<string>, result_fields: array<mixed>}  $family
+     * @param  array{completion: class-string<OperationCompletion>, execution: class-string<OperationFamilyExecution>, transport: string, done_step: string, variant: string, result_fields: array<mixed>}  $family
      * @param  array<string, array{commands: list<string>, done_when: array<string, string>, admission?: class-string<OperationChildAdmission>}>  $actions
      * @return array<string, array<string, mixed>>
      */
     public static function compile(array $family, array $actions): array
     {
-        if (array_diff(array_keys($family), ['completion', 'execution', 'transport', 'done_step', 'variant', 'requires', 'result_fields']) !== []) {
+        if (array_diff(array_keys($family), ['completion', 'execution', 'transport', 'done_step', 'variant', 'result_fields']) !== []) {
             throw new LogicException('Unsupported family spec field.');
-        }
-        if (array_any($family['requires'] ?? [], static fn (string $capability): bool => ! OperationKinds::supports($capability))) {
-            return [];
         }
         $kinds = [];
         foreach ($actions as $kind => $action) {

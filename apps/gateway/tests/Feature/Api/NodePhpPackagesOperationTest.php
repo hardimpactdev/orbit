@@ -58,9 +58,6 @@ final class PhpPackagesParent implements OperationCompletion, OperationFamilyChi
 }
 
 beforeEach(function (): void {
-    if (! OperationKinds::supports('list_of')) {
-        $this->markTestSkipped('Bounded warning lists require Kit C.');
-    }
     $gateway = $this->markAsGateway(FleetFixtures::node('gateway', [RoleName::Gateway]));
     $services = FleetFixtures::node('services');
     $services->accessibleNodes()->attach($gateway);

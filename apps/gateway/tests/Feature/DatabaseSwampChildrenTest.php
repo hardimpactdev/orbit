@@ -8,7 +8,6 @@ use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -173,9 +172,6 @@ it('refuses to reset a clone whose enum checkpoint is already complete', functio
 })->with(['mysql', 'sqlite']);
 
 it('admits stored removal children on their recorded Node under the owning Instance hold and resumes after wait', function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
     $this->instance->update(['node_id' => $this->gateway->id]);
     $owned = DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'owned', 'username' => 'owned_user', 'owner_instance_id' => $this->instance->id]);

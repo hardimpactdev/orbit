@@ -21,11 +21,7 @@ use App\Models\TaskVm;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
 
-beforeEach(function (): void {
-    if (! OperationKinds::supports('children')) {
-        $this->markTestSkipped('Requires the matching kit v2 children slice.');
-    }
-});
+beforeEach(function (): void {});
 
 function runtimeAdmissionVm(): TaskVm
 {

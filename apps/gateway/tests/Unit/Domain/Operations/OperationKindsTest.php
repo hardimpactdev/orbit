@@ -52,18 +52,6 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
     ['runs', 'unknown_guard'],
 ]);
 
-it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
-    expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['unknown']);
-
-it('reports enforced child and target receipt capabilities', function (): void {
-    expect(OperationKinds::supports('children'))->toBeTrue()
-        ->and(OperationKinds::supports('receipts'))->toBeTrue()
-        ->and(OperationKinds::supports('compensations'))->toBeTrue()
-        ->and(OperationKinds::supports('list_of'))->toBeTrue()
-        ->and(OperationKinds::supports('children_settled'))->toBeTrue();
-});
-
 it('rejects a child-only completion contract that proves no child', function (): void {
     $definition = PolledOperationFixture::definition();
     $definition['completion_contract'] = ['children_succeeded' => []];

@@ -48,7 +48,7 @@ final readonly class DirectOperation
     {
         $definition = app(self::class)->definition($operation->kind);
 
-        return $definition !== null && ($operation->state[$definition['writer_state']] ?? 'polled') === 'direct';
+        return $definition !== null && ($operation->state[$definition['writer_state']] ?? null) === 'direct';
     }
 
     /** @param array<string, mixed> $input Safe admitted input, never worker data. */
@@ -59,16 +59,15 @@ final readonly class DirectOperation
             return $this->requireWriter($kind, null);
         }
         $writers = config($definition['writer_config'], []);
-        $default = app(OperationKinds::class)->directOnly($kind) ? 'direct' : 'polled';
-        $writer = is_array($writers) ? ($writers[$kind] ?? $default) : null;
-        if (! in_array($writer, ['polled', 'direct'], true)) {
-            throw new ResourceOperationException('operation.writer_invalid', 'Select polled or direct for the Swamp writer.', 503);
+        $writer = is_array($writers) ? ($writers[$kind] ?? 'direct') : null;
+        if ($writer !== 'direct') {
+            throw new ResourceOperationException('operation.writer_invalid', 'This kind requires the direct Swamp writer.', 503);
         }
 
         $admitted = [...$input, 'node_id' => $nodeId, 'parent_operation_id' => app(OperationIdempotency::class)->parent?->id];
         foreach ($definition['writer_scope'] ?? [] as $field => $value) {
             if (! array_key_exists($field, $admitted) || $admitted[$field] !== $value) {
-                return $this->requireWriter($kind, 'polled');
+                throw new ResourceOperationException('operation.writer_invalid', 'The intent is outside its declared direct scope.', 503);
             }
         }
 

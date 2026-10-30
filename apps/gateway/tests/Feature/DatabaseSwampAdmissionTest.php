@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\DatabaseConnection;
@@ -42,11 +41,7 @@ function databaseAdmissionServer(Node $node, string $driver = 'mysql'): Database
         'tag' => $driver === 'pgsql' ? '18' : '8.4', 'port' => 5434, 'root_password' => 'test-admin-password', 'status' => 'active']);
 }
 
-beforeEach(function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
-});
+beforeEach(function (): void {});
 
 it('accepts server creation without running PHP infrastructure', function (): void {
     Queue::fake();

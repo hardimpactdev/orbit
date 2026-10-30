@@ -46,7 +46,6 @@ return (static function (): array {
         'tool.update' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
         'tool.remove' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
         ...OperationFamilySpec::compile([
-            'requires' => ['children', 'list_of'],
             'completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,
             'transport' => 'agent', 'done_step' => 'tool-verified', 'variant' => 'completion_variant',
             'result_fields' => ['installed_version', 'block', 'version', 'outcome', 'error_code',

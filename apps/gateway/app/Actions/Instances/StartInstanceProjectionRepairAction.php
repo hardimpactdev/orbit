@@ -6,7 +6,6 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -17,9 +16,6 @@ final readonly class StartInstanceProjectionRepairAction
 
     public function execute(Instance $instance): Operation
     {
-        if (! OperationKinds::supports('children')) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Projection repair needs child Operations.', 503);
-        }
         $this->intents->assertDevelopment($instance->refresh());
         $route = $instance->authoritativeRoute();
         if (! $instance->development_projection_pending || $route === null) {

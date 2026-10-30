@@ -2,13 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationKinds;
 use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 
 return (static function (): array {
-    if (! OperationKinds::supports('list_of')) {
-        return [];
-    }
     $kinds = [];
     foreach (['setup', 'sync', 'teardown'] as $action) {
         $kinds['vault.'.$action] = [

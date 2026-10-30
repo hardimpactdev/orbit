@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationResult;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -27,7 +27,7 @@ final class DirectOperationsController extends Controller
         return $this->respond($request, $this->operation($operation));
     }
 
-    public function primitive(DirectOperationRequest $request, Operation $operation, DirectOperation $direct, OperationExecutionContract $contract): JsonResponse
+    public function primitive(DirectOperationRequest $request, Operation $operation, DirectOperation $direct, OperationResult $contract): JsonResponse
     {
         $direct->projection($operation);
         if ($operation->status->terminal()) {

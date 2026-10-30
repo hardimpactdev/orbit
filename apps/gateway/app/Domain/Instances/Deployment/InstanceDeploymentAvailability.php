@@ -44,9 +44,6 @@ final class InstanceDeploymentAvailability
     /** @param array<string,mixed> $intent */
     public static function assertAvailable(array $intent): void
     {
-        if (! OperationKinds::supports('children')) {
-            throw self::unavailable();
-        }
         $required = [];
         if (($intent['variant'] ?? null) !== 'development') {
             if (($intent['runtime_synchronous'] ?? false) !== true) {

@@ -174,8 +174,7 @@ it('encrypts outputs once and keeps only references through hook, step, context 
     $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => $result])->assertOk();
     expect($this->store->calls)->toBe(1)->and($this->command->calls)->toBe(1)
         ->and(json_encode($this->operation->fresh()->getAttributes()))->not->toContain($this->command->value)
-        ->and(json_encode($this->operation->steps()->get()->toArray()))->not->toContain($this->command->value)
-        ->and(OperationKinds::supports('secret_outputs'))->toBeTrue();
+        ->and(json_encode($this->operation->steps()->get()->toArray()))->not->toContain($this->command->value);
 });
 
 it('preserves boolean completion proof when a protected value contains the digit one', function (): void {

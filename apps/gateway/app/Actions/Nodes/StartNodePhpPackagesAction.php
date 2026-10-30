@@ -7,7 +7,6 @@ namespace App\Actions\Nodes;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -22,9 +21,6 @@ final readonly class StartNodePhpPackagesAction
     /** @param array<array-key, mixed> $versions Version selection from a recorded parent intent. */
     public function execute(Node $node, array $versions): Operation
     {
-        if (! OperationKinds::supports('list_of')) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'PHP package children require enforced list results.', 409);
-        }
         if ($this->identity->parent === null || ! in_array($this->identity->parent->kind, ['instance.deploy', 'instance.rollback', 'instance.prepare_php_runtime'], true)
             || $this->identity->parent->node_id !== $node->id || $this->identity->kind !== 'node.prepare_php_packages') {
             throw new ResourceOperationException('operation.child_forbidden', 'PHP package preparation requires its owning deployment or Route runtime child admission.', 422);

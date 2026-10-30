@@ -17,7 +17,6 @@ use App\Domain\Nodes\NodeRoleRelocationSourceCompletion;
 use App\Domain\Nodes\NodeSettingsOperationCompletion;
 use App\Domain\Nodes\NodeWireGuardOperationCompletion;
 use App\Domain\Nodes\NodeWireGuardOperationExecution;
-use App\Domain\Operations\OperationKinds;
 
 $nodeKinds = [
     'node.prepare_php_packages' => [
@@ -55,14 +54,7 @@ $nodeKinds = [
         'result_fields' => ['error_code'],
     ],
 ];
-
-if (! OperationKinds::supports('list_of')) {
-    unset($nodeKinds['node.prepare_php_packages']);
-}
-
-if (OperationKinds::supports('children') && OperationKinds::supports('children_settled') && OperationKinds::supports('list_of') && OperationKinds::supports('secret_outputs')) {
-    $nodeKinds['node.converge'] = require __DIR__.'/node-converge-kind.php';
-}
+$nodeKinds['node.converge'] = require __DIR__.'/node-converge-kind.php';
 
 $wireguard = [
     'admission' => NodeChildAdmission::class,
@@ -125,9 +117,6 @@ $nodeKinds['node.add'] = [...$nodeLifecycleDefinition,
     'compensations' => ['node.enrollment_restore'], 'cancellation_boundary' => 'add-begin',
     'result_fields' => ['node_plan_proven', 'node_restore_required', 'id', 'name', 'enrolled', 'follow_up', 'error_code', 'failed_step'],
 ];
-if (! OperationKinds::supports('secret_outputs') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('compensations')) {
-    unset($nodeKinds['node.add']);
-}
 foreach (['node.bootstrap_host' => ['node.bootstrap'], 'node.bootstrap_verify' => ['agent.status', 'firewall.rules'], 'node.macos_inspect' => ['node.inspect-macos-enrollment']] as $bootstrapKind => $bootstrapCommands) {
     $nodeKinds[$bootstrapKind] = [...$nodeLifecycleDefinition,
         'runs' => [
@@ -176,9 +165,6 @@ $nodeKinds['node.remove'] = [...$nodeLifecycleDefinition,
         ['name' => 'roles_shed', 'type' => 'list', 'items' => 'string', 'max' => 32],
         ['name' => 'retained_on_node', 'type' => 'list', 'items' => 'string', 'max' => 128]],
 ];
-if (! OperationKinds::supports('list_of') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('compensations')) {
-    unset($nodeKinds['node.remove']);
-}
 
 $nodeKinds['node.network_converge'] = [
     'executor' => 'swamp', 'admission' => NodeChildAdmission::class,
@@ -248,13 +234,5 @@ foreach (['node.role_add', 'node.role_converge', 'node.role_remove', 'node.role_
 }
 
 $nodeKinds['node.role_relocate_source']['completion'] = NodeRoleRelocationSourceCompletion::class;
-
-if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('compensations')) {
-    unset($nodeKinds['node.role_add'], $nodeKinds['node.role_converge'], $nodeKinds['node.role_remove'], $nodeKinds['node.role_relocate'], $nodeKinds['node.role_relocate_source'], $nodeKinds['node.role_relocate_target']);
-}
-
-if (! OperationKinds::supports('children')) {
-    unset($nodeKinds['node.enrollment_restore'], $nodeKinds['node.removal_restore'], $nodeKinds['node.network_converge']);
-}
 
 return [...$nodeKinds, ...require __DIR__.'/node-bootstrap-kinds.php'];

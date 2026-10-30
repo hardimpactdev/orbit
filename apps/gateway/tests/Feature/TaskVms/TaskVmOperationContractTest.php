@@ -46,11 +46,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
 
-beforeEach(function (): void {
-    if (! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Requires the matching kit v2 receipts slice.');
-    }
-});
+beforeEach(function (): void {});
 
 function taskVmEffectFixture(string $verb = 'start'): Operation
 {

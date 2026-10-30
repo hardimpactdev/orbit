@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
@@ -10,11 +9,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 
-beforeEach(function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
-});
+beforeEach(function (): void {});
 
 it('keeps credential-bearing SQL out of Activity and public Operation input', function (): void {
     $node = Node::query()->create(['name' => 'dev-sql', 'status' => LifecycleStatus::Active, 'platform' => 'linux',

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 /** Cutover only, after the PHP workers drain. Never dispatches or inspects a Node. */
 final readonly class InterruptLegacyInstanceDeploymentsAction
 {
-    public function __construct(private OperationStore $store, private InstanceDeploymentExecution $execution) {}
+    public function __construct(private OperationStore $store) {}
 
     public function execute(): void
     {
@@ -33,8 +33,8 @@ final readonly class InterruptLegacyInstanceDeploymentsAction
                                 'error_code' => 'deployment.interrupted', 'finished_at' => now()]);
                         }
                     }
-                    $result = $this->execution->result($operation);
-                    $this->execution->complete($operation, OperationOutcome::failed('deployment.interrupted', $result));
+                    $result = app(InstanceDeploymentExecution::class)->result($operation);
+                    app(InstanceDeploymentExecution::class)->complete($operation, OperationOutcome::failed('deployment.interrupted', $result));
                     $this->store->change($operation, ['status' => OperationStatus::Failed, 'error_code' => 'deployment.interrupted',
                         'failed_step' => $operation->current_step, 'current_step' => null, 'finished_at' => now(),
                         'lock_key' => null, 'result' => $result]);

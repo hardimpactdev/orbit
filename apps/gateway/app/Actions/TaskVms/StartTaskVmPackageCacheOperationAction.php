@@ -7,7 +7,6 @@ namespace App\Actions\TaskVms;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmCacheFillBatches;
-use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
@@ -20,9 +19,6 @@ final readonly class StartTaskVmPackageCacheOperationAction
 
     public function execute(int $hostNodeId): Operation
     {
-        TaskVmCapabilities::require('list_of');
-        TaskVmCapabilities::require('children_settled');
-        TaskVmCapabilities::require('receipts');
         $this->settings->host($hostNodeId);
         Node::query()->whereKey($hostNodeId)->where('status', LifecycleStatus::Active)->firstOrFail();
         $existing = Operation::query()->where('kind', 'task_vm.fill_package_cache')->where('target_id', $hostNodeId)

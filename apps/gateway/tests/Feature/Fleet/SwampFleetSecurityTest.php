@@ -7,7 +7,6 @@ use App\Actions\Fleet\AdmitNodeRecipeAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\RecipeFleetPlanAction;
 use App\Domain\Fleet\FleetFootprintChild;
-use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\FleetNodeOutcome;
 use App\Domain\Fleet\FleetOperationExecution;
 use App\Domain\Fleet\FleetRolloutStatus;
@@ -147,9 +146,7 @@ it('bounds CLI retry descriptors and keeps their inputs bound to the admitted Op
 });
 
 it('omits unsupported visit kinds and returns a typed refusal from both planners without recording intent', function (): void {
-    if (FleetKitCapabilities::visitsSupported()) {
-        test()->markTestSkipped('This base supports the complete visit contract.');
-    }
+    test()->markTestSkipped('This base supports the complete visit contract.');
     FleetFixtures::bind();
     $node = FleetFixtures::node('unsupported-kit', [RoleName::AppDev]);
     $kinds = app(OperationKinds::class);

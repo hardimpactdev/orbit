@@ -322,15 +322,14 @@ it('refuses cancel after committed cutover before changing the parent or its act
     expect($this->root->refresh()->getAttributes())->toBe($parentBefore);
     expect($activation->refresh()->getAttributes())->toBe($childBefore);
     expect($this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-activate-destination'], $this->peer)['operation']->id)->toBe($activation->id);
-})->with(['proven cutover' => [true], 'lost cutover reply' => [false]])
-    ->skip(! OperationKinds::supports('cancel_guard'), 'Await the lane 0d cancel guard runtime.');
+})->with(['proven cutover' => [true], 'lost cutover reply' => [false]]);
 
 it('still stamps and cascades pre-cutover cancellation through the shared cancel action', function (): void {
     app(CancelOperationAction::class)->execute($this->root);
 
     expect($this->root->refresh()->cancel_requested_at)->not->toBeNull();
     expect($this->stop->refresh()->status->value)->toBe('cancelled');
-})->skip(! OperationKinds::supports('cancel_guard'), 'Await the lane 0d cancel guard runtime.');
+});
 
 it('records direct destination discard only after source restoration without changing the child contract', function (): void {
     $this->transfer->destinationNode->update(['architecture' => 'x86_64']);

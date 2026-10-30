@@ -2,16 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessOperationCompletion;
 use App\Domain\Processes\ProcessOperationExecution;
 use App\Domain\Processes\ProcessRuntimeChildAdmission;
 
 return (static function (): array {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        return [];
-    }
     $kinds = [];
     $artifact = ['process_id', 'runtime', 'name'];
     foreach (['create', 'update', 'start', 'restart', 'destroy'] as $verb) {
@@ -56,9 +52,6 @@ return (static function (): array {
     $kinds['process.stop'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
 
     foreach (['install_instance_definitions' => 'process.create', 'restart_instance' => 'process.restart'] as $verb => $childKind) {
-        if ($verb === 'restart_instance' && ! OperationKinds::supports('list_of')) {
-            continue;
-        }
         $kinds['process.'.$verb] = [
             'executor' => 'swamp', 'admission' => ProcessInstanceOperation::class, 'completion' => ProcessInstanceOperation::class,
             'execution' => ProcessInstanceOperation::class,

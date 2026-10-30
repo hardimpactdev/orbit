@@ -4,21 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Operations;
 
-use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
-use App\Models\Operation;
-use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 
-/**
- * Gateway-peer primitives are restricted to the configured Services identity.
- *
- * @phpstan-import-type StepInput from SwampOperationExecutor
- * @phpstan-import-type CompletionInput from SwampOperationExecutor
- * @phpstan-import-type RunInput from SwampOperationExecutor
- */
+/** Authenticates configured Node peers for retained intent and private-material APIs. */
 abstract class ExecutorRequest extends FormRequest
 {
     public function authorize(): bool
@@ -45,51 +35,6 @@ abstract class ExecutorRequest extends FormRequest
         }
 
         return $caller->id;
-    }
-
-    public function worker(): string
-    {
-        return ValidatedData::string($this->validated('worker'));
-    }
-
-    /** @return StepInput */
-    public function stepInput(): array
-    {
-        return ['worker' => $this->worker(), 'key' => ValidatedData::string($this->validated('key')),
-            'name' => ValidatedData::string($this->validated('name')), 'status' => ValidatedData::string($this->validated('status')),
-            'output' => ValidatedData::string($this->validated('output', '')),
-            'result' => $this->resultInput(),
-            'error_code' => ValidatedData::nullableString($this->validated('error_code'))];
-    }
-
-    /** @return CompletionInput */
-    public function completionInput(): array
-    {
-        return ['worker' => $this->worker(), 'status' => ValidatedData::string($this->validated('status')),
-            'result' => $this->resultInput(),
-            'error_code' => ValidatedData::nullableString($this->validated('error_code'))];
-    }
-
-    /** @return RunInput */
-    public function runInput(): array
-    {
-        return ['worker' => $this->worker(), 'key' => ValidatedData::string($this->validated('key')),
-            'transport' => ValidatedData::string($this->validated('transport')),
-            'name' => ValidatedData::string($this->validated('name')), 'input' => ValidatedData::object($this->validated('input'))];
-    }
-
-    /** @return array<string,mixed> */
-    private function resultInput(): array
-    {
-        $result = ValidatedData::object($this->validated('result', []));
-        $operation = $this->route('operation');
-        if (! $operation instanceof Operation) {
-            throw new \LogicException('An executor result requires its bound Operation.');
-        }
-        $wire = json_decode($this->getContent());
-        app(OperationExecutionContract::class)->assertResultWire($operation, $result, $wire instanceof \stdClass ? ($wire->result ?? null) : null);
-
-        return $result;
     }
 
     /**

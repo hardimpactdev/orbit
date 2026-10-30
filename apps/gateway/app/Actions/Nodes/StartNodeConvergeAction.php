@@ -6,7 +6,6 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Models\Node;
@@ -22,10 +21,6 @@ final readonly class StartNodeConvergeAction
     {
         if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node has a Gateway-rendered footprint.', 422);
-        }
-
-        if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('secret_outputs')) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'The Node footprint requires recorded-intent child completion and transient protected agent-secret outputs.', 503);
         }
 
         $reference = $workerCredentials === null ? null : app(NodeWorkerEnrollment::class)->stage($node, $workerCredentials);

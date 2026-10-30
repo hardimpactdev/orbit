@@ -9,7 +9,6 @@ use App\Domain\Instances\InstanceExecutionChildAdmission;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
 use App\Domain\Instances\StepLists\InstanceStepListExecution;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentExecution;
-use App\Domain\Operations\OperationKinds;
 
 $deployment = static fn (bool $rollback): array => [
     'executor' => 'swamp',
@@ -50,7 +49,7 @@ $deployment = static fn (bool $rollback): array => [
 $instanceExecutionKinds = [
     'instance.prepare_served_web_roots' => [
         'executor' => 'swamp', 'execution' => InstanceServedWebRootsExecution::class, 'completion' => InstanceServedWebRootsExecution::class,
-        ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
+        ...(['admission' => InstanceExecutionChildAdmission::class]),
         'runs' => [
             ['transport' => 'instance-deploy-agent', 'name' => 'instance.prepare-served-web-roots', 'resumable' => true],
             ['transport' => 'gateway', 'name' => 'instance.web-roots-receipt', 'resumable' => true],
@@ -72,7 +71,7 @@ $instanceExecutionKinds = [
     'instance.deploy' => $deployment(false),
     'instance.rollback' => $deployment(true),
     'instance.prepare_php_runtime' => [
-        ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
+        ...(['admission' => InstanceExecutionChildAdmission::class]),
         'children' => [['kind' => 'node.prepare_php_packages', 'node_from' => 'operation.node_id']],
         'executor' => 'swamp', 'execution' => InstancePhpRuntimeExecution::class, 'completion' => InstancePhpRuntimeExecution::class,
         'runs' => [
@@ -87,7 +86,7 @@ $instanceExecutionKinds = [
             'published', 'changed', 'instance_id', 'confirmed', 'no_op', 'error_code'],
     ],
     'instance.prepare_vp_environment' => [
-        ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
+        ...(['admission' => InstanceExecutionChildAdmission::class]),
         'children' => [['kind' => 'tool.manager_converge', 'node_from' => 'operation.node_id']],
         'executor' => 'swamp', 'execution' => InstanceVpEnvironmentExecution::class, 'completion' => InstanceVpEnvironmentExecution::class,
         'runs' => [
@@ -108,7 +107,7 @@ $instanceExecutionKinds = [
             'vp_environment.package_manager_version', 'vp_environment.package_manager_hash', 'error_code'],
     ],
     'instance.run_steps' => [
-        ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
+        ...(['admission' => InstanceExecutionChildAdmission::class]),
         'executor' => 'swamp',
         'execution' => InstanceStepListExecution::class,
         'completion' => InstanceStepListExecution::class,
@@ -125,11 +124,5 @@ $instanceExecutionKinds = [
     ],
 
 ];
-
-if (! OperationKinds::supports('children')) {
-    foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.repair_projection', 'instance.prepare_served_web_roots'] as $kind) {
-        unset($instanceExecutionKinds[$kind]);
-    }
-}
 
 return $instanceExecutionKinds;

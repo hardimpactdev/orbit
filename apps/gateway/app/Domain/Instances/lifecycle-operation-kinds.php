@@ -8,7 +8,6 @@ use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceTransferCancelGuard;
 use App\Domain\Instances\TransferCompensation;
-use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
     $agent = static fn (string $name, array $secrets = [], bool $resumable = true): array => [
@@ -87,13 +86,9 @@ return (static function (): array {
     }
 
     $kinds['instance.destroy']['cancel_guard'] = InstanceDestroyCancelGuard::class;
-    if (OperationKinds::supports('compensations')) {
-        $kinds['instance.transfer']['compensations'] = ['instance.transfer_rollback'];
-        $kinds['instance.transfer']['cancellation_boundary'] = 'transfer-stop-source';
-    }
-    if (OperationKinds::supports('cancel_guard')) {
-        $kinds['instance.transfer']['cancel_guard'] = InstanceTransferCancelGuard::class;
-    }
+    $kinds['instance.transfer']['compensations'] = ['instance.transfer_rollback'];
+    $kinds['instance.transfer']['cancellation_boundary'] = 'transfer-stop-source';
+    $kinds['instance.transfer']['cancel_guard'] = InstanceTransferCancelGuard::class;
     $kinds['instance.transfer_rollback'] = [
         'executor' => 'swamp', 'execution' => TransferCompensation::class,
         'completion' => InstanceLifecycleCompletion::class, 'admission' => TransferCompensation::class,

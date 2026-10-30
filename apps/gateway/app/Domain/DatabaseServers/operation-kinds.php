@@ -5,12 +5,8 @@ declare(strict_types=1);
 use App\Domain\DatabaseServers\DatabaseChildAdmission;
 use App\Domain\DatabaseServers\DatabaseOperationCompletion;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
-use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        return [];
-    }
     $string = ['type' => 'string'];
     $object = ['type' => 'object'];
     $valkey = ['transport' => 'remote_program', 'name' => 'database.valkey', 'input_fields' => [], 'input_values' => [],
@@ -55,9 +51,6 @@ return (static function (): array {
         'database.sqlite_seed_abandon' => [$seedTarget],
         'database.write' => [$sqlite, $pdo],
     ] as $kind => $runs) {
-        if ($kind === 'database.sqlite_seed_abandon' && ! OperationKinds::supports('compensations')) {
-            continue;
-        }
         $kinds[$kind] = ['executor' => 'swamp', 'execution' => DatabaseOperationExecution::class,
             'completion' => DatabaseOperationCompletion::class, 'runs' => $runs,
             'children' => match ($kind) {

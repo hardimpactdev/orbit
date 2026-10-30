@@ -7,7 +7,6 @@ namespace App\Infrastructure\TaskVms;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentGuest;
@@ -26,8 +25,6 @@ final readonly class UpCloudTaskVmImageBuilder
 
     public function build(?MachineRecipe $recipe = null, ?int $afterAttemptId = null, ?int $generation = null): Operation
     {
-        TaskVmCapabilities::require('children');
-        TaskVmCapabilities::require('receipts');
         $recipe ??= $this->builds->currentRecipe();
         $upcloud = $this->settings->upcloud ?? throw new TaskVmException('task_vm.upcloud_not_configured', 'UpCloud is not configured.');
         $node = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\RouteChildAdmission;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\CaddyOperationCompletion;
 use App\Domain\Routes\ClusterRouterParentExecution;
@@ -88,58 +87,45 @@ $definitions = [
         'result_fields' => ['outcome', 'data.ready', 'data.digest', 'ready', 'error_code'],
     ],
 ];
-
-if (! OperationKinds::supports('list_of')) {
-    unset($definitions['route.offline_residue_clean']);
+foreach (AnalyticsRouteParentExecution::Kinds as $kind) {
+    $childKinds = ['certificate.converge', 'certificate.remove', 'route.caddy_converge', 'route.private_dns_publish', 'route.public_verify', 'route.public_firewall'];
+    $definitions[$kind] = [
+        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => AnalyticsRouteParentExecution::class,
+        'runs' => [['transport' => 'gateway', 'name' => 'route.analytics-parent', 'resumable' => true, 'input_fields' => [], 'input_values' => []]],
+        'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], RouteKitAvailability::registeredChildren($childKinds)),
+        'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway', 'name' => 'route.analytics-parent', 'result' => ['ready' => true]],
+        'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage', 'route_id', 'wait_seconds', 'error_code',
+            ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']]],
+    ];
 }
-
-if (OperationKinds::supports('children') && OperationKinds::supports('list_of')) {
-    foreach (AnalyticsRouteParentExecution::Kinds as $kind) {
-        $childKinds = ['certificate.converge', 'certificate.remove', 'route.caddy_converge', 'route.private_dns_publish', 'route.public_verify', 'route.public_firewall'];
-        $definitions[$kind] = [
-            'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => AnalyticsRouteParentExecution::class,
-            'runs' => [['transport' => 'gateway', 'name' => 'route.analytics-parent', 'resumable' => true, 'input_fields' => [], 'input_values' => []]],
-            'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], RouteKitAvailability::registeredChildren($childKinds)),
-            'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway', 'name' => 'route.analytics-parent', 'result' => ['ready' => true]],
-            'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage', 'route_id', 'wait_seconds', 'error_code',
-                ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']]],
-        ];
+$children = ['certificate.converge', 'certificate.remove', 'route.caddy_converge', 'route.private_dns_publish',
+    'route.workload_prepare', 'route.workload_firewall', 'route.lan_converge', 'route.lan_remove', 'route.router_lan_retire',
+    'route.workload_verify', 'route.public_verify', 'route.public_firewall', 'route.shared_php_withdraw',
+    'route.transfer_php_withdraw', 'route.transfer_lan_remove', 'instance.prepare_php_runtime', 'instance.prepare_served_web_roots',
+    'instance.sync_environment', 'instance.destroy', 'node.role_converge', 'node.role_remove', 'metrics.reconcile'];
+foreach ([...RouteParentExecution::Kinds, ...ClusterRouterParentExecution::Kinds] as $kind) {
+    $router = str_starts_with($kind, 'cluster.');
+    $definitions[$kind] = [
+        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class,
+        'execution' => $router ? ClusterRouterParentExecution::class : RouteParentExecution::class,
+        'runs' => [['transport' => 'gateway', 'name' => $router ? 'route.cluster-router' : 'route.parent',
+            'resumable' => true, 'input_fields' => [], 'input_values' => []]],
+        'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], RouteKitAvailability::registeredChildren($children)),
+        // The final command requires each exact required keyed child, including optional phases.
+        'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway',
+            'name' => $router ? 'route.cluster-router' : 'route.parent', 'result' => ['ready' => true]],
+        'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage',
+            'route_id', 'cluster_id', 'wait_seconds', 'activate_public', 'withdraw_public', 'changed', 'metrics', 'route_branch', 'failure_code', 'error_code',
+            ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']],
+            ['name' => 'retained_on_nodes', 'max' => 128, 'list_of' => ['node_id' => 'int', 'node' => 'string',
+                'steps' => ['type' => 'list', 'items' => 'string', 'max' => 32]]]],
+    ];
+}
+foreach ($definitions as $kind => &$definition) {
+    if (str_starts_with($kind, 'route.')) {
+        $definition['admission'] = RouteChildAdmission::class;
     }
 }
-
-if (OperationKinds::supports('children') && OperationKinds::supports('list_of')) {
-    $children = ['certificate.converge', 'certificate.remove', 'route.caddy_converge', 'route.private_dns_publish',
-        'route.workload_prepare', 'route.workload_firewall', 'route.lan_converge', 'route.lan_remove', 'route.router_lan_retire',
-        'route.workload_verify', 'route.public_verify', 'route.public_firewall', 'route.shared_php_withdraw',
-        'route.transfer_php_withdraw', 'route.transfer_lan_remove', 'instance.prepare_php_runtime', 'instance.prepare_served_web_roots',
-        'instance.sync_environment', 'instance.destroy', 'node.role_converge', 'node.role_remove', 'metrics.reconcile'];
-    foreach ([...RouteParentExecution::Kinds, ...ClusterRouterParentExecution::Kinds] as $kind) {
-        $router = str_starts_with($kind, 'cluster.');
-        $definitions[$kind] = [
-            'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class,
-            'execution' => $router ? ClusterRouterParentExecution::class : RouteParentExecution::class,
-            'runs' => [['transport' => 'gateway', 'name' => $router ? 'route.cluster-router' : 'route.parent',
-                'resumable' => true, 'input_fields' => [], 'input_values' => []]],
-            'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], RouteKitAvailability::registeredChildren($children)),
-            // The final command requires each exact required keyed child, including optional phases.
-            'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway',
-                'name' => $router ? 'route.cluster-router' : 'route.parent', 'result' => ['ready' => true]],
-            'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage',
-                'route_id', 'cluster_id', 'wait_seconds', 'activate_public', 'withdraw_public', 'changed', 'metrics', 'route_branch', 'failure_code', 'error_code',
-                ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']],
-                ['name' => 'retained_on_nodes', 'max' => 128, 'list_of' => ['node_id' => 'int', 'node' => 'string',
-                    'steps' => ['type' => 'list', 'items' => 'string', 'max' => 32]]]],
-        ];
-    }
-}
-
-if (OperationKinds::supports('children')) {
-    foreach ($definitions as $kind => &$definition) {
-        if (str_starts_with($kind, 'route.')) {
-            $definition['admission'] = RouteChildAdmission::class;
-        }
-    }
-    unset($definition);
-}
+unset($definition);
 
 return $definitions;

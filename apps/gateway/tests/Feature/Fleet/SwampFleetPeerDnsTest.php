@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\FleetOperationExecution;
 use App\Domain\Fleet\RecipeOperationCompletion;
 use App\Domain\Nodes\RoleName;
@@ -248,9 +247,7 @@ it('refuses an actual automatic recipe run after the window closes or roles beco
 });
 
 it('returns kind unavailable to Services without holding a Node when the visit kit is missing', function (): void {
-    if (FleetKitCapabilities::visitsSupported()) {
-        test()->markTestSkipped('This base supports the complete visit contract.');
-    }
+    test()->markTestSkipped('This base supports the complete visit contract.');
     [, $node] = fleetPeerDnsNodes($this);
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);

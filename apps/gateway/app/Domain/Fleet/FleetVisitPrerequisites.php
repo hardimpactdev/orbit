@@ -17,9 +17,6 @@ final readonly class FleetVisitPrerequisites
 
     public function assertAvailable(): void
     {
-        if (! FleetKitCapabilities::visitsSupported()) {
-            $this->refuse();
-        }
         $required = [
             'api/v1/operation-executor/{operation}/children' => ['GET', 'POST'],
             'api/v1/operation-executor/{operation}/receipts/{step}' => ['GET'],

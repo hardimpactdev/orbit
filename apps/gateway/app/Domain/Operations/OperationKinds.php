@@ -104,8 +104,7 @@ final readonly class OperationKinds
         if (! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'])) {
             throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
         }
-        if (array_key_exists('cancel_guard', $definition) && (! self::supports('cancel_guard')
-            || ! is_string($definition['cancel_guard']) || ! class_exists($definition['cancel_guard'])
+        if (array_key_exists('cancel_guard', $definition) && (! is_string($definition['cancel_guard']) || ! class_exists($definition['cancel_guard'])
             || ! is_a($definition['cancel_guard'], OperationCancelGuard::class, true))) {
             throw new LogicException("Operation kind [{$kind}] requires an OperationCancelGuard class.");
         }
@@ -194,15 +193,6 @@ final readonly class OperationKinds
         if ($unsupported !== []) {
             throw new LogicException("Operation kind [{$kind}] has unsupported {$part} keys: ".implode(', ', $unsupported).'.');
         }
-    }
-
-    /**
-     * Optional capabilities: children (including children_succeeded), children_settled, list_of, receipts.
-     * Each remains unavailable until its enforcement ships. Unknown names are unavailable.
-     */
-    public static function supports(string $capability): bool
-    {
-        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations', 'secret_outputs', 'archive_relay', 'cancel_guard'], true);
     }
 
     public static function executor(string $kind): string

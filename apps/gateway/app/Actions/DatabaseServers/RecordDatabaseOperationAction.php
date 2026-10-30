@@ -6,8 +6,6 @@ namespace App\Actions\DatabaseServers;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
-use App\Domain\Operations\OperationKinds;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -29,11 +27,6 @@ final readonly class RecordDatabaseOperationAction
 
     public function start(PreparedDatabaseOperation $prepared): Operation
     {
-        if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')
-            || ($prepared->kind === 'database.sqlite_seed_abandon' && ! OperationKinds::supports('compensations'))) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'This database kind requires its kit execution capabilities.', 503);
-        }
-
         return $this->operations->execute($prepared->kind, $prepared->targetType, $prepared->targetId, $prepared->nodeId,
             $prepared->input, 'operator', request()->attributes->getString('orbit.request_id'));
     }

@@ -45,10 +45,9 @@ it('declares no Gateway cleanup relay', function (): void {
 });
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
-    $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'database.sqlite_cleanup')['claimable'])->toBe(0);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'database.sqlite_cleanup', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
-    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
+    $this->getJson('/api/v1/operation-executor/claimable')->assertNotFound();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'database.sqlite_cleanup', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertNotFound();
+    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertNotFound();
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -116,34 +115,29 @@ it('keeps an unreadable native history uncertain without resubmitting or reporti
     expect($socket->closed)->toBeTrue();
 });
 
-it('keeps the previous Swamp writer by default and binds Operations through switch and rollback', function (): void {
+it('defaults cleanup to direct and refuses the removed writer without changing admitted work', function (): void {
     config(['swamp.direct_writers' => []]);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-cleanup', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     $start = app(StartOperationAction::class);
-    $polled = $start->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null);
-    expect($polled->state['database_cleanup_writer'])->toBe('polled');
-    expect($socket->sent)->toBe([]);
-    $this->postJson('/api/v1/direct-operations/'.$polled->id.'/primitive', $this->body)->assertUnprocessable();
-
-    config(['swamp.direct_writers' => ['database.sqlite_cleanup' => 'direct']]);
     $direct = $start->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null);
     expect($direct->fresh()->state['database_cleanup_writer'])->toBe('direct');
     expect($socket->sent)->toHaveCount(1);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $polled->kind, 'worker' => 'previous', 'operation_id' => $polled->id])->assertOk()->assertJsonPath('data.id', $polled->id);
 
     config(['swamp.direct_writers' => ['database.sqlite_cleanup' => 'polled']]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $direct->kind, 'worker' => 'previous', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
+    $count = Operation::query()->count();
+    expect(fn () => $start->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe($count);
     $this->getJson('/api/v1/direct-operations/'.$direct->id.'?run_id='.$direct->fresh()->state['swamp_run_id'])->assertOk()->assertJsonPath('data.kind', 'database.sqlite_cleanup');
     expect($this->agents->calls)->toBe([]);
 });
 
-it('keeps pre-rollout Operations with no writer stamp on their original Swamp path', function (): void {
+it('gives unstamped Operations neither direct authority nor a retired executor path', function (): void {
     $this->operation->update(['state' => null]);
     $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'previous', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data.id', $this->operation->id);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'previous', 'operation_id' => $this->operation->id])->assertNotFound();
     expect($this->agents->calls)->toBe([]);
 });
 

@@ -9,7 +9,6 @@ use App\Domain\Fleet\CliConvergeResult;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetCliChildAdmission;
-use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\NodeCliState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
@@ -132,9 +131,7 @@ it('binds only the pinned install input and rechecks eligibility before dispatch
 });
 
 it('refuses unsupported CLI admission and omits its dependent registration', function (): void {
-    if (FleetKitCapabilities::cliSupported()) {
-        test()->markTestSkipped('The shared child and receipt contracts are installed.');
-    }
+    test()->markTestSkipped('The shared child and receipt contracts are installed.');
     $node = FleetFixtures::node('unavailable-cli', [RoleName::AppDev]);
     expect(fn () => app(AdmitFleetCliAction::class)->execute($node))->toThrow(ResourceOperationException::class)
         ->and(app(OperationKinds::class)->definition('fleet.cli_converge'))->toBeNull()
@@ -150,9 +147,6 @@ it('rejects child inputs that attempt to select a release', function (): void {
 });
 
 it('enforces the CLI target allowlist redaction and completion proof through the executor API', function (): void {
-    if (! FleetKitCapabilities::cliSupported()) {
-        test()->markTestSkipped('Shared B admission and I receipts are not installed in this base.');
-    }
     $gateway = Node::query()->where('name', 'gateway-cli')->sole();
     $services = FleetFixtures::node('cli-services');
     $services->accessibleNodes()->attach($gateway);

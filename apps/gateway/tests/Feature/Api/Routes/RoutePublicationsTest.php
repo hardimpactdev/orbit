@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
@@ -109,10 +108,9 @@ it('refuses missing peers malformed run IDs and undeclared kinds on shared endpo
 });
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
-    $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'route.caddy_converge'))->toBeNull();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'route.caddy_converge', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
+    $this->getJson('/api/v1/operation-executor/claimable')->assertNotFound();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'route.caddy_converge', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertNotFound();
+    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertNotFound();
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -205,6 +203,6 @@ it('defaults each proven direct Route kind to its only writer and refuses the re
 it('gives pre-rollout Operations no removed publication executor', function (): void {
     $this->operation->update(['state' => null]);
     $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    expect(fn () => app(OperationExecutionContract::class)->context($this->operation->fresh()))->toThrow(ResourceOperationException::class, 'no Gateway execution contract');
+    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/run', ['worker' => 'old'])->assertNotFound();
     expect($this->agents->calls)->toBe([]);
 });

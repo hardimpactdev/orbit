@@ -8,7 +8,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\TaskVms\TaskVmAgentExecution;
-use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -24,7 +23,6 @@ final readonly class StartTaskVmIncusEffectAction
 
     public function execute(TaskVm $vm, string $verb): Operation
     {
-        TaskVmCapabilities::require('receipts');
         $input = $this->snapshot($vm, $verb);
         if (app(DirectOperation::class)->writer('task_vm.incus_'.$verb) === 'direct') {
             $intent = new Operation(['kind' => 'task_vm.incus_'.$verb,

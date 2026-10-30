@@ -9,13 +9,6 @@ use App\Domain\Shared\ResourceOperationException;
 
 final class TaskVmCapabilities
 {
-    public static function require(string $capability): void
-    {
-        if (! OperationKinds::supports($capability)) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'The deployed Operation kit does not support this task VM kind yet.', 409);
-        }
-    }
-
     public static function requireOwner(string $kind): void
     {
         $definition = app(OperationKinds::class)->definition($kind);
@@ -27,8 +20,6 @@ final class TaskVmCapabilities
     /** @param list<string> $owners */
     public static function requireComposition(string $kind, array $owners): void
     {
-        self::require('children');
-        self::require('receipts');
         $definition = app(OperationKinds::class)->definition($kind);
         $children = is_array($definition) ? array_column($definition['children'] ?? [], 'kind') : [];
         foreach ($owners as $owner) {

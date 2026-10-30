@@ -6,7 +6,6 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -26,8 +25,6 @@ final readonly class StartTaskVmImageOperationAction
 
     public function execute(TaskVmImageBuild $build, bool $resume = false): Operation
     {
-        TaskVmCapabilities::require('children');
-        TaskVmCapabilities::require('receipts');
         $existing = Operation::query()->where('kind', 'task_vm.image_build')->where('target_type', 'task_vm_image')->where('target_id', $build->id)
             ->where('input->attempt', $build->attempt)->latest('id')->first();
         if ($existing !== null) {

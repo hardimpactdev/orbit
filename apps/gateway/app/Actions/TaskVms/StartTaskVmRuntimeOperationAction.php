@@ -33,8 +33,6 @@ final readonly class StartTaskVmRuntimeOperationAction
 
     public function execute(int $taskVmId): ?Operation
     {
-        TaskVmCapabilities::require('children');
-        TaskVmCapabilities::require('receipts');
         TaskVmCapabilities::requireComposition('task_vm.prepare_runtime', ['process.create']);
         TaskVmCapabilities::requireOwner('node.add');
 

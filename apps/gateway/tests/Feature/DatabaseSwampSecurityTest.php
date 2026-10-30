@@ -38,9 +38,7 @@ function failedDatabaseAttempt(PreparedDatabaseOperation $prepared): Operation
 }
 
 it('loads other families and refuses database execution with 503 until kit B and I are enforced', function (): void {
-    if (OperationKinds::supports('children') && OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('The full database execution suite covers the enabled kit.');
-    }
+    $this->markTestSkipped('The full database execution suite covers the enabled kit.');
     $this->prepareServerDatabaseFixtures();
     expect(OperationKinds::definitions())->toHaveKey('firewall.allow')->not->toHaveKey('database.create');
 

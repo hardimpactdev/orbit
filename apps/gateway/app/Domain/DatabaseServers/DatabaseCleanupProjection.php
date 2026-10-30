@@ -6,7 +6,7 @@ namespace App\Domain\DatabaseServers;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationResult;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\DatabaseExecutionIntent;
@@ -72,7 +72,7 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
     /** @param array<string, mixed> $data */
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(app(OperationExecutionContract::class)->result($operation, ValidatedData::object($data['result'] ?? [])), array_flip(['backend', 'error_code']));
+        $result = array_intersect_key(app(OperationResult::class)->result($operation, ValidatedData::object($data['result'] ?? [])), array_flip(['backend', 'error_code']));
         $status = ValidatedData::string($data['status']);
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         if (($status === 'succeeded' && (($result['backend'] ?? null) !== 'absent' || $code !== null || isset($result['error_code'])))

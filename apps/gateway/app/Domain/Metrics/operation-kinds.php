@@ -11,7 +11,6 @@ use App\Domain\Metrics\MetricsOperationCompletion;
 use App\Domain\Metrics\MetricsPrimitiveExecution;
 use App\Domain\Metrics\MetricsReconcileAdmission;
 use App\Domain\Metrics\MetricsServiceExecution;
-use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
     $kinds = [];
@@ -90,12 +89,6 @@ return (static function (): array {
         }
     }
     foreach ($kinds as $name => $definition) {
-        if ((isset($definition['children']) && ! OperationKinds::supports('children')) || (isset($definition['compensations']) && ! OperationKinds::supports('compensations'))) {
-            unset($kinds[$name]);
-        }
-        if (! OperationKinds::supports('list_of') && (! in_array($name, ['metrics.credentials_reset', 'metrics.service_caddy_restore'], true) && ! preg_match('/\Ametrics\.(?:node_exporter|cadvisor)_(?:converge|remove|snapshot|restore)\z/D', $name))) {
-            unset($kinds[$name]);
-        }
     }
 
     return $kinds;

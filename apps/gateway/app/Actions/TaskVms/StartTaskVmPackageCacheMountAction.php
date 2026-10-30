@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -25,8 +24,6 @@ final readonly class StartTaskVmPackageCacheMountAction
         if ($vm->provider !== TaskVmProviderKind::Incus) {
             return null;
         }
-        TaskVmCapabilities::require('children');
-        TaskVmCapabilities::require('receipts');
 
         return DB::transaction(function () use ($vm, $project): Operation {
             $vm = TaskVm::query()->lockForUpdate()->findOrFail($vm->id);

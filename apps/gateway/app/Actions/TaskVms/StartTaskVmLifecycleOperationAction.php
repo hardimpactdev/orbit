@@ -29,8 +29,6 @@ final readonly class StartTaskVmLifecycleOperationAction
 
     public function execute(int $taskVmId, string $verb): ?Operation
     {
-        TaskVmCapabilities::require('children');
-        TaskVmCapabilities::require('receipts');
         if (in_array($verb, ['provision', 'enroll'], true)) {
             TaskVmCapabilities::requireComposition('task_vm.'.$verb, ['node.add']);
             TaskVmCapabilities::requireComposition('task_vm.prepare_runtime', ['process.create']);

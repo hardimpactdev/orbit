@@ -10,7 +10,6 @@ use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
 use App\Domain\Instances\StepLists\InstanceStepListExecution;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -23,9 +22,6 @@ final readonly class StartInstanceExecutionChildAction
     /** @param array{key:string,kind:string,node_id:int|null,input:array<string,mixed>} $intent */
     public function execute(Operation $parent, array $intent): Operation
     {
-        if (! OperationKinds::supports('children')) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Instance child execution needs the child Operation kit.', 503);
-        }
         $id = ValidatedData::integer($intent['input']['instance_id'] ?? null);
         $candidate = new Operation()->forceFill(['kind' => $intent['kind'], 'target_type' => 'instance', 'target_id' => $id,
             'node_id' => $intent['node_id'], 'input' => $intent['input'], 'parent_operation_id' => $parent->id, 'child_key' => $intent['key']]);

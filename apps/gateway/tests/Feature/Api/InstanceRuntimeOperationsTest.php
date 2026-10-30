@@ -166,7 +166,7 @@ it('proves the exact restarted Process ID list through child execution and HTTP 
     $this->postJson($path.'/complete', ['worker' => 'restart-worker', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.result.process_ids', $selected);
     $controls = array_filter($this->agents->calls, static fn (array $call): bool => $call['command'] === 'process.control');
     expect(array_values(array_map(static fn (array $call): int => $call['input']['process_id'], $controls)))->toBe($selected);
-})->with([false, true])->skip(! OperationKinds::supports('list_of'), 'Requires the shared kit C list-result contract.');
+})->with([false, true]);
 
 /** Execute descriptors through the real HTTP proof boundary with a fake target agent. */
 function runtimeExecuteLeaf(TestCase $test, Operation $operation): void

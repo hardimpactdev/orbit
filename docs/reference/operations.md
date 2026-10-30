@@ -15,7 +15,7 @@ covers:
 
 Swamp is the sole executor of task groups. The Gateway stores task state and runs requested keyed primitives. Operation recovery resumes a primitive without choosing the next task phase. Review parking reports stopped power only after provider confirmation; an unconfirmed parked row reports unknown power.
 
-A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Its kind declares its executor: PHP uses the [Gateway queue](/reference/gateway-queue); Swamp claims work through the [Services primitives](#swamp-execution). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
+A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Its kind declares its executor: PHP uses the [Gateway queue](/reference/gateway-queue); Swamp starts the [native workflow](#swamp-execution). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
 Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. [External review parking](/reference/tasks#park-an-external-group-for-review) is also a keyed operation. It succeeds only after provider-confirmed stopped power; replay or recovery keeps the same group and VM. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)). Other long commands, such as `node:add` and `instance:transfer`, also still run inside their request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) plans to move them off the request path and to lower the request limit.
 
@@ -68,33 +68,19 @@ The steps appear when a worker first starts the operation, all `pending`. A queu
 
 `result` depends on the kind. For `instance.deploy` and `instance.rollback` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
 
-### Swamp child Operations
+### One parent, one native workflow
 
-Executor responses encode map fields as JSON objects, including empty Operation inputs, execution contexts, descriptor inputs, step-result maps, run results and receipt results. Descriptor input schemas preserve nested maps as objects and lists as arrays. Empty lists remain `[]`, and absent results remain null. This conversion happens only at the HTTP boundary, after authorization and redaction; stored input, fingerprints and receipts retain their original values. Reading a response does not hydrate secrets or run transports.
+The Gateway records one parent intent and projects its result. Multi-step and multi-Node work runs as one native Swamp workflow of placed jobs. The Gateway has no child admission or wait API. Cancellation records the parent request; Swamp stops its workflow and projects the terminal result. Existing records keep their stored parent/child fields.
 
-A Swamp parent admits children through its owning family's `OperationFamilyChildren::childContext()`. The context returns exact keyed intents `{key,kind,node_id,input}` from admitted input or prepared Gateway state. The parent kind declares allowed child kinds and Node relations. Each child kind registers an `OperationChildAdmission` adapter that calls its normal owning admission action. Swamp posts `{worker,key}` to `operation-executor/{parent}/children`; optional kind, Node and input fields are exact assertions only. Repeating a key returns the same child before repeating family admission.
+This executor retirement is **held** until all owning-family conversions have landed, with Task VMs the final migration gate. It must not merge or release while any caller needs the removed classes or routes. The orchestrator's per-kind deletion checklist in `THREADS.md` records the remaining discovery entries, claim registrations and Gateway run contracts. At preparation, 214 kinds still use polled contracts and 62 parent kinds declare children. These are merge blockers.
 
-The Gateway stamps `parent_operation_id`, `child_key` and an admission fingerprint. `OperationChildren::requireSucceeded(parent,key)` verifies the child's exact recorded target, input and constraints before returning its result. Parents cannot finish while any admitted child is nonterminal. A `children_succeeded` completion contract requires matching successful children, including each eligible keyed intent. Unsupported guarantees fail when the kind loads; families check `OperationKinds::supports()` before registration.
-
-A same-target child inherits the ancestor's target hold, including chains such as `node.add -> node.role_add -> node.converge`. Child completion releases only its own hold. An unrelated start remains busy until the ancestor ends. A child on another target acquires the normal hold for that target.
-
-`POST operation-executor/{parent}/wait` takes `{worker,keys:[child keys]}`. The Gateway records exact child IDs and fingerprints, releases the parent worker lease and keeps the target hold. The workflow ends. Claim only resumes that parent when those same children are terminal. Claim accepts optional `operation_id` for an exact queued child. `GET operation-executor/{parent}/children` returns bounded receipts for that parent’s children to executor peers. These routes use the same peer and Gateway-access gate as other executor routes.
-
-Owning admission may add a server-only `run_constraints` map. Children retain inherited constraints unchanged. The named `time_window` constraint takes `{timezone,start,end}`, with an IANA timezone and distinct `HH:mm` times; start is inclusive and end is exclusive. Midnight crossing is supported. The Gateway checks constraints before hydration and immediately before dispatch. Families contribute other constraints through tagged `OperationRunConstraint` implementations.
+The source deletion removes `OperationChildren`, `SwampOperationExecutor`, `OperationExecutionContract`, their controller, dedicated requests and routes, plus `supports()` capability flags. Shared `ExecutorRequest` authentication remains for direct, private-material and state APIs. `OperationResult` retains bounded filtering and redaction for native primitives and projections. No database records are deleted or rewritten.
 
 ### Bounded results and completion variants
 
 A Swamp kind's `result_fields` accepts scalar paths and bounded lists. Scalar lists declare `{name,type:"list",items:"string"|"integer"|"boolean",max:N}`. Object lists declare `{name,list_of:{field:type},max:N}`. An omitted object-list bound is 4096; explicit bounds are 1–4096. Object fields use `string`, `int`, `bool`, `enum(a,b)` or a nullable form such as `string|null`. Every object field is required, and unknown fields refuse the result. A field inside an object entry may instead use a bounded scalar-list declaration. No other nested containers or keyed maps are allowed.
 
 Lists must use JSON arrays. The step and completion boundaries refuse empty objects and objects with numeric keys. List strings are limited to 1024 bytes each. The complete encoded result is limited to 256 KiB, including scalar paths. A declaration may allow at most 65,536 total list items after expanding nested bounds. List order and scalar types are preserved. Selected values pass through redaction before storage; invalid results return only `operation.result_invalid` and never project a partial receipt.
-
-A completion variant declares `completion_contract: {completion: {by: "input_field_path", map: {variant: proof}}}`. The path is relative to the immutable Operation input, for example `completion_variant` or `configuration.manager`. Each map value is a full named step or child proof. Missing or unlisted variants refuse completion with `operation.completion_unproven`; Swamp cannot choose a variant in a step or completion request. Root `completion` still names the family projection class.
-
-`children_settled:[kinds]` lists allowed child kinds. A listed kind with no recorded intent is optional and does not require a child. Successful completion requires a terminal child matching every recorded intent. Every admitted child must be terminal and have a listed kind. Exact intent and stamped admission proof apply to optional children when present.
-
-On success, `skipped` must acknowledge every failed or cancelled child with its ID and a nonempty reason. The Gateway stamps any declared key and kind from the verified child row. Duplicate, foreign, running or successful skips refuse completion. On failed or cancelled completion the Gateway derives skipped from stamped children, using their terminal status as the reason. No echo is required.
-
-Kind loading requires a bounded skipped object list with `child_id:int`, `reason:string` and optional `key:string`/`kind:string`. Admission checks that its count and encoded byte capacity can retain every child failure. Canonical child metadata appears only in completion results; step and run results keep ordinary redaction. Final step and completion proof compare skipped child metadata after verifying and stamping it from the child rows. All other receipt fields must still match. Executor routes bypass string trimming and empty-string conversion to preserve exact bytes.
 
 ### Await from a Gateway caller
 
@@ -236,7 +222,7 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 `operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A waiting operation calls its current step’s stop hook at once and becomes `cancelled` only after the hook confirms the stop. Orbit records the cancel request before calling the hook. When the hook cannot confirm the stop, the request answers with that step’s error, such as HTTP 502. The operation and step stay `waiting`, keep the target, and retry the stop on the next delayed read.
 
-A Swamp kind may declare `cancel_guard: GuardClass`, implementing `OperationCancelGuard::assertCancellable(Operation): void`. The Gateway checks the root and every nonterminal descendant under the parent lock in the cancel transaction, before recording a cancel or changing any child. Guards read Gateway-recorded proof only and perform no effects. A typed refusal, such as `operation.cancel_refused` with HTTP 409, leaves the whole tree unchanged. Terminal Operations remain unchanged without invoking a guard. Kind loading rejects an invalid guard class; `OperationKinds::supports("cancel_guard")` reports this capability.
+A Swamp kind may declare `cancel_guard: GuardClass`, implementing `OperationCancelGuard::assertCancellable(Operation): void`. For retained PHP operations, the Gateway checks the root under its lock before recording cancellation. Native Swamp operations record only the cancellation request. Guards read Gateway-recorded proof only and perform no effects. A typed refusal, such as `operation.cancel_refused` with HTTP 409, leaves the Operation unchanged. Terminal Operations remain unchanged without invoking a guard. Kind loading rejects an invalid guard class.
 
 When a waiting `tasks.publish` has started its push, cancellation is deferred without an error. It returns the waiting record and keeps the group held until the job records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
@@ -394,134 +380,9 @@ Cancellation stops observation and reports unknown; it never resends or cancels 
 
 ## Swamp execution
 
-Author native workflows in `hardimpactdev/orbit-swamp`. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader. The claim-based API below remains for kinds still being converted.
+Author native workflows in `hardimpactdev/orbit-swamp`. The Gateway stores admitted intent and bounded results. Swamp owns placement, locks, execution, cancellation and recovery. Use the shared [direct-start intent and result projection](#direct-swamp-starts). The claim, lease, heartbeat, run, child-admission and wait endpoints under `/api/v1/operation-executor` are removed.
 
-A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway never dispatches a PHP job for it. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
-
-The configured Services peer (`dependency_detection.services_node_id`) and explicitly listed executor worker peers can use `/api/v1/operation-executor`. Its primitives claim one queued kind with a renewable lease, record named steps and keyed log lines, invoke a named RemoteProgram or agent command on a Node, and complete the Operation. A worker uses one stable claim key per workflow run.
-
-An expired claim can be reclaimed; every later write must present the current lease from the claiming Node. A matching worker string from another peer does not grant ownership. A lost response is retried with the same key and input. Families must use convergent Node commands or reconcile an uncertain effect before advancing.
-
-### Protected inputs
-
-A run may declare named secret sources for parameter paths. Operation input and Swamp carry only an owning-record reference; the Gateway verifies ownership before hydrating it for the existing transport. Secrets never enter Operation records or responses. Run fingerprints and stored input bind only the unhydrated reference, so a fresh credential mint cannot change replay identity. A null or different owner, or a target type outside the source’s `targetTypes()`, refuses execution. Executor requests preserve empty strings and whitespace for exact input binding.
-
-Each family supplies tagged resolvers for protected values and redaction strings. Script resolvers verify an admitted SHA-256 digest. Registered agent wrappers implement `OperationTransportInput` and delegate native wire conversion before strict schema validation. Optional family execution hooks derive public context, an optional result projection filtered by `result_fields`, and exact inputs, recheck policy before execution, and project redacted receipts in the database. A started invocation without a receipt refuses retries with `operation.execution_uncertain` by default. Only convergent runs explicitly declare `resumable: true`.
-
-### Execution contracts
-
-Each kind declares a closed list of allowed transport/name pairs, typed input bindings to admitted intent, a successful step/result completion contract, and scalar result fields that may be retained. The Gateway validates agent input against the exported schema; RemotePrograms require an explicit input schema. Run targets come only from the Operation, and a supplied target or unlisted command receives `operation.execution_forbidden`. Successful completion requires a recorded successful Node run and matching step, or returns `operation.completion_unproven`.
-
-Immediately before a new Node command, the Gateway rechecks status, worker lease and cancellation. Cancellation returns a keyed `operation.cancelled` refusal without invoking the Node; a saved successful receipt can still be completed. Step names support dotted phase names such as `setup.install`. Step and completion error codes contain only lowercase letters, digits, underscores, dots and hyphens.
-
-Undeclared result fields are dropped. Structured result sensitivity follows the kind’s `result_fields` declarations: secret outputs use their declared stores and return owning-record references.
-
-Kind loading rejects public result paths containing a secret word, including nested and list fields, unless the exact path is `key`, `skipped.key`, `child_phases.key`, `public_key`, `host_key_fingerprint` or `key_count`. Other secret-named results require a declared secret output. Public fields such as `environment` keep their declared structure. Boolean completion proofs keep their native type.
-
-Hydrated secret values and secret text patterns remain masked before projection, storage or return; numeric masks never coerce booleans. Activity inputs, logs and errors retain their existing redaction rules.
-
-Firewall `allow`, `deny` and `remove` use Swamp. Their normal commands validate and record managed intent before returning the Operation. Firewall list, live-list, managed-list and fleet-list remain reads in Orbit. The agent's existing `firewall.rule` command converges or removes the exact owned UFW rule. The conversion recipe is maintained in `hardimpactdev/orbit-swamp`, `docs/conversion-kit.md`.
-
-
-Protected sources resolve only during invocation hydration. Step, completion and context reads never mint credentials for redaction. Known values are redacted in the run before projection, storage or return; Swamp reuses those redacted results. Later messages retain ordinary secret-pattern filtering. Transport schema and wire failures return a fixed refusal, and a permissive `true` schema is refused.
-
-
-Kind loading rejects unsupported kind, run and completion-contract keys. A family cannot declare a guarantee before the shared executor enforces it. Child declarations and `children_succeeded` use the checks above. `children_settled` uses the verified terminal and skip checks above.
-
-
-An uncertain executor response leaves the keyed result unset for a proven recovered receipt. It never projects uncertainty as a completed effect. A successful outcome clears `failed_step` while retaining any failed best-effort step rows. The Gateway requires redaction strings for protected content, including typed credentials and scalars. Boolean flags, null, empty strings, empty arrays, empty plain objects and `GitReadEnvironment::none()` keep their native types without inferred masks. In particular, true does not add a mask for the digit `1`. Unknown opaque values without masks remain refused.
-
-Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission. The `children`, `children_settled`, `list_of`, `receipts` and `compensations` capabilities are enabled. `secret_outputs` uses the enforced storage boundary below.
-### Target effect receipts
-
-Remote executor runs use `effect_key` equal to `op-<operation id>.<step key>`. The Gateway adds the key after authorizing the original input. Fingerprints and stored inputs always use the unhydrated request. Native commands persist their intent and result in the shared agent receipt store. Existing fixed RemotePrograms use `KeyedRemoteProgramRunner`, which reserves and completes receipts through that same store.
-
-After a lost reply, Swamp reads `GET /operation-executor/{operation}/receipts/{step}`. The route uses the existing executor peer guard and needs no worker query. The authenticated peer must match the Operation's recorded lease peer. The step must have an admitted descriptor or an already recorded run that still matches the kind's allowlist. The Node comes only from the Operation. The response data contains `{effect_key, state, exit_code, result, finished_at}`. State is `succeeded`, `failed`, `running`, or `unknown`. Pending receipts have null exit code, result, and finish time.
-
-The original invocation carries its masks as a protected transient metadata object, outside public input, fingerprints and stored Operation state. Native command envelopes carry those masks separately from typed input. The agent sanitizes results before persistence, stores a sanitization flag, and discards the masks. Missing proof refuses recovery.
-
-A receipt read never resolves payload sources, mints credentials or executes the effect. The hook below lets a bootstrap transport read an existing credential for authentication. Terminal sanitized target results pass through the family transport's normalization, the same `execution.received` hook as `/run`, and the kind's redaction and result filtering. Recording the result and family projection is atomic and happens once. Recovering an unrecorded result requires an active Operation claim; reading an already recorded result needs only the executor peer identity.
-
-On `succeeded` or `failed`, Swamp uses the returned result. On `running`, it reads again later. On `unknown`, it may invoke `/run` with the same step key only when that run explicitly permits replay. An absent key can execute once; an unfinished saved intent refuses another execution. An unknown receipt never proves success.
-
-A family transport can implement `OperationEffectTransport` beside the existing `OperationTransport` methods. Its `effectful(Operation, array $run): bool` declares which runs use target receipts. Its `receipt(Operation, array $run, array $input): array` reads and normalizes the target receipt to the same transport result as `run`. Both methods receive the server-generated key as `$run['effect_key']`. During the original invocation, `$run['effect_metadata']` holds the protected masks. `AgentEffectReceipts::input($run, $input)` forwards that metadata with a native command. Fixed RemotePrograms pass `effect: EffectReceiptMetadata::fromRun($run)` to `KeyedRemoteProgramRunner::run`. Receipt reads receive the original input references; payload references remain unhydrated.
-
-For connection authentication only, `OperationSecrets::connection($operation, $run, $parameter)` requires a declared source implementing `OperationConnectionSecretSource::resolveConnection(Operation,int): OperationSecretValue`. It reuses the exact run allowlist, target-type and owner checks, and reads an existing credential without minting, rotating or creating one. The transport uses that in-memory value only to establish its pinned connection; it never adds it to command payloads, masks, results or records. Other sources cannot use this hook.
-
-Custom readers preserve `effect_nonce`, `effect_created_at` and `sanitized: true` when normalizing proven target results. `AgentEffectReceipts::read(Node, command, effectKey, owner?)` reads native results. `KeyedRemoteProgramRunner::receipt(Node, RemoteProgram, effectKey)` reads fixed program results. Neither accepts a Node override from Swamp.
-
-Pre-start refusals (`agent.target_busy`, `agent.lock_unavailable`, `agent.supervisor_not_ready`) return `{error_code, not_started: true}` without a saved result. The Gateway resets `started` only when no earlier attempt was uncertain, so the same key may run again after the precondition clears. Target and resource locks are acquired before the agent saves an unfinished intent. Contention for the effect key remains uncertain. Invalid input, envelope, version and command refusals before an effect starts retain their real error code as a failed result. Deadlines, supervisor errors after spawning, receipt-store errors and identity conflicts remain `operation.execution_uncertain`. A failed attempt to save the receipt after a remote program runs also remains uncertain.
-
-The Gateway stores a random nonce and the original creation time privately on each Operation. Protected effect metadata binds this identity into target fingerprints and receipts. Receipt recovery checks it before projection. Restoring a Gateway database and reusing a numeric Operation ID therefore cannot adopt an older target result. Public effect keys and receipt response fields stay unchanged.
-
-## Discover work for executor workers
-
-`GET /api/v1/operation-executor/claimable` is a read for the active configured Services peer with Gateway access. Listed worker peers cannot use this endpoint. Its `data.kinds` contains one `{kind, claimable, oldest_at}` entry per registered Swamp kind, including zero counts and null timestamps. It exposes no Operation IDs or inputs and changes no lease or Operation. `oldest_at` is the earliest admission timestamp among the candidates, in ISO 8601 UTC.
-
-The read and claim paths use one shared candidate selector. It counts queued Operations, running Operations whose 120-second lease has expired, and waiting parents whose exact recorded children are terminal and verified. Discovery does not write assistance flags; claim flags an invalid waiting parent and continues to other candidates. A live worker's own claim replay is not new claimable work. Services uses this summary to start each kind's workflow on its placed worker; that same authenticated Node claims, heartbeats, runs and completes the Operation. Discovery never claims work on behalf of another Node.
-
-
-### Cancel child plans
-
-A kind may declare `compensations: [<child kinds>]` with `cancellation_boundary: <child key>`, gated by `OperationKinds::supports("compensations")`. Each compensation kind must also be a declared child kind. After cancellation, this parent performs no further effect itself. It may admit and run several compensation kinds only after the named boundary is a Gateway-stamped successful child of this parent. Existing input, target and receipt checks still apply.
-
-Cancellation stamps every nonterminal descendant in the same transaction and immediately settles queued children that have not started. Running children observe their own cancel request, so their own proven activation boundary or compensation contract still applies. A cancelled child returns the ordinary `operation.cancelled` result and can settle.
-
-An intermediate transfer can therefore restore after its grandparent is cancelled. New compensation children run their cleanup plan under the existing proof rules.
-
-Child Node relations may use only `state.child_intents`, `state.integration_intent`, `state.route_plan` or `state.role_intent` and their nested fields. Other state prefixes refuse at load. Use admitted `input`, `intent` or `operation.node_id` for other plans. Swamp step data and target receipts never supply Node authority. Same-target siblings serialize their effects under the original ancestor's attempt lease without acquiring or releasing its target hold. Custom run constraints check once at final dispatch; the owning admission adapter validates custom parameters.
-
-An invalid waiting child makes that parent unavailable for claim, without stopping other candidates. Claim records a safe `state.executor_assistance.error_code`; discovery remains read-only. Missing Gateway Swamp kind registration also raises this assistance flag. The Gateway cannot infer whether a deployed Swamp checkout includes a workflow, so deploy each family's registration with its Gateway kind. Re-entry copies verified child states, error codes and redacted results beside their original identities.
-
-
-### Resolve cancellation and missing targets
-
-Operation show and list expose a safe `assistance` value: null, or `{error_code}` for an invalid waiting child or unavailable child kind. Internal state and arbitrary details stay private. An explicit cancel may end a flagged waiting parent and release its target once no stamped nonterminal child can still be proven. A proven running child keeps the hold until it settles.
-
-The first cancel cascades to nonterminal descendants; queued children that have not started end immediately. A repeated ancestor cancel skips a subtree already marked for cancellation, so newly admitted compensations can finish. A direct cancel of a compensation still cancels that child.
-
-The cascade commits before PHP waiting-step stop hooks run. A started effect without a saved result stays uncertain after cancellation and must be resolved through its target receipt. When explicit cancellation abandons a flagged parent, unprovable descendants end cancelled with `operation.child_unproven` assistance and release their own holds.
-
-Admission records the original Node ID, target type and target ID independently of the live Node foreign key. Child admission proof retains these immutable values after Node deletion. Child receipts and terminal executor context keep the original Node identity. Completion replies, lost-reply replays and cached effect receipt reads do not hydrate sources. New transport effects on a deleted Node fail with `operation.target_missing` before hydration or dispatch. Clearing a live Node foreign key while that admitted Node still exists refuses proof.
-
-`AwaitOperation` refuses with a `LogicException` when called inside a database transaction. Commit admission before awaiting; otherwise the Gateway would hold SQLite's write lock while waiting for Swamp to complete. Claim scans candidates in ID order, stops at the first eligible candidate and locks only that selected row. Discovery uses the same readiness predicate and writes nothing.
-
-
-## Store secret outputs
-
-A result field declared `{name,secret:true,store:"<family>.<field>"}` is stored through the family's tagged `OperationSecretOutputStore`. The adapter checks the owning record and writes its existing encrypted field. The Gateway checks the target type and owner before dispatch and again when saving the receipt. The encrypted write, family projection and keyed receipt commit together. Retries return the existing receipt without writing the credential again.
-
-Before the family receives a run result, the Gateway replaces each secret output with `{"$secret":"<store>","id":<ownerId>}`. It redacts echoes from other fields. Swamp, Operation state, activity, steps and completion contain only that reference. The family's existing API controls reading the encrypted value. Unknown stores, invalid owners and storage failures return a fixed refusal without credential details. Step and completion requests cannot submit raw values at these paths.
-
-Secret output paths traverse one JSON segment at a time. A literal dotted key cannot replace a nested field. Boolean secret outputs, including booleans inside containers, refuse before storage so public boolean status fields remain usable. A null output stays null in the target receipt: it carries no new secret and does not require recovery of a lost value.
-
-A transport with secret outputs implements `OperationSecretOutputTransport` and keeps its generated values only in memory until the Gateway extracts them. The Gateway transport meets this contract. The agent receives the declared output paths as protected metadata. It stores only a presence marker at each path and redacts echoes before saving its target receipt. The first live reply carries the values for encrypted Gateway storage. If that reply is lost before storage, a presence marker cannot recover the secret: the run stays uncertain and the effect does not repeat. A custom transport must provide the same safe output path before opting in.
-
-`OperationKinds::supports("secret_outputs")` reports support for this enforced contract.
-
-## Relay an archive between child Operations
-
-The `archive_relay` transport delivers an archive from one stamped child to a sibling. The source child first creates a private archive with a named agent command and saves a successful receipt containing `bytes` and `sha256`. The destination descriptor uses its native receive command name and input `{relay:{parent_operation_id,child_key,run_key},input:{...native receive input}}`. The family builds the handle and destination input from recorded intent. Swamp carries references and receipts only; archive bytes stay on the Nodes and in a private temporary Gateway file.
-
-The destination execution class implements `OperationFamilyArchiveRelay::archiveRelay()`. This pure binding returns `source_transport`, `source_name`, `read:{name,input}` and `max_bytes`. The shared transport proves the source child and keyed producer receipt, checks both native schemas, compares the exact byte count and SHA-256, and enforces the minimum of the family bound, the compiled reader and receiver bounds, and 1 TiB. The destination verifies the same metadata before changing its managed target. Unknown handles, foreign children, missing Nodes and invalid metadata refuse before destination dispatch.
-
-Kind loading refuses an archive relay without that family interface. The reader's archive or SQLite path must match the proven producer receipt. Before staging, the Gateway checks free space for the archive plus the larger of 64 MiB or ten percent. Binding, download, integrity or cancellation failures before destination dispatch leave the run unstarted and retryable. A previous uncertain destination attempt stays uncertain; a later preparation failure cannot erase it.
-
-The source producer and destination receiver have separate keyed receipts. A lost destination reply uses the existing target receipt route, with the original effect identity. Recovery never downloads the archive or resolves payload secrets again. Gateway staging is an unlinked private file closed in `finally`. Families keep their source artifact until the destination outcome is proven, then remove only that artifact through a named cleanup child on success or failure. Cancellation uses declared compensation children and their proven boundary; destination discard and source checkout removal remain separate effects.
-
-## Executor health
-
-The Gateway runs `orbit:operations-check` every minute for every registered Swamp kind, independently of Swamp. Queued work without an executor for five minutes reports `operation.executor_unclaimed`; a waiting parent reports the same code while a child has been unclaimed that long. Running or waiting work without an Operation sequence change for fifteen minutes reports `operation.no_progress`. More than three attempts reports `operation.reclaim_churn`.
-
-The primary code appears in `operation:show` assistance, including owner-checked family reads. Existing execution proof assistance takes priority, followed by unclaimed work, no progress and reclaim churn. Activity records each health change once and records recovery once. Health checks never execute, cancel or release an Operation. Terminal work clears its computed assistance.
-
-A Swamp Operation has at most five execution attempts. After the fifth lease expires, the next claim parks it as `waiting` with `operation.reclaim_limit` assistance and keeps its target hold and receipts. Replaying a live claim or resuming a proven child wait spends no additional attempt. Read-only discovery can dispatch one final claim to park exhausted work; it does not change the Operation itself.
-
-### Resume after the reclaim limit
-
-An operator can resume this parked Operation with `orbit operation:resume <id>` (`POST /api/v1/operations/{operation}/resume`, empty JSON object). Under the Operation lock, resume resets attempts to zero, clears reclaim-limit assistance and queues the same Operation for Swamp. It preserves intent, steps, receipts and the target hold. Activity records the caller, Operation and outcome. Resume returns the Operation with its steps and never waits for execution.
-
-A repeated request after the reset, another assistance code, a terminal Operation, a non-Swamp kind or a pending cancellation returns HTTP 409 `operation.not_resumable` without changing the Operation. Each new reclaim-limit stop needs an explicit operator resume; there is no automatic reset. Cancellation still uses the normal proof-aware path.
+Protected values use only the [shared private-material boundary](#private-material-transport). Public results use declared fields, bounded containers and redaction through `OperationResult`. Result projection performs no Node action and makes no execution decision.
 
 ## Direct Swamp starts
 
@@ -537,11 +398,9 @@ A declaration names the workflow, writer configuration path, immutable writer-st
 
 After a kind cuts over and removes its previous executor, its `operation-kinds.php` entry contains only `executor: 'swamp'`, `result_fields`, and optional `admission`. Its matching `direct-operations.php` declaration supplies the workflow and projection. The registry resolves that projection without requiring old `runs`, completion handlers or receipt proofs. These direct-only kinds default to the direct writer; an explicit polled setting, a scope mismatch or a missing direct declaration refuses admission rather than falling back to deleted code. The previous executor's claim, execution and completion paths also refuse them. Rollback reverts the kind's cutover PR.
 
-A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
+Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job.
 
-Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
-
-A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
+A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch refuses admission. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
 `firewall.allow`, `firewall.deny` and `firewall.remove` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors, receipt proofs and legacy execution tests are removed. Rollback is a revert PR, which restores both admission and the previous execution contract.
 
@@ -549,7 +408,7 @@ A declaration may constrain its writer with literal `writer_scope` admitted fiel
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 
-Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
+An undeclared kind has no direct path; an unstamped Operation has no direct read or projection authority. The helper rejects every configured writer except direct. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
 
 The optional typed primitive hook is reserved for shared generic Gateway primitives, such as Route/Caddy publication or scoped token minting. New family execution relays are refused; family actions run on their Node worker.
 

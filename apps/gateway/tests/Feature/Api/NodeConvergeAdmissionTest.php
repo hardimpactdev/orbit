@@ -39,7 +39,6 @@ it('refuses an unmanaged footprint target before admission', function (): void {
 });
 
 it('registers the footprint with protected outputs and optional child completion', function (): void {
-    expect(OperationKinds::supports('secret_outputs'))->toBeTrue();
     expect(app(OperationKinds::class)->executor('node.converge'))->toBe('swamp');
 });
 

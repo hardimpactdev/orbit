@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationKinds;
 use App\Domain\TaskVms\TaskVmAgentExecution;
 use App\Domain\TaskVms\TaskVmChildAdmission;
 use App\Domain\TaskVms\TaskVmCommandContracts;
@@ -35,19 +34,9 @@ return (static function (): array {
     $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::packageCacheKinds(), ...TaskVmCommandContracts::cacheMountKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
     foreach ($kinds as $kind => &$definition) {
         if ($kind === 'task_vm.destroy') {
-            if (! OperationKinds::supports('cancel_guard')) {
-                unset($kinds[$kind]);
-
-                continue;
-            }
             $definition['cancel_guard'] = TaskVmDestroyCancelGuard::class;
         }
         $localKinds = ['task_vm.model_issue', 'task_vm.model_revoke', 'task_vm.runtime_confirm', 'task_vm.image_phase_confirm'];
-        if (! OperationKinds::supports('receipts') && ! in_array($kind, $localKinds, true)) {
-            unset($kinds[$kind]);
-
-            continue;
-        }
 
         if (isset($definition['runs']) && is_array($definition['runs'])) {
             foreach ($definition['runs'] as &$run) {
@@ -58,11 +47,6 @@ return (static function (): array {
             unset($run);
         }
         if (isset($definition['children'])) {
-            if (! OperationKinds::supports('children')) {
-                unset($kinds[$kind]);
-
-                continue;
-            }
             $definition['execution'] = TaskVmFamilyChildren::class;
             if (! is_array($definition['children'])) {
                 throw new LogicException('Child definitions must be a list.');
@@ -74,12 +58,7 @@ return (static function (): array {
             }
             unset($child);
         }
-        if (OperationKinds::supports('children')) {
-            $definition['admission'] = TaskVmChildAdmission::class;
-        }
-        if (str_starts_with($kind, 'task_vm.fill_package_cache') && (! OperationKinds::supports('list_of') || ! OperationKinds::supports('children_settled'))) {
-            unset($kinds[$kind]);
-        }
+        $definition['admission'] = TaskVmChildAdmission::class;
     }
     unset($definition);
 

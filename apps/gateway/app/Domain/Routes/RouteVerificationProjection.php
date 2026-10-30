@@ -6,7 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationResult;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -18,7 +18,7 @@ final readonly class RouteVerificationProjection implements DirectOperationProje
 {
     public const array Kinds = ['route.workload_verify', 'route.public_verify'];
 
-    public function __construct(private DirectOperation $direct, private OperationExecutionContract $contract) {}
+    public function __construct(private DirectOperation $direct, private OperationResult $contract) {}
 
     public function input(Operation $operation): array
     {

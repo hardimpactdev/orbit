@@ -90,10 +90,10 @@ it('keeps retained stale and deferred FPM warnings', function (): void {
 
 it('refuses standalone package admission and keeps the registry valid without Kit C', function (): void {
     $node = FleetFixtures::node('standalone-packages', [RoleName::AppProd]);
-    $code = OperationKinds::supports('list_of') ? 'operation.child_forbidden' : 'operation.kind_unavailable';
+    $code = 'operation.child_forbidden';
 
     expect(fn () => app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
-    expect(array_key_exists('node.prepare_php_packages', OperationKinds::definitions()))->toBe(OperationKinds::supports('list_of'));
+    expect(array_key_exists('node.prepare_php_packages', OperationKinds::definitions()))->toBe(true);
     $this->assertDatabaseCount('operations', 0);
 });
