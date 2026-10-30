@@ -1,0 +1,26 @@
+id: 1e424a34-8bb2-4bc9-8889-223125af21e3
+name: operation-tool-direct
+description: Execute one admitted Tool intent on its Node without polling.
+labels: { pool: migration }
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tool.install, tool.update, tool.remove, tool.adopt, tool.manager_converge] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: tools
+    steps:
+      - name: apply
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/tool-direct"
+          behaviorName: '${{ "tools-node-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

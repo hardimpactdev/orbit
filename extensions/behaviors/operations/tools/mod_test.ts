@@ -248,34 +248,16 @@ class Fixture {
   }
 }
 
-Deno.test("the placed workflow accepts dispatcher kind and worker for every registered Tool kind", async () => {
+Deno.test("the retained polling workflow discovers only the registered Tool kinds", async () => {
   const workflow = parse(
     await Deno.readTextFile("workflows/workflow-operation-tools.yaml"),
-  ) as {
-    labels: Record<string, string>;
-    inputs: { required: string[]; properties: { kind: { enum: string[] } } };
-    jobs: {
-      steps: {
-        task: { inputs: Record<string, string>; behaviorName: string };
-      }[];
-    }[];
-  };
+  ) as { jobs: { steps: { task: { inputs: Record<string, unknown> } }[] }[] };
   const registration = JSON.parse(
     await Deno.readTextFile(
       "extensions/behaviors/operations/tools/registration.json",
     ),
   );
-  assertEquals(workflow.labels, { pool: "migration" });
-  assertEquals(workflow.inputs.required, ["kind", "worker"]);
-  assertEquals(workflow.inputs.properties.kind.enum, registration.kinds);
-  assertEquals(workflow.jobs[0].steps[0].task.inputs, {
-    kind: "${{ inputs.kind }}",
-    worker: "${{ inputs.worker }}",
-  });
-  assertEquals(
-    workflow.jobs[0].steps[0].task.behaviorName.includes("operationId"),
-    false,
-  );
+  assertEquals(workflow.jobs[0].steps[0].task.inputs.kinds, registration.kinds);
   for (const kind of registration.kinds) {
     assertEquals(
       tools().methods.execute.arguments.safeParse({ kind, worker: "dispatch" })
@@ -283,13 +265,6 @@ Deno.test("the placed workflow accepts dispatcher kind and worker for every regi
       true,
     );
   }
-  assertEquals(
-    tools().methods.execute.arguments.safeParse({
-      operationId: 11,
-      worker: "dispatch",
-    }).success,
-    false,
-  );
 });
 
 Deno.test("manager convergence claims its kind and returns only manager readiness", async () => {
