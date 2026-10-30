@@ -8,9 +8,11 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
@@ -32,7 +34,12 @@ final readonly class ProcessOperationAdmission
 
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, ValidatedData::integer($input['node_id']), $input, 'operator', $requestId);
+            $nodeId = ValidatedData::integer($input['node_id']);
+            $writer = app(DirectOperation::class)->writer('process.'.$verb, $input, $nodeId);
+            if ($writer === 'direct') {
+                $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($nodeId));
+            }
+            $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, $nodeId, $input, 'operator', $requestId, expectedWriter: $writer);
             $process->update(['status' => $verb === 'destroy' ? LifecycleStatus::Removing : LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
 
             return $operation;

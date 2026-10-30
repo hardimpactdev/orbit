@@ -7,6 +7,7 @@ namespace App\Domain\Processes;
 use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
@@ -31,7 +32,9 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
 
             return;
         }
-        $this->assertEffects($operation);
+        if (! DirectOperation::owns($operation)) {
+            $this->assertEffects($operation);
+        }
         if ($operation->kind === 'process.destroy') {
             if (! $operation->input['preserve_record']) {
                 $process->delete();
