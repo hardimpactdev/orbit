@@ -18,7 +18,6 @@
     "task_vm.upcloud_stop",
     "task_vm.upcloud_hard_stop",
     "task_vm.upcloud_delete",
-    "task_vm.lifecycle_intent",
     "task_vm.prepare_enrollment",
     "task_vm.enroll_node",
     "task_vm.confirm_stopped",
