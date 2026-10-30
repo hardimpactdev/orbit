@@ -90,10 +90,16 @@ control/removal and reads status. Only ready/state or an error code reaches the
 Gateway; no readiness relay, child Operation or keyed receipt is used. Exact
 Node placement and native behavior locking own dispatch and concurrency.
 
-The writer map defaults to polled. Vite/Instance child intents remain polled
-until their own parent/traffic conversion. No live kind has switched merely
-because this source is merged. Actual canary and production proofs precede
-takeover and deletion.
+The paired `process.stop` cutover switches its Gateway writer and removes the
+PHP stop action, polled descriptors and receipt tests after an actual safe
+action canary. Stopping a Vite Process needs no traffic preparation or private
+input. Other Process controls keep their current writers. Rollback is a revert
+PR.
+
+For the `process.stop` canary on admitted Node209, the workflow chooses the
+existing `swamp209-migration-a` worker. Every other Node and Process kind keeps
+exact `orbit-node-ID` placement. There is no fallback to another Node. The
+canary owns a short-lived sleep Process and changes no serving unit.
 
 For the first real `schedule.run` canary, Node209uses its existing reviewed
 `swamp209-migration-a` token identity, which runs as the Node user with sudo.
