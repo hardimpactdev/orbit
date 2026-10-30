@@ -13,7 +13,7 @@ use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 
-/** Promotes and prunes host-local recipe images. */
+/** Prunes host-local recipe images. */
 final readonly class TaskVmImageHostCommand implements OperationEffectTransport
 {
     use TaskVmTargetReceipt;
@@ -38,12 +38,6 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
             throw new ResourceOperationException('operation.execution_forbidden', 'The image attempt does not own this effect.', 422);
         }
         $this->eligibility->assertCurrent($build);
-        if ($operation->kind === 'task_vm.image_promote') {
-            $this->eligibility->assertPromotion($build);
-            $this->agents->run($build->hostNode, 'incus.image', AgentEffectReceipts::input($run, ['project' => $host->project, 'operation' => ['kind' => 'promote', 'alias' => $host->imageAlias, 'fingerprint' => $build->image_fingerprint]]));
-
-            return ['ready' => true, 'fingerprint' => $build->image_fingerprint];
-        }
         if ($operation->kind === 'task_vm.image_prune') {
             if ($build->promoted_at === null) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The image must be promoted before pruning.', 409);
@@ -84,6 +78,6 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
      */
     private function effectResult(Operation $operation, array $result): array
     {
-        return ['ready' => true, ...$result, ...($operation->kind === 'task_vm.image_promote' ? ['fingerprint' => TaskVmImageBuild::query()->findOrFail($operation->target_id)->image_fingerprint] : [])];
+        return ['ready' => true, ...$result];
     }
 }
