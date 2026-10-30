@@ -18,14 +18,14 @@ class DatabaseCleanupNative(unittest.TestCase):
         self.repo = Path(self.temp.name)
         shutil.copy(ROOT / '.swamp.yaml', self.repo)
         behavior = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/database']:
+        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/database']:
             shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
         module = behavior / 'operations/database/cleanup.ts'
-        module.write_text('import {fixtureHttp} from "./cleanup_native_fixture.ts";\n' + module.read_text().replace('export const behavior = cleanup();', 'export const behavior = cleanup(() => fixtureHttp);'))
+        module.write_text('import {fixtureHttp, fixtureLocal} from "./cleanup_native_fixture.ts";\n' + module.read_text().replace('export const behavior = cleanup();', 'export const behavior = cleanup(() => fixtureHttp, fixtureLocal);'))
         (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-database-cleanup.yaml'
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith('labels:'))+'\n')
-        self.state = {'operation':{'id':17,'kind':'database.sqlite_cleanup','node_id':9,'status':'queued','result':None,'cancel_requested':False},'calls':[],'cleanups':0}
+        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith(('labels:', 'target:')))+'\n')
+        self.state = {'operation':{'id':17,'kind':'database.sqlite_cleanup','node_id':209,'status':'queued','result':None,'cancel_requested':False,'input':{'variant':'clone','agent_sha256':'a'*64,'directory':'/tmp/orbit-sqlite-clone-'+str(17).zfill(32)}},'calls':[],'cleanups':0}
         self.save()
 
     def save(self):
@@ -46,7 +46,7 @@ class DatabaseCleanupNative(unittest.TestCase):
         return result
 
     def run_workflow(self, success=True):
-        result = self.cli('workflow','run','operation-database-cleanup','--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
+        result = self.cli('workflow','run','operation-database-cleanup','--input','operation_id=17','--input','node_id=209','--input','kind='+self.state['operation']['kind'],success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
         return result
 
@@ -56,7 +56,7 @@ class DatabaseCleanupNative(unittest.TestCase):
         self.assertEqual(state['cleanups'],1)
         self.assertEqual(state['operation']['status'],'succeeded')
         self.assertTrue(all('/direct-operations/' in call for call in state['calls']))
-        self.assertFalse(any('claim' in call or 'heartbeat' in call or 'receipts' in call for call in state['calls']))
+        self.assertFalse(any('claim' in call or 'heartbeat' in call or 'receipts' in call or '/primitive' in call for call in state['calls']))
 
     def test_native_retry_after_lost_terminal_projection_does_not_repeat_effect(self):
         self.state['loseCompletion']=True
@@ -76,14 +76,14 @@ class DatabaseCleanupNative(unittest.TestCase):
 
     def test_native_behavior_lock_serializes_two_cleanups_on_the_same_node(self):
         first=self.state.pop('operation')
-        self.state['operations']={'17':first,'18':dict(first,id=18)}
+        self.state['operations']={'17':first,'18':dict(first,id=18,input=dict(first['input'],directory='/tmp/orbit-sqlite-clone-'+str(18).zfill(32)))}
         self.state['events']=[]
         self.save()
         env=dict(os.environ,SWAMP_NO_UPDATE_CHECK='1',SWAMP_NO_TELEMETRY='1')
         processes=[]
         try:
             for operation in (17,18):
-                processes.append(subprocess.Popen([SWAMP,'workflow','run','operation-database-cleanup','--input',f'operation_id={operation}','--input','node_id=9','--input','kind=database.sqlite_cleanup','--json'],cwd=self.repo,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE))
+                processes.append(subprocess.Popen([SWAMP,'workflow','run','operation-database-cleanup','--input',f'operation_id={operation}','--input','node_id=209','--input','kind=database.sqlite_cleanup','--json'],cwd=self.repo,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE))
             for process in processes:
                 stdout,stderr=process.communicate(timeout=60)
                 self.assertEqual(process.returncode,0,stdout+stderr)

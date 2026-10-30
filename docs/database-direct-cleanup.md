@@ -1,28 +1,44 @@
-# Direct database cleanup
+# Node-local SQLite cleanup
 
 The Gateway records one `database.sqlite_cleanup` intent and starts
-`operation-database-cleanup` directly. Its per-kind switch defaults to the
-previous Swamp path. Existing intents retain their writer when the switch
-changes.
+`operation-database-cleanup` through the shared `StartSwampRun` helper. The
+shared `ORBIT_SWAMP_DIRECT_WRITERS` map defaults to the previous polled path.
+Existing intents retain their writer when the map changes.
 
-The workflow uses a native Node behavior lock. It invokes only the fixed cleanup
-primitive admitted by the Gateway, then projects the bounded result. It never
-claims work, heartbeats, creates child Operations, saves keyed effect receipts
-or waits in PHP. Native Swamp recovery can repeat cleanup after a lost reply;
-cleanup must converge an already absent snapshot.
+This inactive canary workflow accepts only Node 209 and uses the existing
+`pool=migration` workers. It declares `writes: true` and `vaults: []` and uses
+native defaults. It must never execute another Node's local action on 209. Exact
+`orbit-node-<admittedNodeId>` placement follows with per-Node workers. Shared
+`GatewayOperation` and `directOperation` provide read/result projection. There
+is no family Gateway primitive or relay.
 
-The Gateway shared direct boundary supplies
-`GET /api/v1/direct-operations/{operation}?run_id=UUID`, `POST .../primitive`
-and `POST .../result`. The primitive receives only `run_id`; it cannot select a
-command, endpoint, Node or input. Families add no controller or token transport.
+The Gateway supplies a typed cleanup variant, the admitted agent hash and safe
+paths. The current local action supports clone cleanup as a non-root worker that
+already owns the private `0700` snapshot directory. It checks the directory and
+snapshot without following symlinks, removes only `snapshot.sqlite`, then
+removes the empty directory. An absent directory succeeds. It refuses another
+owner and unrelated directory contents. It accepts no shell, executable, argv or
+owner selector. Seed cleanup returns `database.cleanup_privilege_unavailable`.
 
-Load this source before deploying the dormant Gateway branch. The orchestrator
-extends the one shared `ORBIT_SWAMP_RUN_TOKEN` grant to this workflow. This
-source creates no token or grant. The shared helper and the Databases
-intent/result handler must be deployed before this workflow is enabled.
+The future `orbit-swamp-worker` UID has no demonstrated access to managed
+Instance snapshots. Root seed state also requires a privileged capability. The
+shared `localRootAgent` client is available, but the current server catalogue
+permits only `instance.prepare-served-web-roots`. SQLite requires a separate
+cleanup-only wrapper and catalogue review before activation. Full copy-sqlite
+and seed prepare/install commands must remain outside that catalogue. This
+source changes no worker unit, sudo policy, token, grant or writer.
 
-Prove both clone-directory and seed-snapshot cleanup on a disposable development
-target before selecting direct. Keep the previous workflow and Gateway adapters
-until that proof and the required production success. Record run IDs, latency
-and Gateway line changes with the takeover slice. This source alone is not
-takeover.
+The first live 209 proof uses an admitted disposable 209 intent and an absent
+snapshot path. It proves root-run binding, read and projection, without a root
+socket call or a foreign Node action. A worker read before the Gateway records
+the native start response must fail `operation.run_unbound` without local
+execution. Bound requests must accept only the admitted Node and run. Record
+loaded heads, Operation/run IDs and timing. This proof does not prove real owner
+access, seed cleanup, the root boundary or readiness for takeover.
+
+A later disposable-target canary must prove real cleanup with its actual worker
+identity, owner/path checks, absent-state replay and native recovery after lost
+replies. Source tests with a fake Gateway do not replace live proof. Keep the
+writer polled until that end-to-end proof succeeds. Production success gates
+deletion of the previous polled path. The refused family relay is removed from
+the source slice that introduces local execution.
