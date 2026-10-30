@@ -9,8 +9,10 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
@@ -56,11 +58,14 @@ final readonly class StoreFirewallRuleAction
             ])->save();
             $rule->setRelation('node', $node);
 
+            $writer = app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
+
             return $this->operations->execute('firewall.'.$data->action->value, 'node_firewall', $node->id, $node->id, [
                 'rule_id' => $rule->id, 'created' => $created, 'name' => $rule->name, 'action' => $rule->action->value,
                 'source' => $rule->source, 'protocol' => $rule->protocol, 'port' => $rule->port,
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-            ], 'operator', $requestId);
+                ...($writer === 'direct' ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
+            ], 'operator', $requestId, expectedWriter: $writer);
         });
     }
 

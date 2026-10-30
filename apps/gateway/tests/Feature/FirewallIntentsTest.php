@@ -2,13 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Firewall\RemoveFirewallRuleAction;
+use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Firewall\StoreFirewallRuleData;
+use App\Domain\Firewall\FirewallAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -24,7 +29,7 @@ beforeEach(function (): void {
     $this->worker->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->forceCreate(['id' => 209, 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
     $this->rule = FirewallRule::query()->create(['node_id' => $this->node->id, 'name' => 'canary', 'action' => 'allow', 'source' => '192.0.2.100', 'protocol' => 'tcp', 'port' => '45678', 'status' => LifecycleStatus::Provisioning]);
     $this->input = ['rule_id' => $this->rule->id, 'node_id' => $this->node->id, 'name' => 'canary', 'action' => 'allow', 'source' => '192.0.2.100', 'protocol' => 'tcp', 'port' => '45678'];
     $this->operation = Operation::query()->create(['kind' => 'firewall.allow', 'target_type' => 'node_firewall', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'state' => ['firewall_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => $this->input]);
@@ -146,4 +151,29 @@ it('allows the admitted Node peer and refuses a different Node worker', function
 
 it('declares no Gateway execution primitive for Firewall', function (): void {
     $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/primitive', ['run_id' => $this->runId])->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+});
+
+it('pins the admitted agent for a direct Firewall action without a Gateway relay', function (string $verb): void {
+    $kind = 'firewall.'.$verb;
+    config(['swamp.direct_writers' => [$kind => 'direct'], 'swamp.run_token' => 'fixture-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-firewall-direct', 'runId' => $this->runId]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $operation = $verb === 'remove'
+        ? app(RemoveFirewallRuleAction::class)->execute($this->rule)
+        : app(StoreFirewallRuleAction::class)->execute($this->node, new StoreFirewallRuleData('sudo-'.$verb, FirewallAction::from($verb), '192.0.2.101', 'tcp', '45679'));
+
+    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($operation->state['firewall_writer'])->toBe('direct');
+    expect($operation->lock_key)->toBeNull();
+    expect($socket->sent)->toHaveCount(1);
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.agent_sha256', $operation->input['agent_sha256']);
+    config(['swamp.direct_writers' => [$kind => 'polled']]);
+    expect($operation->fresh()->input['agent_sha256'])->toBe($operation->input['agent_sha256']);
+})->with(['allow', 'deny', 'remove']);
+
+it('keeps a foreign Firewall Node polled while the canary workflow is Node 209 only', function (): void {
+    config(['swamp.direct_writers' => ['firewall.allow' => 'direct']]);
+
+    expect(app(DirectOperation::class)->writer('firewall.allow', [], 210))->toBe('polled');
 });

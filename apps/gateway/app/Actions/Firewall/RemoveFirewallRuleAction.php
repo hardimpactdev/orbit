@@ -6,7 +6,9 @@ namespace App\Actions\Firewall;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,11 +26,13 @@ final readonly class RemoveFirewallRuleAction
         }
 
         return DB::transaction(function () use ($rule, $caller, $requestId): Operation {
+            $writer = app(DirectOperation::class)->writer('firewall.remove', [], $rule->node_id);
             $operation = $this->operations->execute('firewall.remove', 'node_firewall', $rule->node_id, $rule->node_id, [
                 'rule_id' => $rule->id, 'node_id' => $rule->node_id, 'name' => $rule->name,
                 'action' => $rule->action->value, 'source' => $rule->source, 'protocol' => $rule->protocol,
                 'port' => $rule->port, 'caller_node_id' => $caller?->id,
-            ], 'operator', $requestId);
+                ...($writer === 'direct' ? ['agent_sha256' => app(AgentDelivery::class)->pin($rule->node)] : []),
+            ], 'operator', $requestId, expectedWriter: $writer);
             $rule->update(['status' => LifecycleStatus::Removing, 'failed_step' => null, 'error_code' => null]);
 
             return $operation;
