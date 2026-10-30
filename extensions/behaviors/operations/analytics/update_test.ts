@@ -31,6 +31,8 @@ export async function input() {
   };
   return {
     process_id: 250,
+    assignment_id: 4,
+    runtime_environment: { "$secret": "analytics.runtime_environment", id: 17 },
     version: "3.3.0",
     previous_version: "3.2.1",
     agent_sha256: "a".repeat(64),
@@ -108,7 +110,7 @@ Deno.test("failed agent recovery is explicit and never issues another mutation",
     rolled_back: false,
   });
 });
-Deno.test("stale vault environment refuses before Node effects", async () => {
+Deno.test("stale private environment refuses before Node effects", async () => {
   let count = 0;
   const result = await updateRuntime(await input(), {
     ...environment,
@@ -142,7 +144,13 @@ Deno.test("running projection is re-read before effects and terminal replay make
   let status = "queued";
   let calls = 0;
   let reads = 0;
-  const behavior = analyticsUpdate(() => (method, _path, body) => {
+  const behavior = analyticsUpdate(() => (method, path, body) => {
+    if (path.includes("/private-material?")) {
+      return Promise.resolve({
+        status: 200,
+        body: { data: { runtime_environment: environment } },
+      });
+    }
     if (method === "POST") status = (body as { status: string }).status;
     else reads++;
     return Promise.resolve({
@@ -174,7 +182,6 @@ Deno.test("running projection is re-read before effects and terminal replay make
     kind: "analytics.update" as const,
     node_id: 17,
     run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-    environment,
   };
   const ctx = {
     globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "/tmp/ca" },

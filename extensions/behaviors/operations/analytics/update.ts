@@ -29,6 +29,11 @@ const Container = z.object({
 }).strict();
 export const UpdateInput = z.object({
   process_id: z.number().int().positive(),
+  assignment_id: z.number().int().positive(),
+  runtime_environment: z.object({
+    "$secret": z.literal("analytics.runtime_environment"),
+    id: z.number().int().positive(),
+  }).strict(),
   version: Version,
   previous_version: Version,
   agent_sha256: Digest,
@@ -41,14 +46,6 @@ const Environment = z.record(z.string(), z.string());
 const Args = DirectArgs.extend({
   kind: z.literal("analytics.update"),
   node_id: z.number().int().positive(),
-  environment: z.preprocess((value) => {
-    if (typeof value !== "string") return value;
-    try {
-      return JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }, Environment).meta({ sensitive: true }),
 });
 const Result = z.union([
   z.object({
@@ -176,12 +173,18 @@ export function analyticsUpdate(
               const fresh = z.object({ input: UpdateInput }).parse(
                 await gateway.read(ctx.signal),
               );
-              return await updateRuntime(
-                fresh.input,
-                args.environment,
-                invoke,
-                ctx.signal,
-              );
+              let observation: z.infer<typeof Result> | undefined;
+              await gateway.withPrivateMaterial(async (material) => {
+                observation = Result.parse(
+                  await updateRuntime(
+                    fresh.input,
+                    Environment.parse(material.runtime_environment),
+                    invoke,
+                    ctx.signal,
+                  ),
+                );
+              });
+              return Result.parse(observation);
             },
             (result) => Result.parse(result),
             ctx.signal,

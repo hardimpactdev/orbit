@@ -1,7 +1,6 @@
 id: 04baf3d5-926d-4d03-8157-e1302a08360c
 name: operation-analytics-update-direct
 description: Update the pinned Plausible image under one native Node scope.
-vaults: [default]
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
@@ -25,4 +24,3 @@ jobs:
             node_id: "${{ inputs.node_id }}"
             kind: "${{ inputs.kind }}"
             run_id: "${{ run.id }}"
-            environment: '${{ vault.get("default", "analytics-runtime-environment") }}'

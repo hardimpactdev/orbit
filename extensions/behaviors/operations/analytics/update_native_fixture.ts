@@ -1,35 +1,29 @@
+import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { agentReply, type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
 const path = "update-native.json";
 const read = () => JSON.parse(Deno.readTextFileSync(path));
 const save = (state: unknown) =>
   Deno.writeTextFileSync(path, JSON.stringify(state));
-export function http(method: string, _path: string, body?: unknown) {
-  const state = read();
-  if (method === "POST") {
-    const report = body as { status: string; result?: unknown };
-    state.operation.status = report.status;
-    state.operation.result = report.result ?? null;
-    if (state.loseProjection && report.status === "succeeded") {
-      state.loseProjection = false;
-      save(state);
-      return Promise.reject(new Error("lost committed projection reply"));
-    }
-  }
-  save(state);
-  return Promise.resolve({
-    status: 200,
-    body: {
-      data: {
-        ...state.operation,
-        input: state.operation.status === "queued" ? {} : state.operation.input,
-      },
-    },
-  });
-}
+// Exercise the actual production HTTP client; the native test supplies a loopback TLS Gateway.
+const endpoint = read();
+export const http = gatewayHttp(endpoint.gatewayUrl, endpoint.caFile);
 export async function invoke(call: NodeCall) {
   const state = read();
   state.calls.push({ name: call.name, image: call.input.image ?? null });
   save(state);
+  if (state.throwPrivate) {
+    throw new Error(
+      String(
+        (call.input.environment as Record<string, string>).SECRET_KEY_BASE,
+      ),
+    );
+  }
+  if (state.privatePayload) {
+    return {
+      ignored:
+        (call.input.environment as Record<string, string>).SECRET_KEY_BASE,
+    };
+  }
   if (state.devAgent) {
     // Disposable Docker integration only: never changes the installed agent.
     const input = structuredClone(call.input);
