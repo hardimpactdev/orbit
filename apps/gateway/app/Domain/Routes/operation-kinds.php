@@ -12,7 +12,6 @@ use App\Domain\Routes\OfflineResidueCompletion;
 use App\Domain\Routes\OfflineResidueExecution;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
-use App\Domain\Routes\RouteNodeExecution;
 use App\Domain\Routes\RouteParentExecution;
 use App\Domain\Routes\RouteWorkloadExecution;
 
@@ -31,12 +30,6 @@ $definitions = [
     'route.workload_firewall' => $effect('firewall.rules'),
     'route.lan_converge' => $effect('firewall.route-lan'),
     'route.lan_remove' => $effect('firewall.route-lan'),
-    'route.workload_verify' => $effect('route.verify-certificate'),
-    'route.public_verify' => [...$effect('route.verify-certificate'), 'runs' => [
-        ['transport' => 'gateway', 'name' => 'route.node-effect', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-        ['transport' => 'agent', 'name' => 'route.verify-certificate', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-        ['transport' => 'agent', 'name' => 'route.verify-http', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-    ]],
     'route.public_firewall' => $effect('firewall.rules'),
     'route.shared_php_withdraw' => $effect('php.converge-shared-pools', ['configurations' => 'route.php_pools']),
     'route.transfer_php_withdraw' => $effect('php.converge-shared-pools', ['configurations' => 'route.php_pools']),
@@ -82,25 +75,20 @@ $definitions = [
         'result_fields' => ['prepared', 'ready', 'withdrawn', 'result', 'error_code'],
     ]),
 
-    'route.private_dns_publish' => [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => RouteNodeExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'route.private-dns-prepare', 'input_fields' => ['reason'], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'route-dns', 'name' => 'route.publish-dns', 'input_fields' => [], 'resumable' => true, 'input_values' => [],
-                'input_schema' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['records', 'catalog'],
-                    'properties' => ['records' => ['type' => 'string'], 'catalog' => ['type' => 'string']]]],
-        ],
-        'completion_contract' => ['step' => 'private-dns-publish', 'transport' => 'route-dns', 'name' => 'route.publish-dns', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'version', 'outcome', 'data.ready', 'data.digest', 'ready', 'error_code'],
-    ],
+    ...array_fill_keys(['route.workload_verify', 'route.public_verify'], [
+        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'runs' => [],
+        'completion_contract' => ['step' => 'route-verified', 'transport' => 'swamp', 'name' => 'operation-route-verification', 'result' => ['ready' => true]],
+        'result_fields' => ['ready', 'error_code'],
+    ]),
     'route.caddy_converge' => [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => RouteNodeExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'route.caddy-prepare', 'input_fields' => ['reason'], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'route-caddy', 'name' => 'caddy.publish', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-        ],
-        'completion_contract' => ['step' => 'caddy-publish', 'transport' => 'route-caddy', 'name' => 'caddy.publish', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'version', 'result', 'ready', 'stage', 'error_code'],
+        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'runs' => [],
+        'completion_contract' => ['step' => 'caddy-publish', 'transport' => 'swamp', 'name' => 'operation-route-publication', 'result' => ['ready' => true]],
+        'result_fields' => ['version', 'result', 'ready', 'stage', 'error_code'],
+    ],
+    'route.private_dns_publish' => [
+        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'runs' => [],
+        'completion_contract' => ['step' => 'private-dns-publish', 'transport' => 'swamp', 'name' => 'operation-route-publication', 'result' => ['ready' => true]],
+        'result_fields' => ['outcome', 'data.ready', 'data.digest', 'ready', 'error_code'],
     ],
 ];
 

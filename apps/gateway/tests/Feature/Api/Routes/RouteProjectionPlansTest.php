@@ -24,7 +24,6 @@ use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\ClusterRouterParentCommand;
 use App\Domain\Routes\ClusterRouterParentExecution;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
-use App\Domain\Routes\PreparePrivateDnsCommand;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteParentCommand;
@@ -559,10 +558,7 @@ it('commits Router selection before publishing private DNS and refuses rollback 
     $command->run($operation, ['action' => 'commit', 'stage' => 'database']);
     expect($candidate->fresh()->status)->toBe(LifecycleStatus::Active)->and($oldRole->fresh()->status)->toBe(LifecycleStatus::Removing);
     $command->run($operation, ['action' => 'open', 'stage' => 'dns-publication']);
-    $dns = Operation::query()->create(['kind' => 'route.private_dns_publish', 'target_type' => 'node_route_projection', 'target_id' => $this->node->id,
-        'node_id' => $this->node->id, 'input' => ['reason' => 'committed Router proof'], 'status' => OperationStatus::Queued, 'sequence' => 1]);
-    app(PreparePrivateDnsCommand::class)->run($dns, $dns->input);
-    expect($dns->fresh()->state['private_dns_plan']['records'])->toContain('host-record=private.test,10.44.0.3')
+    expect($renderer->render())->toContain('host-record=private.test,10.44.0.3')
         ->not->toContain('host-record=private.test,10.44.0.5');
     expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'restore-dns']))->toThrow(ResourceOperationException::class, 'recovers forward');
     expect(app(ClusterRouterParentExecution::class)->sequence($operation))->toContain('database', 'dns-publication')
