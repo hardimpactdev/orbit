@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,7 +21,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    config(['swamp.direct_writers' => ['database.sqlite_cleanup' => 'direct']]);
+    config(['swamp.direct_writers' => []]);
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->worker = Node::query()->create(['name' => 'services', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.17', 'status' => LifecycleStatus::Active]);
@@ -31,7 +32,7 @@ beforeEach(function (): void {
     $this->intent = DatabaseExecutionIntent::query()->create(['target_type' => 'instance', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'payload' => ['commands' => ['database-apply' => ['name' => 'instance.copy-sqlite', 'input' => ['operation' => 'cleanup', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']]], 'projection' => []]]);
     $this->operation = Operation::query()->create(['kind' => 'database.sqlite_cleanup', 'target_type' => 'instance',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued,
-        'sequence' => 1, 'state' => ['database_cleanup_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => ['intent_id' => $this->intent->id]]);
+        'sequence' => 1, 'state' => ['database_cleanup_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => ['intent_id' => $this->intent->id, 'agent_sha256' => app(AgentDelivery::class)->pin($this->node)]]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId];
@@ -46,8 +47,8 @@ it('declares no Gateway cleanup relay', function (): void {
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
     $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'database.sqlite_cleanup')['claimable'])->toBe(0);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'database.sqlite_cleanup', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'database.sqlite_cleanup'))->toBeNull();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'database.sqlite_cleanup', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
     $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
     expect($this->agents->calls)->toBe([]);
 });
@@ -91,7 +92,7 @@ it('submits once after commit and records a native run without acquiring a targe
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     DB::beginTransaction();
-    $operation = app(StartOperationAction::class)->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null);
+    $operation = app(StartOperationAction::class)->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id, 'agent_sha256' => app(AgentDelivery::class)->pin($this->node)], 'test', null);
     expect($socket->sent)->toBe([]);
     DB::commit();
     expect($socket->sent)->toHaveCount(1);
@@ -116,35 +117,11 @@ it('keeps an unreadable native history uncertain without resubmitting or reporti
     expect($socket->closed)->toBeTrue();
 });
 
-it('keeps the previous Swamp writer by default and binds Operations through switch and rollback', function (): void {
-    config(['swamp.direct_writers' => []]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-cleanup', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake.token']);
-    $start = app(StartOperationAction::class);
-    $polled = $start->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null);
-    expect($polled->state['database_cleanup_writer'])->toBe('polled');
-    expect($socket->sent)->toBe([]);
-    $this->postJson('/api/v1/direct-operations/'.$polled->id.'/primitive', $this->body)->assertUnprocessable();
-
-    config(['swamp.direct_writers' => ['database.sqlite_cleanup' => 'direct']]);
-    $direct = $start->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null);
-    expect($direct->fresh()->state['database_cleanup_writer'])->toBe('direct');
-    expect($socket->sent)->toHaveCount(1);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $polled->kind, 'worker' => 'previous', 'operation_id' => $polled->id])->assertOk()->assertJsonPath('data.id', $polled->id);
-
+it('defaults to direct and refuses a polled setting without a deleted executor fallback', function (): void {
+    expect(app(OperationKinds::class)->directOnly('database.sqlite_cleanup'))->toBeTrue();
     config(['swamp.direct_writers' => ['database.sqlite_cleanup' => 'polled']]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $direct->kind, 'worker' => 'previous', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
-    $this->getJson('/api/v1/direct-operations/'.$direct->id.'?run_id='.$direct->fresh()->state['swamp_run_id'])->assertOk()->assertJsonPath('data.kind', 'database.sqlite_cleanup');
-    expect($this->agents->calls)->toBe([]);
-});
-
-it('keeps pre-rollout Operations with no writer stamp on their original Swamp path', function (): void {
-    $this->operation->update(['state' => null]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'previous', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data.id', $this->operation->id);
-    expect($this->agents->calls)->toBe([]);
+    expect(fn () => app(StartOperationAction::class)->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id,
+        ['intent_id' => $this->intent->id], 'test', null))->toThrow(ResourceOperationException::class);
 });
 
 it('exposes no raw admitted input through the shared read boundary', function (): void {
@@ -214,4 +191,12 @@ it('lets a configured Node worker read only its own bound cleanup', function ():
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+});
+
+it('retains its admitted digest after the configured Node pin changes', function (): void {
+    $input = $this->operation->input;
+    $this->operation->update(['input' => [...$input, 'agent_sha256' => str_repeat('f', 64)]]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.agent_sha256', str_repeat('f', 64));
+    $this->operation->update(['input' => array_diff_key($input, ['agent_sha256' => true])]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
 });

@@ -6,9 +6,7 @@ namespace App\Domain\DatabaseServers;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Node;
 use App\Models\Operation;
@@ -31,7 +29,10 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
         }
         $node = Node::query()->findOrFail($operation->node_id);
         $owner = $node->user;
-        $pin = app(AgentDelivery::class)->pin($node);
+        $pin = $operation->input['agent_sha256'] ?? null;
+        if (! is_string($pin) || preg_match('/\A[0-9a-f]{64}\z/D', $pin) !== 1) {
+            $this->invalid();
+        }
         $input = $command['input'];
         if ($command['name'] === 'instance.copy-sqlite' && ($input['operation'] ?? null) === 'cleanup'
             && is_string($input['directory'] ?? null) && preg_match('#\A/tmp/orbit-sqlite-clone-[0-9a-f]{32}\z#D', $input['directory']) === 1) {
@@ -72,13 +73,16 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
     /** @param array<string, mixed> $data */
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(app(OperationExecutionContract::class)->result($operation, ValidatedData::object($data['result'] ?? [])), array_flip(['backend', 'error_code']));
+        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
         $status = ValidatedData::string($data['status']);
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         if (($status === 'succeeded' && (($result['backend'] ?? null) !== 'absent' || $code !== null || isset($result['error_code'])))
-            || ($status === 'failed' && ($code === null || ($result['error_code'] ?? null) !== $code))) {
+            || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
+            || ($status === 'failed' && ($result !== ['error_code' => $code] || ! in_array($code, ['agent.version_mismatch', 'instance.sqlite_seed_refused', 'instance.sqlite_seed_failed', 'database.cleanup_owner_unavailable', 'database.sqlite_cleanup_refused', 'database.sqlite_cleanup_failed'], true)))) {
             throw new ResourceOperationException('operation.result_invalid', 'The cleanup needs its bounded Swamp outcome.', 422);
         }
+
+        $this->input($operation);
 
         return app(DirectOperation::class)->project($operation, $data, $result, 'database-apply');
     }

@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $direct = ['database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_server.destroy' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
+    $direct = ['database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class], 'database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_server.destroy' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $direct;
     }
@@ -46,7 +46,6 @@ return (static function (): array {
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],
         'database.sqlite_export' => [$sqliteCopy, $seedSource],
-        'database.sqlite_cleanup' => [$sqliteCopy, $seedSource],
         'database.sqlite_seed' => [$seedTarget, $relay],
         'database.sqlite_seed_abandon' => [$seedTarget],
         'database.write' => [$sqlite, $pdo],
