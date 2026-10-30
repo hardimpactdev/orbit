@@ -13,7 +13,7 @@ use std::{
 };
 
 pub(crate) mod issuer;
-pub(crate) mod renewal;
+pub(crate) mod lifecycle;
 #[cfg(test)]
 mod tests;
 
@@ -92,13 +92,8 @@ fn install_binary(files: &Files, host: &mut impl Host) -> Result<bool, Error> {
 }
 
 fn worker_unit() -> String {
-    format!("[Unit]\nDescription=Orbit Node Swamp worker\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser={USER}\nGroup={USER}\nWorkingDirectory={ROOT}/work\nEnvironment=HOME={ROOT}/home SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/home/config\nLoadCredential=enrollment:{ROOT}/credentials/enrollment\nLoadCredential=server:{ROOT}/credentials/server\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --concurrency=1 --no-telemetry\nRestart=on-failure\nRestartSec=10\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nReadWritePaths={ROOT}/cache {ROOT}/work {ROOT}/home\nStandardOutput=null\nStandardError=null\n")
+    format!("[Unit]\nDescription=Orbit Node Swamp worker\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nExitType=cgroup\nUser={USER}\nGroup={USER}\nWorkingDirectory={ROOT}/work\nEnvironment=HOME={ROOT}/home SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/home/config\nLoadCredential=enrollment:{ROOT}/credentials/enrollment\nLoadCredential=server:{ROOT}/credentials/server\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --concurrency=1 --no-telemetry\nRestart=on-failure\nRestartSec=10\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nReadWritePaths={ROOT}/cache {ROOT}/work {ROOT}/home\nStandardOutput=null\nStandardError=null\n\n[Install]\nWantedBy=multi-user.target\n")
 }
-fn renew_unit() -> &'static str {
-    "[Unit]\nDescription=Renew Orbit Node worker credentials\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nUser=root\nExecStart=/usr/local/bin/orbit-agent service swamp-node-worker-renew\nUMask=0077\nStandardOutput=null\nStandardError=null\n"
-}
-const TIMER: &str = "[Unit]\nDescription=Check Orbit Node worker credential lifetime\n\n[Timer]\nOnBootSec=30\nOnUnitInactiveSec=60\nUnit=orbit-node-worker-renew.service\n\n[Install]\nWantedBy=timers.target\n";
-
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
@@ -155,46 +150,23 @@ fn configure(
         )?;
     }
     let mut changed = binary_changed;
-    for (path, value, mode) in [
-        (format!("/etc/systemd/system/{UNIT}"), worker_unit(), 0o644),
-        (
-            "/etc/systemd/system/orbit-node-worker-renew.service".into(),
-            renew_unit().into(),
+    let path = format!("/etc/systemd/system/{UNIT}");
+    let value = worker_unit();
+    changed |= fs::read(files.path(&path)).ok().as_deref() != Some(value.as_bytes());
+    files
+        .publish(
+            &files.path(&path),
+            value.as_bytes(),
             0o644,
-        ),
-        (
-            "/etc/systemd/system/orbit-node-worker-renew.timer".into(),
-            TIMER.into(),
-            0o644,
-        ),
-    ] {
-        if fs::read(files.path(&path)).ok().as_deref() != Some(value.as_bytes()) {
-            changed = true;
-        }
-        files
-            .publish(
-                &files.path(&path),
-                value.as_bytes(),
-                mode,
-                files.uid,
-                files.gid,
-                false,
-            )
-            .map_err(|_| invalid())?;
-    }
+            files.uid,
+            files.gid,
+            false,
+        )
+        .map_err(|_| invalid())?;
     call(host, &["systemctl", "daemon-reload"])?;
     if changed {
         call(host, &["systemctl", "stop", "--no-block", UNIT])?;
     }
-    call(
-        host,
-        &[
-            "systemctl",
-            "enable",
-            "--now",
-            "orbit-node-worker-renew.timer",
-        ],
-    )?;
     Ok(Output {
         installed: true,
         changed,
@@ -255,25 +227,15 @@ fn remove(files: &Files, host: &mut impl Host) -> Result<(), Error> {
     if !meta.is_dir() || meta.uid() != files.uid {
         return Err(invalid());
     }
-    for unit in [
-        "orbit-node-worker-renew.timer",
-        "orbit-node-worker-renew.service",
-        UNIT,
-    ] {
-        let path = format!("/etc/systemd/system/{unit}");
-        if files.path(&path).exists() {
-            owned_file(files, &path, 0o644)?;
-            if unit.ends_with(".timer") {
-                call(host, &["systemctl", "disable", "--now", unit])?;
-            } else {
-                call(host, &["systemctl", "stop", unit])?;
-            }
-            fs::remove_file(files.path(&path)).map_err(|_| failed())?;
-        }
+    let path = format!("/etc/systemd/system/{UNIT}");
+    if files.path(&path).exists() {
+        owned_file(files, &path, 0o644)?;
+        call(host, &["systemctl", "disable", "--now", UNIT])?;
+        fs::remove_file(files.path(&path)).map_err(|_| failed())?;
     }
     // A blocking native drain must finish before credentials or agent trust go away.
     for name in [
-        "credentials/pair.json",
+        "credentials/expiry",
         "credentials/enrollment",
         "credentials/server",
     ] {

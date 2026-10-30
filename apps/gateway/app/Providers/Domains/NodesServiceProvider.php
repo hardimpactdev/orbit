@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Console\Commands\ConvergeNodeWorkersCommand;
 use App\Console\Commands\RekeyNodeAgentCommand;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -67,7 +68,7 @@ final class NodesServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([RekeyNodeAgentCommand::class]);
+            $this->commands([RekeyNodeAgentCommand::class, ConvergeNodeWorkersCommand::class]);
         }
     }
 

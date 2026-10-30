@@ -3,6 +3,7 @@ use super::*;
 
 const DIRECTORY: &str = "/etc/orbit/swamp-issuer";
 const OPERATOR: &str = "/etc/orbit/swamp-issuer/operator.token";
+const API_KEY: &str = "/etc/orbit/swamp-issuer/api-key";
 const NODES: &str = "/etc/orbit/swamp-issuer/nodes.json";
 
 #[derive(schemars::JsonSchema, Serialize, Deserialize)]
@@ -39,7 +40,7 @@ impl Pair {
             })
         };
         let remaining = self.expires()? - now;
-        if !(3600..=14400).contains(&remaining)
+        if !(72000..=86400).contains(&remaining)
             || !token(&self.enrollment_token, name)
             || !token(&self.server_token, &format!("{name}-access"))
         {
@@ -56,6 +57,7 @@ fn native(host: &mut impl Host, args: &[&str]) -> Result<serde_json::Value, Erro
         "HOME=/var/lib/orbit-swamp-issuer",
         "SWAMP_HOME=/var/lib/orbit-swamp-issuer",
         "SWAMP_CONFIG_DIR=/var/lib/orbit-swamp-issuer/config",
+        "SWAMP_API_KEY_FILE=/etc/orbit/swamp-issuer/api-key",
         "SWAMP_NO_UPDATE_CHECK=1",
         "SWAMP_NO_TELEMETRY=1",
         BINARY,
@@ -110,6 +112,7 @@ fn issue(files: &Files, host: &mut impl Host, node: u64) -> Result<Pair, Error> 
         return Err(invalid());
     }
     owned_file(files, OPERATOR, 0o600)?;
+    owned_file(files, API_KEY, 0o600)?;
     owned_file(files, NODES, 0o600)?;
     let allowed = fs::read(files.path(NODES)).map_err(|_| invalid())?;
     if allowed.len() > 4096 {
@@ -132,7 +135,7 @@ fn issue(files: &Files, host: &mut impl Host, node: u64) -> Result<Pair, Error> 
 fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
     let name = format!("orbit-node-{node}");
     let access = format!("{name}-access");
-    // The caller's root courier drains before requesting a pair. Names cannot
+    // The Gateway drains the target before requesting a pair. Names cannot
     // be supplied by a workflow or task, and no grant is created here.
     revoke_existing(host, &["worker", "token"], &name)?;
     revoke_existing(host, &["access", "token"], &access)?;
@@ -145,7 +148,7 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
             "create",
             &name,
             "--duration",
-            "4h",
+            "24h",
             "--max-enrollments",
             "1",
             "--vault",
@@ -154,7 +157,7 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
     )?;
     // Native access-token mint has no vault flag. Its built-in typed method
     // accepts the audited vault; the default internal vault is not revealable remotely.
-    let arguments = serde_json::json!({"principalId":format!("worker:{name}"), "principalEmail":format!("{name}@node.invalid"), "durationMs":14400000, "vaultName":VAULT}).to_string();
+    let arguments = serde_json::json!({"principalId":format!("worker:{name}"), "principalEmail":format!("{name}@node.invalid"), "durationMs":86400000, "vaultName":VAULT}).to_string();
     native(
         host,
         &[
@@ -271,7 +274,7 @@ mod tests {
     }
     #[test]
     fn native_issuer_uses_one_machine_worker_principal_and_audited_vault_without_secret_argv() {
-        let expires = (time::OffsetDateTime::now_utc() + time::Duration::hours(4))
+        let expires = (time::OffsetDateTime::now_utc() + time::Duration::hours(24))
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap();
         let mut host = Fake {
@@ -284,6 +287,13 @@ mod tests {
         assert!(!text.contains("enrollmentSentinel"));
         assert!(!text.contains("serverSentinel"));
         assert!(text.contains("--max-enrollments"));
+        let create = host
+            .calls
+            .iter()
+            .find(|c| c.iter().any(|a| a == "create"))
+            .unwrap();
+        let duration = create.iter().position(|a| a == "--duration").unwrap();
+        assert_eq!(create[duration + 1], "24h");
         let method = host
             .calls
             .iter()
@@ -293,7 +303,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&method[input]).unwrap();
         assert_eq!(value["principalId"], "worker:orbit-node-71");
         assert_eq!(value["vaultName"], "orbit-worker-enrollment");
-        assert_eq!(value["durationMs"], 14400000);
+        assert_eq!(value["durationMs"], 86400000);
         let entry = crate::command::registry::find("swamp.issue-node-worker").unwrap();
         let result = (entry.run)(
             serde_json::json!({"node_id":71,"effect_key":"op-71.issue"}),

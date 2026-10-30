@@ -655,7 +655,6 @@ TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
 INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 INTERNAL.update({'task-vm-executor:runtime', 'task-vm-executor:lifecycle', 'task-vm-executor:image', 'task-vm-executor:upcloud-image', 'task-vm-executor:sweep'})
 INTERNAL.update({'observation:plan', 'observation:observe', 'observation:inspect', 'observation:signals', 'observation:maintain'})
-INTERNAL.add('agent:swamp-worker')
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -724,7 +723,6 @@ SUMMARIES = {
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
     'agent:workspaces': "List the task checkouts the agent watches",
-    'agent:swamp-worker': "Renew this Node's Swamp worker credentials",
     'agent:log-streams': "List the live log streams the agent reads",
     'instance:log-stream:create': 'Open a live Instance log stream', 'instance:log-stream:renew': 'Renew a live Instance log stream', 'instance:log-stream:destroy': 'Close a live Instance log stream',
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
@@ -2061,17 +2059,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     responses = {}
     if route['name'] == 'tasks:agent-stream':
         responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
-    elif route['name'] == 'agent:swamp-worker':
-        op['description'] = 'Protected Node lifecycle callback. Requires the active WireGuard peer and its root-held agent secret. No target or input fields. The operator rollout and issuer allowlists must both permit this Node. Credentials are returned only to that Node, without activity or Operation persistence.'
-        op['requestBody'] = {'required': False, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
-        pair = {'type': 'object', 'additionalProperties': False, 'properties': {
-            'enrollment_token': {'type': 'string', 'format': 'password'},
-            'server_token': {'type': 'string', 'format': 'password'},
-            'expires_at': {'type': 'string', 'format': 'date-time'},
-        }, 'required': ['enrollment_token', 'server_token', 'expires_at']}
-        responses['200'] = {'description': 'The short-lived pair. Cache-Control: no-store.', 'content': {'application/json': {'schema': pair}}}
-        responses['503'] = error_response('The operator issuer is unavailable; no credential pair is returned.')
-        responses['403'] = error_response('The caller is not an active WireGuard peer, its agent secret is invalid, or its persistent worker rollout is disabled (`swamp.worker_not_enabled`).')
     elif route['name'] == 'agent:realtime':
         connection = {'type': 'object', 'properties': {
             'url': {'type': ['string', 'null'], 'description': 'Reverb WebSocket URL.'},
@@ -2183,7 +2170,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if route['name'] == 'project:document:create':
             responses.pop('200', None)
             responses['201'] = envelope(ref('DocumentEntryData'), 'Created.')
-    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'agent:swamp-worker'):
+    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
     if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).')
@@ -2191,7 +2178,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['403'] = error_response('Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
-    elif route['name'] not in ('gateway:status', 'gateway:trust', 'agent:swamp-worker'):
+    elif route['name'] not in ('gateway:status', 'gateway:trust'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
     if route['name'] == 'tool:scan':
         responses['404'] = error_response('No Node matches `node_id` (`http.404`).')

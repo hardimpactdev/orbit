@@ -2119,6 +2119,20 @@
       ]
     },
     {
+      "name": "swamp.converge-node-worker",
+      "summary": "Drain a due Node worker or start it with operator-issued credentials.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "swamp.node_worker_failed",
+        "swamp.node_worker_invalid"
+      ]
+    },
+    {
       "name": "swamp.stop-worker",
       "summary": "Stop a task worker and remove its runtime unit and startup credential.",
       "mutates": true,

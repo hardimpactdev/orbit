@@ -71,19 +71,21 @@ class NativeWorkerTest(unittest.TestCase):
                         self.assertLess(time.monotonic(), deadline, 'scratch serve readiness')
                         time.sleep(.1)
                 name = 'orbit-node-71'
-                enrollment = secret_file('enrollment', command('worker', 'token', 'create', name, '--duration', '4h',
+                enrollment = secret_file('enrollment', command('worker', 'token', 'create', name, '--duration', '24h',
                                          '--max-enrollments', '1', '--vault', 'operator-enrollment', *flags)['token'])
                 minted = command('model', 'method', 'run', '@swamp/server-token', 'mint', name + '-access',
                                  '--literal-inputs', '--input', json.dumps({'principalId': 'worker:' + name,
-                                 'principalEmail': 'fixture@node.invalid', 'durationMs': 14400000,
+                                 'principalEmail': 'fixture@node.invalid', 'durationMs': 86400000,
                                  'vaultName': 'operator-enrollment'}), *flags)
                 self.assertEqual(minted['status'], 'succeeded')
                 access = secret_file('access', name + '-access.' + command('vault', 'read-secret',
                                      'operator-enrollment', 'server-token-' + name + '-access', '--yes', *flags)['value'])
                 worker_args = [binary, 'worker', 'connect', url, '--token-file', enrollment, '--server-token-file', access,
                                '--cache-dir', str(root / 'cache'), '--concurrency=1', '--no-telemetry']
+                worker_env = dict(env, SWAMP_CONFIG_DIR=str(root / 'worker-config'))
+                worker_env.pop('SWAMP_API_KEY_FILE', None)
                 for attempt in range(2):
-                    worker = subprocess.Popen(worker_args, cwd=root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    worker = subprocess.Popen(worker_args, cwd=root, env=worker_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     processes.append(worker)
                     deadline = time.monotonic() + 20
                     while True:

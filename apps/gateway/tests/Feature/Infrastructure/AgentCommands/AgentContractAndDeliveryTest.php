@@ -45,14 +45,14 @@ describe(AgentContract::class, function (): void {
             ->and($contract->command('task-vm.export-git-pack')->needsSudo('linux'))->toBeFalse();
     });
 
-    it('keeps credential issuance outside Operations while retaining the operator command', function (): void {
+    it('keeps worker lifecycle outside Operations while retaining the operator command', function (string $name): void {
         $contract = app(AgentContract::class);
-        expect($contract->command('swamp.issue-node-worker')->mutates)->toBeTrue()
-            ->and($contract->operationNames())->not->toContain('swamp.issue-node-worker');
+        expect($contract->command($name)->mutates)->toBeTrue()
+            ->and($contract->operationNames())->not->toContain($name);
         expect(fn () => app(OperationAgentTransport::class)
-            ->schema(new Operation, ['name' => 'swamp.issue-node-worker']))
+            ->schema(new Operation, ['name' => $name]))
             ->toThrow(LogicException::class, 'Operator-only command.');
-    });
+    })->with(['swamp.issue-node-worker', 'swamp.converge-node-worker']);
 
     it('refuses an unknown command as a programming error', function (): void {
         expect(fn () => app(AgentContract::class)->command('no.such'))->toThrow(LogicException::class);

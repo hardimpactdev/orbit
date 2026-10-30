@@ -13,7 +13,7 @@ it('exports the pinned agent and registered Gateway commands with closed hook na
     $document = json_decode($catalogue->json(), true, flags: JSON_THROW_ON_ERROR);
     $agentPath = base_path('../agent/contract/commands.json');
     $agent = new AgentContract($agentPath);
-    $names = array_values(array_diff($agent->names(), ['swamp.issue-node-worker']));
+    $names = array_values(array_diff($agent->names(), ['swamp.issue-node-worker', 'swamp.converge-node-worker']));
     sort($names);
     $gateway = app(OperationGatewayCommands::class)->names();
     sort($gateway);
@@ -29,7 +29,7 @@ it('exports the pinned agent and registered Gateway commands with closed hook na
 it('loads the actual Swamp compiler artifact only at its reviewed release pin', function (): void {
     $contract = app(OperationFamilyContract::class)->load(
         base_path('tests/Fixtures/Operations/family-contract.json'),
-        '0cc5a8a70678def39ab39ea63bbfe255d0d1cc0f8c48fa86443793fed872c5c3',
+        '87eb30a37a458e1830edb6e8cb1b88c3e37092ca8db29e40b038dfe6cf86baf8',
     );
 
     expect($contract['kind'])->toBe('example.manage')
@@ -62,6 +62,7 @@ it('refuses stale catalogues and unregistered names even in a release-pinned art
     ['invariants', ['caller.arbitrary'], 'Unknown family invariant.'],
     ['commands', ['inspect' => ['transport' => 'orbit-agent', 'names' => ['valid.looking.typo']]], 'Unknown family command.'],
     ['commands', ['inspect' => ['transport' => 'orbit-agent', 'names' => ['swamp.issue-node-worker']]], 'Unknown family command.'],
+    ['commands', ['inspect' => ['transport' => 'orbit-agent', 'names' => ['swamp.converge-node-worker']]], 'Unknown family command.'],
     ['commands', ['inspect' => ['transport' => 'gateway', 'names' => ['tool.apt-version']]], 'Unknown family command.'],
     ['commands', ['inspect' => ['transport' => 'shell', 'names' => ['exec']]], 'Unknown family transport.'],
     ['commands', ['inspect' => ['transport' => 'orbit-agent', 'names' => ['tool.apt-version']]], 'No native family command methods are registered.'],
