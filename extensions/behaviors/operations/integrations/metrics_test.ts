@@ -206,7 +206,9 @@ class FleetFixture {
       const services = nodes.filter((n) =>
         this.children.get(`service-apply-${n.node_id}`)?.status ===
           "succeeded" &&
-        this.children.get(`service-caddy-${n.node_id}`)?.status === "succeeded"
+        (!n.caddy ||
+          this.children.get(`service-caddy-${n.node_id}`)?.status ===
+            "succeeded")
       );
       return {
         kind: p.remove ? "metrics.runtime_remove" : "metrics.runtime_converge",
@@ -572,3 +574,53 @@ for (const key of ["service-restore-2", "service-caddy-restore-2"]) {
     assertEquals(f.calls.filter((call) => call.key === key).length, 2);
   });
 }
+
+Deno.test("reconcile publishes service Caddy only on managed Caddy Nodes", async () => {
+  const f = new FleetFixture();
+  f.operation.kind = "metrics.reconcile";
+  const nodes = f.operation.input.fleet as Record<string, unknown>[];
+  nodes[1] = {
+    ...nodes[1],
+    node_id: 209,
+    name: "swamp",
+    address: "10.44.0.15",
+    caddy: false,
+  };
+  f.failures.set("service-caddy-209", "caddy.publication_failed");
+
+  assertEquals((await f.run()).status, "succeeded");
+  assert(f.children.has("service-caddy-2"));
+  assert(!f.children.has("service-caddy-209"));
+  assertEquals(f.childInput("metrics-runtime").service_node_ids, [2, 209]);
+});
+
+Deno.test("service recovery on a Node without managed Caddy never publishes Caddy", async () => {
+  const f = new FleetFixture();
+  f.operation.kind = "metrics.reconcile";
+  (f.operation.input.fleet as Record<string, unknown>[])[1].caddy = false;
+  f.failures.set("service-apply-5", "metrics.service_failed");
+  f.failures.set("service-caddy-restore-5", "integration.child_failed");
+
+  assertEquals((await f.run()).status, "succeeded");
+  assert(f.children.has("service-restore-5"));
+  assert(!f.children.has("service-caddy-restore-5"));
+  assertEquals(f.childInput("metrics-runtime").service_node_ids, [2]);
+});
+
+Deno.test("fleet rollback restores unmanaged Nodes without touching their Caddy", async () => {
+  const f = new FleetFixture();
+  f.operation.kind = "metrics.reconcile";
+  (f.operation.input.fleet as Record<string, unknown>[])[1].caddy = false;
+  f.failures.set("metrics-runtime", "metrics.runtime_failed");
+  f.failures.set("service-caddy-restore-5", "integration.child_failed");
+
+  assertEquals((await f.run()).status, "failed");
+  assert(f.children.has("service-restore-5"));
+  assert(!f.children.has("service-caddy-restore-5"));
+  assert(f.children.has("service-caddy-restore-2"));
+  assert(f.children.has("node_exporter-restore-2"));
+  const completion = f.calls.find((call) =>
+    String(call.path).endsWith("/complete")
+  );
+  assertEquals(completion?.error_code, "metrics.runtime_failed");
+});

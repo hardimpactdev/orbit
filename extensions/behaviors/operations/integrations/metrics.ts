@@ -168,12 +168,14 @@ export async function metricsFleet(
           source: receipt,
           input,
         });
-        await child(
-          `service-caddy-${node.node_id}`,
-          "route.caddy_converge",
-          node.node_id,
-          { reason: "metrics service projection" },
-        );
+        if (node.caddy) {
+          await child(
+            `service-caddy-${node.node_id}`,
+            "route.caddy_converge",
+            node.node_id,
+            { reason: "metrics service projection" },
+          );
+        }
         serviceHealthy.add(node.node_id);
       }
       if (plan.remove) {
@@ -341,7 +343,7 @@ export async function metricsFleet(
       restore_key: item.key,
     }, acceptFailure);
     if (lockLost(restored)) fail(restored);
-    if (item.kind === "metrics.service_restore") {
+    if (item.kind === "metrics.service_restore" && item.node.caddy) {
       const caddy = await child(
         `service-caddy-restore-${item.node.node_id}`,
         "metrics.service_caddy_restore",

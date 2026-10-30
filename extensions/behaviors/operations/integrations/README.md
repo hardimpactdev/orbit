@@ -85,6 +85,9 @@ Conn cutovers.
 Route parents request `metrics.reconcile {}` on the active Metrics Node. The
 Gateway captures the fleet and admits that exact child once. Its placed workflow
 uses `metrics.receipt` after proven exporter, service and runtime children.
+Service Caddy publication and restoration run only when the admitted Node has
+`caddy: true` (Orbit-managed Caddy). Nodes without managed Caddy still receive
+exporter and service monitoring; their unrelated Caddy Processes stay untouched.
 Reconciliation keeps Metrics publication in place: it does no certificate or
 private DNS work. Retained Gateway callers keep their synchronous fleet
 implementation.
