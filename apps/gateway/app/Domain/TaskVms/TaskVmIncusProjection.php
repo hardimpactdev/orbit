@@ -10,11 +10,13 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
+use App\Infrastructure\TaskVms\TaskVmInputs;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -39,7 +41,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         'task_vm.image_prune' => ['project', 'operation'],
     ];
 
-    public const array CacheFields = ['task_vm.cache_initialize' => ['operation'], 'task_vm.cache_mount' => ['project', 'name']];
+    public const array CacheFields = ['task_vm.cache_initialize' => ['operation'], 'task_vm.cache_mount' => ['project', 'name'], 'task_vm.cache_seed' => ['guest', 'parameters_json']];
 
     /** @param array<string,mixed> $input
      * @return array<string,mixed>
@@ -126,13 +128,53 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             throw new ResourceOperationException('operation.execution_forbidden', 'Cache preparation requires its ready Incus VM and owning host.', 422);
         }
         $host = app(TaskVmSettings::class)->host($nodeId);
-        $expected = $kind === 'task_vm.cache_initialize' ? ['effect_key' => 'cache-initialize']
-            : ['effect_key' => 'cache-mount', 'project' => $host->project, 'name' => $vm->name];
+        $expected = match ($kind) {
+            'task_vm.cache_initialize' => ['effect_key' => 'cache-initialize'],
+            'task_vm.cache_mount' => ['effect_key' => 'cache-mount', 'project' => $host->project, 'name' => $vm->name],
+            'task_vm.cache_seed' => ['effect_key' => 'cache-seed', 'guest' => ['project' => $host->project, 'name' => $vm->name], 'parameters_json' => $input['parameters_json'] ?? null],
+        };
+        if ($kind === 'task_vm.cache_seed') {
+            $this->seedArtifacts($input);
+        }
         if (Arr::sortRecursive($input) !== Arr::sortRecursive($expected)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The cache effect must match its fixed owning VM intent.', 422);
         }
 
         return [...$input, 'task_vm_id' => $vm->id, ...($kind === 'task_vm.cache_initialize' ? ['operation' => 'initialize'] : []), 'agent_sha256' => app(AgentDelivery::class)->pin($vm->incusHostNode())];
+    }
+
+    /** @param array<string,mixed> $input
+     * @return list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}>
+     */
+    private function seedArtifacts(array $input): array
+    {
+        try {
+            $json = ValidatedData::string($input['parameters_json'] ?? null);
+            if (strlen($json) > 2 * 1024 * 1024) {
+                throw new \LogicException('Seed input exceeds its bound.');
+            }
+            $wire = json_decode($json, flags: JSON_THROW_ON_ERROR);
+            if (! $wire instanceof \stdClass || AgentSchemas::errors($wire, TaskVmCommandContracts::guestParameters('package-cache.seed')) !== []) {
+                throw new \LogicException('Seed input does not match its schema.');
+            }
+            $parameters = ValidatedData::object(json_decode($json, true, flags: JSON_THROW_ON_ERROR));
+            $artifacts = TaskVmInputs::artifacts($parameters['artifacts']);
+            if (count($artifacts) > 2048) {
+                throw new \LogicException('Seed artifact count exceeds its bound.');
+            }
+
+            foreach ($artifacts as $artifact) {
+                $url = parse_url($artifact['url']);
+                if (! is_array($url) || ($url['scheme'] ?? null) !== 'https' || ! in_array($url['host'] ?? null, ['registry.npmjs.org', 'api.github.com', 'codeload.github.com'], true)
+                    || array_intersect(['user', 'pass', 'query', 'fragment', 'port'], array_keys($url)) !== []) {
+                    throw new \LogicException('Seed URLs must contain only public archive metadata.');
+                }
+            }
+
+            return $artifacts;
+        } catch (\JsonException|\LogicException $error) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The cache seed requires bounded typed artifact intent.', 422, $error);
+        }
     }
 
     public function input(Operation $operation): array
@@ -146,6 +188,9 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         }
 
         $intent = Arr::only($operation->input, $seed ? ['build_id', 'attempt', ...self::ImageFields[$operation->kind]] : ['task_vm_id', ...(self::CacheFields[$operation->kind] ?? ['vm', 'operation'])]);
+        if ($operation->kind === 'task_vm.cache_seed') {
+            $intent = ['task_vm_id' => $operation->target_id, 'guest' => $operation->input['guest'], 'artifacts' => $this->seedArtifacts($operation->input)];
+        }
         if ($operation->kind === 'task_vm.image_launch') {
             $intent['operation'] = [...ValidatedData::object($intent['operation']), 'image' => ValidatedData::string($operation->input['launch_image'])];
         }

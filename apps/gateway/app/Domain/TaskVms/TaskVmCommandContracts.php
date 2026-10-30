@@ -247,10 +247,6 @@ final class TaskVmCommandContracts
         foreach (array_keys(TaskVmIncusProjection::CacheFields) as $kind) {
             $kinds[$kind] = ['executor' => 'swamp', 'admission' => TaskVmChildAdmission::class, 'result_fields' => ['ready', 'error_code']];
         }
-        $kinds['task_vm.cache_seed'] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
-            'runs' => [['transport' => 'task_vm_guest', 'name' => 'task_vm.guest', 'input_fields' => ['guest', 'parameters_json'],
-                'input_values' => ['command' => 'package-cache.seed'], 'input_schema' => self::guestInput('package-cache.seed'), 'resumable' => true]],
-            'completion_contract' => ['step' => 'cache-seed', 'transport' => 'task_vm_guest', 'name' => 'task_vm.guest', 'result' => ['ready' => true]], 'result_fields' => ['ready', 'error_code']];
         $kinds['task_vm.prepare_package_cache'] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class, 'runs' => [],
             'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'input.host_node_id'], array_keys($kinds)),
             'completion_contract' => ['children_succeeded' => array_keys($kinds)], 'result_fields' => ['ready', 'error_code']];

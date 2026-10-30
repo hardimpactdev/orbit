@@ -209,3 +209,37 @@ it('refuses a polled cache mount after its old executor is removed', function ()
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'cache-mount']))->toThrow(ResourceOperationException::class);
     expect($this->socket->sent)->toBe([])->and($parent->children()->count())->toBe(0);
 });
+
+it('seeds only the parent-selected immutable guest cache inventory through direct admission', function (): void {
+    $parent = directCacheParent();
+    $artifact = ['manager' => 'npm', 'package' => 'demo', 'version' => '1.0.0', 'url' => 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz', 'integrity' => null, 'key' => 'npm/demo.tgz'];
+    $parent->update(['input' => [...$parent->input, 'artifacts_json' => json_encode(['artifacts' => [$artifact]], JSON_THROW_ON_ERROR)]]);
+    $child = app(OperationChildren::class)->admit($parent, ['key' => 'cache-seed'])['operation'];
+    $path = '/api/v1/direct-operations/'.$child->id;
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.artifacts', [$artifact])->assertJsonPath('data.input.intent.guest.name', $this->vm->name);
+    $parent->update(['input' => [...$parent->input, 'artifacts_json' => '{"artifacts":[]}']]);
+    expect(app(TaskVmIncusProjection::class)->input($child)['intent']['artifacts'])->toBe([$artifact]);
+    $this->postJson($path.'/result', $this->outcome)->assertOk();
+    $this->postJson($path.'/result', $this->outcome)->assertOk();
+    expect(app(OperationChildren::class)->requireSucceeded($parent, 'cache-seed')->id)->toBe($child->id);
+});
+
+it('refuses foreign guests malformed inventory credentials and polled cache seeding before starting Swamp', function (string $change): void {
+    $parent = directCacheParent();
+    $input = ['effect_key' => 'cache-seed', 'guest' => ['project' => 'orbit-tasks', 'name' => $this->vm->name], 'parameters_json' => '{"artifacts":[]}'];
+    match ($change) {
+        'guest' => $input['guest']['name'] = 'tvm-999', 'project' => $input['guest']['project'] = 'operator',
+        'json' => $input['parameters_json'] = 'bad', 'shape' => $input['parameters_json'] = '{"artifacts":{}}',
+        'extra' => $input['parameters_json'] = '{"artifacts":[],"github_token":"literal"}',
+        'count' => $input['parameters_json'] = json_encode(['artifacts' => array_fill(0, 2049, ['manager' => 'npm', 'package' => 'demo', 'version' => '1.0.0', 'url' => 'https://registry.npmjs.org/demo', 'integrity' => null, 'key' => 'demo'])], JSON_THROW_ON_ERROR),
+        'url' => $input['parameters_json'] = json_encode(['artifacts' => [['manager' => 'npm', 'package' => 'demo', 'version' => '1.0.0', 'url' => 'https://u:p@registry.npmjs.org/demo', 'integrity' => null, 'key' => 'demo']]], JSON_THROW_ON_ERROR),
+        'oversized' => $input['parameters_json'] = str_repeat(' ', 2 * 1024 * 1024 + 1),
+        'polled' => config(['swamp.direct_writers' => ['task_vm.cache_seed' => 'polled']]),
+    };
+    if ($change === 'polled') {
+        expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'cache-seed']))->toThrow(ResourceOperationException::class);
+    } else {
+        expect(fn () => app(TaskVmIncusProjection::class)->admitCache('task_vm.cache_seed', $this->vm->id, $this->host->id, $input))->toThrow(ResourceOperationException::class);
+    }
+    expect($this->socket->sent)->toBe([]);
+})->with(['guest', 'project', 'json', 'shape', 'extra', 'count', 'url', 'oversized', 'polled']);
