@@ -21,6 +21,7 @@ class TaskVmNativeTest(unittest.TestCase):
         for name in ("automatic-deploy", "operation-runner"):
             shutil.copytree(ROOT / "extensions/behaviors" / name, self.repo / "extensions/behaviors" / name)
         shutil.copytree(ROOT / "extensions/behaviors/operations/task-vms", self.repo / "extensions/behaviors/operations/task-vms")
+        shutil.copytree(ROOT / "extensions/behaviors/operations/_lib", self.repo / "extensions/behaviors/operations/_lib")
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "extensions/behaviors/operations/task-vms/native-fixture.ts", fixture)
@@ -28,6 +29,9 @@ class TaskVmNativeTest(unittest.TestCase):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"...{factory}()", f"...{factory}(() => fixtureHttp)").replace("behavior = taskVms()", "behavior = taskVms(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
+        direct = self.repo / 'extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts'
+        direct.write_text('import { fixtureHttp } from "../../_test/executor.ts";\n' + direct.read_text().replace(
+            '...lifecycleIntent()', '...lifecycleIntent(() => fixtureHttp)'))
         (self.repo / "workflows").mkdir()
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
             # Local receipt recovery uses fresh processes; worker placement has its own harness.
@@ -53,6 +57,7 @@ class TaskVmNativeTest(unittest.TestCase):
                                 capture_output=True, timeout=45,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
         if args[:2] == ("workflow", "run"):
+            self.assertTrue(result.stdout.strip(), result.stderr)
             value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
             self.last_run_id = value.get("id")
         if success:
@@ -81,6 +86,53 @@ class TaskVmNativeTest(unittest.TestCase):
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(len(state["completions"]), 1)
+
+    def prepare_direct_acknowledgement(self):
+        source = (ROOT / 'workflows/workflow-operation-task-vms.yaml').read_text()
+        self.assertIn('target: swamp209-migration-a', source)
+        self.assertIn('labels: { node: "209", pool: migration }', source)
+        workflow = self.repo / 'workflows/workflow-operation-task-vms.yaml'
+        # Local fixture only. Live source always places this pure stage on Node209.
+        workflow.write_text('\n'.join(line for line in workflow.read_text().splitlines()
+                                     if not line.strip().startswith(('labels:', 'target:'))) + '\n')
+        self.state['operation'].update(kind='task_vm.lifecycle_intent', input={'task_vm_id': 5}, result=None)
+        self.save()
+
+    def run_direct(self, success=True):
+        return self.swamp('workflow', 'run', 'operation-task-vms', '--input',
+                          json.dumps({'operation_id': 19, 'kind': 'task_vm.lifecycle_intent', 'node_id': 3}),
+                          success=success)
+
+    def test_direct_acknowledgement_skips_discovery_and_performs_no_provider_effect(self):
+        self.prepare_direct_acknowledgement()
+        self.run_direct()
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'succeeded')
+        self.assertEqual(state['operation']['result'], {'ready': True})
+        self.assertEqual(state['runs'], 0)
+        self.assertEqual(state.get('discoveryCalls', 0), 0)
+        self.assertEqual(len(state['directCalls']), 3)
+
+    def test_direct_acknowledgement_resumes_after_a_lost_terminal_reply(self):
+        self.prepare_direct_acknowledgement()
+        self.state['loseDirectReply'] = True
+        self.save()
+        self.run_direct(success=False)
+        self.assertEqual(self.read()['operation']['status'], 'succeeded')
+        self.swamp('workflow', 'resume', 'operation-task-vms')
+        state = self.read()
+        self.assertEqual(state['runs'], 0)
+        self.assertEqual(len(state['directCalls']), 4)
+
+    def test_direct_cancellation_supplies_no_ready_acknowledgement(self):
+        self.prepare_direct_acknowledgement()
+        self.state['operation']['cancel_requested'] = True
+        self.save()
+        self.run_direct()
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'cancelled')
+        self.assertEqual(state['operation']['result'], {})
+        self.assertEqual(state['runs'], 0)
 
     def queued_child(self):
         self.state["operation"].update({"kind": "task_vm.fill_package_cache", "input": {
