@@ -1,31 +1,22 @@
 """Prove deployment recovery in the pinned Swamp runtime across fresh processes."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
+import sys
 import unittest
 
 FAMILY = Path(__file__).resolve().parent
 ROOT = FAMILY.parents[3]
-SWAMP = os.environ.get('SWAMP_BIN', shutil.which('swamp') or 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
 
-class DeploymentNativeTest(unittest.TestCase):
+class DeploymentNativeTest(NativeTestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='instance-deploy-native-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        for name in ('automatic-deploy', 'operation-runner'):
-            shutil.copytree(ROOT / 'extensions/behaviors' / name,
-                            self.repo / 'extensions/behaviors' / name)
+        super().setUp()
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/instance-deploy')
         family = self.repo / 'extensions/behaviors/operations/instance-deploy'
-        shutil.copytree(FAMILY, family)
         source = (family / 'mod.ts').read_text().replace('...instanceDeploy()', '...instanceDeploy(() => fixtureHttp)')
         (family / 'mod.ts').write_text('import { fixtureHttp } from "./native_executor.ts";\n' + source)
-        (self.repo / 'workflows').mkdir()
         # Placement is exercised by the kit worker test; this fixture proves local process recovery.
         source = (ROOT / 'workflows/workflow-operation-instance-deploy.yaml').read_text()
         source = '\n'.join(line for line in source.splitlines()
@@ -59,13 +50,10 @@ class DeploymentNativeTest(unittest.TestCase):
     def swamp(self, *args, success=True):
         if args[:2] == ("workflow", "resume"):
             args = (*args[:3], "--run", self.last_run_id)
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, text=True,
-                                capture_output=True, timeout=50,
-                                env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        result = self.cli(*args, success=success)
         if args[:2] == ("workflow", "run"):
             value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
             self.last_run_id = value.get("id")
-        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
 
     def run_deploy(self, success=True):
         self.swamp('workflow', 'run', 'operation-instance-deploy', success=success)

@@ -2,7 +2,6 @@
   "kinds": [
     "instance.deploy",
     "instance.rollback",
-    "instance.run_steps",
     "instance.sync_environment",
     "instance.prepare_vp_environment",
     "instance.prepare_php_runtime",
