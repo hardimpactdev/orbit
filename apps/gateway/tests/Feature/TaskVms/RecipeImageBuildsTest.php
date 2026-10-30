@@ -121,6 +121,13 @@ function recipeImageDirectIntent(string $kind = 'task_vm.image_finish_seed'): ar
             'vm' => ['project' => 'orbit-tasks', 'name' => $build->builder_vm_name, 'cidr' => '10.251.77.0/24'], 'operation' => ['kind' => 'remove_instance']];
     }
 
+    if ($kind === 'task_vm.image_publish') {
+        $build->update(['images' => [], 'image_fingerprint' => null]);
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'publish', 'effect_key' => 'publish',
+            'project' => 'orbit-tasks', 'operation' => ['kind' => 'publish', 'name' => $build->builder_vm_name,
+                'alias' => $parent->input['candidate_alias'], 'properties' => ['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => 'base']]];
+    }
+
     return [$build, $parent, $input];
 }
 
@@ -137,7 +144,7 @@ it('admits the image effect directly and projects its phase once without Gateway
         ->and($child->state['swamp_run_id'])->toBe($run)->and($child->worker)->toBeNull()->and($child->attempts)->toBe(0);
     $projection = app(TaskVmIncusProjection::class);
     expect($projection->input($child)['intent'])->toEqual(array_diff_key($input, array_flip(['phase', 'effect_key'])));
-    $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true]];
+    $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true, ...($kind === 'task_vm.image_publish' ? ['fingerprint' => IMAGE_NEW] : [])]];
     $projection->apply($child, $outcome);
     $steps = $build->fresh()->steps;
     $this->travel(30)->seconds();
@@ -146,7 +153,7 @@ it('admits the image effect directly and projects its phase once without Gateway
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
     expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:'.$input['phase'])['operations'][$key])->toBe($child->id);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish']);
 
 it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
     [$build, , $input] = recipeImageDirectIntent($kind);
@@ -217,13 +224,44 @@ it('admits each exact image removal key and its matching builder or smoke VM', f
     ['reset-seed-smoke', 'topology-seed', '-smoke'],
 ]);
 
+it('refuses publication for another builder alias recipe or lifecycle before starting Swamp', function (string $change): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_publish');
+    $nodeId = $build->host_node_id;
+    match ($change) {
+        'host' => $nodeId++, 'attempt' => $input['attempt']++,
+        'project' => $input['project'] = 'operator-owned',
+        'builder' => $input['operation']['name'] .= '-smoke',
+        'alias' => $input['operation']['alias'] = 'operator-image',
+        'recipe' => $input['operation']['properties']['orbit.recipe'] = 'sha256:'.str_repeat('d', 64),
+        'profile' => $input['operation']['properties']['orbit.profile'] = 'app-prod',
+        'variant' => $input['operation']['kind'] = 'promote',
+        'phase' => $input['phase'] = 'prepare',
+        'cleanup' => $build->forceFill(['cleanup_started_at' => now()])->save(),
+        'finished' => $build->update(['state' => 'succeeded']),
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitImage('task_vm.image_publish', $build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', 'task_vm.image_publish')->count())->toBe(0);
+})->with(['host', 'attempt', 'project', 'builder', 'alias', 'recipe', 'profile', 'variant', 'phase', 'cleanup', 'finished']);
+
+it('refuses a publication outcome without its full fingerprint or with raw fields', function (array $result): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_publish');
+    $input = app(TaskVmIncusProjection::class)->admitImage('task_vm.image_publish', $build->id, $build->host_node_id, $input);
+    $operation = new Operation(['kind' => 'task_vm.image_publish', 'target_type' => 'task_vm_image', 'target_id' => $build->id, 'node_id' => $build->host_node_id, 'input' => $input]);
+    expect(fn () => app(TaskVmIncusProjection::class)->apply($operation, ['status' => 'succeeded', 'result' => $result]))
+        ->toThrow(ResourceOperationException::class);
+    expect($build->fresh()->image_fingerprint)->toBeNull();
+})->with([
+    [['ready' => true]], [['ready' => true, 'fingerprint' => null]], [['ready' => true, 'fingerprint' => 'short']],
+    [['ready' => true, 'fingerprint' => IMAGE_NEW, 'stdout' => 'private']],
+]);
+
 it('refuses a polled image writer after the execution contract is deleted', function (string $kind): void {
     [, $parent, $input] = recipeImageDirectIntent($kind);
     config(['swamp.direct_writers' => [$kind => 'polled']]);
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
