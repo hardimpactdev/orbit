@@ -52,7 +52,7 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
                     $add('vite-awake', 'vite.set-traffic', ValidatedData::object($plan['awake']));
                 }
             }
-            if (in_array($verb, ['start', 'stop', 'restart'], true)) {
+            if (in_array($verb, ['start', 'restart'], true)) {
                 $add('process-'.$verb, 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => $verb], $verb !== 'restart');
             } elseif (in_array($verb, ['create', 'update'], true)) {
                 if (isset($input['retired_runtime'])) {

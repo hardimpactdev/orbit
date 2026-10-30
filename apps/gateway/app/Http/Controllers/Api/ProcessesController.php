@@ -85,10 +85,6 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.stop')]
     public function stop(Request $request, Process $process, StopProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
-            return $this->processResponse($request, $action->execute($process));
-        }
-
         return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 

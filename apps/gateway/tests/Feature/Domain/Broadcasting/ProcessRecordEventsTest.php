@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\StartProcessAction;
-use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
@@ -160,30 +159,6 @@ describe('Process record events', function (): void {
             fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ProcessStatus
                 && $event->id === $process->id
                 && $event->data['runtime_status'] === 'running',
-        );
-    });
-
-    it('broadcasts process.status when a process is stopped', function (): void {
-        $process = Process::query()->create([
-            'owner_type' => Instance::MorphAlias,
-            'owner_id' => $this->instance->id,
-            'name' => 'web',
-            'runtime' => ProcessRuntime::Systemd,
-            'working_directory' => '/home/orbit/apps/docs',
-            'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'serve']],
-            'restart_policy' => 'always',
-            'desired_state' => DesiredProcessState::Running,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        Event::fake([RecordBroadcast::class]);
-
-        new StopProcessAction($this->runtime)->execute($process);
-
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ProcessStatus
-                && $event->id === $process->id,
         );
     });
 

@@ -8,7 +8,6 @@ use App\Actions\Processes\ListProcessesAction;
 use App\Actions\Processes\RestartProcessAction;
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
-use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -594,15 +593,11 @@ it('runs idempotent lifecycle actions and returns bounded logs', function (): vo
 
     $started = new StartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($process);
     $startedState = $started->desired_state->value;
-    $stopped = new StopProcessAction($this->runtime)->execute($started);
-    $stoppedState = $stopped->desired_state->value;
-    $restarted = new RestartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($stopped);
+    $restarted = new RestartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($started);
     $restartedState = $restarted->desired_state->value;
     $logs = new ShowProcessLogsAction($this->runtime, new LogRedactor(new CommandActivityInputSanitizer))->execute($restarted, 25);
 
     expect($this->runtime->started)
-        ->toBe([$process->id])
-        ->and($this->runtime->stopped)
         ->toBe([$process->id])
         ->and($this->runtime->restarted)
         ->toBe([$process->id])
@@ -610,8 +605,6 @@ it('runs idempotent lifecycle actions and returns bounded logs', function (): vo
         ->toBe([25])
         ->and($startedState)
         ->toBe('running')
-        ->and($stoppedState)
-        ->toBe('stopped')
         ->and($restartedState)
         ->toBe('running')
         ->and($logs)
@@ -799,26 +792,6 @@ it('leaves intent and lifecycle unchanged when a start loses the runtime owner',
         expect($process->refresh()->getRawOriginal())
             ->toBe($original)
             ->and($this->runtime->started)
-            ->toBeEmpty();
-    } finally {
-        $lock->release();
-    }
-});
-
-it('leaves intent and lifecycle unchanged when a stop loses the runtime owner', function (): void {
-    $process = process_actions_record($this->instance);
-    $process->update(['desired_state' => DesiredProcessState::Running]);
-    $original = $process->fresh()->getRawOriginal();
-    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
-    expect($lock->get())->toBeTrue();
-
-    try {
-        expect(fn () => new StopProcessAction($this->runtime)->execute($process))
-            ->toThrow(ProcessOperationException::class);
-
-        expect($process->refresh()->getRawOriginal())
-            ->toBe($original)
-            ->and($this->runtime->stopped)
             ->toBeEmpty();
     } finally {
         $lock->release();
@@ -1051,9 +1024,6 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
     public array $startedNames = [];
 
     /** @var list<int> */
-    public array $stopped = [];
-
-    /** @var list<int> */
     public array $restarted = [];
 
     /** @var list<string> */
@@ -1125,10 +1095,7 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
         $this->startedNames[] = $process->name;
     }
 
-    public function stop(Process $process): void
-    {
-        $this->stopped[] = $process->id;
-    }
+    public function stop(Process $process): void {}
 
     public function restart(Process $process): void
     {
