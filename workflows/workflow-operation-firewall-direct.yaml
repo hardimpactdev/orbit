@@ -6,7 +6,7 @@ vaults: []
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, enum: [209] }
     kind: {
       type: string,
       enum: [firewall.allow, firewall.deny, firewall.remove],

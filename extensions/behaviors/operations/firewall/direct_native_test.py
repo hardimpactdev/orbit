@@ -26,7 +26,7 @@ class DirectFirewallNative(unittest.TestCase):
         # Unit DAG proof only: live worker placement is a separate canary gate.
         text = '\n'.join(line for line in source.read_text().splitlines() if 'labels:' not in line and not line.strip().startswith('target:')) + '\n'
         (self.repo / 'workflows' / source.name).write_text(text)
-        self.state = {'operation':{'id':17,'node_id':9,'kind':'firewall.allow','input':{'node_id':9,'name':'canary','action':'allow','source':'192.0.2.100','protocol':'tcp','port':'45678'},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'bound':True}
+        self.state = {'operation':{'id':17,'node_id':209,'kind':'firewall.allow','input':{'node_id':209,'name':'canary','action':'allow','source':'192.0.2.100','protocol':'tcp','port':'45678'},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'bound':True}
         self.save()
 
     def save(self):
@@ -44,7 +44,7 @@ class DirectFirewallNative(unittest.TestCase):
         return result
 
     def run_workflow(self, success=True):
-        result = self.cli('workflow','run','operation-firewall-direct','--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
+        result = self.cli('workflow','run','operation-firewall-direct','--input','operation_id=17','--input','node_id=209','--input','kind='+self.state['operation']['kind'],success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def test_each_kind_uses_the_same_direct_dag_without_executor_calls(self):
@@ -58,7 +58,7 @@ class DirectFirewallNative(unittest.TestCase):
             self.assertEqual(state['operation']['status'],'succeeded')
             self.assertEqual(state['effects'],1)
             self.assertTrue(all('/direct-operations/' in p for p in state['calls']))
-            self.assertEqual(state['input']['node_id'],9)
+            self.assertEqual(state['input']['node_id'],209)
 
     def test_lost_projection_resumes_without_repeating_the_node_action(self):
         self.state['loseProjection'] = True
@@ -86,6 +86,12 @@ class DirectFirewallNative(unittest.TestCase):
         self.save()
         self.cli('workflow','resume','operation-firewall-direct','--run',self.run_id,'--from','apply')
         self.assertEqual(self.read()['effects'],1)
+
+    def test_migration_pool_refuses_a_foreign_node_before_dispatch(self):
+        self.cli('workflow','run','operation-firewall-direct','--input','operation_id=17','--input','node_id=210','--input','kind=firewall.allow',success=False)
+        state = self.read()
+        self.assertEqual(state['effects'], 0)
+        self.assertEqual(state['calls'], [])
 
 if __name__ == '__main__':
     unittest.main()

@@ -26,7 +26,7 @@ class DirectToolNative(unittest.TestCase):
         # Unit DAG proof only: live worker placement is a separate canary gate.
         text = '\n'.join(line for line in source.read_text().splitlines() if 'labels:' not in line and not line.strip().startswith('target:')) + '\n'
         (self.repo / 'workflows' / source.name).write_text(text)
-        self.state = {'operation':{'id':17,'node_id':9,'kind':'tool.install','input':{'node_id':9,'manager':'apt','package':'jq','version_constraint':None,'user':'orbit','agent_sha256':'a'*64,'platform':'linux','architecture':'x86_64','tool_id':None},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'commands':[],'installed':None}
+        self.state = {'operation':{'id':17,'node_id':209,'kind':'tool.install','input':{'node_id':209,'manager':'apt','package':'jq','version_constraint':None,'user':'orbit','agent_sha256':'a'*64,'platform':'linux','architecture':'x86_64','tool_id':None},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'commands':[],'installed':None}
         self.save()
 
     def save(self):
@@ -44,7 +44,7 @@ class DirectToolNative(unittest.TestCase):
         return result
 
     def run_workflow(self, success=True):
-        result = self.cli('workflow','run','operation-tool-direct','--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
+        result = self.cli('workflow','run','operation-tool-direct','--input','operation_id=17','--input','node_id=209','--input','kind='+self.state['operation']['kind'],success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def test_each_kind_uses_the_same_direct_dag_without_executor_calls(self):
@@ -94,6 +94,12 @@ class DirectToolNative(unittest.TestCase):
         self.cli('workflow','resume','operation-tool-direct','--run',self.run_id,'--from','apply')
         self.assertEqual(self.read()['effects'], 1)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
+
+    def test_migration_pool_refuses_a_foreign_node_before_dispatch(self):
+        self.cli('workflow','run','operation-tool-direct','--input','operation_id=17','--input','node_id=210','--input','kind=tool.install',success=False)
+        state = self.read()
+        self.assertEqual(state['effects'], 0)
+        self.assertEqual(state['calls'], [])
 
 if __name__ == '__main__':
     unittest.main()
