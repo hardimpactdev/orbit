@@ -15,4 +15,5 @@ Route::middleware([
     Route::get('operations', [OperationsController::class, 'index'])->name('operation:list');
     Route::get('operations/{operation}', [OperationsController::class, 'show'])->whereNumber('operation')->name('operation:show');
     Route::post('operations/{operation}/cancel', [OperationsController::class, 'cancel'])->whereNumber('operation')->name('operation:cancel');
+    Route::post('operations/{operation}/resume', [OperationsController::class, 'resume'])->whereNumber('operation')->name('operation:resume');
 });

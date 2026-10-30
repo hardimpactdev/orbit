@@ -13,6 +13,7 @@ use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
+use Orbit\Sdk\Requests\Operations\ResumeOperationRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
@@ -385,6 +386,44 @@ describe('operation commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and(Artisan::output())->toContain('Operation: 42', 'deployment.step_failed', 'Output of before_activation.migrate:', 'boom');
+    });
+
+    it('resumes one parked operation without following it in human and JSON output', function (bool $json): void {
+        $mock = MockClient::global([
+            ResumeOperationRequest::class => cli_operation_response(cli_operation(['status' => 'queued', 'attempts' => 0])),
+        ]);
+
+        expect(Artisan::call('operation:resume', ['operation' => '42', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        $output = Artisan::output();
+        if ($json) {
+            $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            expect($data['id'])->toBe(42)->and($data['status'])->toBe('queued')->and($data['attempts'])->toBe(0);
+        } else {
+            expect($output)->toContain('Queued operation to resume', 'Operation: 42', 'orbit operation:show 42', 'Request ID:');
+        }
+        $mock->assertSentCount(1);
+        $mock->assertSent(static fn ($request): bool => $request instanceof ResumeOperationRequest && (string) $request->body() === '{}');
+    })->with([false, true]);
+
+    it('reports a refused resume without claiming success', function (bool $json): void {
+        $mock = MockClient::global([
+            ResumeOperationRequest::class => MockResponse::make(['error' => ['code' => 'operation.not_resumable', 'message' => 'Operation is not at its reclaim limit.'],
+                'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 409),
+        ]);
+        expect(Artisan::call('operation:resume', ['operation' => '42', '--json' => $json, '--no-interaction' => true]))->toBe(1);
+        $output = Artisan::output();
+        expect($output)->toContain('Operation is not at its reclaim limit.')->not->toContain('Queued operation to resume');
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.not_resumable');
+        }
+        $mock->assertSentCount(1);
+    })->with([false, true]);
+
+    it('refuses an invalid resume ID before Gateway access', function (): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('operation:resume', ['operation' => 'bad', '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.id_invalid');
+        $mock->assertNothingSent();
     });
 
     it('asks an operation to stop and says how to follow it', function (): void {

@@ -11,6 +11,7 @@ use App\Infrastructure\Shared\StoredValue;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process as OrbitProcess;
 use App\Models\Project;
 use App\Models\Route;
@@ -178,6 +179,7 @@ final readonly class CommandActivityTargetResolver
         }
 
         foreach ([
+            'operation',
             'firewallRule',
             'process',
             'instance',
@@ -326,6 +328,10 @@ final readonly class CommandActivityTargetResolver
     {
         if ($subject instanceof Node) {
             return $subject->exists ? $subject->id : null;
+        }
+
+        if ($subject instanceof Operation) {
+            return $subject->node_id;
         }
 
         if ($subject instanceof Instance) {

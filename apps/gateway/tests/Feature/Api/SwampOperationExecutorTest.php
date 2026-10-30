@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationSweeper;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Activity;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -138,6 +139,89 @@ it('parks an exhausted Operation without a sixth execution or dropping its targe
     $this->postJson('/api/v1/operation-executor/claim', $claim)->assertOk()->assertJsonPath('data', null);
     expect($operation->refresh()->sequence)->toBe($sequence);
 })->with([false, true]);
+
+it('resumes a reclaim-limit stop once with its receipts, hold and audited caller intact', function (): void {
+    $this->freezeTime();
+    [$node, $id] = firewallAdmission($this);
+    $services = asExecutor($this);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->andReturn(['backend' => 'active']);
+    app()->instance(AgentCommandRunner::class, $runner);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'before-limit'])->assertOk();
+    recordExecutorProof($this, $id, worker: 'before-limit');
+    $operation = Operation::findOrFail($id);
+    $operation->update(['attempts' => 5]);
+    $this->travel(121)->seconds();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'exhausted'])->assertJsonPath('data', null);
+    $operation->refresh();
+    expect([$operation->status->value, $operation->state['executor_assistance'] ?? null])->toBe(['waiting', ['error_code' => 'operation.reclaim_limit']]);
+    $state = $operation->state;
+    unset($state['executor_assistance']);
+    $steps = $operation->steps()->get()->toArray();
+    $sequence = $operation->sequence;
+    $hold = $operation->lock_key;
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
+    $this->postJson("/api/v1/operations/{$id}/resume", [], options: JSON_FORCE_OBJECT)->assertOk()
+        ->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.attempts', 0)->assertJsonPath('data.assistance', null)
+        ->assertJsonPath('data.sequence', $sequence + 1)->assertJsonCount(1, 'data.steps');
+
+    expect($operation->refresh()->state)->toBe($state)
+        ->and($operation->lock_key)->toBe($hold)
+        ->and($operation->steps()->get()->toArray())->toBe($steps);
+    $activity = Activity::query()->where('command', 'operation:resume')->sole();
+    expect($activity->status)->toBe('succeeded')
+        ->and($activity->caller_node_id)->toBe($node->id)
+        ->and($activity->subject_type)->toBe(Operation::class)
+        ->and($activity->subject_id)->toBe($id)
+        ->and($activity->request_id)->not->toBeEmpty();
+    $before = $operation->getRawOriginal();
+    $this->postJson("/api/v1/operations/{$id}/resume", [], options: JSON_FORCE_OBJECT)->assertConflict()->assertJsonPath('error.code', 'operation.not_resumable');
+    expect($operation->refresh()->getRawOriginal())->toBe($before);
+    $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'after-limit'])
+        ->assertOk()->assertJsonPath('data.id', $id)->assertJsonPath('data.attempts', 1);
+    $this->postJson("/api/v1/operation-executor/{$id}/run", executorRunInput($id, 'after-limit'))->assertJsonPath('data.backend', 'active');
+    $this->postJson("/api/v1/operation-executor/{$id}/complete", ['worker' => 'after-limit', 'status' => 'succeeded', 'result' => ['backend' => 'active']])
+        ->assertOk()->assertJsonPath('data.status', 'succeeded');
+});
+
+it('refuses resume with 409 unless Swamp work is parked at reclaim limit without cancellation', function (array $changes): void {
+    [, $id] = firewallAdmission($this);
+    $operation = Operation::findOrFail($id);
+    $operation->update(['status' => 'waiting', 'attempts' => 5, 'state' => ['executor_assistance' => ['error_code' => 'operation.reclaim_limit']], ...$changes]);
+    $before = $operation->getRawOriginal();
+
+    $this->withoutHeader('Idempotency-Key')->postJson("/api/v1/operations/{$id}/resume", [], options: JSON_FORCE_OBJECT)
+        ->assertConflict()->assertJsonPath('error.code', 'operation.not_resumable');
+    expect($operation->refresh()->getRawOriginal())->toBe($before);
+})->with([
+    'running' => [['status' => 'running']],
+    'queued' => [['status' => 'queued']],
+    'succeeded' => [['status' => 'succeeded']],
+    'failed' => [['status' => 'failed']],
+    'cancelled' => [['status' => 'cancelled']],
+    'unproven child' => [['state' => ['executor_assistance' => ['error_code' => 'operation.child_unproven']]]],
+    'ordinary child wait' => [['state' => []]],
+    'malformed assistance' => [['state' => ['executor_assistance' => 'operation.reclaim_limit']]],
+    'not Swamp' => [['kind' => 'legacy.unregistered']],
+    'cancel requested' => [['cancel_requested_at' => '2026-10-30 08:00:00']],
+]);
+
+it('refuses resume without serving-Node access or a valid empty request', function (): void {
+    [, $id] = firewallAdmission($this);
+    $operation = Operation::findOrFail($id);
+    $operation->update(['status' => 'waiting', 'attempts' => 5, 'state' => ['executor_assistance' => ['error_code' => 'operation.reclaim_limit']]]);
+    $before = $operation->getRawOriginal();
+    $this->withoutHeader('Idempotency-Key')->postJson("/api/v1/operations/{$id}/resume", ['attempts' => 0])->assertUnprocessable();
+    $stranger = executorNode('stranger', '10.44.0.8');
+    $this->withServerVariables(['REMOTE_ADDR' => $stranger->wireguard_ip])->postJson("/api/v1/operations/{$id}/resume", [], options: JSON_FORCE_OBJECT)
+        ->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.99'])->postJson("/api/v1/operations/{$id}/resume", [], options: JSON_FORCE_OBJECT)
+        ->assertForbidden()->assertJsonPath('error.code', 'peer.identity_unknown');
+    expect($operation->refresh()->getRawOriginal())->toBe($before);
+});
 
 it('records keyed output once and projects one repeatable completion', function (): void {
     [, $id] = firewallAdmission($this);

@@ -6,13 +6,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ListOperationsAction;
+use App\Actions\Operations\ResumeOperationAction;
 use App\Data\Operations\OperationData;
 use App\Data\Operations\OperationStepData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Operations\CancelOperationRequest;
+use App\Http\Requests\Operations\EmptyOperationRequest;
 use App\Http\Requests\Operations\ListOperationsRequest;
 use App\Http\Requests\Operations\ShowOperationRequest;
 use App\Models\Node;
@@ -22,7 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Reads and cancels operations (docs/reference/operations.md#read-an-operation). After route binding, each read is
+ * Reads, cancels and resumes operations (docs/reference/operations.md#read-an-operation). After route binding, each read is
  * one database query and never waits for the operation.
  */
 final class OperationsController extends Controller
@@ -49,7 +50,15 @@ final class OperationsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
-    public function cancel(CancelOperationRequest $request, Operation $operation, CancelOperationAction $action): JsonResponse
+    public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $action): JsonResponse
+    {
+        $callerNodeName = $operation->caller_node_name;
+
+        return $this->respond($request, self::withSteps($action->execute($operation), null, $callerNodeName));
+    }
+
+    #[RequiresNodeAccess(ServingNode::OperationOwning)]
+    public function resume(EmptyOperationRequest $request, Operation $operation, ResumeOperationAction $action): JsonResponse
     {
         $callerNodeName = $operation->caller_node_name;
 
