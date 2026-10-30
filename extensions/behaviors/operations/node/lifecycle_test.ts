@@ -465,3 +465,93 @@ Deno.test("enrollment re-entry restores after a failed child step without reques
   assertEquals([...f.childRows.keys()], ["add-network", "add-restore"]);
   assertEquals(f.runs(), ["node.lifecycle-result"]);
 });
+
+Deno.test("exporter retirement settles before any target teardown or Node finalization", async () => {
+  const retirement = child("remove-metrics", "metrics.reconcile", 5);
+  const f = new LifecycleFixture([begin, retirement, ssh, {
+    type: "run",
+    key: "remove-agent",
+    transport: "agent",
+    name: "agent.remove",
+    input: {},
+    result: {},
+    optional: true,
+  }, residue]);
+  f.childRows.set("remove-metrics", {
+    id: 25,
+    key: "remove-metrics",
+    kind: "metrics.reconcile",
+    node_id: 5,
+    status: "running",
+  });
+  f.replies.set("remove-public-ssh", { matches: true });
+  f.replies.set("remove-agent", {});
+
+  assertEquals((await f.execute()).status, "waiting");
+  assertEquals(f.runs(), []);
+  assertEquals(f.completion(), undefined);
+  assertEquals(f.childRows.has("remove-residue"), false);
+  f.childRows.get("remove-metrics")!.status = "succeeded";
+  assertEquals((await f.execute("resumed-removal")).status, "succeeded");
+  assertEquals(f.runs(), [
+    "firewall.rules",
+    "agent.remove",
+    "node.lifecycle-result",
+  ]);
+  assertEquals(f.childAdmissions, 2);
+});
+
+Deno.test("failed exporter retirement restores membership and cannot delete the Node", async () => {
+  const f = new LifecycleFixture([
+    begin,
+    child("remove-metrics", "metrics.reconcile", 5),
+    ssh,
+    residue,
+  ]);
+  f.childRows.set("remove-metrics", {
+    id: 25,
+    key: "remove-metrics",
+    kind: "metrics.reconcile",
+    node_id: 5,
+    status: "failed",
+  });
+  f.compensations = [child("remove-restore", "node.removal_restore")];
+  f.operation.execution_context = {
+    descriptors: [],
+    result: { node_restore_required: true },
+  };
+  f.replies.set("node-lifecycle-result", {
+    node_plan_proven: true,
+    removed: false,
+    error_code: "metrics.exporter_remove_failed",
+    failed_step: "remove-metrics",
+  });
+
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.runs(), ["node.lifecycle-result"]);
+  assertEquals(f.childRows.has("remove-restore"), true);
+  assertEquals(f.childRows.has("remove-residue"), false);
+  assertEquals(f.completion()?.result, {
+    node_plan_proven: true,
+    removed: false,
+    error_code: "metrics.exporter_remove_failed",
+    failed_step: "remove-metrics",
+  });
+});
+
+Deno.test("unmanaged peer removal runs only serving Node children", async () => {
+  const f = new LifecycleFixture([
+    begin,
+    child("remove-hub", "node.wireguard_hub_converge", 4, {
+      context_node_id: 2,
+      excluded_node_id: 2,
+    }),
+    child("remove-dns", "route.private_dns_publish", 4, {
+      reason: "node removal",
+    }),
+  ]);
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.runs(), ["node.lifecycle-result"]);
+  assertEquals(f.childRows.get("remove-hub")!.node_id, 4);
+  assertEquals(f.childRows.get("remove-dns")!.node_id, 4);
+});
