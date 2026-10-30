@@ -1,0 +1,26 @@
+id: baa6dafa-1638-4565-a5af-cd7103633c42
+name: operation-schedule-control
+description: One directly admitted Schedule control on its exact Node worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [schedule.enable, schedule.run] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: node
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    writes: true
+    steps:
+      - name: control
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/schedule-control"
+          behaviorName: '${{ "schedule-control-node-" + string(inputs.node_id) }}'
+          methodName: control
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
