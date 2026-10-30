@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\Environment\DirectInstanceWebRoots;
 use App\Domain\Instances\Environment\InstanceWebRootsProjection;
 use App\Domain\Instances\InstanceRenameProjection;
 
@@ -18,6 +17,5 @@ return [
         'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'instance_writer',
         'projection' => InstanceWebRootsProjection::class,
-        'primitive' => DirectInstanceWebRoots::class,
     ],
 ];

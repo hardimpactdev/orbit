@@ -698,22 +698,24 @@ Cancel queued Swamp deploy and rollback Operations through the Operation API. Co
 keeps that choice through later setting changes. Existing unstamped Operations
 stay on the polled Swamp path.
 
-The direct workflow uses one native behavior per Node for web-root preparation. Swamp owns its lock,
-recovery and cancellation. The shared `/api/v1/direct-operations/{id}` endpoints return safe admitted input,
-run the declared primitive and accept result projections. The Gateway validates
-the admitted Route and Instance,
-runs only the fixed `instance.prepare-served-web-roots` Node primitive, and projects
-bounded native status and results. It accepts no worker-selected Node, command,
-program, environment content or input. It creates no executor claim, lease, child
-Operation, execution receipt or target hold for the direct Operation. The Route
-parent is existing admission context, not a child scheduler in this new path.
+### Admitted input and local action
+
+The direct workflow uses one native behavior per Node for web-root preparation. Swamp owns its lock, recovery and cancellation. The shared `/api/v1/direct-operations/{id}` endpoints return safe admitted agent input and the Gateway delivery digest, and accept bounded result projections. The Gateway validates Route and Instance ownership but executes no family primitive.
+
+The Node-local action calls the shared `localRootAgent` client with the fixed `instance.prepare-served-web-roots` command. Its socket path is fixed at `/run/orbit-agent/local.sock`; no workflow input selects a command, executable, socket, credential or shell. A primary-root Route returns a no-op without opening the socket. The Route parent is existing admission context. This path adds no claim, lease, child scheduler, execution receipt or target hold.
+
+### Binding and rollout
+
+Only the Gateway's matching native start response binds the root run ID. Worker reads and projections refuse until that binding exists. Node callers must match the Operation's Node; the configured control-plane peer keeps its existing authority.
+
+The initial Node 209 `pool=migration` canary proves start binding, reads and projection only. It must not execute a foreign Node's local action. Root effects require the independently reviewed local socket boundary and placement on the admitted Node; later per-Node workers use exact `orbit-node-<id>` placement with no fallback. This slice installs no socket and changes no worker privileges.
 
 A missing start acknowledgement is uncertain. Inspect native run history before
 resubmission; the Gateway does not retry the submission or mark a possibly running
 workflow failed. Native recovery can repeat the convergent Node primitive. It
-checks the selected release and owned links before changing them; this is not an
-exactly-once guarantee. A requested cancellation is checked before the primitive;
-an in-flight primitive must settle before its outcome can be projected.
+checks the selected release and root-owned layout marker. This is not the full activation inspection or an exactly-once guarantee. Preparation may create an environment link before a later path fails. A lost or malformed socket reply leaves the outcome uncertain; native recovery must reconcile before repeating an effect.
+
+A requested cancellation is checked before the action; an in-flight action must settle before its outcome can be projected.
 
 The default remains polled until the exact direct workflow succeeds on a dev or
 canary target. Record that proof before takeover. Delete the previous family path

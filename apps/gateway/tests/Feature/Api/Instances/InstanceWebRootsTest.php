@@ -6,6 +6,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
@@ -32,6 +33,11 @@ beforeEach(function (): void {
     $this->operation->forceFill(['parent_operation_id' => $this->parent->id])->save();
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'];
+    $this->operation->update(['state' => ['instance_writer' => 'direct', 'swamp_run_id' => $this->body['run_id']]]);
+    $this->node->update(['architecture' => 'x86_64']);
+    $this->manifest = tempnam(sys_get_temp_dir(), 'web-roots-agent-');
+    file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64)]]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
     $this->result = ['instance_id' => $this->instance->id, 'confirmed' => true, 'no_op' => false];
     $this->finish = [...$this->body, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => $this->result];
     $this->agents = new FakeAgentCommandRunner()->answer('instance.prepare-served-web-roots', [
@@ -39,34 +45,42 @@ beforeEach(function (): void {
     app()->instance(AgentCommandRunner::class, $this->agents);
 });
 
-it('prepares only the admitted Instance on its stored Node without execution receipts', function (): void {
-
-    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertOk()->assertJsonPath('data.input', ['instance_id' => $this->instance->id]);
-    $this->postJson($this->path.'/primitive', [...$this->body, 'instance_id' => 999])->assertOk()->assertJsonPath('data', $this->result);
-    expect($this->agents->calls)->toHaveCount(1);
-    $call = $this->agents->calls[0];
-    expect($call)->toMatchArray(['command' => 'instance.prepare-served-web-roots', 'node' => $this->node->name]);
-    expect($call['input']['instance'])->toBe($this->instance->id);
-    expect($call['input']['served'])->toContain(['web_root' => 'other/public', 'directory' => 'other']);
-    expect($call['input'])->not->toHaveKeys(['effect_key', 'effect_metadata', 'worker', 'env', 'content']);
-    expect($this->operation->fresh()->state)->toBe(['instance_writer' => 'direct']);
+afterEach(function (): void {
+    unlink($this->manifest);
 });
 
-it('refuses changed Route ownership or Instance placement before the Node primitive', function (): void {
-    $this->parent->update(['input' => ['route_id' => $this->route->id, 'target_instance_ids' => []]]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->parent->update(['input' => ['route_id' => $this->route->id, 'target_instance_ids' => [$this->instance->id]]]);
-    $this->operation->update(['node_id' => $this->worker->id]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
+it('returns only admitted Node input and refuses a Gateway execution relay', function (): void {
+    $response = $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertOk()
+        ->assertJsonPath('data.input.instance_id', $this->instance->id)
+        ->assertJsonPath('data.input.agent_sha256', str_repeat('a', 64))
+        ->assertJsonPath('data.input.agent_input.instance', $this->instance->id)
+        ->assertJsonPath('data.input.agent_input.home', '/home/deployment-api')
+        ->assertJsonPath('data.input.agent_input.served', [['web_root' => 'other/public', 'directory' => 'other']]);
+    expect($response->json('data.input.agent_input'))->not->toHaveKeys(['command', 'env', 'content', 'socket', 'worker']);
+    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable()
+        ->assertJsonPath('error.code', 'operation.execution_forbidden');
     expect($this->agents->calls)->toBe([]);
 });
 
-it('requires executor identity and refuses caller-selected commands and targets', function (): void {
-    foreach (['node_id' => $this->worker->id, 'input' => ['env' => 'private'], 'command' => 'arbitrary'] as $key => $value) {
-        $this->postJson($this->path.'/primitive', [...$this->body, $key => $value])->assertUnprocessable();
-    }
+it('refuses changed Route ownership or Instance placement before returning local input', function (): void {
+    $this->parent->update(['input' => ['route_id' => $this->route->id, 'target_instance_ids' => []]]);
+    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertUnprocessable();
+    $this->parent->update(['input' => ['route_id' => $this->route->id, 'target_instance_ids' => [$this->instance->id]]]);
+    $this->operation->update(['node_id' => $this->worker->id]);
+    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertUnprocessable();
+    expect($this->agents->calls)->toBe([]);
+});
+
+it('allows only the matching Node worker to read and project the bound run', function (): void {
+    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
+    $gateway = Node::query()->whereHas('roles', fn ($query) => $query->where('role', 'gateway'))->firstOrFail();
+    $this->node->accessibleNodes()->attach($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertForbidden();
+    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertOk();
+    $this->postJson($this->path.'/result', $this->finish)->assertOk();
+    $this->operation->update(['node_id' => $this->worker->id]);
+    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertForbidden();
+    $this->postJson($this->path.'/result', $this->finish)->assertForbidden();
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -95,9 +109,7 @@ it('rejects false success another Instance another run and conflicting terminal 
     $this->getJson($this->path.'?run_id=fabd4059-fb6c-49d8-940e-01ae58aa3f38')->assertConflict();
 });
 
-it('maps a missing selected release and accepts only a matching bounded failure', function (): void {
-    $this->agents->refuse('instance.prepare-served-web-roots', 'instance.release_missing');
-    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.error_code', 'route.web_root_release_missing');
+it('accepts only a matching bounded local failure', function (): void {
     $failed = [...$this->finish, 'status' => 'failed', 'error_code' => 'route.web_root_release_missing', 'result' => ['error_code' => 'instance.release_invalid']];
     $this->postJson($this->path.'/result', $failed)->assertUnprocessable();
     $this->postJson($this->path.'/result', [...$failed, 'result' => ['error_code' => 'route.web_root_release_missing']])->assertOk();
@@ -105,8 +117,17 @@ it('maps a missing selected release and accepts only a matching bounded failure'
 
 it('stamps the per-kind writer and starts only its declared workflow with the shared run token', function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-instance-web-roots', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = function (array $request): array {
+        $operation = Operation::query()->findOrFail($request['payload']['inputs']['operation_id']);
+        $operation->forceFill(['parent_operation_id' => $this->parent->id])->save();
+        $path = '/api/v1/direct-operations/'.$operation->id;
+        $this->getJson($path.'?run_id='.$this->body['run_id'])->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+        $this->postJson($path.'/result', $this->finish)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+        expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+
+        return [['type' => 'event', 'id' => $request['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => 'operation-instance-web-roots', 'runId' => $this->body['run_id']]]];
+    };
     app()->instance(WebSocketClient::class, $socket);
     $operation = app(StartOperationAction::class)->execute('instance.prepare_served_web_roots', 'instance', $this->instance->id, $this->node->id, ['instance_id' => $this->instance->id], 'test', null);
     expect($socket->sent)->toHaveCount(1);
@@ -114,6 +135,8 @@ it('stamps the per-kind writer and starts only its declared workflow with the sh
         'operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $this->node->id]]);
     expect($socket->endpoint->bearerToken)->toBe('private.fixture');
     expect($operation->fresh()->state['instance_writer'])->toBe('direct');
+    expect($operation->fresh()->state['swamp_run_id'])->toBe($this->body['run_id']);
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->body['run_id'])->assertOk();
     expect($operation->fresh()->lock_key)->toBeNull();
     config(['swamp.direct_writers' => []]);
     expect(DirectOperation::owns($operation->fresh()))->toBeTrue();
@@ -134,7 +157,7 @@ it('keeps unstamped and polled intents on the previous Swamp path', function ():
 
 it('returns a no-op for the primary root without a Node mutation', function (): void {
     $this->route->update(['web_root' => 'public']);
-    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data', [...$this->result, 'no_op' => true]);
+    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertOk()->assertJsonPath('data.input', ['instance_id' => $this->instance->id, 'agent_sha256' => null, 'agent_input' => null]);
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -143,4 +166,12 @@ it('projects cancellation without a Node call or an execution receipt', function
     $this->postJson($this->path.'/result', $cancelled)->assertOk()->assertJsonPath('data.status', 'cancelled');
     $this->postJson($this->path.'/primitive', $this->body)->assertConflict();
     expect($this->agents->calls)->toBe([]);
+});
+
+it('refuses worker read and projection before the Gateway start response binds the run', function (): void {
+    $this->operation->update(['state' => ['instance_writer' => 'direct']]);
+    $this->getJson($this->path.'?run_id='.$this->body['run_id'])->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    $this->postJson($this->path.'/result', $this->finish)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+    expect($this->operation->fresh()->status->value)->toBe('queued');
 });

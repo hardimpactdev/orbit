@@ -10,7 +10,7 @@ use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
 use App\Models\Operation;
 
-/** Pure admitted resource validation and fixed primitive input. */
+/** Pure admitted resource validation and fixed Node action input. */
 final readonly class InstanceServedWebRootsInput
 {
     public function __construct(private InstanceRouteOwnership $ownership) {}
