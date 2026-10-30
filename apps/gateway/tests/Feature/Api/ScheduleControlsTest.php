@@ -72,7 +72,7 @@ it('checks shared start-response and first-read ordering without a family token 
     $this->getJson($path)->assertOk();
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->endpoint->bearerToken)->toBe('shared.scoped.fixture');
-    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.run', 'node_id' => $this->node->id]]);
+    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.run', 'node_id' => $this->node->id], 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
