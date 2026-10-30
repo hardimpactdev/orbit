@@ -2,13 +2,13 @@
 
 The direct workflow places each action on its admitted Node: Node209 uses
 `swamp209-migration-a`, while other Nodes use `orbit-node-<admittedNodeId>`.
-There is no foreign-Node fallback. It handles branch-only `instance.rename` and
-destination-only `instance.transfer_discard`. Discard calls the installed pinned
-agent's fixed `instance.transfer-source` command with `operation: discard`
-through `/usr/bin/sudo -n`. The agent drops to the Node account for this account
-effect. Only the recorded destination is removed. Its 600-second native command
-budget and bounded typed reply apply. Raw stdout/stderr are never projected.
-Missing destinations succeed. Unknown outcomes throw for native Swamp recovery.
+There is no foreign-Node fallback. It handles only destination cleanup for
+`instance.transfer_discard`. Discard calls the installed pinned agent's fixed
+`instance.transfer-source` command with `operation: discard` through
+`/usr/bin/sudo -n`. The agent drops to the Node account for this account effect.
+Only the recorded destination is removed. Its 600-second native command budget
+and bounded typed reply apply. Raw stdout/stderr are never projected. Missing
+destinations succeed. Unknown outcomes throw for native Swamp recovery.
 Cancellation before the command skips it; an in-flight command finishes and
 projects its result.
 
@@ -17,33 +17,17 @@ discard does not open it. Discard has only the direct writer and no polled
 runner. Its Gateway cutover follows the actual Node209 action canary. Revert the
 cutover PR to roll back. Other lifecycle kinds retain their current writer.
 
-# Binding proof
+The unconverted lifecycle kinds use their existing polled workflow. Rename has
+no dormant direct writer, binding-only canary or alternate direct method. Its
+complete cutover must preserve branch and Route behavior and remove its polled
+discovery, claim/run registration and PHP execution together.
 
-`operation-instance-lifecycle-direct` handles branch-only `instance.rename`. The
-previous canary used the existing Node 209 workers with `pool=migration`, as
-authorized by the orchestrator. It proved the Gateway start-response binding
-before the first worker read, running projection and terminal projection. Its
-`bindingCanary` method then refuses with `instance.node_action_unavailable`
-without calling any local agent. It cannot prove checkout inspection or justify
-writer takeover. The `rename` method now requires exact-Node placement and a
-live worker.
-
-It uses the shared direct Operation read/result protocol and the existing
-read-only account agent command. It changes no HEAD, files or origin. Repository
-identity and the requested checked-out branch must match before the Gateway
-records the branch. The writer defaults to `polled` through
-`ORBIT_SWAMP_DIRECT_WRITERS={}`. Extending the existing shared token's grant to
-converted workflows is pre-approved; lane 16 records run-and-status access in
-FLEET-CHANGES. No new token, worker unit or root privilege boundary is needed.
-
-Use native defaults, `vaults: []` and a stable behavior per admitted Node.
-Unbound reads refuse before a local agent call. Native recovery owns retry.
-Cancellation before inspection skips it; an in-flight inspection finishes before
-projection.
-
-In direct mode a request containing a domain change refuses before admission.
-Route composition and the other lifecycle kinds remain on their existing Swamp
-path. Keep that path until dev/canary and production proof, then delete it.
+Use the shared direct Operation protocol and native defaults. The focused
+`direct_discard_test.ts` tests cover the fixed destination effect and shared
+read/result integration. Validate the workflow with
+`swamp workflow validate
+operation-instance-lifecycle-direct`. Native
+persistence tests belong in the shared harness rather than a lifecycle copy.
 
 # Instance lifecycle execution
 

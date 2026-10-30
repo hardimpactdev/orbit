@@ -52,9 +52,7 @@ class Fixture {
     });
   };
   run() {
-    return lifecycleDirect(() => this.http, () => {
-      throw new Error("Discard must not inspect source");
-    }, this.action)
+    return lifecycleDirect(() => this.http, this.action)
       .methods.execute.execute(args, ctx);
   }
 }
