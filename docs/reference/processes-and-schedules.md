@@ -312,7 +312,7 @@ The runtime family reads target receipts before remote effects. A lost restart r
 
 ## Direct Process controls
 
-`process.stop` uses `operation-process-control` directly for every systemd and Docker Process, including Vite Processes. Stop needs no Vite traffic preparation or private material. Its direct-only kind declaration selects the shared direct writer by default; rollback is a revert PR. An explicit `polled` override refuses because that executor is removed. The PHP stop action, polled stop descriptor and receipt proof are removed. The idle-hibernation sweep keeps its runtime stop method until its own conversion because it preserves desired-running state. Admission takes no Gateway runtime lease or target hold. Each admitted Operation preserves its selected writer and delivered agent digest.
+`process.stop` uses `operation-process-control` directly for every systemd and Docker Process, including Vite Processes. Stop needs no Vite traffic preparation or private material. The kind has no Gateway executor, so the shared writer defaults to direct. Rollback is a revert PR. An explicit `polled` override refuses because that executor is removed. The PHP stop action, polled stop descriptor and receipt proof are removed. The idle-hibernation sweep keeps its runtime stop method until its own conversion because it preserves desired-running state. Admission takes no Gateway runtime lease or target hold. Each admitted Operation preserves its selected writer and delivered agent digest.
 
 The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map keeps independent settings for unconverted standalone `process.start`, `process.restart` and `process.destroy`, which default to `polled`. Their Vite and Instance child paths keep the current writer.
 

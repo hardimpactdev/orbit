@@ -53,9 +53,7 @@ return (static function (): array {
             'result_fields' => ['state', 'staged', 'previous', 'backup_left', 'available', 'owned', 'ready', 'error_code']];
     }
 
-    $kinds['process.stop'] = ['executor' => 'swamp', 'completion' => ProcessOperationCompletion::class, 'runs' => [],
-        'completion_contract' => ['step' => 'process-control', 'transport' => 'agent', 'name' => 'process.control', 'result' => []],
-        'result_fields' => ['ready', 'state', 'error_code']];
+    $kinds['process.stop'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
 
     foreach (['install_instance_definitions' => 'process.create', 'restart_instance' => 'process.restart'] as $verb => $childKind) {
         if ($verb === 'restart_instance' && ! OperationKinds::supports('list_of')) {
