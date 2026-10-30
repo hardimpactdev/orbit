@@ -48,16 +48,16 @@ tuple, assignment, target hold or keyed receipt is added.
 
 ## Takeover and removal
 
-`ORBIT_SWAMP_DIRECT_WRITERS` defaults to `{}`. Each exact Firewall kind
-therefore selects `polled`, the previous Swamp writer. Set only a proven kind to
-`direct`; the Operation keeps its recorded writer through later setting changes.
-Revert that map entry to `polled` for rollback, never PHP.
+The Gateway registrations are direct-only for all three Firewall kinds. The
+shared writer map still defaults to `{}`; these converted kinds select direct
+without a map entry. An explicit polled setting or unavailable Node scope
+refuses admission. Rollback reverts the owning takeover PR.
 
-Keep the old workflow, registration and tests until dev/canary proof and
-production success. Record Operation/run IDs and before/after latency. Then
-delete each replaced execution path; remove the old schedule once all Firewall
-kinds and outstanding polled work are settled. Shared Gateway executor core
-stays with the boundary lane.
+The retired `operation-firewall` polling workflow, discovery registration, eight
+slot definitions and legacy claim/receipt tests are removed from source. Retire
+its schedule only after the Gateway release is live and old work is settled.
+Preserve native run history, receipt data and existing configuration. The shared
+Gateway executor core stays with the boundary lane.
 
 The 2026-10-30 Node209 profile in
 `~/swamp-execution/evidence/run-producers-20261030/attribution.json` measured
@@ -77,4 +77,5 @@ ordering, the admitted Node peer and a foreign peer.
 
 Run Deno's tests/check/lint/fmt and
 `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s extensions/behaviors/operations/firewall -p direct_native_test.py`.
-Live canary, takeover and family net-negative deletion remain separate gates.
+Each kind needs a real canary before its single takeover/deletion PR. The family
+reports its cumulative net Gateway lines after removal.

@@ -169,23 +169,23 @@ return {dataHandles:[await ctx.writeResource("receipt","proof",{worker:args.work
                 shutil.copytree(ROOT / 'extensions/behaviors' / folder, extensions / folder)
             discovery = extensions / 'operation-runner/mod.ts'
             discovery.write_text(discovery.read_text().replace('...operationDiscovery()', '''...operationDiscovery(() => async () => ({ status:200, body:{data:{kinds:[
-{kind:"firewall.allow",claimable:1,oldest_at:null},{kind:"tool.install",claimable:1,oldest_at:null}]}} }))'''))
+{kind:"fleet.peer_dns",claimable:1,oldest_at:null},{kind:"tool.install",claimable:1,oldest_at:null}]}} }))'''))
             if block_discovery:
                 with discovery.open('a') as source:
-                    source.write('\nconst discover=behavior.methods.discover.execute;\nbehavior.methods.discover.execute=async(args,ctx)=>{\nawait Deno.writeTextFile(args.family+"-discover-started","yes");\nif(args.family==="operation-firewall")await Deno.writeTextFile("parent-running","yes");\nconst other=args.family==="operation-firewall"?"operation-tools":"operation-firewall";\nfor(let i=0;;i++){\ntry{await Deno.stat(other+"-discover-started");break}catch(e){if(!(e instanceof Deno.errors.NotFound))throw e}\nif(i>=500){await Deno.writeTextFile("discovery-failed","yes");throw new Error("discovery_blocked_sibling");}\nawait new Promise(r=>setTimeout(r,20));\n}\nreturn await discover(args,ctx);\n};\n')
+                    source.write('\nconst discover=behavior.methods.discover.execute;\nbehavior.methods.discover.execute=async(args,ctx)=>{\nawait Deno.writeTextFile(args.family+"-discover-started","yes");\nif(args.family==="operation-fleet")await Deno.writeTextFile("parent-running","yes");\nconst other=args.family==="operation-fleet"?"operation-tools":"operation-fleet";\nfor(let i=0;;i++){\ntry{await Deno.stat(other+"-discover-started");break}catch(e){if(!(e instanceof Deno.errors.NotFound))throw e}\nif(i>=500){await Deno.writeTextFile("discovery-failed","yes");throw new Error("discovery_blocked_sibling");}\nawait new Promise(r=>setTimeout(r,20));\n}\nreturn await discover(args,ctx);\n};\n')
             probe = '''import {z} from "npm:zod@4.4.3";
 export const behavior={type:"@nckrtl/operation-FAMILY",version:"2026.10.30.1",
 resources:{receipt:{description:"Scheduler isolation proof",schema:z.object({done:z.boolean()}),lifetime:"1d",garbageCollection:1}},
 methods:{execute:{description:"Local test barrier",arguments:z.object({kind:z.string(),worker:z.string()}),execute:async(_args,ctx)=>{
 const exists=async(p)=>{try{await Deno.stat(p);return true}catch(e){if(e instanceof Deno.errors.NotFound)return false;throw e}};
-if("FAMILY"==="firewall")await Deno.writeTextFile("parent-running","yes");
-const awaited="FAMILY"==="firewall"?"child-completed":"parent-running";
+if("FAMILY"==="fleet")await Deno.writeTextFile("parent-running","yes");
+const awaited="FAMILY"==="fleet"?"child-completed":"parent-running";
 for(let i=0;!await exists(awaited);i++){if(i>=500){await Deno.writeTextFile("execution-failed","yes");throw new Error("family_dispatch_blocked");}await new Promise(r=>setTimeout(r,20))}
-await Deno.writeTextFile("FAMILY"==="firewall"?"parent-completed":"child-completed",String(Date.now()));
+await Deno.writeTextFile("FAMILY"==="fleet"?"parent-completed":"child-completed",String(Date.now()));
 return {dataHandles:[await ctx.writeResource("receipt","proof",{done:true})]};}}}};
 '''
             (repo / 'workflows').mkdir()
-            for family in ('firewall', 'tools'):
+            for family in ('fleet', 'tools'):
                 folder = extensions / f'operations/{family}'
                 folder.mkdir(parents=True)
                 (folder / 'mod.ts').write_text(probe.replace('FAMILY', family))
@@ -195,7 +195,7 @@ return {dataHandles:[await ctx.writeResource("receipt","proof",{done:true})]};}}
                 (repo / f'workflows/workflow-operation-{family}.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
             env = {k: v for k, v in os.environ.items() if not k.startswith('SWAMP_SERVER_') and k not in ('SWAMP_SERVE_URL', 'SWAMP_REPO_DIR')}
             env.update(SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-            for family in ('firewall', 'tools'):
+            for family in ('fleet', 'tools'):
                 validation = subprocess.run([SWAMP, 'workflow', 'validate', 'operation-' + family, '--json'],
                                             cwd=repo, env=env, capture_output=True, text=True, timeout=20)
                 self.assertEqual(validation.returncode, 0, validation.stdout + validation.stderr)

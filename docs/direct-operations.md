@@ -65,13 +65,12 @@ history once by workflow, key and Operation ID. Only confirmed absence permits
 one immediate resubmission with the same inputs and key. Native tags support
 lookup, not atomic start deduplication. There is no Gateway retry job or poll.
 
-Read, result
-and primitive requests refuse until that binding is recorded. Projection never
-establishes or replaces it. Each canary verifies start-response/first-read
-ordering. Per-Node callers in `worker_node_ids` must match the admitted
-`node_id`; foreign and Gateway-scoped intents are refused. The configured
-control-plane peer retains its existing fleet authority; joining the worker list
-grants no such authority.
+Read, result and primitive requests refuse until that binding is recorded.
+Projection never establishes or replaces it. Each canary verifies
+start-response/first-read ordering. Per-Node callers in `worker_node_ids` must
+match the admitted `node_id`; foreign and Gateway-scoped intents are refused.
+The configured control-plane peer retains its existing fleet authority; joining
+the worker list grants no such authority.
 
 Swamp's first read waits only for `409 operation.run_unbound`, once per second
 for up to 90 seconds. This covers the measured 29.316-second native history
@@ -109,10 +108,10 @@ observe/reconcile an uncertain external mutation before repeating it. Cancelling
 a suspended nested parent can detach its child; settle that child through native
 Swamp rather than a Gateway cascade.
 
-Prove E2E on dev/canary before takeover, use one reversible per-kind setting
-back to the previous Swamp path, and delete that path only after production
-success. This extraction changes no live setting, token/grant, writer or
-workflow identity.
+Prove each kind E2E on dev/canary before takeover. Its owning PR selects the
+direct writer and deletes the replaced Gateway execution path and tests
+together. Rollback is a revert PR. Remove obsolete polling definitions after the
+release is live, while preserving native history and data.
 
 Sources:
 [workflow model](https://swamp-club.com/manual/explanation/the-workflow-execution-model),

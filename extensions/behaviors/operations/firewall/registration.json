@@ -1,4 +1,0 @@
-{
-  "kinds": ["firewall.allow", "firewall.deny", "firewall.remove"],
-  "workflow": "operation-firewall"
-}
