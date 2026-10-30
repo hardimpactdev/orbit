@@ -105,14 +105,6 @@ final readonly class HttpT3ServerClient implements T3ServerClient
         return ($body['revoked'] ?? false) === true;
     }
 
-    public function revokePairingLink(string $baseUrl, #[SensitiveParameter] string $adminSession, string $pairingLinkId): bool
-    {
-        $body = $this->json($baseUrl, 'pairing-links/revoke', fn (): Response => $this->request($adminSession)
-            ->post($this->endpoint($baseUrl, '/api/auth/pairing-links/revoke'), ['id' => $pairingLinkId]));
-
-        return ($body['revoked'] ?? false) === true;
-    }
-
     private function request(#[SensitiveParameter] ?string $adminSession = null): PendingRequest
     {
         $request = Http::acceptJson()

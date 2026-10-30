@@ -28,7 +28,4 @@ interface T3ServerClient
 
     /** POST /api/auth/clients/revoke */
     public function revokeClientSession(string $baseUrl, #[SensitiveParameter] string $adminSession, string $sessionId): bool;
-
-    /** POST /api/auth/pairing-links/revoke */
-    public function revokePairingLink(string $baseUrl, #[SensitiveParameter] string $adminSession, string $pairingLinkId): bool;
 }

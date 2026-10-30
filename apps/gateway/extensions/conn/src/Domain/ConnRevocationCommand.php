@@ -8,11 +8,9 @@ use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
-use Orbit\Extensions\Conn\Models\ConnPairing;
 use SensitiveParameter;
 
 /** Reads owned targets or makes exactly one idempotent revoke call. Swamp owns iteration. */
@@ -50,28 +48,15 @@ final readonly class ConnRevocationCommand implements OperationGatewayCommand
      */
     private function effect(Operation $operation, #[SensitiveParameter] array $input, #[SensitiveParameter] array $environment): array
     {
-        $gateway = $operation->kind === 'conn.gateway_sessions_revoke';
-        if (! $gateway && $operation->kind !== 'conn.pairing_revoke') {
-            throw new ResourceOperationException('operation.execution_forbidden', 'This is not Conn revocation.', 422);
+        if ($operation->kind !== 'conn.gateway_sessions_revoke') {
+            throw new ResourceOperationException('operation.execution_forbidden', 'This is not Gateway session cleanup.', 422);
         }
-        $pairings = $gateway ? collect() : ConnPairing::query()->whereIn('id', ValidatedData::integerList($operation->input['pairing_ids']))
-            ->where('node_id', $operation->target_id)->where('conn_environment_id', $environment['id'])->get();
-        if (! $gateway && $pairings->count() !== count(ValidatedData::integerList($operation->input['pairing_ids']))) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The admitted pairing owner changed.', 422);
-        }
-        $labels = $gateway ? [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL] : $pairings->pluck('client_label')->all();
+        $labels = [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL];
         if ($input['action'] === 'receipt') {
             return $this->execution->result($operation);
         }
-        if ($input['action'] === 'link') {
-            if (! $pairings->contains('pairing_link_id', $input['id'])) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'The admitted link owner changed.', 422);
-            }
-
-            return ['backend' => 'revoked', 'revoked' => $this->server->revokePairingLink($environment['url'], $environment['admin_session'], $input['id'])];
-        }
         try {
-            $sessions = $labels === [] ? [] : $this->server->clientSessions($environment['url'], $environment['admin_session']);
+            $sessions = $this->server->clientSessions($environment['url'], $environment['admin_session']);
         } catch (T3ServerException $exception) {
             // This read failed before a revoke was sent; preserve a proven failure for Swamp.
             return ['error_code' => $exception->errorCode];
@@ -87,7 +72,7 @@ final readonly class ConnRevocationCommand implements OperationGatewayCommand
         }
         $ids = array_map(static fn (T3ClientSession $session): string => $session->sessionId,
             array_values(array_filter($sessions, static fn (T3ClientSession $session): bool => ! $session->current && in_array($session->label, $labels, true))));
-        $links = $pairings->map(static fn (ConnPairing $pairing): ?string => $pairing->pairing_link_id)->filter()->values()->all();
+        $links = [];
         $result = ['backend' => 'inspected', 'sessions' => array_values(array_unique($ids)), 'links' => array_values(array_unique($links))];
 
         // Apply the shared bounded-result validator before any plan is recorded or effect can run.

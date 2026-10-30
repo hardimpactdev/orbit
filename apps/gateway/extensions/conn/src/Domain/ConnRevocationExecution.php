@@ -87,7 +87,7 @@ final readonly class ConnRevocationExecution implements OperationFamilyExecution
 
     public function finalStep(Operation $operation): string
     {
-        return $operation->kind === 'conn.pairing_revoke' ? 'pairing-revoke' : 'gateway-sessions-revoke';
+        return 'gateway-sessions-revoke';
     }
 
     /** @return array<string,mixed>|null */
