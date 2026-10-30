@@ -40,8 +40,8 @@ final readonly class AdmitTaskVmChildAction
 
             return app(StartTaskVmIncusEffectAction::class)->execute($vm, substr($kind, strlen('task_vm.incus_')));
         }
-        if ($kind === 'task_vm.image_finish_seed') {
-            $input = app(TaskVmIncusProjection::class)->admitSeed($parent->target_id, $node, $input);
+        if (isset(TaskVmIncusProjection::ImageFields[$kind])) {
+            $input = app(TaskVmIncusProjection::class)->admitImage($kind, $parent->target_id, $node, $input);
         }
         if ($kind === 'task_vm.prepare_runtime') {
             if (in_array($parent->kind, ['task_vm.provision', 'task_vm.enroll'], true)) {
