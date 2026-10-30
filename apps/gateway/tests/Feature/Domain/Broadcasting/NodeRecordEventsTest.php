@@ -131,7 +131,7 @@ describe('Node record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        $this->deleteJson("/api/v1/nodes/{$node->id}", ["offline" => false])->assertAccepted()
+        $this->deleteJson("/api/v1/nodes/{$node->id}", ['offline' => false])->assertAccepted()
             ->assertJsonPath('data.kind', 'node.remove')->assertJsonPath('data.status', 'queued');
         $this->assertModelExists($node);
         Event::assertNotDispatched(RecordBroadcast::class,

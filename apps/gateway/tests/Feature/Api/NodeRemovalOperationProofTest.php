@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\NodeLifecycleOperationExecution;
 use App\Domain\Nodes\NodeRemovalOperationCompletion;
 use App\Domain\Nodes\NodeRemovalPolicy;
@@ -14,8 +16,6 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use App\Domain\Broadcasting\RecordBroadcast;
-use App\Domain\Broadcasting\RecordEventType;
 use Tests\Support\Fleet\FleetFixtures;
 
 function removalProofOperation(): array
