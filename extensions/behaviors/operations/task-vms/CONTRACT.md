@@ -152,8 +152,25 @@ admissions remain allowed after a long Node enrollment. Explicit parent
 cancellation still settles all children before the parent completes.
 
 The family's existing `deadline_at` bounds its own provider and runtime
-observation waits. It is not an outer deadline for child composition. The family
-workflow has `queueTimeout: 60` and `autoResume: true`; a child wait yields the
-invocation and leaves the Operation durably waiting in the Gateway. Gateway
-no-progress assistance and the five-attempt cap catch stalls. There is no
-additional parent safety deadline.
+observation waits. It is not an outer deadline for child composition.
+
+Each dispatch is a native nested `operation-task-vm-dispatch` workflow. If its
+first child observation is queued with zero claims, a native `wait_for_signal`
+step opens a 60-second queue window. Native suspension releases the execution
+slot. Swamp persists and expires the wait, then auto-resumes the workflow to
+read the child again and request normal cancellation only if it is still queued
+with zero attempts. Running, waiting, retried and terminal children are left
+alone. The cancellation endpoint rechecks domain cancellation guards. A lost
+cancel response fails this step; native resume repeats the read first. No
+Gateway no-progress alert or reclaim cap supplies this queue bound.
+
+The timeout is required by the native signal-wait schema; there is no implicit
+signal timeout. It matches this family's existing 60-second dispatch queue
+window. The wait has no external key. It is a timer, not a completion signal. It
+does not claim that a running child has completed or impose the VM parent's old
+observation budget on enrollment. A child already running at the first
+observation stays under its owning workflow's execution policy.
+
+The image observation loop still yields on its last admitted child. Replacing
+that completed-child yield with a native observation wait belongs to the direct
+start slice; do not pause active image builds for this queue-wait fix.

@@ -29,10 +29,9 @@ jobs:
           item: work
           in: "${{ has(steps.discover.outputs) ? steps.discover.outputs.work : [] }}"
         task:
-          type: behavior
-          behaviorType: '@nckrtl/operation-task-vms'
-          behaviorName: '${{ "operation-task-vms-slot-" + string(self.work.slot) }}'
-          methodName: execute
+          type: workflow
+          workflowIdOrName: operation-task-vm-dispatch
           inputs:
             kind: '${{ self.work.kind }}'
             worker: '${{ self.work.worker }}'
+            behavior: '${{ "operation-task-vms-slot-" + string(self.work.slot) }}'

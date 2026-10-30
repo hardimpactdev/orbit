@@ -370,3 +370,35 @@ Deno.test("enrollment preparation recovers its exact reserved Node and enrolled 
     );
   }
 });
+
+for (
+  const [status, attempts, expected] of [
+    ["queued", 0, "cancel_requested"],
+    ["queued", 1, "preserved"],
+    ["running", 1, "preserved"],
+    ["waiting", 1, "preserved"],
+    ["succeeded", 1, "preserved"],
+    ["failed", 1, "preserved"],
+    ["cancelled", 0, "preserved"],
+  ] as const
+) {
+  Deno.test(`native queue expiry ${expected}: child ${status}, attempts ${attempts}`, async () => {
+    const f = new Fixture();
+    f.resources.set("queue-wait-native", { unclaimed_child_id: 56 });
+    const calls: string[] = [];
+    const http: Http = (_method, path) => {
+      calls.push(path);
+      return Promise.resolve({
+        status: 200,
+        body: { data: { id: 56, status, attempts } },
+      });
+    };
+    const result = await taskVms(() => http).methods.cancelUnclaimedChild
+      .execute({ worker: "native" }, f.context());
+    assertEquals(result.status, expected);
+    assertEquals(
+      calls.includes("/api/v1/operations/56/cancel"),
+      expected === "cancel_requested",
+    );
+  });
+}

@@ -48,7 +48,7 @@ class Fixture {
       }
       return Promise.resolve({
         status: 200,
-        body: { data: { id: 56, status: this.status } },
+        body: { data: { id: 56, status: this.status, attempts: 0 } },
       });
     }
     if (path.includes("operations/56")) {
@@ -58,6 +58,7 @@ class Fixture {
           data: {
             id: 56,
             status: this.status,
+            attempts: 0,
             result: { ready: true },
             finished_at: "2026-10-28T12:00:00Z",
           },
@@ -253,4 +254,19 @@ Deno.test("an expired parent preserves its child's terminal failure instead of r
     ExecutorError,
     "operation.cancelled",
   );
+});
+
+Deno.test("a never-claimed child carries its identity into the native queue timer", async () => {
+  const f = new Fixture();
+  const waiting = await assertRejects(
+    () => f.driver().child("node-enrollment", "node.add", 3, {}),
+    FamilyWaiting,
+  );
+  assertEquals(waiting.unclaimedChildId, 56);
+  f.status = "running";
+  const running = await assertRejects(
+    () => f.driver().child("node-enrollment", "node.add", 3, {}),
+    FamilyWaiting,
+  );
+  assertEquals(running.unclaimedChildId, null);
 });

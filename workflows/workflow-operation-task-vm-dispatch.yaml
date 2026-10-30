@@ -1,0 +1,44 @@
+id: 6ea35d75-98b1-4769-8c23-49669fc28b06
+name: operation-task-vm-dispatch
+description: Execute one dispatch and bound a never-claimed child with a native timer.
+labels: { pool: migration }
+queueTimeout: 60
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: { type: string }
+    worker: { type: string }
+    behavior: { type: string }
+  required: [kind, worker, behavior]
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: execute
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-task-vms'
+          behaviorName: '${{ inputs.behavior }}'
+          methodName: execute
+          inputs:
+            kind: '${{ inputs.kind }}'
+            worker: '${{ inputs.worker }}'
+      - name: queue-wait
+        dependsOn: [{ step: execute, condition: { type: succeeded } }]
+        guard: '${{ !has(steps.execute.outputs.unclaimed_child_id) }}'
+        allowFailure: true
+        task:
+          type: wait_for_signal
+          timeout: 60
+          schema: { type: object, additionalProperties: false }
+      - name: cancel-unclaimed
+        dependsOn: [{ step: queue-wait, condition: { type: failed } }]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-task-vms'
+          behaviorName: '${{ inputs.behavior }}'
+          methodName: cancelUnclaimedChild
+          inputs:
+            worker: '${{ inputs.worker }}'
