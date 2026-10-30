@@ -67,6 +67,22 @@ class LocalBoundary(unittest.TestCase):
                 ROOT / 'units' / name, '/etc/systemd/system/' + name)
         run('systemctl', 'daemon-reload')
         run('systemctl', 'start', 'orbit-agent-local.socket')
+        # Instrument the trusted ACL child, then execute the real binary unchanged.
+        # A socket on any inherited descriptor would expose the root reply channel.
+        acl = Path('/usr/bin/setfacl')
+        acl.rename('/usr/bin/setfacl.proof-real')
+        acl.write_text("""#!/usr/bin/python3
+import json,os,sys
+from pathlib import Path
+fds={}
+for p in Path('/proc/self/fd').iterdir():
+ try:fds[p.name]=os.readlink(p)
+ except FileNotFoundError:pass
+Path('/run/orbit-local-child-fds.json').write_text(json.dumps(fds))
+print('SYNTHETIC_RAW_CHILD_STDOUT_SENTINEL',flush=True)
+os.execv('/usr/bin/setfacl.proof-real',['setfacl',*sys.argv[1:]])
+""")
+        acl.chmod(0o755)
         cls.digest = hashlib.sha256(Path(AGENT).read_bytes()).hexdigest()
         cls.home = Path('/home') / OWNER
         release = cls.home / 'releases/proof-1'
@@ -125,6 +141,10 @@ class LocalBoundary(unittest.TestCase):
         journal = run('journalctl', '--no-pager', '-u', 'orbit-agent-local@*')
         self.assertNotIn('SYNTHETIC_PRIVATE_INPUT_SENTINEL', journal)
         self.assertNotIn(self.commit, journal)
+        self.assertNotIn('SYNTHETIC_RAW_CHILD_STDOUT_SENTINEL', journal)
+        child_fds = json.loads(Path('/run/orbit-local-child-fds.json').read_text())
+        self.assertFalse(any(value.startswith('socket:') for value in child_fds.values()))
+        self.assertEqual([child_fds[str(n)] for n in [0, 1, 2]], ['/dev/null'] * 3)
 
     def test_package_and_other_uid_refused(self):
         self.assertEqual(self.call(self.request(), PACKAGE), 'DENIED')

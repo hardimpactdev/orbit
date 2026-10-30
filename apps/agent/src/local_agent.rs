@@ -98,7 +98,7 @@ fn reply(outcome: Outcome) -> Vec<u8> {
 
 #[cfg(target_os = "linux")]
 pub fn main() -> i32 {
-    use std::os::fd::FromRawFd;
+    use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::net::UnixStream;
     let Some(worker) = crate::command::identity::passwd(WORKER).filter(|p| p.uid != 0) else {
         return 77;
@@ -122,8 +122,27 @@ pub fn main() -> i32 {
     if unsafe { peer.assume_init() }.uid != worker.uid {
         return 77;
     }
-    // SAFETY: systemd owns this connected socket on fd0; this process takes it once.
-    let mut stream = unsafe { UnixStream::from_raw_fd(0) };
+    // Keep the reply channel private even when a trusted primitive starts children.
+    // SAFETY: fd0 is the authenticated connected socket; CLOEXEC prevents child access.
+    let descriptor = unsafe { libc::fcntl(0, libc::F_DUPFD_CLOEXEC, 3) };
+    if descriptor < 0 {
+        return 74;
+    }
+    // SAFETY: fcntl returned a new owned descriptor above.
+    let mut stream = unsafe { UnixStream::from_raw_fd(descriptor) };
+    let Ok(null) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/null")
+    else {
+        return 74;
+    };
+    for descriptor in [0, 1, 2] {
+        // SAFETY: both descriptors are valid; children inherit only /dev/null stdio.
+        if unsafe { libc::dup2(null.as_raw_fd(), descriptor) } < 0 {
+            return 74;
+        }
+    }
     let limit = Some(std::time::Duration::from_secs(5));
     if stream
         .set_read_timeout(limit)

@@ -59,7 +59,7 @@ Node converge installs `orbit-agent-local.socket` for an opted-in per-Node worke
 
 The service checks Linux `SO_PEERCRED` against the exact worker UID before reading input. It accepts one newline JSON frame with `command`, `agent_sha256` and typed `input`. The closed local catalogue starts with `instance.prepare-served-web-roots`; it never exposes all agent commands. The binary digest must match the admitted Node pin. The existing primitive validates its paths and owner/layout state. This boundary does not add transactional effects or stronger path-race guarantees to that primitive.
 
-Input is bounded to 64 KiB and the typed reply to 16 KiB. The compiled command timeout bounds the service. Output contains the typed result or a fixed refusal, with no raw stdout, stderr or input in journals. There is no shell, executable selection, binary stream, effect key or caller-selected transport path. The socket owns only local privilege admission; Swamp owns execution policy.
+Input is bounded to 64 KiB and the typed reply to 16 KiB. The compiled command timeout bounds the service. The reply socket is private and closes on child exec; inherited standard streams point to `/dev/null`. Output contains the typed result or a fixed refusal, with no raw stdout, stderr or input in journals. There is no shell, executable selection, binary stream, effect key or caller-selected transport path. The socket owns only local privilege admission; Swamp owns execution policy.
 
 ### Worker and package access
 
