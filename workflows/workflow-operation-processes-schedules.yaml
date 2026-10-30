@@ -18,7 +18,7 @@ jobs:
           methodName: discover
           inputs:
             family: operation-processes-schedules
-            kinds: ["process.create", "process.destroy", "process.update", "process.start", "process.stop", "process.restart", "schedule.create", "schedule.destroy", "schedule.enable", "schedule.run", "process.install_instance_definitions", "schedule.install_instance_definitions", "process.restart_instance"]
+            kinds: ["process.create", "process.destroy", "process.update", "process.start", "process.restart", "schedule.create", "schedule.enable", "process.install_instance_definitions", "schedule.install_instance_definitions", "process.restart_instance"]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]

@@ -170,12 +170,9 @@ class Fixture {
   }
 }
 
-Deno.test("Schedule create, destroy, enable and run use only admitted fields", async () => {
+Deno.test("unconverted Schedule create and enable use only admitted fields", async () => {
   for (
-    const [verb, command] of [["create", "install"], ["destroy", "remove"], [
-      "enable",
-      "activate",
-    ], ["run", "run"]]
+    const [verb, command] of [["create", "install"], ["enable", "activate"]]
   ) {
     const f = new Fixture();
     f.operation.kind = `schedule.${verb}`;
@@ -193,7 +190,7 @@ Deno.test("Schedule create, destroy, enable and run use only admitted fields", a
 });
 Deno.test("lost run reply reuses the same effect key", async () => {
   const f = new Fixture();
-  f.operation.kind = "schedule.run";
+  f.operation.kind = "schedule.enable";
   f.failAfterRun = true;
   await assertRejects(() => f.execute());
   await f.execute();
@@ -202,7 +199,7 @@ Deno.test("lost run reply reuses the same effect key", async () => {
     f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
       call.body.key
     ),
-    ["schedule-run"],
+    ["schedule-activate"],
   );
 });
 Deno.test("lost successful step reply resumes from recorded results", async () => {
@@ -411,9 +408,9 @@ Deno.test("runtime switch removes retired footprint before creating replacement"
     ],
   );
 });
-Deno.test("Process start, stop, restart and removal target only their artifact", async () => {
+Deno.test("unconverted Process start, restart and removal target only their artifact", async () => {
   for (const runtime of ["systemd", "docker"]) {
-    for (const verb of ["start", "stop", "restart", "destroy"]) {
+    for (const verb of ["start", "restart", "destroy"]) {
       const f = processFixture(verb, runtime);
       await f.execute();
       assertEquals(f.runs, 1);
@@ -480,25 +477,6 @@ Deno.test("Vite startup prepares its environment, starts a Caddy child and verif
     }],
   );
   assertEquals(f.resources.get("operation-7")!.status, "succeeded");
-});
-
-Deno.test("uncertain Schedule run remains pending until its original receipt arrives", async () => {
-  const f = new Fixture();
-  f.operation.kind = "schedule.run";
-  f.failAfterRun = true;
-  await assertRejects(() => f.execute());
-  f.receiptState = "unknown";
-  assertEquals((await f.execute()).status, "pending");
-  f.receiptState = "running";
-  assertEquals((await f.execute()).status, "pending");
-  f.receiptUnavailable = true;
-  assertEquals((await f.execute()).status, "pending");
-  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
-  assertEquals(f.resources.has("operation-7"), false);
-  f.receiptUnavailable = false;
-  f.receiptState = null;
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
 });
 
 Deno.test("unavailable receipt cannot authorize the first restart attempt", async () => {
@@ -595,9 +573,9 @@ Deno.test("A failed runtime child prevents the readiness run", async () => {
   assertEquals(f.resources.get("operation-7")!.status, "failed");
   assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 0);
 });
-Deno.test("A proven not-started Schedule run can retry the same key once", async () => {
+Deno.test("A proven not-started unconverted Schedule activation can retry the same key once", async () => {
   const f = new Fixture();
-  f.operation.kind = "schedule.run";
+  f.operation.kind = "schedule.enable";
   f.notStartedOnce = true;
   assertEquals((await f.execute()).status, "pending");
   await f.execute();
@@ -607,6 +585,16 @@ Deno.test("A proven not-started Schedule run can retry the same key once", async
     f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
       call.body.key
     ),
-    ["schedule-run", "schedule-run"],
+    ["schedule-activate", "schedule-activate"],
   );
+});
+
+Deno.test("direct kinds refuse polled dispatch before claim or effect", async () => {
+  for (const kind of ["process.stop", "schedule.run", "schedule.destroy"]) {
+    const f = new Fixture();
+    f.operation.kind = kind;
+    await assertRejects(() => f.execute());
+    assertEquals(f.calls, []);
+    assertEquals(f.resources.size, 0);
+  }
 });

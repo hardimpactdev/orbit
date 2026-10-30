@@ -10,8 +10,7 @@ from native_harness import NativeTestCase
 class ScheduleNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules']:
-            shutil.copytree(ROOT/'extensions/behaviors'/family, self.repo/'extensions/behaviors'/family)
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules')
         module = self.repo/'extensions/behaviors/operations/processes-schedules/control.ts'
         module.write_text('import {http, action} from "./control_native_fixture.ts";\n'+module.read_text().replace('export const behavior = scheduleControl();', 'export const behavior = scheduleControl(() => http, action);'))
         source = ROOT/'workflows/workflow-operation-schedule-control.yaml'

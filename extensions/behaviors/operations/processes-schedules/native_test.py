@@ -1,29 +1,22 @@
 """Exercise the pinned Swamp DAG and recover it in a fresh process."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get('SWAMP_BIN', shutil.which('swamp') or 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
 
-class NativeProcessesSchedulesTest(unittest.TestCase):
+class NativeProcessesSchedulesTest(NativeTestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='lane9-native-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        for family in ['automatic-deploy', 'operation-runner', 'operations/processes-schedules']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, self.repo / 'extensions/behaviors' / family)
+        super().setUp()
+        self.native_timeout = 55
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/processes-schedules')
         for family, factory, relative in [('operation-runner', 'operationDiscovery', '../operations/processes-schedules/native_fixture.ts'), ('operations/processes-schedules', 'processesSchedules', './native_fixture.ts')]:
             path = self.repo / 'extensions/behaviors' / family / 'mod.ts'
             source = path.read_text().replace(f'...{factory}()', f'...{factory}(() => fixtureHttp)')
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
-        (self.repo / 'workflows').mkdir()
         for name in ['processes-schedules']:
             path = ROOT / f'workflows/workflow-operation-{name}.yaml'
             (self.repo / 'workflows' / path.name).write_text(path.read_text().replace('labels: { pool: migration }\n', '').replace('queueTimeout: 60\n', ''))
@@ -39,14 +32,10 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
     def swamp(self, *args, success=True):
         if args[:2] == ("workflow", "resume"):
             args = (*args[:3], "--run", self.last_run_id)
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, capture_output=True, text=True, timeout=55, env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        result = self.cli(*args, success=success)
         if args[:2] == ("workflow", "run"):
             value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
             self.last_run_id = value.get("id")
-        if success:
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        else:
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
     def test_systemd_create_runs_native_parent_dispatch_and_family(self):
@@ -92,9 +81,5 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
     def test_restart_new_process_reads_original_receipt(self):
         self.assert_control_reply_recovery('process.restart', {'process_id': 12, 'runtime': 'systemd', 'name': 'orbit-process-12-proof.service', 'on_demand': False})
 
-    def test_schedule_run_new_process_reads_original_receipt(self):
-        self.assert_control_reply_recovery('schedule.run', {'id': '830fd68c-948b-4e46-a215-229c7f510246', 'user': 'orbit', 'working_directory': '/home/orbit'})
-
-
-if __name__ == '__main__':
-    unittest.main()
+    def test_unconverted_schedule_activation_reads_original_receipt(self):
+        self.assert_control_reply_recovery('schedule.enable', {'id': '830fd68c-948b-4e46-a215-229c7f510246', 'user': 'orbit', 'working_directory': '/home/orbit'})

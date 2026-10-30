@@ -1,3 +1,4 @@
+import registration from "./registration.json" with { type: "json" };
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { type Context, Executor, Globals } from "../../operation-runner/mod.ts";
@@ -70,13 +71,16 @@ export function processesSchedules(
         description:
           "Execute admitted Process or Schedule intent through keyed Gateway commands",
         arguments: z.object({
-          kind: z.string().regex(/^(process|schedule)\.[a-z_]+$/),
+          kind: z.string().refine((kind) => registration.kinds.includes(kind)),
           worker: z.string(),
         }),
         execute: async (
           args: { kind: string; worker: string },
           ctx: Context,
         ) => {
+          if (!registration.kinds.includes(args.kind)) {
+            throw new Error("Unregistered family kind");
+          }
           const http = makeHttp(ctx);
           const executor = new Executor(http);
           const assignment = `assignment-${args.worker}`;
@@ -182,9 +186,8 @@ export function processesSchedules(
                 } else {
                   const intent = `effect-${path}-${call.step}`;
                   const attempted = await ctx.readResource(intent);
-                  const repeatable = call.name !== "schedule.run" &&
-                    !(call.name === "process.control" &&
-                      call.input.operation === "restart");
+                  const repeatable = !(call.name === "process.control" &&
+                    call.input.operation === "restart");
                   if (
                     receipt.state === "running" ||
                     (attempted && attempted.not_started !== true && !repeatable)
@@ -417,7 +420,7 @@ async function executeProcess(
 ) {
   const verb = kind.slice("process.".length);
   if (
-    !["create", "update", "start", "stop", "restart", "destroy"].includes(verb)
+    !["create", "update", "start", "restart", "destroy"].includes(verb)
   ) throw new Error("Wrong Process kind");
   const artifact = pick(input, ["process_id", "runtime", "name"]);
   if (verb === "destroy") {
@@ -458,7 +461,7 @@ async function executeProcess(
     });
     await project();
   }
-  if (["start", "stop", "restart"].includes(verb)) {
+  if (["start", "restart"].includes(verb)) {
     return await invoke({
       step: `process-${verb}`,
       name: "process.control",
@@ -544,8 +547,6 @@ function refusalCode(code: string, runtime: unknown, command: string): string {
     return {
       "schedule.install": "schedule.install_failed",
       "schedule.activate": "schedule.activation_failed",
-      "schedule.run": "schedule.run_failed",
-      "schedule.remove": "schedule.remove_failed",
     }[command] ?? code;
   }
   if (command.startsWith("process.")) {

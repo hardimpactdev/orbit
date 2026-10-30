@@ -58,10 +58,14 @@ child targets; Swamp sends only stable `runtime-N` keys, waits through kit B,
 then invokes the Gateway readiness descriptor. Restart success carries the exact
 verified `process_ids` list. Its registration remains gated on kit C.
 
-The placed family claims its own kind, persists an assignment before effects,
-and keeps retries bound to that Operation. Native tests remove placement labels
-only inside their disposable local repository. They prove DAG and receipt
-recovery, while deployed worker placement needs the live verification.
+The polled family claims only kinds listed in `registration.json`, persists an
+assignment before effects, and keeps retries bound to that Operation. Native
+tests remove placement labels only inside their disposable local repository.
+They prove DAG and receipt recovery, while deployed worker placement needs the
+live verification. Proven `process.stop`, `schedule.run` and `schedule.destroy`
+are absent from that registration and scheduled discovery; the executor refuses
+them before any claim or command. Their Gateway declarations require direct
+execution and refuse an explicit polled writer.
 
 ## Direct Schedule controls
 
@@ -74,10 +78,10 @@ Native command deadlines are15/45/60seconds and output is capped at16KiB. Only a
 typed ready result or error code reaches Gateway projection. No root socket or
 broker is used. Placement stays exactly `orbit-node-<admitted node_id>`.
 
-Each writer defaults to polled until actual dev/canary action proof. Instance
-removal child Schedule Operations retain the old writer until their parent
-moves. The earlier209pre-cancelled canaries proved binding/read/projection only;
-their temporary migration placement was restored live in main e830a3d.
+`schedule.run` and `schedule.destroy` use their proven direct path only.
+Unconverted Schedule kinds retain their polled path until the complete owning
+cutover. The earlier209pre-cancelled canaries proved binding/read/projection
+only; their temporary migration placement was restored live in main e830a3d.
 Production success must precede deletion of the replaced Gateway executor.
 
 ## Direct Process controls
