@@ -2,23 +2,25 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    if (! OperationFamilySpec::available('tool.install')) {
-        $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
-    }
     $this->gateway = toolOperationNode('gateway', '10.44.0.2');
     $this->markAsGateway($this->gateway);
-    $this->node = toolOperationNode('dev', '10.44.0.3');
+    $this->node = toolOperationNode('dev', '10.44.0.3', 209);
+    config(['swamp.run_token' => 'fixture-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     Queue::fake();
     $agents = Mockery::mock(AgentCommandRunner::class);
@@ -32,6 +34,7 @@ it('admits keyed installs without manager execution or premature Tool ownership'
     $this->postJson('/api/v1/tools', $body)->assertAccepted()->assertJsonPath('data.id', $start->json('data.id'));
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('tool.install')->and($operation->node_id)->toBe($this->node->id)
+        ->and($operation->state['tool_writer'])->toBe('direct')->and($operation->lock_key)->toBeNull()
         ->and($operation->input['constraint_intervals'])->not->toBeEmpty()->and(Tool::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });
@@ -110,9 +113,9 @@ it('rejects malformed strict input without exposing caller fields', function ():
     expect(Operation::query()->count())->toBe(0);
 });
 
-function toolOperationNode(string $name, string $address): Node
+function toolOperationNode(string $name, string $address, ?int $id = null): Node
 {
-    return Node::query()->create(['name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
+    return Node::query()->forceCreate([...($id === null ? [] : ['id' => $id]), 'name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.20', 'public_ssh_port' => 22, 'user' => 'orbit', 'wireguard_ip' => $address,
         'ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
 }

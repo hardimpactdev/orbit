@@ -29,7 +29,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
             $descriptors[] = ['key' => $key, 'step' => $key, 'transport' => $transport, 'name' => $name,
                 'input' => $input, 'resumable' => true, 'required' => $required];
         };
-        if (isset($input['materialize_command']) && in_array($verb, ['install', 'manager_converge'], true)) {
+        if (isset($input['materialize_command']) && $verb === 'manager_converge') {
             $add('manager-materialize', 'agent', ValidatedData::string($input['materialize_command']), array_intersect_key($input, array_flip(ValidatedData::stringList($input['materialize_fields']))), true);
         }
         $add('manager-ready', 'agent', $version, [], true);
@@ -47,7 +47,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
             if ($input['platform'] === 'macos' && in_array($manager, ['brew', 'brew-cask'], true)) {
                 $bottle['architecture'] = $input['architecture'];
             }
-            if (in_array($verb, ['install', 'update'], true)) {
+            if ($verb === 'update') {
                 $add('package-candidate', 'agent', $prefix.'candidate', $manager === 'composer' ? [...$package, 'operation' => $verb] : $bottle);
             }
             if ($verb === 'remove' && in_array($manager, ['apt', 'vp', 'composer'], true)) {
@@ -118,7 +118,6 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
         $outcome = match ($operation->kind) {
             'tool.remove' => 'applied',
             'tool.adopt' => ($input['tool_status'] ?? null) === 'installed' ? 'unchanged' : 'applied',
-            'tool.install' => $before !== null ? 'unchanged' : 'applied',
             default => $before === $version ? 'unchanged' : 'applied',
         };
         if ($operation->kind === 'tool.update' && is_string(data_get($operation->state, 'executor_runs.package-candidate.result.version'))) {

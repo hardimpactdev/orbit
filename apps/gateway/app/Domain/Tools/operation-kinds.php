@@ -9,7 +9,7 @@ use App\Domain\Tools\ToolOperationExecution;
 
 return (static function (): array {
     $kinds = [];
-    foreach (['install', 'update', 'remove', 'adopt', 'manager_converge'] as $verb) {
+    foreach (['update', 'remove', 'adopt', 'manager_converge'] as $verb) {
         $commands = ['tool.apt-version', 'tool.composer-version', 'tool.vp-version', 'tool.homebrew-version'];
         $map = [];
         foreach (['apt', 'composer', 'vp', 'brew', 'brew-cask'] as $manager) {
@@ -32,7 +32,7 @@ return (static function (): array {
             if ($verb === 'remove') {
                 $map[$manager.':version'] = $version;
             }
-            if (in_array($verb, ['install', 'update', 'remove'], true)) {
+            if (in_array($verb, ['update', 'remove'], true)) {
                 $commands[] = $prefix.$verb;
                 if ($verb !== 'remove') {
                     $commands[] = $prefix.'candidate';
@@ -44,7 +44,7 @@ return (static function (): array {
         if ($verb === 'adopt') {
             $commands[] = 'tool.inspect-composer-scope';
         }
-        if (in_array($verb, ['install', 'manager_converge'], true)) {
+        if ($verb === 'manager_converge') {
             $commands = [...$commands, 'tool.materialize-composer', 'tool.materialize-vp', 'tool.materialize-homebrew'];
         }
         $kinds['tool.'.$verb] = ['commands' => $commands, 'done_when' => $map];
@@ -52,12 +52,15 @@ return (static function (): array {
 
     $kinds['tool.manager_converge']['admission'] = ToolManagerChildAdmission::class;
 
-    return OperationFamilySpec::compile([
-        'requires' => ['children', 'list_of'],
-        'completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,
-        'transport' => 'agent', 'done_step' => 'tool-verified', 'variant' => 'completion_variant',
-        'result_fields' => ['installed_version', 'block', 'version', 'outcome', 'error_code',
-            ['name' => 'packages', 'type' => 'list', 'items' => 'string', 'max' => 4096],
-            ['name' => 'roots', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
-    ], $kinds);
+    return [
+        'tool.install' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
+        ...OperationFamilySpec::compile([
+            'requires' => ['children', 'list_of'],
+            'completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,
+            'transport' => 'agent', 'done_step' => 'tool-verified', 'variant' => 'completion_variant',
+            'result_fields' => ['installed_version', 'block', 'version', 'outcome', 'error_code',
+                ['name' => 'packages', 'type' => 'list', 'items' => 'string', 'max' => 4096],
+                ['name' => 'roots', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
+        ], $kinds),
+    ];
 })();
