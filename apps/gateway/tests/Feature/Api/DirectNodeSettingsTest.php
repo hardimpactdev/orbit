@@ -7,6 +7,8 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -25,7 +27,7 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->gateway = $gateway;
-    $this->node = Node::query()->create(['name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'settings' => ['apps' => ['path' => '/srv/old']]]);
+    $this->node = Node::query()->forceCreate(['id' => 209, 'name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'settings' => ['apps' => ['path' => '/srv/old']]]);
     $this->input = ['agent_pin' => str_repeat('a', 64), 'root' => '/srv/new', 'user' => 'orbit', 'group' => 'orbit', 'create_missing' => true,
         'settings' => ['apps' => ['path' => '/srv/new']], 'settings_patch' => ['apps' => true, 'task_vms' => false]];
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -120,4 +122,35 @@ it('captures the agent pin with direct owning admission and exposes only safe in
     $operation = Operation::findOrFail($response->json('data.id'));
     expect($operation->input['agent_pin'])->toBe(app(AgentDelivery::class)->pin($this->node));
     expect(array_keys(app(NodeSettingsProjection::class)->input($operation)))->toBe(['agent_pin', 'storage']);
+});
+
+it('keeps foreign Nodes and parent admissions polled when the kind switch is direct', function (): void {
+    config(['swamp.direct_writers' => ['node.settings' => 'direct']]);
+    $other = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $direct = app(DirectOperation::class);
+    expect($direct->writer('node.settings', [], 209))->toBe('direct');
+    expect($direct->writer('node.settings', [], $other->id))->toBe('polled');
+    $op = app(StartOperationAction::class)->execute('node.settings', 'node', $other->id, $other->id, $this->input, 'test', null);
+    expect($op->state['node_settings_writer'])->toBe('polled');
+    expect($op->lock_key)->toBe('node:'.$other->id);
+    app(OperationIdempotency::class)->parent = $this->operation;
+    expect($direct->writer('node.settings', [], 209))->toBe('polled');
+    config(['swamp.direct_writers' => ['node.settings' => 'polled']]);
+    app(OperationIdempotency::class)->parent = null;
+    expect($direct->writer('node.settings', [], 209))->toBe('polled');
+});
+
+it('admits foreign Node settings without preparing a direct agent pin', function (): void {
+    $node = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->worker->accessibleNodes()->attach($node);
+    $resolver = Mockery::mock(ManagedUserAccountResolver::class);
+    $resolver->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+    app()->instance(ManagedUserAccountResolver::class, $resolver);
+    config(['swamp.direct_writers' => ['node.settings' => 'direct']]);
+    $response = $this->patchJson('/api/v1/nodes/'.$node->id.'/settings', ['apps' => ['path' => '/srv/new']])->assertAccepted();
+    $operation = Operation::findOrFail($response->json('data.id'));
+    expect($operation->state['node_settings_writer'])->toBe('polled');
+    expect($operation->input)->not->toHaveKey('agent_pin');
+    expect($operation->lock_key)->toBe('node:'.$node->id);
 });
