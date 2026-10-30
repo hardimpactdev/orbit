@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $direct = ['database_server.destroy' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
+    $direct = ['database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_server.destroy' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $direct;
     }
@@ -19,7 +19,7 @@ return (static function (): array {
         'input_schema' => ['type' => 'object', 'additionalProperties' => false,
             'required' => ['host', 'port', 'password', 'default_open', 'action', 'payload'],
             'properties' => ['host' => $string, 'port' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 65535],
-                'password' => $string, 'default_open' => ['type' => 'boolean'], 'action' => ['enum' => ['ready', 'create', 'remove', 'close', 'converge']], 'payload' => $object]]];
+                'password' => $string, 'default_open' => ['type' => 'boolean'], 'action' => ['enum' => ['ready', 'create', 'remove', 'converge']], 'payload' => $object]]];
     $sql = ['transport' => 'agent', 'name' => 'database.server-admin', 'input_fields' => [], 'input_values' => ['operation' => 'execute'],
         'secrets' => ['password' => 'database.intent', 'sql' => 'database.intent']];
     $ready = [...$sql, 'input_values' => ['operation' => 'ready'], 'secrets' => ['password' => 'database.intent']];
@@ -41,7 +41,6 @@ return (static function (): array {
     $kinds = [];
     foreach ([
         'database_server.create' => [$container, $acl, $ready, $valkey, $control],
-        'database_server.close' => [$valkey],
         'database.create' => [$sql, $valkey],
         'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
