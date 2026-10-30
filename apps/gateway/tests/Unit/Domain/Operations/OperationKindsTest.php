@@ -7,6 +7,7 @@ use App\Domain\Operations\OperationCancelGuard;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\TaskPublishOperation;
 use Illuminate\Container\Container;
+use Tests\Support\PolledOperationFixture;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -27,7 +28,7 @@ describe(OperationKinds::class, function (): void {
 
     it('refuses a Swamp declaration on the PHP execution path', function (): void {
         $kinds = new OperationKinds(new Container, [
-            'test.remote' => OperationKinds::definitions()['firewall.deny'],
+            'test.remote' => PolledOperationFixture::definition(),
         ]);
 
         expect(fn () => $kinds->for('test.remote'))->toThrow(LogicException::class, 'not executed by PHP');
@@ -35,7 +36,7 @@ describe(OperationKinds::class, function (): void {
 });
 
 it('refuses unenforced kind run and completion guarantees while loading declarations', function (string $part, string $key): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     if ($part === 'kind') {
         $definition[$key] = ['route.caddy_converge'];
     } elseif ($part === 'runs') {
@@ -64,20 +65,20 @@ it('reports enforced child and target receipt capabilities', function (): void {
 });
 
 it('rejects a child-only completion contract that proves no child', function (): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['completion_contract'] = ['children_succeeded' => []];
     expect(fn () => new OperationKinds(new Container, ['test.empty' => $definition]))
         ->toThrow(LogicException::class, 'complete enforced completion proof');
 });
 
 it('refuses child Node relations from Swamp-written state', function (string $path): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['children'] = [['kind' => 'test.child', 'node_from' => $path]];
     expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
 })->with(['state.steps.inspection.node_id', 'state.executor_runs.inspect.result.node_id', 'state.executor_reentry.children.0.node_id', 'state.unknown_plan.node_id']);
 
 it('requires compensation kinds to be declared with a bounded child boundary key', function (string $case): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['children'] = [['kind' => 'test.child', 'node_from' => 'operation.node_id']];
     $definition['compensations'] = ['test.child'];
     $definition['cancellation_boundary'] = 'stop-source';
@@ -100,13 +101,13 @@ it('rejects result declarations that cannot be enforced', function (string $case
         'nested object' => $field['list_of']['node_id'] = ['list_of' => ['id' => 'int'], 'max' => 4],
         'unbounded nested' => $field['list_of']['node_id'] = ['type' => 'list', 'items' => 'integer'],
     };
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['result_fields'] = [$field];
     expect(fn () => new OperationKinds(new Container, ['test.invalid' => $definition]))->toThrow(LogicException::class);
 })->with(['zero bound', 'large bound', 'unknown field', 'unsupported type', 'empty object', 'nested object', 'unbounded nested']);
 
 it('rejects malformed completion variants at kind load', function (string $case): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $variant = ['by' => 'manager', 'map' => ['apt' => $definition['completion_contract']]];
     match ($case) {
         'missing selector' => $variant['by'] = '',
@@ -119,13 +120,13 @@ it('rejects malformed completion variants at kind load', function (string $case)
 })->with(['missing selector', 'empty map', 'incomplete proof', 'unknown guarantee']);
 
 it('rejects excessive expanded nested list capacity', function (): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['result_fields'] = [['name' => 'large', 'max' => 4096, 'list_of' => ['steps' => ['type' => 'list', 'items' => 'string', 'max' => 4096]]]];
     expect(fn () => new OperationKinds(new Container, ['test.large' => $definition]))->toThrow(LogicException::class);
 });
 
 it('requires a usable skipped schema for settled child contracts at kind load', function (string $case): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['children'] = [['kind' => 'test.first', 'node_from' => 'operation.node_id'], ['kind' => 'test.second', 'node_from' => 'operation.node_id']];
     $definition['completion_contract'] = ['children_settled' => ['test.first', 'test.second']];
     $definition['result_fields'] = [['name' => 'skipped', 'max' => 2, 'list_of' => ['child_id' => 'int', 'reason' => 'string']]];
@@ -140,14 +141,14 @@ it('requires a usable skipped schema for settled child contracts at kind load', 
 })->with(['missing', 'id', 'reason', 'max', 'unknown']);
 
 it('refuses archive relay kinds whose execution class cannot bind the source', function (): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['runs'][0]['transport'] = 'archive_relay';
     expect(fn () => new OperationKinds(new Container, ['test.relay' => $definition]))
         ->toThrow(LogicException::class, 'OperationFamilyArchiveRelay');
 });
 
 it('rejects invalid cancel guard registrations at kind loading', function (mixed $guard): void {
-    $definition = OperationKinds::definitions()['firewall.deny'];
+    $definition = PolledOperationFixture::definition();
     $definition['cancel_guard'] = $guard;
     expect(fn () => new OperationKinds(new Container, ['test.guarded' => $definition]))
         ->toThrow(LogicException::class, 'OperationCancelGuard');

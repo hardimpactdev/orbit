@@ -190,7 +190,7 @@ it('selects only proven APT root intents and keeps other managers Nodes children
         expect($direct->writer($kind, ['manager' => 'apt', 'node_id' => 209], 210))->toBe('polled');
         expect($direct->writer($kind, [], 209))->toBe('polled');
     }
-    foreach (['tool.install', 'tool.update', 'tool.remove', 'firewall.deny', 'firewall.remove'] as $kind) {
+    foreach (['tool.install', 'tool.update', 'tool.remove', 'firewall.remove'] as $kind) {
         expect($direct->writer($kind, ['manager' => 'apt'], 209))->toBe('polled');
     }
     $idempotency = app(OperationIdempotency::class);
