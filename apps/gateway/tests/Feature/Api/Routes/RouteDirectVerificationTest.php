@@ -56,12 +56,12 @@ it('keeps new verification writers polled by default and rejects a PHP choice', 
 it('captures the validated hop and pin without a Gateway effect or execution hold', function (): void {
     config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
     $operation = app(StartRouteVerificationAction::class)->execute('route.workload_verify', $this->router, $this->input);
-    expect($operation->input['verification'])->toBe(['protocol' => 'tls', 'probe' => ['address' => '192.168.6.18', 'port' => 443, 'domain' => 'demo.private.test'], 'agent_sha256' => str_repeat('a', 64)])
+    expect($operation->input['verification'])->toBe(['protocol' => 'tls', 'probe' => ['address' => '10.44.0.18', 'port' => 443, 'domain' => 'demo.private.test'], 'agent_sha256' => str_repeat('a', 64)])
         ->and($operation->state['route_verification_writer'])->toBe('direct')->and($operation->lock_key)->toBeNull()
         ->and($operation->worker)->toBeNull()->and($this->agents->calls)->toBe([]);
-    $this->instance->node->update(['lan_ip' => '192.168.6.88']);
+    $this->instance->node->update(['lan_ip' => '192.168.6.88', 'wireguard_ip' => '10.44.0.88']);
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.probe.address', '192.168.6.18');
+        ->assertJsonPath('data.input.probe.address', '10.44.0.18');
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
     expect($this->agents->calls)->toBe([]);
 });
@@ -121,7 +121,7 @@ it('admits a prospective target only through its owning Route parent snapshot', 
         ]]]]);
     $operation = app(RouteChildAdmission::class)->admit($parent,
         ['kind' => 'route.workload_verify', 'node_id' => $this->router->id, 'input' => $input]);
-    expect($operation->input['verification']['probe']['address'])->toBe('192.168.6.18')
+    expect($operation->input['verification']['probe']['address'])->toBe('10.44.0.18')
         ->and($operation->node_id)->toBe($this->router->id)->and($operation->state['route_verification_writer'])->toBe('direct')
         ->and($this->agents->calls)->toBe([]);
 });
@@ -133,6 +133,22 @@ it('captures public TLS verification only on the stored Ingress', function (): v
     expect(fn () => app(StartRouteVerificationAction::class)->execute('route.public_verify', $this->router, ['route_id' => $this->route->id]))->toThrow(ResourceOperationException::class);
     $operation = app(StartRouteVerificationAction::class)->execute('route.public_verify', $this->control, ['route_id' => $this->route->id]);
     expect($operation->input['verification']['protocol'])->toBe('tls')
-        ->and($operation->input['verification']['probe'])->toBe(['address' => '192.168.6.9', 'port' => 443, 'domain' => 'demo.private.test'])
+        ->and($operation->input['verification']['probe'])->toBe(['address' => '10.44.0.9', 'port' => 443, 'domain' => 'demo.private.test'])
         ->and($operation->node_id)->toBe($this->control->id)->and($this->agents->calls)->toBe([]);
+});
+
+it('probes a colocated Router and workload over its stored WireGuard address', function (): void {
+    $this->instance->update(['node_id' => $this->router->id]);
+    config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
+    $operation = app(StartRouteVerificationAction::class)->execute('route.workload_verify', $this->router, $this->input);
+    expect($operation->input['verification']['protocol'])->toBe('tls')
+        ->and($operation->input['verification']['probe'])->toBe(['address' => '10.44.0.9', 'port' => 443, 'domain' => 'demo.private.test'])
+        ->and($operation->node_id)->toBe($this->router->id)->and($this->agents->calls)->toBe([]);
+});
+
+it('refuses a workload without a published WireGuard endpoint before recording intent', function (): void {
+    $this->instance->node->update(['wireguard_ip' => null]);
+    config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
+    expect(fn () => app(StartRouteVerificationAction::class)->execute('route.workload_verify', $this->router, $this->input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
 });
