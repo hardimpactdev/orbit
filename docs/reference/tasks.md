@@ -1261,6 +1261,8 @@ before admission. A worker for another Node cannot execute the action.
 
 `task_vm.image_metadata` prepares only the active attempt's recorded builder through the fixed `incus.image` `prepare_metadata` action. It also uses direct execution, the admitted host agent digest and the existing 900-second command deadline. It admits no image publication, promotion or pruning input. The Gateway records the completed effect without running a host command.
 
+`task_vm.image_remove` removes only that active attempt's builder or smoke VM, with the exact recorded reset or deletion phase. Swamp executes the fixed `incus.vm` `remove_instance` action on the owning Node and records provider confirmation before the image workflow continues. A live task VM or operator-owned name cannot be substituted. This kind also defaults to direct and has no Gateway execution path.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.

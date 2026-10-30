@@ -266,7 +266,7 @@ final class TaskVmCommandContracts
     {
         $kinds = [];
         foreach ([
-            'image_remove' => ['incus.vm', ['vm', 'operation']], 'image_launch' => ['incus.vm', ['vm', 'operation']],
+            'image_launch' => ['incus.vm', ['vm', 'operation']],
             'image_publish' => ['incus.image', ['project', 'operation']],
         ] as $verb => [$command, $fields]) {
             $schema = self::agentInput($command);
