@@ -7,6 +7,7 @@ namespace App\Domain\Instances\StepLists;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** The shared Instance projection for a completed setup, without execution policy. */
 final readonly class InstanceSetupState
@@ -16,9 +17,10 @@ final readonly class InstanceSetupState
         if (($operation->input['list'] ?? null) !== 'setup' || ! $status->terminal()) {
             return;
         }
+        $execution = ValidatedData::object($operation->input['execution'] ?? []);
         $instance = Instance::query()->whereKey($operation->target_id)->where('node_id', $operation->node_id)
             ->where('project_id', $operation->input['project_id'] ?? null)
-            ->where('checkout_path', $operation->input['execution']['directory'] ?? null)->first();
+            ->where('checkout_path', $execution['directory'] ?? null)->first();
         if ($instance === null) {
             return;
         }
