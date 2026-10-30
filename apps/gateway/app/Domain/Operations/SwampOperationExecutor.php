@@ -662,7 +662,7 @@ final readonly class SwampOperationExecutor
     private function assertPolledKind(Operation $operation): void
     {
         if (DirectOperation::owns($operation)) {
-            throw new ResourceOperationException('operation.executor_invalid', 'Route publications run directly in Swamp and have no executor claim.', 422);
+            throw new ResourceOperationException('operation.executor_invalid', 'Direct Swamp Operations have no executor claim.', 422);
         }
     }
 }
