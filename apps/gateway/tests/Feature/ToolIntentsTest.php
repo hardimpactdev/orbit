@@ -39,7 +39,9 @@ beforeEach(function (): void {
 });
 
 it('returns typed intent without command descriptors and requires the executor peer', function (): void {
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.manager', 'apt')->assertJsonPath('data.input.user', 'orbit');
+    $this->operation->update(['input' => [...$this->input, 'version_constraint' => '^1.0', 'constraint_intervals' => [['start' => 'discard']]]]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.manager', 'apt')->assertJsonPath('data.input.user', 'orbit')
+        ->assertJsonPath('data.input.version_constraint', '^1.0')->assertJsonMissingPath('data.input.constraint_intervals');
     expect($this->operation->fresh()->state)->toBe(['tool_writer' => 'direct', 'swamp_run_id' => $this->runId]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();

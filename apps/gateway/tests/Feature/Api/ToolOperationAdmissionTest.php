@@ -35,7 +35,7 @@ it('admits keyed installs without manager execution or premature Tool ownership'
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('tool.install')->and($operation->node_id)->toBe($this->node->id)
         ->and($operation->state['tool_writer'])->toBe('direct')->and($operation->lock_key)->toBeNull()
-        ->and($operation->input['constraint_intervals'])->not->toBeEmpty()->and(Tool::query()->count())->toBe(0);
+        ->and($operation->input['version_constraint'])->toBe('^1.0')->and($operation->input)->not->toHaveKey('constraint_intervals')->and(Tool::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });
 
@@ -71,6 +71,8 @@ it('rejects unsupported packages and constraints before admission', function (st
     ['vp', 'https://example.test/pkg', null, 'tool.package_invalid'],
     ['composer', 'pkg', null, 'tool.package_invalid'],
     ['apt', 'jq', 'not a range', 'tool.constraint_invalid'],
+    ['apt', 'jq', '^1.0 ||', 'tool.constraint_invalid'],
+    ['apt', 'jq', '>=1.0 <', 'tool.constraint_invalid'],
 ]);
 
 it('protects Node prerequisites and refuses role-owned packages', function (string $manager, string $package, string $code): void {
