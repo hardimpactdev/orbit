@@ -28,9 +28,7 @@ return (static function (): array {
     $kinds['schedule.destroy'] = ['executor' => 'swamp', 'admission' => ScheduleRuntimeChildAdmission::class,
         'result_fields' => ['ready', 'error_code']];
 
-    $kinds['schedule.run'] = ['executor' => 'swamp', 'completion' => ScheduleOperationCompletion::class, 'runs' => [],
-        'completion_contract' => ['step' => 'schedule-control', 'transport' => 'agent', 'name' => 'schedule.run', 'result' => []],
-        'result_fields' => ['ready', 'error_code']];
+    $kinds['schedule.run'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'error_code']];
 
     if (OperationKinds::supports('children')) {
         $kinds['schedule.install_instance_definitions'] = [

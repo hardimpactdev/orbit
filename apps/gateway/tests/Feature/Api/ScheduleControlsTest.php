@@ -40,7 +40,7 @@ beforeEach(function (): void {
 it('exposes only admitted safe input through the shared endpoint and declares no relay', function (): void {
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit', 'agent_sha256' => str_repeat('a', 64)]);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
 });
 
 it('projects safe native results once and refuses conflicting or unproven completion', function (): void {
@@ -175,4 +175,23 @@ it('admits manual runs directly on a worker Node without PHP runtime execution',
     expect($admitted->state['swamp_run_id'])->toBe($this->runId);
     expect($admitted->lock_key)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('starts a manual run natively when the shared writer map is empty', function (): void {
+    config(['swamp.direct_writers' => [], 'operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
+    $id = $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->state['schedule_control_writer'])->toBe('direct')
+        ->and($operation->state['swamp_run_id'])->toBe($this->runId)
+        ->and($this->socket->sent)->toHaveCount(1);
+});
+
+it('refuses a polled manual run override before recording another intent', function (): void {
+    config(['swamp.direct_writers' => ['schedule.run' => 'polled']]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    $count = Operation::query()->count();
+    $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(Operation::query()->count())->toBe($count)->and($this->socket->sent)->toBe([]);
 });
