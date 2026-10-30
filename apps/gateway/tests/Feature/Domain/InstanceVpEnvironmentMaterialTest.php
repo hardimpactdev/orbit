@@ -15,6 +15,7 @@ use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -53,6 +54,29 @@ it('reads the proven candidate checkout and keeps registry settings out of the p
         ->and($agents->calls[0]['input'])->toBe(['path' => $plan['path'], 'user' => $instance->production_user])
         ->and($child->input)->toBe(['instance_id' => $instance->id])->and($child->state)->toBeNull();
 });
+
+it('reads pinned runtime requirements from the owning create checkout', function (): void {
+    [$child, $parent, $instance, $agents] = instanceVpMaterialFixture();
+    $instance->node->roles()->update(['role' => 'app-dev']);
+    $instance->update(['checkout_path' => '/fast/apps/deployment-api/proof', 'environment' => 'development']);
+    $parent->update(['kind' => 'instance.create', 'input' => ['instance_id' => $instance->id], 'state' => []]);
+
+    $plan = app(InstanceVpEnvironmentMaterial::class)->plan($child);
+
+    expect($plan['path'])->toBe($instance->checkout_path)
+        ->and($plan['requirements'])->toMatchArray(['vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager_version' => '11.12.0'])
+        ->and($agents->calls[0]['input'])->toBe(['path' => $instance->checkout_path, 'user' => $instance->node->user]);
+});
+
+it('refuses a VP child whose create parent does not own the placement', function (string $field): void {
+    [$child, $parent, , $agents] = instanceVpMaterialFixture();
+    $foreignId = $field === 'node_id' ? Node::query()->whereKeyNot($child->node_id)->firstOrFail()->id : 999999;
+    $parent->update(['kind' => 'instance.create', $field => $foreignId]);
+
+    expect(fn () => app(InstanceVpEnvironmentMaterial::class)->plan($child))
+        ->toThrow(ResourceOperationException::class);
+    expect($agents->calls)->toBe([]);
+})->with(['target_id', 'node_id']);
 
 it('resolves registry settings in memory only for the admitted environment', function (): void {
     [$child, , $instance] = instanceVpMaterialFixture();

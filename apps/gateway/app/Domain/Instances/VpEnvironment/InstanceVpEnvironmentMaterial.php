@@ -35,10 +35,13 @@ final readonly class InstanceVpEnvironmentMaterial
         $instance = Instance::query()->with(['node', 'project'])->findOrFail($operation->target_id);
         if ($operation->kind !== 'instance.prepare_vp_environment' || $operation->target_type !== 'instance'
             || $operation->node_id !== $instance->node_id || ($operation->input['instance_id'] ?? null) !== $instance->id
-            || $parent?->kind !== 'instance.deploy' || $parent->target_type !== 'instance'
+            || ! in_array($parent?->kind, ['instance.create', 'instance.deploy'], true) || $parent->target_type !== 'instance'
             || $parent->target_id !== $instance->id || $parent->node_id !== $operation->node_id
             || ($parent->input['instance_id'] ?? null) !== $instance->id) {
             throw $this->invalid();
+        }
+        if ($parent->kind === 'instance.create') {
+            return [$instance, $parent, $instance->checkout_path];
         }
         $intent = InstanceDeploymentIntent::admitted($parent);
         $path = $intent['variant'] === 'development' ? $intent['home']
@@ -67,7 +70,7 @@ final readonly class InstanceVpEnvironmentMaterial
     public function plan(Operation $operation): array
     {
         [$instance, $parent, $path] = $this->target($operation);
-        if (! InstanceDeploymentIntent::admitted($parent)['needs_vp']) {
+        if ($parent->kind === 'instance.deploy' && ! InstanceDeploymentIntent::admitted($parent)['needs_vp']) {
             return ['path' => $path, 'requirements' => null];
         }
         $environment = $this->requirements($instance, $path);

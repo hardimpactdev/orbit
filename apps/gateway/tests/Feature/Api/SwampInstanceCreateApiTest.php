@@ -352,6 +352,28 @@ it('synchronizes the resolved create source through its owning child before acti
     expect(json_encode([$parent->refresh()->toArray(), $child->toArray()]))->not->toContain('synthetic-create-secret', $stored['APP_SECRET']);
     expect(fn () => app(InstanceEnvironmentContextResolver::class)->resolve($instance, true))
         ->toThrow(ResourceOperationException::class, 'The Instance environment owner is not available');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.create', 'worker' => 'create-after-env'])
+        ->assertOk()->assertJsonPath('data.id', $parent->id);
+    $vpId = $this->postJson('/api/v1/operation-executor/'.$parent->id.'/children', ['worker' => 'create-after-env', 'key' => 'vp-environment'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'instance.prepare_vp_environment')->json('data.id');
+    $this->postJson('/api/v1/operation-executor/'.$parent->id.'/wait', ['worker' => 'create-after-env', 'keys' => ['vp-environment']])->assertOk();
+    $agents->answer('tool.read-vp-project', ['package' => [], 'locks' => [], '.node-version' => null,
+        '.nvmrc' => null, 'npmrc' => '', 'workspaces' => []]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.prepare_vp_environment', 'worker' => 'create-vp-child'])
+        ->assertOk()->assertJsonPath('data.id', $vpId);
+    $path = '/api/v1/operation-executor/'.$vpId;
+    foreach (['vp.plan', 'vp.receipt'] as $key) {
+        $descriptors = $this->postJson($path.'/heartbeat', ['worker' => 'create-vp-child'])->assertOk()->json('data.execution_context.descriptors');
+        $descriptor = array_find($descriptors, static fn (array $entry): bool => $entry['key'] === $key);
+        $result = $this->postJson($path.'/run', ['worker' => 'create-vp-child',
+            ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))])->assertOk()->json('data');
+        $this->postJson($path.'/step', ['worker' => 'create-vp-child', 'key' => $key.':finish',
+            'name' => $descriptor['step'], 'status' => 'succeeded', 'result' => $result])->assertOk();
+    }
+    $this->postJson($path.'/complete', ['worker' => 'create-vp-child', 'status' => 'succeeded', 'result' => $result])
+        ->assertOk()->assertJsonPath('data.status', 'succeeded');
+    expect($result['no_op'])->toBeTrue();
+    expect($agents->calls[2]['input'])->toBe(['path' => $instance->checkout_path, 'user' => $this->node->user]);
 });
 
 it('seeds absent create templates and keeps stored application keys on replay', function (string $type, string $key, bool $existing): void {
