@@ -17,9 +17,6 @@ final class FakeScheduleRuntimeManager implements ScheduleRuntimeManager
     /** @var list<string> */
     public array $activated = [];
 
-    /** @var list<string> */
-    public array $ran = [];
-
     /** @var list<array{id: string, cascade: bool}> */
     public array $removed = [];
 
@@ -37,12 +34,6 @@ final class FakeScheduleRuntimeManager implements ScheduleRuntimeManager
     {
         $this->throwFailure();
         $this->activated[] = $schedule->id;
-    }
-
-    public function run(Schedule $schedule): void
-    {
-        $this->throwFailure();
-        $this->ran[] = $schedule->id;
     }
 
     public function logs(Schedule $schedule, int $lines): ScheduleLogsData

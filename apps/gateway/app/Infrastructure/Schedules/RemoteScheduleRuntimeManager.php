@@ -45,12 +45,6 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         $this->call($target, 'schedule.activate', $this->runnable($schedule, $target), 'activate', ScheduleErrorCode::ActivationFailed, 'Schedule activation failed.');
     }
 
-    public function run(#[SensitiveParameter] Schedule $schedule): void
-    {
-        $target = $this->targets->forSchedule($schedule);
-        $this->call($target, 'schedule.run', $this->runnable($schedule, $target), 'run', ScheduleErrorCode::RunFailed, 'Schedule run failed.');
-    }
-
     public function logs(#[SensitiveParameter] Schedule $schedule, int $lines): ScheduleLogsData
     {
         if ($lines < 1 || $lines > 1000) {

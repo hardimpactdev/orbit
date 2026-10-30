@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationExecutors;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStatus;
@@ -29,6 +31,13 @@ final readonly class CancelOperationAction
         DB::transaction(function () use ($operation): void {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             if ($operation->status->terminal()) {
+                return;
+            }
+            if ($this->native($operation)) {
+                if ($operation->cancel_requested_at === null) {
+                    $this->store->change($operation, ['cancel_requested_at' => Carbon::now()]);
+                }
+
                 return;
             }
             $this->assertCancellableTree($operation);
@@ -110,6 +119,9 @@ final readonly class CancelOperationAction
             }
         }
         foreach (array_reverse($descendants) as $child) {
+            if ($this->native($child)) {
+                continue;
+            }
             $now = Carbon::now();
             $this->store->change($child, ['status' => OperationStatus::Cancelled, 'worker' => null, 'current_step' => null,
                 'lock_key' => null, 'cancel_requested_at' => $child->cancel_requested_at ?? $now, 'finished_at' => $now,
@@ -122,9 +134,17 @@ final readonly class CancelOperationAction
 
     private function settleUnstarted(Operation $operation): void
     {
+        if ($this->native($operation)) {
+            return;
+        }
         if ($this->store->cancelQueued($operation)) {
             $this->store->change($operation, ['error_code' => 'operation.cancelled']);
             app(OperationExecutors::class)->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
         }
+    }
+
+    private function native(Operation $operation): bool
+    {
+        return DirectOperation::owns($operation) || app(OperationKinds::class)->directOnly($operation->kind);
     }
 }

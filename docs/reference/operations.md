@@ -535,7 +535,13 @@ A declaration names the workflow, writer configuration path, immutable writer-st
 
 After a kind cuts over and removes its previous executor, its `operation-kinds.php` entry contains only `executor: 'swamp'`, `result_fields`, and optional `admission`. Its matching `direct-operations.php` declaration supplies the workflow and projection. The registry resolves that projection without requiring old `runs`, completion handlers or receipt proofs. These direct-only kinds default to the direct writer; an explicit polled setting, a scope mismatch or a missing direct declaration refuses admission rather than falling back to deleted code. The previous executor's claim, execution and completion paths also refuse them. Rollback reverts the kind's cutover PR.
 
+A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
+
+Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
+
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
+
+`firewall.allow` starts `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Its Gateway agent-run descriptor and receipt proof are removed. `firewall.deny` and `firewall.remove` retain their previous Swamp path until their own canaries pass. Rollback is a revert PR, which restores both admission and the previous execution contract.
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 
@@ -554,8 +560,6 @@ Read input comes only from the projection hook, never automatically from raw int
 | `GET /api/v1/direct-operations/{operation}?run_id=UUID` | Safe admitted input, status, result and cancellation request |
 | `POST /api/v1/direct-operations/{operation}/result` | Run ID, status, timestamps, bounded result and error code |
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
-| `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
-| `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 
@@ -563,7 +567,7 @@ On Swamp, use the shared `directOperation` template with family-owned read, acti
 
 The Node action checks repository identity and the requested checked-out branch, then the Gateway projects the recorded branch. Direct mode refuses a domain change before admission until Route's owning workflow can compose it. The previous polled writer retains domain changes. This first slice uses no secrets, Gateway primitive hook or root action.
 
-Prove the new path end to end on a dev or canary target before changing its per-kind writer. Rollback selects the previous Swamp path for new intents; admitted Operations retain their writer. Delete the old path only after production success. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
+Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
 
 ### Private material transport
 

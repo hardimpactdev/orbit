@@ -83,10 +83,6 @@ final class SchedulesController extends Controller
         Schedule $schedule,
         RunScheduleAction $action,
     ): JsonResponse {
-        if ($this->synchronous($schedule)) {
-            return $this->scheduleResponse($request, $action->execute($schedule));
-        }
-
         return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
