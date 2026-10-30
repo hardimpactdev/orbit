@@ -18,6 +18,8 @@ A Route is a domain that reaches an Instance or a Node service. This page explai
 
 The Gateway validates Route changes and records intent as an Operation. Swamp executes the Route lifecycle through the shared Operation executor primitives. Each Node effect is a child Operation bound to its own Node. Successful completion requires the recorded child receipts. The Gateway retains Route state, input validation, ownership checks, certificate signing, and read APIs.
 
+Domain, publication and web-root updates use the Route admission action. They return an Operation before execution. Instance rename records its own Operation and composes the Route update. Neither path uses a synchronous Route update executor.
+
 Caddy convergence and private DNS publication start a Swamp run directly after
 their intent commits. They do not use scheduled discovery, claims, leases,
 heartbeats or Gateway execution locks. Swamp serializes these publications by
