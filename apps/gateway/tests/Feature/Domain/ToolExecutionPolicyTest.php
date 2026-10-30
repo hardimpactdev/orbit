@@ -12,7 +12,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 
-function toolPolicyOperation(string $verb = 'install'): Operation
+function toolPolicyOperation(string $verb = 'update'): Operation
 {
     return new Operation(['kind' => 'tool.'.$verb, 'node_id' => 2, 'input' => [
         'manager' => 'vp', 'package' => 'is-number', 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -29,10 +29,10 @@ function toolPolicyReceipt(Operation $operation, string $key, string $name, arra
 it('exposes only the admitted manager and verb in its executable descriptors', function (): void {
     $policy = new ToolOperationExecution;
     $operation = toolPolicyOperation();
-    expect($policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-install']))->toBe(['package' => 'is-number']);
-    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.apt-install']))
+    expect($policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-update']))->toBe(['package' => 'is-number']);
+    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.apt-update']))
         ->toThrow(ResourceOperationException::class);
-    expect(fn () => $policy->input($operation, ['key' => 'arbitrary', 'transport' => 'agent', 'name' => 'tool.vp-install']))
+    expect(fn () => $policy->input($operation, ['key' => 'arbitrary', 'transport' => 'agent', 'name' => 'tool.vp-update']))
         ->toThrow(ResourceOperationException::class);
 });
 

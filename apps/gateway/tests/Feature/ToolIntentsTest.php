@@ -10,6 +10,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -73,13 +74,17 @@ it('projects manager refusal without synthesizing Gateway executor state', funct
     expect($this->operation->fresh()->state)->not->toHaveKey('executor_runs');
 });
 
-it('isolates kind switches retains old unstamped work and excludes direct claims', function (): void {
-    foreach (['tool.install', 'tool.update', 'tool.remove', 'tool.adopt', 'tool.manager_converge'] as $kind) {
+it('requires direct install without legacy discovery or claims and retains immutable ownership', function (): void {
+    foreach (['tool.update', 'tool.remove', 'tool.adopt', 'tool.manager_converge'] as $kind) {
         expect(app(DirectOperation::class)->writer($kind))->toBe('polled');
     }
-    config(['swamp.direct_writers' => ['tool.install' => 'direct']]);
-    expect(app(DirectOperation::class)->writer('tool.update'))->toBe('polled');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'tool.install', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    $direct = app(DirectOperation::class);
+    expect($direct->writer('tool.install', $this->input, 209))->toBe('direct');
+    expect(fn () => $direct->writer('tool.install', $this->input, 210))->toThrow(ResourceOperationException::class);
+    expect(fn () => $direct->writer('tool.install'))->toThrow(ResourceOperationException::class);
+    config(['swamp.direct_writers' => ['tool.install' => 'polled']]);
+    expect(fn () => $direct->writer('tool.install', $this->input, 209))->toThrow(ResourceOperationException::class);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'tool.install', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable()->assertJsonPath('error.code', 'operation.executor_invalid');
     $this->operation->update(['state' => []]);
     expect(DirectOperation::owns($this->operation))->toBeFalse();
     $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
@@ -190,7 +195,7 @@ it('selects only proven APT root intents and keeps other managers Nodes children
         expect($direct->writer($kind, ['manager' => 'apt', 'node_id' => 209], 210))->toBe('polled');
         expect($direct->writer($kind, [], 209))->toBe('polled');
     }
-    foreach (['tool.install', 'tool.update', 'tool.remove'] as $kind) {
+    foreach (['tool.update', 'tool.remove'] as $kind) {
         expect($direct->writer($kind, ['manager' => 'apt'], 209))->toBe('polled');
     }
     $idempotency = app(OperationIdempotency::class);
