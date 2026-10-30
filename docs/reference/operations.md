@@ -548,6 +548,8 @@ Read input comes only from the projection hook, never automatically from raw int
 | `GET /api/v1/direct-operations/{operation}?run_id=UUID` | Safe admitted input, status, result and cancellation request |
 | `POST /api/v1/direct-operations/{operation}/result` | Run ID, status, timestamps, bounded result and error code |
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
+| `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
+| `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 
@@ -556,3 +558,9 @@ On Swamp, use the shared `directOperation` template with family-owned read, acti
 The Node action checks repository identity and the requested checked-out branch, then the Gateway projects the recorded branch. Direct mode refuses a domain change before admission until Route's owning workflow can compose it. The previous polled writer retains domain changes. This first slice uses no secrets, Gateway primitive hook or root action.
 
 Prove the new path end to end on a dev or canary target before changing its per-kind writer. Rollback selects the previous Swamp path for new intents; admitted Operations retain their writer. Delete the old path only after production success. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
+
+### Private material transport
+
+A direct declaration may map `private_material` input paths to registered `OperationSecretSource` names and `secret_outputs` output names to registered `OperationSecretOutputStore` names. The shared endpoints accept no caller-selected source, store, owner or Node. Reads hydrate only those admitted references; writes call the registered store with its existing owner checks and preconditions. They perform no execution and record no receipt.
+
+Both paths require the recorded native run ID, an unfinished direct Operation, and a configured worker whose caller Node equals `Operation.node_id`. The Services peer has no fleet bypass on these paths. Responses use `Cache-Control: no-store`; Activity records no request body, and MCP excludes both endpoints. Private material and output values never enter Operation input, state, results, steps or logs. Swamp consumes them in memory or protected stdin; it must not write them to arguments or resources.
