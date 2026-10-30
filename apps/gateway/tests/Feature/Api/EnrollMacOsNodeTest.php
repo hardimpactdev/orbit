@@ -16,10 +16,12 @@ use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Carbon\CarbonImmutable;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Tests\Support\FakeMacAdmissionAgentRunner;
 use Tests\Support\FakeNodeAgentRuntime;
+use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
     app()->instance(AdmissionAgentRunner::class, new FakeMacAdmissionAgentRunner);
@@ -123,12 +125,13 @@ it('records an enrolled mac and its removal', function (): void {
     record_fixture($created, 'nodes/node-add/macos-enrolled', AddNodeRequest::class, 'POST /api/v1/nodes');
 
     Node::query()->findOrFail(2)->update(['wireguard_public_key' => 'MINI_KEY']);
+    FleetFixtures::node('mac-removal-vpn', [RoleName::Vpn]);
 
-    $removed = $this->deleteJson('/api/v1/nodes/2', ['offline' => false])->assertOk()
-        ->assertJsonPath('data.removed', true)
-        ->assertJsonPath('data.wireguard_peer_removed', true)
-        ->assertJsonPath('data.retained_on_node', ['user', 'package-managers', 'host-wireguard'])
-        ->assertJsonPath('data.follow_up', null);
+    $this->freezeTime();
+    $this->travelTo(CarbonImmutable::parse('2026-10-30T16:00:00Z'));
+    $removed = $this->deleteJson('/api/v1/nodes/2', ['offline' => false])->assertAccepted()
+        ->assertJsonPath('data.kind', 'node.remove')->assertJsonPath('data.status', 'queued');
+    $this->assertDatabaseHas('nodes', ['id' => 2, 'platform' => 'macos']);
 
     record_fixture($removed, 'nodes/node-remove/macos-removed', RemoveNodeRequest::class, 'DELETE /api/v1/nodes/{node}');
 });

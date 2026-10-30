@@ -13,6 +13,9 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use Tests\Support\Fleet\FleetFixtures;
 
 function removalProofOperation(): array
@@ -65,6 +68,7 @@ it('keeps the source Route relation while a cleanup child is pending', function 
 });
 
 it('deletes the captured nonactive Route and Node only after serving cleanup proof', function (): void {
+    Event::fake([RecordBroadcast::class]);
     [$operation, $node, $route] = removalProofOperation();
     removalProofChild($operation, 'remove-begin');
     removalProofChild($operation, 'remove-residue');
@@ -75,6 +79,7 @@ it('deletes the captured nonactive Route and Node only after serving cleanup pro
 
     $this->assertModelMissing($node);
     $this->assertModelMissing($route);
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::NodeDeleted && $event->id === $node->id);
     expect($result['removed'])->toBeTrue();
 });
 
@@ -134,3 +139,22 @@ it('uses settled compensation evidence to project cancellation with no parent ru
 
     expect($result)->toMatchArray(['node_plan_proven' => true, 'removed' => false, 'error_code' => 'operation.cancelled']);
 });
+
+it('refuses Node deletion until its exact exporter retirement child succeeds', function (string $status): void {
+    [$operation, $node, $route] = removalProofOperation();
+    $metrics = FleetFixtures::node('remove-proof-metrics');
+    $intent = ['key' => 'remove-metrics', 'kind' => 'metrics.reconcile', 'node_id' => $metrics->id, 'input' => []];
+    $operation->update([
+        'input' => [...$operation->input, '_node_plan' => [...$operation->input['_node_plan'], ['type' => 'child', ...$intent, 'optional' => false]]],
+        'state' => [...$operation->state, 'child_intents' => [...$operation->state['child_intents'], $intent]],
+    ]);
+    removalProofChild($operation, 'remove-begin');
+    removalProofChild($operation, 'remove-residue');
+    removalProofChild($operation, 'remove-metrics', $status);
+    $node->update(['status' => 'removing']);
+
+    expect(fn () => DB::transaction(fn () => app(NodeRemovalOperationCompletion::class)->complete($operation,
+        OperationOutcome::succeeded(['node_plan_proven' => true, 'removed' => true]))))->toThrow(ResourceOperationException::class);
+    $this->assertModelExists($node);
+    $this->assertModelExists($route);
+})->with(['queued', 'running', 'failed']);

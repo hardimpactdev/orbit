@@ -12,7 +12,6 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
@@ -396,7 +395,6 @@ final readonly class RecordCommandActivity
         ];
         $result = match (true) {
             $exception instanceof NodeProvisioningException => $exception->result,
-            $exception instanceof NodeRemovalException => $exception->result,
             $exception instanceof RuntimeConvergenceException => $exception->result,
             $exception instanceof ProcessOperationException => $exception->result,
             $exception instanceof FirewallOperationException => $exception->result,

@@ -65,11 +65,11 @@ final readonly class AdmitNodeRemovalOperationAction
             $intents[] = ['key' => 'remove-restore', 'kind' => 'node.removal_restore', 'node_id' => $node->id, 'input' => []];
             $routeRows = $this->policy->routeRows($node);
             $roles = $node->roles()->orderBy('role')->get()->map(static fn ($role): string => $role->role->value)->all();
-            $mac = $node->platform === 'macos';
+            $unmanaged = in_array($node->platform, ['macos', 'ipados'], true);
             $result = ['id' => $node->id, 'name' => $node->name, 'removed' => true, 'wireguard_peer_removed' => $node->wireguard_public_key !== null,
                 'dns_records_removed' => true, 'degradation' => $unreachable ? 'unreachable' : null, 'roles_shed' => $unreachable ? $roles : [],
-                'retained_on_node' => $mac ? ['user', 'package-managers', 'host-wireguard'] : ($unreachable ? app(NodeSideResidue::class)->describe(array_map(RoleName::from(...), array_values($roles)), true) : []),
-                'follow_up' => $unreachable && ! $mac ? app(NodeSideResidue::class)->followUp(true) : null];
+                'retained_on_node' => $unmanaged ? ($node->platform === 'macos' ? ['user', 'package-managers', 'host-wireguard'] : ['host-wireguard']) : ($unreachable ? app(NodeSideResidue::class)->describe(array_map(RoleName::from(...), array_values($roles)), true) : []),
+                'follow_up' => $unreachable && ! $unmanaged ? app(NodeSideResidue::class)->followUp(true) : null];
             $this->store->change($operation, ['input' => [...$operation->input, '_node_plan' => $steps, '_node_result' => $result, '_node_failure_result' => ['id' => $node->id, 'name' => $node->name, 'removed' => false]],
                 'state' => [...($operation->state ?? []), 'child_intents' => $intents, 'removal_intent' => [
                     'id' => $node->id, 'name' => $node->name, 'prior_status' => $node->status->value, 'offline' => $unreachable,

@@ -8,7 +8,7 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -118,22 +118,11 @@ describe('macOS enrollment transport', function (): void {
             ->toBe($recorded['body']['meta']['request_id']);
     });
 
-    it('maps the recorded removal response and keeps the retained host state', function (): void {
+    it('maps the recorded removal admission without claiming completed host cleanup', function (): void {
         $response = macos_fixture_send('nodes/node-remove/macos-removed', new RemoveNodeRequest(2, force: true));
-        $recorded = macos_fixture('nodes/node-remove/macos-removed');
-
-        expect($response)
-            ->toBeInstanceOf(RemovedNodeResponse::class)
-            ->and($response->removed)
-            ->toBeTrue()
-            ->and($response->degradation)
-            ->toBeNull()
-            ->and($response->followUp)
-            ->toBeNull()
-            ->and($response->retainedOnNode)
-            ->toBe(['user', 'package-managers', 'host-wireguard'])
-            ->and($response->toArray())
-            ->toBe([...$recorded['body']['data'], 'request_id' => $recorded['body']['meta']['request_id']]);
+        expect($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->kind)->toBe('node.remove')->and($response->targetId)->toBe(2)
+            ->and($response->status)->toBe('queued')->and($response->result)->toBeNull();
     });
 
     it('preserves a recorded enrollment refusal without rewriting the code', function (string $fixture): void {

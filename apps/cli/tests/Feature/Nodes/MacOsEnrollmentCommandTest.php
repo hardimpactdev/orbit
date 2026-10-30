@@ -157,55 +157,6 @@ it('sends macOS enrollment fields and leaves policy to the gateway', function (a
     ],
 ]);
 
-it('reports retained macOS host state in human and json output', function (): void {
-    MockClient::global([
-        ShowNodeRequest::class => MockResponse::make([
-            'data' => macos_enrolled_node(),
-            'meta' => ['request_id' => macos_request_id()],
-        ]),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => [
-                'id' => 2,
-                'name' => 'mini',
-                'removed' => true,
-                'wireguard_peer_removed' => true,
-                'dns_records_removed' => true,
-                'degradation' => null,
-                'roles_shed' => [],
-                'retained_on_node' => ['user', 'package-managers', 'host-wireguard'],
-                'follow_up' => null,
-            ],
-            'meta' => ['request_id' => macos_request_id()],
-        ]),
-    ]);
-    $json = json_encode([
-        'id' => 2,
-        'name' => 'mini',
-        'removed' => true,
-        'wireguard_peer_removed' => true,
-        'dns_records_removed' => true,
-        'degradation' => null,
-        'roles_shed' => [],
-        'retained_on_node' => ['user', 'package-managers', 'host-wireguard'],
-        'follow_up' => null,
-        'request_id' => macos_request_id(),
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this->artisan('node:remove', ['node' => '2', '--force' => true, '--json' => true])
-        ->expectsOutput($json)
-        ->assertExitCode(0);
-
-    $this->artisan('node:remove', ['node' => '2', '--force' => true])
-        ->expectsOutputToContain('Node [mini] removed.')
-        ->expectsOutputToContain('Left on the node:')
-        ->expectsOutputToContain('user')
-        ->expectsOutputToContain('package-managers')
-        ->expectsOutputToContain('host-wireguard')
-        ->doesntExpectOutputToContain('Warning:')
-        ->expectsOutput('Request ID: '.macos_request_id())
-        ->assertExitCode(0);
-});
-
 it('cancels macOS removal before sending the delete', function (): void {
     $mockClient = MockClient::global([
         ShowNodeRequest::class => MockResponse::make([

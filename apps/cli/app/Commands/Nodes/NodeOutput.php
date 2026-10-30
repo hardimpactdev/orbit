@@ -12,7 +12,6 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 
 final class NodeOutput
 {
@@ -47,7 +46,6 @@ final class NodeOutput
     {
         $valid = match (true) {
             $response instanceof NodeResponse => ! $removing && $response->status === 'active',
-            $response instanceof RemovedNodeResponse => $removing && $response->removed,
             $response instanceof NodeRoleMutationResponse => $response->removed === $removing && ($removing || $response->assignment?->status === 'active'),
             default => false,
         };
@@ -55,12 +53,11 @@ final class NodeOutput
         if (! $valid) {
             throw new GatewayApiException('Gateway response does not confirm the Node operation.',
                 'gateway.invalid_response', requestId: $response instanceof NodeResponse
-                    || $response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse
+                    || $response instanceof NodeRoleMutationResponse
                         ? $response->requestId : null);
         }
 
         $warning = match (true) {
-            $response instanceof RemovedNodeResponse => $response->degradation !== null,
             $response instanceof NodeRoleMutationResponse => $response->degradation !== null || $response->followUp !== null,
             default => false,
         };

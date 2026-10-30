@@ -862,7 +862,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:list' => [[], ['json' => false]],
         'node:metrics' => [['node'], ['json' => false]],
         'node:platform' => [['node', 'platform'], ['json' => false]],
-        'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
+        'node:remove' => [['node'], ['force' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],
         'node:rename' => [['node', 'name'], ['json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],

@@ -5,10 +5,12 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -32,6 +34,7 @@ afterEach(function (): void {
 
 it('fails as not-found for a missing node without force', function (): void {
     $mockClient = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(
             missing_node_error_payload(),
             404,
@@ -57,6 +60,7 @@ it('fails as not-found for a missing node without force', function (): void {
 
 it('fails as not-found for a missing node with force', function (): void {
     $mockClient = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(
             missing_node_error_payload(),
             404,
@@ -80,6 +84,7 @@ it('fails as not-found for a missing node with force', function (): void {
 
 it('fails as typed not-found when the gateway names the missing node', function (): void {
     $mockClient = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(
             [
                 'error' => [
@@ -113,6 +118,7 @@ it('fails as typed not-found when the gateway names the missing node', function 
 
 it('requires force only after an existing node is resolved', function (): void {
     $mockClient = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
     ]);
     $expected = json_encode([
@@ -134,92 +140,61 @@ it('requires force only after an existing node is resolved', function (): void {
         ->toHaveCount(1);
 });
 
-it('sends node removal to the active gateway as json', function (): void {
+it('starts removal with idempotency and follows the Operation without claiming early deletion', function (bool $offline): void {
+    $final = remove_node_operation('succeeded', $offline ? removed_node_degraded_payload() : removed_node_payload());
     $mockClient = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
+        RemoveNodeRequest::class => MockResponse::make(['data' => remove_node_operation('queued'),
+            'meta' => ['request_id' => remove_node_request_id()]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => remove_node_request_id()]]),
     ]);
-    $expected = json_encode(removed_node_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-    $this
-        ->artisan('node:remove', ['node' => '2', '--force' => true, '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
+    $this->artisan('node:remove', ['node' => '2', '--force' => true, '--offline' => $offline,
+        '--idempotency-key' => 'remove-once', '--json' => true])->assertExitCode(0);
+    $requests = array_map(static fn ($response) => $response->getPendingRequest(), $mockClient->getRecordedResponses());
+    $removal = array_find($requests, static fn ($request): bool => $request->getRequest() instanceof RemoveNodeRequest);
+    expect($removal->body()->all())->toBe(['force' => true, 'offline' => $offline]);
+    expect($removal->headers()->get('Idempotency-Key'))->toBe('remove-once');
+    expect($mockClient->getLastRequest())->toBeInstanceOf(ShowOperationRequest::class);
+})->with([false, true]);
 
-    $request = $mockClient->getLastRequest();
-
-    expect($request)
-        ->toBeInstanceOf(RemoveNodeRequest::class)
-        ->and($request?->getMethod())
-        ->toBe(Method::DELETE)
-        ->and($mockClient->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/nodes/2')
-        ->and($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['force' => true, 'offline' => false])
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(2);
-});
-
-it('sends the offline claim and returns the full degraded json payload', function (): void {
-    $mockClient = MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload(id: 3, name: 'app-prod')),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_degraded_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-    $expected = json_encode(removed_node_degraded_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this
-        ->artisan('node:remove', ['node' => '3', '--offline' => true, '--force' => true, '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['force' => true, 'offline' => true]);
-});
-
-it('shows deterministic human output for node removal', function (): void {
+it('reports the final Operation and retained state as JSON', function (): void {
+    $final = remove_node_operation('succeeded', removed_node_degraded_payload());
     MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
+        RemoveNodeRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => remove_node_request_id()]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => remove_node_request_id()]]),
     ]);
-
-    $this
-        ->artisan('node:remove', ['node' => '2', '--force' => true])
-        ->expectsOutput('Node [app-dev] removed.')
-        ->doesntExpectOutputToContain('Left on the node:')
-        ->doesntExpectOutputToContain('  - ')
-        ->expectsOutput('Request ID: '.remove_node_request_id())
+    $this->artisan('node:remove', ['node' => '2', '--force' => true, '--json' => true])
+        ->expectsOutput(json_encode(OperationResponse::fromGatewayData($final, remove_node_request_id())->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(0);
 });
 
-it('shows the degradation advisory for an offline node removal', function (): void {
+it('shows a failed retirement as failed removal and preserves the Operation', function (): void {
+    $final = [...remove_node_operation('failed', ['removed' => false]), 'error_code' => 'node.metrics_reconcile_failed', 'failed_step' => 'remove-metrics'];
     MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload(id: 3, name: 'app-prod')),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_degraded_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
+        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
+        RemoveNodeRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => remove_node_request_id()]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => remove_node_request_id()]]),
     ]);
-
-    expect(Artisan::call('node:remove', ['node' => '3', '--offline' => true, '--force' => true]))->toBe(0);
-    $output = preg_replace('/\s+/', '', Artisan::output());
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Node [app-prod] removed.'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Warning: Node [app-prod] was unreachable. Orbit removed only the state it owns.'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Roles shed:'));
-    expect($output)->toContain(preg_replace('/\s+/', '', '  app-prod'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Left on the node:'));
-    expect($output)->toContain(preg_replace('/\s+/', '', '  Caddy site configuration and certificates for the app-prod role'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.'));
-    expect($output)->toContain(preg_replace('/\s+/', '', 'Request ID: '.remove_node_request_id()));
+    $this->artisan('node:remove', ['node' => '2', '--force' => true])
+        ->expectsOutputToContain('Node removal failed.')
+        ->expectsOutputToContain('node.metrics_reconcile_failed')
+        ->doesntExpectOutputToContain('Node [app-dev] removed.')
+        ->assertExitCode(1);
 });
+
+/** @param array<string,mixed>|null $result
+ * @return array<string,mixed>
+ */
+function remove_node_operation(string $status, ?array $result = null): array
+{
+    return ['id' => 42, 'kind' => 'node.remove', 'target_type' => 'node', 'target_id' => 2,
+        'input' => [], 'status' => $status, 'sequence' => 1, 'steps' => [], 'result' => $result];
+}
 
 it('rejects an invalid node id before making an API request', function (string $nodeId): void {
     $mockClient = MockClient::global();
@@ -238,6 +213,7 @@ it('rejects an invalid node id before making an API request', function (string $
 
 it('prints the request id for node removal gateway api errors', function (): void {
     MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
         ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
         RemoveNodeRequest::class => MockResponse::make(
             [

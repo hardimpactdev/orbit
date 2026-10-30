@@ -116,7 +116,7 @@ describe('Node record events', function (): void {
         );
     });
 
-    it('broadcasts node.deleted when a node is removed', function (): void {
+    it('does not broadcast node.deleted before the removal Operation is proven', function (): void {
         app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
         {
             public function converge(?Node $pendingNode = null): void {}
@@ -131,13 +131,10 @@ describe('Node record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        $this->deleteJson("/api/v1/nodes/{$node->id}", ['offline' => false])->assertOk();
-
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::NodeDeleted
-                && $event->id === $node->id
-                && $event->data === ['id' => $node->id, 'name' => 'quarantined'],
-        );
+        $this->deleteJson("/api/v1/nodes/{$node->id}", ["offline" => false])->assertAccepted()
+            ->assertJsonPath('data.kind', 'node.remove')->assertJsonPath('data.status', 'queued');
+        $this->assertModelExists($node);
+        Event::assertNotDispatched(RecordBroadcast::class,
+            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::NodeDeleted);
     });
 });

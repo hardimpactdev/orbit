@@ -73,6 +73,7 @@ final class NodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
+    #[StartsOperation('node.remove', bindCaller: true)]
     public function destroy(
         Request $request,
         RemoveNodeRequest $removal,
@@ -91,9 +92,9 @@ final class NodesController extends Controller
         ]);
 
         return response()->json([
-            'data' => $action->execute($node, $caller, $removal->offline(), $removal->force())->toArray(),
+            'data' => OperationData::fromModel($action->start($node, $caller, $removal->offline(), $removal->force(), requestId: $request->attributes->getString('orbit.request_id')))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ]);
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]

@@ -6,17 +6,22 @@ Loading Node...
 │
 └  Loaded Node.
 
-Removing Node...
+Recording Node removal...
 
 ┌  Remove Node
 │
-├  ● Removed Node
+├  ● Node removal Operation recorded
 │
-└  Removed Node.
+└  Node removal Operation recorded.
 
-Node [mini] removed.
-Left on the node:
-  user
-  package-managers
-  host-wireguard
+Waiting for a worker...
+
+┌  Remove Node
+│
+├  ● Start on a worker
+│    Operation 1.
+│
+└  Node removal succeeded.
+
+Operation: 1
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

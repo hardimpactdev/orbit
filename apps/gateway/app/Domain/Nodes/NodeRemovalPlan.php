@@ -36,12 +36,12 @@ final readonly class NodeRemovalPlan
             $steps[] = $this->child('remove-metrics', 'metrics.reconcile', $metrics->node_id, []);
         }
         if (! $offline && $node->platform === 'linux') {
-            $steps[] = ['type' => 'run', 'key' => 'remove-agent', 'transport' => 'agent', 'name' => 'agent.remove',
-                'input' => [], 'result' => [], 'optional' => true];
             if ($node->wireguard_public_key !== null) {
                 $steps[] = ['type' => 'run', 'key' => 'remove-public-ssh', 'transport' => 'agent', 'name' => 'firewall.rules',
                     'input' => $this->firewall->publicSsh($node), 'result' => ['matches' => true], 'optional' => false];
             }
+            $steps[] = ['type' => 'run', 'key' => 'remove-agent', 'transport' => 'agent', 'name' => 'agent.remove',
+                'input' => [], 'result' => [], 'optional' => true];
         }
         if ($node->wireguard_public_key !== null) {
             $hub = NodeRole::query()->where('role', RoleName::Vpn)->sole();

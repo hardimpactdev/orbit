@@ -7,7 +7,6 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -148,12 +147,6 @@ dataset('domain exception renderers', function (): array {
                 'message' => 'Error: loading certificates',
             ]],
             static fn (): array => ['orbit.error_code' => 'node.provision_failed', 'orbit.command_result' => null],
-        ],
-        'node removal' => [
-            fn (): Throwable => new NodeRemovalException('wireguard', 'node.remove_failed', 'Removal failed.', $result),
-            502,
-            ['code' => 'node.remove_failed', 'message' => 'Removal failed.', 'details' => ['step' => 'wireguard']],
-            static fn (): array => ['orbit.error_code' => 'node.remove_failed', 'orbit.command_result' => $result],
         ],
         'runtime convergence' => [
             fn (): Throwable => new RuntimeConvergenceException('caddy-config', 'app-dev.caddy_config_failed', 'Caddy did not load.', result: $result),

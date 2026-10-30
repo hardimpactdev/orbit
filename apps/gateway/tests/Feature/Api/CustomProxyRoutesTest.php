@@ -389,7 +389,7 @@ describe('custom proxy ownership guards', function (): void {
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.reconciliation_required');
             })
-            ->and(fn () => app(RemoveNodeAction::class)->execute($this->node, $this->gateway, offline: true, force: true))
+            ->and(fn () => app(RemoveNodeAction::class)->start($this->node, $this->gateway, offline: true, force: true))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.reconciliation_required');
             })

@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 /**
  * Contract tests replay recorded Gateway responses and compare the complete command
@@ -72,8 +76,20 @@ describe('node contract', function () use ($addArguments): void {
         run_contract('nodes/node-add/macos-enrolled', 'node:add', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json', 0);
 
         $removal = ['node' => '2', '--force' => true];
-        run_contract(['nodes/node-show/default', 'nodes/node-remove/macos-removed'], 'node:remove', $removal, 'nodes/node-remove/macos-removed.human.txt', 0);
-        run_contract(['nodes/node-show/default', 'nodes/node-remove/macos-removed'], 'node:remove', [...$removal, '--json' => true], 'nodes/node-remove/macos-removed.json', 0);
+        foreach ([false, true] as $json) {
+            $recorded = json_decode(gateway_fixture('nodes/node-remove/macos-removed')['body'], true, flags: JSON_THROW_ON_ERROR);
+            $final = [...$recorded['data'], 'status' => 'succeeded', 'sequence' => 7, 'result' => [
+                'id' => 2, 'name' => 'mini', 'removed' => true, 'retained_on_node' => ['user', 'package-managers', 'host-wireguard'],
+            ]];
+            MockClient::destroyGlobal();
+            MockClient::global([
+                ...gateway_fixture_mock('nodes/node-show/default', 'nodes/node-remove/macos-removed'),
+                ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'realtime.unavailable', 'message' => 'Unavailable']], 503),
+                ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => $recorded['meta']]),
+            ]);
+            expect(Artisan::call('node:remove', [...$removal, '--json' => $json]))->toBe(0);
+            expect_output(Artisan::output(), 'nodes/node-remove/macos-removed.'.($json ? 'json' : 'human.txt'));
+        }
     });
 
     it('renders macOS enrollment refusals', function (): void {

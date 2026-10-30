@@ -622,7 +622,7 @@ Peer convergence still runs over SSH. It generates or reads the peer key and ins
 
 ## Remove a Node
 
-`orbit node:remove <node> [--offline] [--force]` removes the Node record and its Gateway configuration. It does not clean the machine. [macOS removal](#removal) also skips the Linux agent and firewall steps and reports the retained user, package managers, and host tunnel.
+`orbit node:remove <node> [--offline] [--force] [--idempotency-key=<key>]` starts a `node.remove` Operation. The API returns HTTP 202 with the Operation; the CLI follows it and JSON contains the final Operation. Swamp removes the Node record and its Gateway configuration only after its ordered children succeed. It does not clean the machine. [macOS removal](#removal) also skips the Linux agent and firewall steps and reports the retained user, package managers, and host tunnel.
 
 Task VM host intent is an explicit [Node setting](/reference/node-settings#configure-a-task-vm-host), separate from its roles. Enrollment accepts it inside `settings.task_vms`; it does not infer host approval from `app-dev`. Before removing a host, destroy its task VMs, unset its host configuration,. Removing a role alone does not clear host intent.
 
@@ -637,24 +637,15 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |
 
-Online removal runs these steps in order.
+Swamp records each effect on another Node as a child Operation. It begins removal, revokes Metrics access and waits for exporter retirement. It then restores public SSH on an online Linux Node and removes the agent. Serving children update network membership, clean Route residue, and publish private DNS on the active VPN owner. The Gateway deletes the Node only after the recorded plan has proven completion. Pending or failed Metrics children cannot prove deletion.
 
-| Step | Result | Code when it fails |
-| --- | --- | --- |
-| `grafana-access-revocation` | The Gateway revokes the Node's Grafana access. | `node.grafana_access_revocation_failed` |
-| `metrics-exporters` | The Gateway retires the Node's exporter state and reconciles the fleet. | `node.metrics_reconcile_failed` |
-| Node agent | The Gateway stops and disables `orbit-agent.service` and deletes the unit, `/usr/local/bin/orbit-agent`, and `/etc/orbit/agent`. A failure only logs a warning. | none |
-| `firewall-recovery` | The Gateway restores `orbit:public-ssh-recovery` over WireGuard. It skips this step for a Node without a WireGuard peer. | `node.firewall_recovery_failed` |
-| `wireguard-projection` | The Gateway removes the WireGuard peer. | `node.wireguard_projection_failed` |
-| `router-lan-ingress` | The Gateway removes the Node's Router LAN access in its Cluster. | `router.lan_ingress_failed` |
-| `dns-projection` | The Gateway converges private DNS. | `node.dns_projection_failed` |
-| `persistence` | The Gateway deletes the Node record. | `node.persistence_failed` |
+Failure and cancellation use the recorded restoration child before the parent ends. Restoration returns the Node to its prior state, restores network membership and Metrics selection, and republishes private DNS. A failed restoration returns `node.removal_rollback_failed`. The API never waits for these effects inside PHP.
 
-A failed step returns the Node record to the status it had, restores the Metrics selection, and restores the WireGuard peer when the Gateway removed it. So a `failed` Node stays `failed`. When a rollback itself fails, the Gateway returns `node.removal_rollback_failed` with the step `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback`.
+Executor Nodes refuse public removal with `node.executor_dependency`; operators can still converge and re-key them synchronously. No removal of an executor Node is queued through Swamp.
 
 ### Offline removal
 
-Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every guard above, but the removal still skips `firewall-recovery`. So omit `--offline` for a Node that is up. A reachable Linux removal returns an empty `retained_on_node`. The Gateway still removes the Node agent, and public SSH stays as it was because firewall recovery did not run.
+Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every guard above and uses the online plan, including public SSH recovery. Actual reachability, stored as `state.removal_intent.offline`, controls exporter retirement and remote cleanup; the requested flag alone does not. A reachable Linux removal returns an empty `retained_on_node`.
 
 The Node of a task VM is the exception: `DestroyTaskVm` deletes the VM first and removes the Node without a probe, and without a Metrics pass, because a task VM Node never hosts an exporter. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 

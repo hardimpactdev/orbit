@@ -8,7 +8,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -52,7 +51,6 @@ final class GatewayExceptionStatus
             $exception instanceof NodeRoleValidationException => Response::HTTP_UNPROCESSABLE_ENTITY,
             $exception instanceof NodeRoleOperationException,
             $exception instanceof NodeProvisioningException => $exception->status,
-            $exception instanceof NodeRemovalException,
             $exception instanceof RuntimeConvergenceException,
             $exception instanceof ProcessOperationException => Response::HTTP_BAD_GATEWAY,
             $exception instanceof ValidationException => $exception->status,

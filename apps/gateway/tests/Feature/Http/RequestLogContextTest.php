@@ -7,7 +7,6 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -209,7 +208,6 @@ it('renders domain and framework exception statuses from one status source', fun
         new NodeRoleValidationException('Role validation failed.'),
         new NodeRoleOperationException('apply', 'node_role.failed', 'failed', 'Role operation failed.', $result),
         new NodeProvisioningException('provision', 'node.provision_failed', 'Provisioning failed.', result: $result),
-        new NodeRemovalException('remove', 'node.remove_failed', 'Removal failed.', $result),
         new RuntimeConvergenceException('converge', 'runtime.failed', 'Runtime convergence failed.', result: $result),
         new ProcessOperationException('run', 'process.failed', 'Process operation failed.', $result),
         new ScheduleOperationException('install', ScheduleErrorCode::InstallFailed, 'Schedule operation failed.'),

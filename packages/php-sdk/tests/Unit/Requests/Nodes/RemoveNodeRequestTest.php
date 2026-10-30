@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -15,9 +15,8 @@ describe(RemoveNodeRequest::class, function (): void {
         $mockClient = new MockClient([
             RemoveNodeRequest::class => MockResponse::make([
                 'data' => [
-                    'id' => 12,
-                    'name' => 'operator',
-                    'removed' => true,
+                    'id' => 42, 'kind' => 'node.remove', 'target_type' => 'node', 'target_id' => 12,
+                    'status' => 'queued', 'sequence' => 0,
                 ],
                 'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
             ]),
@@ -38,13 +37,12 @@ describe(RemoveNodeRequest::class, function (): void {
             ->and($mockClient->getLastPendingRequest()?->body()->all())
             ->toBe(['force' => false, 'offline' => false])
             ->and($response)
-            ->toBeInstanceOf(RemovedNodeResponse::class)
+            ->toBeInstanceOf(OperationResponse::class)
             ->and($response->id)
-            ->toBe(12)
-            ->and($response->name)
-            ->toBe('operator')
-            ->and($response->removed)
-            ->toBeTrue()
+            ->toBe(42)
+            ->and($response->kind)->toBe('node.remove')
+            ->and($response->targetId)->toBe(12)
+            ->and($response->status)->toBe('queued')
             ->and($response->requestId)
             ->toBe('0198e15d-16c4-7855-8eb2-182b53ad28ba')
             ->and($mockClient->getLastPendingRequest()?->headers()->get('X-Orbit-Request-Id'))
@@ -59,9 +57,8 @@ describe(RemoveNodeRequest::class, function (): void {
         $mockClient = new MockClient([
             RemoveNodeRequest::class => MockResponse::make([
                 'data' => [
-                    'id' => 12,
-                    'name' => 'operator',
-                    'removed' => true,
+                    'id' => 42, 'kind' => 'node.remove', 'target_type' => 'node', 'target_id' => 12,
+                    'status' => 'queued', 'sequence' => 0,
                 ],
                 'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
             ]),
