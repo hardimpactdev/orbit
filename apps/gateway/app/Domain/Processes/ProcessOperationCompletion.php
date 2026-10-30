@@ -59,13 +59,12 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
     {
         $verb = substr($operation->kind, strlen('process.'));
         $required = match ($verb) {
-            'destroy' => ['process-remove' => 'process.remove'],
             'create', 'update' => $operation->input['runtime'] === 'docker'
                 ? ['process-converge-container' => 'process.converge-container']
                 : ['process-stage-unit' => 'process.stage-unit'],
             default => ['process-'.$verb => 'process.control'],
         };
-        if ($requireStatus && $verb !== 'destroy') {
+        if ($requireStatus) {
             $required['process-status'] = 'process.status';
         }
         if (isset($operation->input['retired_runtime'])) {

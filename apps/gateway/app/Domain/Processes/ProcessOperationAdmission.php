@@ -54,7 +54,7 @@ final readonly class ProcessOperationAdmission
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        if ($verb !== 'stop') {
+        if (! in_array($verb, ['stop', 'destroy'], true)) {
             app(ProcessSwampSafety::class)->assertAllowed($target->node);
         }
         if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {

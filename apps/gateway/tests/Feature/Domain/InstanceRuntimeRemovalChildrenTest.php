@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\SwampOperationExecutor;
-use App\Domain\Processes\ProcessOperationExecution;
 use App\Domain\Processes\ProcessRuntimeChildAdmission;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeChildAdmission;
@@ -31,7 +30,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-schedule-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
     $this->node = Node::query()->create(['name' => 'runtime-removal', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active',
@@ -103,7 +102,7 @@ it('refuses an unrecorded record, changed Node, wrong parent or changed ownershi
     $this->assertDatabaseCount('operations', 1);
 })->with(['input', 'node', 'parent', 'owner'])->with(['process', 'schedule']);
 
-it('composes owning admissions and requires native Schedule projection before database cleanup', function (): void {
+it('composes owning admissions and requires native runtime projection before database cleanup', function (): void {
     $agent = (new FakeAgentCommandRunner)->answer('process.remove', [])->answer('schedule.remove', []);
     app()->instance(AgentCommandRunner::class, $agent);
     $executor = app(SwampOperationExecutor::class);
@@ -112,34 +111,18 @@ it('composes owning admissions and requires native Schedule projection before da
         expect($child->kind)->toBe($intent['kind'])->and($child->node_id)->toBe($this->node->id);
         $replay = DB::transaction(fn (): Operation => app(OperationChildren::class)->admit($this->parent, ['key' => $intent['key']])['operation']);
         expect($replay->id)->toBe($child->id);
-        if ($child->kind === 'schedule.destroy') {
-            $child->refresh();
-            expect($child->state['schedule_control_writer'])->toBe('direct');
-            expect($child->lock_key)->toBeNull();
-            expect(fn () => $executor->claim($child->kind, 'old', $this->workerNode->id, $child->id))->toThrow(ResourceOperationException::class);
-            expect(fn () => $this->runtime->assertRemoved($this->parent->refresh(), $this->instance->id))->toThrow(ResourceOperationException::class);
-            app(DirectOperation::class)->projection($child)->apply($child, ['run_id' => $child->state['swamp_run_id'],
-                'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00Z', 'finished_at' => '2026-10-30T12:00:01Z',
-                'result' => ['ready' => true]]);
-
-            continue;
-        }
-        $worker = 'removal-'.$child->id;
-        $child = $executor->claim($child->kind, $worker, $this->workerNode->id, $child->id);
-        expect(fn () => $executor->complete($child, ['worker' => $worker, 'status' => 'succeeded', 'result' => ['ready' => true]], $this->workerNode->id))
-            ->toThrow(ResourceOperationException::class);
-        $execution = app(ProcessOperationExecution::class);
-        foreach ($execution->context($child)['descriptors'] as $descriptor) {
-            $result = $executor->run($child, ['worker' => $worker, 'key' => $descriptor['key'], 'transport' => $descriptor['transport'],
-                'name' => $descriptor['name'], 'input' => $descriptor['input']], $this->workerNode->id);
-            $executor->step($child, ['worker' => $worker, 'key' => $descriptor['key'].'.finish', 'name' => $descriptor['step'],
-                'status' => 'succeeded', 'result' => $result], $this->workerNode->id);
-        }
-        $executor->complete($child, ['worker' => $worker, 'status' => 'succeeded', 'result' => $result], $this->workerNode->id);
-        expect($child->refresh()->status->value)->toBe('succeeded');
+        $child->refresh();
+        $writer = $child->kind === 'process.destroy' ? 'process_control_writer' : 'schedule_control_writer';
+        expect($child->state[$writer])->toBe('direct');
+        expect($child->lock_key)->toBeNull();
+        expect(fn () => $executor->claim($child->kind, 'old', $this->workerNode->id, $child->id))->toThrow(ResourceOperationException::class);
+        expect(fn () => $this->runtime->assertRemoved($this->parent->refresh(), $this->instance->id))->toThrow(ResourceOperationException::class);
+        app(DirectOperation::class)->projection($child)->apply($child, ['run_id' => $child->state['swamp_run_id'],
+            'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00Z', 'finished_at' => '2026-10-30T12:00:01Z',
+            'result' => ['ready' => true]]);
     }
     $this->runtime->assertRemoved($this->parent->refresh(), $this->instance->id);
-    expect(array_column($agent->calls, 'command'))->toBe(['process.remove']);
+    expect(array_column($agent->calls, 'command'))->toBe([]);
     $this->assertModelMissing($this->process);
     $this->assertModelMissing($this->schedule);
     $this->assertModelExists($this->instance);
