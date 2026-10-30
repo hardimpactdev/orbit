@@ -141,9 +141,27 @@ export function lifecycleDirect(
 ) {
   return {
     type: "@nckrtl/instance-lifecycle-direct",
-    version: "2026.10.30.1",
+    version: "2026.10.30.2",
     globalArguments: Globals,
     methods: {
+      bindingCanary: {
+        description:
+          "Prove the bound Gateway read and projection without a Node action",
+        arguments: Args,
+        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
+          Args.parse(args);
+          return await directOperation(
+            args,
+            new GatewayOperation(makeHttp(ctx), args),
+            () =>
+              Promise.resolve({
+                error_code: "instance.node_action_unavailable",
+              }),
+            (result) => Result.parse(result),
+            ctx.signal,
+          );
+        },
+      },
       rename: {
         description: "Record a branch already checked out on the admitted Node",
         arguments: Args,

@@ -1,7 +1,7 @@
 id: a2ac2abb-17bf-4936-802e-995b004773aa
 name: operation-instance-lifecycle-direct
-description: Record a checked-out development branch directly on its admitted Node.
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+description: Canary direct branch recording on the existing migration workers.
+labels: { pool: migration }
 vaults: []
 writes: true
 inputs:
@@ -18,7 +18,7 @@ jobs:
           type: behavior
           behaviorType: '@nckrtl/instance-lifecycle-direct'
           behaviorName: '${{ "instance-lifecycle-node-" + string(inputs.node_id) }}'
-          methodName: rename
+          methodName: bindingCanary
           inputs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'

@@ -32,7 +32,7 @@ class DirectRenameNative(unittest.TestCase):
         module.write_text('import {fixtureHttp, fixtureInspect} from "./direct_native_fixture.ts";\n' + module.read_text().replace('...lifecycleDirect(),', '...lifecycleDirect(() => fixtureHttp, fixtureInspect),'))
         (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-instance-lifecycle-direct.yaml'
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith('target:'))+'\n')
+        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().replace('methodName: bindingCanary', 'methodName: rename').splitlines() if not line.startswith(('target:', 'labels:')))+'\n')
         self.state = {'bound': True, 'calls': [], 'inspections': 0,
                       'operation': {'id': 17, 'kind': 'instance.rename', 'node_id': 9,
                                     'status': 'queued', 'result': None, 'cancel_requested': False,
@@ -90,6 +90,14 @@ class DirectRenameNative(unittest.TestCase):
         self.run_workflow(success=False)
         self.assertEqual(self.read()['inspections'], 0)
         self.assertEqual(self.read()['operation']['status'], 'queued')
+
+    def test_migration_canary_projects_a_refusal_without_a_local_action(self):
+        workflow = self.repo / 'workflows/workflow-operation-instance-lifecycle-direct.yaml'
+        workflow.write_text(workflow.read_text().replace('methodName: rename', 'methodName: bindingCanary'))
+        self.run_workflow(success=False)
+        self.assertEqual(self.read()['inspections'], 0)
+        self.assertEqual(self.read()['operation']['status'], 'failed')
+        self.assertEqual(self.read()['operation']['result'], {'error_code': 'instance.node_action_unavailable'})
 
     def test_cancelled_intent_does_not_inspect(self):
         self.state['operation']['cancel_requested'] = True

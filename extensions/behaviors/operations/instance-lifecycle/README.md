@@ -1,19 +1,27 @@
 # Direct branch recording canary
 
-`operation-instance-lifecycle-direct` handles branch-only `instance.rename` on
-exactly `orbit-node-<admittedNodeId>`. It uses the shared direct Operation
-read/result protocol and the existing read-only account agent command. It does
-not change HEAD, files or the origin. Repository identity and the requested
-checked-out branch must match before the Gateway records the branch.
+`operation-instance-lifecycle-direct` handles branch-only `instance.rename`.
+Until per-Node workers exist, its canary uses the existing Node 209 workers with
+`pool=migration`, as authorized by the orchestrator. Exact placement on
+`orbit-node-<admittedNodeId>` follows with per-Node workers. The canary proves
+the Gateway start-response binding before the first worker read, running
+projection and terminal projection. Its `bindingCanary` method then refuses with
+`instance.node_action_unavailable` without calling any local agent. It cannot
+prove checkout inspection or justify writer takeover. The `rename` method is
+reserved for exact-Node placement when per-Node workers exist.
 
-The writer defaults to `polled` through `ORBIT_SWAMP_DIRECT_WRITERS={}`. A
-canary requires an approved grant on the existing shared run token, the exact
-Node worker running as the enrolled account, and the admitted agent pin already
-installed. No worker unit, root privilege boundary, token or grant changes are
-part of this slice. Use native defaults, `vaults: []` and a stable behavior per
-Node. Verify Gateway start binding before the first worker read. Unbound reads
-refuse without a local agent call; native recovery owns retry. Cancellation
-before inspection skips it; an in-flight inspection finishes before projection.
+It uses the shared direct Operation read/result protocol and the existing
+read-only account agent command. It changes no HEAD, files or origin. Repository
+identity and the requested checked-out branch must match before the Gateway
+records the branch. The writer defaults to `polled` through
+`ORBIT_SWAMP_DIRECT_WRITERS={}`. Extending the existing shared token's grant to
+converted workflows is pre-approved; lane 16 records run-and-status access in
+FLEET-CHANGES. No new token, worker unit or root privilege boundary is needed.
+
+Use native defaults, `vaults: []` and a stable behavior per admitted Node.
+Unbound reads refuse before a local agent call. Native recovery owns retry.
+Cancellation before inspection skips it; an in-flight inspection finishes before
+projection.
 
 In direct mode a request containing a domain change refuses before admission.
 Route composition and the other lifecycle kinds remain on their existing Swamp

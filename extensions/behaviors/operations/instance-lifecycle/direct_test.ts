@@ -243,3 +243,29 @@ Deno.test("local inspection uses fixed argv and the admitted pin/input without s
     Object.defineProperty(Deno, "Command", { value: original });
   }
 });
+
+Deno.test("migration canary proves read and projections without any foreign Node action", async () => {
+  const f = new Fixture();
+  await assertRejects(
+    () =>
+      lifecycleDirect(() => f.http, f.inspect).methods.bindingCanary.execute(
+        args,
+        ctx,
+      ),
+    Error,
+    "instance.node_action_unavailable",
+  );
+  assertEquals(f.inspections, 0);
+  assertEquals(f.calls.map((call) => call.path), [
+    `/api/v1/direct-operations/17?run_id=${args.run_id}`,
+    "/api/v1/direct-operations/17/result",
+    "/api/v1/direct-operations/17/result",
+  ]);
+  assertEquals(f.calls.slice(1).map((call) => call.body!.status), [
+    "running",
+    "failed",
+  ]);
+  assertEquals(f.operation.result, {
+    error_code: "instance.node_action_unavailable",
+  });
+});
