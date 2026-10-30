@@ -45,12 +45,18 @@ a started action must stop safely and retain an uncertain outcome if needed.
 
 ## Activation gates
 
-The local adapter refuses before executing anything until lane16 supplies the
-approved shared local socket API and its closed Tools catalogue. There is no
-executable sudo client or alternate launch path. This source change installs no
-worker, account, sudo rule, token, grant or runtime unit. Preserve the worker's
-current protections. Fixture injection tests policy while that upstream boundary
-is pending.
+The local adapter permits only the existing non-mutating Linux APT
+`tool.apt-version` and `tool.apt-inventory` commands. They run as the current
+worker account through the fixed root-owned agent binary and its admitted pin,
+without sudo, account switching or a root socket. The agent's frozen command
+protocol checks the pin and account privilege. No command descriptor or caller
+program reaches the adapter. Other commands refuse until lane16's approved
+shared privilege API and closed catalogue cover them.
+
+No worker, account, sudo rule, token, grant or runtime unit is installed or
+changed. Preserve the worker's current protections. Read-only APT manager and
+adoption canaries can prove their actual action path while privileged actions
+remain gated. Fixture success alone remains insufficient for takeover.
 
 `ORBIT_SWAMP_DIRECT_WRITERS` defaults to `{}`; all five kinds remain polled.
 Before switching a kind to `direct`, prove the approved action end to end on a
