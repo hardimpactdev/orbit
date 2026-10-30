@@ -5,7 +5,7 @@ import { PageHeader } from "../ui/PageHeader";
 import { Pane } from "../ui/Pane";
 import { useNodeTables } from "./nodeTables";
 
-/** The Nodes section: the Nodes with roles and their meters, then the roleless Nodes that only join the network. */
+/** Nodes with desired active exporters and their meters, followed by other Nodes. */
 export function NodesList() {
     const go = useGo();
     const fleet = useFleet();
@@ -29,8 +29,8 @@ export function NodesList() {
             <Pane
                 name="list"
                 order={1}
-                title="Nodes with roles"
-                // As tall as its rows, up to most of the page; the roleless Nodes take what is left.
+                title="Tracked nodes"
+                // As tall as its rows, up to most of the page; the other nodes take what is left.
                 className="w-full max-h-[50vh] md:max-h-[60vh]"
                 columns={workerColumns}
                 rows={workers}
@@ -42,7 +42,7 @@ export function NodesList() {
             <Pane
                 name="clients"
                 order={2}
-                title="Roleless Nodes"
+                title="Other nodes"
                 className="w-full max-h-[40vh] md:max-h-none"
                 columns={clientColumns}
                 rows={clients}

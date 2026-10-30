@@ -18,11 +18,11 @@
             },
             {
                 "testid": "dashboard-workers",
-                "purpose": "The Nodes with roles pane."
+                "purpose": "The Tracked nodes pane."
             },
             {
                 "testid": "dashboard-clients",
-                "purpose": "The roleless Nodes pane."
+                "purpose": "The other nodes pane."
             },
             {
                 "testid": "dashboard-projects",

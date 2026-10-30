@@ -1,7 +1,8 @@
+import { useMemo } from "react";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import { queryClient } from "../api/queryClient";
-import type { Node } from "../api/types";
+import type { MetricsStatus, Node } from "../api/types";
 import {
     mapMetrics,
     mapReach,
@@ -105,6 +106,26 @@ async function readMetrics(instance: string | null): Promise<Record<string, Node
 
 const interval = (seconds: number) => (query: { state: { status: string } }) =>
     query.state.status === "error" ? 60_000 : seconds * 1000;
+
+/** Group Nodes by the Gateway's desired and active exporter state, never by roles or samples. */
+export function useTrackedNodeIds(): ReadonlySet<number> {
+    const { data } = useQuery({
+        queryKey: ["metrics", "status"],
+        queryFn: () => get<MetricsStatus>("/api/v1/metrics/status"),
+        refetchInterval: interval(60),
+        retry: false,
+    });
+
+    return useMemo(
+        () =>
+            new Set(
+                (data?.exporters ?? [])
+                    .filter((exporter) => exporter.desired && exporter.actual === "active")
+                    .map((exporter) => exporter.id),
+            ),
+        [data],
+    );
+}
 
 /** Every Node's metrics in one read, for the dashboard. Look a Node up by its `wireguard_ip`. */
 export function useFleetMetrics(): Record<string, NodeMetrics> {
