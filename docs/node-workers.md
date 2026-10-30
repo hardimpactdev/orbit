@@ -61,13 +61,15 @@ not run in-process. CI checks every Node placement for both target and string
 node label and traces the local behavior imports. Third-party packages stay in
 the `orbit-swamp-package` sandbox without sudo.
 
-Update agents fleet-wide before selecting any Node: old agents cannot parse the
-bool-to-table `[swamp_worker]` change. Rollout intent is the JSON array
+Update each Node to the released agent before selecting that Node. Old agents
+cannot parse the bool-to-table `[swamp_worker]` change. Select it immediately
+before enrollment. Rollout intent is the JSON array
 `ORBIT_SWAMP_WORKER_NODES`, initially `[]`. The Node API projects that selection
 as `swamp_worker_selected`; schedules never enroll opt-out Nodes.
 
-After orchestrator approval, enroll in order: beast 9, shark 13, sabre 12,
-services 17, app-prod 4, usexit 18, vpn 1, gateway 14, then Swamp 209. Read the current Node
+After orchestrator approval, enroll in the current demand order: beast 9,
+gateway 14, services 17, shark 13, sabre 12, app-prod 4, usexit 18, vpn 1, then
+Swamp 209. Read the current Node
 record for `user`; currently 9/13/12 use nckrtl, and 17/4/18/1/14 use orbit.
 Never infer the account from the host name. macOS has no installer in this
 slice; its launchd path is deferred.
@@ -105,3 +107,8 @@ requires native support for overlapping credential generations. This ordering
 is an outstanding follow-up; the scheduledday20 rotation does not provide it.
 Do not change the exact placement identity or add a custom issuer to hide this
 limit. Initial enrollment is unaffected.
+
+The native runtime merges global arguments into method arguments. Lifecycle methods
+accept the declared `gatewayUrl` and `caFile` alongside their method input, while
+rejecting undeclared keys. Both enrollment and the scheduled rotation planner use
+this boundary before reaching any token or Gateway effect.

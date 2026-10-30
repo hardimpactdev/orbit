@@ -188,7 +188,7 @@ type Context = {
 };
 export const behavior = {
   type: "@nckrtl/node-worker-lifecycle",
-  version: "2026.10.30.1",
+  version: "2026.10.30.2",
   globalArguments: Globals,
   resources: {
     work: {
@@ -210,7 +210,7 @@ export const behavior = {
   methods: {
     plan: {
       description: "Select native Node enrollments due for rotation by day20",
-      arguments: z.object({}).strict(),
+      arguments: Globals.strict(),
       execute: async (_args: unknown, ctx: Context) => {
         const http = gatewayHttp(
           ctx.globalArgs.gatewayUrl,
@@ -238,7 +238,7 @@ export const behavior = {
     converge: {
       description:
         "Mint or re-deliver native credentials through Node converge",
-      arguments: Args,
+      arguments: Globals.extend(Args.shape).strict(),
       execute: async (args: z.infer<typeof Args>, ctx: Context) => ({
         dataHandles: [
           await ctx.writeResource(

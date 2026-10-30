@@ -2,6 +2,9 @@
 Run: SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s tests -p node_worker_native_test.py
 """
 import json
+import http.server
+import ssl
+import threading
 import os
 import pwd
 import shutil
@@ -16,6 +19,58 @@ import urllib.request
 
 @unittest.skipUnless(os.environ.get('SWAMP_BIN'), 'requires the pinned native Swamp binary')
 class NativeWorkerTest(unittest.TestCase):
+    def test_lifecycle_globals_reach_native_plan_and_converge_guards(self):
+        with tempfile.TemporaryDirectory(prefix='orbit-worker-global-') as directory:
+            root = Path(directory)
+            env = {key: value for key, value in os.environ.items() if not key.startswith('SWAMP_')}
+            env.update(SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1', SWAMP_HOME=str(root / 'home'),
+                       SWAMP_CONFIG_DIR=os.environ.get('SWAMP_CONFIG_DIR', str(Path.home() / '.config/swamp')),
+                       SWAMP_API_KEY_FILE=os.environ.get('SWAMP_API_KEY_FILE', str(Path.home() / '.config/swamp/api-key')))
+            def command(*args):
+                return subprocess.run([os.environ['SWAMP_BIN'], *args, '--json'], cwd=root, env=env,
+                                      capture_output=True, text=True, timeout=30)
+            self.assertEqual(command('init', str(root)).returncode, 0)
+            source = Path(__file__).resolve().parents[1] / 'extensions/behaviors'
+            for name in ('node-worker', 'automatic-deploy'):
+                shutil.copytree(source / name, root / 'extensions/behaviors' / name)
+            requests = []
+            class Gateway(http.server.BaseHTTPRequestHandler):
+                def log_message(self, *_args):
+                    pass
+                def do_GET(self):
+                    requests.append(self.path)
+                    # Both guards refuse before native token commands or any write.
+                    data = {'id': 9, 'user': 'nckrtl', 'status': 'active', 'platform': 'linux',
+                            'swamp_worker_selected': False}
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'data': data}).encode())
+            server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Gateway)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                created = command('behavior', 'create', '@nckrtl/node-worker-lifecycle', 'fixture-worker')
+                self.assertEqual(created.returncode, 0, 'native lifecycle scaffold')
+                model = json.loads(created.stdout)
+                path = Path(model['path'])
+                definition = {
+                    'id': model['id'], 'type': '@nckrtl/node-worker-lifecycle', 'typeVersion': model['version'],
+                    'name': 'fixture-worker', 'version': 1,
+                    'globalArguments': {'gatewayUrl': f'http://127.0.0.1:{server.server_port}',
+                                        'caFile': ssl.get_default_verify_paths().cafile}}
+                path.write_text(json.dumps(definition))
+                for method, inputs, endpoint in [('plan', [], '/api/v1/nodes'),
+                                                  ('converge', ['--input', 'node_id=9'], '/api/v1/nodes/9')]:
+                    result = command('behavior', 'run', 'fixture-worker', method, *inputs)
+                    self.assertNotEqual(result.returncode, 0, 'fixture must refuse before credentials')
+                    self.assertIn(endpoint, requests, 'native method must accept merged globals and reach its guard')
+                    self.assertNotIn('Unrecognized keys', result.stdout + result.stderr)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_single_machine_crash_restart_and_revoke_by_name(self):
         with tempfile.TemporaryDirectory(prefix='orbit-native-worker-') as directory:
             root = Path(directory)

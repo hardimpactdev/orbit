@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.13";
-import { convergeWorker, due, type Native, plan } from "./rotation.ts";
+import {
+  behavior,
+  convergeWorker,
+  due,
+  type Native,
+  plan,
+} from "./rotation.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
 const day = 86400000;
 Deno.test("rotation is due at day20 while ten days of native lifetime remain", async () => {
@@ -183,4 +189,26 @@ Deno.test("rotation recovers fresh undelivered enrollment but leaves connected f
     enrolledAt: new Date(now).toISOString(),
   }];
   assertEquals(await plan(call, now), []);
+});
+
+Deno.test("native merged globals reach lifecycle methods without allowing unknown input", () => {
+  const globals = {
+    gatewayUrl: "https://gateway.orbit",
+    caFile: "/public/orbit-ca.pem",
+  };
+  const converge = { ...globals, node_id: 9 };
+  assertEquals(behavior.methods.converge.arguments.parse(converge), converge);
+  assertEquals(behavior.methods.plan.arguments.parse(globals), globals);
+  assertEquals(
+    behavior.methods.converge.arguments.safeParse({
+      ...converge,
+      injected: true,
+    }).success,
+    false,
+  );
+  assertEquals(
+    behavior.methods.plan.arguments.safeParse({ ...globals, node_id: 9 })
+      .success,
+    false,
+  );
 });
