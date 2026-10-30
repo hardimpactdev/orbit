@@ -85,7 +85,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                     }
                     $this->unproven();
                 }
-                if ($component === 'service') {
+                if ($component === 'service' && $node['caddy']) {
                     $caddy = $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false);
                     if ($caddy->status !== OperationStatus::Succeeded) {
                         if ($rollbackFailed && ($caddy->status === OperationStatus::Cancelled || ($caddy->status === OperationStatus::Failed && $caddy->error_code !== null))) {
@@ -150,9 +150,9 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 if ($apply->status === OperationStatus::Failed) {
                     $key = 'service-restore-'.$node['node_id'];
                     $restore = $this->requireChild($operation, $key, 'metrics.service_restore', $node['node_id'], [...$serviceInput, 'source_operation_id' => $snapshot->id, 'source_key' => 'service-snapshot-'.$node['node_id'], 'restore_key' => $key], false);
-                    $caddy = $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false);
+                    $caddy = $node['caddy'] ? $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false) : null;
 
-                    if (MetricsChildIntent::interrupted($restore) || MetricsChildIntent::interrupted($caddy)) {
+                    if (MetricsChildIntent::interrupted($restore) || ($caddy !== null && MetricsChildIntent::interrupted($caddy))) {
                         $this->unproven();
                     }
 
@@ -161,7 +161,9 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 if ($apply->status !== OperationStatus::Succeeded) {
                     $this->unproven();
                 }
-                $this->requireChild($operation, 'service-caddy-'.$node['node_id'], 'route.caddy_converge', $node['node_id'], ['reason' => 'metrics service projection']);
+                if ($node['caddy']) {
+                    $this->requireChild($operation, 'service-caddy-'.$node['node_id'], 'route.caddy_converge', $node['node_id'], ['reason' => 'metrics service projection']);
+                }
                 $healthyServices[] = $node;
             }
             usort($targets, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
