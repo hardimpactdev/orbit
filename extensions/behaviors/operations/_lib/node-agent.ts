@@ -14,7 +14,10 @@ const Reply = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), data: z.record(z.string(), z.unknown()) }),
   z.object({
     ok: z.literal(false),
-    error: z.object({ code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }),
+    error: z.object({
+      code: z.string().regex(/^[a-z0-9_.-]{1,100}$/),
+      details: z.object({ restored: z.boolean().optional() }).optional(),
+    }),
   }),
 ]);
 
@@ -38,7 +41,13 @@ export function agentReply(bytes: Uint8Array, success: boolean) {
   } catch {
     throw new Error("The Node action returned no typed result");
   }
-  if (!reply.ok) return { error_code: reply.error.code };
+  if (!reply.ok) {
+    const restored = reply.error.details?.restored;
+    return {
+      error_code: reply.error.code,
+      ...(restored === undefined ? {} : { restored }),
+    };
+  }
   if (!success) throw new Error("The Node action outcome is uncertain");
   return reply.data;
 }

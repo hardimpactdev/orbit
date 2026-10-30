@@ -79,3 +79,18 @@ Deno.test("refusal diagnostics and malformed output never escape the local step"
     "The Node action outcome is uncertain",
   );
 });
+
+Deno.test("only the typed restoration boolean survives refusal diagnostics", () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({
+    ok: false,
+    error: {
+      code: "process.health_failed",
+      message: "SECRET",
+      details: { restored: true, output: { stderr: "SECRET" } },
+    },
+  }));
+  assertEquals(agentReply(bytes, false), {
+    error_code: "process.health_failed",
+    restored: true,
+  });
+});
