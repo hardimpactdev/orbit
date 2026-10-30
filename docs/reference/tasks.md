@@ -1263,6 +1263,8 @@ before admission. A worker for another Node cannot execute the action.
 
 `task_vm.image_remove` removes only that active attempt's builder or smoke VM, with the exact recorded reset or deletion phase. Swamp executes the fixed `incus.vm` `remove_instance` action on the owning Node and records provider confirmation before the image workflow continues. A live task VM or operator-owned name cannot be substituted. This kind also defaults to direct and has no Gateway execution path.
 
+`task_vm.image_publish` publishes only the active attempt's builder to its exact candidate alias and recipe properties. Swamp owns preparation order and stops before publication if a preparation step fails. Gateway admission validates the publication intent; its result projection requires a full image fingerprint and records that candidate. The Gateway does not execute publication or keep a second ledger of preparation receipts. The direct workflow retains the existing 900-second agent deadline.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.

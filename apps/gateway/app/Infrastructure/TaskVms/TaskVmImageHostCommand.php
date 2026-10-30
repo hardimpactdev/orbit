@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\Operations\OperationEffectTransport;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -82,24 +81,9 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
                     $valid = $valid && $effect['image'] === $expectedImage;
                 }
             }
-        } elseif ($command === 'incus.image') {
-            $effect = ValidatedData::object($input['operation']);
-            $alias = $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id);
-            $properties = ValidatedData::object($effect['properties'] ?? []);
-            $valid = $operation->kind === 'task_vm.image_publish' && $input['project'] === $host->project && $effect['kind'] === 'publish' && ($effect['name'] ?? null) === $name
-                && ($effect['alias'] ?? null) === $alias && ($properties['orbit.recipe'] ?? null) === $build->recipe_identity && ($properties['orbit.profile'] ?? null) === 'base';
         }
         if (! $valid) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The host effect does not match this image attempt.', 422);
-        }
-
-        if ($operation->kind === 'task_vm.image_publish') {
-            $ids = [];
-            foreach ($build->steps as $step) {
-                $ids += $step['operations'] ?? [];
-            }
-            $proofs = TaskVmImageEvidence::preparation($build, $ids);
-            app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'task_vm_image_preparation' => $proofs]]);
         }
 
         return $this->effectResult($operation, $this->agents->run($build->hostNode, $command, AgentEffectReceipts::input($run, $input)));
@@ -134,10 +118,6 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
      */
     private function effectResult(Operation $operation, array $result): array
     {
-        if ($operation->kind === 'task_vm.image_publish' && (! is_string($result['fingerprint'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $result['fingerprint']) !== 1)) {
-            return ['error_code' => 'task_vm.invalid_host_output'];
-        }
-
         return ['ready' => true, ...$result, ...($operation->kind === 'task_vm.image_promote' ? ['fingerprint' => TaskVmImageBuild::query()->findOrFail($operation->target_id)->image_fingerprint] : [])];
     }
 }

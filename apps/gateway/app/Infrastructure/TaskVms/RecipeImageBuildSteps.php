@@ -82,12 +82,7 @@ final readonly class RecipeImageBuildSteps
             if ($publication->id !== $published->id) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The publication proof names another candidate.', 409);
             }
-            $preparation = ValidatedData::object($publication->state['task_vm_image_preparation'] ?? []);
-            $ids = [];
-            foreach ($preparation as $key => $id) {
-                $ids[$key] = ValidatedData::integer($id);
-            }
-            TaskVmImageEvidence::preparation($build, $ids);
+
         });
     }
 
