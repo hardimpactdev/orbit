@@ -146,27 +146,6 @@ const runtimeEffects: Record<
   },
 };
 
-runtimeEffects["task_vm.cache_initialize"] = {
-  name: "package-cache.host",
-  transport: "agent",
-  fields: [],
-  values: { operation: "initialize" },
-  proof: "receipt",
-};
-runtimeEffects["task_vm.cache_mount"] = {
-  name: "incus.package-cache",
-  transport: "agent",
-  fields: ["project", "name"],
-  proof: "ready",
-};
-runtimeEffects["task_vm.cache_seed"] = {
-  name: "task_vm.guest",
-  transport: "task_vm_guest",
-  fields: ["guest", "parameters_json"],
-  command: "package-cache.seed",
-  proof: "ready",
-};
-
 for (const verb of ["create", "start", "stop", "hard_stop", "delete"]) {
   runtimeEffects[`task_vm.upcloud_${verb}`] = {
     name: "task_vm.upcloud",

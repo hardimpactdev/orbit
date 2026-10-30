@@ -14,12 +14,7 @@ import { lifecycle, LifecycleInput } from "./lifecycle.ts";
 import { buildImage, ImageInput } from "./images.ts";
 import { buildUpCloudImage, UpCloudImageInput } from "./upcloud-images.ts";
 import { sweepHost, SweepInput } from "./sweep.ts";
-import {
-  CacheFillInput,
-  CacheMountInput,
-  fillPackageCache,
-  preparePackageCache,
-} from "./package-cache.ts";
+import { CacheFillInput, fillPackageCache } from "./package-cache.ts";
 
 export function taskVms(
   makeHttp = (ctx: Context) =>
@@ -74,7 +69,6 @@ export function taskVms(
             [
               ...leafKinds,
               "task_vm.fill_package_cache",
-              "task_vm.prepare_package_cache",
               "task_vm.prepare_runtime",
               "task_vm.provision",
               "task_vm.enroll",
@@ -190,14 +184,11 @@ export function taskVms(
           const sweep = operation.kind === "task_vm.sweep_host"
             ? SweepInput.parse(operation.input)
             : null;
-          const cacheMount = operation.kind === "task_vm.prepare_package_cache"
-            ? CacheMountInput.parse(operation.input)
-            : null;
           const cacheFill = operation.kind === "task_vm.fill_package_cache"
             ? CacheFillInput.parse(operation.input)
             : null;
           const invocation =
-            runtime || life || image || upcloudImage || sweep || cacheMount ||
+            runtime || life || image || upcloudImage || sweep ||
               cacheFill
               ? null
               : invocationFor(operation.kind, operation.input);
@@ -251,14 +242,14 @@ export function taskVms(
           try {
             let completion: z.infer<typeof Completion>;
             if (
-              runtime || life || image || upcloudImage || sweep || cacheMount ||
+              runtime || life || image || upcloudImage || sweep ||
               cacheFill
             ) {
               const driver = new FamilyDriver(
                 operation.id,
                 args.worker,
                 (runtime ?? life ?? image ?? upcloudImage ?? sweep ??
-                  cacheMount ?? cacheFill)!
+                  cacheFill)!
                   .deadline_at,
                 ctx,
                 makeHttp(ctx),
@@ -289,8 +280,6 @@ export function taskVms(
                     status: "succeeded",
                     result: cacheFill
                       ? await fillPackageCache(cacheFill, driver)
-                      : cacheMount
-                      ? await preparePackageCache(cacheMount, driver)
                       : runtime
                       ? await prepareRuntime(runtime, driver)
                       : sweep

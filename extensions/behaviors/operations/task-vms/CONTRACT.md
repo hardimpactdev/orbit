@@ -183,3 +183,10 @@ queue or cancellation policy.
 The image observation loop still yields on its last admitted child. Replacing
 that completed-child yield with a native observation wait belongs to the direct
 start slice; do not pause active image builds for this removal.
+
+The unused cache-preparation Operation family is retired:
+`prepare_package_cache`, `cache_initialize`, `cache_mount` and `cache_seed` have
+no production caller or Gateway admission. Live workspace provisioning still
+uses its retained cache implementation and tests until the owning Tasks root
+cutover. Host cache fills remain separate; this removal does not change their
+discovery or execution.
