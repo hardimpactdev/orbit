@@ -15,7 +15,6 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Adds or updates a SQL login and replaces its grants. Replication users get reader grants.
@@ -76,15 +75,13 @@ final readonly class CreateDatabaseUserAction
             ? $statements->ensureUser($data->username, $data->password, replication: $data->replication)
             : $statements->ensureUser($data->username, $data->password);
 
-        return DB::transaction(function () use ($connection, $data, $createdBy, $statements, $readOnly, $server, $ensureUser, $knownUser): Operation {
-            return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
-                ['connection_id' => $connection->id, 'driver' => $server->driver->value, 'username' => $data->username,
-                    'replication' => $data->replication, 'known_user' => $knownUser],
-                ['database-apply' => DatabaseCommands::sql($server, $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username), redactions: [$data->password])], ['upsert_user' => [
-                    'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
-                    'privileges' => $statements->privilegeText($connection->database, $readOnly), 'replication' => $data->replication,
-                    'created_by' => $createdBy,
-                ]]);
-        });
+        return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
+            ['connection_id' => $connection->id, 'driver' => $server->driver->value, 'username' => $data->username,
+                'replication' => $data->replication, 'known_user' => $knownUser],
+            ['database-apply' => DatabaseCommands::sql($server, $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username), redactions: [$data->password])], ['upsert_user' => [
+                'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
+                'privileges' => $statements->privilegeText($connection->database, $readOnly), 'replication' => $data->replication,
+                'created_by' => $createdBy,
+            ]]);
     }
 }
