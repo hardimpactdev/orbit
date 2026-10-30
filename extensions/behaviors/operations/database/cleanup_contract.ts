@@ -11,7 +11,7 @@ const Clone = z.object({
   agent_sha256: Pin,
   directory: z.string().regex(/^\/tmp\/orbit-sqlite-clone-[0-9a-f]{32}$/),
 }).strict();
-const Seed = z.object({
+export const Seed = z.object({
   variant: z.literal("seed"),
   agent_sha256: Pin,
   target_instance_id: z.number().int().positive(),
@@ -32,7 +32,7 @@ const Seed = z.object({
 export const CleanupInput = z.union([Clone, Seed]);
 export type CleanupIntent = z.infer<typeof CleanupInput>;
 
-/** The pin belongs in the shared socket envelope, not the typed action input. */
+/** The admitted pin is separate from the typed cleanup command input. */
 export function cleanupPayload(raw: unknown) {
   const { agent_sha256, ...input } = CleanupInput.parse(raw);
   return { agent_sha256, input };

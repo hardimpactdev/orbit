@@ -10,7 +10,6 @@ import {
 
 const Args = DirectArgs.extend({
   kind: z.literal("database.sqlite_cleanup"),
-  node_id: z.literal(209),
 });
 type Context = {
   globalArgs: z.infer<typeof Globals>;
@@ -25,7 +24,7 @@ export function cleanup(
 ) {
   return {
     type: "@nckrtl/database-cleanup",
-    version: "2026.10.30.2",
+    version: "2026.10.30.3",
     globalArguments: Globals,
     methods: {
       cleanup: {

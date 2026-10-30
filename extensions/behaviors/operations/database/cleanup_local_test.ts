@@ -94,23 +94,3 @@ Deno.test("owner cleanup refuses public directories, symlinks and unrelated cont
     });
   });
 });
-
-Deno.test("seed cleanup stays refused without the reviewed root capability", async () => {
-  const operation = "c".repeat(64);
-  assertEquals(
-    await cleanupAsOwner({
-      variant: "seed",
-      agent_sha256: "a".repeat(64),
-      target_instance_id: 12,
-      base: "/srv/source",
-      source_path: "/srv/source/database.sqlite",
-      source_user: "source",
-      transport_user: "orbit",
-      operation,
-      state_dir:
-        `/var/lib/orbit/app-instance-sqlite-seeds/source-11-target-12-${operation}`,
-      snapshot_path: `/tmp/orbit-sqlite-${operation}.sqlite`,
-    }),
-    { error_code: "database.cleanup_privilege_unavailable" },
-  );
-});

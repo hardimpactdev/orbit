@@ -1,12 +1,13 @@
 import { cleanupPayload } from "./cleanup_contract.ts";
+import { cleanupSeed } from "./cleanup_seed.ts";
 
-/** Canary owner-only action. The reviewed root capability is activated separately. */
+/** The configured Node user owns clone exports; seed state cleanup runs with sudo. */
 export async function cleanupAsOwner(
   raw: unknown,
 ): Promise<Record<string, unknown>> {
-  const { input } = cleanupPayload(raw);
+  const { input, agent_sha256 } = cleanupPayload(raw);
   if (input.variant !== "clone") {
-    return { error_code: "database.cleanup_privilege_unavailable" };
+    return await cleanupSeed(agent_sha256, input);
   }
   try {
     let directory: Deno.FileInfo;

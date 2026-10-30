@@ -1,44 +1,35 @@
 # Node-local SQLite cleanup
 
-The Gateway records one `database.sqlite_cleanup` intent and starts
-`operation-database-cleanup` through the shared `StartSwampRun` helper. The
-shared `ORBIT_SWAMP_DIRECT_WRITERS` map defaults to the previous polled path.
-Existing intents retain their writer when the map changes.
+The Gateway records `database.sqlite_cleanup` and starts
+`operation-database-cleanup` with the shared direct Operation helper and run
+token. Its typed projection supplies admitted paths and the agent digest. The
+shared writer map defaults to polled; each intent retains its writer stamp.
 
-This inactive canary workflow accepts only Node 209 and uses the existing
-`pool=migration` workers. It declares `writes: true` and `vaults: []` and uses
-native defaults. It must never execute another Node's local action on 209. Exact
-`orbit-node-<admittedNodeId>` placement follows with per-Node workers. Shared
-`GatewayOperation` and `directOperation` provide read/result projection. There
-is no family Gateway primitive or relay.
+The Node worker runs as its configured Node user with existing passwordless
+sudo. Clone cleanup runs as that user and removes only `snapshot.sqlite` and its
+empty private `0700` directory. It refuses symlinks, another owner and unrelated
+contents. Absence succeeds. Seed cleanup invokes the installed pinned
+`instance.prepare-sqlite-seed` command with `sudo -n` and mode fixed to cleanup.
+The command retains root-private state, recorded operation/path, snapshot owner
+and inode checks. No socket, broker, new command or account is introduced.
 
-The Gateway supplies a typed cleanup variant, the admitted agent hash and safe
-paths. The current local action supports clone cleanup as a non-root worker that
-already owns the private `0700` snapshot directory. It checks the directory and
-snapshot without following symlinks, removes only `snapshot.sqlite`, then
-removes the empty directory. An absent directory succeeds. It refuses another
-owner and unrelated directory contents. It accepts no shell, executable, argv or
-owner selector. Seed cleanup returns `database.cleanup_privilege_unavailable`.
+The seed step verifies the root-owned, non-writable agent binary and its
+admitted SHA-256 before invocation. It sends typed JSON on stdin, uses the
+native 120-second command budget, bounds the reply and discards stderr. Only the
+fixed refusal code or `backend: absent` reaches the Operation result. An
+uncertain reply escapes to native Swamp recovery without a local retry or
+receipt.
 
-The future `orbit-swamp-worker` UID has no demonstrated access to managed
-Instance snapshots. Root seed state also requires a privileged capability. The
-shared `localRootAgent` client is available, but the current server catalogue
-permits only `instance.prepare-served-web-roots`. SQLite requires a separate
-cleanup-only wrapper and catalogue review before activation. Full copy-sqlite
-and seed prepare/install commands must remain outside that catalogue. This
-source changes no worker unit, sudo policy, token, grant or writer.
+Node placement uses the admitted Node label, with no control-worker fallback.
+This admits the existing Node209 migration workers and the new per-Node fleet
+only when their Node identity matches. Workflows declare `writes: true`,
+`vaults: []` and use native queue, locking and recovery defaults. A worker on
+another Node must never execute the local action.
 
-The first live 209 proof uses an admitted disposable 209 intent and an absent
-snapshot path. It proves root-run binding, read and projection, without a root
-socket call or a foreign Node action. A worker read before the Gateway records
-the native start response must fail `operation.run_unbound` without local
-execution. Bound requests must accept only the admitted Node and run. Record
-loaded heads, Operation/run IDs and timing. This proof does not prove real owner
-access, seed cleanup, the root boundary or readiness for takeover.
-
-A later disposable-target canary must prove real cleanup with its actual worker
-identity, owner/path checks, absent-state replay and native recovery after lost
-replies. Source tests with a fake Gateway do not replace live proof. Keep the
-writer polled until that end-to-end proof succeeds. Production success gates
-deletion of the previous polled path. The refused family relay is removed from
-the source slice that introduces local execution.
+Canaries must prove real clone deletion and seed state/snapshot cleanup with the
+actual worker identity, then repeat on absence. Check unbound read refusal,
+Gateway root-run binding, safe projection and foreign-run refusal. An
+absent-path protocol proof alone does not establish real cleanup or owner
+access. Switch the kind reversibly after end-to-end proof; production success
+gates deleting the old polled execution and tests. No writer, credential or unit
+change is part of the workflow source.

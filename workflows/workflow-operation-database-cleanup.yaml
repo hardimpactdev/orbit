@@ -1,13 +1,13 @@
 id: 48d7426d-54e7-44cf-b1bf-0706b5a874f5
 name: operation-database-cleanup
 description: Clean up one admitted SQLite snapshot directly, without discovery or claims.
-labels: { pool: migration }
+labels: { node: "${{ string(inputs.node_id) }}" }
 writes: true
 vaults: []
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, enum: [209] }
+    node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
       enum: [database.sqlite_cleanup],
