@@ -133,3 +133,61 @@ it('refuses deleted app-create polling before recording the registry mutation', 
     expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
     expect(WebSocketApp::query()->where('name', 'refused-disposable')->exists())->toBeFalse();
 });
+
+it('replays direct app creation with the same key without another credential revision or native start', function (): void {
+    $socket = app(WebSocketClient::class);
+    $first = $this->withHeader('Idempotency-Key', 'direct-create-replay')
+        ->postJson('/api/v1/websocket-apps', ['name' => 'replay-disposable'])->assertAccepted();
+    $app = WebSocketApp::query()->where('name', 'replay-disposable')->sole();
+    $secret = $app->secret;
+    $version = app(WebSocketRegistry::class)->version();
+    $registryCount = WebSocketRegistryOperation::query()->count();
+
+    $this->postJson('/api/v1/websocket-apps', ['name' => 'replay-disposable'])
+        ->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'))->assertDontSee($secret);
+
+    expect($app->refresh()->secret)->toBe($secret);
+    expect(app(WebSocketRegistry::class)->version())->toBe($version);
+    expect(WebSocketRegistryOperation::query()->count())->toBe($registryCount);
+    expect(Operation::query()->where('kind', 'websocket.app_create')->count())->toBe(1);
+    expect($socket->sent)->toHaveCount(1);
+});
+
+it('refuses reserved or taken direct app names with 422 before a registry write or native start', function (string $name): void {
+    WebSocketApp::query()->create(['name' => 'taken', 'app_id' => 'taken-id', 'key' => 'taken-key', 'secret' => 'taken-secret']);
+    $version = app(WebSocketRegistry::class)->version();
+    $registryCount = WebSocketRegistryOperation::query()->count();
+
+    $this->withHeader('Idempotency-Key', 'direct-create-invalid-'.$name)
+        ->postJson('/api/v1/websocket-apps', ['name' => $name])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+
+    expect(WebSocketApp::query()->pluck('name')->all())->toBe(['taken']);
+    expect(app(WebSocketRegistry::class)->version())->toBe($version);
+    expect(WebSocketRegistryOperation::query()->count())->toBe($registryCount);
+    expect(Operation::query()->where('kind', 'websocket.app_create')->exists())->toBeFalse();
+    expect(app(WebSocketClient::class)->sent)->toBe([]);
+})->with(['taken', 'gateway']);
+
+it('returns 503 and preserves committed direct app intent when Swamp refuses the start', function (): void {
+    $socket = app(WebSocketClient::class);
+    $socket->reply = function (array $request): array {
+        expect(WebSocketApp::query()->where('name', 'start-refused-disposable')->exists())->toBeTrue();
+        expect(Operation::query()->where('kind', 'websocket.app_create')->exists())->toBeTrue();
+
+        return [['type' => 'error', 'id' => $request['id']]];
+    };
+
+    $response = $this->withHeader('Idempotency-Key', 'direct-create-start-refused')
+        ->postJson('/api/v1/websocket-apps', ['name' => 'start-refused-disposable'])
+        ->assertStatus(503)->assertJsonPath('error.code', 'swamp.start_refused');
+
+    $app = WebSocketApp::query()->where('name', 'start-refused-disposable')->sole();
+    $operation = Operation::query()->where('kind', 'websocket.app_create')->sole();
+    $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
+    expect($registry->result['id'])->toBe($app->id);
+    expect($operation->status)->toBe(OperationStatus::Queued);
+    expect($operation->state)->not->toHaveKey('swamp_run_id');
+    expect($socket->sent)->toHaveCount(1);
+    $response->assertDontSee($app->secret);
+});
