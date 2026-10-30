@@ -362,17 +362,12 @@ export function processesSchedules(
                     }
                   }
                 }
-                if (
-                  family === "process" && !composition &&
-                  operation.kind !== "process.destroy"
-                ) {
+                if (family === "process" && !composition) {
                   await invoke({
                     step: "process-status",
                     name: "process.status",
                     input: pick(input, ["process_id", "runtime", "name"]),
                   });
-                }
-                if (family === "process" && !composition) {
                   result = await invoke({
                     step: "runtime-ready",
                     transport: "gateway",
@@ -420,16 +415,9 @@ async function executeProcess(
 ) {
   const verb = kind.slice("process.".length);
   if (
-    !["create", "update", "start", "restart", "destroy"].includes(verb)
+    !["create", "update", "start", "restart"].includes(verb)
   ) throw new Error("Wrong Process kind");
   const artifact = pick(input, ["process_id", "runtime", "name"]);
-  if (verb === "destroy") {
-    return await invoke({
-      step: "process-remove",
-      name: "process.remove",
-      input: { ...artifact, vite: input.vite },
-    });
-  }
   if (input.directory) {
     const release = await invoke({
       step: "process-check-release",

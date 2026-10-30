@@ -302,7 +302,7 @@ function processFixture(verb = "create", runtime = "systemd") {
   };
   f.answers["process.activate-unit"] = { backup_left: false };
   f.answers["process.status"] = {
-    state: verb === "destroy" ? "absent" : "active",
+    state: "active",
   };
   return f;
 }
@@ -408,17 +408,14 @@ Deno.test("runtime switch removes retired footprint before creating replacement"
     ],
   );
 });
-Deno.test("unconverted Process start, restart and removal target only their artifact", async () => {
+Deno.test("unconverted Process start and restart target only their artifact", async () => {
   for (const runtime of ["systemd", "docker"]) {
-    for (const verb of ["start", "restart", "destroy"]) {
+    for (const verb of ["start", "restart"]) {
       const f = processFixture(verb, runtime);
       await f.execute();
       assertEquals(f.runs, 1);
       const call = f.calls.find((call) => call.path.endsWith("/run"))!.body;
-      assertEquals(
-        call.name,
-        verb === "destroy" ? "process.remove" : "process.control",
-      );
+      assertEquals(call.name, "process.control");
       assertEquals((call.input as Record<string, unknown>).process_id, 12);
     }
   }
@@ -590,7 +587,14 @@ Deno.test("A proven not-started unconverted Schedule activation can retry the sa
 });
 
 Deno.test("direct kinds refuse polled dispatch before claim or effect", async () => {
-  for (const kind of ["process.stop", "schedule.run", "schedule.destroy"]) {
+  for (
+    const kind of [
+      "process.stop",
+      "process.destroy",
+      "schedule.run",
+      "schedule.destroy",
+    ]
+  ) {
     const f = new Fixture();
     f.operation.kind = kind;
     await assertRejects(() => f.execute());

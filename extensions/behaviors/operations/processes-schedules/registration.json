@@ -1,7 +1,6 @@
 {
   "kinds": [
     "process.create",
-    "process.destroy",
     "process.update",
     "process.start",
     "process.restart",

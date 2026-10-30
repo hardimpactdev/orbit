@@ -62,10 +62,10 @@ The polled family claims only kinds listed in `registration.json`, persists an
 assignment before effects, and keeps retries bound to that Operation. Native
 tests remove placement labels only inside their disposable local repository.
 They prove DAG and receipt recovery, while deployed worker placement needs the
-live verification. Proven `process.stop`, `schedule.run` and `schedule.destroy`
-are absent from that registration and scheduled discovery; the executor refuses
-them before any claim or command. Their Gateway declarations require direct
-execution and refuse an explicit polled writer.
+live verification. Proven `process.stop`, `process.destroy`, `schedule.run` and
+`schedule.destroy` are absent from that registration and scheduled discovery;
+the executor refuses them before any claim or command. Their Gateway
+declarations require direct execution and refuse an explicit polled writer.
 
 ## Direct Schedule controls
 
