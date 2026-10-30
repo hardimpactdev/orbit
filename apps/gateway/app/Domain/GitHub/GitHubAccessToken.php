@@ -7,7 +7,7 @@ namespace App\Domain\GitHub;
 use LogicException;
 use SensitiveParameter;
 
-final readonly class DependencyReadToken
+final readonly class GitHubAccessToken
 {
     public function __construct(
         #[SensitiveParameter] private string $token,
@@ -27,6 +27,6 @@ final readonly class DependencyReadToken
 
     public function __serialize(): array
     {
-        throw new LogicException('Dependency credentials cannot be serialized.');
+        throw new LogicException('GitHub credentials cannot be serialized.');
     }
 }

@@ -6,8 +6,11 @@ namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Validation\ValidationException;
+use UnexpectedValueException;
 
 class DirectOperationRequest extends ExecutorRequest
 {
@@ -30,6 +33,23 @@ class DirectOperationRequest extends ExecutorRequest
             'worker' => ['prohibited'],
             'key' => ['prohibited'],
         ];
+    }
+
+    /** @return array<string, mixed> */
+    public function validationData(): array
+    {
+        if ($this->route()?->getActionMethod() !== 'githubToken') {
+            return parent::validationData();
+        }
+        try {
+            if ($this->query->count() !== 0) {
+                throw new UnexpectedValueException('Query parameters are not accepted.');
+            }
+
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['run_id']);
+        } catch (UnexpectedValueException $exception) {
+            throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
+        }
     }
 
     public function authorize(): bool

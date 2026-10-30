@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\OperationStep;
@@ -14,7 +15,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>}> */
+    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, github_token?: array{repository:string, permissions:array<string,string>}}> */
     private array $definitions;
 
     public function __construct()
@@ -23,7 +24,7 @@ final readonly class DirectOperation
         foreach (glob(__DIR__.'/../*/direct-operations.php') ?: [] as $file) {
             foreach (require $file as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs']) !== []
+                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token']) !== []
                     || array_diff(['workflow', 'writer_config', 'writer_state', 'projection'], array_keys($definition)) !== []
                     || array_any(array_intersect_key($definition, array_flip(['workflow', 'writer_config', 'writer_state'])), static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)
                     || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
@@ -31,6 +32,9 @@ final readonly class DirectOperation
                     || ! is_a($definition['projection'], DirectOperationProjection::class, true)
                     || (isset($definition['primitive']) && ! is_a($definition['primitive'], DirectOperationPrimitive::class, true))) {
                     throw new LogicException('A direct Operation needs one fixed family declaration.');
+                }
+                if (isset($definition['github_token'])) {
+                    GitHubTokenGrant::from($definition['github_token']);
                 }
                 $definitions[$kind] = $definition;
             }
@@ -92,7 +96,7 @@ final readonly class DirectOperation
         return $definition === null || $writer === null ? [] : [$definition['writer_state'] => $writer];
     }
 
-    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>}|null */
+    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
@@ -127,6 +131,17 @@ final readonly class DirectOperation
         }
 
         return app($primitive);
+    }
+
+    public function githubTokenGrant(Operation $operation): GitHubTokenGrant
+    {
+        $this->projection($operation);
+        $grant = $this->definitions[$operation->kind]['github_token'] ?? null;
+        if ($grant === null) {
+            throw new ResourceOperationException('operation.github_token_forbidden', 'This intent declares no GitHub credential.', 403);
+        }
+
+        return GitHubTokenGrant::from($grant);
     }
 
     /**
