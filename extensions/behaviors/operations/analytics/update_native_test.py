@@ -4,9 +4,9 @@ import json
 import os
 from pathlib import Path
 import secrets
-import shutil
 import subprocess
 import socket
+import sys
 import tempfile
 import time
 import unittest
@@ -16,21 +16,20 @@ import http.server
 import base64
 
 ROOT=Path(__file__).resolve().parents[4]
-SWAMP=os.environ.get('SWAMP_BIN','swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
-class UpdateNative(unittest.TestCase):
+class UpdateNative(NativeTestCase):
+    native_timeout = 55
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix='analytics-update-native-');self.addCleanup(self.temp.cleanup)
-        self.repo=Path(self.temp.name)
-        shutil.copy(ROOT/'.swamp.yaml',self.repo)
-        for family in ['automatic-deploy','operation-runner','operations/_lib','operations/analytics']:
-            shutil.copytree(ROOT/'extensions/behaviors'/family,self.repo/'extensions/behaviors'/family)
+        super().setUp()
+        self.copy_behaviors('automatic-deploy','operation-runner','operations/_lib','operations/analytics')
         module=self.repo/'extensions/behaviors/operations/analytics/update.ts'
         module.write_text('import {http,invoke} from "./update_native_fixture.ts";\n'+module.read_text().replace('export const behavior = analyticsUpdate();','export const behavior = analyticsUpdate(() => http,invoke);'))
         source=ROOT/'workflows/workflow-operation-analytics-update-direct.yaml'
-        (self.repo/'workflows').mkdir()
         (self.repo/'workflows'/source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('labels:','target:')))+'\n')
         self.secret='runtime-env-'+secrets.token_hex(24)
+        self.secrets=(self.secret,base64.b64encode(self.secret.encode()).decode())
         self.environment={'SECRET_KEY_BASE':self.secret,'BASE_URL':'https://analytics.orbit'}
         raw=json.dumps(self.environment,sort_keys=True,separators=(',',':'))
         before={'process_id':250,'container':'orbit-process-250-plausible','desired':'running','spec':'a'*64,'image':'ghcr.io/plausible/community-edition:v3.2.1','command':['/usr/local/bin/orbit-agent','service','plausible'],'restart':'unless-stopped','working_directory':None,'ports':['10.44.0.3:8000:8000/tcp'],'mounts':[]}
@@ -80,18 +79,7 @@ class UpdateNative(unittest.TestCase):
         self.state['gatewayUrl']=f'https://127.0.0.1:{server.server_port}'
         self.state['caFile']=str(certificate)
     def scan_scratch(self,*outputs):
-        needles=[self.secret.encode(),base64.b64encode(self.secret.encode())]
-        for output in outputs:
-            self.assertFalse(any(needle in output.encode() for needle in needles),'private bytes in CLI output')
-        self.assertFalse(self.secret in json.dumps(self.public_requests),'private bytes in public projection')
-        for path in self.repo.rglob('*'):
-            if not path.is_file() or path.is_symlink():continue
-            with path.open('rb') as source:
-                tail=b''
-                while block:=source.read(1024*1024):
-                    chunk=tail+block
-                    self.assertFalse(any(needle in chunk for needle in needles),str(path))
-                    tail=chunk[-max(map(len,needles)):]
+        self.assert_private_absent(*outputs, json.dumps(self.public_requests))
     def prepare_dev_container(self,before):
         agent=str(Path(os.environ['ANALYTICS_UPDATE_DEV_AGENT']).resolve())
         self.state['devAgent']=agent
@@ -131,14 +119,6 @@ class UpdateNative(unittest.TestCase):
         self.assertIn('SECRET_KEY_BASE='+self.secret,container['Config']['Env'])
     def save(self): (self.repo/'update-native.json').write_text(json.dumps(self.state))
     def read(self): return json.loads((self.repo/'update-native.json').read_text())
-    def cli(self,*args,success=True,input=None):
-        env=dict(os.environ,SWAMP_NO_UPDATE_CHECK='1',SWAMP_NO_TELEMETRY='1')
-        for key in ['SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT']:env.pop(key,None)
-        result=subprocess.run([SWAMP,*args,'--json'],cwd=self.repo,env=env,input=input,text=True,capture_output=True,timeout=55)
-        for needle in [self.secret,base64.b64encode(self.secret.encode()).decode()]:
-            self.assertFalse(needle in result.stdout or needle in result.stderr,'private bytes in CLI stdout/stderr')
-        self.assertEqual(result.returncode==0,success,result.stdout+result.stderr)
-        return result
     def workflow(self,success=True):
         started=time.monotonic()
         result=self.cli('workflow','run','operation-analytics-update-direct','--input','operation_id=12','--input','node_id=209','--input','kind=analytics.update',success=success)
