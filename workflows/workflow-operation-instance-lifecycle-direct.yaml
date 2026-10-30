@@ -11,7 +11,7 @@ inputs:
   required: [operation_id, node_id, kind]
 jobs:
   - name: lifecycle
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    target: '${{ inputs.node_id == 209 ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
     labels: { node: '${{ string(inputs.node_id) }}' }
     steps:
       - name: inspect

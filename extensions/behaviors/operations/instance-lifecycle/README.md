@@ -1,20 +1,21 @@
 # Direct lifecycle actions
 
-The direct workflow places each action on `orbit-node-<admittedNodeId>` with no
-fallback. It handles branch-only `instance.rename` and destination-only
-`instance.transfer_discard`. Discard calls the installed pinned agent's fixed
-`instance.transfer-source` command with `operation: discard` through
-`/usr/bin/sudo -n`. The agent drops to the Node account for this account effect.
-Only the recorded destination is removed. Its 600-second native command budget
-and bounded typed reply apply. Raw stdout/stderr are never projected. Missing
-destinations succeed. Unknown outcomes throw for native Swamp recovery.
+The direct workflow places each action on its admitted Node: Node209 uses
+`swamp209-migration-a`, while other Nodes use `orbit-node-<admittedNodeId>`.
+There is no foreign-Node fallback. It handles branch-only `instance.rename` and
+destination-only `instance.transfer_discard`. Discard calls the installed pinned
+agent's fixed `instance.transfer-source` command with `operation: discard`
+through `/usr/bin/sudo -n`. The agent drops to the Node account for this account
+effect. Only the recorded destination is removed. Its 600-second native command
+budget and bounded typed reply apply. Raw stdout/stderr are never projected.
+Missing destinations succeed. Unknown outcomes throw for native Swamp recovery.
 Cancellation before the command skips it; an in-flight command finishes and
 projects its result.
 
 Transfer stays gated on its missing destination and activation handlers. Adding
-discard does not open it. These definitions switch no live writer. Prove each
-action on its target before takeover, then remove the replaced executor and
-execution tests.
+discard does not open it. Discard has only the direct writer and no polled
+runner. Its Gateway cutover follows the actual Node209 action canary. Revert the
+cutover PR to roll back. Other lifecycle kinds retain their current writer.
 
 # Binding proof
 

@@ -6,8 +6,7 @@
     "instance.register",
     "instance.clone",
     "instance.transfer",
-    "instance.transfer_rollback",
-    "instance.transfer_discard"
+    "instance.transfer_rollback"
   ],
   "workflow": "operation-instance-lifecycle"
 }

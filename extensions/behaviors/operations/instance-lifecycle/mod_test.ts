@@ -330,3 +330,14 @@ Deno.test("a saved create failure without cancellation keeps its original outcom
   assertEquals(f.errorCode, "tool.store_invalid");
   assertEquals(f.effects.size, 0);
 });
+
+Deno.test("retired discard kind refuses the polled runner before any executor request", () => {
+  const argumentsSchema = instanceLifecycle().methods.execute.arguments;
+  assertEquals(
+    argumentsSchema.safeParse({
+      kind: "instance.transfer_discard",
+      worker: "retired",
+    }).success,
+    false,
+  );
+});

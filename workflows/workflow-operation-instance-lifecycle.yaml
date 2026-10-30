@@ -19,7 +19,7 @@ jobs:
           methodName: discover
           inputs:
             family: operation-instance-lifecycle
-            kinds: ["instance.rename", "instance.destroy", "instance.create", "instance.register", "instance.clone", "instance.transfer", "instance.transfer_rollback", "instance.transfer_discard"]
+            kinds: ["instance.rename", "instance.destroy", "instance.create", "instance.register", "instance.clone", "instance.transfer", "instance.transfer_rollback"]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]

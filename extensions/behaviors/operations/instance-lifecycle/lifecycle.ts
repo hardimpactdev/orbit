@@ -583,11 +583,6 @@ async function transferRollback(s: Session): Promise<Receipt> {
   return await run(s, "compensation-proof");
 }
 
-async function transferDiscard(s: Session): Promise<Receipt> {
-  await run(s, "transfer-discard-checkout");
-  return await run(s, "compensation-proof");
-}
-
 /** Swamp selects the sequence; Gateway descriptors enforce each effect's admitted inputs and prerequisites. */
 export async function lifecycle(s: Session): Promise<Completion> {
   try {
@@ -599,7 +594,6 @@ export async function lifecycle(s: Session): Promise<Completion> {
       "instance.destroy": destroy,
       "instance.transfer": transfer,
       "instance.transfer_rollback": transferRollback,
-      "instance.transfer_discard": transferDiscard,
     }[s.kind];
     if (!execute) throw new Error("Wrong instance lifecycle kind");
     return { status: "succeeded", result: await execute(s), error_code: null };
