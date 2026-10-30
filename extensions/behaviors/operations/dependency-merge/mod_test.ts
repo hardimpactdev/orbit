@@ -105,11 +105,22 @@ class Fixture {
   }
   run() {
     return dependencyMerge(() => this.http).methods.execute.execute({
-      operationId: 7,
+      kind: "tasks.dependency_merge",
       worker: "worker",
     }, this.context());
   }
 }
+Deno.test("a lost merge claim race performs no heartbeat or effect", async () => {
+  const f = new Fixture();
+  f.http = (_method, path) => {
+    assertEquals(path, "/api/v1/operation-executor/claim");
+    return Promise.resolve({ status: 200, body: { data: null } });
+  };
+  assertEquals((await f.run()).status, "idle");
+  assertEquals(f.configurations, 0);
+  assertEquals(f.writes, 0);
+  assertEquals(f.resources.size, 0);
+});
 Deno.test("Gateway merge uses references only and records proven completion", async () => {
   const f = new Fixture();
   assertEquals((await f.run()).status, "succeeded");
@@ -127,6 +138,10 @@ for (const boundary of ["lostRun", "lostComplete"] as const) {
     await assertRejects(() => f.run());
     assertEquals((await f.run()).status, "succeeded");
     assertEquals(f.writes, 1);
+    assertEquals(
+      f.calls.filter((call) => String(call.path).endsWith("/claim")).length,
+      1,
+    );
     if (boundary === "lostComplete") {
       assertEquals(
         f.calls.filter((c) => String(c.path).endsWith("/run")).length,
@@ -169,7 +184,7 @@ Deno.test("a forged merge head cannot complete", async () => {
   const f = new Fixture();
   f.wrongHead = true;
   await assertRejects(() => f.run());
-  assertEquals(f.resources.size, 0);
+  assertEquals(f.resources.has("operation-7"), false);
 });
 function admissionFixture() {
   const project = DependencyProjectSchema.parse({

@@ -24,7 +24,7 @@ class FleetNativeTest(unittest.TestCase):
             shutil.copytree(source / name, destination / name)
         shutil.copytree(FAMILY, destination / "operations/fleet")
         for name, factory, relative in (
-            ("operation-runner", "operationRunner", "../operations/fleet/native_fixture.ts"),
+            ("operation-runner", "operationDiscovery", "../operations/fleet/native_fixture.ts"),
             ("operations/fleet", "fleet", "./native_fixture.ts"),
         ):
             path = destination / name / "mod.ts"
@@ -32,7 +32,7 @@ class FleetNativeTest(unittest.TestCase):
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + text)
         workflows = self.repo / "workflows"
         workflows.mkdir()
-        for name in ("operation-runner", "operation-dispatch", "operation-fleet"):
+        for name in ("operation-fleet",):
             source = (ROOT / f"workflows/workflow-{name}.yaml").read_text()
             # Process recovery is local; shipped workflows keep worker placement.
             source = "\n".join(line for line in source.splitlines()
@@ -59,16 +59,21 @@ class FleetNativeTest(unittest.TestCase):
         return json.loads((self.repo / "fleet-native.json").read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
                                 capture_output=True, timeout=60,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
 
     def test_parent_dispatches_and_projects_recipe_steps(self):
-        for workflow in ("operation-runner", "operation-dispatch", "operation-fleet"):
+        for workflow in ("operation-fleet",):
             self.swamp("workflow", "validate", workflow)
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["mutations"], 1)
@@ -78,10 +83,10 @@ class FleetNativeTest(unittest.TestCase):
     def test_new_process_resumes_lost_node_reply_with_the_original_key(self):
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-fleet", success=False)
         self.assertEqual(self.read()["mutations"], 1)
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-fleet", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-fleet")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["mutations"], 1)
@@ -95,13 +100,13 @@ class FleetNativeTest(unittest.TestCase):
         self.state["windowOpen"] = True
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-fleet", success=False)
         before = self.read()
         self.assertEqual(before["mutations"], 1)
         self.state = before
         self.state["windowOpen"] = False
         self.save()
-        self.swamp("workflow", "resume", "operation-fleet", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-fleet")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "failed")
         self.assertEqual(state["completions"][0]["error_code"], "fleet.visit_interrupted")
@@ -113,10 +118,10 @@ class FleetNativeTest(unittest.TestCase):
     def test_new_process_replays_saved_completion_without_another_node_effect(self):
         self.state["loseCompletionReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-fleet", success=False)
         before = self.read()
         runs = len([c for c in before["calls"] if c["path"].endswith("/run")])
-        self.swamp("workflow", "resume", "operation-fleet", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-fleet")
         state = self.read()
         self.assertEqual(len([c for c in state["calls"] if c["path"].endswith("/run")]), runs)
         self.assertEqual(state["mutations"], 1)
@@ -126,7 +131,7 @@ class FleetNativeTest(unittest.TestCase):
         self.state.update({"daytime": False, "windowOpen": True})
         self.state["operation"]["input"].update({"has_php": True, "vpn": True})
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         self.state = self.read()
         self.assertEqual(self.state["operation"]["status"], "waiting")
         self.assertEqual(self.state["completions"], [])
@@ -135,7 +140,7 @@ class FleetNativeTest(unittest.TestCase):
     def test_new_process_continues_a_restricted_durable_child_wait(self):
         self.start_child_wait()
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["mutations"], 1)
@@ -146,7 +151,7 @@ class FleetNativeTest(unittest.TestCase):
         self.state["windowOpen"] = False
         before = len([c for c in self.state["calls"] if c["path"].endswith("/run")])
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         state = self.read()
         self.assertEqual(state["completions"][0]["error_code"], "fleet.visit_interrupted")
         self.assertEqual(len([c for c in state["calls"] if c["path"].endswith("/run")]), before)
@@ -155,13 +160,13 @@ class FleetNativeTest(unittest.TestCase):
         self.state.update({"daytime": False, "windowOpen": False, "runningReceipts": ["recipe-apply"]})
         self.state["operation"]["steps"] = [{"name": "recipe-apply", "status": "running", "error_code": None}]
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         self.state = self.read()
         self.assertEqual(self.state["completions"], [])
         self.assertEqual(self.state["operation"]["steps"][0]["status"], "running")
         self.state["runningReceipts"] = []
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         state = self.read()
         self.assertEqual(state["completions"][0]["error_code"], "fleet.visit_interrupted")
         self.assertFalse(any(c["path"].endswith("/run") for c in state["calls"]))
@@ -176,9 +181,9 @@ class FleetNativeTest(unittest.TestCase):
         self.state["loseRunName"] = "cli.install"
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-fleet", success=False)
         self.assertEqual(self.read()["mutations"], 1)
-        self.swamp("workflow", "resume", "operation-fleet", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-fleet")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["mutations"], 1)
@@ -190,7 +195,7 @@ class FleetNativeTest(unittest.TestCase):
         self.cli_child()
         self.state["operation"]["input"].update({"release": None, "skip_reason": "release_missing"})
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-fleet")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["mutations"], 0)

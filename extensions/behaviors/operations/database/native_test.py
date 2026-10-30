@@ -18,7 +18,7 @@ class DatabaseNativeTest(unittest.TestCase):
             for name in ('automatic-deploy', 'operation-runner', 'operations'):
                 shutil.copytree(ROOT / 'extensions/behaviors' / name, repo / 'extensions/behaviors' / name)
             runner = repo / 'extensions/behaviors/operation-runner/mod.ts'
-            runner.write_text('import { fixtureHttp } from "../operations/database/tests/native-executor.ts";\n' + runner.read_text().replace('...operationRunner()', '...operationRunner(() => fixtureHttp)'))
+            runner.write_text('import { fixtureHttp } from "../operations/database/tests/native-executor.ts";\n' + runner.read_text().replace('...operationDiscovery()', '...operationDiscovery(() => fixtureHttp)'))
             family = repo / 'extensions/behaviors/operations/database/mod.ts'
             family.write_text('import { fixtureHttp } from "./tests/native-executor.ts";\n' + family.read_text().replace('...database()', '...database(() => fixtureHttp)'))
             (repo / 'workflows').mkdir()
@@ -39,13 +39,13 @@ class DatabaseNativeTest(unittest.TestCase):
                 return subprocess.run(['swamp', *args, '--json'], cwd=repo, capture_output=True, text=True, timeout=60,
                     env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
 
-            for workflow in ('operation-runner', 'operation-dispatch', 'operation-database'):
+            for workflow in ('operation-database',):
                 result = swamp('workflow', 'validate', workflow)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            result = swamp('workflow', 'run', 'operation-runner')
+            result = swamp('workflow', 'run', 'operation-database')
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(state_file.read_text())['runs'], 1)
-            result = swamp('workflow', 'resume', 'operation-database', '--from', 'execute')
+            result = swamp('workflow', 'resume', 'operation-database', '--run', json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id'])
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             state = json.loads(state_file.read_text())
             self.assertEqual(state['runs'], 1)

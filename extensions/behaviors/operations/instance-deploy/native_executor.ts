@@ -28,7 +28,22 @@ export async function fixtureHttp(
   if (_method === "GET" && path === `/api/v1/operations/${operation.id}`) {
     return { status: 200, body: { data: operation } };
   }
+  if (path.endsWith("/claimable")) {
+    return {
+      status: 200,
+      body: {
+        data: {
+          kinds: [{
+            kind: operation.kind,
+            claimable: operation.status === "succeeded" ? 0 : 1,
+            oldest_at: null,
+          }],
+        },
+      },
+    };
+  }
   if (path.endsWith("/claim")) {
+    operation.worker = body.worker;
     if (body.kind !== operation.kind) throw new Error("Wrong claim kind");
     state.claims = (state.claims ?? 0) + 1;
     operation.status = "running";

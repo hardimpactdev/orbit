@@ -5,6 +5,21 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
   const state = JSON.parse(await Deno.readTextFile(file));
   const input = raw as Record<string, unknown>;
   let data = state.operation;
+  if (path.endsWith("/claimable")) {
+    return {
+      status: 200,
+      body: {
+        data: {
+          kinds: [{
+            kind: "tasks.dependency_merge",
+            claimable: 1,
+            oldest_at: null,
+          }],
+        },
+      },
+    };
+  }
+  if (path.endsWith("/claim")) state.operation.worker = input.worker;
   if (path.endsWith("/run")) {
     if (
       input.transport !== "gateway" ||

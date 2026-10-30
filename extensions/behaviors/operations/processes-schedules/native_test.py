@@ -19,14 +19,14 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
         shutil.copy(ROOT / '.swamp.yaml', self.repo)
         for family in ['automatic-deploy', 'operation-runner', 'operations/processes-schedules']:
             shutil.copytree(ROOT / 'extensions/behaviors' / family, self.repo / 'extensions/behaviors' / family)
-        for family, factory, relative in [('operation-runner', 'operationRunner', '../operations/processes-schedules/native_fixture.ts'), ('operations/processes-schedules', 'processesSchedules', './native_fixture.ts')]:
+        for family, factory, relative in [('operation-runner', 'operationDiscovery', '../operations/processes-schedules/native_fixture.ts'), ('operations/processes-schedules', 'processesSchedules', './native_fixture.ts')]:
             path = self.repo / 'extensions/behaviors' / family / 'mod.ts'
             source = path.read_text().replace(f'...{factory}()', f'...{factory}(() => fixtureHttp)')
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
         (self.repo / 'workflows').mkdir()
-        for name in ['runner', 'dispatch', 'processes-schedules']:
+        for name in ['processes-schedules']:
             path = ROOT / f'workflows/workflow-operation-{name}.yaml'
-            (self.repo / 'workflows' / path.name).write_text(path.read_text().replace('labels: { pool: migration }\n', '').replace('queueTimeout: 300\n', ''))
+            (self.repo / 'workflows' / path.name).write_text(path.read_text().replace('labels: { pool: migration }\n', '').replace('queueTimeout: 60\n', ''))
         self.state = {'operation': {'id': 9, 'node_id': 2, 'kind': 'process.create', 'status': 'queued', 'cancel_requested': False, 'steps': [], 'step_results': {}, 'input': {'node_id': 2, 'process_id': 12, 'runtime': 'systemd', 'name': 'orbit-process-12-proof.service', 'unit': 'orbit-process-12-proof.service', 'content': {'$secret': 'process.unit_content', 'id': 12}, 'desired': 'stopped', 'on_demand': True, 'activation_pending': False}}, 'receipts': {}, 'calls': [], 'completions': [], 'loseRunReply': False, 'loseCompletionReply': False}
         self.save()
 
@@ -37,7 +37,12 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
         return json.loads((self.repo / 'executor.json').read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, capture_output=True, text=True, timeout=55, env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -45,9 +50,9 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
         return result
 
     def test_systemd_create_runs_native_parent_dispatch_and_family(self):
-        for name in ['runner', 'dispatch', 'processes-schedules']:
+        for name in ['processes-schedules']:
             self.swamp('workflow', 'validate', f'operation-{name}')
-        self.swamp('workflow', 'run', 'operation-runner')
+        self.swamp('workflow', 'run', 'operation-processes-schedules')
         state = self.read()
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual([call['name'] for call in state['calls']], ['process.stage-unit', 'process.activate-unit', 'process.status'])
@@ -57,9 +62,9 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
     def test_resume_after_node_reply_loss_reuses_receipt(self):
         self.state['loseRunReply'] = True
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
+        self.swamp('workflow', 'run', 'operation-processes-schedules', success=False)
         self.assertEqual(len(self.read()['calls']), 1)
-        self.swamp('workflow', 'resume', 'operation-processes-schedules', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-processes-schedules')
         self.assertEqual(len(self.read()['calls']), 3)
         self.assertEqual(self.read()['runPosts'], 2)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
@@ -67,8 +72,8 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
     def test_resume_after_completion_reply_loss_runs_no_new_command(self):
         self.state['loseCompletionReply'] = True
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
-        self.swamp('workflow', 'resume', 'operation-processes-schedules', '--from', 'execute')
+        self.swamp('workflow', 'run', 'operation-processes-schedules', success=False)
+        self.swamp('workflow', 'resume', 'operation-processes-schedules')
         self.assertEqual(len(self.read()['calls']), 3)
         self.assertEqual(self.read()['runPosts'], 2)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
@@ -78,9 +83,9 @@ class NativeProcessesSchedulesTest(unittest.TestCase):
         self.state['operation']['input'] = {'node_id': 2, **runtime_input}
         self.state['loseRunReply'] = True
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
+        self.swamp('workflow', 'run', 'operation-processes-schedules', success=False)
         self.assertEqual(self.read()['runPosts'], 1)
-        self.swamp('workflow', 'resume', 'operation-processes-schedules', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-processes-schedules')
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
         self.assertEqual(self.read()['runPosts'], 1)
 

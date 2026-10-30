@@ -20,11 +20,11 @@ class CertificateNative(unittest.TestCase):
         behavior = self.repo / 'extensions/behaviors'
         for family in ['automatic-deploy', 'operation-runner', 'operations/certificates']:
             shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
-        for family, factory, relative in [('operation-runner', 'operationRunner', '../operations/certificates/native_fixture.ts'), ('operations/certificates', 'certificates', './native_fixture.ts')]:
+        for family, factory, relative in [('operation-runner', 'operationDiscovery', '../operations/certificates/native_fixture.ts'), ('operations/certificates', 'certificates', './native_fixture.ts')]:
             module = behavior / family / 'mod.ts'
             module.write_text('import { fixtureHttp } from "' + relative + '";\n' + module.read_text().replace('...' + factory + '()', '...' + factory + '(() => fixtureHttp)'))
         (self.repo / 'workflows').mkdir()
-        for name in ['operation-runner', 'operation-dispatch', 'operation-certificates']:
+        for name in ['operation-certificates']:
             path = ROOT / ('workflows/workflow-' + name + '.yaml')
             source = '\n'.join(line for line in path.read_text().splitlines()
                                if not line.startswith(('labels:', 'queueTimeout:'))) + '\n'
@@ -33,8 +33,13 @@ class CertificateNative(unittest.TestCase):
             'input': {'scope': 'route-8-router', 'home': '/home/orbit', 'domain': 'private.test', 'version': '0123456789abcdef', 'root_hash': 'a'*64, 'user': 'orbit'}, 'steps': [], 'step_results': {}}, 'effects': [], 'receipts': {}, 'reads': [], 'completions': []}
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, capture_output=True, text=True, timeout=45,
             env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -49,9 +54,9 @@ class CertificateNative(unittest.TestCase):
     def test_lost_request_reply_reads_same_public_csr_without_generating_another_key(self):
         self.state['loseKey'] = 'certificate-request'
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
+        self.swamp('workflow', 'run', 'operation-certificates', success=False)
         self.assertEqual(self.read()['effects'], ['certificate-request'])
-        self.swamp('workflow', 'resume', 'operation-certificates', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-certificates')
         state = self.read()
         self.assertEqual(state['effects'].count('certificate-request'), 1)
         self.assertEqual(state['reads'], ['certificate-request'])
@@ -60,8 +65,8 @@ class CertificateNative(unittest.TestCase):
     def test_lost_publication_reply_reads_receipt_before_inspection(self):
         self.state['loseKey'] = 'certificate-publish'
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
-        self.swamp('workflow', 'resume', 'operation-certificates', '--from', 'execute')
+        self.swamp('workflow', 'run', 'operation-certificates', success=False)
+        self.swamp('workflow', 'resume', 'operation-certificates')
         state = self.read()
         self.assertEqual(state['effects'], ['certificate-request', 'certificate-sign', 'certificate-publish', 'certificate-inspect'])
         self.assertEqual(state['reads'], ['certificate-publish'])
@@ -70,9 +75,9 @@ class CertificateNative(unittest.TestCase):
     def test_lost_completion_reply_reuses_completion_with_no_node_effect(self):
         self.state['loseCompletion'] = True
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
+        self.swamp('workflow', 'run', 'operation-certificates', success=False)
         before = self.read()['effects']
-        self.swamp('workflow', 'resume', 'operation-certificates', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-certificates')
         self.assertEqual(self.read()['effects'], before)
         self.assertEqual(len(self.read()['completions']), 1)
 

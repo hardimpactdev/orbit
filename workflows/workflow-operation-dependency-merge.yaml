@@ -1,22 +1,35 @@
 id: 92c89a8c-6487-42f5-a70e-d67be3921b28
 name: operation-dependency-merge
 description: Execute a disabled-by-default app dependency squash admission through the Gateway.
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    operationId: { type: integer }
-    worker: { type: string }
-  required: [operationId, worker]
+trigger:
+  schedule: "2,12,22,32,42,52 * * * * *"
 jobs:
-  - name: merge
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-dependency-merge-discovery
+          methodName: discover
+          inputs:
+            family: operation-dependency-merge
+            kinds: ["tasks.dependency_merge"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-dependency-merge'
-          behaviorName: '${{ "operation-dependency-merge-" + string(inputs.operationId) }}'
+          behaviorName: operation-dependency-merge
           methodName: execute
           inputs:
-            operationId: '${{ inputs.operationId }}'
-            worker: '${{ inputs.worker }}'
+            kind: '${{ self.kind }}'
+            worker: '${{ run.id + ":" + self.kind }}'

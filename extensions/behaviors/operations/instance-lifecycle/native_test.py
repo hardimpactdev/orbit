@@ -24,12 +24,12 @@ class LifecycleNativeTest(unittest.TestCase):
         shutil.copytree(FAMILY, family)
         runner = self.repo / "extensions/behaviors/operation-runner/mod.ts"
         runner.write_text('import { fixtureHttp } from "../operations/instance-lifecycle/fixtures/native.ts";\n' +
-                          runner.read_text().replace("...operationRunner()", "...operationRunner(() => fixtureHttp)"))
+                          runner.read_text().replace("...operationDiscovery()", "...operationDiscovery(() => fixtureHttp)"))
         module = family / "mod.ts"
         module.write_text('import { fixtureHttp } from "./fixtures/native.ts";\n' +
                           module.read_text().replace("...instanceLifecycle()", "...instanceLifecycle(() => fixtureHttp)"))
         (self.repo / "workflows").mkdir()
-        for name in ("operation-runner", "operation-dispatch", "operation-instance-lifecycle"):
+        for name in ("operation-instance-lifecycle",):
             shutil.copy(ROOT / f"workflows/workflow-{name}.yaml", self.repo / "workflows")
         # Local native recovery exercises process persistence, without pretending
         # to prove remote placement. Production keeps migration worker placement.
@@ -54,15 +54,20 @@ class LifecycleNativeTest(unittest.TestCase):
         return json.loads((self.repo / "native-lifecycle.json").read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True, capture_output=True,
                                 timeout=45, env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
 
     def test_validate_and_dispatch(self):
-        for name in ("operation-runner", "operation-dispatch", "operation-instance-lifecycle"):
+        for name in ("operation-instance-lifecycle",):
             self.swamp("workflow", "validate", name)
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-instance-lifecycle")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["effects"], {"rename-inspect": 1, "lifecycle-finish": 1})
@@ -72,20 +77,20 @@ class LifecycleNativeTest(unittest.TestCase):
     def test_resume_admitted_operation_with_the_same_claim(self):
         self.state["loseClaimReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-instance-lifecycle", success=False)
         claimed = self.read()["operation"]["worker"]
         self.assertEqual(self.read()["effects"], {})
-        self.swamp("workflow", "resume", "operation-instance-lifecycle", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-instance-lifecycle")
         self.assertEqual(self.read()["operation"]["worker"], claimed)
         self.assertEqual(len(self.read()["completions"]), 1)
 
     def test_resume_recovers_the_effect_receipt_without_reinvoking(self):
         self.state["loseRunReply"] = "rename-inspect"
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-instance-lifecycle", success=False)
         self.assertEqual(self.read()["effects"], {"rename-inspect": 1})
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-instance-lifecycle", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-instance-lifecycle")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["invocations"]["rename-inspect"], 1)
@@ -96,7 +101,7 @@ class LifecycleNativeTest(unittest.TestCase):
         self.state["operation"]["child_context"] = {"children": [{"key": "route-update", "kind": "route.update", "node_id": 9,
             "input": {"route_id": 30, "domain": "preview.test"}}]}
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-instance-lifecycle")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "waiting")
         self.assertIsNone(state["operation"]["worker"])
@@ -105,7 +110,7 @@ class LifecycleNativeTest(unittest.TestCase):
         self.state = state
         self.state["childStatus"] = "succeeded"
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-instance-lifecycle")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["invocations"], {"rename-inspect": 1, "lifecycle-finish": 1})
@@ -115,9 +120,9 @@ class LifecycleNativeTest(unittest.TestCase):
     def test_resume_replays_saved_completion_without_new_effects_or_context(self):
         self.state["loseCompletionReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-instance-lifecycle", success=False)
         previous = self.read()
-        self.swamp("workflow", "resume", "operation-instance-lifecycle", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-instance-lifecycle")
         state = self.read()
         self.assertEqual(state["calls"][len(previous["calls"]):], [{"method": "GET", "path": "/api/v1/operations/100"}])
         self.assertEqual(len(state["completions"]), 1)

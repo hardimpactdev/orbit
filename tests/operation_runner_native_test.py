@@ -22,7 +22,7 @@ class OperationRunnerNativeTest(unittest.TestCase):
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "tests/fixtures/operation-executor.ts", fixture)
-        for name, factory, relative in (("operation-runner", "operationRunner", "../_test/executor.ts"), ("operations/firewall", "firewall", "../../_test/executor.ts")):
+        for name, factory, relative in (("operation-runner", "operationDiscovery", "../_test/executor.ts"), ("operations/firewall", "firewall", "../../_test/executor.ts")):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"...{factory}()", f"...{factory}(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
@@ -47,9 +47,14 @@ class OperationRunnerNativeTest(unittest.TestCase):
         return json.loads((self.repo / "native-executor.json").read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
                                 capture_output=True, timeout=45,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -57,17 +62,15 @@ class OperationRunnerNativeTest(unittest.TestCase):
         return result
 
     def test_runner_dispatches_allow_then_remove_with_recorded_steps(self):
-        self.swamp("workflow", "validate", "operation-runner")
-        self.swamp("workflow", "validate", "operation-dispatch")
         self.swamp("workflow", "validate", "operation-firewall")
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-firewall")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["operation"]["steps"], [{"name": "ufw-converge", "status": "succeeded"}])
         self.assertEqual(state["runs"], 1)
         self.state["operation"].update(id=8, kind="firewall.remove", status="queued")
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-firewall")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["completions"][0]["result"], {"backend": "absent"})
@@ -76,10 +79,10 @@ class OperationRunnerNativeTest(unittest.TestCase):
     def test_resume_after_lost_run_reply_reuses_the_node_receipt(self):
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-firewall", success=False)
         self.assertEqual(self.read()["runs"], 1)
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-firewall", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-firewall")
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["operation"]["status"], "succeeded")
@@ -88,9 +91,9 @@ class OperationRunnerNativeTest(unittest.TestCase):
     def test_committed_completion_reply_loss_resumes_original_operation(self):
         self.state["loseCompletionReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-firewall", success=False)
         self.assertEqual(self.read()["operation"]["status"], "succeeded")
-        self.swamp("workflow", "resume", "operation-firewall", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-firewall")
         state = self.read()
         self.assertEqual(state["operation"]["id"], 7)
         self.assertEqual(state["runs"], 1)

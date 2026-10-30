@@ -2,23 +2,35 @@ id: 8e7a8caf-625c-422e-8b08-3ff8d2de4e3b
 name: operation-integrations
 description: Claim and execute an integration Operation on one placed worker.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind: { type: string }
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "7,17,27,37,47,57 * * * * *"
 jobs:
-  - name: integration
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-integrations-discovery
+          methodName: discover
+          inputs:
+            family: operation-integrations
+            kinds: ["metrics.node_exporter_converge", "metrics.node_exporter_remove", "metrics.cadvisor_converge", "metrics.cadvisor_remove", "vault.setup", "vault.sync", "vault.teardown", "websocket.app_create", "websocket.app_destroy", "websocket.app_rotate", "websocket.sync", "conn.pairing_create", "conn.pairing_revoke", "ai_router.setup", "ai_router.teardown", "ai_router.collector_converge", "analytics.enable", "analytics.update", "analytics.disable", "analytics.clickhouse_converge", "metrics.enable", "metrics.disable", "metrics.reconcile", "metrics.exporter_enable", "metrics.exporter_disable", "metrics.node_exporter_snapshot", "metrics.node_exporter_restore", "metrics.cadvisor_snapshot", "metrics.cadvisor_restore", "metrics.service_snapshot", "metrics.service_converge", "metrics.service_restore", "metrics.runtime_converge", "metrics.runtime_remove", "metrics.runtime_verify", "metrics.certificate_publish", "metrics.certificate_remove", "metrics.publication_firewall", "metrics.credentials_reset", "analytics.instance_enable", "analytics.instance_disable", "conn.gateway_sessions_revoke", "metrics.retire", "metrics.role_converge", "metrics.role_remove", "analytics.role_converge", "analytics.role_remove", "websocket.role_converge", "websocket.role_remove", "metrics.service_caddy_restore"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-integrations'
           behaviorName: operation-integrations
           methodName: execute
           inputs:
-            kind: '${{ inputs.kind }}'
-            worker: '${{ inputs.worker }}'
+            kind: '${{ self.kind }}'
+            worker: '${{ run.id + ":" + self.kind }}'

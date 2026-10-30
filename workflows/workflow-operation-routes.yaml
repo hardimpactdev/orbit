@@ -2,23 +2,35 @@ id: 611f677a-01ac-4d78-8677-36747ee90bd5
 name: operation-routes
 description: Claim and execute one Route kind on the same worker Node.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind: { type: string }
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "0,10,20,30,40,50 * * * * *"
 jobs:
-  - name: routes
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-routes-discovery
+          methodName: discover
+          inputs:
+            family: operation-routes
+            kinds: ["route.caddy_converge", "route.workload_prepare", "route.private_dns_publish", "route.offline_residue_clean", "route.withdraw_instance", "route.cleanup_instance", "route.lan_converge", "route.lan_remove", "route.workload_verify", "route.public_verify", "route.public_firewall", "route.shared_php_withdraw", "route.transfer_php_withdraw", "route.transfer_lan_remove", "route.analytics_publish", "route.analytics_remove", "route.analytics_host_prepare", "route.analytics_host_withdraw", "route.workload_firewall", "route.create", "route.converge", "route.withdraw", "route.destroy", "route.update", "route.target_set", "route.target_unset", "route.retire_source", "cluster.router_set", "cluster.router_unset", "route.router_lan_retire"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-routes'
           behaviorName: "operation-routes"
           methodName: execute
           inputs:
-            kind: '${{ inputs.kind }}'
-            worker: '${{ inputs.worker }}'
+            kind: '${{ self.kind }}'
+            worker: '${{ run.id + ":" + self.kind }}'

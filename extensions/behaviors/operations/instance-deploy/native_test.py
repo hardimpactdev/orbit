@@ -31,6 +31,8 @@ class DeploymentNativeTest(unittest.TestCase):
         source = '\n'.join(line for line in source.splitlines()
                            if not line.startswith(('labels:', 'queueTimeout:'))) + '\n'
         (self.repo / 'workflows/workflow-operation-instance-deploy.yaml').write_text(source)
+        discovery = self.repo / 'extensions/behaviors/operation-runner/mod.ts'
+        discovery.write_text('import { fixtureHttp } from "../operations/instance-deploy/native_executor.ts";\n' + discovery.read_text().replace('...operationDiscovery()', '...operationDiscovery(() => fixtureHttp)'))
         descriptors = []
         for key, step, name, transport, inputs in (
             ('source.resolve', 'source_preparation.resolve', 'instance.resolve-development-target', 'agent', {}),
@@ -55,14 +57,18 @@ class DeploymentNativeTest(unittest.TestCase):
         return json.loads((self.repo / 'native-executor.json').read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, text=True,
                                 capture_output=True, timeout=50,
                                 env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
 
     def run_deploy(self, success=True):
-        self.swamp('workflow', 'run', 'operation-instance-deploy', '--input',
-                   json.dumps({'kind': self.state['operation']['kind'], 'worker': 'proof'}), success=success)
+        self.swamp('workflow', 'run', 'operation-instance-deploy', success=success)
 
     def test_lost_node_reply_resumes_without_running_the_script_twice(self):
         self.state['loseRunReply'] = 'before_activation.install'
@@ -70,7 +76,7 @@ class DeploymentNativeTest(unittest.TestCase):
         self.swamp('workflow', 'validate', 'operation-instance-deploy')
         self.run_deploy(success=False)
         self.assertEqual(self.read()['completions'], [])
-        self.swamp('workflow', 'resume', 'operation-instance-deploy', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-instance-deploy')
         state = self.read()
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual(state['effects'].count('before_activation.install'), 1)
@@ -104,7 +110,7 @@ class DeploymentNativeTest(unittest.TestCase):
         self.save()
         self.run_deploy(success=False)
         self.assertEqual(self.read()['completions'], [])
-        self.swamp('workflow', 'resume', 'operation-instance-deploy', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-instance-deploy')
         state = self.read()
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual(state['invocations'].count('environment.write'), 1)
@@ -118,7 +124,7 @@ class DeploymentNativeTest(unittest.TestCase):
         self.save()
         self.run_deploy(success=False)
         before = self.read()['effects']
-        self.swamp('workflow', 'resume', 'operation-instance-deploy', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-instance-deploy')
         state = self.read()
         self.assertEqual(state['effects'], before)
         self.assertEqual(len(state['completions']), 1)

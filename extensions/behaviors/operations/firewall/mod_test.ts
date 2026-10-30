@@ -4,7 +4,7 @@ import { firewall } from "./mod.ts";
 import {
   type Context,
   Operation,
-  operationRunner,
+  operationDiscovery,
 } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
@@ -169,27 +169,22 @@ class Fixture {
     }, this.context());
   }
 }
-Deno.test("Services discovery is read-only and dispatches claimable kinds without ids or inputs", async () => {
+Deno.test("Family discovery is read-only and selects only its own kinds without ids or inputs", async () => {
   const f = new Fixture();
-  const runner = operationRunner(
-    () => f.http,
-    () =>
-      Promise.resolve([{
-        workflow: "operation-firewall",
-        kinds: ["firewall.allow", "firewall.deny", "firewall.remove"],
-      }]),
-  );
+  const runner = operationDiscovery(() => f.http);
   const before = structuredClone(f.operation);
   f.peer = 17;
   const result = await runner.methods.discover.execute(
-    { worker: "workflow-7" },
+    {
+      family: "operation-firewall",
+      kinds: ["firewall.allow", "firewall.deny", "firewall.remove"],
+      worker: "workflow-7",
+    },
     f.context(),
   );
   assertEquals(result.work.length, 1);
   assertEquals(result.work[0].worker, "workflow-7:firewall.allow");
-  assertEquals(result.work[0].workflow, "operation-firewall");
   assertEquals(result.work[0], {
-    workflow: "operation-firewall",
     kind: "firewall.allow",
     worker: "workflow-7:firewall.allow",
   });
@@ -201,7 +196,11 @@ Deno.test("Services discovery is read-only and dispatches claimable kinds withou
   assertEquals(f.leasePeer, null);
   f.claimableCount = 0;
   assertEquals(
-    (await runner.methods.discover.execute({ worker: "empty" }, f.context()))
+    (await runner.methods.discover.execute({
+      family: "operation-firewall",
+      kinds: ["firewall.allow"],
+      worker: "empty",
+    }, f.context()))
       .work,
     [],
   );

@@ -23,7 +23,7 @@ class TaskVmNativeTest(unittest.TestCase):
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "extensions/behaviors/operations/task-vms/native-fixture.ts", fixture)
-        for name, factory, relative in (("operation-runner", "operationRunner", "../_test/executor.ts"), ("operations/task-vms", "taskVms", "../../_test/executor.ts")):
+        for name, factory, relative in (("operation-runner", "operationDiscovery", "../_test/executor.ts"), ("operations/task-vms", "taskVms", "../../_test/executor.ts")):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"...{factory}()", f"...{factory}(() => fixtureHttp)").replace("behavior = taskVms()", "behavior = taskVms(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
@@ -46,9 +46,14 @@ class TaskVmNativeTest(unittest.TestCase):
         return json.loads((self.repo / "native-executor.json").read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
                                 capture_output=True, timeout=45,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -56,9 +61,9 @@ class TaskVmNativeTest(unittest.TestCase):
         return result
 
     def test_runner_dispatches_the_vm_family_with_proven_steps(self):
-        for workflow in ("operation-runner", "operation-dispatch", "operation-task-vms"):
+        for workflow in ("operation-task-vms",):
             self.swamp("workflow", "validate", workflow)
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-task-vms")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["operation"]["steps"], [{"name":"incus-start", "status":"succeeded"}])
@@ -67,10 +72,10 @@ class TaskVmNativeTest(unittest.TestCase):
     def test_resume_after_lost_run_reply_reuses_the_node_receipt(self):
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-task-vms", success=False)
         self.assertEqual(self.read()["runs"], 1)
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-task-vms", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-task-vms")
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["operation"]["status"], "succeeded")

@@ -2,26 +2,35 @@ id: a574d7de-b643-4189-bbcc-399785e6bbe0
 name: operation-instance-lifecycle
 description: Claim and execute an Instance lifecycle kind within one placed worker invocation.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind: {
-      type: string,
-      enum: [instance.rename, instance.destroy, instance.create, instance.register, instance.clone, instance.transfer, instance.transfer_rollback, instance.transfer_discard],
-    }
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "6,16,26,36,46,56 * * * * *"
 jobs:
-  - name: lifecycle
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-instance-lifecycle-discovery
+          methodName: discover
+          inputs:
+            family: operation-instance-lifecycle
+            kinds: ["instance.rename", "instance.destroy", "instance.create", "instance.register", "instance.clone", "instance.transfer", "instance.transfer_rollback", "instance.transfer_discard"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-instance-lifecycle"
-          behaviorName: '${{ "operation-instance-lifecycle-" + {"instance.create":"create", "instance.clone":"clone", "instance.destroy":"destroy", "instance.register":"register", "instance.rename":"rename", "instance.transfer":"transfer", "instance.transfer_rollback":"transfer_rollback", "instance.transfer_discard":"transfer_discard"}[inputs.kind] }}'
+          behaviorName: '${{ "operation-instance-lifecycle-" + {"instance.create":"create", "instance.clone":"clone", "instance.destroy":"destroy", "instance.register":"register", "instance.rename":"rename", "instance.transfer":"transfer", "instance.transfer_rollback":"transfer_rollback", "instance.transfer_discard":"transfer_discard"}[self.kind] }}'
           methodName: execute
           inputs:
-            kind: "${{ inputs.kind }}"
-            worker: "${{ inputs.worker }}"
+            kind: "${{ self.kind }}"
+            worker: '${{ run.id + ":" + self.kind }}'

@@ -1,5 +1,10 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
-import { Executor, ExecutorError, Operation, operationRunner } from "./mod.ts";
+import {
+  Executor,
+  ExecutorError,
+  Operation,
+  operationDiscovery,
+} from "./mod.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
 
 const operation = (id: number, status = "queued") => ({
@@ -108,7 +113,7 @@ Deno.test("child reads expose terminal failure for the family branch and propaga
 
 Deno.test("waiting parent is dispatched again only when read-only discovery reports ready work", async () => {
   let ready = false;
-  const runner = operationRunner(
+  const runner = operationDiscovery(
     () => () =>
       Promise.resolve({
         status: 200,
@@ -122,8 +127,6 @@ Deno.test("waiting parent is dispatched again only when read-only discovery repo
           },
         },
       }),
-    () =>
-      Promise.resolve([{ kinds: ["test.parent"], workflow: "test-parent" }]),
   );
   const ctx = {
     globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "test-ca" },
@@ -135,14 +138,21 @@ Deno.test("waiting parent is dispatched again only when read-only discovery repo
     ) => Promise.resolve({ name }),
   };
   assertEquals(
-    (await runner.methods.discover.execute({ worker: "tick-a" }, ctx)).work,
+    (await runner.methods.discover.execute({
+      family: "test-parent",
+      kinds: ["test.parent"],
+      worker: "tick-a",
+    }, ctx)).work,
     [],
   );
   ready = true;
   assertEquals(
-    (await runner.methods.discover.execute({ worker: "tick-b" }, ctx)).work,
+    (await runner.methods.discover.execute({
+      family: "test-parent",
+      kinds: ["test.parent"],
+      worker: "tick-b",
+    }, ctx)).work,
     [{
-      workflow: "test-parent",
       kind: "test.parent",
       worker: "tick-b:test.parent",
     }],

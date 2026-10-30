@@ -2,25 +2,35 @@ id: 11b7c12d-2dfb-4516-a025-31cd8f1b0010
 name: operation-database
 description: Claim and execute one database kind within one placed worker invocation.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind:
-      type: string
-      enum: [database_server.create, database_server.destroy, database_server.close, database.create, database.destroy, database_user.create, database.clone, database.destroy_owned, database.sqlite_export, database.sqlite_cleanup, database.sqlite_seed, database.sqlite_seed_abandon, database.write]
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "1,11,21,31,41,51 * * * * *"
 jobs:
-  - name: database
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-database-discovery
+          methodName: discover
+          inputs:
+            family: operation-database
+            kinds: ["database_server.create", "database_server.destroy", "database_server.close", "database.create", "database.destroy", "database_user.create", "database.write", "database.clone", "database.destroy_owned", "database.sqlite_export", "database.sqlite_cleanup", "database.sqlite_seed", "database.sqlite_seed_abandon"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-database'
-          behaviorName: '${{ "operation-database-" + {"database_server.create":"server-create", "database_server.destroy":"server-destroy", "database_server.close":"server-close", "database.create":"create", "database.destroy":"destroy", "database_user.create":"user-create", "database.clone":"clone", "database.destroy_owned":"destroy-owned", "database.sqlite_export":"sqlite-export", "database.sqlite_cleanup":"sqlite-cleanup", "database.sqlite_seed":"sqlite-seed", "database.sqlite_seed_abandon":"sqlite-seed-abandon", "database.write":"write"}[inputs.kind] }}'
+          behaviorName: '${{ "operation-database-" + {"database_server.create":"server-create", "database_server.destroy":"server-destroy", "database_server.close":"server-close", "database.create":"create", "database.destroy":"destroy", "database_user.create":"user-create", "database.clone":"clone", "database.destroy_owned":"destroy-owned", "database.sqlite_export":"sqlite-export", "database.sqlite_cleanup":"sqlite-cleanup", "database.sqlite_seed":"sqlite-seed", "database.sqlite_seed_abandon":"sqlite-seed-abandon", "database.write":"write"}[self.kind] }}'
           methodName: execute
           inputs:
-            kind: '${{ inputs.kind }}'
-            worker: '${{ inputs.worker }}'
+            kind: '${{ self.kind }}'
+            worker: '${{ run.id + ":" + self.kind }}'

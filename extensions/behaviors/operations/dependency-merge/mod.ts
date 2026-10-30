@@ -47,9 +47,15 @@ export function dependencyMerge(
 ) {
   return {
     type: "@nckrtl/operation-dependency-merge",
-    version: "2026.10.28.1",
+    version: "2026.10.30.1",
     globalArguments: Globals,
     resources: {
+      claim: {
+        description: "First merge claimed by this scheduled invocation",
+        schema: z.object({ operation_id: z.number().int().positive() }),
+        lifetime: "infinite",
+        garbageCollection: 1,
+      },
       receipt: {
         description: "Exact-head dependency squash completion intent",
         schema: Completion,
@@ -61,16 +67,31 @@ export function dependencyMerge(
       execute: {
         description: "Request one proven Gateway-owned squash merge",
         arguments: z.object({
-          operationId: z.number().int().positive(),
+          kind: z.literal("tasks.dependency_merge"),
           worker: z.string(),
         }),
         execute: async (
-          args: { operationId: number; worker: string },
+          args: { kind: "tasks.dependency_merge"; worker: string },
           ctx: Context & ProjectConfigContext,
         ) => {
-          const executor = new Executor(makeHttp(ctx)),
-            path = String(args.operationId),
-            resource = `operation-${path}`;
+          const executor = new Executor(makeHttp(ctx));
+          const claimName = `claim-${args.worker}`;
+          const savedClaim = await ctx.readResource(claimName);
+          let id: number;
+          if (savedClaim) {
+            id = z.object({ operation_id: z.number().int().positive() }).parse(
+              savedClaim,
+            ).operation_id;
+          } else {
+            const raw = await executor.post("claim", {
+              kind: args.kind,
+              worker: args.worker,
+            });
+            if (raw === null) return { status: "idle" };
+            id = Operation.parse(raw).id;
+            await ctx.writeResource("claim", claimName, { operation_id: id });
+          }
+          const path = String(id), resource = `operation-${path}`;
           const complete = async (value: z.infer<typeof Completion>) => {
             const handle = await ctx.writeResource("receipt", resource, value);
             await executor.post(`${path}/complete`, {
@@ -85,7 +106,7 @@ export function dependencyMerge(
             await executor.post(`${path}/heartbeat`, { worker: args.worker }),
           );
           if (
-            op.id !== args.operationId || op.target_id !== op.input.group_id
+            op.id !== id || op.target_id !== op.input.group_id
           ) throw new Error("Merge operation identity changed");
           const stored = op.step_results.squash;
           if (op.cancel_requested && !stored) {

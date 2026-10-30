@@ -95,7 +95,7 @@ class OperationWorkerNativeTest(unittest.TestCase):
 let peer="services";try{peer=await Deno.readTextFile("/worker-proof-identity")}catch(e){if(!(e instanceof Deno.errors.NotFound))throw e}
 const r=await fetch("http://127.0.0.1:%d"+path,{method,headers:{"Content-Type":"application/json","X-Proof-Peer":peer},body:body===undefined?undefined:JSON.stringify(body)});
 return {status:r.status,body:await r.json()};}''' % server.server_port)
-            for folder, factory, relative in (('operation-runner', 'operationRunner', '../_test/http.ts'),
+            for folder, factory, relative in (('operation-runner', 'operationDiscovery', '../_test/http.ts'),
                                               ('operations/firewall', 'firewall', '../../_test/http.ts')):
                 path = root / 'extensions/behaviors' / folder / 'mod.ts'
                 path.write_text('import {fixtureHttp} from "%s";\n' % relative +
@@ -148,7 +148,7 @@ return {status:r.status,body:await r.json()};}''' % server.server_port)
                                     'ws://127.0.0.1:%d' % port, '--token-file', '/fixture/enrollment',
                                     '--server-token-file', '/fixture/worker-access', '--concurrency', 'auto',
                                     '--label', 'pool=migration'], check=True, capture_output=True, timeout=30)
-                    result = cli('workflow', 'run', 'operation-runner', *flags)
+                    result = cli('workflow', 'run', 'operation-firewall', *flags)
                     self.assertEqual(result['status'], 'succeeded')
                     self.assertEqual(state['operation']['status'], 'succeeded')
                     self.assertEqual(state['effects'], 1)
@@ -157,7 +157,7 @@ return {status:r.status,body:await r.json()};}''' % server.server_port)
                     self.assertEqual(len(reads), 1)
                     self.assertEqual(writes[0][1], '/api/v1/operation-executor/claim')
                     self.assertEqual(len({c[2] for c in writes}), 1)
-                    self.assertNotEqual(reads[0][2], writes[0][2], 'Services must never claim the worker lease')
+                    self.assertEqual(reads[0][2], writes[0][2], 'Family discovery and execution share its placed worker Node')
             finally:
                 subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=20)
                 if serve:

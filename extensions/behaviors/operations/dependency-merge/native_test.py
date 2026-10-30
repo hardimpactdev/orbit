@@ -40,10 +40,12 @@ class DependencyMergeNativeTest(unittest.TestCase):
                 env.update(SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
                 def run(*args):
                     return subprocess.run(["swamp", "workflow", *args, "--json"], cwd=repo, env=env, text=True, capture_output=True, timeout=50)
-                first = run("run", "operation-dependency-merge", "--input", "operationId=7", "--input", "worker=proof")
+                discovery = behavior / "operation-runner/mod.ts"
+                discovery.write_text('import { fixtureHttp } from "../_test/merge.ts";\n' + discovery.read_text().replace("...operationDiscovery()", "...operationDiscovery(() => fixtureHttp)"))
+                first = run("run", "operation-dependency-merge")
                 self.assertNotEqual(first.returncode, 0, first.stdout + first.stderr)
                 self.assertEqual(json.loads(state_file.read_text())["writes"], 1, first.stdout + first.stderr)
-                resumed = run("resume", "operation-dependency-merge", "--from", "execute")
+                resumed = run("resume", "operation-dependency-merge", "--run", json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["id"])
                 self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
                 final = json.loads(state_file.read_text())
                 self.assertEqual(final["writes"], 1)

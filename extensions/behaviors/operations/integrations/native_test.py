@@ -24,11 +24,11 @@ class IntegrationNativeTest(unittest.TestCase):
         fixture = self.repo / 'extensions/behaviors/_test/executor.ts'
         fixture.parent.mkdir()
         shutil.copy(FAMILY / 'native_fixture.ts', fixture)
-        for name, factory, relative in [('operation-runner', 'operationRunner', '../_test/executor.ts'), ('operations/integrations', 'integrations', '../../_test/executor.ts')]:
+        for name, factory, relative in [('operation-runner', 'operationDiscovery', '../_test/executor.ts'), ('operations/integrations', 'integrations', '../../_test/executor.ts')]:
             path = self.repo / 'extensions/behaviors' / name / 'mod.ts'
             path.write_text('import { fixtureHttp } from "' + relative + '";\n' + path.read_text().replace('...' + factory + '()', '...' + factory + '(() => fixtureHttp)'))
         (self.repo / 'workflows').mkdir()
-        for name in ('runner', 'dispatch', 'integrations'):
+        for name in ('integrations',):
             source = (ROOT / f'workflows/workflow-operation-{name}.yaml').read_text()
             source = '\n'.join(line for line in source.splitlines() if not line.startswith(('labels:', 'queueTimeout:'))) + '\n'
             (self.repo / f'workflows/workflow-operation-{name}.yaml').write_text(source)
@@ -40,15 +40,20 @@ class IntegrationNativeTest(unittest.TestCase):
     def save(self): (self.repo / 'native-executor.json').write_text(json.dumps(self.state))
     def read(self): return json.loads((self.repo / 'native-executor.json').read_text())
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, text=True, capture_output=True, timeout=45,
             env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success: self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else: self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
     def test_native_dispatch_keeps_the_admitted_target_and_proven_step(self):
-        for name in ('operation-runner', 'operation-dispatch', 'operation-integrations'):
+        for name in ('operation-integrations',):
             self.swamp('workflow', 'validate', name)
-        self.swamp('workflow', 'run', 'operation-runner')
+        self.swamp('workflow', 'run', 'operation-integrations')
         state = self.read()
         self.assertEqual(state['runs'], 1)
         self.assertEqual(state['operation']['status'], 'succeeded')
@@ -56,18 +61,18 @@ class IntegrationNativeTest(unittest.TestCase):
     def test_new_process_resumes_a_lost_effect_reply_with_the_same_key(self):
         self.state['loseRunReply'] = True
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
+        self.swamp('workflow', 'run', 'operation-integrations', success=False)
         self.assertEqual(self.read()['runs'], 1)
-        self.swamp('workflow', 'resume', 'operation-integrations', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-integrations')
         self.assertEqual(self.read()['runs'], 1)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
         self.assertEqual(self.read()['receiptReads'], 1)
     def test_new_process_replays_saved_completion_without_another_effect(self):
         self.state['loseCompletionReply'] = True
         self.save()
-        self.swamp('workflow', 'run', 'operation-runner', success=False)
+        self.swamp('workflow', 'run', 'operation-integrations', success=False)
         self.assertEqual(self.read()['runs'], 1)
-        self.swamp('workflow', 'resume', 'operation-integrations', '--from', 'execute')
+        self.swamp('workflow', 'resume', 'operation-integrations')
         state = self.read()
         self.assertEqual(state['runs'], 1)
         self.assertEqual(len(state['completions']), 1)

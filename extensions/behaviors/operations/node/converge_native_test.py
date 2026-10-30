@@ -21,14 +21,14 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
             shutil.copytree(ROOT / "extensions/behaviors" / name,
                             self.repo / "extensions/behaviors" / name)
         for name, factory, relative in (
-            ("operation-runner", "operationRunner", "../operations/node/converge_native_fixture.ts"),
+            ("operation-runner", "operationDiscovery", "../operations/node/converge_native_fixture.ts"),
             ("operations/node", "node", "./converge_native_fixture.ts"),
         ):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"{factory}()", f"{factory}(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
         (self.repo / "workflows").mkdir()
-        for name in ("operation-runner", "operation-dispatch", "operation-node"):
+        for name in ("operation-node",):
             source = (ROOT / "workflows" / f"workflow-{name}.yaml").read_text()
             # Process recovery is local; the shipped workflow keeps worker placement.
             source = "\n".join(line for line in source.splitlines()
@@ -52,9 +52,14 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
 
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
                                 capture_output=True, timeout=45,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -78,7 +83,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.footprint("route-residue", "route.offline_residue_clean")
         self.state["childStatus"] = "waiting"
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-node")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "waiting")
         self.assertEqual(state["waiting_for"], ["footprint-route-residue"])
@@ -89,7 +94,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         state["operation"]["status"] = "queued"
         self.state = state
         self.save()
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-node")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(len(state["children"]), 1)
@@ -100,7 +105,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.footprint("route-residue", "route.offline_residue_clean")
         self.state["loseChildReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(len(self.read()["children"]), 1)
         self.swamp("workflow", "resume", "operation-node", "--from", "execute")
         state = self.read()
@@ -113,7 +118,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.footprint("tmpfiles")
         self.state["loseRunReplyKey"] = "footprint-tmpfiles"
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read()["runs"], 1)
         self.swamp("workflow", "resume", "operation-node", "--from", "execute")
         state = self.read()
@@ -130,7 +135,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.state["operation"]["state"]["child_intents"][0]["input"] = {"reason": "native-proof"}
         self.state["loseRunReplyKey"] = "footprint-private-dns-listener"
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read().get("children", []), [])
         self.swamp("workflow", "resume", "operation-node", "--from", "execute")
         state = self.read()
@@ -147,7 +152,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
                                for version in ["8.4", "8.5"]]}
         self.state["loseRunReplyKey"] = "footprint-php-runtime-8.5"
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read()["runs"], 2)
         self.swamp("workflow", "resume", "operation-node", "--from", "execute")
         state = self.read()
@@ -166,7 +171,7 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
             "agent_pin": "a" * 64, "command_input": []}
         self.state["loseRunReplyKey"] = "agent-install"
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read()["runs"], 1)
         self.swamp("workflow", "resume", "operation-node", "--from", "execute")
         state = self.read()

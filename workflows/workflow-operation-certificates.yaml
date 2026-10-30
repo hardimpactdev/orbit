@@ -2,23 +2,35 @@ id: 0eef618f-3b0c-464e-919a-ebb793d6aa9e
 name: operation-certificates
 description: Claim and execute one certificate kind on the same worker Node.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind: { type: string }
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "0,10,20,30,40,50 * * * * *"
 jobs:
-  - name: certificates
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-certificates-discovery
+          methodName: discover
+          inputs:
+            family: operation-certificates
+            kinds: ["certificate.converge", "certificate.remove"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-certificates'
           behaviorName: "operation-certificates"
           methodName: execute
           inputs:
-            kind: '${{ inputs.kind }}'
-            worker: '${{ inputs.worker }}'
+            kind: '${{ self.kind }}'
+            worker: '${{ run.id + ":" + self.kind }}'

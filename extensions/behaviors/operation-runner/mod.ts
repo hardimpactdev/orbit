@@ -7,11 +7,6 @@ export const Globals = z.object({
     "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
   ),
 });
-export const Registration = z.object({
-  kinds: z.array(z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/))
-    .nonempty(),
-  workflow: z.string().min(1),
-});
 export const Operation = z.object({
   id: z.number().int().positive(),
   kind: z.string(),
@@ -201,53 +196,27 @@ export class Executor {
     return operation;
   }
 }
-export async function registrations(
-  directory = "extensions/behaviors/operations",
-) {
-  const result: z.infer<typeof Registration>[] = [];
-  const names: string[] = [];
-  for await (const entry of Deno.readDir(directory)) {
-    if (entry.isDirectory) names.push(entry.name);
-  }
-  for (const name of names.sort()) {
-    result.push(
-      Registration.parse(
-        JSON.parse(
-          await Deno.readTextFile(`${directory}/${name}/registration.json`),
-        ),
-      ),
-    );
-  }
-  const kinds = result.flatMap((entry) => entry.kinds);
-  if (new Set(kinds).size !== kinds.length) {
-    throw new Error("Duplicate operation kind registration");
-  }
-  return result;
-}
-export function operationRunner(
+/** Family-local discovery; no filesystem, claim, nested workflow or polling. */
+export function operationDiscovery(
   makeHttp = (ctx: Context) =>
     gatewayHttp(
       ctx.globalArgs.gatewayUrl,
       ctx.globalArgs.caFile,
       ctx.signal,
-      600_000,
+      30_000,
     ),
-  discover = registrations,
 ) {
+  const Kind = z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/);
   return {
-    type: "@nckrtl/operation-runner",
-    version: "2026.10.28.1",
+    type: "@nckrtl/operation-discovery",
+    version: "2026.10.30.1",
     globalArguments: Globals,
     resources: {
       dispatch: {
         description:
-          "Read-only discovery of registered kinds with claimable work",
+          "Latest claimable kinds for one independently scheduled family",
         schema: z.object({
-          work: z.array(z.object({
-            workflow: z.string(),
-            kind: z.string(),
-            worker: z.string(),
-          })),
+          work: z.array(z.object({ kind: Kind, worker: z.string() })),
         }),
         lifetime: "7d",
         garbageCollection: 1,
@@ -255,39 +224,42 @@ export function operationRunner(
     },
     methods: {
       discover: {
-        description: "Read claimable kind counts without claiming an Operation",
-        arguments: z.object({ worker: z.string().min(1) }),
-        execute: async (args: { worker: string }, ctx: Context) => {
-          const registered = await discover();
-          const executor = new Executor(makeHttp(ctx));
+        description:
+          "Read only this family's claimable kinds; execution stays in its workflow",
+        arguments: z.object({
+          family: z.string().min(1),
+          kinds: z.array(Kind).nonempty(),
+          worker: z.string().min(1),
+        }),
+        execute: async (
+          args: { family: string; kinds: string[]; worker: string },
+          ctx: Context,
+        ) => {
+          if (new Set(args.kinds).size !== args.kinds.length) {
+            throw new Error("Duplicate family kind");
+          }
           const available = z.object({
-            kinds: z.array(z.object({
-              kind: z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/),
-              claimable: z.number().int().nonnegative(),
-              oldest_at: z.iso.datetime({ offset: true }).nullable(),
-            })),
-          }).parse(await executor.get("claimable"));
+            kinds: z.array(
+              z.object({
+                kind: Kind,
+                claimable: z.number().int().nonnegative(),
+                oldest_at: z.iso.datetime({ offset: true }).nullable(),
+              }),
+            ),
+          }).parse(await new Executor(makeHttp(ctx)).get("claimable"));
           if (
             new Set(available.kinds.map((entry) => entry.kind)).size !==
               available.kinds.length
-          ) {
-            throw new Error("Duplicate claimable kind");
-          }
-          const kinds = new Set(
+          ) throw new Error("Duplicate claimable kind");
+          const claimable = new Set(
             available.kinds.filter((entry) => entry.claimable > 0).map((
               entry,
             ) => entry.kind),
           );
-          const work = registered.flatMap((registration) =>
-            registration.kinds
-              .filter((kind) => kinds.has(kind))
-              .map((kind) => ({
-                workflow: registration.workflow,
-                kind,
-                worker: `${args.worker}:${kind}`,
-              }))
-          );
-          const handle = await ctx.writeResource("dispatch", "dispatch", {
+          const work = args.kinds.filter((kind) => claimable.has(kind)).map((
+            kind,
+          ) => ({ kind, worker: `${args.worker}:${kind}` }));
+          const handle = await ctx.writeResource("dispatch", args.family, {
             work,
           });
           return { dataHandles: [handle], work };
@@ -297,6 +269,6 @@ export function operationRunner(
   };
 }
 export const behavior = {
-  ...operationRunner(),
-  type: "@nckrtl/operation-runner",
+  ...operationDiscovery(),
+  type: "@nckrtl/operation-discovery",
 };

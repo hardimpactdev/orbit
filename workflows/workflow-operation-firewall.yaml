@@ -2,26 +2,35 @@ id: 9249dbc7-f61a-4288-9e51-a10a3c0bfa1d
 name: operation-firewall
 description: Claim and execute a firewall kind within one placed worker invocation.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind: {
-      type: string,
-      enum: [firewall.allow, firewall.deny, firewall.remove],
-    }
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "3,13,23,33,43,53 * * * * *"
 jobs:
-  - name: firewall
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-firewall-discovery
+          methodName: discover
+          inputs:
+            family: operation-firewall
+            kinds: ["firewall.allow", "firewall.deny", "firewall.remove"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-firewall"
-          behaviorName: '${{ "operation-firewall-" + {"firewall.allow":"allow", "firewall.deny":"deny", "firewall.remove":"remove"}[inputs.kind] }}'
+          behaviorName: '${{ "operation-firewall-" + {"firewall.allow":"allow", "firewall.deny":"deny", "firewall.remove":"remove"}[self.kind] }}'
           methodName: execute
           inputs:
-            kind: "${{ inputs.kind }}"
-            worker: "${{ inputs.worker }}"
+            kind: "${{ self.kind }}"
+            worker: '${{ run.id + ":" + self.kind }}'

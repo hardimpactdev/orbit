@@ -2,25 +2,35 @@ id: 7dfea1f8-75c3-48b1-8987-271d3f590d27
 name: operation-instance-deploy
 description: Claim and execute Instance deployment and Project step-list work on one placed Node.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind:
-      type: string
-      enum: [instance.deploy, instance.rollback, instance.sync_environment, instance.run_steps, instance.prepare_vp_environment, instance.prepare_php_runtime, instance.repair_projection, instance.prepare_served_web_roots, instance.synchronize_environment]
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "5,15,25,35,45,55 * * * * *"
 jobs:
-  - name: instance-deploy
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-instance-deploy-discovery
+          methodName: discover
+          inputs:
+            family: operation-instance-deploy
+            kinds: ["instance.deploy", "instance.rollback", "instance.run_steps", "instance.sync_environment", "instance.prepare_vp_environment", "instance.prepare_php_runtime", "instance.repair_projection", "instance.prepare_served_web_roots", "instance.synchronize_environment"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-instance-deploy'
-          behaviorName: '${{ "operation-instance-deploy-" + {"instance.deploy":"deploy","instance.rollback":"rollback","instance.sync_environment":"sync-environment","instance.run_steps":"run-steps","instance.prepare_vp_environment":"prepare-vp-environment","instance.prepare_php_runtime":"prepare-php-runtime","instance.repair_projection":"repair-projection","instance.prepare_served_web_roots":"prepare-served-web-roots","instance.synchronize_environment":"synchronize-environment"}[inputs.kind] }}'
+          behaviorName: '${{ "operation-instance-deploy-" + {"instance.deploy":"deploy","instance.rollback":"rollback","instance.sync_environment":"sync-environment","instance.run_steps":"run-steps","instance.prepare_vp_environment":"prepare-vp-environment","instance.prepare_php_runtime":"prepare-php-runtime","instance.repair_projection":"repair-projection","instance.prepare_served_web_roots":"prepare-served-web-roots","instance.synchronize_environment":"synchronize-environment"}[self.kind] }}'
           methodName: execute
           inputs:
-            kind: '${{ inputs.kind }}'
-            worker: '${{ inputs.worker }}'
+            kind: '${{ self.kind }}'
+            worker: '${{ run.id + ":" + self.kind }}'

@@ -21,14 +21,14 @@ class NodeWorkflowTest(unittest.TestCase):
             shutil.copytree(ROOT / "extensions/behaviors" / name,
                             self.repo / "extensions/behaviors" / name)
         for name, factory, relative in (
-            ("operation-runner", "operationRunner", "../operations/node/native_fixture.ts"),
+            ("operation-runner", "operationDiscovery", "../operations/node/native_fixture.ts"),
             ("operations/node", "node", "./native_fixture.ts"),
         ):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"{factory}()", f"{factory}(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
         (self.repo / "workflows").mkdir()
-        for name in ("operation-runner", "operation-dispatch", "operation-node"):
+        for name in ("operation-node",):
             source = (ROOT / "workflows" / f"workflow-{name}.yaml").read_text()
             # Process recovery is local; the shipped workflow keeps worker placement.
             source = "\n".join(line for line in source.splitlines()
@@ -49,9 +49,14 @@ class NodeWorkflowTest(unittest.TestCase):
         return json.loads((self.repo / "native-node.json").read_text())
 
     def swamp(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
                                 capture_output=True, timeout=45,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -60,9 +65,9 @@ class NodeWorkflowTest(unittest.TestCase):
 
     def test_native_dispatch_runs_the_settings_check(self):
         self.swamp("doctor", "extensions")
-        for name in ("operation-runner", "operation-dispatch", "operation-node"):
+        for name in ("operation-node",):
             self.swamp("workflow", "validate", name)
-        self.swamp("workflow", "run", "operation-runner")
+        self.swamp("workflow", "run", "operation-node")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["runs"], 1)
@@ -71,10 +76,10 @@ class NodeWorkflowTest(unittest.TestCase):
     def test_fresh_process_recovers_a_lost_node_reply(self):
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read()["runs"], 1)
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-node")
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["calls"].count("/api/v1/operation-executor/7/run"), 1)
@@ -84,8 +89,8 @@ class NodeWorkflowTest(unittest.TestCase):
     def test_fresh_process_replays_lost_completion_without_node_work(self):
         self.state["loseCompletionReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
-        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        self.swamp("workflow", "run", "operation-node", success=False)
+        self.swamp("workflow", "resume", "operation-node")
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["calls"].count("/api/v1/operation-executor/7/run"), 1)
@@ -95,9 +100,9 @@ class NodeWorkflowTest(unittest.TestCase):
     def test_fresh_process_replays_a_completion_that_did_not_commit(self):
         self.state["loseBeforeCommit"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-node")
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(len(state["completions"]), 1)
@@ -111,11 +116,11 @@ class NodeWorkflowTest(unittest.TestCase):
         }]}
         self.state["loseChildReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         state = self.read()
         self.assertEqual(state["child"]["id"], 20)
         self.assertEqual(state["runs"], 0)
-        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-node")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "waiting")
         self.assertEqual(state["completions"], [])
@@ -125,9 +130,9 @@ class NodeWorkflowTest(unittest.TestCase):
         state["loseBeforeCommit"] = True
         self.state = state
         self.save()
-        self.swamp("workflow", "run", "operation-runner", success=False)
+        self.swamp("workflow", "run", "operation-node", success=False)
         self.assertEqual(self.read()["runs"], 1)
-        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        self.swamp("workflow", "resume", "operation-node")
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["operation"]["status"], "succeeded")

@@ -20,13 +20,13 @@ class ToolsNativeTest(unittest.TestCase):
         for family in ("automatic-deploy", "operation-runner", "operations/tools"):
             shutil.copytree(ROOT / "extensions/behaviors" / family,
                             self.repo / "extensions/behaviors" / family)
-        for family, factory, relative in (("operation-runner", "operationRunner", "../operations/tools/native_fixture.ts"),
+        for family, factory, relative in (("operation-runner", "operationDiscovery", "../operations/tools/native_fixture.ts"),
                                            ("operations/tools", "tools", "./native_fixture.ts")):
             path = self.repo / "extensions/behaviors" / family / "mod.ts"
             source = path.read_text().replace(f"...{factory}()", f"...{factory}(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
         (self.repo / "workflows").mkdir()
-        for name in ("runner", "dispatch", "tools"):
+        for name in ("tools",):
             path = ROOT / f"workflows/workflow-operation-{name}.yaml"
             # Native process recovery is local; production keeps placed worker labels.
             source = "\n".join(line for line in path.read_text().splitlines()
@@ -39,9 +39,14 @@ class ToolsNativeTest(unittest.TestCase):
                       "calls": [], "receipts": {}, "mutations": 0, "installed": None, "completions": []}
 
     def call(self, *args, success=True):
+        if args[:2] == ("workflow", "resume"):
+            args = (*args[:3], "--run", self.last_run_id)
         result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo,
                                 env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"},
                                 text=True, capture_output=True, timeout=45)
+        if args[:2] == ("workflow", "run"):
+            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+            self.last_run_id = value.get("id")
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -54,12 +59,10 @@ class ToolsNativeTest(unittest.TestCase):
                 # One fixture and native workflow definition per permanent Operation identity.
                 self.state[boundary] = True
                 (self.repo / "native-tools.json").write_text(json.dumps(self.state))
-                self.call("workflow", "validate", "operation-runner")
-                self.call("workflow", "validate", "operation-dispatch")
                 self.call("workflow", "validate", "operation-tools")
-                self.call("workflow", "run", "operation-runner", success=False)
+                self.call("workflow", "run", "operation-tools", success=False)
                 before = json.loads((self.repo / "native-tools.json").read_text())
-                self.call("workflow", "resume", "operation-tools", "--from", "execute")
+                self.call("workflow", "resume", "operation-tools")
                 state = json.loads((self.repo / "native-tools.json").read_text())
                 self.assertEqual(state["operation"]["status"], "succeeded")
                 self.assertEqual(state["mutations"], 1)
@@ -92,10 +95,10 @@ class ToolsNativeTest(unittest.TestCase):
         self.state.update(installed="2.46.0-4", mutations=1, receipts={"package-mutate": {}},
                           worker="previous-dispatch", leaseExpired=True)
         (self.repo / "native-tools.json").write_text(json.dumps(self.state))
-        for workflow in ("operation-runner", "operation-dispatch", "operation-tools"):
+        for workflow in ("operation-tools",):
             self.call("workflow", "validate", workflow)
 
-        self.call("workflow", "run", "operation-runner")
+        self.call("workflow", "run", "operation-tools")
 
         state = json.loads((self.repo / "native-tools.json").read_text())
         self.assertEqual(state["operation"]["id"], 1190)

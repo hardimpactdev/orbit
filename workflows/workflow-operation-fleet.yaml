@@ -2,32 +2,35 @@ id: f494f606-0050-446e-a025-25b6c160578c
 name: operation-fleet
 description: Claim and execute one Fleet kind in the same worker invocation.
 labels: { pool: migration }
-queueTimeout: 300
+queueTimeout: 60
 autoResume: true
-inputs:
-  type: object
-  properties:
-    kind: {
-      type: string,
-      enum: [
-        fleet.peer_dns,
-        fleet.recipe,
-        fleet.rollout,
-        fleet.recipe_pr,
-        fleet.cli_converge,
-      ],
-    }
-    worker: { type: string }
-  required: [kind, worker]
+trigger:
+  schedule: "4,14,24,34,44,54 * * * * *"
 jobs:
-  - name: fleet
+  - name: discover
     steps:
-      - name: execute
+      - name: discover
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-discovery"
+          behaviorName: operation-fleet-discovery
+          methodName: discover
+          inputs:
+            family: operation-fleet
+            kinds: ["fleet.peer_dns", "fleet.recipe", "fleet.rollout", "fleet.recipe_pr", "fleet.cli_converge"]
+            worker: "${{ run.id }}"
+  - name: execute
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: execute-${{ self.kind }}
+        forEach:
+          item: kind
+          in: "${{ steps.discover.outputs.work.map(item, item.kind) }}"
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-fleet"
-          behaviorName: '${{ "operation-fleet-" + {"fleet.peer_dns":"peer-dns", "fleet.recipe":"recipe", "fleet.rollout":"rollout", "fleet.recipe_pr":"recipe-pr", "fleet.cli_converge":"cli-converge"}[inputs.kind] }}'
+          behaviorName: '${{ "operation-fleet-" + {"fleet.peer_dns":"peer-dns", "fleet.recipe":"recipe", "fleet.rollout":"rollout", "fleet.recipe_pr":"recipe-pr", "fleet.cli_converge":"cli-converge"}[self.kind] }}'
           methodName: execute
           inputs:
-            kind: "${{ inputs.kind }}"
-            worker: "${{ inputs.worker }}"
+            kind: "${{ self.kind }}"
+            worker: '${{ run.id + ":" + self.kind }}'
