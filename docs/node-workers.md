@@ -87,3 +87,21 @@ intent and converge to disable/remove its unit; preserve its secrets and cache
 for recovery. Existing family writers remain selected until each family has
 a passing canary and a reversible writer switch. Delete its previous path
 after its first production success.
+
+
+## Unplaced steps and rotation limits
+
+The [Swamp placement manual](https://swamp-club.com/manual/reference/remote-execution/workflow-placement)
+states: “Steps without any effective placement run locally on the orchestrator.”
+Effective placement inherits workflow, job and step fields. Omitting only
+`target` does not make a step local: labels or platform can dispatch it.
+Node steps always use the exact token target and matching string Node label.
+
+At the pinned1602a617 version, native enrollment mint refuses an active token
+name until it is revoked or expired (`enrollment_token_model.ts:179–187`).
+Connect provides no alternate registered name. Minting and delivering a new
+enrollment before revoking the old one while retaining `orbit-node-ID` therefore
+requires native support for overlapping credential generations. This ordering
+is an outstanding follow-up; the scheduledday20 rotation does not provide it.
+Do not change the exact placement identity or add a custom issuer to hide this
+limit. Initial enrollment is unaffected.
