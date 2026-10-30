@@ -13,7 +13,6 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
-use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
@@ -26,7 +25,6 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
         $this->execution->assertCompletion($operation, $outcome);
-        $server = $operation->target_type === 'database_server' ? DatabaseServer::query()->find($operation->target_id) : null;
         $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
         $preflight = ValidatedData::object($runs['preflight'] ?? []);
         if ($outcome->status !== OperationStatus::Succeeded) {
@@ -43,24 +41,10 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
                 }
             }
 
-            if (str_starts_with($operation->kind, 'database_server.') && $server !== null) {
-                $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $outcome->errorCode,
-                    'failed_step' => $operation->steps()->where('status', 'failed')->value('name')]);
-            }
-
             return;
         }
         $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
         $projection = $intent->payload['projection'];
-        if (isset($projection['server']) && $server !== null) {
-            $server->update($projection['server']);
-        }
-        if (isset($projection['process']) && $server?->process !== null) {
-            $server->process->fill($projection['process'])->fill(['status' => 'active', 'failed_step' => null, 'error_code' => null])->save();
-        }
-        if (isset($projection['adopted_connection']) && $server !== null) {
-            DatabaseConnection::query()->where('slug', $projection['adopted_connection'])->update(['database_server_id' => $server->id]);
-        }
         foreach ($projection['delete_connections'] ?? [] as $id) {
             $connection = DatabaseConnection::query()->findOrFail($id);
             $connection->delete();

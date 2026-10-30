@@ -7,11 +7,14 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Str;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
@@ -32,9 +35,14 @@ beforeEach(function (): void {
     ]);
     $this->gateway = $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => Str::uuid()->toString()]]];
+    app()->instance(WebSocketClient::class, $socket);
 
     $this->dbNode = Node::query()->create([
         'name' => 'beast',
+        'architecture' => 'amd64',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.80',

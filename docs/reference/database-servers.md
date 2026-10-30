@@ -28,6 +28,8 @@ The Gateway resolves stored database credentials only when it invokes an authori
 
 ## Create a server
 
+`database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes. Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. The old kind is absent from polled registration and scheduled discovery. Rollback reverts the kind PR.
+
 `database:server:create` creates the server and its Process in one command.
 
 ```bash
@@ -108,7 +110,7 @@ The server's Process is an ordinary Docker Node Process: read its logs, stop it,
 orbit database:server:create services-valkey --node=services --driver=redis --process=162 --connection=services-valkey
 ```
 
-The Gateway refuses with `database.server_adoption_refused` and changes nothing unless all of these hold:
+The Gateway checks recorded Process and connection ownership before admitting adoption. The Node checks live credentials, ACLs and persistence before writing its ACL file or changing the container, including when the original command already has `--aclfile`. Either check refuses with `database.server_adoption_refused` unless all of these hold:
 
 - The driver is `redis`, and the Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - The Process publishes container port `6379` on the Node's WireGuard address. That host port becomes the server's port.
