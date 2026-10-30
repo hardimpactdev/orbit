@@ -11,11 +11,9 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Operation;
@@ -37,13 +35,7 @@ final readonly class RenameInstanceAction
         if (($replay = $this->idempotency->replay('instance.rename')) !== null) {
             return $replay;
         }
-        if (app(DirectOperation::class)->writer('instance.rename') === 'direct') {
-            if ($data->domain !== null) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Direct rename supports branch recording until Route composition is available.', 503);
-            }
-        } else {
-            app(InstanceLifecycleAvailability::class)->assertAvailable('instance.rename');
-        }
+        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.rename');
 
         return DB::transaction(fn (): Operation => $this->admit($instance->refresh(), $data, $caller, $requestId));
     }
@@ -91,8 +83,6 @@ final readonly class RenameInstanceAction
             'prepare_id' => $instance->source_prepare_id, 'seed_repository' => $instance->seed_repository,
             'user' => $account->user, 'group' => $account->group,
             'source_root' => $this->boundaries->instanceRoot($instance, $account)->value,
-            ...(app(DirectOperation::class)->writer('instance.rename') === 'direct'
-                ? ['agent_sha256' => app(AgentDelivery::class)->pin($instance->node)] : []),
         ], $caller, $requestId);
     }
 }

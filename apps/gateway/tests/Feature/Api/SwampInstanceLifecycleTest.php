@@ -25,6 +25,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -32,6 +33,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     app()->instance(OperationKinds::class, new OperationKinds(app(), [
@@ -60,6 +62,9 @@ beforeEach(function (): void {
         'status' => InstanceState::Active, 'provisioning_step' => 'active', 'branch' => 'old']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->dev->wireguard_ip]);
     Queue::fake();
+    $this->socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['swamp.direct_writers' => ['instance.rename' => 'direct']]);
     $response = $this->withHeader('Idempotency-Key', 'rename-proof')
         ->postJson('/api/v1/instances/'.$this->instance->id.'/rename', ['branch' => 'feature'])
         ->assertAccepted();
@@ -102,6 +107,11 @@ it('admits rename without PHP dispatch and projects only proven source evidence'
         ->and($this->operation->status)->toBe(OperationStatus::Succeeded)
         ->and($this->operation->state['executor_lease_node_id'])->toBe($this->services->id)
         ->and($this->operation->state['executor_runs']['rename-inspect']['result'])->toBe($result);
+});
+
+it('has one rename dispatch even when a stale direct-writer setting is present', function (): void {
+    expect($this->socket->sent)->toBe([])
+        ->and($this->operation->state)->not->toHaveKeys(['instance_lifecycle_writer', 'swamp_run_id']);
 });
 
 it('projects a lost protected source reply only after its original target identity is proven', function (string $variation): void {
