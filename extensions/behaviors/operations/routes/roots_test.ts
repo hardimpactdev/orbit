@@ -104,3 +104,59 @@ Deno.test("a lost parent completion reply replays only permanent completion in a
   ]);
   assertEquals(f.children.size, 1);
 });
+
+Deno.test("an active private development domain replacement waits for publication before cutover and source cleanup", async () => {
+  const f = new ParentFixture();
+  f.operation.kind = "route.update";
+  f.mode = "replacement";
+  f.keys = ["workload-caddy.node-2", "dns-published.node-1"];
+
+  assertEquals((await f.execute()).status, "waiting");
+  assertEquals([...f.children.keys()], ["workload-caddy.node-2"]);
+  assertEquals(
+    f.calls.some((c) => c.body.key === "stage-open.database-cutover"),
+    false,
+  );
+  f.settle();
+  assertEquals((await f.execute()).status, "waiting");
+  assertEquals([...f.children.keys()], f.keys);
+  assertEquals(
+    f.calls.some((c) => c.body.key === "stage-open.prepare-cleanup"),
+    false,
+  );
+  f.settle();
+  assertEquals((await f.execute()).status, "succeeded");
+  const commits = f.calls.filter((c) =>
+    c.path.endsWith("/run") && String(c.body.key).startsWith("stage-commit.")
+  ).map((c) => c.body.key);
+  assertEquals(
+    commits.indexOf("stage-commit.dns-published") <
+      commits.indexOf("stage-commit.database-cutover"),
+    true,
+  );
+  assertEquals(
+    commits.indexOf("stage-commit.database-cutover") <
+      commits.indexOf("stage-commit.prepare-cleanup"),
+    true,
+  );
+  assertEquals(commits.at(-1), "stage-commit.complete-replacement");
+});
+
+Deno.test("an unserved pending domain replacement completes without publishing a Node", async () => {
+  const f = new ParentFixture();
+  f.operation.kind = "route.update";
+  f.mode = "replace_pending";
+  f.keys = [];
+
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.children.size, 0);
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.key),
+    [
+      "parent-prepare",
+      "stage-open.replace-pending",
+      "stage-commit.replace-pending",
+      "route-proof",
+    ],
+  );
+});
