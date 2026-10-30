@@ -27,6 +27,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmGuestCommand;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
@@ -44,6 +45,7 @@ use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
@@ -363,6 +365,10 @@ it('admits cache preparation for only the ready VM’s Project and retains its s
     expect($action->execute($vm, $project)->id)->toBe($operation->id);
     expect($operation->input['artifacts_json'])->toBe('{"artifacts":[]}');
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'cache-parent'])->assertOk();
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-vm-incus', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
     foreach (['cache-initialize', 'cache-mount', 'cache-seed'] as $key) {
         $this->postJson("/api/v1/operation-executor/{$operation->id}/children", ['worker' => 'cache-parent', 'key' => $key])->assertAccepted();
     }

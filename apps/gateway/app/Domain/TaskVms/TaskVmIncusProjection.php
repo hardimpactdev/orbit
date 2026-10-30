@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -37,6 +38,8 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         'task_vm.image_promote' => ['project', 'operation'],
         'task_vm.image_prune' => ['project', 'operation'],
     ];
+
+    public const array CacheFields = ['task_vm.cache_initialize' => ['operation']];
 
     /** @param array<string,mixed> $input
      * @return array<string,mixed>
@@ -112,17 +115,32 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         return [...$input, 'agent_sha256' => app(AgentDelivery::class)->pin($build->hostNode)];
     }
 
+    /** @param array<string,mixed> $input
+     * @return array<string,mixed>
+     */
+    public function admitCache(string $kind, int $vmId, int $nodeId, array $input): array
+    {
+        $vm = TaskVm::query()->findOrFail($vmId);
+        if (! isset(self::CacheFields[$kind]) || $vm->provider !== TaskVmProviderKind::Incus
+            || $vm->host_node_id !== $nodeId || $vm->state !== TaskVmState::Ready || $input !== ['effect_key' => 'cache-initialize']) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Cache initialization requires its ready Incus VM and owning host.', 422);
+        }
+        app(TaskVmSettings::class)->host($nodeId);
+
+        return [...$input, 'task_vm_id' => $vm->id, 'operation' => 'initialize', 'agent_sha256' => app(AgentDelivery::class)->pin($vm->incusHostNode())];
+    }
+
     public function input(Operation $operation): array
     {
         $pin = $operation->input['agent_sha256'] ?? null;
         $seed = isset(self::ImageFields[$operation->kind]);
-        if ((! $seed && ! in_array($operation->kind, self::Kinds, true)) || $operation->target_type !== ($seed ? 'task_vm_image' : 'task_vm')
+        if ((! $seed && ! isset(self::CacheFields[$operation->kind]) && ! in_array($operation->kind, self::Kinds, true)) || $operation->target_type !== ($seed ? 'task_vm_image' : 'task_vm')
             || $operation->node_id === null || ($operation->input[$seed ? 'build_id' : 'task_vm_id'] ?? null) !== $operation->target_id
             || ! is_string($pin) || preg_match('/\A[a-f0-9]{64}\z/D', $pin) !== 1) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Incus intent has no admitted VM and agent digest.', 422);
         }
 
-        $intent = Arr::only($operation->input, $seed ? ['build_id', 'attempt', ...self::ImageFields[$operation->kind]] : ['task_vm_id', 'vm', 'operation']);
+        $intent = Arr::only($operation->input, $seed ? ['build_id', 'attempt', ...self::ImageFields[$operation->kind]] : ['task_vm_id', ...(self::CacheFields[$operation->kind] ?? ['vm', 'operation'])]);
         if ($operation->kind === 'task_vm.image_launch') {
             $intent['operation'] = [...ValidatedData::object($intent['operation']), 'image' => ValidatedData::string($operation->input['launch_image'])];
         }

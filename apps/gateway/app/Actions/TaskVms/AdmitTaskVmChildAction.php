@@ -43,6 +43,9 @@ final readonly class AdmitTaskVmChildAction
         if (isset(TaskVmIncusProjection::ImageFields[$kind])) {
             $input = app(TaskVmIncusProjection::class)->admitImage($kind, $parent->target_id, $node, $input);
         }
+        if (isset(TaskVmIncusProjection::CacheFields[$kind])) {
+            $input = app(TaskVmIncusProjection::class)->admitCache($kind, $parent->target_id, $node, $input);
+        }
         if ($kind === 'task_vm.prepare_runtime') {
             if (in_array($parent->kind, ['task_vm.provision', 'task_vm.enroll'], true)) {
                 $enrolled = app(OperationChildren::class)->requireSucceeded($parent, 'enroll');

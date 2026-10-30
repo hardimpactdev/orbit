@@ -244,8 +244,10 @@ final class TaskVmCommandContracts
     public static function cacheMountKinds(): array
     {
         $kinds = [];
-        foreach (['cache_initialize' => ['package-cache.host', [], ['operation' => 'initialize'], []],
-            'cache_mount' => ['incus.package-cache', ['project', 'name'], [], ['ready' => true]]] as $verb => [$name, $fields, $values, $proof]) {
+        foreach (array_keys(TaskVmIncusProjection::CacheFields) as $kind) {
+            $kinds[$kind] = ['executor' => 'swamp', 'admission' => TaskVmChildAdmission::class, 'result_fields' => ['ready', 'error_code']];
+        }
+        foreach (['cache_mount' => ['incus.package-cache', ['project', 'name'], [], ['ready' => true]]] as $verb => [$name, $fields, $values, $proof]) {
             $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class, 'execution' => TaskVmAgentExecution::class,
                 'runs' => [['transport' => 'agent', 'name' => $name, 'input_fields' => $fields, 'input_values' => $values, 'resumable' => true]],
                 'completion_contract' => ['step' => str_replace('_', '-', $verb), 'transport' => 'agent', 'name' => $name, 'result' => $proof], 'result_fields' => ['ready', 'error_code']];

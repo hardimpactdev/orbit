@@ -51,9 +51,9 @@ final readonly class TaskVmAgentExecution implements OperationFamilyExecution
             $this->refuse();
         }
         $vm = TaskVm::query()->findOrFail($operation->target_id);
-        if (in_array($operation->kind, ['task_vm.cache_initialize', 'task_vm.cache_mount'], true)) {
+        if ($operation->kind === 'task_vm.cache_mount') {
             $host = app(TaskVmSettings::class)->host((int) $vm->host_node_id);
-            if ($vm->host_node_id !== $operation->node_id || $vm->state !== TaskVmState::Ready || ($operation->kind === 'task_vm.cache_mount' && (($operation->input['project'] ?? null) !== $host->project || ($operation->input['name'] ?? null) !== $vm->name))) {
+            if ($vm->host_node_id !== $operation->node_id || $vm->state !== TaskVmState::Ready || (($operation->input['project'] ?? null) !== $host->project || ($operation->input['name'] ?? null) !== $vm->name)) {
                 $this->refuse();
             }
         } elseif (str_starts_with($operation->kind, 'task_vm.incus_')) {

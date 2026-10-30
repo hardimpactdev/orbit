@@ -1507,3 +1507,5 @@ Run receipts and input fingerprints store and hash only the unhydrated input, in
 The Gateway run is explicitly resumable: lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.
 
 `task_vm.image_prune` records a bounded host-local retention snapshot at admission. It keeps the current and previous base images and every running build’s fingerprints. Swamp calls fixed `incus.image` pruning on that host; the primitive also checks live VM use and foreign aliases before deleting an image or its topology seed. Direct selection deletes the last PHP host executor and transport registration.
+
+`task_vm.cache_initialize` admits only a ready Incus VM’s owning host and the fixed `initialize` operation. Swamp runs `package-cache.host` locally with the admitted agent pin; no archive, URL, credential or path is accepted. Its direct writer replaces the old Gateway execution contract.

@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmIncusProjection;
@@ -127,4 +128,49 @@ it('keeps a directly started provider deletion bound to its owning destruction c
         ->and($child->node_id)->toBe($this->host->id)
         ->and($child->input['agent_sha256'])->toBe($this->pin)
         ->and($this->vm->fresh()->state->value)->toBe('destroying');
+});
+
+function directCacheParent(): Operation
+{
+    test()->vm->update(['state' => 'ready']);
+    config(['swamp.run_token' => 'fake.token']);
+
+    return Operation::query()->create(['kind' => 'task_vm.prepare_package_cache', 'status' => 'queued', 'target_type' => 'task_vm', 'target_id' => test()->vm->id, 'node_id' => test()->host->id,
+        'input' => ['host_node_id' => test()->host->id, 'guest' => ['project' => 'orbit-tasks', 'name' => test()->vm->name], 'artifacts_json' => '{"artifacts":[]}']]);
+}
+
+it('admits fixed cache initialization directly with start binding and idempotent ready projection', function (): void {
+    $parent = directCacheParent();
+    DB::beginTransaction();
+    $child = app(OperationChildren::class)->admit($parent, ['key' => 'cache-initialize'])['operation'];
+    $path = '/api/v1/direct-operations/'.$child->id;
+    $this->getJson($path.'?run_id='.$this->run)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    DB::commit();
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent', ['task_vm_id' => $this->vm->id, 'operation' => 'initialize']);
+    expect(DirectOperation::owns($child))->toBeTrue()->and($child->node_id)->toBe($this->host->id)->and($child->input['agent_sha256'])->toBe($this->pin);
+    $this->postJson($path.'/result', $this->outcome)->assertOk();
+    $this->postJson($path.'/result', $this->outcome)->assertOk();
+    expect(app(OperationChildren::class)->requireSucceeded($parent, 'cache-initialize')->id)->toBe($child->id)
+        ->and($this->vm->fresh()->state->value)->toBe('ready')->and($child->fresh()->state)->not->toHaveKey('executor_runs');
+    expect(fn () => app(SwampOperationExecutor::class)->claim('task_vm.cache_initialize', 'old-worker', $this->worker->id))->toThrow(ResourceOperationException::class);
+});
+
+it('refuses cache initialization on a foreign host provider lifecycle or changed fixed input before Swamp starts', function (string $change): void {
+    directCacheParent();
+    $input = ['effect_key' => 'cache-initialize'];
+    $nodeId = $this->host->id;
+    match ($change) {
+        'host' => $nodeId++, 'provider' => $this->vm->update(['provider' => 'upcloud']),
+        'state' => $this->vm->update(['state' => 'parked']), 'payload' => $input = ['operation' => 'fill'],
+        'token' => $input = ['github_token' => 'literal-forbidden'],
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitCache('task_vm.cache_initialize', $this->vm->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toBe([]);
+})->with(['host', 'provider', 'state', 'payload', 'token']);
+
+it('refuses a polled cache initializer after its old executor is removed', function (): void {
+    $parent = directCacheParent();
+    config(['swamp.direct_writers' => ['task_vm.cache_initialize' => 'polled']]);
+    expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'cache-initialize']))->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toBe([])->and($parent->children()->count())->toBe(0);
 });
