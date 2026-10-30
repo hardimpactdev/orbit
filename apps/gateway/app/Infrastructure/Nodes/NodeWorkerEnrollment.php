@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
@@ -51,7 +52,11 @@ final readonly class NodeWorkerEnrollment implements OperationSecretSource
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
-        if ($id !== $this->ownerId($operation) || $parameter !== 'worker_credentials' || $key !== 'footprint-agent') {
+        $run = $operation->state['swamp_run_id'] ?? null;
+        $allowed = DirectOperation::owns($operation)
+            ? $key === '' && is_string($run) && $run !== ''
+            : $key === 'footprint-agent';
+        if ($id !== $this->ownerId($operation) || $parameter !== 'worker_credentials' || $operation->status->terminal() || ! $allowed) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Worker credentials do not belong to this Node intent.', 422);
         }
         $reference = $operation->input['_worker_enrollment'] ?? null;
