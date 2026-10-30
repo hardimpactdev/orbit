@@ -30,14 +30,16 @@ uncertain action. A lost terminal projection reads its existing result without
 another effect. The mutating step declares `writes: true`; `vaults: []` sends no
 vault data.
 
-Root-required actions **await the approved shared local privilege API**. The
-production adapter refuses before any local action. Fixture injection tests the
-policy while lane16 supplies the exact socket API and closed command catalogue.
-There is no executable sudo client. This change installs no account, worker,
-token, grant or runtime unit, and preserves the current worker protections.
-Connect the approved transport, then prove the actual local launch and
-start-binding/first-read ordering on a dev or canary target before changing a
-writer. Fixture tests are not live proof.
+The worker runs as the Node's configured user and uses its existing passwordless
+sudo. The Gateway records the frozen agent digest with direct intent. The action
+checks that digest, the fixed root-owned binary and its parent paths, then runs
+`sudo -n -- /usr/local/bin/orbit-agent command firewall.rule` with the admitted
+rule and the native 120-second budget. Output is bounded to16KiB; stderr and
+refusal details never enter workflow resources. No socket, broker, new account,
+sudo rule, token, grant or runtime unit is installed by this family.
+
+Prove the actual sudo action and start-binding/first-read ordering on a safe
+Node209 rule before changing a writer. Fixture tests are not live proof.
 
 Gateway HTTP calls remain bounded and do not inherit the workflow cancellation
 signal. Check cancellation before the Node action; after it starts, let it

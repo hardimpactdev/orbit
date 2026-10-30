@@ -15,6 +15,7 @@ const Args = DirectArgs.extend({
 });
 const Rule = z.object({
   node_id: z.number().int().positive(),
+  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   name: z.string(),
   action: z.enum(["allow", "deny"]),
   source: z.string(),
@@ -35,7 +36,7 @@ export function directFirewall(
 ) {
   return {
     type: "@nckrtl/firewall-direct",
-    version: "2026.10.30.2",
+    version: "2026.10.30.3",
     globalArguments: Globals,
     methods: {
       apply: {

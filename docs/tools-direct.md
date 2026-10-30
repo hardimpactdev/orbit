@@ -3,8 +3,8 @@
 `operation-tool-direct` runs `tool.install`, `tool.update`, `tool.remove`,
 `tool.adopt` and `tool.manager_converge` through the
 [shared direct Operation boundary](direct-operations.md). The Gateway declares
-one workflow, `writer_config: swamp.direct_writers`, immutable `tool_writer`
-and `ToolIntentProjection`. It uses `StartSwampRun` and the one
+one workflow, `writer_config: swamp.direct_writers`, immutable `tool_writer` and
+`ToolIntentProjection`. It uses `StartSwampRun` and the one
 `ORBIT_SWAMP_RUN_TOKEN`. No family token, controller, request, route, primitive
 or Gateway execution relay is added.
 
@@ -15,20 +15,21 @@ projection stores bounded manager/package versions and refusal codes; it never
 stores manager stdout or execution receipts.
 
 The canary uses the existing Node209 `pool=migration` workers. Admit canary
-intent only for Node209; keep the shared writer map polled fleet-wide. When
-per-Node workers are available, place the action on exact
-`orbit-node-<admitted-node-id>` before fleet takeover.
-`tools-node-<id>` is a stable behavior identity for native scope serialization.
-The workflow uses `writes: true`, `vaults: []` and native placement, concurrency
-and retention defaults. There is no placement fallback or polling schedule.
+intent only for Node209; keep unproven kinds and scopes polled. The proven APT
+root manager/adoption scope can retain its existing direct writer. When per-Node
+workers are available, place the action on exact `orbit-node-<admitted-node-id>`
+before fleet takeover. `tools-node-<id>` is a stable behavior identity for
+native scope serialization. The workflow uses `writes: true`, `vaults: []` and
+native placement, concurrency and retention defaults. There is no placement
+fallback or polling schedule.
 
 ## Policy and native recovery
 
 The direct and retained writers share `policy.ts`: constraints gate normal
 candidates, install refuses silent adoption, adoption never mutates, and removal
-requires only the exact recorded root with no autoremove. Manager materialization
-is part of the native action, rather than a Gateway child Operation. macOS
-verification preserves the enrolled account's existing scope.
+requires only the exact recorded root with no autoremove. Manager
+materialization is part of the native action, rather than a Gateway child
+Operation. macOS verification preserves the enrolled account's existing scope.
 
 Before mutation the workflow stores its selected package observation as a native
 workflow resource. This is an observation, not an effect receipt. Recover/resume
@@ -45,25 +46,27 @@ a started action must stop safely and retain an uncertain outcome if needed.
 
 ## Activation gates
 
-The local adapter permits only the existing non-mutating Linux APT
-`tool.apt-version` and `tool.apt-inventory` commands. They run as the current
-worker account through the fixed root-owned agent binary and its admitted pin,
-without sudo, account switching or a root socket. The agent's frozen command
-protocol checks the pin and account privilege. No command descriptor or caller
-program reaches the adapter. Other commands refuse until lane16's approved
-shared privilege API and closed catalogue cover them.
+The worker runs as the Node's configured user with its existing passwordless
+sudo. Fixed policy commands run through the admitted, root-owned local agent;
+the step checks the binary path and digest before launch. Linux mutations and
+manager materialization start via `sudo -n --`; the frozen agent supervises the
+command under its declared root or enrolled-account identity. Account reads and
+macOS account commands run as the configured worker user. The existing package
+sandbox UID is not changed and gains no sudo.
 
-No worker, account, sudo rule, token, grant or runtime unit is installed or
-changed. Preserve the worker's current protections. Read-only APT manager and
-adoption canaries can prove their actual action path while privileged actions
-remain gated. Fixture success alone remains insufficient for takeover.
+The agent and workflow enforce time limits. Streamed output is bounded to4MiB;
+stderr, refusal details and malformed output never enter native resources. A
+started mutation finishes under its agent deadline even if workflow cancellation
+arrives; native recovery reconciles uncertain outcomes. No socket, broker,
+account, sudo rule, token, grant or runtime unit is installed by this family.
 
-`ORBIT_SWAMP_DIRECT_WRITERS` defaults to `{}`; all five kinds remain polled.
-Before switching a kind to `direct`, prove the approved action end to end on a
-dev/canary target, including Gateway start-response binding before first read.
-Per-Node callers must match admitted `Operation.node_id`. A worker cannot bind
-the root run ID. Record Operation/run IDs and before/after latency. Reverting a
-map entry to `polled` changes new intent only; admitted intent retains its writer.
+`ORBIT_SWAMP_DIRECT_WRITERS` defaults to `{}`. Enable only the kinds and
+admission scopes already proven live. Before switching a kind to `direct`, prove
+the approved action end to end on a dev/canary target, including Gateway
+start-response binding before first read. Per-Node callers must match admitted
+`Operation.node_id`. A worker cannot bind the root run ID. Record Operation/run
+IDs and before/after latency. Reverting a map entry to `polled` changes new
+intent only; admitted intent retains its writer.
 
 Legacy parents still request `tool.manager_converge` child Operations and verify
 their old completion contracts. Keep that kind polled for these callers until

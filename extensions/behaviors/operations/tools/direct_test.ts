@@ -268,11 +268,17 @@ Deno.test("shared protocol binds intent before local action and uses no executio
   assertEquals(f.calls.length, count);
 });
 
-Deno.test("production adapter refuses until the shared local API is approved", async () => {
+Deno.test("production adapter checks cancellation before a local sudo launch", async () => {
   await assertRejects(
-    () => localTool("tool.apt-install", {}, new Fixture().value.input),
+    () =>
+      localTool(
+        "tool.apt-install",
+        {},
+        new Fixture().value.input,
+        AbortSignal.abort(new Error("cancelled before launch")),
+      ),
     Error,
-    "approved local Node privilege boundary",
+    "cancelled before launch",
   );
 });
 

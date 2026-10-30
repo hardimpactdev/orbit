@@ -18,6 +18,7 @@ class Fixture {
     kind: "firewall.allow",
     input: {
       node_id: 9,
+      agent_sha256: "a".repeat(64),
       name: "canary",
       action: "allow",
       source: "192.0.2.100",
@@ -133,10 +134,10 @@ Deno.test("bounded refusal and inactive backend fail the native run after projec
   }
 });
 
-Deno.test("production adapter refuses until the shared privilege API is approved", async () => {
+Deno.test("production adapter refuses without the admitted agent digest", async () => {
   await assertRejects(
     () => localRule({}),
     Error,
-    "approved local Node privilege boundary",
+    "admitted agent digest",
   );
 });

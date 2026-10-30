@@ -26,7 +26,7 @@ class DirectFirewallNative(unittest.TestCase):
         # Unit DAG proof only: live worker placement is a separate canary gate.
         text = '\n'.join(line for line in source.read_text().splitlines() if 'labels:' not in line and not line.strip().startswith('target:')) + '\n'
         (self.repo / 'workflows' / source.name).write_text(text)
-        self.state = {'operation':{'id':17,'node_id':209,'kind':'firewall.allow','input':{'node_id':209,'name':'canary','action':'allow','source':'192.0.2.100','protocol':'tcp','port':'45678'},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'bound':True}
+        self.state = {'operation':{'id':17,'node_id':209,'kind':'firewall.allow','input':{'node_id':209,'agent_sha256':'a'*64,'name':'canary','action':'allow','source':'192.0.2.100','protocol':'tcp','port':'45678'},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'bound':True}
         self.save()
 
     def save(self):
