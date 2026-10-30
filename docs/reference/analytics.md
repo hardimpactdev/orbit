@@ -115,7 +115,9 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 A repeated version checks health without replacing the container. Start a stopped Plausible Process before updating it. The agent refuses a stale replacement under its Process lock; the Gateway also refuses a stale success projection.
 
-The shared map of writers selects this direct-only kind. Rollback of the implementation uses a revert PR. The Node worker reads the existing runtime environment from a Swamp vault and checks its hash against the admitted snapshot, so a stale vault cannot change `SECRET_KEY_BASE`. Store the existing Plausible Process environment as a JSON object in the default Swamp vault under `analytics-runtime-environment`. Transfer it through protected stdin and keep its values out of logs, arguments and review artifacts. The workflow refuses missing or stale vault data before changing the Node.
+The shared map of writers selects this direct-only kind. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach only the local agent's protected stdin; they never enter workflow arguments, resources, results or logs.
+
+This update declares no secret-output store and generates no credentials. No runtime vault copy is required.
 
 A new role starts at the version in the Gateway's `ORBIT_ANALYTICS_PLAUSIBLE_VERSION`, which defaults to `3.2.1`.
 

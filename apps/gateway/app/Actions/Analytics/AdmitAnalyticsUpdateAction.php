@@ -31,7 +31,8 @@ final readonly class AdmitAnalyticsUpdateAction
         }
 
         return $this->operations->execute('analytics.update', 'node', $node->id, $node->id,
-            ['version' => $version, 'process_id' => $process->id, 'agent_sha256' => $this->agents->pin($node)],
+            ['version' => $version, 'assignment_id' => $assignment->id, 'process_id' => $process->id, 'agent_sha256' => $this->agents->pin($node),
+                'runtime_environment' => ['$secret' => 'analytics.runtime_environment', 'id' => $node->id]],
             'operator', request()->attributes->getString('orbit.request_id'), expectedWriter: 'direct');
     }
 }

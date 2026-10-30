@@ -9,4 +9,5 @@ return ['analytics.update' => [
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'analytics_update_writer',
     'projection' => AnalyticsUpdateProjection::class,
+    'private_material' => ['runtime_environment' => 'analytics.runtime_environment'],
 ]];
