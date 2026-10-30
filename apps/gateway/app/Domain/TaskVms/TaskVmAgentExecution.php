@@ -42,6 +42,11 @@ final readonly class TaskVmAgentExecution implements OperationFamilyExecution
 
     public function beforeRun(Operation $operation, array $run): void
     {
+        $this->assertIntent($operation);
+    }
+
+    public function assertIntent(Operation $operation): void
+    {
         if ($operation->target_type !== 'task_vm') {
             $this->refuse();
         }

@@ -1244,6 +1244,17 @@ Teardown steps run before the workspace and task VM are destroyed. Recorded appr
 
 Task VM Node cleanup records `task_vm.destroy` and returns. Swamp proves provider absence, removes any remaining workspace records, admits the owning `node.remove` child, and only then marks the VM destroyed. Already queued `DestroyTaskVm` jobs record the same intent; they perform no VM or Node work and never wait for completion. Workspace teardown, preservation and the retained provider deletion still run before this admission; their separate caller cutover remains pending.
 
+### Direct Incus VM effects
+
+Incus create, start, stop and delete also declare the direct Swamp workflow
+`operation-task-vm-incus`. Each kind defaults to `polled` in
+`swamp.direct_writers` until its owning Node worker passes a canary. Direct
+admission captures the agent digest and the fixed VM command. The exact Node
+worker runs the pinned agent with the Node user's passwordless sudo. The
+Gateway records its bounded result; it adds no execution queue, retry or wait.
+Deletion still requires the owning destruction intent and model-key revocation
+before admission. A worker for another Node cannot execute the action.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.
