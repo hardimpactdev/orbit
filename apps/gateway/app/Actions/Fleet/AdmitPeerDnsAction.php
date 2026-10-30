@@ -23,7 +23,7 @@ final readonly class AdmitPeerDnsAction
         }
         $server = $this->policy->server($node);
 
-        return $this->start->execute('fleet.peer_dns', 'node', $node->id, $node->id, [
+        return $this->start->execute('fleet.peer_dns', 'peer_dns', $node->id, $node->id, [
             'server' => $server, 'dns_server' => $server, 'public_key' => $node->wireguard_public_key,
             'domains' => $this->policy->domains($node),
         ], $triggeredBy, $requestId);

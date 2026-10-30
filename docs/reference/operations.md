@@ -108,6 +108,7 @@ Use the kind and target type to start or find the work of a command.
 | --- | --- | --- | --- |
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
+| `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
 | `tasks:park` | `tasks.park` | `task_group` | Gateway |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `POST /api/v1/task-groups/{group}/worker` | `tasks.worker` | `task_group` | Gateway |
