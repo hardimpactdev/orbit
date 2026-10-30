@@ -15,8 +15,8 @@ projection stores bounded manager/package versions and refusal codes; it never
 stores manager stdout or execution receipts.
 
 The canary uses the existing Node209 `pool=migration` workers. Admit canary
-intent only for Node209; keep unproven kinds and scopes polled. The proven APT
-root manager/adoption scope can retain its existing direct writer. When per-Node
+intent only for Node209. Converted kinds have one direct dispatch path; their
+legacy discovery and executor registrations are removed. When per-Node
 workers are available, place the action on exact `orbit-node-<admitted-node-id>`
 before fleet takeover. `tools-node-<id>` is a stable behavior identity for
 native scope serialization. The workflow uses `writes: true`, `vaults: []` and
@@ -60,24 +60,23 @@ started mutation finishes under its agent deadline even if workflow cancellation
 arrives; native recovery reconciles uncertain outcomes. No socket, broker,
 account, sudo rule, token, grant or runtime unit is installed by this family.
 
-`ORBIT_SWAMP_DIRECT_WRITERS` defaults to `{}`. Enable only the kinds and
-admission scopes already proven live. Before switching a kind to `direct`, prove
-the approved action end to end on a dev/canary target, including Gateway
-start-response binding before first read. Per-Node callers must match admitted
-`Operation.node_id`. A worker cannot bind the root run ID. Record Operation/run
-IDs and before/after latency. Reverting a map entry to `polled` changes new
-intent only; admitted intent retains its writer.
+Each kind ships its direct start, writer selection and Gateway execution deletion
+in one slice. Its converted kind is also removed from legacy discovery and
+executor registration. Rollback is a revert PR. If the owning writer needs a
+release, merge first, then canary immediately against a test target and revert
+on failure. The shared boundary lane owns final executor API deletion.
 
-Legacy parents still request `tool.manager_converge` child Operations and verify
-their old completion contracts. Keep that kind polled for these callers until
-parent owners move manager actions into their own native DAGs. No shared child
-core is deleted by this slice.
+`tool.install`, `tool.update` and `tool.remove` are absent from the retained
+`operation-tools` workflow. Only adoption and manager convergence remain there
+until their owning one-kind cutovers. Native history and data are preserved;
+source retirement does not run `swamp workflow delete`.
 
-Production success precedes deletion of the old writer, descriptors, manager
-child admission and corresponding tests. Remove `operation-tools` polling after
-all kinds and outstanding polled work are settled. Shared executor core remains
-with the boundary lane. No family net-negative or latency improvement is claimed
-by this preparation slice.
+The Gateway records the bounded constraint string. `constraints.ts` is the
+Tool range evaluator in Swamp and uses the existing node-semver dependency for
+comparisons. Composer numeric-range forms retain their bounds, including zero
+major carets, two-part tildes, exclusions and prereleases. Swamp rejects malformed
+ranges before any manager or package command. No compiled intervals cross the
+Gateway boundary.
 
 The Node209 ten-second cadence baseline was 45/45 empty Tools discovery runs,
 about 6,392 inodes/hour. Evidence is
@@ -96,4 +95,4 @@ Run Deno tests/check/lint/fmt for this directory and
 `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s extensions/behaviors/operations/tools -p direct_native_test.py`.
 Gateway `ToolIntentsTest.php` covers immutable safe admission, start-binding and
 first-read ordering, Node identity, bounded results, inventory projection and
-reversible writer selection.
+refusal of a retired polled writer.

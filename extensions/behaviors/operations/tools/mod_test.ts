@@ -5,13 +5,7 @@ import { type Context, Operation } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { tools } from "./mod.ts";
 import { fixturePlan } from "./plan_fixture.ts";
-import {
-  allows,
-  Completion,
-  Input,
-  normalizeVersion,
-  ReceiptResult,
-} from "./contract.ts";
+import { Completion, ReceiptResult } from "./contract.ts";
 
 class Fixture {
   operation = Operation.parse({
@@ -27,7 +21,6 @@ class Fixture {
       platform: "linux",
       architecture: "x86_64",
       version_constraint: null,
-      constraint_intervals: null,
       tool_id: null,
       intent_only: false,
     },
@@ -258,6 +251,14 @@ Deno.test("the retained polling workflow discovers only the registered Tool kind
     ),
   );
   assertEquals(workflow.jobs[0].steps[0].task.inputs.kinds, registration.kinds);
+  assertEquals(registration.kinds, ["tool.adopt", "tool.manager_converge"]);
+  for (const kind of ["tool.install", "tool.update", "tool.remove"]) {
+    assertEquals(
+      tools().methods.execute.arguments.safeParse({ kind, worker: "dispatch" })
+        .success,
+      false,
+    );
+  }
   for (const kind of registration.kinds) {
     assertEquals(
       tools().methods.execute.arguments.safeParse({ kind, worker: "dispatch" })
@@ -473,12 +474,6 @@ Deno.test("APT and Composer reject unavailable or malformed candidates before in
       Object.assign(f.operation.input, {
         manager,
         version_constraint: "^7.0",
-        constraint_intervals: [{
-          start: "7.0.0.0-dev",
-          start_operator: ">=",
-          end: "8.0.0.0-dev",
-          end_operator: "<",
-        }],
       });
       f.candidateReply = version;
 
@@ -537,12 +532,6 @@ Deno.test("candidate gates stop install and leave a blocked update unchanged", a
     f.operation.kind = kind;
     f.candidate = "8.0.0";
     f.operation.input.version_constraint = "^7.0";
-    f.operation.input.constraint_intervals = [{
-      start: "7.0.0.0-dev",
-      start_operator: ">=",
-      end: "8.0.0.0-dev",
-      end_operator: "<",
-    }];
     if (kind === "tool.update") {
       f.installed = "7.0.0";
       f.operation.input.tool_id = 8;
@@ -945,53 +934,6 @@ Deno.test("package failures complete as failed with the original managed package
     );
   }
 });
-Deno.test("normalization preserves package-manager distinctions", () => {
-  assertEquals(normalizeVersion("1:1.25.0-2ubuntu4", "apt"), "1.25.0");
-  assertEquals(normalizeVersion("25.8.1_1", "brew"), null);
-  assertEquals(normalizeVersion("3.003", "brew-cask"), null);
-  assertEquals(normalizeVersion("v1.2", "vp"), "1.2.0");
-  const input = Input.parse({
-    node_id: 2,
-    manager: "vp",
-    package: "x",
-    platform: "linux",
-    architecture: "x86_64",
-    constraint_intervals: [{
-      start: "1.0.0.0-dev",
-      start_operator: ">=",
-      end: "2.0.0.0-dev",
-      end_operator: "<",
-    }],
-  });
-  assertEquals(allows(input, "1.9.0"), true);
-  assertEquals(allows(input, "2.0.0-beta.1"), false);
-});
-
-Deno.test("compiled ranges preserve Composer 3.5.1 constraint decisions", async () => {
-  const corpus = JSON.parse(
-    await Deno.readTextFile(
-      new URL("./composer-constraints.json", import.meta.url),
-    ),
-  );
-  for (const entry of corpus) {
-    const input = Input.parse({
-      node_id: 2,
-      manager: "vp",
-      package: "x",
-      platform: "linux",
-      architecture: "x86_64",
-      constraint_intervals: entry.intervals,
-    });
-    for (const { version, allowed } of entry.versions) {
-      assertEquals(
-        allows(input, version),
-        allowed,
-        `${entry.constraint}: ${version}`,
-      );
-    }
-  }
-});
-
 Deno.test("missing admitted mutation descriptor refuses before a package effect", async () => {
   const f = new Fixture();
   f.admittedPlan = (operation) => ({

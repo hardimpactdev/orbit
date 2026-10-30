@@ -5,6 +5,7 @@ import {
   safeVersion,
   type ToolInput,
   ToolRefusal,
+  validateConstraint,
   verifyInstalled,
 } from "./contract.ts";
 
@@ -16,6 +17,7 @@ export async function executeToolPolicy(
   hasMaterialize: boolean,
 ): Promise<Result> {
   const verb = kind.slice(5);
+  if (verb !== "remove") validateConstraint(input);
   let final: Result;
   if (
     hasMaterialize
@@ -74,7 +76,7 @@ export async function executeToolPolicy(
       !(verb === "remove" && before === null);
     if (
       mutate && (verb === "install" || verb === "update") &&
-      input.constraint_intervals !== null
+      input.version_constraint !== null
     ) {
       const candidate = await run("package-candidate");
       if (!safeVersion(candidate.version)) {

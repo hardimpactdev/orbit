@@ -18,7 +18,7 @@ jobs:
           methodName: discover
           inputs:
             family: operation-tools
-            kinds: ["tool.install", "tool.update", "tool.remove", "tool.adopt", "tool.manager_converge"]
+            kinds: ["tool.adopt", "tool.manager_converge"]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]

@@ -160,12 +160,7 @@ Deno.test("native resume reconciles completed update and removal without repeati
 
 Deno.test("candidate constraints and exact removal plans remain policy gates", async () => {
   const f = new Fixture();
-  f.value.input.constraint_intervals = [{
-    start: "1.0.0",
-    start_operator: ">=",
-    end: "1.9.9",
-    end_operator: "<=",
-  }];
+  f.value.input.version_constraint = "^1.0";
   assertEquals(
     (await f.execute()).outcome.error_code,
     "tool.version_constraint_blocked",
@@ -180,6 +175,17 @@ Deno.test("candidate constraints and exact removal plans remain policy gates", a
   ).methods.apply.execute({ intent: remove.value }, remove.ctx);
   assertEquals(result.outcome.error_code, "tool.removal_plan_unsafe");
   assertEquals(remove.mutations().length, 0);
+});
+
+Deno.test("malformed constraints refuse before manager materialization or package commands", async () => {
+  const f = new Fixture();
+  f.value.input.version_constraint = "not a range";
+  f.value.input.materialize = { user: "orbit" };
+  assertEquals(
+    (await f.execute()).outcome.error_code,
+    "tool.constraint_invalid",
+  );
+  assertEquals(f.calls, []);
 });
 
 Deno.test("ambiguous unreadable and incomplete inventories cannot prove package state", () => {

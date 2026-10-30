@@ -57,9 +57,6 @@ export function tools(
           "Claim and execute one Tool Operation on the same placed worker Node",
         arguments: z.object({
           kind: z.enum([
-            "tool.install",
-            "tool.update",
-            "tool.remove",
             "tool.adopt",
             "tool.manager_converge",
           ]),

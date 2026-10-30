@@ -1,12 +1,7 @@
 import { z } from "npm:zod@4.4.3";
+import { constraintMatches } from "./constraints.ts";
 
 export const Manager = z.enum(["apt", "composer", "vp", "brew", "brew-cask"]);
-export const Interval = z.object({
-  start: z.string(),
-  start_operator: z.enum([">", ">=", "=="]),
-  end: z.string(),
-  end_operator: z.enum(["<", "<=", "=="]),
-});
 export const Input = z.object({
   node_id: z.number().int().positive(),
   manager: Manager,
@@ -14,7 +9,6 @@ export const Input = z.object({
   platform: z.enum(["linux", "macos"]),
   architecture: z.string(),
   version_constraint: z.string().nullable().default(null),
-  constraint_intervals: z.array(Interval).nullable().default(null),
   tool_id: z.number().int().positive().nullable().default(null),
   tool_status: z.string().nullable().default(null),
   installed_version: z.string().nullable().default(null),
@@ -72,70 +66,24 @@ export function normalizeVersion(
     : null;
 }
 
-// Composer has already expanded the constraint into numeric intervals in the Gateway.
-// Compare those boundaries with a normalized, three-component package version.
-function compare(left: string, right: string): number {
-  const parts = (value: string) => {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(.*)$/.exec(
-      value.replace(/\+.*/, ""),
-    );
-    if (!match) throw new Error("Invalid compiled version boundary");
-    return [
-      match[1],
-      match[2],
-      match[3],
-      match[4] ?? "0",
-      ...match[5].replace(/^[-.]/, "").replace(/([a-zA-Z]+)(\d)/g, "$1.$2")
-        .split(/[.-]/),
-    ];
-  };
-  const a = parts(left), b = parts(right);
-  const rank = (
-    word: string,
-  ) => ({
-    dev: -6,
-    alpha: -5,
-    a: -5,
-    beta: -4,
-    b: -4,
-    RC: -3,
-    rc: -3,
-    "": -2,
-    pl: 1,
-    p: 1,
-  }[word] ?? -7);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const x = a[i] ?? "", y = b[i] ?? "";
-    if (x === y) continue;
-    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
-    if (xn && yn) return BigInt(x) < BigInt(y) ? -1 : 1;
-    const xr = xn ? -2 : rank(x), yr = yn ? -2 : rank(y);
-    if (xr !== yr) return xr < yr ? -1 : 1;
+export function validateConstraint(input: ToolInput): void {
+  if (input.version_constraint === null) return;
+  try {
+    constraintMatches(input.version_constraint);
+  } catch {
+    throw new ToolRefusal("tool.constraint_invalid");
   }
-  return 0;
 }
+
 export function allows(input: ToolInput, raw: string): boolean {
-  if (input.constraint_intervals === null) return true;
+  if (input.version_constraint === null) return true;
   const normalized = normalizeVersion(raw, input.manager);
-  if (normalized === null) return false;
-  return input.constraint_intervals.some((interval) => {
-    const start = compare(normalized, interval.start),
-      end = compare(normalized, interval.end);
-    return (interval.start_operator === ">"
-      ? start > 0
-      : interval.start_operator === "=="
-      ? start === 0
-      : start >= 0) &&
-      (interval.end_operator === "<"
-        ? end < 0
-        : interval.end_operator === "=="
-        ? end === 0
-        : end <= 0);
-  });
+  return normalized !== null &&
+    constraintMatches(input.version_constraint)(normalized);
 }
 
 export function verifyInstalled(input: ToolInput, version: string): void {
-  if (input.constraint_intervals === null) return;
+  if (input.version_constraint === null) return;
   if (normalizeVersion(version, input.manager) === null) {
     throw new ToolRefusal("tool.installed_version_unparseable");
   }
