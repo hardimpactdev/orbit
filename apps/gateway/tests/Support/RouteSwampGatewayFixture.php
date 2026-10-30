@@ -67,6 +67,7 @@ final class RouteSwampGatewayFixture
     public function __construct(private TestCase $test, bool $nativeChildren = false, private bool $httpRuns = false)
     {
         Event::fake([RecordBroadcast::class]);
+        Node::query()->where('platform', 'linux')->whereNull('architecture')->update(['architecture' => 'x86_64']);
         config(['swamp.direct_writers' => ['route.workload_verify' => 'direct', 'route.public_verify' => 'direct'], 'swamp.run_token' => 'fixture.fake', 'swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
         $socket = new FakeRoutePublicationSocket;
         $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
@@ -244,7 +245,7 @@ final class RouteSwampGatewayFixture
             }
 
             return ['status' => 200, 'body' => ['data' => ['id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
-                'input' => $direct->projection($operation)->input($operation), 'status' => $operation->status->value,
+                'input' => $method === 'GET' ? $direct->projection($operation)->input($operation) : [], 'status' => $operation->status->value,
                 'result' => $operation->result, 'cancel_requested' => $operation->cancel_requested_at !== null]]];
         }
         $executor = app(SwampOperationExecutor::class);

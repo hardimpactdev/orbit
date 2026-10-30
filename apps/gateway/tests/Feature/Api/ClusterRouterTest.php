@@ -249,7 +249,8 @@ it('restores the old Router when candidate Caddy publication fails', function ()
     $this->swamp->foreign->failures['router-caddy.node-'.$this->second->id] = 1;
     $failed = $this->swamp->finish($this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}"));
     expect($failed->status->value)->toBe('failed')->and($this->cluster->routerAssignment()->sole()->node_id)->toBe($this->first->id)
-        ->and(array_column($this->swamp->foreign->calls, 'kind'))->toContain('route.private_dns_publish', 'certificate.remove');
+        ->and(array_column($this->swamp->foreign->calls, 'kind'))->toContain('route.private_dns_publish')
+        ->and(Operation::query()->where('parent_operation_id', $failed->id)->where('kind', 'certificate.remove')->where('status', 'succeeded')->exists())->toBeTrue();
 });
 
 it('keeps the replacement when cleanup fails and refuses a conflicting transition', function (): void {

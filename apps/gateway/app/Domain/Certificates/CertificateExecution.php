@@ -8,11 +8,7 @@ use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSite;
-use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Models\Node;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
 /** Keeps public CSR bytes usable without weakening the common PEM redactor. */
@@ -20,9 +16,7 @@ final readonly class CertificateExecution implements OperationFamilyExecution
 {
     public function context(Operation $operation): array
     {
-        $commands = $operation->kind === 'certificate.remove'
-            ? [['certificate-remove', 'agent', 'certificate.remove-leaf']]
-            : [['certificate-request', 'certificate-request', 'certificate.request-leaf']];
+        $commands = [['certificate-request', 'certificate-request', 'certificate.request-leaf']];
         $request = RouteExecutionProof::result($operation, 'certificate-request');
         if (($request['state'] ?? null) === 'request') {
             $commands[] = ['certificate-sign', 'gateway', 'certificate.sign-leaf'];
@@ -54,7 +48,7 @@ final readonly class CertificateExecution implements OperationFamilyExecution
             'certificate.publish-leaf' => [...$leaf,
                 'certificate' => ['$secret' => 'certificate.leaf', 'id' => $operation->id],
                 'root_certificate' => ['$secret' => 'certificate.leaf', 'id' => $operation->id]],
-            'certificate.inspect-leaf', 'certificate.remove-leaf' => Arr::only($operation->input, ['scope', 'home']),
+            'certificate.inspect-leaf' => Arr::only($operation->input, ['scope', 'home']),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown certificate command.', 422),
         };
     }
@@ -62,14 +56,6 @@ final readonly class CertificateExecution implements OperationFamilyExecution
     public function beforeRun(Operation $operation, array $run): void
     {
         RouteExecutionProof::preceding($operation, $this->context($operation)['descriptors'], $run['key']);
-        if ($run['name'] === 'certificate.remove-leaf') {
-            $scope = ValidatedData::string($operation->input['scope']);
-            $node = Node::query()->findOrFail($operation->node_id);
-            if (app(DevelopmentSiteRepository::class)->forNode($node)->contains(
-                static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))) {
-                throw new ResourceOperationException('app-dev.certificate_in_use', 'A stored Caddy site still uses this certificate.', 409);
-            }
-        }
     }
 
     public function received(Operation $operation, array $run, array $receipt): array
@@ -79,10 +65,8 @@ final readonly class CertificateExecution implements OperationFamilyExecution
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void {}
 
-    public function cancellationBoundary(Operation $operation): ?array
+    public function cancellationBoundary(Operation $operation): array
     {
-        return $operation->kind === 'certificate.converge'
-            ? ['key' => 'certificate-publish', 'transport' => 'agent', 'name' => 'certificate.publish-leaf', 'result' => []]
-            : null;
+        return ['key' => 'certificate-publish', 'transport' => 'agent', 'name' => 'certificate.publish-leaf', 'result' => []];
     }
 }

@@ -8,13 +8,11 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
@@ -95,20 +93,6 @@ it('refuses an unrelated secret reference and forged final inspection', function
     expect($this->agents->calls)->toHaveCount(1);
 });
 
-it('keeps a leaf still named by a stored Caddy site', function (): void {
-    $route = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $this->node->id, 'domain' => 'still-used.test',
-        'provenance' => 'explicit', 'publication' => RoutePublication::Private, 'status' => 'pending']);
-    $route->customProxy()->create(['node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:4788']);
-    $route->publishSites();
-    $this->operation = Operation::query()->create(['kind' => 'certificate.remove', 'target_type' => 'node_certificate', 'target_id' => $this->node->id,
-        'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1,
-        'input' => ['scope' => 'route-'.$route->id, 'home' => '/home/orbit']]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'certificate.remove', 'worker' => 'worker', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data.id', $this->operation->id);
-    $this->path = '/api/v1/operation-executor/'.$this->operation->id;
-    $this->postJson($this->path.'/run', ['worker' => 'worker', 'key' => 'certificate-remove', 'transport' => 'agent', 'name' => 'certificate.remove-leaf', 'input' => $this->operation->input])->assertConflict()->assertJsonPath('error.code', 'app-dev.certificate_in_use');
-    expect($this->agents->calls)->toBe([]);
-});
-
 it('recovers and encodes the original public CSR from sanitized evidence without another request', function (): void {
     expect(strlen(base64_encode($this->csr)))->toBeGreaterThan(1024);
     $this->agents->answer('certificate.request-leaf', static fn (): array => throw new RuntimeException('Lost reply after key generation.'));
@@ -140,4 +124,4 @@ it('preserves the parent actor and request when admitting a certificate child', 
     $child = app(CertificateChildAdmission::class)->admit($parent, ['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
     expect($child->triggered_by)->toBe($actor)->and($child->request_id)->toBe($parent->request_id)
         ->and($child->node_id)->toBe($node->id)->and($this->agents->calls)->toBe([]);
-})->with(['certificate.converge', 'certificate.remove'])->with(['peer:proof', null]);
+})->with(['certificate.converge'])->with(['peer:proof', null]);

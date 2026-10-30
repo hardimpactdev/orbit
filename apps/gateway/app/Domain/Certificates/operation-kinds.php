@@ -23,11 +23,8 @@ $definitions = [
         'result_fields' => ['state', 'request_base64', 'signed', 'certificate_base64', 'root_certificate_base64', 'present', 'error_code'],
     ],
     'certificate.remove' => [
-        'executor' => 'swamp', 'completion' => CertificateOperationCompletion::class,
-        'execution' => CertificateExecution::class,
-        'runs' => [['transport' => 'agent', 'name' => 'certificate.remove-leaf', 'input_fields' => ['scope', 'home'], 'resumable' => true, 'input_values' => []]],
-        'completion_contract' => ['step' => 'certificate-remove', 'transport' => 'agent', 'name' => 'certificate.remove-leaf', 'result' => []],
-        'result_fields' => ['error_code'],
+        'executor' => 'swamp',
+        'result_fields' => ['present', 'error_code'],
     ],
 ];
 

@@ -9,13 +9,16 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Models\Operation;
 
 /** Records one leaf intent. The signer and Node effects run later through Swamp. */
 final readonly class StartCertificateOperationAction
 {
-    public function __construct(private StartOperationAction $operations, private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer) {}
+    public function __construct(private StartOperationAction $operations, private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer, private AgentDelivery $agents, private DevelopmentSiteRepository $sites) {}
 
     public function converge(Node $node, string $scope, string $domain, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
@@ -32,8 +35,16 @@ final readonly class StartCertificateOperationAction
     {
         $this->assertScope($scope);
 
+        if ($node->platform !== 'linux') {
+            throw new ResourceOperationException('certificate.node_unsupported', 'Certificate removal requires a Linux Node.', 422);
+        }
+        if ($this->sites->forNode($node)->contains(
+            static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))) {
+            throw new ResourceOperationException('app-dev.certificate_in_use', 'A stored Caddy site still uses this certificate.', 409);
+        }
+
         return $this->operations->execute('certificate.remove', 'node_certificate', $node->id, $node->id,
-            ['scope' => $scope, 'home' => $this->accounts->resolve($node)->home], $triggeredBy, $requestId);
+            ['scope' => $scope, 'home' => $this->accounts->resolve($node)->home, 'agent_sha256' => $this->agents->pin($node)], $triggeredBy, $requestId);
     }
 
     private function assertScope(string $scope): void
