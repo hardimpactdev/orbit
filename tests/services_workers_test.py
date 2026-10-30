@@ -113,11 +113,11 @@ class WorkerProvisioningTest(unittest.TestCase):
         capacity = importlib.util.module_from_spec(spec)
         loader.exec_module(capacity)
         original = ['/usr/bin/env','SWAMP_SERVER_TOKEN_FILE=/private/path','/bin/swamp','serve',
-                    '--dispatch-env-allow=,','--max-concurrent-scheduled-runs=1',
+                    '--dispatch-env-allow=,','--max-concurrent-scheduled-runs=32',
                     '--max-concurrent-webhook-runs','1','--trusted-hosts','swamp.orbit']
         updated = capacity.capacity_command(original)
         self.assertEqual(updated, original[:5] + original[-2:] +
-                         ['--max-concurrent-scheduled-runs','32','--max-concurrent-webhook-runs','4'])
+                         ['--max-concurrent-scheduled-runs','1','--max-concurrent-webhook-runs','4'])
         self.assertEqual(capacity.capacity_command(updated), updated)
         with self.assertRaises(ValueError):
             capacity.capacity_command(['/bin/swamp','serve','--max-concurrent-scheduled-runs','--dispatch-env-allow=,'])
