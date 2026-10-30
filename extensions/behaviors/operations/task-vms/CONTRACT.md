@@ -145,6 +145,19 @@ never queries or deletes unrelated workspace records with a null Node.
 
 ## Child lifetime and observation waits
 
+The retained workspace-removal and host-sweep callers admit `task_vm.destroy`.
+An already queued PHP destruction job only records that intent; it performs no
+Node work or wait. Existing workspace teardown, transcript archival and provider
+deletion stay in their retained caller until that caller's separate cutover. The
+Swamp parent still proves provider absence and workspace cleanup before
+admitting its owning Node removal child. Final VM cleanup waits for that child.
+
+Destruction execution cases belong to this family: pending preservation, failed
+worker stop and power-off, revocation refusal, lost provider replies, Route
+cleanup and Node-removal failure. Gateway tests retain admission, reviewed-work
+state, teardown, archival and ownership contracts. Admission or a queued Node
+child never proves a destroyed VM.
+
 A VM parent does not cancel a progressing child because the parent's observation
 budget elapsed. Child admission and waiting follow the stamped child to its
 terminal result, including Node enrollment and Process creation. Later child

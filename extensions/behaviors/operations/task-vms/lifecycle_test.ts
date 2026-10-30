@@ -441,3 +441,77 @@ Deno.test("a VM without a recorded guest Node omits Node removal", async () => {
   assertEquals(effects.calls.at(-2)?.key, "forget-workspaces");
   assertEquals(effects.calls.at(-1)?.key, "forget-records");
 });
+
+Deno.test("a live workspace cannot reach provider deletion while preservation is pending", async () => {
+  const effects = new Effects();
+  Object.assign(effects.state, {
+    destroy_allowed: false,
+    needs_wake: false,
+    pending_commit: "b".repeat(40),
+  });
+  effects.onWait = () => {
+    throw new ExecutorError("operation.waiting");
+  };
+  await assertRejects(
+    () => lifecycle("task_vm.destroy", intent(), effects),
+    ExecutorError,
+    "operation.waiting",
+  );
+  assertEquals(effects.calls.map((call) => call.key), ["lifecycle-intent"]);
+  assertEquals(effects.state.pending_commit, "b".repeat(40));
+});
+
+Deno.test("a refused model-key revocation keeps the provider and Node intact", async () => {
+  const effects = new Effects();
+  effects.failures.add("revoke-model-key");
+  await assertRejects(
+    () => lifecycle("task_vm.destroy", intent(), effects),
+    ExecutorError,
+    "task_vm.host_command_failed",
+  );
+  assertEquals(effects.calls.map((call) => call.key), [
+    "lifecycle-intent",
+    "destroy-intent",
+  ]);
+});
+
+Deno.test("a lost provider deletion reply defers cleanup and reuses the owning child on replay", async () => {
+  const effects = new Effects();
+  const child = effects.child.bind(effects);
+  let lost = true;
+  effects.child = async (...args) => {
+    const result = await child(...args);
+    if (args[0] === "provider-delete" && lost) {
+      lost = false;
+      throw new ExecutorError("operation.outcome_unknown");
+    }
+    return result;
+  };
+  await assertRejects(
+    () => lifecycle("task_vm.destroy", intent(), effects),
+    ExecutorError,
+    "operation.outcome_unknown",
+  );
+  assertEquals(effects.calls.map((call) => call.key), [
+    "lifecycle-intent",
+    "destroy-intent",
+    "revoke-model-key",
+    "provider-delete",
+  ]);
+  assertEquals(await lifecycle("task_vm.destroy", intent(), effects), {
+    ready: true,
+  });
+  assertEquals(effects.calls.map((call) => call.key), [
+    "lifecycle-intent",
+    "destroy-intent",
+    "revoke-model-key",
+    "provider-delete",
+    "forget-workspaces",
+    "node-removal",
+    "forget-records",
+  ]);
+  assertEquals(
+    effects.calls.find((call) => call.key === "node-removal")?.node,
+    intent().guest_node_id,
+  );
+});
