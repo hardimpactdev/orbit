@@ -42,9 +42,12 @@ The declaration names `projection: YourProjection::class`, implementing
 and `apply(Operation, array): Operation` (domain validation, then shared
 `DirectOperation::project($op, $data, $safeResult, 'fixed-step')`). Optional
 `primitive: YourPrimitive::class` implements
-`DirectOperationPrimitive::execute(Operation): array`. This transitional hook
-runs one fixed typed action from admitted state; it receives no caller command
-or input. Local Node steps omit the primitive.
+`DirectOperationPrimitive::execute(Operation): array`. This hook is reserved for
+generic Gateway primitives such as Route/Caddy publication or scoped token
+minting. New family execution relays are refused. Family actions run locally on
+their Node worker and omit the primitive hook; a fixed command name alone does
+not make a relay generic. Gateway primitive input comes from admitted state,
+with no caller command or input.
 
 `GatewayOperation(http, args)` uses
 `GET /api/v1/direct-operations/{id}?run_id=UUID`, `POST .../result` and optional
@@ -54,6 +57,14 @@ Result body is `run_id`, `status`, `started_at`, `finished_at`, `result`,
 `error_code`. Primitive body is only `run_id`; call `gateway.primitive()`.
 `StartSwampRun` records the native run ID after the intent commits. Existing
 Route URLs reach the same shared controller during deployment.
+
+The Gateway alone binds the run ID from its native start response. Read, result
+and primitive requests refuse until that binding is recorded. Projection never
+establishes or replaces it. Each canary verifies start-response/first-read
+ordering. Per-Node callers in `worker_node_ids` must match the admitted
+`node_id`; foreign and Gateway-scoped intents are refused. The configured
+control-plane peer retains its existing fleet authority; joining the worker list
+grants no such authority.
 
 Use `swamp workflow create` to obtain the workflow ID, then adapt the existing
 `workflow-operation-route-publication.yaml`. Keep one workflow per family with
