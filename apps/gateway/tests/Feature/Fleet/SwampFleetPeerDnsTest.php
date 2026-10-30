@@ -74,6 +74,11 @@ it('records keyed peer DNS intent without PHP execution and lists only eligible 
     app()->instance(AgentCommandRunner::class, $agents);
 
     $this->getJson('/api/v1/fleet/peer-dns/targets')->assertOk()->assertJsonPath('data', [$node->id]);
+    $targets = $this->getJson('/api/v1/fleet/peer-dns/plan')->assertOk()->json('data');
+    expect($targets)->toHaveCount(1)
+        ->and($targets[0]['node_id'])->toBe($node->id)
+        ->and($targets[0]['configuration_digest'])->toMatch('/^[a-f0-9]{64}$/');
+    expect(Operation::query()->count())->toBe(0);
     foreach (range(1, 2) as $_) {
         $this->withHeader('Idempotency-Key', 'peer-dns-proof')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertAccepted();
     }
@@ -83,6 +88,41 @@ it('records keyed peer DNS intent without PHP execution and lists only eligible 
         ->and($agents->calls)->toBe([]);
     Queue::assertNothingPushed();
     $this->withoutHeader('Idempotency-Key')->postJson('/api/v1/fleet/nodes/'.$gateway->id.'/peer-dns')->assertUnprocessable()->assertJsonPath('error.code', 'vpn.peer_dns_unmanaged');
+});
+
+it('changes the peer DNS digest only when the effective admitted policy changes', function (): void {
+    [, $node] = fleetPeerDnsNodes($this);
+    $read = fn (): string => $this->getJson('/api/v1/fleet/peer-dns/plan')->assertOk()->json('data.0.configuration_digest');
+    $original = $read();
+    $node->update(['name' => 'renamed-dev']);
+    expect($read())->toBe($original);
+
+    foreach ([
+        ['dns_server_override' => '10.44.0.4'],
+        ['wireguard_public_key' => str_repeat('B', 43).'='],
+        ['tld' => 'project.test'],
+    ] as $change) {
+        $previous = $read();
+        $node->update($change);
+        expect($read())->not->toBe($previous);
+    }
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('refuses the peer DNS plan to an unconfigured executor peer', function (): void {
+    [, $node] = fleetPeerDnsNodes($this);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson('/api/v1/fleet/peer-dns/plan')
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('keeps explicit peer DNS reconciliation admitting the planned Node ids', function (): void {
+    [, $node] = fleetPeerDnsNodes($this);
+
+    $this->artisan('orbit:peer-dns-reconcile')->assertSuccessful();
+
+    expect(Operation::query()->where('kind', 'fleet.peer_dns')->pluck('node_id')->all())->toBe([$node->id]);
 });
 
 it('denies fleet maintenance reads without Services identity', function (): void {
