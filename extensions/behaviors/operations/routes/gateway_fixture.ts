@@ -1,6 +1,7 @@
 /** Runs the real family workflows against a PHP test's in-memory Gateway through JSON lines. */
 import { routes } from "./mod.ts";
 import { publication } from "./publication.ts";
+import { verification } from "./verification.ts";
 import { certificates } from "../certificates/mod.ts";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import type { Context } from "../../operation-runner/mod.ts";
@@ -57,16 +58,35 @@ while (true) {
       args.direct === true
     ) {
       try {
-        result = await publication(() => http).methods.publish.execute(
-          args as Parameters<
-            ReturnType<typeof publication>["methods"]["publish"]["execute"]
-          >[0],
-          ctx,
-        );
+        if (args.kind.endsWith("_verify")) {
+          result = await verification(() => http, async () => {
+            const response = await http(
+              "POST",
+              `/fixture/route-verification/${args.operation_id}`,
+              {},
+            );
+            if (response.status !== 200) {
+              throw new Error("Probe fixture failed");
+            }
+            return (response.body as { data: unknown }).data;
+          }).methods.verify.execute(
+            args as Parameters<
+              ReturnType<typeof verification>["methods"]["verify"]["execute"]
+            >[0],
+            ctx,
+          );
+        } else {
+          result = await publication(() => http).methods.publish.execute(
+            args as Parameters<
+              ReturnType<typeof publication>["methods"]["publish"]["execute"]
+            >[0],
+            ctx,
+          );
+        }
       } catch (error) {
         const response = await http(
           "GET",
-          `/api/v1/route-publications/${args.operation_id}?run_id=${args.run_id}`,
+          `/api/v1/direct-operations/${args.operation_id}?run_id=${args.run_id}`,
         );
         const op = (response.body as { data: { status: string } }).data;
         if (!["failed", "cancelled"].includes(op.status)) throw error;

@@ -40,12 +40,13 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
   const save = () =>
     Deno.writeTextFile("native-parent.json", JSON.stringify(state));
   const eligible = (operation: FixtureOperation) =>
-    operation.status === "queued" || (operation.status === "waiting" &&
+    operation.id === 17 &&
+    (operation.status === "queued" || (operation.status === "waiting" &&
       operation.waiting_for?.every((child) =>
         ["succeeded", "failed", "cancelled"].includes(
           operations[String(child.id)].status,
         )
-      ));
+      )));
   if (path.endsWith("/claimable")) {
     if (method !== "GET" || raw !== undefined) {
       throw new Error("Discovery must be a read");
@@ -80,6 +81,33 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
     operation.worker = body.worker;
     await save();
     return { status: 200, body: { data: operation } };
+  }
+  if (path.includes("/direct-operations/")) {
+    const child = operations["44"];
+    if (!child || !path.includes("/direct-operations/44")) {
+      throw new Error("Unknown direct child");
+    }
+    if (method === "GET") {
+      return {
+        status: 200,
+        body: { data: { ...child, input: {}, result: child.result ?? null } },
+      };
+    }
+    if (path.endsWith("/primitive")) {
+      state.nodeEffects++;
+      await save();
+      return {
+        status: 200,
+        body: { data: { ready: true, result: "published" } },
+      };
+    }
+    if (!path.endsWith("/result")) throw new Error("Unknown direct request");
+    child.status = String(body.status);
+    child.result = body.result ?? null;
+    child.error_code = body.error_code ?? null;
+    if (child.status === "succeeded") state.completions.push(child.id);
+    await save();
+    return { status: 200, body: { data: child } };
   }
   const id = path.match(/operation-executor\/(\d+)/)?.[1];
   const operation = id ? operations[id] : undefined;
@@ -118,33 +146,7 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
     targeted: false,
     child_phases: [{ stage: "caddy", key: "caddy.node-2" }],
   };
-  const descriptors = operation.id === 17 ? [] : [
-    {
-      key: "prepare",
-      step: "prepare",
-      transport: "gateway",
-      name: "route.caddy-prepare",
-      input: operation.input,
-      resumable: true,
-      required: true,
-    },
-    ...(operation.prepared
-      ? [{
-        key: "caddy-publish",
-        step: "caddy-publish",
-        transport: "route-caddy",
-        name: "caddy.publish",
-        input: {
-          content: "# private proof\n",
-          version: "a".repeat(32),
-          listen_addresses: ["10.44.0.3"],
-          unserved: false,
-        },
-        resumable: true,
-        required: true,
-      }]
-      : []),
-  ];
+  const descriptors: unknown[] = [];
   if (path.endsWith("/heartbeat")) {
     data = { ...operation, execution_context: { descriptors } };
   }
@@ -259,24 +261,7 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
         throw new Error("lost phase commit reply");
       }
     } else {
-      const descriptor = descriptors.find((descriptor) =>
-        descriptor.key === key
-      );
-      if (
-        !descriptor || descriptor.name !== body.name ||
-        descriptor.transport !== body.transport ||
-        JSON.stringify(descriptor.input) !== JSON.stringify(body.input)
-      ) {
-        throw new Error("Unadmitted Node descriptor");
-      }
-      if (key === "prepare") {
-        operation.prepared = true;
-        data = { prepared: true };
-      } else {
-        state.nodeEffects++;
-        data = { ready: true, result: "published" };
-      }
-      operation.runs[key] = { identity, result: data };
+      throw new Error("Direct children have no legacy executor");
     }
   }
   if (path.endsWith("/complete")) {
@@ -286,9 +271,6 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
         (!parent.completed?.includes("record") ||
           operations["44"]?.status !== "succeeded")
       ) throw new Error("Bare parent completion");
-      if (operation.id !== 17 && !operation.runs?.["caddy-publish"]) {
-        throw new Error("Bare Node completion");
-      }
     }
     operation.status = String(body.status);
     operation.result = body.result;

@@ -23,12 +23,10 @@ repeating the probe. The configured control-plane peer and run binding are
 checked by the Gateway; worker placement does not change the Route intent's
 owning Node.
 
-Both per-kind settings default to `polled` in `ORBIT_SWAMP_DIRECT_WRITERS`. The
-source does not change a grant or live writer. Extend the one approved Gateway
-run token's grant to this workflow through the approved exact-workflow grant
-process. Load the workflow and deploy the Gateway declaration before a dev
-canary. Prove start binding, first-read ordering and an actual non-root 209
-worker probing the real published endpoint before selecting direct. Rollback
-selects polled for new intents. Keep the previous workflow until direct
-production success. Root-required certificate changes remain gated on the
-approved privileged action boundary.
+Both proven verification kinds select `direct` in `ORBIT_SWAMP_DIRECT_WRITERS`.
+Their old polled execution and discovery entries are removed. Disabling either
+writer refuses new child admission instead of restoring the removed executor.
+Existing direct Operations keep their stamped writer and bound run. No root
+socket, sudo, or Node-local state is needed for these network checks.
+Certificate mutations retain their current executor until their Node-user sudo
+workflow passes its own cutover proof.

@@ -5,9 +5,9 @@ import type { Context } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 class Fixture {
-  kind = "route.caddy_converge";
+  kind = "route.offline_residue_clean";
   worker = "workflow-1";
-  intent: Record<string, unknown> = { reason: "dev proof" };
+  intent: Record<string, unknown> = { removed_node_id: null };
   effects: {
     key: string;
     transport: string;
@@ -78,29 +78,7 @@ class Fixture {
         input: { ...this.intent, action: "prove" },
       };
     }
-    return this.kind === "route.caddy_converge"
-      ? {
-        prepare: "route.caddy-prepare",
-        key: "caddy-publish",
-        transport: "route-caddy",
-        name: "caddy.publish",
-        input: {
-          content: "private.example.test {}",
-          version: "a".repeat(32),
-          listen_addresses: ["10.8.0.2"],
-          unserved: false,
-        },
-      }
-      : {
-        prepare: "route.private-dns-prepare",
-        key: "private-dns-publish",
-        transport: "route-dns",
-        name: "route.publish-dns",
-        input: {
-          records: "host-record=private.example.test,10.8.0.2",
-          catalog: "{}\n",
-        },
-      };
+    throw new Error("Unknown retained Route fixture");
   }
   available = true;
   terminal: Record<string, unknown> | null = null;
@@ -265,62 +243,22 @@ class Fixture {
   }
 }
 
-Deno.test("Caddy publication prepares and executes exactly the Gateway snapshot on the Operation Node", async () => {
-  const f = new Fixture();
-  assertEquals((await f.execute()).status, "succeeded");
-  const runs = f.calls.filter((x) => x.path.endsWith("/run")).map((x) =>
-    x.body
-  );
-  assertEquals(runs.map((x) => x.key), ["prepare", "caddy-publish"]);
-  assertEquals(runs[1].input, f.spec.input);
-  assertEquals(runs.some((x) => "node_id" in x), false);
-});
-Deno.test("private DNS uses its own named transport with Gateway-rendered records and catalog", async () => {
-  const f = new Fixture();
-  f.kind = "route.private_dns_publish";
-  f.final = {
-    outcome: "published",
-    data: { ready: true, digest: "b".repeat(64) },
-    ready: true,
-  };
-  assertEquals((await f.execute()).status, "succeeded");
-  const run = f.calls.find((x) => x.body.key === "private-dns-publish")!.body;
-  assertEquals(run.transport, "route-dns");
-  assertEquals(run.name, "route.publish-dns");
-  assertEquals(run.input, f.spec.input);
-});
-Deno.test("render refusal records failure and never reloads a serving configuration", async () => {
-  const f = new Fixture();
-  f.refusal = "caddy.render_failed";
-  f.refusalStage = "render";
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.runs.size, 1);
-  assertEquals(f.calls.at(-1)!.body.error_code, f.refusal);
-  assertEquals(f.calls.at(-1)!.body.result, {
-    error_code: "caddy.render_failed",
-    stage: "render",
-  });
-});
-Deno.test("a recovered worker uses saved step results without rendering again", async () => {
-  const f = new Fixture();
-  f.prepared = true;
-  f.results = {
-    prepare: { prepared: true },
-    "caddy-publish": { result: "published", ready: true },
-  };
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.runs.size, 0);
-});
 Deno.test("lost publication reply retains its stable key and exact input", async () => {
   const f = new Fixture();
+  f.effects = [{
+    key: "residue-effect",
+    transport: "agent",
+    name: "firewall.route-lan",
+    input: { operation: "remove", route_id: 23 },
+  }];
   f.loseRun = true;
   await assertRejects(() => f.execute(), Error, "lost publication reply");
   assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.runs.size, 2);
-  const runs = f.calls.filter((x) => x.body.key === "caddy-publish");
+  assertEquals(f.runs.size, 3);
+  const runs = f.calls.filter((x) => x.body.key === "residue-effect");
   assertEquals(runs.length, 1);
   assertEquals(
-    f.calls.filter((c) => c.path.endsWith("/receipts/caddy-publish")).length,
+    f.calls.filter((c) => c.path.endsWith("/receipts/residue-effect")).length,
     1,
   );
 });
@@ -449,20 +387,35 @@ Deno.test("cleanup after source deletion withdraws Caddy before the unused Insta
 
 Deno.test("a running target receipt stops recovery without replaying or completing the effect", async () => {
   const f = new Fixture();
+  f.effects = [{
+    key: "residue-effect",
+    transport: "agent",
+    name: "firewall.route-lan",
+    input: { operation: "remove", route_id: 23 },
+  }];
   f.loseRun = true;
   await assertRejects(() => f.execute());
   f.receiptState = "running";
   await assertRejects(() => f.execute(), Error, "still running");
-  assertEquals(f.calls.filter((c) => c.body.key === "caddy-publish").length, 1);
+  assertEquals(
+    f.calls.filter((c) => c.body.key === "residue-effect").length,
+    1,
+  );
   assertEquals(f.calls.some((c) => c.path.endsWith("/complete")), false);
 });
 Deno.test("only an unknown target receipt permits re-invoking the same effect key", async () => {
   const f = new Fixture();
+  f.effects = [{
+    key: "residue-effect",
+    transport: "agent",
+    name: "firewall.route-lan",
+    input: { operation: "remove", route_id: 23 },
+  }];
   f.loseRun = true;
   await assertRejects(() => f.execute());
   f.receiptState = "unknown";
   assertEquals((await f.execute()).status, "succeeded");
-  const runs = f.calls.filter((c) => c.body.key === "caddy-publish");
+  const runs = f.calls.filter((c) => c.body.key === "residue-effect");
   assertEquals(runs.length, 2);
   assertEquals(runs[0].body, runs[1].body);
 });
@@ -510,32 +463,6 @@ Deno.test("workload preparation executes only the Gateway descriptors before its
       "workload-proof",
     ],
   );
-});
-
-Deno.test("Caddy validation failure keeps its proven stage in final and replayed completion", async () => {
-  const f = new Fixture();
-  f.final = { error_code: "caddy.publication_failed", stage: "validate" };
-  f.loseComplete = true;
-  await assertRejects(() => f.execute(), Error, "lost completion reply");
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.terminal!.result, {
-    error_code: "caddy.publication_failed",
-    stage: "validate",
-  });
-});
-
-Deno.test("a recovered Caddy validation receipt keeps its stage without another Node effect", async () => {
-  const f = new Fixture();
-  f.final = { error_code: "caddy.publication_failed", stage: "validate" };
-  f.loseRun = true;
-  await assertRejects(() => f.execute(), Error, "lost publication reply");
-  f.receiptState = "failed";
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.runs.size, 2);
-  assertEquals(f.calls.at(-1)!.body.result, {
-    error_code: "caddy.publication_failed",
-    stage: "validate",
-  });
 });
 
 Deno.test("empty family claim ends without a heartbeat or effect", async () => {
@@ -593,4 +520,20 @@ Deno.test("resumed family dispatch with a lost lease never claims a replacement 
   assertEquals(f.calls.slice(before).map((call) => call.path), [
     "/api/v1/operation-executor/17/heartbeat",
   ]);
+});
+
+Deno.test("the polled Route family refuses all four direct-only kinds before any Gateway call", async () => {
+  for (
+    const kind of [
+      "route.caddy_converge",
+      "route.private_dns_publish",
+      "route.workload_verify",
+      "route.public_verify",
+    ]
+  ) {
+    const f = new Fixture();
+    f.kind = kind;
+    await assertRejects(() => f.execute(), Error, "Unregistered family kind");
+    assertEquals(f.calls, []);
+  }
 });

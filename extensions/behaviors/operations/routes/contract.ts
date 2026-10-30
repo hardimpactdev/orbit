@@ -1,8 +1,5 @@
 import { z } from "npm:zod@4.4.3";
 
-export const NodePublicationIntent = z.object({
-  reason: z.string().min(1).max(200),
-}).strict();
 export const Descriptor = z.object({
   key: z.string().min(1),
   step: z.string().min(1),

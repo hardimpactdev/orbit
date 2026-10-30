@@ -18,13 +18,15 @@ class RouteParentNative(unittest.TestCase):
         self.repo = Path(self.temp.name)
         shutil.copy(ROOT / '.swamp.yaml', self.repo)
         behavior = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/routes']:
+        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/routes']:
             shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
         for family, factory, relative in [('operation-runner', 'operationDiscovery', '../operations/routes/parent_native_fixture.ts'), ('operations/routes', 'routes', './parent_native_fixture.ts')]:
             module = behavior / family / 'mod.ts'
             module.write_text('import { fixtureHttp } from "' + relative + '";\n' + module.read_text().replace('...' + factory + '()', '...' + factory + '(() => fixtureHttp)'))
+        publication = behavior / 'operations/routes/publication.ts'
+        publication.write_text('import {fixtureHttp} from "./parent_native_fixture.ts";\n'+publication.read_text().replace('export const behavior = publication();','export const behavior = publication(() => fixtureHttp);'))
         (self.repo / 'workflows').mkdir()
-        for name in ['operation-routes']:
+        for name in ['operation-routes', 'operation-route-publication']:
             path = ROOT / ('workflows/workflow-' + name + '.yaml')
             source = '\n'.join(line for line in path.read_text().splitlines()
                                if not line.startswith(('labels:', 'queueTimeout:'))) + '\n'
@@ -52,8 +54,11 @@ class RouteParentNative(unittest.TestCase):
         else:
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def direct_child(self):
+        self.swamp('workflow', 'run', 'operation-route-publication', '--input', 'operation_id=44', '--input', 'node_id=2', '--input', 'kind=route.caddy_converge')
+
     def finish(self):
-        self.swamp('workflow', 'run', 'operation-routes')
+        self.direct_child()
         self.swamp('workflow', 'run', 'operation-routes')
         state = self.read()
         self.assertEqual(state['operations']['17']['status'], 'succeeded')
@@ -82,7 +87,7 @@ class RouteParentNative(unittest.TestCase):
         self.state['loseCommitReply'] = True
         self.save()
         self.swamp('workflow', 'run', 'operation-routes')
-        self.swamp('workflow', 'run', 'operation-routes')
+        self.direct_child()
         self.swamp('workflow', 'run', 'operation-routes', success=False)
         self.swamp('workflow', 'resume', 'operation-routes')
         state = self.read()

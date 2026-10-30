@@ -1,15 +1,11 @@
 {
   "kinds": [
-    "route.caddy_converge",
     "route.workload_prepare",
-    "route.private_dns_publish",
     "route.offline_residue_clean",
     "route.withdraw_instance",
     "route.cleanup_instance",
     "route.lan_converge",
     "route.lan_remove",
-    "route.workload_verify",
-    "route.public_verify",
     "route.public_firewall",
     "route.shared_php_withdraw",
     "route.transfer_php_withdraw",

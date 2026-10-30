@@ -12,7 +12,6 @@ import {
   EffectReceipt,
   ExecutionContext,
   Invocation,
-  NodePublicationIntent,
 } from "./contract.ts";
 import { RouteRefusal } from "./contract.ts";
 import { analyticsKinds, executeAnalytics } from "./analytics.ts";
@@ -24,8 +23,6 @@ const nodeEffectKinds = [
   "route.workload_firewall",
   "route.lan_converge",
   "route.lan_remove",
-  "route.workload_verify",
-  "route.public_verify",
   "route.public_firewall",
   "route.shared_php_withdraw",
   "route.transfer_php_withdraw",
@@ -47,11 +44,6 @@ const specs: Record<string, { step: string; transport: string; name: string }> =
       transport: "gateway",
       name: "route.workload",
     },
-    "route.caddy_converge": {
-      step: "caddy-publish",
-      transport: "route-caddy",
-      name: "caddy.publish",
-    },
     "route.offline_residue_clean": {
       step: "offline-residue-proof",
       transport: "gateway",
@@ -66,11 +58,6 @@ const specs: Record<string, { step: string; transport: string; name: string }> =
       step: "instance-runtime-proof",
       transport: "gateway",
       name: "route.instance-runtime",
-    },
-    "route.private_dns_publish": {
-      step: "private-dns-publish",
-      transport: "route-dns",
-      name: "route.publish-dns",
     },
   };
 
@@ -217,13 +204,7 @@ export function routes(
           }
           const spec = specs[operation.kind];
           if (!spec) throw new Error("Unknown Route publication kind");
-          if (
-            ["route.caddy_converge", "route.private_dns_publish"].includes(
-              operation.kind,
-            )
-          ) {
-            NodePublicationIntent.parse(operation.input);
-          } else if (operation.kind === "route.offline_residue_clean") {
+          if (operation.kind === "route.offline_residue_clean") {
             z.object({
               removed_node_id: z.number().int().positive().nullable(),
             }).strict().parse(operation.input);
@@ -365,14 +346,7 @@ export function routes(
                       output: error ? `${error}\n` : `${step} succeeded\n`,
                     });
                     if (error) {
-                      throw new RouteRefusal(
-                        error,
-                        operation.kind === "route.caddy_converge" &&
-                          (value.stage === "render" ||
-                            value.stage === "validate")
-                          ? value.stage
-                          : undefined,
-                      );
+                      throw new RouteRefusal(error);
                     }
                   }
                   const value = z.record(z.string(), z.unknown()).parse(
@@ -381,13 +355,7 @@ export function routes(
                   if (
                     typeof value.error_code === "string"
                   ) {
-                    throw new RouteRefusal(
-                      value.error_code,
-                      operation.kind === "route.caddy_converge" &&
-                        (value.stage === "render" || value.stage === "validate")
-                        ? value.stage
-                        : undefined,
-                    );
+                    throw new RouteRefusal(value.error_code);
                   }
                   completed.add(key);
                   if (
