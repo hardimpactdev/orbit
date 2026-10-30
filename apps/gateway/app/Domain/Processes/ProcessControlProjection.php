@@ -24,7 +24,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
     public function input(Operation $operation): array
     {
         $input = Arr::only($operation->input, ['process_id', 'agent_sha256', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
-        if ($operation->kind === 'process.start' && isset($operation->input['vite_plan'])) {
+        if (in_array($operation->kind, ['process.start', 'process.restart'], true) && isset($operation->input['vite_plan'])) {
             $input['vite_plan'] = $operation->input['vite_plan'];
             $input['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id));
         }
