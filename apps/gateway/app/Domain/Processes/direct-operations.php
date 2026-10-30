@@ -13,6 +13,6 @@ $control = [
 ];
 
 return [
-    'process.destroy' => $control,
+    'process.destroy' => [...$control, 'writer_scope' => []],
     'process.stop' => [...$control, 'writer_scope' => []],
 ];

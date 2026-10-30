@@ -36,7 +36,6 @@ it('runs executor-host mutations synchronously with the original HTTP responses'
     $this->runtime->shouldReceive('status')->andReturn('active');
     match ($verb) {
         'create', 'update' => $this->runtime->shouldReceive('converge')->once(),
-        'destroy' => $this->runtime->shouldReceive('remove')->once(),
         'start' => $this->runtime->shouldReceive('start')->once(),
         'restart' => $this->runtime->shouldReceive('restart')->once(),
     };
@@ -48,40 +47,34 @@ it('runs executor-host mutations synchronously with the original HTTP responses'
             'name' => 'another-dependency', 'runtime' => 'systemd', 'command' => ['/bin/sleep', '300'],
         ]),
         'update' => $this->patchJson($path, ['command' => ['/bin/sleep', '300']]),
-        'destroy' => $this->deleteJson($path),
         default => $this->postJson($path.'/'.$verb),
     };
 
     $verb === 'create' ? $response->assertCreated() : $response->assertOk();
     $response->assertJsonPath('data.target_type', 'node')->assertJsonPath('data.target_id', $this->node->id)->assertJsonMissingPath('data.kind');
-    if ($verb === 'destroy') {
-        $response->assertJsonPath('data.runtime_status', 'absent');
-        $this->assertModelMissing($this->process);
-    } elseif ($verb === 'update') {
+    if ($verb === 'update') {
         expect($this->process->refresh()->runtime_config['command'])->toBe(['/bin/sleep', '300']);
     } elseif ($verb !== 'create') {
         expect($this->process->refresh()->desired_state->value)->toBe($verb === 'stop' ? 'stopped' : 'running');
     }
     $this->assertDatabaseCount('processes', match ($verb) {
-        'create' => 2, 'destroy' => 0, default => 1
+        'create' => 2, default => 1
     });
     $this->assertDatabaseCount('operations', 0);
-})->with(['services', 'worker'])->with(['create', 'update', 'start', 'restart', 'destroy']);
+})->with(['services', 'worker'])->with(['create', 'update', 'start', 'restart']);
 
-it('creates reuses and destroys a Services deploy helper without admitting an Operation', function (): void {
+it('creates and reuses a Services deploy helper without admitting an Operation', function (): void {
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withHeader('Idempotency-Key', 'services-helper');
     $this->runtime->shouldReceive('converge')->twice();
     $this->runtime->shouldReceive('status')->andReturn('active');
-    $this->runtime->shouldReceive('remove')->once();
     $payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'deploy-helper',
         'runtime' => 'systemd', 'command' => ['/bin/sleep', '300'], 'start' => true];
 
     $id = $this->postJson('/api/v1/processes', $payload)->assertCreated()->json('data.id');
     $this->postJson('/api/v1/processes', $payload)->assertOk()->assertJsonPath('data.id', $id);
-    $this->deleteJson('/api/v1/processes/'.$id)->assertOk()->assertJsonPath('data.id', $id)->assertJsonPath('data.runtime_status', 'absent');
 
-    $this->assertDatabaseMissing('processes', ['id' => $id]);
+    $this->assertDatabaseHas('processes', ['id' => $id]);
     $this->assertDatabaseCount('operations', 0);
 });
 
