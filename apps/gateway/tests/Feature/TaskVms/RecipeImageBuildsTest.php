@@ -128,6 +128,13 @@ function recipeImageDirectIntent(string $kind = 'task_vm.image_finish_seed'): ar
                 'alias' => $parent->input['candidate_alias'], 'properties' => ['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => 'base']]];
     }
 
+    if ($kind === 'task_vm.image_launch') {
+        $build->update(['images' => [], 'image_fingerprint' => null]);
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'launch', 'effect_key' => 'launch',
+            'vm' => ['project' => 'orbit-tasks', 'name' => $build->builder_vm_name, 'cidr' => '10.251.77.0/24'],
+            'operation' => ['kind' => 'create_image', 'image' => $parent->input['source'], 'gateway_public_key' => IMAGE_KEY, 'cpus' => 2, 'memory' => '4GiB', 'disk' => '20GiB', 'network' => 'orbittask0', 'builder' => true]];
+    }
+
     return [$build, $parent, $input];
 }
 
@@ -143,7 +150,12 @@ it('admits the image effect directly and projects its phase once without Gateway
     expect(DirectOperation::owns($child))->toBeTrue()->and($child->node_id)->toBe($build->host_node_id)
         ->and($child->state['swamp_run_id'])->toBe($run)->and($child->worker)->toBeNull()->and($child->attempts)->toBe(0);
     $projection = app(TaskVmIncusProjection::class);
-    expect($projection->input($child)['intent'])->toEqual(array_diff_key($input, array_flip(['phase', 'effect_key'])));
+    $safe = array_diff_key($input, array_flip(['phase', 'effect_key']));
+    if ($kind === 'task_vm.image_launch') {
+        $safe['operation']['image'] = IMAGE_STOCK;
+        expect($child->input['operation']['image'])->toBe(TaskVmHost::SourceImage)->and($build->fresh()->source_fingerprint)->toBe(IMAGE_STOCK);
+    }
+    expect($projection->input($child)['intent'])->toEqual($safe);
     $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true, ...($kind === 'task_vm.image_publish' ? ['fingerprint' => IMAGE_NEW] : [])]];
     $projection->apply($child, $outcome);
     $steps = $build->fresh()->steps;
@@ -153,7 +165,7 @@ it('admits the image effect directly and projects its phase once without Gateway
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
     expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:'.$input['phase'])['operations'][$key])->toBe($child->id);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch']);
 
 it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
     [$build, , $input] = recipeImageDirectIntent($kind);
@@ -255,13 +267,45 @@ it('refuses a publication outcome without its full fingerprint or with raw field
     [['ready' => true, 'fingerprint' => IMAGE_NEW, 'stdout' => 'private']],
 ]);
 
+it('refuses a launch for another VM image resources key or lifecycle before starting Swamp', function (string $change): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_launch');
+    $nodeId = $build->host_node_id;
+    match ($change) {
+        'host' => $nodeId++, 'attempt' => $input['attempt']++,
+        'project' => $input['vm']['project'] = 'operator-owned', 'vm' => $input['vm']['name'] = 'tvm-175',
+        'cidr' => $input['vm']['cidr'] = '10.99.0.0/24', 'image' => $input['operation']['image'] = 'operator-image',
+        'cpus' => $input['operation']['cpus']++, 'memory' => $input['operation']['memory'] = '1GiB',
+        'disk' => $input['operation']['disk'] = '1GiB', 'network' => $input['operation']['network'] = 'operator-net',
+        'key' => $input['operation']['gateway_public_key'] = 'ssh-ed25519 wrong', 'builder' => $input['operation']['builder'] = false,
+        'phase' => $input['phase'] = 'smoke', 'variant' => $input['operation']['kind'] = 'create',
+        'cleanup' => $build->forceFill(['cleanup_started_at' => now()])->save(),
+        'finished' => $build->update(['state' => 'succeeded']),
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitImage('task_vm.image_launch', $build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', 'task_vm.image_launch')->count())->toBe(0);
+})->with(['host', 'attempt', 'project', 'vm', 'cidr', 'image', 'cpus', 'memory', 'disk', 'network', 'key', 'builder', 'phase', 'variant', 'cleanup', 'finished']);
+
+it('binds each candidate smoke launch to the recorded fingerprint and phase', function (string $key, string $phase): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_launch');
+    $build->update(['images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'candidate', 'fingerprint' => IMAGE_NEW, 'type' => 'virtual-machine']], 'image_fingerprint' => IMAGE_NEW]);
+    $input['phase'] = $phase;
+    $input['effect_key'] = $key;
+    $input['vm']['name'] .= '-smoke';
+    $input['operation']['builder'] = false;
+    $input['operation']['image'] = IMAGE_NEW;
+    $projection = app(TaskVmIncusProjection::class);
+    expect($projection->admitImage('task_vm.image_launch', $build->id, $build->host_node_id, $input)['launch_image'])->toBe(IMAGE_NEW);
+    $input['operation']['image'] = TaskVmHost::SourceImage;
+    expect(fn () => $projection->admitImage('task_vm.image_launch', $build->id, $build->host_node_id, $input))->toThrow(ResourceOperationException::class);
+})->with([['launch-smoke', 'smoke'], ['seed-smoke-launch', 'topology-seed']]);
+
 it('refuses a polled image writer after the execution contract is deleted', function (string $kind): void {
     [, $parent, $input] = recipeImageDirectIntent($kind);
     config(['swamp.direct_writers' => [$kind => 'polled']]);
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);

@@ -265,16 +265,6 @@ final class TaskVmCommandContracts
     public static function imageKinds(): array
     {
         $kinds = [];
-        foreach ([
-            'image_launch' => ['incus.vm', ['vm', 'operation']],
-        ] as $verb => [$command, $fields]) {
-            $schema = self::agentInput($command);
-            $properties = ValidatedData::object($schema['properties']);
-            $properties['command'] = ['const' => $command];
-            $schema['properties'] = $properties;
-            $schema['required'] = [...ValidatedData::stringList($schema['required']), 'command'];
-            $kinds['task_vm.'.$verb] = self::imageDefinition($verb, 'task_vm.image-host', $fields, ['command' => $command], $schema);
-        }
         foreach (['image_promote', 'image_prune'] as $verb) {
             $kinds['task_vm.'.$verb] = self::imageDefinition($verb, 'task_vm.image-host', ['build_id'], [], ['type' => 'object', 'additionalProperties' => false,
                 'required' => ['build_id'], 'properties' => ['build_id' => ['type' => 'integer', 'minimum' => 1]]]);
