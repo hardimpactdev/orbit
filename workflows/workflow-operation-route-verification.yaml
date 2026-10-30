@@ -1,0 +1,25 @@
+id: aea0a4c4-6f74-473d-a245-7cc39f20c54a
+name: operation-route-verification
+description: Verify an admitted Route hop locally on its forwarding Node.
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [route.workload_verify, route.public_verify] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: verification
+    steps:
+      - name: verify
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/route-verification"
+          behaviorName: '${{ "route-verification-node-" + string(inputs.node_id) }}'
+          methodName: verify
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
