@@ -1,6 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { PackageSandboxes } from "../package_sandbox.ts";
 
-export type ToolPolicy = { home: string; npmrc: string; bunfig: string };
+export type ToolPolicy = {
+  home: string;
+  npmrc: string;
+  bunfig: string;
+  sandboxes?: PackageSandboxes;
+};
 const policies = new AsyncLocalStorage<ToolPolicy>();
 export const serviceToolPolicy = () => policies.getStore();
 export const withServiceTools = <T>(

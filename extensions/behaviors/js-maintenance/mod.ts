@@ -112,7 +112,7 @@ async function project(args: z.infer<typeof CommonSchema>) {
 /** Local commands with versioned schema 1 resources, matching Composer maintenance. */
 export const behavior = {
   type: "@nckrtl/js-maintenance",
-  version: "2026.10.28.6",
+  version: "2026.10.30.1",
   globalArguments: z.strictObject({}),
   resources: {
     snapshot: {

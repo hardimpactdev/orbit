@@ -31,6 +31,8 @@ class NativeHostMethodTest(unittest.TestCase):
             shutil.copy(REPO / '.swamp.yaml', root)
             ext = root / 'extensions/behaviors'
             ext.mkdir(parents=True)
+            (root / 'bin').mkdir()
+            shutil.copy(REPO / 'bin/native-host-start.py', root / 'bin/native-host-start.py')
             shutil.copytree(REPO / 'extensions/behaviors/_lib', ext / '_lib')
             shutil.copytree(REPO / 'extensions/behaviors/composer-maintenance', ext / 'composer-maintenance')
             shutil.copytree(REPO / 'extensions/behaviors/js-maintenance', ext / 'js-maintenance')
@@ -48,7 +50,7 @@ class NativeHostMethodTest(unittest.TestCase):
 
             def cli(*args):
                 result = subprocess.run([CLI, *args, '--json'], cwd=root, env=env, capture_output=True, text=True, timeout=90)
-                self.assertEqual(result.returncode, 0, 'Native command failed: ' + ' '.join(args[:3]) + result.stderr[-1000:])
+                self.assertEqual(result.returncode, 0, 'Native command failed: ' + ' '.join(args[:3]) + result.stderr[-1000:] + (result.stdout[-3000:] if args[:2] == ('workflow', 'run') else ''))
                 return reply(result.stdout)
 
             workflow = cli('workflow', 'create', 'native-host-proof')

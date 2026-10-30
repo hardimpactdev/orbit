@@ -44,9 +44,26 @@ export async function executeHostMethod(
   signal?.throwIfAborted();
   const value: Record<string, unknown> = schemas[action].parse(input);
   const [definition, method, seconds] = targets[action];
+  // The pinned compiled Swamp CLI forbids direct /proc reads. This fixed
+  // read-only child inherits our cgroup; no caller selects its path or args.
+  const cgroup = await new Deno.Command("/usr/bin/cat", {
+    args: ["/proc/self/cgroup"],
+    stdout: "piped",
+    stderr: "null",
+  }).output();
+  if (!cgroup.success) throw new Error("native_host_lifetime_unavailable");
+  const membership = new TextDecoder().decode(cgroup.stdout);
+  const parent = /^0::\/system\.slice\/([a-zA-Z0-9@_.-]+\.service)$/m.exec(
+    membership,
+  )?.[1];
+  if (!parent) throw new Error("native_host_lifetime_unavailable");
   const scratch = await Deno.makeTempDir({ prefix: "orbit-host-method-" });
   let child: Deno.ChildProcess | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  const unit = `orbit-swamp-host-${
+    crypto.randomUUID().replaceAll("-", "")
+  }.service`;
+  const lease = `${scratch}/active`;
+  await Deno.writeTextFile(lease, "active\n", { mode: 0o600 });
   let abort: (() => void) | undefined;
   let errorText = "";
   let readErrors: Promise<void> | undefined;
@@ -54,9 +71,73 @@ export async function executeHostMethod(
     signal ?? new AbortController().signal,
     AbortSignal.timeout(seconds * 1000),
   ]);
+  const stopNativeHost = async () => {
+    const stopped = await new Deno.Command("/usr/bin/sudo", {
+      args: ["-n", "/usr/bin/systemctl", "stop", unit],
+      stdin: "null",
+      stdout: "null",
+      stderr: "null",
+    }).output();
+    await child!.status;
+    await readErrors;
+    if (!stopped.success) {
+      const state = await new Deno.Command("/usr/bin/sudo", {
+        args: [
+          "-n",
+          "/usr/bin/systemctl",
+          "show",
+          "--property=ActiveState",
+          "--value",
+          unit,
+        ],
+        stdout: "piped",
+        stderr: "null",
+      }).output();
+      if (
+        !["inactive", "failed"].includes(
+          new TextDecoder().decode(state.stdout).trim(),
+        )
+      ) throw new Error("native_host_cleanup_failed");
+    }
+  };
   try {
-    child = new Deno.Command("/usr/bin/setsid", {
+    child = new Deno.Command("/usr/bin/sudo", {
       args: [
+        "-n",
+        "/usr/bin/systemd-run",
+        "--quiet",
+        "--wait",
+        "--pipe",
+        "--collect",
+        "--service-type=exec",
+        `--unit=${unit}`,
+        `--uid=${Deno.uid()}`,
+        `--gid=${Deno.gid()}`,
+        `--working-directory=${runtime.repo}`,
+        `--property=BindsTo=${parent}`,
+        `--property=After=${parent}`,
+        "--property=KillMode=control-group",
+        "--property=SendSIGKILL=yes",
+        `--property=TimeoutStopSec=${
+          Math.max(1, Math.ceil(runtime.graceMs / 1000))
+        }`,
+        `--property=RuntimeMaxSec=${seconds + 10}`,
+        ...Object.entries({
+          HOME: runtime.home,
+          PATH: `${runtime.home}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
+          TMPDIR: scratch,
+          LANG: "C.UTF-8",
+          SWAMP_HOME: `${runtime.home}/.swamp`,
+          SWAMP_CONFIG_DIR: `${runtime.home}/.config/swamp`,
+          SWAMP_API_KEY_FILE: `${runtime.home}/.config/swamp/api-key`,
+          SWAMP_NO_UPDATE_CHECK: "1",
+          SWAMP_NO_TELEMETRY: "1",
+        }).map(([key, value]) => `--setenv=${key}=${value}`),
+        "--",
+        "/usr/bin/python3",
+        "-I",
+        `${runtime.repo}/bin/native-host-start.py`,
+        lease,
         runtime.executable,
         "behavior",
         "run",
@@ -137,28 +218,13 @@ export async function executeHostMethod(
     }
     return { dataHandles: [], action, exitCode: 0 };
   } finally {
+    await Deno.remove(lease).catch((error) => {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    });
     if (child) {
-      const kill = async (name: string) => {
-        await new Deno.Command("/bin/kill", {
-          args: ["--signal", name, "--", `-${child!.pid}`],
-          stdin: "null",
-          stdout: "null",
-          stderr: "null",
-        }).output();
-      };
-      await kill("TERM");
-      await Promise.race([
-        child.status,
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, runtime.graceMs);
-        }),
-      ]);
-      clearTimeout(timer);
-      await kill("KILL");
-      await child.status;
-      await readErrors;
+      // Revoke first: a unit registered after stop still refuses before exec.
+      await stopNativeHost();
     }
-    clearTimeout(timer);
     if (abort) stop.removeEventListener("abort", abort);
     await Deno.remove(scratch, { recursive: true });
   }
@@ -166,7 +232,7 @@ export async function executeHostMethod(
 
 export const behavior = {
   type: "@nckrtl/native-host-method",
-  version: "2026.10.29.1",
+  version: "2026.10.30.2",
   globalArguments: z.object({}),
   methods: Object.fromEntries(
     (Object.keys(targets) as HostAction[]).map((action) => [action, {

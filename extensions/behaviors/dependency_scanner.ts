@@ -18,7 +18,7 @@ import { DependencyProjectSchema } from "./_lib/dependency_projects.ts";
 /** Long work owns this model's native lock, never the orchestration lock. */
 export const behavior = {
   type: "@nckrtl/dependency-scanner",
-  version: "2026.10.28.5",
+  version: "2026.10.30.1",
   globalArguments: z.object({}),
   resources: {
     diagnostics: {

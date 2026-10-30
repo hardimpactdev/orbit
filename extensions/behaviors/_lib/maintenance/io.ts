@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { z } from "npm:zod@4";
-import { toolOptions } from "./tool_policy.ts";
+import { serviceToolPolicy, toolOptions } from "./tool_policy.ts";
 import { cleanEnv } from "./environment.ts";
 
 export class MaintenanceFailure extends Error {
@@ -126,6 +126,13 @@ export async function command(
 ): Promise<CommandResult> {
   try {
     signal?.throwIfAborted();
+    const policy = serviceToolPolicy();
+    if (policy && !["git", "gh"].includes(binary)) {
+      if (!policy.sandboxes) {
+        throw new MaintenanceFailure("package.isolation_unavailable");
+      }
+      return await policy.sandboxes.command(cwd, binary, args, signal);
+    }
     const options = toolOptions(
       binary,
       args,

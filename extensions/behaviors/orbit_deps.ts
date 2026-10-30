@@ -198,7 +198,7 @@ function slug(s: string): string {
 
 export const behavior = {
   type: "@nckrtl/orbit-deps",
-  version: "2026.10.25.1",
+  version: "2026.10.30.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     inventory: {

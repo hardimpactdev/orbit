@@ -1,3 +1,4 @@
+import { PackageSandboxes } from "./package_sandbox.ts";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { command, object } from "./maintenance/io.ts";
@@ -102,7 +103,9 @@ export async function serviceWorkspace(
 ): Promise<{ root: string; policy: ToolPolicy; close(): Promise<void> }> {
   const root = await Deno.makeTempDir({ prefix: "dependency-tools-" });
   let toolHome: string | undefined;
+  const sandboxes = new PackageSandboxes();
   const close = async () => {
+    await sandboxes.close();
     await Deno.remove(root, { recursive: true });
     if (toolHome) await Deno.remove(toolHome, { recursive: true });
   };
@@ -311,6 +314,7 @@ export async function serviceWorkspace(
       home,
       npmrc: `${home}/npmrc`,
       bunfig: `${home}/bunfig.toml`,
+      sandboxes,
     };
     await Deno.writeTextFile(
       policy.npmrc,

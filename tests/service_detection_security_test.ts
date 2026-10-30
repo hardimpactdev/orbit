@@ -12,6 +12,34 @@ import {
 } from "../extensions/behaviors/_lib/service_detection.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 
+// Parser/environment fixtures invoke npm directly. Production package routing
+// and refusal are covered by package_sandbox_test and the agent native suite.
+async function npmFixture(
+  cwd: string,
+  _binary: string,
+  args: string[],
+  signal?: AbortSignal,
+) {
+  const options = toolOptions("npm", args, {
+    PATH: Deno.env.get("PATH") ?? "/usr/bin:/bin",
+  });
+  const result = await new Deno.Command("npm", {
+    args: options.args,
+    cwd,
+    clearEnv: true,
+    env: options.env,
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+    signal,
+  }).output();
+  return {
+    code: result.code,
+    stdout: new TextDecoder().decode(result.stdout),
+    stderr: new TextDecoder().decode(result.stderr),
+  };
+}
+
 async function fixture(files: Record<string, unknown>) {
   const root = await Deno.makeTempDir({ prefix: "hostile-config-" });
   for (const [name, data] of Object.entries(files)) {
@@ -74,14 +102,18 @@ Deno.test("Services scratch excludes repo config/code and overrides npm env and 
           "https://registry.npmjs.org/",
         );
         assertEquals(opts.env.HOME, tree.policy.home);
-        const result = await command(tree.root, "npm", [
+        const result = await npmFixture(tree.root, "npm", [
           "config",
           "get",
           "registry",
         ]);
         assertEquals(result.code, 0);
         assertEquals(result.stdout.trim(), "https://registry.npmjs.org/");
-        const git = await command(tree.root, "npm", ["config", "get", "git"]);
+        const git = await npmFixture(tree.root, "npm", [
+          "config",
+          "get",
+          "git",
+        ]);
         assertEquals(git.stdout.trim(), "git");
         assertEquals(toolOptions("bun", ["outdated"], {}).args, [
           "--config",
@@ -544,7 +576,7 @@ Deno.test("accepted local file URL resolves to the same directory through real n
       const out = await withServiceTools(
         tree.policy,
         () =>
-          command(tree.root, "npm", [
+          npmFixture(tree.root, "npm", [
             "install",
             "--package-lock-only",
             "--ignore-scripts",

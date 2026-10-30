@@ -3,6 +3,11 @@ import { executeHostMethod } from "../extensions/behaviors/native_host_method.ts
 
 async function fixture(body: string) {
   const root = await Deno.makeTempDir({ prefix: "native-host-test-" });
+  await Deno.mkdir(`${root}/bin`);
+  await Deno.copyFile(
+    new URL("../bin/native-host-start.py", import.meta.url),
+    `${root}/bin/native-host-start.py`,
+  );
   const executable = `${root}/command`;
   await Deno.writeTextFile(
     executable,
@@ -85,7 +90,7 @@ Deno.test("abort reaps a native process and its stubborn descendant before clean
   const f = await fixture(`
 json.load(sys.stdin)
 signal.signal(signal.SIGTERM,signal.SIG_IGN)
-p=subprocess.Popen([sys.executable,'-c','import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(100)'])
+p=subprocess.Popen([sys.executable,'-c','import os,signal,time;os.setsid();signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(100)'])
 (root/'started').write_text(json.dumps({'pid':os.getpid(),'descendant':p.pid,'tmp':os.environ['TMPDIR']}))
 time.sleep(100)
 `);
@@ -142,10 +147,10 @@ Deno.test("host adapter refuses inputs outside each fixed method contract", asyn
   }
 });
 
-Deno.test("abort still applies after a parent exits with a descendant holding stderr", async () => {
+Deno.test("normal completion reaps a setsid descendant holding stderr", async () => {
   const f = await fixture(`
 json.load(sys.stdin)
-p=subprocess.Popen([sys.executable,'-c','import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(100)'])
+p=subprocess.Popen([sys.executable,'-c','import os,signal,time;os.setsid();signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(100)'])
 (root/'started').write_text(json.dumps({'descendant':p.pid,'tmp':os.environ['TMPDIR']}))
 `);
   const controller = new AbortController();
@@ -165,9 +170,17 @@ p=subprocess.Popen([sys.executable,'-c','import signal,time;signal.signal(signal
       }
     }
     const proof = JSON.parse(await Deno.readTextFile(`${f.root}/started`));
-    await new Promise((r) => setTimeout(r, 100));
-    controller.abort();
-    await assertRejects(() => pending, Error, "native_host_method_cancelled");
+    await pending;
+    try {
+      assertEquals(
+        (await Deno.readTextFile(`/proc/${proof.descendant}/stat`)).split(
+          " ",
+        )[2],
+        "Z",
+      );
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
     await assertRejects(() => Deno.stat(proof.tmp), Deno.errors.NotFound);
   } finally {
     controller.abort();

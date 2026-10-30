@@ -86,7 +86,7 @@ const SummarySchema = z.strictObject({
 /** Swamp behavior: local commands and versioned schema 1 resources. */
 export const behavior = {
   type: "@nckrtl/composer-maintenance",
-  version: "2026.10.28.6",
+  version: "2026.10.30.1",
   globalArguments: z.strictObject({}),
   resources: {
     failure: failureResource,

@@ -1,3 +1,4 @@
+import { serviceToolPolicy } from "../../_lib/maintenance/tool_policy.ts";
 // @deno-types="npm:@types/semver@7.7.1"
 import { satisfies } from "npm:semver@7.7.2";
 import {
@@ -131,6 +132,13 @@ async function sdk(
   dir: string,
   signal?: AbortSignal,
 ): Promise<Record<string, string>> {
+  if (serviceToolPolicy()) {
+    const result = await command(dir, "expo-catalog", [version], signal);
+    if (result.code !== 0) {
+      registryFailure(result, "Cannot read the Expo SDK dependency catalog");
+    }
+    return decode(result.stdout, "Expo SDK catalog") as Record<string, string>;
+  }
   const temp = await Deno.makeTempDir({ prefix: "maintenance-expo-" });
   try {
     const result = await command(dir, "npm", [

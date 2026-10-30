@@ -1,3 +1,4 @@
+import { serviceToolPolicy } from "../../_lib/maintenance/tool_policy.ts";
 import {
   command,
   decode,
@@ -107,7 +108,7 @@ export async function workspace(place: Place): Promise<Workspace> {
     manifest,
     manager: declared ?? (npm ? "npm" : "bun"),
     direct: deps,
-    vitePlus: "vite-plus" in deps,
+    vitePlus: !serviceToolPolicy() && "vite-plus" in deps,
     expo: "expo" in deps,
   };
 }
@@ -157,6 +158,7 @@ export async function run(
   }
 }
 export async function prepare(js: Workspace, signal?: AbortSignal) {
+  if (serviceToolPolicy()) return;
   if (!js.vitePlus) return await executable(js.manager);
   if (!(await exists(`${js.dir}/node_modules`))?.isDirectory) {
     await executable(js.manager);
