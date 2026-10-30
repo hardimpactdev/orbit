@@ -29,7 +29,7 @@ jobs:
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-processes-schedules"
-          behaviorName: '${{ "operation-processes-schedules-" + {"process.create":"process-create","process.destroy":"process-destroy","process.update":"process-update","process.start":"process-start","process.stop":"process-stop","process.restart":"process-restart","schedule.create":"schedule-create","schedule.destroy":"schedule-destroy","schedule.enable":"schedule-enable","schedule.run":"schedule-run","process.install_instance_definitions":"process-install-instance-definitions","schedule.install_instance_definitions":"schedule-install-instance-definitions","process.restart_instance":"process-restart-instance"}[self.kind] }}'
+          behaviorName: '${{ "operation-processes-schedules-" + {"process.create":"process-create","process.destroy":"process-destroy","process.update":"process-update","process.start":"process-start","process.stop":"process-stop","process.restart":"process-restart","schedule.create":"schedule-create","schedule.destroy":"schedule-destroy","schedule.enable":"schedule-enable","schedule.run":"schedule-run","process.install_instance_definitions":"process-install-defs","schedule.install_instance_definitions":"schedule-install-defs","process.restart_instance":"process-restart-instance"}[self.kind] }}'
           methodName: execute
           inputs:
             kind: "${{ self.kind }}"

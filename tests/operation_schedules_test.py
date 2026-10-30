@@ -16,6 +16,16 @@ SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
 
 
 class OperationSchedulesTest(unittest.TestCase):
+
+    def test_every_resolved_behavior_name_fits_swamp_limit(self):
+        # Swamp rejects definition names over 64 characters at run time, not at load.
+        import re
+        for path in sorted(ROOT.glob('workflows/*.yaml')):
+            text = path.read_text()
+            for prefix, mapping in re.findall(r'behaviorName:\s*\'\$\{\{\s*"([^"]+)"\s*\+\s*(\{[^}]*\})', text):
+                for suffix in re.findall(r':"([^"]+)"', mapping):
+                    with self.subTest(workflow=path.name, name=prefix + suffix):
+                        self.assertLessEqual(len(prefix + suffix), 64)
     def test_every_registered_family_has_an_independent_placed_schedule(self):
         self.assertFalse((ROOT / 'workflows/workflow-operation-runner.yaml').exists())
         self.assertFalse((ROOT / 'workflows/workflow-operation-dispatch.yaml').exists())
