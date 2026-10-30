@@ -21,7 +21,7 @@ final readonly class TaskVmAgentExecution implements OperationFamilyExecution
     public function context(Operation $operation): array
     {
         $kind = app(OperationKinds::class)->definition($operation->kind);
-        if (! is_array($kind)) {
+        if (! is_array($kind) || ! isset($kind['runs'], $kind['completion_contract'])) {
             throw new \LogicException('The VM kind has no Swamp contract.');
         }
         $contract = ValidatedData::object($kind['completion_contract']);
@@ -41,6 +41,11 @@ final readonly class TaskVmAgentExecution implements OperationFamilyExecution
     }
 
     public function beforeRun(Operation $operation, array $run): void
+    {
+        $this->assertIntent($operation);
+    }
+
+    public function assertIntent(Operation $operation): void
     {
         if ($operation->target_type !== 'task_vm') {
             $this->refuse();

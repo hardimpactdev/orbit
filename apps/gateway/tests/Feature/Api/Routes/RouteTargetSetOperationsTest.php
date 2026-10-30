@@ -19,7 +19,7 @@ beforeEach(function (): void {
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'target-gateway', 'wireguard_ip' => '10.44.0.1', 'status' => 'active', 'public_ssh_host' => '192.0.2.1']));
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $cluster = Cluster::query()->create(['name' => 'target-pool', 'state' => 'active']);
-    $router = Node::query()->create(['name' => 'target-router', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.2', 'status' => 'active', 'public_ssh_host' => '192.0.2.2']);
+    $router = Node::query()->create(['architecture' => 'x86_64', 'name' => 'target-router', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.2', 'status' => 'active', 'public_ssh_host' => '192.0.2.2']);
     $router->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Pool', 'slug' => 'pool', 'repository_url' => 'https://example.test/pool.git', 'root' => 'public']);
     $instances = [];

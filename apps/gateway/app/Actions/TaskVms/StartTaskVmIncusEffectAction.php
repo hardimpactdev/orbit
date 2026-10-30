@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
+use App\Domain\TaskVms\TaskVmAgentExecution;
 use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -22,6 +26,14 @@ final readonly class StartTaskVmIncusEffectAction
     {
         TaskVmCapabilities::require('receipts');
         $input = $this->snapshot($vm, $verb);
+        if (app(DirectOperation::class)->writer('task_vm.incus_'.$verb) === 'direct') {
+            $intent = new Operation(['kind' => 'task_vm.incus_'.$verb,
+                'target_type' => 'task_vm', 'target_id' => $vm->id, 'node_id' => $vm->host_node_id,
+                'input' => $input]);
+            $intent->parent_operation_id = app(OperationIdempotency::class)->parent?->id;
+            app(TaskVmAgentExecution::class)->assertIntent($intent);
+            $input['agent_sha256'] = app(AgentDelivery::class)->pin($vm->incusHostNode());
+        }
 
         return $this->start->execute('task_vm.incus_'.$verb, 'task_vm', $vm->id, $vm->host_node_id, $input, 'task-vm', null);
     }

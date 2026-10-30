@@ -6,6 +6,8 @@ use App\Actions\Routes\RouteChildAdmission;
 use App\Actions\Routes\StartRouteVerificationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -151,4 +153,19 @@ it('refuses a workload without a published WireGuard endpoint before recording i
     config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
     expect(fn () => app(StartRouteVerificationAction::class)->execute('route.workload_verify', $this->router, $this->input))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
+});
+
+it('declares no Gateway executor runs for the four proven direct kinds', function (): void {
+    foreach (['route.workload_verify', 'route.public_verify', 'route.caddy_converge', 'route.private_dns_publish'] as $kind) {
+        $definition = OperationKinds::definitions()[$kind];
+        expect($definition['runs'])->toBe([])->and($definition)->not->toHaveKey('execution');
+        $operation = new Operation(['kind' => $kind, 'node_id' => $this->router->id, 'input' => $this->input]);
+        expect(app(OperationExecutionContract::class)->context($operation)['descriptors'])->toBe([]);
+    }
+});
+
+it('refuses a disabled verification writer before recording an unusable intent', function (): void {
+    expect(fn () => app(StartRouteVerificationAction::class)->execute('route.workload_verify', $this->router, $this->input))
+        ->toThrow(ResourceOperationException::class, 'direct Swamp');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });

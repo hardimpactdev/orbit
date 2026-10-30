@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteVerificationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -25,6 +26,9 @@ final readonly class StartRouteVerificationAction
         if (! in_array($kind, RouteVerificationProjection::Kinds, true) || $node->platform !== 'linux'
             || array_diff(array_keys($input), $fields) !== [] || array_diff($fields, array_keys($input)) !== []) {
             throw new ResourceOperationException('operation.execution_forbidden', 'A stored Route verification on its Linux forwarding Node is required.', 422);
+        }
+        if (app(DirectOperation::class)->writer($kind) !== 'direct') {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Route verification requires its direct Swamp writer.', 409);
         }
         $draft = new Operation(['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
         $draft->parent_operation_id = $parent?->id;

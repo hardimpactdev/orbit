@@ -525,9 +525,15 @@ A repeated request after the reset, another assistance code, a terminal Operatio
 
 ## Direct Swamp starts
 
-Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` sends one native `workflow.run` request after intent commits and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. A lost start response stays uncertain; the Gateway does not poll, retry or claim work. Inspect native run history before submitting again.
+Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` submits the committed intent through native `workflow.run` and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. The immutable Operation ID supplies the stable `orbit_start_key` runtime tag. Connection and reply budgets follow the native client's 15-second connection and 30-second request defaults.
+
+If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal is not resubmitted.
+
+This is bounded submission recovery, with no job, timer, execution retry or history poll. Native runtime tags support lookup; they do not provide atomic start deduplication. The recorded run binding remains required before a workflow can read intent or invoke a primitive. Swamp alone waits for this initial binding: its shared first read retries only `409 operation.run_unbound`, once per second for up to 90 seconds. Cancellation ends that wait. Other errors and all mutations remain single attempts.
 
 A declaration names the workflow, writer configuration path, immutable writer-state field and a typed projection hook. New families use the common `swamp.direct_writers` map (`ORBIT_SWAMP_DIRECT_WRITERS` JSON keyed by exact kind, default `{}`). Families add no token, controller or HTTP routes. Routes retain their existing per-kind settings and `route_publication_writer` field.
+
+After a kind cuts over and removes its previous executor, its `operation-kinds.php` entry contains only `executor: 'swamp'`, `result_fields`, and optional `admission`. Its matching `direct-operations.php` declaration supplies the workflow and projection. The registry resolves that projection without requiring old `runs`, completion handlers or receipt proofs. These direct-only kinds default to the direct writer; an explicit polled setting, a scope mismatch or a missing direct declaration refuses admission rather than falling back to deleted code. The previous executor's claim, execution and completion paths also refuse them. Rollback reverts the kind's cutover PR.
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
@@ -539,7 +545,7 @@ The optional typed primitive hook is reserved for shared generic Gateway primiti
 
 Per-Node workers must match the admitted Operation’s `node_id` on read, result and primitive requests. The configured control-plane peer keeps its existing fleet authority; adding a Node to `worker_node_ids` does not grant that authority. Gateway-scoped intents are refused to per-Node workers.
 
-Only the Gateway’s authenticated start response can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A lost start response stays uncertain. Each family canary proves start-response and first-read ordering.
+Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase without remote diagnostics or credentials.
 
 Read input comes only from the projection hook, never automatically from raw intent. Primitive calls accept only the run ID; the hook selects its command and input from admitted state. Existing Route publication URLs reach the same shared controller during the Swamp rollout.
 

@@ -62,7 +62,8 @@ it('keeps the default writer polled and stamps a direct admission without a Gate
         ->and($operation->state['instance_lifecycle_writer'])->toBe('direct')
         ->and($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
     expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-instance-lifecycle-direct',
-        'inputs' => ['operation_id' => $operation->id, 'kind' => 'instance.rename', 'node_id' => $this->node->id]]);
+        'inputs' => ['operation_id' => $operation->id, 'kind' => 'instance.rename', 'node_id' => $this->node->id],
+        'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
     expect($operation->state['swamp_run_id'])->toBe($this->body['run_id']);
     config(['swamp.direct_writers' => []]);
     $input = $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->body['run_id'])
