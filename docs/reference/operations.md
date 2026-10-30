@@ -394,9 +394,7 @@ Cancellation stops observation and reports unknown; it never resends or cancels 
 
 ## Swamp execution
 
-The inactive `orbit.family/v1` build format uses a closed catalogue exported by `bin/export-family-catalogue`. Agent command names and mutation flags come from the pinned `apps/agent/contract/commands.json`. Gateway-local commands come from the existing family command registrations. Projection and invariant names resolve only to registered code. Native method bindings are registered with their implemented typed adapters. The initial catalogue has no command method bindings. Families that execute commands cannot adopt it yet.
-
-`OperationFamilyContract::load` accepts only a local compiler artifact with a matching code-owned release digest and the exact installed catalogue digest. It rejects unknown commands and hooks. The release pin never comes from an Operation or Swamp input. This loader registers no kinds and changes no current family. Shared admission, run identity, completion and secret-reference adapters must land before adoption. The compiler and its native step binding rules live in `hardimpactdev/orbit-swamp`, `docs/family-v1.md`.
+Author native workflows in `hardimpactdev/orbit-swamp`. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader. The claim-based API below remains for kinds still being converted.
 
 A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway never dispatches a PHP job for it. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
 
