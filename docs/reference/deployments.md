@@ -692,13 +692,16 @@ Cancel queued Swamp deploy and rollback Operations through the Operation API. Co
 ## Direct Swamp web-root preparation
 
 `instance.prepare_served_web_roots` can submit its admitted intent directly to
-`operation-instance-web-roots`. `ORBIT_INSTANCE_WEB_ROOTS_WRITER` selects `polled`
-(the existing Swamp path, the default) or `direct` for new intents. Each Operation
+`operation-instance-web-roots`. `ORBIT_SWAMP_DIRECT_WRITERS` maps exact kinds to `polled`
+(the existing Swamp path, the default) or `direct` for new intents. For example,
+`{"instance.prepare_served_web_roots":"direct"}` selects this kind. Each Operation
 keeps that choice through later setting changes. Existing unstamped Operations
 stay on the polled Swamp path.
 
 The direct workflow uses one native behavior per Node for web-root preparation. Swamp owns its lock,
-recovery and cancellation. The Gateway validates the admitted Route and Instance,
+recovery and cancellation. The shared `/api/v1/direct-operations/{id}` endpoints return safe admitted input,
+run the declared primitive and accept result projections. The Gateway validates
+the admitted Route and Instance,
 runs only the fixed `instance.prepare-served-web-roots` Node primitive, and projects
 bounded native status and results. It accepts no worker-selected Node, command,
 program, environment content or input. It creates no executor claim, lease, child
@@ -714,6 +717,7 @@ an in-flight primitive must settle before its outcome can be projected.
 
 The default remains polled until the exact direct workflow succeeds on a dev or
 canary target. Record that proof before takeover. Delete the previous family path
-only after the direct replacement succeeds in production. Workflow grants and
-production writer changes require their existing operator approval. This slice
+only after the direct replacement succeeds in production. The shared `ORBIT_SWAMP_RUN_TOKEN` and its reviewed grants authorize native
+starts. This family adds no separate token, grant, controller or request.
+Production writer changes require their existing operator approval. This slice
 does not change those settings or prove deploy, rollback, environment or smoke.

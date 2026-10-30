@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -12,7 +13,7 @@ use App\Models\Node;
 use App\Models\Operation;
 
 /** One convergent Node primitive; Swamp owns execution and recovery. */
-final readonly class DirectInstanceWebRoots
+final readonly class DirectInstanceWebRoots implements DirectOperationPrimitive
 {
     public function __construct(private InstanceServedWebRootsInput $input, private AgentCommandRunner $agent) {}
 
@@ -25,7 +26,7 @@ final readonly class DirectInstanceWebRoots
     }
 
     /** @return array<string, mixed> */
-    public function prepare(Operation $operation): array
+    public function execute(Operation $operation): array
     {
         $this->assertOperation($operation);
         $input = $this->input->forOperation($operation);

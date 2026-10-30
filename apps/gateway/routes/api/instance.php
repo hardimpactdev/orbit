@@ -22,7 +22,6 @@ use App\Http\Controllers\Api\InstanceSmokeControlController;
 use App\Http\Controllers\Api\InstanceSmokeController;
 use App\Http\Controllers\Api\InstanceSmokeRepairController;
 use App\Http\Controllers\Api\InstanceTransfersController;
-use App\Http\Controllers\Api\InstanceWebRootsController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\ResolveInstanceController;
@@ -36,9 +35,6 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
-    Route::get('instance-web-roots/{operation}', [InstanceWebRootsController::class, 'show'])->whereNumber('operation')->name('instance:web-roots:show');
-    Route::post('instance-web-roots/{operation}/prepare', [InstanceWebRootsController::class, 'prepare'])->whereNumber('operation')->name('instance:web-roots:prepare');
-    Route::post('instance-web-roots/{operation}/result', [InstanceWebRootsController::class, 'result'])->whereNumber('operation')->name('instance:web-roots:result');
     Route::get('projects/{project}/setup-steps', [ProjectLifecycleStepsController::class, 'setupIndex'])->name('instance:setup-step:list');
     Route::post('projects/{project}/setup-steps', [ProjectLifecycleStepsController::class, 'setupStore'])->name('instance:setup-step:create');
     Route::patch('projects/{project}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupUpdate'])
