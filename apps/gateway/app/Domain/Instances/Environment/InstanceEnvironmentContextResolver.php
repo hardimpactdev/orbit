@@ -6,12 +6,14 @@ namespace App\Domain\Instances\Environment;
 
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -21,13 +23,16 @@ final readonly class InstanceEnvironmentContextResolver
         Instance $instance,
         bool $requireActiveNode,
         bool $lockRoute = false,
+        ?int $createOperationId = null,
     ): InstanceEnvironmentContext {
         $sourceIsLaravel = $instance->source_is_laravel;
         $environment = $instance->placementEnvironment();
+        $create = $createOperationId === null ? null : $this->createOwner($instance, $createOperationId);
 
         if (
-            $instance->status !== InstanceState::Active
-            || $instance->provisioning_step !== 'active'
+            ($create === null && ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active'))
+            || ($create !== null && ($instance->status !== InstanceState::SourceResolved
+                || $instance->provisioning_step !== 'php-selected' || $environment !== 'development'))
             || $environment === null
         ) {
             $this->conflict();
@@ -62,8 +67,14 @@ final readonly class InstanceEnvironmentContextResolver
 
         $route = $routes->first();
 
+        if ($create !== null && ($route?->id !== ($create->input['route_id'] ?? null)
+            || $route?->domain !== ($create->input['route_domain'] ?? null)
+            || ($route !== null && ($route->project_id !== $instance->project_id || $route->targets()->count() !== 1)))) {
+            $this->conflict();
+        }
+
         if ($route instanceof Route && (
-            ! $route->isAuthoritative()
+            (! $route->isAuthoritative() && ! ($create !== null && $route->status === RouteStatus::Pending))
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
             || $route->failed_step !== null
@@ -87,7 +98,26 @@ final readonly class InstanceEnvironmentContextResolver
             routeDomain: $route?->domain,
             nodeStatus: $node->status->value,
             node: $node,
+            createOperationId: $createOperationId,
         );
+    }
+
+    private function createOwner(Instance $instance, int $id): Operation
+    {
+        $parent = Operation::query()->find($id);
+        if (! $parent instanceof Operation || $parent->kind !== 'instance.create'
+            || ! in_array($parent->status, [OperationStatus::Running, OperationStatus::Waiting], true)
+            || $parent->target_type !== 'instance' || $parent->target_id !== $instance->id
+            || $parent->node_id !== $instance->node_id
+            || ($parent->input['instance_id'] ?? null) !== $instance->id
+            || ($parent->input['project_id'] ?? null) !== $instance->project_id
+            || ($parent->input['checkout'] ?? null) !== $instance->checkout_path
+            || $instance->source_prepare_id === null
+            || ($parent->input['prepare_id'] ?? null) !== $instance->source_prepare_id) {
+            $this->conflict();
+        }
+
+        return $parent;
     }
 
     public function resolveForClone(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
@@ -98,7 +99,9 @@ final readonly class EnvironmentSyncMaterial
 
         return $parent?->kind === 'instance.clone'
             ? $this->contexts->resolveForClone($instance, requireActiveNode: true)
-            : $this->contexts->resolve($instance, requireActiveNode: true);
+            : $this->contexts->resolve($instance, requireActiveNode: true,
+                createOperationId: $parent?->kind === 'instance.create' && $instance->status === InstanceState::SourceResolved
+                    ? $parent->id : null);
     }
 
     public function onlyUrls(Operation $operation): bool

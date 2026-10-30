@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceRemovalState;
@@ -27,6 +29,7 @@ use App\Models\ProjectNodeExclusion;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
     app()->instance(OperationKinds::class, new OperationKinds(app(), [
@@ -272,4 +275,60 @@ it('refuses prepared worktree cleanup when its pending Route belongs to another 
     $this->assertModelExists($instance);
     $this->assertModelExists($route);
     expect(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+});
+
+it('synchronizes the resolved create source through its owning child before activation', function (): void {
+    $this->project->update(['type' => 'symfony-app']);
+    $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
+    $parent = Operation::query()->findOrFail($id);
+    $instance = Instance::query()->findOrFail($parent->target_id);
+    $instance->update(['status' => 'source_resolved', 'provisioning_step' => 'php-selected',
+        'branch' => 'proof', 'starting_commit' => str_repeat('a', 40), 'source_is_laravel' => false, 'selected_php_version' => '8.5']);
+    $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'synthetic-create-secret']);
+    $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}']);
+    $peer = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway))->sole();
+    config(['operation_executor.worker_node_ids' => [$peer->id]]);
+    $executor = app(SwampOperationExecutor::class);
+    $parent = $executor->claim('instance.create', 'create-env-proof', $peer->id, $parent->id);
+    $descriptor = array_find(app(InstanceLifecycleExecution::class)->context($parent)['descriptors'],
+        static fn (array $entry): bool => $entry['key'] === 'source-configuration');
+    $parent->update(['state' => [...$parent->state, 'lifecycle_bindings' => ['source-configuration' => $descriptor],
+        'executor_runs' => ['source-configuration' => [...$descriptor, 'result' => ['written' => true]]]]]);
+    $parent->steps()->create(['name' => 'source-configuration', 'position' => 1, 'status' => 'succeeded', 'sequence' => 1, 'resumable' => true]);
+
+    $path = '/api/v1/operation-executor/'.$parent->id;
+    $childId = $this->postJson($path.'/children', ['worker' => 'create-env-proof', 'key' => 'environment-sync'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'instance.sync_environment')->json('data.id');
+    $this->postJson($path.'/children', ['worker' => 'create-env-proof', 'key' => 'environment-sync'])
+        ->assertOk()->assertJsonPath('data.id', $childId);
+    $this->postJson($path.'/wait', ['worker' => 'create-env-proof', 'keys' => ['environment-sync']])->assertOk();
+    $preflight = Mockery::mock(InstanceOperationPreflight::class);
+    $preflight->shouldReceive('readWritableEnvironment')->once()->andReturn("API_TOKEN=old\nAPP_URL=old\n");
+    app()->instance(InstanceOperationPreflight::class, $preflight);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('instance.write-environment', ['state' => 'changed', 'installed' => true]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $path = '/api/v1/operation-executor/'.$childId;
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.sync_environment', 'worker' => 'create-env-child'])
+        ->assertOk()->assertJsonPath('data.id', $childId);
+    foreach (['environment.prepare', 'environment.write', 'environment.receipt'] as $key) {
+        $descriptors = $this->postJson($path.'/heartbeat', ['worker' => 'create-env-child'])
+            ->assertOk()->json('data.execution_context.descriptors');
+        $descriptor = array_find($descriptors, static fn (array $entry): bool => $entry['key'] === $key);
+        $result = $this->postJson($path.'/run', ['worker' => 'create-env-child',
+            ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))])->assertOk()->json('data');
+        $this->postJson($path.'/step', ['worker' => 'create-env-child', 'key' => $key.':finish',
+            'name' => $descriptor['step'], 'status' => 'succeeded', 'result' => $result])->assertOk();
+    }
+    $this->postJson($path.'/complete', ['worker' => 'create-env-child', 'status' => 'succeeded', 'result' => $result])
+        ->assertOk()->assertJsonPath('data.status', 'succeeded');
+    $child = Operation::query()->findOrFail($childId);
+    expect($child->parent_operation_id)->toBe($parent->id)->and($child->child_key)->toBe('environment-sync');
+    expect($agents->commands())->toBe(['instance.write-environment']);
+    expect($agents->calls[0]['input']['content'])->toBe("API_TOKEN=\"synthetic-create-secret\"\nAPP_URL=\"https://proof.admission.test\"\n");
+    expect($instance->refresh()->status->value)->toBe('source_resolved');
+    expect($instance->environment_owned_keys)->toBe(['API_TOKEN', 'APP_URL']);
+    expect(json_encode($child->toArray()))->not->toContain('synthetic-create-secret');
+    expect(fn () => app(InstanceEnvironmentContextResolver::class)->resolve($instance, true))
+        ->toThrow(ResourceOperationException::class, 'The Instance environment owner is not available');
 });
