@@ -97,18 +97,20 @@ it('submits once after commit and records a native run without acquiring a targe
     expect($socket->sent)->toHaveCount(1);
     expect($socket->sent[0])->toMatchArray(['type' => 'workflow.run', 'payload' => [
         'workflowIdOrName' => 'operation-database-cleanup', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'database.sqlite_cleanup', 'node_id' => $this->node->id],
+        'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     expect($socket->closed)->toBeTrue();
 });
 
-it('keeps an uncertain native submission visible and never retries or reports a false failure', function (): void {
+it('keeps an unreadable native history uncertain without resubmitting or reporting a false failure', function (): void {
+    $this->operation->update(['state' => array_diff_key($this->operation->state, ['swamp_run_id' => true])]);
     $socket = new FakeRoutePublicationSocket(false);
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
-    expect($socket->sent)->toHaveCount(1);
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
     expect($this->operation->fresh()->attempts)->toBe(0);
     expect($socket->closed)->toBeTrue();
