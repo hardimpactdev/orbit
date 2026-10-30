@@ -19,14 +19,13 @@ final class FirewallOperationProof
         $executor = app(SwampOperationExecutor::class);
         $peerNodeId = Node::query()->firstOrFail()->id;
         $operation = $executor->claim($kind, $worker, $peerNodeId) ?? throw new LogicException('Expected a queued firewall Operation.');
-        $remove = $kind === 'firewall.remove';
-        $step = $remove ? 'ufw-remove' : 'ufw-converge';
-        $result = ['backend' => $remove ? 'absent' : 'active'];
+        $step = 'ufw-remove';
+        $result = ['backend' => 'absent'];
         app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('firewall.rule', $result));
         $receipt = $executor->run($operation, ['worker' => $worker, 'key' => $step,
             'transport' => 'agent', 'name' => 'firewall.rule', 'input' => [
                 ...Arr::only($operation->input, ['name', 'action', 'source', 'port', 'protocol']),
-                'node_id' => $operation->node_id, 'operation' => $remove ? 'remove' : 'converge',
+                'node_id' => $operation->node_id, 'operation' => 'remove',
             ]], $peerNodeId);
         $executor->step($operation, ['worker' => $worker, 'key' => $step.':finish',
             'name' => $step, 'status' => 'succeeded', 'result' => $receipt], $peerNodeId);

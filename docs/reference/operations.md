@@ -541,7 +541,7 @@ Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns sto
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
-`firewall.allow` starts `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Its Gateway agent-run descriptor and receipt proof are removed. `firewall.deny` and `firewall.remove` retain their previous Swamp path until their own canaries pass. Rollback is a revert PR, which restores both admission and the previous execution contract.
+`firewall.allow` and `firewall.deny` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors and receipt proofs are removed. `firewall.remove` retains its previous Swamp path until its own canary passes. Rollback is a revert PR, which restores both admission and the previous execution contract.
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 

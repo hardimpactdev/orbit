@@ -83,16 +83,16 @@ it('excludes direct intents from discovery claims and heartbeat writes', functio
     $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
 });
 
-it('selects direct allow on the proven Node and retains unconverted kinds', function (): void {
+it('selects direct allow and deny on the proven Node and retains remove', function (): void {
     expect(app(DirectOperation::class)->writer('firewall.allow', [], 209))->toBe('direct');
-    foreach (['firewall.deny', 'firewall.remove'] as $kind) {
-        expect(app(DirectOperation::class)->writer($kind, [], 209))->toBe('polled');
-    }
+    expect(app(DirectOperation::class)->writer('firewall.deny', [], 209))->toBe('direct');
+    expect(app(OperationKinds::class)->directOnly('firewall.deny'))->toBeTrue();
+    expect(app(DirectOperation::class)->writer('firewall.remove', [], 209))->toBe('polled');
     expect(app(OperationKinds::class)->directOnly('firewall.allow'))->toBeTrue();
     $this->operation->update(['state' => []]);
     config(['swamp.direct_writers' => ['firewall.allow' => 'direct']]);
     expect(DirectOperation::owns($this->operation))->toBeFalse();
-    expect(app(DirectOperation::class)->writer('firewall.deny'))->toBe('polled');
+    expect(app(DirectOperation::class)->writer('firewall.deny', [], 209))->toBe('direct');
     $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
 });
 
