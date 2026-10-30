@@ -1,5 +1,6 @@
 /** Runs the real family workflows against a PHP test's in-memory Gateway through JSON lines. */
 import { routes } from "./mod.ts";
+import { publication } from "./publication.ts";
 import { certificates } from "../certificates/mod.ts";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import type { Context } from "../../operation-runner/mod.ts";
@@ -41,10 +42,37 @@ const ctx = Object.assign(context, {
   },
 }) as Context;
 while (true) {
-  const args = read() as { kind: string; worker: string; foreign?: boolean };
+  const args = read() as {
+    kind: string;
+    worker: string;
+    foreign?: boolean;
+    direct?: boolean;
+    operation_id: number;
+    node_id: number;
+    run_id: string;
+  };
   try {
     let result: unknown;
-    if (args.foreign) {
+    if (
+      args.direct === true
+    ) {
+      try {
+        result = await publication(() => http).methods.publish.execute(
+          args as Parameters<
+            ReturnType<typeof publication>["methods"]["publish"]["execute"]
+          >[0],
+          ctx,
+        );
+      } catch (error) {
+        const response = await http(
+          "GET",
+          `/api/v1/route-publications/${args.operation_id}?run_id=${args.run_id}`,
+        );
+        const op = (response.body as { data: { status: string } }).data;
+        if (!["failed", "cancelled"].includes(op.status)) throw error;
+        result = { status: op.status };
+      }
+    } else if (args.foreign) {
       const response = await http(
         "POST",
         "/api/v1/operation-executor/claim",

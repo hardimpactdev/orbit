@@ -1,0 +1,27 @@
+id: 2cd61bc8-5189-4365-b79d-41c614fac8a1
+name: operation-route-publication
+description: Publish one admitted Route Node directly, without discovery or claims.
+labels: { pool: migration }
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: {
+      type: string,
+      enum: [route.caddy_converge, route.private_dns_publish],
+    }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: publication
+    steps:
+      - name: publish
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/route-publication"
+          behaviorName: '${{ "route-publication-node-" + string(inputs.node_id) }}'
+          methodName: publish
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
