@@ -240,3 +240,50 @@ fn clears_a_failed_start_limit_before_nonblocking_start() {
         ]
     );
 }
+
+#[test]
+fn rehomes_only_the_empty_root_owned_legacy_cache() {
+    let (_work, mut files, _input, account, _host) = fixture();
+    let path = files.path(ROOT);
+    fs::create_dir(&path).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    let status = std::process::Command::new("/usr/bin/sudo")
+        .args(["-n", "/usr/bin/chown", "0:0"])
+        .arg(&path)
+        .status()
+        .unwrap();
+    if !status.success() {
+        eprintln!(
+            "root-owned fixture needs passwordless sudo; normal ownership cases remain covered"
+        );
+        return;
+    }
+    files.uid = 0;
+    files.gid = 0;
+    private_dir(&files, ROOT, account.uid, account.gid).unwrap();
+    let meta = fs::symlink_metadata(&path).unwrap();
+    assert_eq!(meta.uid(), account.uid);
+    assert_eq!(meta.mode() & 0o777, 0o700);
+}
+
+#[test]
+fn refuses_nonempty_legacy_cache_and_linked_cache_without_removing_data() {
+    for linked in [false, true] {
+        let (_work, files, _input, account, _host) = fixture();
+        let path = files.path(ROOT);
+        let data = files.path("var/lib/existing");
+        fs::create_dir(&data).unwrap();
+        fs::write(data.join("preserved"), "existing data").unwrap();
+        if linked {
+            symlink(&data, &path).unwrap();
+        } else {
+            fs::rename(&data, &path).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(private_dir(&files, ROOT, account.uid, account.gid).is_err());
+        assert_eq!(
+            fs::read_to_string(path.join("preserved")).unwrap(),
+            "existing data"
+        );
+    }
+}

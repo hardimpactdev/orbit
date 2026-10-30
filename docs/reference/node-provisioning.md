@@ -775,3 +775,7 @@ Cross-family child enrollment uses the internal `ProvisionNodeData` field names.
 Every hub render excludes Nodes in `Removing` state, including concurrent enrollment and retained synchronous renders. Rollback restores the prior state before restoring hub membership. Swamp enrollment, removal and restoration omit network projections on Services and configured executor workers; admission also refuses such targets if an admitted plan tries to use them.
 
 Enrollment, removal and restoration publish private DNS only on an active Node with an active VPN assignment. Gateway-only Nodes receive no DNS footprint or publication child. Role convergence uses the same owner selection. Saved footprint listener runs refuse a target without an active VPN role.
+
+If the existing worker cache is empty, owned by root and mode `0755`, converge
+replaces it with a private `0700` cache for the configured Node user. It refuses
+a nonempty cache owned by root or a symlink. Credential ownership stays the same.

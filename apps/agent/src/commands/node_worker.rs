@@ -39,7 +39,16 @@ fn owned_file(files: &Files, path: &str, mode: u32) -> Result<(), Error> {
     Ok(())
 }
 fn private_dir(files: &Files, path: &str, uid: u32, gid: u32) -> Result<(), Error> {
+    let cache = path == ROOT;
     let path = files.path(path);
+    if cache
+        && fs::symlink_metadata(&path).is_ok_and(|m| {
+            m.is_dir() && m.uid() == files.uid && m.gid() == files.gid && m.mode() & 0o7777 == 0o755
+        })
+    {
+        // Retire only the empty root-owned directory left by the earlier worker setup.
+        fs::remove_dir(&path).map_err(|_| invalid())?;
+    }
     files.directory(&path, uid, gid).map_err(|_| invalid())?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|_| failed())
 }
