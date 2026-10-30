@@ -178,6 +178,7 @@ for (const verb of ["create", "start", "stop", "hard_stop", "delete"]) {
 }
 for (
   const [verb, action] of Object.entries({
+    lifecycle_intent: "intent",
     prepare_enrollment: "prepare-enrollment",
     enroll_node: "enroll",
     confirm_stopped: "stopped",

@@ -5,21 +5,6 @@ export async function fixtureHttp(
   body?: unknown,
 ) {
   const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
-  if (path.startsWith(`/api/v1/direct-operations/${state.operation.id}`)) {
-    state.directCalls = [...(state.directCalls ?? []), { method, path }];
-    if (method === "POST") {
-      const result = body as Record<string, unknown>;
-      state.operation.status = result.status;
-      state.operation.result = result.result ?? null;
-      if (state.loseDirectReply && result.status === "succeeded") {
-        state.loseDirectReply = false;
-        await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
-        throw new Error("Lost direct completion reply");
-      }
-    }
-    await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
-    return { status: 200, body: { data: state.operation } };
-  }
   if (state.child && path === `/api/v1/operations/${state.child.id}`) {
     return { status: 200, body: { data: state.child } };
   }
@@ -45,8 +30,6 @@ export async function fixtureHttp(
     };
   }
   if (path.endsWith("/claimable")) {
-    state.discoveryCalls = (state.discoveryCalls ?? 0) + 1;
-    await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
     if (method !== "GET" || body !== undefined) {
       throw new Error("Discovery must be a read");
     }
