@@ -130,6 +130,30 @@ export class GatewayOperation {
   project(body: Record<string, unknown>) {
     return this.call("POST", "/result", { ...body, run_id: this.args.run_id });
   }
+  /** Private bytes are callback-local; native arguments/resources must stay secret-free. */
+  async withPrivateMaterial(
+    use: (material: Result) => Promise<void>,
+  ): Promise<void> {
+    try {
+      const material = DirectResult.parse(
+        await this.call("GET", `/private-material?run_id=${this.args.run_id}`),
+      );
+      await use(material);
+    } catch {
+      // A fetch/schema/callback error can contain private material. Never forward its text.
+      throw new Error("Private material callback failed");
+    }
+  }
+  async storeSecretOutput(outputs: Result): Promise<void> {
+    try {
+      await this.call("POST", "/secret-output", {
+        run_id: this.args.run_id,
+        outputs,
+      });
+    } catch {
+      throw new Error("Private output write failed");
+    }
+  }
   primitive() {
     return this.call("POST", "/primitive", { run_id: this.args.run_id });
   }

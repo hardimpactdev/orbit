@@ -1,0 +1,21 @@
+id: 75332543-410b-4c2a-a798-0772fa7ae42f
+name: private-material-proof
+vaults: []
+inputs:
+  properties:
+    failure: { type: boolean }
+    attack: { type: string }
+  required: [failure, attack]
+jobs:
+  - name: private
+    steps:
+      - name: transport
+        task:
+          type: behavior
+          behaviorType: "@fixture/private-material"
+          behaviorName: "private-material-proof"
+          methodName: apply
+          inputs:
+            failure: "${{ inputs.failure }}"
+            attack: "${{ inputs.attack }}"
+            run_id: "${{ run.id }}"
