@@ -112,3 +112,7 @@ The native runtime merges global arguments into method arguments. Lifecycle meth
 accept the declared `gatewayUrl` and `caFile` alongside their method input, while
 rejecting undeclared keys. Both enrollment and the scheduled rotation planner use
 this boundary before reaching any token or Gateway effect.
+
+Enrollment checks the public Operation `kind`, `target_type: node` and
+`target_id` against the selected Node on admission and each status read. The
+public Operation API does not expose a `node_id` field.

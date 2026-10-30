@@ -79,9 +79,10 @@ const Node = z.object({
 const Intent = z.object({
   id: z.number().int().positive(),
   kind: z.literal("node.converge"),
-  node_id: z.number().int().positive(),
+  target_type: z.literal("node"),
+  target_id: z.number().int().positive(),
   status: z.string(),
-  poll_after_seconds: z.number().optional(),
+  poll_after_seconds: z.number().nullish(),
 }).passthrough();
 async function data(
   http: Http,
@@ -141,9 +142,10 @@ export async function convergeWorker(
       },
     }, `node-worker-${node.id}-${crypto.randomUUID()}`),
   );
-  if (intent.node_id !== node.id) {
+  if (intent.target_id !== node.id) {
     throw new Error("Node converge target changed");
   }
+  const operationId = intent.id;
   while (!["succeeded", "failed", "cancelled"].includes(intent.status)) {
     signal?.throwIfAborted();
     await new Promise<void>((resolve, reject) => {
@@ -158,9 +160,9 @@ export async function convergeWorker(
       signal?.addEventListener("abort", abort, { once: true });
     });
     intent = Intent.parse(
-      await data(http, "GET", `/api/v1/operations/${intent.id}`),
+      await data(http, "GET", `/api/v1/operations/${operationId}`),
     );
-    if (intent.node_id !== node.id) {
+    if (intent.id !== operationId || intent.target_id !== node.id) {
       throw new Error("Node converge target changed");
     }
   }
@@ -188,7 +190,7 @@ type Context = {
 };
 export const behavior = {
   type: "@nckrtl/node-worker-lifecycle",
-  version: "2026.10.30.2",
+  version: "2026.10.30.3",
   globalArguments: Globals,
   resources: {
     work: {

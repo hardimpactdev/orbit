@@ -107,8 +107,10 @@ Deno.test("rotation and failed-delivery recovery mint through native commands an
         data: {
           id: 12,
           kind: "node.converge",
-          node_id: 9,
+          target_type: "node",
+          target_id: 9,
           status: "succeeded",
+          poll_after_seconds: null,
         },
       },
     };
@@ -211,4 +213,107 @@ Deno.test("native merged globals reach lifecycle methods without allowing unknow
       .success,
     false,
   );
+});
+
+Deno.test("public Operation target is enforced on admission and status reads", async () => {
+  for (const poll of [false, true]) {
+    const native: Native = async (args) => {
+      if (args[2] === "create") {
+        return { token: "orbit-node-9.abcdefghijklmnop" };
+      }
+      if (args[2] === "reveal") {
+        return { token: "orbit-node-9-access.abcdefghijklmnop" };
+      }
+      return [];
+    };
+    const http: Http = async (method, path) => {
+      if (path === "/api/v1/nodes/9") {
+        return {
+          status: 200,
+          body: {
+            data: {
+              id: 9,
+              user: "nckrtl",
+              status: "active",
+              platform: "linux",
+              swamp_worker_selected: true,
+            },
+          },
+        };
+      }
+      return {
+        status: method === "POST" ? 202 : 200,
+        body: {
+          data: {
+            id: 12,
+            kind: "node.converge",
+            target_type: "node",
+            target_id: poll && method === "POST" ? 9 : 13,
+            node_id: 9,
+            status: poll && method === "POST" ? "queued" : "succeeded",
+          },
+        },
+      };
+    };
+    await assertRejects(
+      () => convergeWorker({ node_id: 9 }, http, native),
+      Error,
+      "Node converge target changed",
+    );
+  }
+});
+
+Deno.test("public queued convergence accepts terminal null polling and retains operation identity", async () => {
+  for (const foreign of [false, true]) {
+    const native: Native = async (args) => {
+      if (args[2] === "create") {
+        return { token: "orbit-node-9.abcdefghijklmnop" };
+      }
+      if (args[2] === "reveal") {
+        return { token: "orbit-node-9-access.abcdefghijklmnop" };
+      }
+      return [];
+    };
+    const http: Http = async (method, path) => {
+      if (path === "/api/v1/nodes/9") {
+        return {
+          status: 200,
+          body: {
+            data: {
+              id: 9,
+              user: "nckrtl",
+              status: "active",
+              platform: "linux",
+              swamp_worker_selected: true,
+            },
+          },
+        };
+      }
+      if (method === "GET") assertEquals(path, "/api/v1/operations/12");
+      return {
+        status: method === "POST" ? 202 : 200,
+        body: {
+          data: {
+            id: foreign && method === "GET" ? 13 : 12,
+            kind: "node.converge",
+            target_type: "node",
+            target_id: 9,
+            status: method === "POST" ? "queued" : "succeeded",
+            poll_after_seconds: method === "POST" ? 0 : null,
+          },
+        },
+      };
+    };
+    if (foreign) {
+      await assertRejects(
+        () => convergeWorker({ node_id: 9 }, http, native),
+        Error,
+        "Node converge target changed",
+      );
+    } else {assertEquals(await convergeWorker({ node_id: 9 }, http, native), {
+        node_id: 9,
+        user: "nckrtl",
+        operation_id: 12,
+      });}
+  }
 });
