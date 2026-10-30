@@ -301,8 +301,4 @@ Running operations still get bounded polls; unknown failures remain retryable.
 The per-group ensure method also checks terminal factory state, so a delayed or
 manual supervisor cannot start a successor after completion.
 
-Driver resources retain one current version (plus one hour online to protect
-in-progress publication). A separate bounded native pruner runs every five minutes. Compaction additionally preserves
-exact versions and workflow runs reachable from live receipts and unfinished
-workflow records. See [Services compaction](services-compaction.md). No factory
-state, operation key, approval or effect receipt is reset.
+Driver resources use their declared native version policies. Swamp collects superseded versions and retains 30 days of finished history; unfinished native runs remain protected by Swamp. Historical output artifact handles do not pin every old version forever. See [native retention](native-retention.md). Current factory state, approvals and completion content remain retained resources.

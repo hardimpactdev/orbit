@@ -38,7 +38,7 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
         self.assertEqual(horizon['jobs'][1]['target'], '${{ inputs.worker }}')
         self.assertEqual(horizon['jobs'][1]['labels'], {})
         for name in ('groups-driver', 'subtasks-driver', 'maintenance-workers',
-                     'runtime-retention', 'dependency-results-prune'):
+                     'dependency-results-prune'):
             path = REPO / f'workflows/workflow-{name}.yaml'
             workflow = yaml.safe_load(path.read_text())
             self.assertNotIn('labels', workflow, name)
