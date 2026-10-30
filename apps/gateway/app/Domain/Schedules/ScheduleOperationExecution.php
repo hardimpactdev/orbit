@@ -22,7 +22,6 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
     {
         return match ($verb) {
             'create' => ['id', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'command', 'calendar', 'timeout_seconds', 'desired'],
-            'destroy' => ['id', 'group', 'cascade'],
             'enable' => ['id', 'user', 'working_directory'],
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Schedule action.', 422),
         };
@@ -32,7 +31,7 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
     {
         $verb = substr($operation->kind, strlen('schedule.'));
         $command = match ($verb) {
-            'create' => 'install', 'destroy' => 'remove', 'enable' => 'activate',
+            'create' => 'install', 'enable' => 'activate',
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Schedule action.', 422),
         };
         $key = 'schedule-'.$command;
@@ -56,7 +55,6 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
         }
         $target = match ($operation->kind) {
             'schedule.create' => app(ScheduleTargetResolver::class)->forInstallation($schedule),
-            'schedule.destroy' => app(ScheduleTargetResolver::class)->forRemoval($schedule),
             default => app(ScheduleTargetResolver::class)->forSchedule($schedule),
         };
         app(ScheduleSwampSafety::class)->assertAllowed($target->node);

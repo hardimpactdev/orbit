@@ -13,7 +13,7 @@ return (static function (): array {
         return [];
     }
     $kinds = [];
-    foreach (['create' => 'install', 'destroy' => 'remove', 'enable' => 'activate'] as $verb => $command) {
+    foreach (['create' => 'install', 'enable' => 'activate'] as $verb => $command) {
         $fields = ScheduleOperationExecution::fields($verb);
         $run = ['transport' => 'agent', 'name' => 'schedule.'.$command, 'resumable' => true, 'input_fields' => $fields, 'input_values' => []];
         if ($verb === 'create') {
@@ -24,6 +24,9 @@ return (static function (): array {
             'completion_contract' => ['step' => 'schedule-'.$command, 'transport' => 'agent', 'name' => 'schedule.'.$command, 'result' => []],
             'result_fields' => ['error_code']];
     }
+
+    $kinds['schedule.destroy'] = ['executor' => 'swamp', 'admission' => ScheduleRuntimeChildAdmission::class,
+        'result_fields' => ['ready', 'error_code']];
 
     $kinds['schedule.run'] = ['executor' => 'swamp', 'completion' => ScheduleOperationCompletion::class, 'runs' => [],
         'completion_contract' => ['step' => 'schedule-control', 'transport' => 'agent', 'name' => 'schedule.run', 'result' => []],
