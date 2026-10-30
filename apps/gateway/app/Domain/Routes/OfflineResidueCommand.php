@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -88,7 +87,7 @@ final readonly class OfflineResidueCommand implements OperationGatewayCommand
                 }
             }
         }
-        if ($node->roles->contains(static fn ($role): bool => in_array($role->role, [RoleName::Vpn, RoleName::Gateway], true))) {
+        if (PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()) {
             $plan['dns'] = ['records' => $this->dns->render(), 'catalog' => json_encode(['requesters' => $this->dns->registeredRequesters(), ...$this->dns->catalog()->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n"];
             $plan['removed'][] = 'private-dns-residue';
         }
