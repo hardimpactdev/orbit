@@ -37,6 +37,7 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
         }
 
         return match ($input['action'] ?? null) {
+            'intent' => ['ready' => true],
             'prepare-enrollment' => app(PrepareTaskVmEnrollmentAction::class)->execute($operation, $vm),
             'enroll' => $this->enroll($operation, $vm),
             'stopped' => $this->stopped($vm),

@@ -138,10 +138,10 @@ final class TaskVmCommandContracts
     /** @return array<string, array<string, mixed>> */
     public static function lifecycleKinds(): array
     {
-        $kinds = ['task_vm.lifecycle_intent' => ['executor' => 'swamp', 'result_fields' => ['ready']]];
+        $kinds = [];
         $schema = static fn (string $action): array => ['type' => 'object', 'additionalProperties' => false,
             'required' => ['action', 'task_vm_id'], 'properties' => ['action' => ['const' => $action], 'task_vm_id' => ['type' => 'integer', 'minimum' => 1]]];
-        foreach (['prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
+        foreach (['lifecycle_intent' => 'intent', 'prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
             $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
                 'runs' => [['transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'input_fields' => ['task_vm_id'],
                     'input_values' => ['action' => $action], 'input_schema' => $schema($action)]],
