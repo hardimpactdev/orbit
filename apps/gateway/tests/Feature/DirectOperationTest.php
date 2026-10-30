@@ -49,13 +49,13 @@ it('rejects undeclared and previous-writer intents before opening a native conne
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
-    foreach ([['kind' => 'tool.install'], ['kind' => 'route.caddy_converge', 'state' => []]] as $changes) {
+    foreach ([['kind' => 'unknown.intent'], ['kind' => 'route.caddy_converge', 'state' => []]] as $changes) {
         $this->operation->update($changes);
         expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     }
     expect($socket->sent)->toBe([]);
     expect($socket->endpoint)->toBeNull();
-    expect(app(DirectOperation::class)->writer('tool.install'))->toBeNull();
+    expect(app(DirectOperation::class)->writer('unknown.intent'))->toBeNull();
 });
 
 it('fails closed without a configured scoped credential before sending intent', function (): void {

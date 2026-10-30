@@ -469,6 +469,12 @@ An admitted Tool Operation holds `node_tools:<node id>` until it ends. This seri
 
 The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`, including a `failed` install that never placed the package. A normalized version that violates the stored constraint reports `tool.version_mismatch`. An unconstrained Tool needs only to be installed; the recorded version is the last operation's result, not desired intent. The report never contains raw dpkg output. Those drift issues use the Tool id as `resource_id` and leave `resource_name` null. Unregistered discoveries are a separate informational kind. They do not replace these drift checks.
 
+## Direct Swamp execution
+
+Tools declares `tool.install`, `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge` on the [shared direct Operation boundary](/reference/operations#direct-swamp-starts). `ORBIT_SWAMP_DIRECT_WRITERS` is a JSON map keyed by exact kind and defaults to `{}`. An absent entry keeps the previous Swamp writer. A `direct` entry records immutable `tool_writer` state and starts `operation-tool-direct` through `StartSwampRun` with the one `ORBIT_SWAMP_RUN_TOKEN`. The Gateway records safe package, manager, enrolled account and recipe intent; the Node worker executes policy and returns a bounded inventory projection. No Tool relay, family credential or Gateway primitive is declared.
+
+Canary runs use the existing Node 209 `pool=migration` workers and admit only that Node. Fleet takeover waits for exact `orbit-node-<admitted-node-id>` placement on per-Node workers. A stable behavior identity serializes each Node's manager scopes. The Gateway start response binds the root run ID; the first worker read refuses until bound. Root actions wait for the approved shared local privilege API and preserve the worker protections. Keep writers polled until dev/canary proof, then switch one proven kind reversibly. Production success precedes old-path and polling deletion. Legacy parents still using manager child Operations keep `tool.manager_converge` polled until those parents move manager actions into their native DAGs.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
