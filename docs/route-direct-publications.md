@@ -46,8 +46,10 @@ Only proven render or target validation failures expose a bounded stage. Lost
 responses escape to native recovery; there is no custom receipt or retry loop.
 Swamp retains its default locking, concurrency, waits and retention policies.
 
-`ORBIT_ROUTE_CADDY_WRITER` defaults to `direct`; the removed writer refuses
-admission. Rollback is a revert PR. No Caddy Gateway primitive or old
+The four direct Route kinds use `swamp.direct_writers`; the removed writer
+refuses admission. Their discovery entries and Gateway executor contracts are
+deleted. The separate publication writer settings and environment variables are
+removed. Rollback is a revert PR. No Caddy Gateway primitive or old
 `/route-publications` relay remains. Private DNS still uses
 `operation-route-publication` with its existing Gateway primitive and migration
 placement; this Caddy slice does not switch that kind's local execution.
@@ -59,23 +61,3 @@ canary. The same-root contention proof must show lock acquisition -> fresh GET
 builders do not yet share this native model; audit and migrate those callers
 before claiming that every Caddy writer is coordinated. Source/unit tests are
 not a live canary or activation approval.
-
-Before measurement on 2026-10-30, Gateway revision `1acd03bd0a44`:
-
-| Operation | Kind                      | Admission to first start | Attempts | Terminal result    |
-| --------- | ------------------------- | -----------------------: | -------: | ------------------ |
-| 3868      | route.create              |                     51 s |        3 | succeeded          |
-| 3895      | route.private_dns_publish |                    894 s |        3 | succeeded          |
-| 3942      | route.shared_php_withdraw |                    261 s |        2 | succeeded          |
-| 3943      | route.workload_firewall   |                    259 s |        2 | succeeded          |
-| 3978      | route.update              |                     78 s |        1 | waiting at capture |
-
-These records contain no failed Gateway steps. Attempts are claims, not failure
-counts. Operation 3895 also has confirmed Swamp ENOSPC and worker disconnect
-evidence; its DNS effect succeeded and recovery did not repeat publication. Do
-not count an unfinished Operation as a success or infer a target failure from a
-claim count. Evidence is in the operator's
-`swamp-execution/evidence/routes-direct-20261030` directory. After release,
-record admission, native run start, primitive start/end and result projection
-times on Node 209, and classify failures separately as admission, Swamp,
-transport, target primitive or projection.

@@ -3,6 +3,8 @@ import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016
 import { routes } from "./mod.ts";
 import type { Context } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
+import { parse } from "jsr:@std/yaml@1.0.12";
+import registration from "./registration.json" with { type: "json" };
 
 class Fixture {
   kind = "route.offline_residue_clean";
@@ -536,4 +538,19 @@ Deno.test("the polled Route family refuses all four direct-only kinds before any
     await assertRejects(() => f.execute(), Error, "Unregistered family kind");
     assertEquals(f.calls, []);
   }
+});
+
+Deno.test("scheduled Route discovery requests only kinds its executor still supports", async () => {
+  const workflow = parse(
+    await Deno.readTextFile(
+      new URL(
+        "../../../../workflows/workflow-operation-routes.yaml",
+        import.meta.url,
+      ),
+    ),
+  ) as {
+    jobs: { steps: { task: { inputs: { kinds: string[] } } }[] }[];
+  };
+  const requested = workflow.jobs[0].steps[0].task.inputs.kinds;
+  assertEquals([...requested].sort(), [...registration.kinds].sort());
 });
