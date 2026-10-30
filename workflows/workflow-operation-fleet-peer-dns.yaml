@@ -1,0 +1,27 @@
+id: f05d2ee0-5aa7-4271-9924-fda8b65a786d
+name: operation-fleet-peer-dns
+description: Reconcile one directly admitted peer DNS policy on its exact Node worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [fleet.peer_dns] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: node
+    target: '${{ inputs.node_id == 209 ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    writes: true
+    steps:
+      - name: reconcile
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/fleet-peer-dns"
+          behaviorName: '${{ "peer-dns-node-" + string(inputs.node_id) }}'
+          methodName: reconcile
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

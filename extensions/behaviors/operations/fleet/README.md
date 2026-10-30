@@ -12,8 +12,20 @@ keeps that Operation and never claims a different one.
   with `outcome: skipped` and a reason. Other failures remain failed children
   for the parent to acknowledge. The Gateway records foreign binaries only from
   a proven refusal and clears that mark only after a proven install.
-- `fleet.peer_dns` inspects, repairs when needed, and verifies the admitted DNS
-  policy.
+- `fleet.peer_dns` starts directly through `operation-fleet-peer-dns` on the
+  exact `orbit-node-ID` worker, or the existing `swamp209-migration-a` worker
+  only for admitted Node209 intent. Both require the matching Node label. It
+  uses the configured Node user’s sudo to run the pinned local inspector, repair
+  only drift, and verify the admitted policy and usable uplink. The Gateway
+  keeps intent and a bound result, without a claim, execution receipt or target
+  lock. Native behavior serialization owns per-peer concurrency. The scheduled
+  discovery branch and old Gateway run and receipt declarations for this kind
+  are deleted. Its direct-only declaration selects the direct writer by default;
+  an explicit operator polled setting refuses admission because that path is
+  deleted. Rollback is a revert PR. Known agent refusals map to bounded `vpn.*`
+  codes without diagnostics, including unreadable inspection and repair failure
+  before publication. Unknown replies still fail natively without claiming a
+  terminal outcome.
 - `fleet.recipe` applies the deployed recipe, installs pinned PHP, checks
   managed inventory and Doctor, and verifies the exact delivery. Automatic
   visits exclude Incus. Explicit visits keep the drained-host preflight. The
@@ -31,7 +43,8 @@ keeps that Operation and never claims a different one.
   the shared `/wait` primitive. The Gateway reads proven child results for Caddy
   skips.
 
-Both Fleet workflows run on the `migration` worker pool on Node 209. The family
+The retained discovery and maintenance workflows run on the `migration` worker
+pool on Node 209; direct peer DNS runs on its own Node worker. The family
 executor has a 60-second queue timeout and claims a bounded batch each
 one-minute tick; maintenance retains its 300-second queue timeout. Each family
 reads its own claimable summary on the configured orchestrator Node. Native

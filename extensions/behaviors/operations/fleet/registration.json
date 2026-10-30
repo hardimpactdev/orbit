@@ -1,6 +1,5 @@
 {
   "kinds": [
-    "fleet.peer_dns",
     "fleet.recipe",
     "fleet.rollout",
     "fleet.recipe_pr",

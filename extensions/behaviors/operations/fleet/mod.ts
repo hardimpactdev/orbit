@@ -13,12 +13,7 @@ import {
   Globals,
   Operation,
 } from "../../operation-runner/mod.ts";
-import {
-  Completion,
-  Inspection,
-  matchesPolicy,
-  PeerDnsInput,
-} from "./contract.ts";
+import { Completion } from "./contract.ts";
 
 export function fleet(
   makeHttp = (ctx: Context) =>
@@ -90,7 +85,6 @@ export function fleet(
           "Reconcile the admitted peer DNS policy and prove the result",
         arguments: z.object({
           kind: z.enum([
-            "fleet.peer_dns",
             "fleet.recipe",
             "fleet.rollout",
             "fleet.recipe_pr",
@@ -418,124 +412,7 @@ export function fleet(
               await post("complete", completion);
               return { dataHandles: [handle], status: completion.status };
             }
-            if (operation.kind !== "fleet.peer_dns") {
-              throw new Error("Wrong fleet kind");
-            }
-            const input = PeerDnsInput.parse(operation.input);
-            const run = async (
-              key: string,
-              name: string,
-              commandInput: Record<string, unknown>,
-            ) => {
-              return z.record(z.string(), z.unknown()).parse(
-                await post("run", {
-                  key,
-                  transport: "agent",
-                  name,
-                  input: commandInput,
-                }),
-              );
-            };
-            const step = async (
-              name: string,
-              result: Record<string, unknown>,
-              error: string | null,
-            ) => {
-              await post("step", {
-                key: `${name}:finish`,
-                name,
-                status: error ? "failed" : "succeeded",
-                result,
-                error_code: error,
-              });
-            };
-            let completion: z.infer<typeof Completion>;
-            const proven = operation.step_results["peer-dns-verify"];
-            const failed = operation.steps.find((s) => s.status === "failed");
-            if (failed) {
-              const code = failed.error_code ?? "vpn.peer_dns_reconcile_failed";
-              completion = {
-                status: code === "operation.cancelled" ? "cancelled" : "failed",
-                result: {},
-                error_code: code,
-              };
-            } else if (proven) {
-              completion = {
-                status: "succeeded",
-                result: z.record(z.string(), z.unknown()).parse(proven),
-                error_code: null,
-              };
-            } else if (
-              operation.cancel_requested && operation.steps.length === 0
-            ) {
-              completion = {
-                status: "cancelled",
-                result: {},
-                error_code: null,
-              };
-            } else {
-              await post("step", {
-                key: "peer-dns-verify:start",
-                name: "peer-dns-verify",
-                status: "running",
-              });
-              let result = await run(
-                "peer-dns-inspect",
-                "wireguard.inspect-peer-dns",
-                { server: input.server },
-              );
-              let error = typeof result.error_code === "string"
-                ? result.error_code
-                : null;
-              if (!error && !matchesPolicy(input, Inspection.parse(result))) {
-                const repair = await run(
-                  "peer-dns-repair",
-                  "wireguard.repair-peer-dns",
-                  {
-                    dns_server: input.dns_server,
-                    public_key: input.public_key,
-                    domains: input.domains,
-                  },
-                );
-                error = typeof repair.error_code === "string"
-                  ? repair.error_code
-                  : null;
-                if (error) result = repair;
-                else {result = await run(
-                    "peer-dns-verify",
-                    "wireguard.inspect-peer-dns",
-                    { server: input.server },
-                  );}
-              }
-              error ??= typeof result.error_code === "string"
-                ? result.error_code
-                : null;
-              if (!error) {
-                const inspection = Inspection.parse(result);
-                error = !inspection.uplink
-                  ? "vpn.peer_dns_uplink_missing"
-                  : !matchesPolicy(input, inspection)
-                  ? "vpn.peer_dns_reconcile_failed"
-                  : null;
-              }
-              await step("peer-dns-verify", result, error);
-              completion = {
-                status: error === "operation.cancelled"
-                  ? "cancelled"
-                  : error
-                  ? "failed"
-                  : "succeeded",
-                result,
-                error_code: error,
-              };
-            }
-            const handle = await ctx.writeResource(
-              "receipt",
-              resource,
-              completion,
-            );
-            await post("complete", completion);
-            return { dataHandles: [handle], status: completion.status };
+            throw new Error("Wrong fleet kind");
           } catch (error) {
             if (
               operation.kind === "fleet.cli_converge" &&
