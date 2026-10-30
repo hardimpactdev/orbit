@@ -640,7 +640,11 @@ describe('optional provision worker', function (): void {
         expect($vm->refresh()->state)->toBe(TaskVmState::Destroying);
         expect(Instance::query()->find($workspace->id))->toBeNull();
         expect($group->refresh()->taskable_id)->toBeNull();
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+        $destroy = Operation::query()->where('kind', 'task_vm.destroy')->sole();
+        expect($destroy->target_id)->toBe($vm->id)
+            ->and($destroy->status)->toBe(OperationStatus::Queued)
+            ->and(Node::query()->whereKey($node->id)->exists())->toBeTrue();
+        Queue::assertNotPushed(DestroyTaskVm::class);
     });
     it('clears staged enrollment when a waiting provision is cancelled', function (): void {
         $group = provision_operation_group();
@@ -951,7 +955,7 @@ it('clears cancelled worker enrollment without starting a worker', function (): 
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });
 
-it('stops the worker before a destroy job waits for unpublished reviewed work', function (): void {
+it('leaves worker stop and preservation to Swamp when admitting VM destruction', function (): void {
     [$group, $vm] = worker_operation_workspace();
     $vm->update(['worker_stop_required' => true]);
     $group->update(['status' => TaskGroupStatus::Completed]);
@@ -964,11 +968,12 @@ it('stops the worker before a destroy job waits for unpublished reviewed work', 
 
     app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-    expect($agents->commands())->toBe(['swamp.stop-worker']);
-    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($agents->commands())->toBe([]);
+    expect($vm->fresh()->worker_stop_required)->toBeTrue();
     expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
     expect($group->fresh()->taskable_id)->not->toBeNull();
-    expect($provider->calls)->toBe(['observe']);
+    expect($provider->calls)->toBe([]);
+    expect(Operation::query()->where('kind', 'task_vm.destroy')->sole()->status)->toBe(OperationStatus::Queued);
 });
 
 it('treats raw-token staged credentials as missing without logging their prefix', function (): void {
