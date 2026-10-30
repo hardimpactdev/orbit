@@ -96,9 +96,6 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
         } elseif ($command === 'incus.build-topology-seed') {
             $valid = $input['project'] === $host->project && $input['pool'] === $host->pool && $input['vm'] === $name.'-smoke'
                 && $input['fingerprint'] === $fingerprint && $input['size'] === TaskVmVolumes::SeedSize;
-        } elseif ($command === 'incus.volume') {
-            $valid = $input['location'] === ['project' => $host->project, 'pool' => $host->pool]
-                && $input['operation'] === ['kind' => 'finish_seed', 'fingerprint' => $fingerprint];
         }
         if (! $valid) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The host effect does not match this image attempt.', 422);

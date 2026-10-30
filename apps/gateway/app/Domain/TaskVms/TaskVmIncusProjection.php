@@ -6,27 +6,55 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
 use App\Models\Operation;
+use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 /** Safe admitted Node input and bounded result projection; no execution. */
 final readonly class TaskVmIncusProjection implements DirectOperationProjection
 {
     public const array Kinds = ['task_vm.incus_create', 'task_vm.incus_start', 'task_vm.incus_stop', 'task_vm.incus_delete'];
 
+    /** @param array<string,mixed> $input
+     * @return array<string,mixed>
+     */
+    public function admitSeed(int $buildId, int $nodeId, array $input): array
+    {
+        $build = TaskVmImageBuild::query()->findOrFail($buildId);
+        $host = app(TaskVmSettings::class)->host($build->host_node_id);
+        $fingerprint = $build->images['base']['fingerprint'] ?? null;
+        if ($nodeId !== $build->host_node_id || ($input['build_id'] ?? null) !== $build->id
+            || ($input['attempt'] ?? null) !== $build->attempt || $build->state !== TaskVmImageBuildState::Running
+            || $build->cleanup_started_at !== null || ($input['phase'] ?? null) !== 'topology-seed'
+            || ($input['effect_key'] ?? null) !== 'finish-seed'
+            || ! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1
+            || ($input['location'] ?? null) !== ['project' => $host->project, 'pool' => $host->pool]
+            || ($input['operation'] ?? null) !== ['kind' => 'finish_seed', 'fingerprint' => $fingerprint]) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The seed must belong to this active image attempt.', 422);
+        }
+        app(RecipeImageBuildSteps::class)->assertCurrent($build);
+
+        return [...$input, 'agent_sha256' => app(AgentDelivery::class)->pin($build->hostNode)];
+    }
+
     public function input(Operation $operation): array
     {
         $pin = $operation->input['agent_sha256'] ?? null;
-        if (! in_array($operation->kind, self::Kinds, true) || $operation->target_type !== 'task_vm'
-            || $operation->node_id === null || ($operation->input['task_vm_id'] ?? null) !== $operation->target_id
+        $seed = $operation->kind === 'task_vm.image_finish_seed';
+        if ((! $seed && ! in_array($operation->kind, self::Kinds, true)) || $operation->target_type !== ($seed ? 'task_vm_image' : 'task_vm')
+            || $operation->node_id === null || ($operation->input[$seed ? 'build_id' : 'task_vm_id'] ?? null) !== $operation->target_id
             || ! is_string($pin) || preg_match('/\A[a-f0-9]{64}\z/D', $pin) !== 1) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Incus intent has no admitted VM and agent digest.', 422);
         }
 
-        return ['agent_sha256' => $pin, 'intent' => Arr::only($operation->input, ['task_vm_id', 'vm', 'operation'])];
+        return ['agent_sha256' => $pin, 'intent' => Arr::only($operation->input, $seed ? ['build_id', 'attempt', 'location', 'operation'] : ['task_vm_id', 'vm', 'operation'])];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -45,6 +73,14 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             throw new ResourceOperationException('operation.result_invalid', 'The Incus action needs a bounded successful result or refusal.', 422);
         }
 
-        return app(DirectOperation::class)->project($operation, $data, $result, str_replace('_', '-', substr($operation->kind, strlen('task_vm.'))));
+        return DB::transaction(function () use ($operation, $data, $result, $status): Operation {
+            $terminal = $operation->refresh()->status->terminal();
+            $projected = app(DirectOperation::class)->project($operation, $data, $result, str_replace('_', '-', substr($operation->kind, strlen('task_vm.'))));
+            if (! $terminal && $operation->kind === 'task_vm.image_finish_seed' && $status === OperationStatus::Succeeded) {
+                app(TaskVmImageEffectCompletion::class)->complete($projected, OperationOutcome::succeeded($result));
+            }
+
+            return $projected;
+        });
     }
 }
