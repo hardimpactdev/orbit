@@ -105,7 +105,6 @@ export function invocation(
       "websocket.app_create",
       "websocket.app_destroy",
       "websocket.app_rotate",
-      "websocket.sync",
     ].includes(kind)
   ) {
     const identity = z.string().uuid().parse(input.registry_operation_id);

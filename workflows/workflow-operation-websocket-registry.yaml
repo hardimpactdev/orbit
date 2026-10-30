@@ -1,0 +1,29 @@
+id: 52388dd6-34fb-43c3-b25b-936f56e96bec
+name: operation-websocket-registry
+description: Confirm an admitted WebSocket registry change through current Reverb reports.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind:
+      type: string
+      enum: [websocket.sync]
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: registry
+    target: swamp209-migration-a
+    labels: { node: "209" }
+    writes: true
+    steps:
+      - name: confirm
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/websocket-registry"
+          behaviorName: '${{ "websocket-registry-node-" + string(inputs.node_id) }}'
+          methodName: confirm
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

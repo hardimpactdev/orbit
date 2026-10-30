@@ -662,7 +662,7 @@ Deno.test("Vault failed collection deletion or write cannot complete as a succes
 });
 
 Deno.test("all registry mutations use only the admitted read probe and preserve it after a lost reply", async () => {
-  for (const verb of ["app_create", "app_destroy", "app_rotate", "sync"]) {
+  for (const verb of ["app_create", "app_destroy", "app_rotate"]) {
     const f = new Fixture();
     f.operation.kind = `websocket.${verb}`;
     f.operation.input = {

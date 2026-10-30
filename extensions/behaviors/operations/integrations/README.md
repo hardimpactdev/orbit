@@ -92,12 +92,16 @@ Reconciliation keeps Metrics publication in place: it does no certificate or
 private DNS work. Retained Gateway callers keep their synchronous fleet
 implementation.
 
-Registry app create, destroy, rotate and sync use only
-`websocket.registry-applied` on the Operation's Gateway Node. The probe reads
-the saved registry UUID and waits for the existing periodic Reverb
-reconciliation. It never restarts Reverb or loads app secrets. A completed
-pending probe gets a new read key on re-entry. A lost reply recovers the same
-keyed receipt; a superseded revision fails with `websocket.registry_superseded`.
-Cancellation stops observation and leaves the already committed registry intent
-in place. The Gateway checks all current required process boots again at
-completion.
+Registry app create, destroy and rotate use only `websocket.registry-applied` on
+the Operation's Gateway Node. The probe reads the saved registry UUID and waits
+for the existing periodic Reverb reconciliation. It never restarts Reverb or
+loads app secrets. A completed pending probe gets a new read key on re-entry. A
+lost reply recovers the same keyed receipt; a superseded revision fails with
+`websocket.registry_superseded`. Cancellation stops observation and leaves the
+already committed registry intent in place. The Gateway checks all current
+required process boots again at completion.
+
+`websocket.sync` uses the direct `operation-websocket-registry` workflow; its
+Gateway run/receipt path and this driver’s sync registration are removed
+together. The shared control-plane peer observes current boot reports without an
+agent or Node-local effect.

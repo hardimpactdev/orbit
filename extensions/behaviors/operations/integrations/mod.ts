@@ -398,7 +398,6 @@ async function finish(
         "websocket.app_create",
         "websocket.app_destroy",
         "websocket.app_rotate",
-        "websocket.sync",
       ].includes(operation.kind)
     ) {
       throw error;

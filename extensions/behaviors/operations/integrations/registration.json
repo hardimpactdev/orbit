@@ -10,7 +10,6 @@
     "websocket.app_create",
     "websocket.app_destroy",
     "websocket.app_rotate",
-    "websocket.sync",
     "conn.pairing_create",
     "conn.pairing_revoke",
     "ai_router.setup",
