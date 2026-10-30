@@ -9,41 +9,22 @@ use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Instances\ProductionApplicationPaths;
-use App\Models\Instance;
 use App\Models\Operation;
 
 /** The Route parent owns the pending web root; the Node prepares its selected release. */
 final readonly class InstanceServedWebRootsExecution implements OperationCompletion, OperationFamilyExecution
 {
-    public function __construct(private InstanceRouteOwnership $ownership) {}
-
     public function context(Operation $operation): array
     {
-        $route = $this->ownership->route($operation) ?? throw $this->invalid();
-        $instance = Instance::query()->with(['project', 'node'])->findOrFail($operation->target_id);
-        $user = $instance->production_user;
-        $home = $instance->production_home;
-        $root = $instance->root ?? $instance->project->root;
-        if (! $instance->placedOnAppProd() || ! is_string($user) || ! is_string($home) || $home !== '/home/'.$user || ! is_string($root)) {
-            throw $this->invalid();
-        }
-        $activating = $this->ownership->preparingRoute($operation);
-        $served = array_map(static fn (array $application): array => ['web_root' => $application['web_root'], 'directory' => $application['directory']], RouteWebRoot::servedApplications($instance, $activating));
-        if ($activating !== null && RouteWebRoot::poolSuffix($instance, $activating->web_root) !== null
-            && ! array_any($served, static fn (array $application): bool => $application['web_root'] === $activating->web_root)) {
-            $served[] = ['web_root' => $activating->web_root, 'directory' => RouteWebRoot::relativeDirectory($activating->web_root)];
-        }
+        $input = app(InstanceServedWebRootsInput::class)->forOperation($operation);
         $descriptors = [];
-        if ($served !== []) {
+        if ($input !== null) {
             $descriptors[] = ['key' => 'web_roots.prepare', 'step' => 'web_roots', 'transport' => 'instance-deploy-agent', 'name' => 'instance.prepare-served-web-roots',
-                'input' => ['repository' => $instance->project->repository_url, 'user' => $user, 'home' => $home, 'instance' => $instance->id,
-                    'relative_root' => $root, 'application_suffix' => ProductionApplicationPaths::suffix($root), 'served' => $served], 'resumable' => true, 'required' => true];
+                'input' => $input, 'resumable' => true, 'required' => true];
         }
         $descriptors[] = ['key' => 'verification', 'step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.web-roots-receipt',
-            'input' => ['instance_id' => $instance->id], 'resumable' => true, 'required' => true];
+            'input' => ['instance_id' => $operation->target_id], 'resumable' => true, 'required' => true];
 
         return ['descriptors' => $descriptors];
     }
