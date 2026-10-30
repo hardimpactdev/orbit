@@ -7,7 +7,6 @@ use App\Actions\Tools\ConvergeToolManagerAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -77,9 +76,6 @@ it('projects manager refusal without synthesizing Gateway executor state', funct
 });
 
 it('requires direct install without legacy discovery or claims and retains immutable ownership', function (): void {
-    foreach (['tool.manager_converge'] as $kind) {
-        expect(app(DirectOperation::class)->writer($kind))->toBe('polled');
-    }
     $direct = app(DirectOperation::class);
     expect($direct->writer('tool.install', $this->input, 209))->toBe('direct');
     expect(fn () => $direct->writer('tool.install', $this->input, 210))->toThrow(ResourceOperationException::class);
@@ -108,7 +104,7 @@ it('starts a direct run after intent commits without a target hold', function ()
 });
 
 it('records direct manager recipe data without a Gateway command descriptor', function (): void {
-    $input = app(ToolManagerIntent::class)->input($this->node, ToolManagerName::Composer, direct: true);
+    $input = app(ToolManagerIntent::class)->input($this->node, ToolManagerName::Composer);
     expect($input)->toBe(['materialize' => ['user' => 'orbit']]);
     expect($input)->not->toHaveKeys(['materialize_command', 'materialize_fields']);
 });
@@ -186,40 +182,14 @@ it('admits direct package and manager intents with immutable account pin and rec
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.user', 'orbit');
 });
 
-it('selects only proven APT root intents and keeps other managers Nodes children and privileged kinds polled', function (): void {
-    config(['swamp.direct_writers' => ['tool.adopt' => 'direct', 'tool.manager_converge' => 'direct']]);
-    $direct = app(DirectOperation::class);
-    foreach (['tool.manager_converge'] as $kind) {
-        expect($direct->writer($kind, ['manager' => 'apt', 'tool_status' => 'installed'], 209))->toBe('direct');
-        foreach (['vp', 'composer', 'brew', 'brew-cask'] as $manager) {
-            expect($direct->writer($kind, ['manager' => $manager], 209))->toBe('polled');
-        }
-        expect($direct->writer($kind, ['manager' => 'apt', 'node_id' => 209], 210))->toBe('polled');
-        expect($direct->writer($kind, [], 209))->toBe('polled');
-    }
-    $idempotency = app(OperationIdempotency::class);
-    $idempotency->parent = $this->operation;
-    expect($direct->writer('tool.manager_converge', ['manager' => 'apt', 'parent_operation_id' => null], 209))->toBe('polled');
-});
-
-it('admits APT adoption directly while recording other managers as polled and retaining rollback per intent', function (): void {
-    config(['swamp.direct_writers' => ['tool.adopt' => 'direct', 'tool.manager_converge' => 'direct'], 'swamp.run_token' => 'fixture-token']);
+it('admits every supported Linux manager directly with no descriptor fields', function (string $manager): void {
+    config(['swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
-    $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
-    $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => 'active']);
-    $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'jq', 'status' => 'installed', 'installed_version' => '1.7.1']);
-    $apt = app(StartToolOperationAction::class)->execute('adopt', 209, 'apt', 'jq', null);
-    expect($apt->state['tool_writer'])->toBe('direct');
-    expect($apt->lock_key)->toBeNull();
-    expect($apt->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    $operation = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::from($manager));
+    expect($operation->state['tool_writer'])->toBe('direct');
+    expect($operation->lock_key)->toBeNull();
+    expect($operation->input)->not->toHaveKeys(['materialize_command', 'materialize_fields', 'completion_variant']);
     expect($socket->sent)->toHaveCount(1);
-    $other = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::Composer);
-    expect($other->state['tool_writer'])->toBe('polled');
-    expect($other->input)->toHaveKeys(['materialize_command', 'materialize_fields'])->not->toHaveKey('agent_sha256');
-    expect($socket->sent)->toHaveCount(1);
-    config(['swamp.direct_writers' => ['tool.adopt' => 'polled', 'tool.manager_converge' => 'polled']]);
-    expect(DirectOperation::owns($apt->fresh()))->toBeTrue();
-    expect(fn () => app(DirectOperation::class)->writer('tool.adopt', ['manager' => 'apt'], 209))->toThrow(ResourceOperationException::class);
-});
+})->with(['apt', 'brew', 'vp', 'composer']);
