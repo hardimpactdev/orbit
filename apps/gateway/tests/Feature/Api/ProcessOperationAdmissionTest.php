@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Queue;
 beforeEach(function (): void {
     Queue::fake();
     $this->node = $this->markAsGateway(Node::query()->create([
-        'name' => 'process-admission', 'status' => 'active', 'platform' => 'linux',
+        'name' => 'process-admission', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
@@ -56,7 +56,7 @@ it('records lifecycle intent without marking an unexecuted effect successful', f
     expect($process->refresh()->desired_state->value)->toBe('stopped')
         ->and($process->status->value)->toBe('provisioning');
     Queue::assertNothingPushed();
-})->with(['start', 'stop', 'restart']);
+})->with(['start', 'restart']);
 
 it('rolls back competing intent before it changes a Process specification', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
@@ -68,11 +68,11 @@ it('rolls back competing intent before it changes a Process specification', func
 it('enforces exact lifecycle run contracts and scalar result redaction', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    $operation->kind = 'process.stop';
+    $operation->kind = 'process.start';
     $contract = app(OperationExecutionContract::class);
     $input = array_intersect_key($operation->input, array_flip(['process_id', 'runtime', 'name', 'on_demand']));
-    $contract->authorizeRun($operation, ['worker' => 'worker', 'key' => 'process-stop', 'transport' => 'agent', 'name' => 'process.control', 'input' => [...$input, 'operation' => 'stop']]);
-    expect(fn () => $contract->authorizeRun($operation, ['worker' => 'worker', 'key' => 'process-stop', 'transport' => 'agent', 'name' => 'process.control', 'input' => [...$input, 'operation' => 'restart']]))
+    $contract->authorizeRun($operation, ['worker' => 'worker', 'key' => 'process-start', 'transport' => 'agent', 'name' => 'process.control', 'input' => [...$input, 'operation' => 'start']]);
+    expect(fn () => $contract->authorizeRun($operation, ['worker' => 'worker', 'key' => 'process-start', 'transport' => 'agent', 'name' => 'process.control', 'input' => [...$input, 'operation' => 'restart']]))
         ->toThrow(ResourceOperationException::class);
     expect($contract->result($operation, ['state' => 'active TOKEN=private-receipt', 'environment' => ['X' => 'private'], 'raw' => 'private']))
         ->toBe(['state' => 'active TOKEN=[REDACTED]']);
@@ -81,7 +81,7 @@ it('enforces exact lifecycle run contracts and scalar result redaction', functio
 it('reads a Process receipt before its first effect and rejects readiness without proof', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
     $executor->accessibleNodes()->attach($this->node);
     config(['dependency_detection.services_node_id' => $executor->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $executor->wireguard_ip]);
@@ -95,8 +95,8 @@ it('reads a Process receipt before its first effect and rejects readiness withou
 it('can finish proof after cancellation once its native effect is proven', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    $operation->update(['kind' => 'process.stop', 'cancel_requested_at' => now(), 'state' => ['executor_runs' => ['process-stop' => ['transport' => 'agent', 'name' => 'process.control', 'result' => ['state' => 'inactive']]]]]);
+    $operation->update(['kind' => 'process.start', 'cancel_requested_at' => now(), 'state' => ['executor_runs' => ['process-start' => ['transport' => 'agent', 'name' => 'process.control', 'result' => ['state' => 'inactive']]]]]);
     expect(app(OperationExecutionContract::class)->cancellationAllowsRun($operation))->toBeTrue();
-    $operation->state = ['executor_runs' => ['process-stop' => ['transport' => 'agent', 'name' => 'process.control', 'result' => null]]];
+    $operation->state = ['executor_runs' => ['process-start' => ['transport' => 'agent', 'name' => 'process.control', 'result' => null]]];
     expect(app(OperationExecutionContract::class)->cancellationAllowsRun($operation))->toBeFalse();
 });

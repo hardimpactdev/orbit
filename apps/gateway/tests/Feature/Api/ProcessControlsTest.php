@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\Project;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -37,6 +43,7 @@ it('exposes only safe admitted Process control input and bypasses old claims', f
 
 it('projects native controls without keyed receipts and keeps terminal projection idempotent', function (string $verb, string $state, string $desired): void {
     $this->operation->update(['kind' => 'process.'.$verb]);
+    Event::fake([RecordBroadcast::class]);
     $body = [...$this->body, 'result' => ['ready' => true, 'state' => $state, 'private' => 'discard']];
     $this->postJson($this->path.'/result', $body)->assertOk()->assertJsonPath('data.result', ['ready' => true, 'state' => $state]);
     expect($this->process->fresh()->desired_state->value)->toBe($desired);
@@ -46,6 +53,8 @@ it('projects native controls without keyed receipts and keeps terminal projectio
     expect($this->operation->fresh()->sequence)->toBe($sequence);
     expect($this->operation->fresh()->attempts)->toBe(0);
     expect($this->operation->fresh()->worker)->toBeNull();
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ProcessStatus
+        && $event->id === $this->process->id && $event->data['runtime_status'] === $state);
 })->with([['start', 'active', 'running'], ['restart', 'active', 'running'], ['stop', 'inactive', 'stopped']]);
 
 it('requires a bounded runtime state and a matching run before projecting success', function (): void {
@@ -64,14 +73,36 @@ it('deletes only after native remove success and preserves a record when admitte
     $this->postJson($this->path.'/result', $body)->assertOk();
 })->with([false, true]);
 
-it('captures the agent digest and starts one native Process run without a target hold', function (): void {
-    config(['swamp.direct_writers' => ['process.stop' => 'direct'], 'dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
-    $operation = app(ProcessOperationAdmission::class)->execute($this->process, 'stop');
+it('starts a native stop on an executor Node without a Gateway runtime lease or target hold', function (): void {
+    $lease = Mockery::mock(ProcessRuntimeLease::class);
+    $lease->shouldNotReceive('run');
+    app()->instance(ProcessRuntimeLease::class, $lease);
+    $this->process->update(['desired_state' => 'running']);
+    $response = $this->postJson('/api/v1/processes/'.$this->process->id.'/stop')->assertAccepted()->assertJsonPath('data.kind', 'process.stop');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
     expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
     expect($operation->state['process_control_writer'])->toBe('direct');
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
     expect($operation->lock_key)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
+    expect($this->process->fresh()->desired_state->value)->toBe('running');
+});
+
+it('admits a Vite stop with safe local control input and no traffic preparation', function (): void {
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Vite stop', 'slug' => 'vite-stop', 'repository_url' => 'git@example.test:vite.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id,
+        'name' => 'main', 'environment' => 'development', 'checkout_path' => '/home/orbit/apps/vite-stop',
+        'source_is_laravel' => false, 'status' => 'active', 'provisioning_step' => 'active']);
+    $this->process->update(['owner_type' => $instance->getMorphClass(), 'owner_id' => $instance->id,
+        'runtime_config' => ['preset' => 'vp-dev'], 'desired_state' => 'running']);
+    $operation = app(ProcessOperationAdmission::class)->execute($this->process, 'stop');
+    expect($operation->state['process_control_writer'])->toBe('direct');
+    expect($operation->input['vite'])->toBeNull();
+    expect($operation->input)->not->toHaveKey('vite_plan');
+    expect($operation->lock_key)->toBeNull();
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
+        ->assertOk()->assertJsonPath('data.input.vite', null)->assertJsonMissingPath('data.input.vite_plan');
 });
 
 it('keeps Vite traffic and Instance children on their admitted polled path', function (): void {
