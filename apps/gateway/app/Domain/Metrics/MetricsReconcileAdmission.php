@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
+use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 
@@ -44,6 +46,16 @@ final readonly class MetricsReconcileAdmission implements OperationChildAdmissio
             $candidates[] = ['node_id' => $item->node->id, 'name' => $item->node->name, 'address' => $item->node->wireguard_ip,
                 'selected' => $item->selection->selected, 'caddy' => $service->caddy, 'fpm' => $service->fpm, 'hosts' => $service->hosts,
                 'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances)];
+        }
+        $removal = $parent->state['removal_intent'] ?? null;
+        $retiring = $parent->kind === 'node.remove' && is_array($removal) && ($removal['offline'] ?? null) === false
+            ? Node::query()->findOrFail($parent->node_id) : null;
+        if ($retiring !== null && $retiring->platform === 'linux'
+            && app(ManagedNodeEligibility::class)->isManagedForObservation($retiring)
+            && filter_var($retiring->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            $candidates = array_values(array_filter($candidates, static fn (array $candidate): bool => $candidate['node_id'] !== $retiring->id));
+            $candidates[] = ['node_id' => $retiring->id, 'name' => $retiring->name, 'address' => $retiring->wireguard_ip,
+                'selected' => false, 'caddy' => false, 'fpm' => false, 'hosts' => [], 'instance_ids' => []];
         }
         $input = ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'metrics_address' => $node->wireguard_ip,
             'gateway_node_id' => null, 'gateway_address' => null, 'relocated' => false, 'dns_node_id' => null,
