@@ -13,7 +13,7 @@ final class ApiErrorResponse
     /** @param array<array-key, mixed> $details */
     public static function make(Request $request, string $code, string $message, array $details, int $status): JsonResponse
     {
-        return response()
+        $response = response()
             ->json([
                 'error' => [
                     'code' => $code,
@@ -22,6 +22,11 @@ final class ApiErrorResponse
                 ],
             ], $status)
             ->header('X-Orbit-Request-Id', self::requestId($request));
+        if ($request->routeIs('operation:direct:private-material', 'operation:direct:secret-output')) {
+            $response->header('Cache-Control', 'no-store');
+        }
+
+        return $response;
     }
 
     /** The request ID that EnsureRequestId assigned, or the one the client sent when the middleware did not run. */
