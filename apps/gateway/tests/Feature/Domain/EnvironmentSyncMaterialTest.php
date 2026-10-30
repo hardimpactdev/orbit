@@ -200,3 +200,71 @@ it('keeps retained environment synchronization synchronous with no child admissi
     $result = app(SynchronizeInstanceEnvironmentAction::class)->execute($instance);
     expect($result->changed)->toBeTrue()->and(Operation::query()->count())->toBe(0);
 });
+
+function createEnvironmentMaterial(): array
+{
+    $source = dev935_instance('create-environment');
+    $instance = Instance::query()->create(['project_id' => $source->project_id, 'node_id' => $source->node_id,
+        'name' => 'creating', 'checkout_path' => '/fast/apps/create-environment/creating', 'source_layout' => 'checkout',
+        'status' => 'source_resolved', 'provisioning_step' => 'php-selected', 'source_is_laravel' => false,
+        'source_prepare_id' => '11111111-1111-4111-8111-111111111111', 'branch' => 'creating', 'starting_commit' => str_repeat('a', 40)]);
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'generation_basis_node_id' => $instance->node_id, 'domain' => 'creating.example.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $parent = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'status' => 'running', 'input' => ['instance_id' => $instance->id,
+            'project_id' => $instance->project_id, 'checkout' => $instance->checkout_path, 'prepare_id' => $instance->source_prepare_id,
+            'route_id' => $route->id, 'route_domain' => $route->domain]]);
+    $child = new Operation(['kind' => 'instance.sync_environment', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'input' => ['instance_id' => $instance->id]]);
+    $child->setAttribute('parent_operation_id', $parent->id);
+
+    return [$child, $instance, $parent, $route];
+}
+
+it('refuses a resolved create source without its live recorded owner and placement', function (string $change): void {
+    [$child, $instance, $parent, $route] = createEnvironmentMaterial();
+    match ($change) {
+        'missing parent' => $child->setAttribute('parent_operation_id', null),
+        'wrong kind' => $parent->update(['kind' => 'instance.deploy']),
+        'queued parent' => $parent->update(['status' => 'queued']),
+        'failed parent' => $parent->update(['status' => 'failed']),
+        'cancelled parent' => $parent->update(['status' => 'cancelled']),
+        'succeeded parent' => $parent->update(['status' => 'succeeded']),
+        'foreign target' => $parent->update(['target_id' => $instance->id + 1]),
+        'foreign node' => $parent->update(['node_id' => dev935_instance('foreign-create-owner')->node_id]),
+        'foreign project' => $parent->update(['input' => [...$parent->input, 'project_id' => $instance->project_id + 1]]),
+        'changed checkout' => $parent->update(['input' => [...$parent->input, 'checkout' => '/fast/apps/other']]),
+        'another preparation' => $parent->update(['input' => [...$parent->input, 'prepare_id' => 'another-attempt']]),
+        'changed route' => $parent->update(['input' => [...$parent->input, 'route_id' => $route->id + 1]]),
+        'changed domain' => $parent->update(['input' => [...$parent->input, 'route_domain' => 'changed.example.test']]),
+        'retiring route' => $route->update(['status' => 'retiring']),
+        'unfinished source' => $instance->update(['status' => 'checkout_prepared']),
+    };
+    $preflight = Mockery::mock(InstanceOperationPreflight::class);
+    $preflight->shouldNotReceive('readWritableEnvironment', 'assertEnvironmentWritable');
+    app()->instance(InstanceOperationPreflight::class, $preflight);
+
+    expect(fn () => app(EnvironmentSyncMaterial::class)->render($child, false))->toThrow(ResourceOperationException::class);
+})->with(['missing parent', 'wrong kind', 'queued parent', 'failed parent', 'cancelled parent', 'succeeded parent',
+    'foreign target', 'foreign node', 'foreign project', 'changed checkout', 'another preparation', 'changed route', 'changed domain', 'retiring route', 'unfinished source']);
+
+it('rechecks the create parent before projecting an environment write receipt', function (): void {
+    [$child, $instance, $parent] = createEnvironmentMaterial();
+    $context = app(EnvironmentSyncMaterial::class)->context($child);
+    $parent->update(['status' => 'failed']);
+
+    expect(fn () => app(InstanceEnvironmentStore::class)->recordSynchronizedKeys($context, ['APP_URL']))
+        ->toThrow(ResourceOperationException::class);
+    expect($instance->refresh()->environment_owned_keys)->toBeNull();
+});
+
+it('keeps the recorded create owner when its reserved Route becomes authoritative', function (): void {
+    [$child, $instance, , $route] = createEnvironmentMaterial();
+    $context = app(EnvironmentSyncMaterial::class)->context($child);
+    $route->update(['status' => 'active']);
+
+    app(InstanceEnvironmentStore::class)->recordSynchronizedKeys($context, ['APP_URL']);
+    expect($instance->refresh()->environment_owned_keys)->toBe(['APP_URL']);
+    expect(app(EnvironmentSyncMaterial::class)->context($child)->samePlacement($context))->toBeTrue();
+});
