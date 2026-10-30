@@ -39,7 +39,7 @@ orbit instance:create <project> <node> default
 orbit instance:create <project> <node> feature-one --branch=release --domain=feature.example.test
 ```
 
-The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. It reads the repository with the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from the Node settings. The name decides the path and the generated domain. The branch is a separate choice.
+The Gateway returns HTTP 202 with an Operation. Swamp clones the repository to `<apps-root>/<project-slug>/<name>` and prepares the Instance using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from the Node settings. The name decides the path and the generated domain. The branch is a separate choice.
 
 | Input | Selected branch |
 | --- | --- |
@@ -49,18 +49,21 @@ The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. It rea
 
 For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates that branch when it is missing. An origin branch keeps its existing selection behavior. An existing local branch is not reset to the default commit. A missing fetched `default_branch` when it is needed returns `instance.branch_resolution_failed`; Orbit selects no fallback branch. The implicit `default` selection must resolve the Project default branch. Invalid branch names return `validation.failed` before source changes.
 
-The response returns `selected_branch` and `branch_override`. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch. The Instance also records the starting commit.
+Follow the returned Operation with `operation:show`, using `poll_after_seconds` and `after_sequence`, until it succeeds, fails, or is cancelled. After success, fetch its captured `target_id` with `instance:show`. That Instance returns `selected_branch`, `branch_override`, and the starting commit. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch.
 
-When Orbit converts a name, it changes only the name. `--branch` keeps its meaning: without it, the `default` Instance inherits the default branch; with it, the value is the `branch_override`, as it is for `default --branch=<branch>`. So `instance:create <project> <node> main --branch=release` creates the `default` Instance pinned to `release`. The create response carries `name_converted_from`: the requested name when Orbit converted it, otherwise null. A retry with the same name converts again and reports it again. A create on an `app-prod` Node converts nothing, and `name_converted_from` is null.
+When Orbit converts a name, it changes only the name. `--branch` keeps its meaning: without it, the `default` Instance inherits the default branch; with it, the value is the `branch_override`, as it is for `default --branch=<branch>`. So `instance:create <project> <node> main --branch=release` creates the `default` Instance pinned to `release`. The final Operation result carries `name_converted_from`: the requested name when Orbit converted it, otherwise null. A retry with the same name converts again and reports it again.
+
+The admission response contains an Operation, as in this abbreviated example:
 
 ```json
 {
   "data": {
-    "name": "default",
-    "checkout_path": "/srv/orbit/apps/acme/default",
-    "domain": "acme.test",
-    "branch_override": null,
-    "name_converted_from": "main"
+    "id": 123,
+    "kind": "instance.create",
+    "target_type": "instance",
+    "target_id": 15,
+    "status": "queued",
+    "poll_after_seconds": 2
   }
 }
 ```
@@ -183,6 +186,8 @@ orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
 ```
 
 The Gateway validates registration and reserves its source set and initial Routes, then returns HTTP 202 with an Operation. Swamp moves the source and configures each endpoint through Gateway-bound steps. `Idempotency-Key` replays the same admission.
+
+Follow that Operation to success before fetching its captured `target_id` with `instance:show`; the admission response has no `data.instance`. With `--setup`, the registration's immutable `setup_digest` belongs to the parent input and applies to the primary member's setup list.
 
 Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
 

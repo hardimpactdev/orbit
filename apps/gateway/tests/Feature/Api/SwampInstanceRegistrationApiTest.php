@@ -188,6 +188,41 @@ it('refuses an unowned repository instead of creating a Project', function (): v
     expect(Project::query()->count())->toBe(0)->and(Instance::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0);
 });
 
+it('admits registration setup using the parent digest after its primary member activates', function (): void {
+    $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts()]);
+    $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/registration', 'setup' => true])->assertAccepted();
+    $parent = Operation::query()->sole();
+    $gateway = Node::query()->create(['name' => 'registration-gateway', 'user' => 'orbit', 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $executor = Node::query()->create(['name' => 'registration-executor', 'user' => 'orbit', 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.17', 'wireguard_ip' => '10.44.0.17', 'status' => 'active']);
+    $executor->accessibleNodes()->attach($gateway);
+    config(['dependency_detection.services_node_id' => $executor->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $executor->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.register', 'worker' => 'register-worker',
+        'operation_id' => $parent->id])->assertOk()->assertJsonPath('data.id', $parent->id);
+    $parent->refresh();
+    $instance = Instance::query()->sole();
+    $instance->routes()->sole()->update(['status' => 'active']);
+    $instance->update(['status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => true]);
+    $key = "registration-{$instance->id}-activate";
+    $descriptor = array_find(app(RegistrationLifecycleExecution::class)->descriptors($parent), static fn (array $entry): bool => $entry['key'] === $key);
+    $parent->update(['state' => [...($parent->state ?? []), 'lifecycle_bindings' => [$key => $descriptor],
+        'executor_runs' => [$key => [...$descriptor, 'result' => ['activated' => true, 'instance_id' => $instance->id]]]]]);
+    $parent->steps()->create(['name' => $key, 'position' => 1, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
+
+    $path = '/api/v1/operation-executor/'.$parent->id.'/children';
+    $id = $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup'])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.run_steps')->assertJsonPath('data.parent_operation_id', $parent->id)
+        ->assertJsonPath('data.input', ['instance_id' => $instance->id, 'source' => 'project', 'list' => 'setup',
+            'configuration_digest' => $parent->input['setup_digest']])->json('data.id');
+
+    $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup'])->assertOk()->assertJsonPath('data.id', $id);
+    expect(Operation::query()->where('kind', 'instance.run_steps')->count())->toBe(1);
+});
+
 it('requires proven Laravel restoration after a confirmed provisioning refusal and forbids early receipt discard', function (): void {
     $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts()]);
     $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));

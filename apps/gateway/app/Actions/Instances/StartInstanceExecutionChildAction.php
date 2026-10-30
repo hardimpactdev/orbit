@@ -62,7 +62,8 @@ final readonly class StartInstanceExecutionChildAction
             }
         }
         $phase = $candidate->input['list'] ?? null;
-        $digest = ($member ?? $parent->input)[($phase === 'setup' ? 'setup' : 'teardown').'_digest'] ?? null;
+        $digestInput = $parent->kind === 'instance.register' ? $parent->input : ($member ?? $parent->input);
+        $digest = $digestInput[($phase === 'setup' ? 'setup' : 'teardown').'_digest'] ?? null;
         if ($parent->target_type !== 'instance' || $candidate->node_id !== $parent->node_id
             || ($member === null && $parent->target_id !== $candidate->target_id)
             || ! in_array($parent->kind, ['instance.create', 'instance.register', 'instance.destroy', 'instance.destroy_member'], true)
