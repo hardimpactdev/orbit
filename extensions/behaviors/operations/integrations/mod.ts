@@ -395,7 +395,6 @@ async function finish(
       error.code !== "websocket.registry_superseded" ||
       completion.status !== "succeeded" ||
       ![
-        "websocket.app_destroy",
         "websocket.app_rotate",
       ].includes(operation.kind)
     ) {

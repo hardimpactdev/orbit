@@ -67,7 +67,10 @@ class Fixture {
       Object.assign(this.operation, body);
       return { status: 200, body: { data: this.operation } };
     });
-  run(kind: "websocket.sync" | "websocket.app_create" = "websocket.sync") {
+  run(
+    kind: "websocket.sync" | "websocket.app_create" | "websocket.app_destroy" =
+      "websocket.sync",
+  ) {
     this.operation.kind = kind;
     return websocketRegistry(() => this.http, () => this.clock, () => {
       this.clock += this.increment;
@@ -161,20 +164,24 @@ Deno.test("WebSocket cancellation in the final bounded delay wins over timeout",
   assertEquals(f.operation.status, "cancelled");
 });
 
-Deno.test("WebSocket app creation confirms its existing revision without transferring credentials or replaying a mutation", async () => {
-  const f = new Fixture();
-  assertEquals(await f.run("websocket.app_create"), { status: "succeeded" });
-  assertEquals(f.operation.result, {
-    outcome: "succeeded",
-    data: { backend: "applied" },
-  });
-  assertEquals(
-    f.calls.every((call) =>
-      call.method === "GET" || call.path.endsWith("/result")
-    ),
-    true,
-  );
-  const reads = f.reads;
-  await f.run("websocket.app_create");
-  assertEquals(f.reads, reads);
+Deno.test("WebSocket app mutations confirm their existing revision without credentials or replaying a mutation", async () => {
+  for (
+    const kind of ["websocket.app_create", "websocket.app_destroy"] as const
+  ) {
+    const f = new Fixture();
+    assertEquals(await f.run(kind), { status: "succeeded" });
+    assertEquals(f.operation.result, {
+      outcome: "succeeded",
+      data: { backend: "applied" },
+    });
+    assertEquals(
+      f.calls.every((call) =>
+        call.method === "GET" || call.path.endsWith("/result")
+      ),
+      true,
+    );
+    const reads = f.reads;
+    await f.run(kind);
+    assertEquals(f.reads, reads);
+  }
 });

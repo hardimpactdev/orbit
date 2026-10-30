@@ -43,12 +43,13 @@ class WebSocketDirectNative(NativeTestCase):
         self.assertEqual(state['operation']['result'], {'outcome': 'succeeded', 'data': {'backend': 'applied'}})
         self.assertEqual(state['registryReads'], 1)
         self.assertFalse(any('/primitive' in path or 'claim' in path or 'receipt' in path for path in state['calls']))
-    def test_actual_workflow_confirms_app_create_without_replaying_registry_mutation(self):
-        self.state['operation']['kind'] = 'websocket.app_create'; self.save()
-        self.run_workflow()
-        self.assertEqual(self.read()['operation']['status'], 'succeeded')
-        self.assertEqual(self.read()['registryReads'], 1)
-        self.assertFalse(any('/websocket-apps' in path for path in self.read()['calls']))
+    def test_actual_workflow_confirms_mutations_without_replaying_registry_mutation(self):
+        for kind in ['websocket.app_create', 'websocket.app_destroy']:
+            self.state['operation']['kind'] = kind; self.save()
+            self.run_workflow()
+            self.assertEqual(self.read()['operation']['status'], 'succeeded')
+            self.assertEqual(self.read()['registryReads'], 1)
+            self.assertFalse(any('/websocket-apps' in path for path in self.read()['calls']))
     def test_unbound_or_foreign_run_reads_no_registry_and_can_resume_after_binding(self):
         self.state['bound'] = False; self.save()
         self.run_workflow(success=False)

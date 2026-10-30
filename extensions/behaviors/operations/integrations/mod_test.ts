@@ -540,7 +540,7 @@ Deno.test("Vault failed collection deletion or write cannot complete as a succes
 });
 
 Deno.test("all registry mutations use only the admitted read probe and preserve it after a lost reply", async () => {
-  for (const verb of ["app_destroy", "app_rotate"]) {
+  for (const verb of ["app_rotate"]) {
     const f = new Fixture();
     f.operation.kind = `websocket.${verb}`;
     f.operation.input = {
@@ -597,7 +597,7 @@ Deno.test("a superseded registry revision fails without claiming success or rest
 
 Deno.test("cancellation before a registry probe stops observation and preserves the saved registry", async () => {
   const f = new Fixture();
-  f.operation.kind = "websocket.app_destroy";
+  f.operation.kind = "websocket.app_rotate";
   f.operation.input = {
     registry_operation_id: "56818f31-84e7-415a-ae29-b283e9903a99",
   };

@@ -9,7 +9,11 @@ import {
 } from "../_lib/direct.ts";
 
 const Args = DirectArgs.extend({
-  kind: z.enum(["websocket.sync", "websocket.app_create"]),
+  kind: z.enum([
+    "websocket.sync",
+    "websocket.app_create",
+    "websocket.app_destroy",
+  ]),
   node_id: z.number().int().positive(),
 });
 const Input = z.strictObject({
