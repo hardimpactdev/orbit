@@ -37,7 +37,14 @@ const Flow = z.discriminatedUnion("type", [
   }),
 ]);
 const SafeResult = z.object({
-  backend: z.enum(["active", "absent", "enabled", "disabled", "reconciled"])
+  backend: z.enum([
+    "active",
+    "absent",
+    "enabled",
+    "disabled",
+    "reconciled",
+    "recorded",
+  ])
     .optional(),
   error_code: ErrorCode.optional(),
   changed: z.boolean().optional(),

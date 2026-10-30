@@ -50,14 +50,25 @@ export async function fixtureHttp(
   if (path.includes("/receipts/")) {
     state.receiptReads = (state.receiptReads ?? 0) + 1;
     data = {
-      effect_key: "op-12.node-exporter-converge",
+      effect_key: `op-12.${path.split("/").at(-1)}`,
       state: state.receipt ? "succeeded" : "unknown",
       exit_code: state.receipt ? 0 : null,
       result: state.receipt,
       finished_at: null,
     };
   }
-  if (path.endsWith("/run")) {
+  if (path.endsWith("/run") && state.operation.input.preference_only === true) {
+    if (
+      input.transport !== "gateway" || input.name !== "metrics.receipt" ||
+      input.key !== "integration-receipt" ||
+      JSON.stringify(input.input) !== JSON.stringify({ backend: "recorded" })
+    ) throw new Error("Preference intent changed");
+    if (!state.receipt) {
+      state.gatewayRuns = (state.gatewayRuns ?? 0) + 1;
+      state.receipt = { backend: "recorded" };
+    }
+    data = state.receipt;
+  } else if (path.endsWith("/run")) {
     const command = input.input as Record<string, unknown>;
     if (
       "node_id" in input || input.transport !== "agent" ||
@@ -81,7 +92,12 @@ export async function fixtureHttp(
   }
   if (path.endsWith("/complete")) {
     if (
-      !state.operation.step_results["node-exporter-converge"] ||
+      !state.operation
+        .step_results[
+          state.operation.input.preference_only === true
+            ? "integration-receipt"
+            : "node-exporter-converge"
+        ] ||
       JSON.stringify(input.result) !== JSON.stringify(state.receipt)
     ) throw new Error("Unproven completion");
     if (!state.completions.length) state.completions.push(input);

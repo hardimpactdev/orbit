@@ -58,6 +58,19 @@ class IntegrationNativeTest(unittest.TestCase):
         self.assertEqual(state['runs'], 1)
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual(state['operation']['step_results'], {'node-exporter-converge': {'changed': True}})
+    def test_exporter_preference_without_metrics_runs_only_the_safe_receipt(self):
+        self.state['operation']['kind'] = 'metrics.exporter_enable'
+        self.state['operation']['input'] = {'preference_only': True, 'exporter_intent': {'node_id': 2, 'desired': True}, 'fleet': []}
+        self.state['operation']['execution_context'] = {'descriptors': [{'key': 'integration-receipt', 'step': 'integration-receipt',
+            'transport': 'gateway', 'name': 'metrics.receipt', 'input': {'backend': 'recorded'}, 'resumable': True, 'required': True}]}
+        self.save()
+        self.swamp('workflow', 'run', 'operation-integrations')
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'succeeded')
+        self.assertEqual(state['runs'], 0)
+        self.assertEqual(state['gatewayRuns'], 1)
+        self.assertEqual(state['completions'][0]['result'], {'backend': 'recorded'})
+
     def test_new_process_resumes_a_lost_effect_reply_with_the_same_key(self):
         self.state['loseRunReply'] = True
         self.save()

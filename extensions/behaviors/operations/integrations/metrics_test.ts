@@ -624,3 +624,105 @@ Deno.test("fleet rollback restores unmanaged Nodes without touching their Caddy"
   );
   assertEquals(completion?.error_code, "metrics.runtime_failed");
 });
+
+for (const rollback of [false, true]) {
+  Deno.test(`managed ingress withdrawal rebuilds Caddy${rollback ? " during rollback too" : ""}`, async () => {
+    const f = new FleetFixture();
+    f.operation.kind = "metrics.exporter_disable";
+    const nodes = f.operation.input.fleet as Record<string, unknown>[];
+    nodes[1] = {
+      ...nodes[1],
+      selected: false,
+      caddy: false,
+      caddy_cleanup: true,
+      hosts: [],
+    };
+    if (rollback) f.failures.set("metrics-runtime", "metrics.runtime_failed");
+
+    assertEquals((await f.run()).status, rollback ? "failed" : "succeeded");
+    assert(f.children.has("service-caddy-5"));
+    assertEquals(f.childInput("service-apply-5").caddy, false);
+    assertEquals(f.children.has("service-caddy-restore-5"), rollback);
+  });
+}
+
+// Execution parity with the PHP exporter/fleet lifecycle specifications.
+Deno.test("a skipped desired exporter is retried by the next fleet reconciliation", async () => {
+  const first = new FleetFixture();
+  first.operation.kind = "metrics.reconcile";
+  first.failures.set(
+    "node_exporter-snapshot-5",
+    "metrics.exporter_firewall_inactive",
+  );
+  assertEquals((await first.run()).status, "succeeded");
+  assertEquals(first.keys().includes("node_exporter-apply-5"), false);
+  assertEquals(first.childInput("metrics-runtime").targets, [{
+    name: "node-2",
+    address: "10.44.0.2",
+  }]);
+
+  const next = new FleetFixture();
+  next.operation.kind = "metrics.reconcile";
+  next.operation.id++;
+  assertEquals((await next.run()).status, "succeeded");
+  assertEquals(
+    next.children.get("node_exporter-apply-5")!.kind,
+    "metrics.node_exporter_converge",
+  );
+  assertEquals(
+    next.children.get("cadvisor-apply-5")!.kind,
+    "metrics.cadvisor_converge",
+  );
+  assertEquals(next.childInput("metrics-runtime").targets, [
+    { name: "node-2", address: "10.44.0.2" },
+    { name: "node-5", address: "10.44.0.5" },
+  ]);
+});
+
+Deno.test("a selected fleet member removal is explicit and never removes the Metrics runtime", async () => {
+  const f = new FleetFixture();
+  f.operation.kind = "metrics.reconcile";
+  const fleet = f.operation.input.fleet as Record<string, unknown>[];
+  fleet[1].selected = false;
+  assertEquals((await f.run()).status, "succeeded");
+  assertEquals(
+    f.children.get("node_exporter-apply-5")!.kind,
+    "metrics.node_exporter_remove",
+  );
+  assertEquals(
+    f.children.get("cadvisor-apply-5")!.kind,
+    "metrics.cadvisor_remove",
+  );
+  assertEquals(
+    f.children.get("metrics-runtime")!.kind,
+    "metrics.runtime_converge",
+  );
+  assertEquals(f.childInput("metrics-runtime").targets, [{
+    name: "node-2",
+    address: "10.44.0.2",
+  }]);
+});
+
+for (const kind of ["metrics.exporter_enable", "metrics.exporter_disable"]) {
+  Deno.test(`${kind} reconciles exporters and runtime without republishing Metrics`, async () => {
+    const f = new FleetFixture();
+    f.operation.kind = kind;
+    f.operation.input.gateway_node_id = null;
+    f.operation.input.dns_node_id = null;
+    const nodes = f.operation.input.fleet as Record<string, unknown>[];
+    nodes[1].selected = kind === "metrics.exporter_enable";
+    assertEquals((await f.run()).status, "succeeded");
+    assertEquals(
+      f.children.get("node_exporter-apply-5")!.kind,
+      kind === "metrics.exporter_enable"
+        ? "metrics.node_exporter_converge"
+        : "metrics.node_exporter_remove",
+    );
+    assertEquals(f.keys().some((key) => key.startsWith("publication-")), false);
+    assertEquals(
+      f.children.get("metrics-runtime")!.kind,
+      "metrics.runtime_converge",
+    );
+    assertEquals(f.calls.at(-1)!.result, { backend: "active" });
+  });
+}

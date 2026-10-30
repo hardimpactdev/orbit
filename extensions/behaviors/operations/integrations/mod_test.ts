@@ -758,3 +758,33 @@ Deno.test("a superseded result between probe and completion ends failed across s
     assertEquals(f.effects, 1);
   }
 });
+
+Deno.test("disabled Metrics acknowledges exporter preference without a fleet or Node effect", async () => {
+  const f = new Fixture();
+  f.operation.kind = "metrics.reconcile";
+  f.operation.input = {
+    preference_only: true,
+    exporter_intent: { node_id: 2, desired: true },
+    fleet: [],
+  };
+  f.operation.execution_context = {
+    descriptors: [{
+      key: "integration-receipt",
+      step: "integration-receipt",
+      transport: "gateway",
+      name: "metrics.receipt",
+      input: { backend: "recorded" },
+      resumable: true,
+      required: true,
+    }],
+  };
+  f.result = { backend: "recorded" };
+  assertEquals((await f.execute()).status, "succeeded");
+  const runs = f.calls.filter((c) => c.path.endsWith("/run"));
+  assertEquals(runs.length, 1);
+  assertEquals(runs[0].body.transport, "gateway");
+  assertEquals(runs[0].body.name, "metrics.receipt");
+  assertEquals(runs[0].body.input, { backend: "recorded" });
+  assertEquals(f.calls.some((c) => c.path.endsWith("/children")), false);
+  assertEquals(f.calls.at(-1)!.body.result, { backend: "recorded" });
+});

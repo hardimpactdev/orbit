@@ -13,6 +13,7 @@ const Candidate = z.object({
   address: z.ipv4(),
   selected: z.boolean(),
   caddy: z.boolean(),
+  caddy_cleanup: z.boolean().default(false),
   fpm: z.boolean(),
   hosts: z.array(z.string()),
   instance_ids: z.array(z.number().int().positive()),
@@ -168,7 +169,7 @@ export async function metricsFleet(
           source: receipt,
           input,
         });
-        if (node.caddy) {
+        if (rebuildsCaddy(node)) {
           await child(
             `service-caddy-${node.node_id}`,
             "route.caddy_converge",
@@ -212,7 +213,14 @@ export async function metricsFleet(
         );
       }
     }
-    if (!plan.remove && operation.kind !== "metrics.reconcile") {
+    if (
+      !plan.remove &&
+      ![
+        "metrics.reconcile",
+        "metrics.exporter_enable",
+        "metrics.exporter_disable",
+      ].includes(operation.kind)
+    ) {
       await publication(true);
     }
     if (plan.remove && plan.gateway_node_id === null && !plan.unreachable) {
@@ -343,7 +351,7 @@ export async function metricsFleet(
       restore_key: item.key,
     }, acceptFailure);
     if (lockLost(restored)) fail(restored);
-    if (item.kind === "metrics.service_restore" && item.node.caddy) {
+    if (item.kind === "metrics.service_restore" && rebuildsCaddy(item.node)) {
       const caddy = await child(
         `service-caddy-restore-${item.node.node_id}`,
         "metrics.service_caddy_restore",
@@ -353,6 +361,9 @@ export async function metricsFleet(
       );
       if (lockLost(caddy)) fail(caddy);
     }
+  }
+  function rebuildsCaddy(node: z.infer<typeof Candidate>) {
+    return node.caddy || node.caddy_cleanup;
   }
   async function publication(enable: boolean) {
     const gateway = plan.gateway_node_id;
