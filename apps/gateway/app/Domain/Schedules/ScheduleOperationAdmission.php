@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -29,7 +31,12 @@ final readonly class ScheduleOperationAdmission
             $input = $this->inputFor($schedule, $verb, $cascade, $caller, $created);
             // UUID Schedules share their owner's target lock; Operation target IDs are integers.
             $owner = Instance::isMorphType($schedule->target_type) ? 'instance_schedules' : 'node_schedules';
-            $operation = $this->operations->execute('schedule.'.$verb, $owner, $schedule->target_id, ValidatedData::integer($input['node_id']), $input, 'operator', $requestId);
+            $nodeId = ValidatedData::integer($input['node_id']);
+            $writer = app(DirectOperation::class)->writer('schedule.'.$verb, $input, $nodeId);
+            if ($writer === 'direct') {
+                $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($nodeId));
+            }
+            $operation = $this->operations->execute('schedule.'.$verb, $owner, $schedule->target_id, $nodeId, $input, 'operator', $requestId, expectedWriter: $writer);
             if (in_array($verb, ['create', 'destroy'], true)) {
                 $schedule->update(['status' => $verb === 'destroy' ? LifecycleStatus::Removing : LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
             }
