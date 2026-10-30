@@ -64,7 +64,7 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
             $server->process->fill($projection['process'])->fill(['status' => 'active', 'failed_step' => null, 'error_code' => null])->save();
         }
         if (isset($projection['adopted_connection']) && $server !== null) {
-            DatabaseConnection::query()->where('slug', $projection['adopted_connection'])->update(['database_server_id' => $server->id]);
+            DatabaseConnection::query()->where('slug', $projection['adopted_connection'])->first()?->update(['database_server_id' => $server->id]);
         }
         foreach ($projection['delete_connections'] ?? [] as $id) {
             $connection = DatabaseConnection::query()->findOrFail($id);
