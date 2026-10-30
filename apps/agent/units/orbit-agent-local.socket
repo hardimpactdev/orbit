@@ -1,0 +1,14 @@
+[Unit]
+Description=Orbit typed local root actions
+
+[Socket]
+ListenStream=/run/orbit-agent/local.sock
+Accept=yes
+SocketUser=root
+SocketGroup=orbit-swamp-worker
+SocketMode=0660
+DirectoryMode=0755
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

@@ -282,6 +282,7 @@ format!("BindsTo={parent}"),format!("After={parent}"),format!("RuntimeMaxSec={se
 "PrivateMounts=yes".into(),
 "PrivateIPC=yes".into(),
 "PrivateDevices=yes".into(),
+"InaccessiblePaths=-/run/orbit-agent".into(),
 "ProtectSystem=strict".into(),
 "ProtectProc=invisible".into(),
 "ProcSubset=pid".into(),

@@ -45,6 +45,9 @@ enum DockerUpdate {
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {
+        Some("serve-local") if arguments.len() == 1 => {
+            std::process::exit(orbit_agent::local_agent::main())
+        }
         // Command mode needs no runtime, observer, secret, or Gateway connection (ADR 0225).
         Some("command") => std::process::exit(orbit_agent::command::main(&arguments[1..])),
         Some("service") => {

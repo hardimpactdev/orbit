@@ -53,6 +53,20 @@ The native package-boundary CI job runs the real delivered agent on systemd. It 
 
 Persistent Node workers share `swamp.start-worker` and `swamp.stop-worker` with task VMs. The Node profile requires the root-owned converge opt-in and runs as its dedicated non-root account. `swamp.issue-node-worker` alone mints the protected 24-hour pair on the Linux issuer; it is excluded from the compiler and Operation transports and refuses keyed effects. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for activation gates.
 
+## Local root primitives for Node workers
+
+Node converge installs `orbit-agent-local.socket` for an opted-in per-Node worker. The root-owned socket uses `/run/orbit-agent/local.sock`, mode `0660`, group `orbit-swamp-worker` and systemd `Accept=yes`. Each connection starts the pinned agent in `serve-local` mode. The observer keeps its outbound-only contract.
+
+The service checks Linux `SO_PEERCRED` against the exact worker UID before reading input. It accepts one newline JSON frame with `command`, `agent_sha256` and typed `input`. The closed local catalogue starts with `instance.prepare-served-web-roots`; it never exposes all agent commands. The binary digest must match the admitted Node pin. The existing primitive validates its paths and owner/layout state. This boundary does not add transactional effects or stronger path-race guarantees to that primitive.
+
+Input is bounded to 64 KiB and the typed reply to 16 KiB. The compiled command timeout bounds the service. Output contains the typed result or a fixed refusal, with no raw stdout, stderr or input in journals. There is no shell, executable selection, binary stream, effect key or caller-selected transport path. The socket owns only local privilege admission; Swamp owns execution policy.
+
+### Worker and package access
+
+The worker stays non-root with `NoNewPrivileges`. Package jobs have a separate UID, no worker group membership and a sandbox denial for `/run/orbit-agent`. Other users fail the socket permission or peer-UID check. A malformed request or unknown action refuses before the primitive starts. A new catalogue entry requires its own typed primitive and access review. Account-only commands cannot run as root through this endpoint.
+
+Scratch native tests must prove a worker call and denial for the package UID, another user, an unknown command and malformed input. Independent security review precedes Sabre or production canaries. No live Node is enabled by merging this code.
+
 ## Where it runs
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.

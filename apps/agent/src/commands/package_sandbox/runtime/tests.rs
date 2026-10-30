@@ -94,6 +94,7 @@ fn package_units_bind_to_their_supervisor_and_confine_entire_cgroups() {
         "--property=KillMode=control-group",
         "--property=BindsTo=orbit-command-package-session-fixture.service",
         "--property=NoNewPrivileges=yes",
+        "--property=InaccessiblePaths=-/run/orbit-agent",
         "--property=SocketBindDeny=any",
         "--property=PrivatePIDs=yes",
         "--property=ProtectControlGroups=yes",

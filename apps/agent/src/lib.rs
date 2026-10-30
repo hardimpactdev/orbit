@@ -10,6 +10,7 @@ use std::{
 };
 pub mod command;
 pub mod commands;
+pub mod local_agent;
 pub mod logs;
 pub mod realtime;
 #[cfg(test)]

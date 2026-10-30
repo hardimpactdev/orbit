@@ -95,6 +95,7 @@ pub fn configure_native(context: &Context, enabled: bool) -> Result<(), Error> {
         {
             worker::stop(&files, &mut host).map_err(|_| failed())?;
         }
+        configure_local(&files, &mut host, false)?;
         return Ok(());
     }
     architecture(&mut host)?;
@@ -137,5 +138,100 @@ pub fn configure_native(context: &Context, enabled: bool) -> Result<(), Error> {
         )
         .map_err(|_| invalid())?;
     install_binary(&files, &mut host)?;
+    configure_local(&files, &mut host, true)?;
     Ok(())
+}
+
+fn configure_local(files: &Files, host: &mut impl Host, enabled: bool) -> Result<(), Error> {
+    use crate::local_agent as local;
+    let units = [
+        (local::SOCKET_UNIT, local::SOCKET),
+        (local::SERVICE_UNIT, local::SERVICE),
+    ];
+    if enabled {
+        for (name, contents) in units {
+            files
+                .publish_root(
+                    &files.path(&format!("/etc/systemd/system/{name}")),
+                    contents.as_bytes(),
+                )
+                .map_err(|_| invalid())?;
+        }
+        call(host, &["systemctl", "daemon-reload"])?;
+        call(host, &["systemctl", "enable", "--now", local::SOCKET_UNIT])?;
+    } else if files
+        .path(&format!("/etc/systemd/system/{}", local::SOCKET_UNIT))
+        .exists()
+    {
+        for (name, contents) in units {
+            let path = format!("/etc/systemd/system/{name}");
+            owned_file(files, &path, 0o644)?;
+            if fs::read_to_string(files.path(&path)).map_err(|_| invalid())? != contents {
+                return Err(invalid());
+            }
+        }
+        call(host, &["systemctl", "disable", "--now", local::SOCKET_UNIT])?;
+        for (name, _) in units {
+            fs::remove_file(files.path(&format!("/etc/systemd/system/{name}")))
+                .map_err(|_| failed())?;
+        }
+        call(host, &["systemctl", "daemon-reload"])?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod local_tests {
+    use super::*;
+    use crate::commands::recipe::{Failure, Output};
+    #[derive(Default)]
+    struct Calls(Vec<Vec<String>>);
+    impl Host for Calls {
+        fn execute(&mut self, value: &Invocation) -> Result<Output, Failure> {
+            self.0.push(value.argv.clone());
+            Ok(Output::default())
+        }
+        fn wait(&mut self, _: Duration) -> Result<(), Failure> {
+            unreachable!()
+        }
+    }
+    #[test]
+    fn converge_publishes_socket_units_and_removes_only_owned_units() {
+        let root = std::env::temp_dir().join(format!(
+            "orbit-local-converge-{:016x}",
+            rand::random::<u64>()
+        ));
+        fs::create_dir_all(root.join("etc/systemd/system")).unwrap();
+        let files = Files {
+            root: root.clone(),
+            uid: rustix::process::geteuid().as_raw(),
+            gid: rustix::process::getegid().as_raw(),
+        };
+        let mut calls = Calls::default();
+        configure_local(&files, &mut calls, true).unwrap();
+        let socket = files.path("/etc/systemd/system/orbit-agent-local.socket");
+        assert_eq!(
+            fs::read_to_string(&socket).unwrap(),
+            crate::local_agent::SOCKET
+        );
+        assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o644);
+        assert_eq!(
+            calls.0[1],
+            ["systemctl", "enable", "--now", "orbit-agent-local.socket"]
+        );
+        fs::write(&socket, "foreign unit").unwrap();
+        assert!(configure_local(&files, &mut calls, false).is_err());
+        assert_eq!(calls.0.len(), 2);
+        fs::write(&socket, crate::local_agent::SOCKET).unwrap();
+        configure_local(&files, &mut calls, false).unwrap();
+        assert!(!socket.exists());
+        assert!(!files
+            .path("/etc/systemd/system/orbit-agent-local@.service")
+            .exists());
+        assert_eq!(
+            calls.0[2],
+            ["systemctl", "disable", "--now", "orbit-agent-local.socket"]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }

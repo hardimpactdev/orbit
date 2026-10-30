@@ -1,0 +1,14 @@
+[Unit]
+Description=Orbit typed local root action
+
+[Service]
+User=root
+Group=root
+ExecStart=/usr/local/bin/orbit-agent serve-local
+StandardInput=socket
+StandardOutput=socket
+StandardError=null
+NoNewPrivileges=yes
+UMask=0077
+RuntimeMaxSec=310
+KillMode=control-group
