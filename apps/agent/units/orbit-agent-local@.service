@@ -12,3 +12,4 @@ NoNewPrivileges=yes
 UMask=0077
 RuntimeMaxSec=310
 KillMode=control-group
+TimeoutStopSec=5s

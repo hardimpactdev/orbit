@@ -15,6 +15,7 @@ use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\Operation;
+use App\Models\ProjectLifecycleStep;
 use Illuminate\Support\Facades\Exceptions;
 
 describe('private app-user step material', function (): void {
@@ -60,6 +61,18 @@ describe('private app-user step material', function (): void {
     it('requires the existing agent secret', function (): void {
         $this->withHeader('Authorization', '')->getJson($this->url)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
         $this->withToken('wrong')->getJson($this->url)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+    });
+
+    it('authenticates before binding a nonexistent Operation', function (): void {
+        $url = '/api/v1/agent/operations/999999999/step?step=setup.install&digest='.str_repeat('a', 64);
+        $this->withHeader('Authorization', '')->getJson($url)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
+        $this->withToken('wrong')->getJson($url)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+        $this->withToken('private-agent-secret')->getJson($url)->assertNotFound();
+    });
+
+    it('refuses material after the Instance moves to another Node', function (): void {
+        $this->instance->update(['node_id' => $this->control->id]);
+        $this->getJson($this->url)->assertConflict()->assertJsonPath('error.code', 'instance.step_not_admitted');
     });
 
     it('refuses the configured control plane as a foreign Node', function (): void {
@@ -135,6 +148,17 @@ describe('private app-user step material', function (): void {
             ...$admission->localAdmission($this->instance)]]);
         $url = '/api/v1/agent/operations/'.$this->operation->id.'/step?'.http_build_query(['step' => 'setup.install', 'digest' => hash('sha256', 'setup-private-command')]);
         $this->getJson($url)->assertOk()->assertJsonPath('data.release', 'initial')->assertJsonPath('data.script', 'setup-private-command');
+        ProjectLifecycleStep::query()->where('project_id', $this->instance->project_id)->where('name', 'install')->update(['command' => 'changed-private-command']);
+        $this->getJson($url)->assertConflict()->assertJsonPath('error.code', 'instance.step_not_admitted');
+        ProjectLifecycleStep::query()->where('project_id', $this->instance->project_id)->where('name', 'install')->update(['command' => 'setup-private-command']);
+        foreach (['../foreign', 'bad/release', '.', '..'] as $badName) {
+            $directory = $this->instance->production_home.'/releases/'.$badName;
+            $this->instance->update(['checkout_path' => $directory]);
+            $input = $this->operation->input;
+            $input['release_directory'] = $directory;
+            $this->operation->update(['input' => $input]);
+            $this->getJson($url)->assertConflict()->assertJsonPath('error.code', 'instance.step_not_admitted');
+        }
         $this->instance->update(['checkout_path' => $this->instance->production_home.'/releases/replaced']);
         $this->getJson($url)->assertConflict();
         $input = $this->operation->input;

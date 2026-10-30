@@ -15,6 +15,7 @@ use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\RequireNodeAgentSecret;
 use App\Http\Middleware\ValidateRequestBodySize;
 use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
@@ -82,6 +83,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(EnsureRequestId::class);
         $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class], append: [AnnounceDesiredCliVersion::class, HandleOperationIdempotency::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
+        $middleware->prependToPriorityList(SubstituteBindings::class, RequireNodeAgentSecret::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
         $middleware->appendToPriorityList(RequireNodeAccess::class, RequireEnabledExtension::class);
         $middleware->appendToPriorityList(RequireEnabledExtension::class, HandleOperationIdempotency::class);

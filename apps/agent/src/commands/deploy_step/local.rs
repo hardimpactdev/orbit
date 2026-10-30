@@ -24,6 +24,9 @@ const MATERIAL_LIMIT: usize = 2 * 1024 * 1024;
 const OUTPUT_LIMIT: usize = 2048;
 const LINE_LIMIT: usize = 4096;
 const CAPTURE_LIMIT: usize = 1024 * 1024;
+const SECRET_LIMIT: usize = 4096;
+const REDACTION_WORK_LIMIT: usize = 16 * 1024 * 1024;
+const REDACTED_LINE_LIMIT: usize = 8192;
 const ACTION_LIMIT: u64 = 300;
 // Shared service/client are 310s. Reserve 5s for cleanup and the bounded reply.
 const HANDLER_LIMIT: u64 = 305;
@@ -123,6 +126,8 @@ impl Material {
             if key.len() > 255
                 || !(first.is_ascii_alphabetic() || first == b'_')
                 || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                || key.starts_with("LD_")
+                || key.starts_with("BASH_")
                 || value.len() > 65_536
                 || value.contains('\0')
             {
@@ -163,7 +168,7 @@ async fn material(input: &Input) -> Result<Material> {
         AgentSecret::load(SECRET_PATH).map_err(|_| "instance.step_material_unavailable")?;
     let client = crate::gateway_client(config.gateway_address, &secret)
         .map_err(|_| "instance.step_material_unavailable")?;
-    let mut response = client
+    let response = client
         .get(format!(
             "https://gateway.orbit/api/v1/agent/operations/{}/step",
             input.operation
@@ -172,6 +177,9 @@ async fn material(input: &Input) -> Result<Material> {
         .send()
         .await
         .map_err(|_| "instance.step_material_unavailable")?;
+    read_material(response).await
+}
+async fn read_material(mut response: reqwest::Response) -> Result<Material> {
     if !response.status().is_success()
         || response
             .content_length()
@@ -270,6 +278,43 @@ fn program(script: &str, uid: u32, gid: u32) -> Result<File> {
     }
     Ok(file)
 }
+fn admitted_account(account: identity::Passwd, home: &ReleaseHome) -> Result<identity::Passwd> {
+    if account.uid == 0 || account.gid == 0 || account.home != home.home.to_string_lossy() {
+        return Err("instance.step_layout_invalid");
+    }
+    Ok(account)
+}
+fn assert_app_identity(uid: u32, gid: u32) -> std::io::Result<()> {
+    let (mut real_uid, mut effective_uid, mut saved_uid) = (0, 0, 0);
+    let (mut real_gid, mut effective_gid, mut saved_gid) = (0, 0, 0);
+    // SAFETY: all six outputs point at live scalar storage.
+    let read = unsafe {
+        libc::getresuid(&mut real_uid, &mut effective_uid, &mut saved_uid) == 0
+            && libc::getresgid(&mut real_gid, &mut effective_gid, &mut saved_gid) == 0
+    };
+    if !read
+        || uid == 0
+        || gid == 0
+        || [real_uid, effective_uid, saved_uid] != [uid; 3]
+        || [real_gid, effective_gid, saved_gid] != [gid; 3]
+    {
+        return Err(std::io::Error::from_raw_os_error(libc::EPERM));
+    }
+    Ok(())
+}
+fn drop_app_identity(uid: u32, gid: u32) -> std::io::Result<()> {
+    // SAFETY: no pointers except an empty groups array; the child permanently drops every ID.
+    let dropped = unsafe {
+        libc::setgroups(0, std::ptr::null()) == 0
+            && libc::setresgid(gid, gid, gid) == 0
+            && libc::setresuid(uid, uid, uid) == 0
+            && libc::getgroups(0, std::ptr::null_mut()) == 0
+    };
+    if !dropped {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
 struct Group(i32);
 impl Drop for Group {
     fn drop(&mut self) {
@@ -290,26 +335,47 @@ struct Capture {
     truncated: bool,
     remaining: usize,
     secrets: Vec<String>,
+    work_remaining: usize,
+    deadline: Instant,
 }
 impl Capture {
     fn new(environment: &BTreeMap<String, String>) -> Self {
-        let mut secrets: Vec<String> = environment
-            .values()
-            .flat_map(|value| value.lines())
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .collect();
+        let mut secrets = Vec::new();
+        let mut disabled = false;
+        'values: for value in environment.values() {
+            for line in value.lines().filter(|line| !line.is_empty()) {
+                if secrets.len() == SECRET_LIMIT {
+                    disabled = true;
+                    break 'values;
+                }
+                secrets.push(line.to_owned());
+            }
+        }
         secrets.sort_by_key(|value| std::cmp::Reverse(value.len()));
         secrets.dedup();
         Self {
             output: String::new(),
-            truncated: false,
-            remaining: CAPTURE_LIMIT,
+            truncated: disabled,
+            remaining: if disabled { 0 } else { CAPTURE_LIMIT },
             secrets,
+            work_remaining: REDACTION_WORK_LIMIT,
+            deadline: Instant::now(),
         }
     }
+    fn stop_capture(&mut self) {
+        self.truncated = true;
+        self.remaining = 0;
+    }
+    fn charge(&mut self, work: usize) -> bool {
+        if Instant::now() >= self.deadline || work > self.work_remaining {
+            self.stop_capture();
+            return false;
+        }
+        self.work_remaining -= work;
+        true
+    }
     fn line(&mut self, lines: &mut Lines) {
-        if self.remaining == 0 {
+        if self.remaining == 0 || !self.charge(lines.pending.len().saturating_mul(32)) {
             self.truncated = true;
             lines.pending.clear();
             return;
@@ -328,8 +394,28 @@ impl Capture {
             return;
         };
         if let Some(mut text) = lines.redactor.line(text) {
-            for secret in &self.secrets {
+            for index in 0..self.secrets.len() {
+                if text.len() > REDACTED_LINE_LIMIT
+                    || !self.charge(text.len().saturating_mul(2) + self.secrets[index].len())
+                {
+                    self.stop_capture();
+                    lines.pending.clear();
+                    return;
+                }
+                let secret = &self.secrets[index];
+                let growth = "[REDACTED]".len().saturating_sub(secret.len());
+                if growth > 0
+                    && text.len() + text.matches(secret).count() * growth > REDACTED_LINE_LIMIT
+                {
+                    self.stop_capture();
+                    lines.pending.clear();
+                    return;
+                }
                 text = text.replace(secret, "[REDACTED]");
+            }
+            if !self.charge(text.len()) {
+                lines.pending.clear();
+                return;
             }
             self.output.push_str(&text);
             self.output.push('\n');
@@ -346,8 +432,9 @@ impl Capture {
     }
     fn bytes(&mut self, lines: &mut Lines, bytes: &[u8]) {
         for &byte in bytes {
-            if self.remaining == 0 {
-                self.truncated = true;
+            if self.remaining == 0 || Instant::now() >= self.deadline {
+                self.stop_capture();
+                lines.pending.clear();
                 return;
             }
             self.remaining -= 1;
@@ -368,16 +455,21 @@ async fn execute(
     gid: u32,
     cwd: File,
     deadline: Instant,
-    drop_identity: bool,
+    #[cfg(test)] skip_identity_drop: bool,
 ) -> Result<Output> {
     // This check precedes even the private memfd creation. No timeout is ever shortened.
+    material.deadline(deadline)?;
+    if uid == 0 || gid == 0 {
+        return Err("instance.step_layout_invalid");
+    }
+    let mut capture = Capture::new(&material.environment);
     material.deadline(deadline)?;
     let script = program(&material.script, uid, gid)?;
     let home = format!("/home/orbit-app-{}", material.project);
     let user = format!("orbit-app-{}", material.project);
     let mut process = Command::new("/bin/bash");
     process
-        .args(["--noprofile", "--norc", "-eu", "/proc/self/fd/3"])
+        .args(["--noprofile", "--norc", "-p", "-eu", "/proc/self/fd/3"])
         .env_clear()
         .envs(&material.environment)
         .env("HOME", home)
@@ -396,13 +488,13 @@ async fn execute(
             if libc::setsid() < 0 {
                 return Err(fail());
             }
-            if drop_identity
-                && (libc::setgroups(0, std::ptr::null()) != 0
-                    || libc::setresgid(gid, gid, gid) != 0
-                    || libc::setresuid(uid, uid, uid) != 0)
-            {
-                return Err(fail());
+            #[cfg(test)]
+            if !skip_identity_drop {
+                drop_app_identity(uid, gid)?;
             }
+            #[cfg(not(test))]
+            drop_app_identity(uid, gid)?;
+            assert_app_identity(uid, gid)?;
             if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
                 || libc::fchdir(directory_fd) != 0
             {
@@ -430,19 +522,30 @@ async fn execute(
     }
     let mut command = tokio::process::Command::from(process);
     command.kill_on_drop(true);
+    let step_deadline = Instant::now() + Duration::from_secs(material.timeout_seconds);
+    capture.deadline = step_deadline;
     let mut child = command.spawn().map_err(|_| "instance.step_start_failed")?;
     let group = Group(child.id().ok_or("instance.step_start_failed")? as i32);
     drop(script);
     drop(cwd);
     let mut stdout = child.stdout.take().ok_or("instance.step_start_failed")?;
     let mut stderr = child.stderr.take().ok_or("instance.step_start_failed")?;
-    let mut capture = Capture::new(&material.environment);
     let (mut out_lines, mut err_lines) = (Lines::default(), Lines::default());
     let (mut out_buffer, mut err_buffer) = ([0u8; 4096], [0u8; 4096]);
     let (mut out_open, mut err_open) = (true, true);
-    let stop = tokio::time::sleep(Duration::from_secs(material.timeout_seconds));
+    let stop = tokio::time::sleep_until(tokio::time::Instant::from_std(step_deadline));
     tokio::pin!(stop);
     let (status, timed_out) = loop {
+        if Instant::now() >= step_deadline {
+            drop(group);
+            break (
+                child
+                    .wait()
+                    .await
+                    .map_err(|_| "instance.step_start_failed")?,
+                true,
+            );
+        }
         tokio::select! {
             biased;
             () = &mut stop => { drop(group); let status = child.wait().await.map_err(|_| "instance.step_start_failed")?; break (status, true) },
@@ -504,11 +607,21 @@ pub(crate) fn run(input: Input, started: Instant) -> Result<Output> {
         material.validate(&input, deadline)?;
         let layout = Layout::system();
         let home = material.home(&layout);
-        let account = identity::passwd(&home.user)
-            .filter(|p| p.uid != 0 && p.gid != 0 && p.home == home.home.to_string_lossy())
-            .ok_or("instance.step_layout_invalid")?;
+        let account = admitted_account(
+            identity::passwd(&home.user).ok_or("instance.step_layout_invalid")?,
+            &home,
+        )?;
         let cwd = release(&material, &layout, account.uid, account.gid)?;
-        execute(&material, account.uid, account.gid, cwd, deadline, true).await
+        execute(
+            &material,
+            account.uid,
+            account.gid,
+            cwd,
+            deadline,
+            #[cfg(test)]
+            false,
+        )
+        .await
     })
 }
 

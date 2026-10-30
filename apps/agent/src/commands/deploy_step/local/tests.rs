@@ -124,6 +124,26 @@ fn layout_is_project_bound_and_refuses_a_symlink_or_foreign_owner() {
     fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
     assert!(release(&material, &layout, uid, gid).is_ok());
     assert!(release(&material, &layout, uid + 1, gid).is_err());
+    assert!(release(&material, &layout, uid, gid + 1).is_err());
+    for directory in [
+        &home.home,
+        &home.home.join("releases"),
+        &home.home.join("releases/admitted"),
+    ] {
+        for mode in [0o770, 0o707] {
+            fs::set_permissions(directory, fs::Permissions::from_mode(mode)).unwrap();
+            assert!(release(&material, &layout, uid, gid).is_err());
+        }
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    for directory in [home.home.join("releases"), home.home.clone()] {
+        let other = directory.with_extension("real");
+        fs::rename(&directory, &other).unwrap();
+        symlink(&other, &directory).unwrap();
+        assert!(release(&material, &layout, uid, gid).is_err());
+        fs::remove_file(&directory).unwrap();
+        fs::rename(other, directory).unwrap();
+    }
     fs::rename(
         home.home.join("releases/admitted"),
         home.home.join("releases/elsewhere"),
@@ -138,6 +158,7 @@ fn layout_is_project_bound_and_refuses_a_symlink_or_foreign_owner() {
 fn capture_bounds_redacts_and_drops_an_oversized_line() {
     let env = BTreeMap::from([("APP_KEY".into(), "first-secret\nsecond-secret".into())]);
     let mut capture = Capture::new(&env);
+    capture.deadline = Instant::now() + Duration::from_secs(5);
     let mut lines = Lines::default();
     capture.bytes(&mut lines, b"first-secret and second-secret\n");
     assert!(!capture.output.contains("secret"));
@@ -156,6 +177,7 @@ fn capture_bounds_redacts_and_drops_an_oversized_line() {
 fn a_capture_cutoff_never_flushes_a_partial_secret() {
     let env = BTreeMap::from([("APP_SECRET".into(), "private-long-secret".into())]);
     let mut capture = Capture::new(&env);
+    capture.deadline = Instant::now() + Duration::from_secs(5);
     capture.remaining = 7;
     let mut lines = Lines::default();
     capture.bytes(&mut lines, b"private-long-secret");
@@ -171,6 +193,7 @@ fn environment_values_cannot_disable_structured_credential_redaction() {
         ("MARKER".into(), "Bearer".into()),
     ]);
     let mut capture = Capture::new(&env);
+    capture.deadline = Instant::now() + Duration::from_secs(5);
     let mut lines = Lines::default();
     capture.bytes(
         &mut lines,
@@ -193,7 +216,7 @@ async fn an_incomplete_tail_never_publishes_a_secret_prefix() {
         rustix::process::getegid().as_raw(),
         File::open(&scratch.0).unwrap(),
         Instant::now() + Duration::from_secs(3),
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -227,7 +250,7 @@ async fn program_has_only_app_env_and_the_sealed_script_descriptor() {
         rustix::process::getegid().as_raw(),
         File::open(&scratch.0).unwrap(),
         Instant::now() + Duration::from_secs(3),
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -257,7 +280,7 @@ async fn timeout_kills_the_process_group_and_noisy_output_stays_bounded() {
         rustix::process::getegid().as_raw(),
         File::open(&scratch.0).unwrap(),
         start + Duration::from_secs(3),
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -297,9 +320,138 @@ async fn unsupported_deadline_precedes_any_program_effect() {
         rustix::process::getegid().as_raw(),
         File::open(&scratch.0).unwrap(),
         Instant::now() + Duration::from_secs(305),
-        false
+        true
     )
     .await
     .is_err());
     assert!(!scratch.0.join("should-not-exist").exists());
+}
+
+#[test]
+fn root_accounts_and_identity_mismatches_refuse() {
+    let material = material("true", 1);
+    let home = material.home(&Layout {
+        home_root: "/home".into(),
+        state_root: "/var/lib/orbit/app-instance-sources".into(),
+        root_uid: 0,
+    });
+    for (uid, gid) in [(0, 1000), (1000, 0)] {
+        let account = identity::Passwd {
+            uid,
+            gid,
+            home: home.home.to_string_lossy().into(),
+            shell: "/bin/bash".into(),
+        };
+        assert!(admitted_account(account, &home).is_err());
+    }
+    assert!(assert_app_identity(0, 0).is_err());
+    assert!(assert_app_identity(
+        rustix::process::geteuid().as_raw() + 1,
+        rustix::process::getegid().as_raw()
+    )
+    .is_err());
+}
+#[test]
+fn mismatched_material_scripts_and_loader_environment_refuse() {
+    let original = material("true", 1);
+    let admitted = input(&original);
+    for field in [
+        "operation",
+        "step",
+        "digest",
+        "oversize",
+        "nul",
+        "LD_PRELOAD",
+        "BASH_ENV",
+        "BASH_FUNC_probe%%",
+    ] {
+        let mut value = material("true", 1);
+        match field {
+            "operation" => value.operation += 1,
+            "step" => value.step = "setup.foreign".into(),
+            "digest" => value.digest = "a".repeat(64),
+            "oversize" => {
+                value.script = "x".repeat(16 * 1024 + 1);
+                value.digest = digest(&value.script);
+            }
+            "nul" => {
+                value.script = "true\0false".into();
+                value.digest = digest(&value.script);
+            }
+            key => {
+                value.environment.insert(key.into(), "private".into());
+            }
+        }
+        let request = if matches!(field, "oversize" | "nul") {
+            input(&value)
+        } else {
+            Input {
+                operation: admitted.operation,
+                step: admitted.step.clone(),
+                digest: admitted.digest.clone(),
+            }
+        };
+        assert_eq!(
+            value.validate(&request, Instant::now() + Duration::from_secs(5)),
+            Err("instance.step_not_admitted"),
+            "{field}"
+        );
+    }
+}
+#[tokio::test]
+async fn material_http_refuses_errors_cacheable_and_oversize_bodies() {
+    for (status, cache, body) in [
+        (403, Some("no-store"), vec![]),
+        (200, None, vec![]),
+        (200, Some("private"), vec![]),
+        (200, Some("no-store"), vec![b'x'; MATERIAL_LIMIT + 1]),
+        (200, Some("no-store"), b"malformed".to_vec()),
+    ] {
+        let mut response = http::Response::builder().status(status);
+        if let Some(cache) = cache {
+            response = response.header("cache-control", cache);
+        }
+        let response = reqwest::Response::from(response.body(body).unwrap());
+        assert!(matches!(
+            read_material(response).await,
+            Err("instance.step_material_unavailable")
+        ));
+    }
+    let body = serde_json::json!({"data": {"operation":44,"step":"setup.install","digest":"a".repeat(64),"instance":12,"project":9,"repository":"https://example.test/project.git","relative_root":"public","release":"admitted","timeout_seconds":1,"script":"true","environment":{}}});
+    let response = http::Response::builder()
+        .status(200)
+        .header("cache-control", "private, no-store")
+        .body(serde_json::to_vec(&body).unwrap())
+        .unwrap();
+    assert!(read_material(reqwest::Response::from(response))
+        .await
+        .is_ok());
+}
+#[test]
+fn redaction_cost_secret_count_expansion_and_timer_are_bounded() {
+    let env = BTreeMap::from([("PRIVATE".into(), "secret".into())]);
+    let mut capture = Capture::new(&env);
+    capture.deadline = Instant::now() + Duration::from_secs(5);
+    capture.work_remaining = 1;
+    let mut lines = Lines::default();
+    capture.bytes(&mut lines, b"secret\n");
+    assert!(capture.output.is_empty() && capture.truncated);
+    let mut capture = Capture::new(&BTreeMap::from([(
+        "PRIVATE".into(),
+        "x\n".repeat(SECRET_LIMIT + 1),
+    )]));
+    assert_eq!(capture.remaining, 0);
+    capture.bytes(&mut lines, b"private\n");
+    assert!(capture.output.is_empty());
+    let mut capture = Capture::new(&BTreeMap::from([("PRIVATE".into(), "x".into())]));
+    capture.deadline = Instant::now() + Duration::from_secs(5);
+    capture.bytes(
+        &mut lines,
+        format!("{}\n", "x".repeat(LINE_LIMIT)).as_bytes(),
+    );
+    assert!(capture.output.is_empty() && capture.truncated);
+    let mut capture = Capture::new(&env);
+    capture.deadline = Instant::now();
+    capture.bytes(&mut Lines::default(), b"private\n");
+    assert!(capture.output.is_empty() && capture.truncated);
 }
