@@ -12,4 +12,7 @@ $control = [
     'writer_scope' => ['vite' => null, 'parent_operation_id' => null],
 ];
 
-return array_fill_keys(['process.start', 'process.stop', 'process.restart', 'process.destroy'], $control);
+return [
+    ...array_fill_keys(['process.start', 'process.restart', 'process.destroy'], $control),
+    'process.stop' => [...$control, 'writer_scope' => []],
+];

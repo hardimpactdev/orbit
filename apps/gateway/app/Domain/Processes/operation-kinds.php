@@ -14,7 +14,7 @@ return (static function (): array {
     }
     $kinds = [];
     $artifact = ['process_id', 'runtime', 'name'];
-    foreach (['create', 'update', 'start', 'stop', 'restart', 'destroy'] as $verb) {
+    foreach (['create', 'update', 'start', 'restart', 'destroy'] as $verb) {
         $runs = [];
         if (in_array($verb, ['create', 'update'], true)) {
             $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => ['process_id'], 'input_values' => ['vite' => null], 'bind' => ['runtime' => 'input.retired_runtime', 'name' => 'input.retired_name']];
@@ -26,7 +26,7 @@ return (static function (): array {
         } else {
             $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => $verb]];
         }
-        if ($verb !== 'destroy' && $verb !== 'stop') {
+        if ($verb !== 'destroy') {
             $runs[] = ['transport' => 'agent', 'name' => 'process.check-release', 'input_fields' => ['directory'], 'input_values' => []];
         }
         if (in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
@@ -52,6 +52,10 @@ return (static function (): array {
             'completion_contract' => ['step' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.runtime_ready', 'result' => ['ready' => true]],
             'result_fields' => ['state', 'staged', 'previous', 'backup_left', 'available', 'owned', 'ready', 'error_code']];
     }
+
+    $kinds['process.stop'] = ['executor' => 'swamp', 'completion' => ProcessOperationCompletion::class, 'runs' => [],
+        'completion_contract' => ['step' => 'process-control', 'transport' => 'agent', 'name' => 'process.control', 'result' => []],
+        'result_fields' => ['ready', 'state', 'error_code']];
 
     foreach (['install_instance_definitions' => 'process.create', 'restart_instance' => 'process.restart'] as $verb => $childKind) {
         if ($verb === 'restart_instance' && ! OperationKinds::supports('list_of')) {
