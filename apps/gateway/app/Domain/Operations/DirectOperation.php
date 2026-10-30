@@ -26,7 +26,7 @@ final readonly class DirectOperation
                     || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope']) !== []
                     || array_diff(['workflow', 'writer_config', 'writer_state', 'projection'], array_keys($definition)) !== []
                     || array_any(array_intersect_key($definition, array_flip(['workflow', 'writer_config', 'writer_state'])), static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)
-                    || (array_key_exists('writer_scope', $definition) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
+                    || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
                     || ! is_a($definition['projection'], DirectOperationProjection::class, true)
                     || (isset($definition['primitive']) && ! is_a($definition['primitive'], DirectOperationPrimitive::class, true))) {
                     throw new LogicException('A direct Operation needs one fixed family declaration.');
