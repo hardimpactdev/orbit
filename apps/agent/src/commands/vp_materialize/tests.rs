@@ -145,6 +145,94 @@ fn retains_existing_runtimes_upgrades_owned_launchers_and_repeats_without_downlo
     }
 }
 #[test]
+fn converges_writable_package_manager_directories_without_replacing_runtimes() {
+    for location in ["opt", "home", "local"] {
+        let fixture = Fixture::new();
+        let scope = fixture.existing(location, false);
+        let package = scope.join("package_manager/npm/11.12.0/npm");
+        fs::create_dir_all(package.join("bin")).unwrap();
+        let runtime = package.join("bin/npm");
+        fs::write(&runtime, "existing npm runtime").unwrap();
+        let mut paths = vec![scope.join("package_manager")];
+        for (manager, version) in [("npm", "11.12.0"), ("pnpm", "12.11.2")] {
+            let path = scope.join("package_manager").join(manager).join(version);
+            fs::create_dir_all(&path).unwrap();
+            paths.extend([path.parent().unwrap().to_path_buf(), path]);
+        }
+        for path in &paths {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o775)).unwrap();
+        }
+        let mut host = Verify::default();
+        assert!(fixture.run(&mut host).unwrap().changed);
+        for path in &paths {
+            assert_eq!(fs::metadata(path).unwrap().mode() & 0o777, 0o755);
+            store::check_path(&scope, path, &fixture.account).unwrap();
+        }
+        assert_eq!(fs::read(&runtime).unwrap(), b"existing npm runtime");
+        assert!(!fixture.run(&mut host).unwrap().changed);
+    }
+}
+
+#[test]
+fn refuses_symlinked_package_manager_directories_before_permission_changes() {
+    for relative in [
+        "package_manager",
+        "package_manager/npm",
+        "package_manager/npm/11.12.0",
+    ] {
+        let fixture = Fixture::new();
+        let scope = fixture.existing("home", false);
+        let target = scope.join(relative);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let outside = fixture.account.home.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o775)).unwrap();
+        symlink(&outside, &target).unwrap();
+        let mut host = Verify::default();
+        assert!(matches!(fixture.run(&mut host), Err(Error::Conflict {})));
+        assert_eq!(fs::metadata(&outside).unwrap().mode() & 0o777, 0o775);
+        assert!(host.calls.is_empty());
+        assert!(!fixture.files.path("/usr/local/bin/vp").exists());
+    }
+}
+
+#[test]
+fn validates_all_manager_paths_before_removing_write_bits() {
+    let fixture = Fixture::new();
+    let scope = fixture.existing("home", false);
+    let npm = scope.join("package_manager/npm/11.12.0");
+    fs::create_dir_all(&npm).unwrap();
+    fs::set_permissions(&npm, fs::Permissions::from_mode(0o775)).unwrap();
+    let pnpm = scope.join("package_manager/pnpm/12.11.2");
+    fs::create_dir_all(pnpm.parent().unwrap()).unwrap();
+    fs::write(&pnpm, "not a directory").unwrap();
+    let mut host = Verify::default();
+    assert!(matches!(fixture.run(&mut host), Err(Error::Conflict {})));
+    assert_eq!(fs::metadata(npm).unwrap().mode() & 0o777, 0o775);
+    assert!(host.calls.is_empty());
+}
+
+#[test]
+fn refuses_permission_repair_for_another_store_owner() {
+    let fixture = Fixture::new();
+    let scope = fixture.existing("home", false);
+    fs::set_permissions(&scope, fs::Permissions::from_mode(0o775)).unwrap();
+    let foreign = Account {
+        uid: fixture.account.uid + 1,
+        ..fixture.account
+    };
+    assert!(matches!(
+        repair_package_manager_permissions(
+            &scope,
+            &foreign,
+            Instant::now() + Duration::from_secs(5)
+        ),
+        Err(Error::Conflict {})
+    ));
+    assert_eq!(fs::metadata(scope).unwrap().mode() & 0o777, 0o775);
+}
+
+#[test]
 fn foreign_launchers_refuse_before_any_publication_or_process() {
     for defect in ["contents", "mode", "symlink", "directory"] {
         let fixture = Fixture::new();

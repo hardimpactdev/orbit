@@ -14,7 +14,7 @@ use serde::Serialize;
 use std::{
     collections::BTreeMap,
     fs, io,
-    os::unix::fs::MetadataExt,
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -113,6 +113,63 @@ fn restore(files: &Files, kept: &BTreeMap<PathBuf, Option<Kept>>) -> Result<()> 
     }
     Ok(())
 }
+/// Repair only real, account-owned package-manager path components, never archive contents.
+fn repair_package_manager_permissions(
+    scope: &Path,
+    account: &Account,
+    deadline: Instant,
+) -> Result<bool> {
+    store::check_home(scope, account, true).map_err(|_| Error::Conflict {})?;
+    let _lock = store::lock(scope, account, deadline).map_err(failed)?;
+    let mut paths = vec![scope.to_path_buf(), scope.join("package_manager")];
+    let mut directories = vec![];
+    let mut index = 0;
+    while index < paths.len() {
+        let path = &paths[index];
+        let directory = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC)
+            .open(path)
+        {
+            Ok(directory) => directory,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                index += 1;
+                continue;
+            }
+            Err(_) => return Err(Error::Conflict {}),
+        };
+        let metadata = directory.metadata().map_err(failed)?;
+        if metadata.uid() != account.uid {
+            return Err(Error::Conflict {});
+        }
+        directories.push((directory, metadata.mode()));
+        if path == &scope.join("package_manager") {
+            paths.extend([path.join("npm"), path.join("pnpm")]);
+        } else if path.parent() == Some(scope.join("package_manager").as_path()) {
+            let mut versions = vec![];
+            for entry in fs::read_dir(path).map_err(failed)? {
+                let entry = entry.map_err(failed)?;
+                if entry.file_name().to_str().is_some_and(store::version) {
+                    versions.push(entry.path());
+                }
+            }
+            versions.sort();
+            paths.extend(versions);
+        }
+        index += 1;
+    }
+    let mut changed = false;
+    for (directory, mode) in directories {
+        if mode & 0o022 != 0 {
+            directory
+                .set_permissions(fs::Permissions::from_mode(mode & 0o7777 & !0o022))
+                .map_err(failed)?;
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
 fn materialize(
     host: &mut impl Host,
     files: &Files,
@@ -165,7 +222,7 @@ fn materialize(
                 return Err(Error::Failed {});
             }
         }
-        let mut changed = missing;
+        let mut changed = missing | repair_package_manager_permissions(&scope, account, deadline)?;
         for binary in BINARIES {
             let path = files.path("/usr/local/bin").join(binary);
             let bytes = launcher(&scope, binary);
