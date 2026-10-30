@@ -16,7 +16,10 @@ const Reply = z.discriminatedUnion("ok", [
     ok: z.literal(false),
     error: z.object({
       code: z.string().regex(/^[a-z0-9_.-]{1,100}$/),
-      details: z.object({ restored: z.boolean().optional() }).optional(),
+      details: z.object({
+        restored: z.boolean().optional(),
+        stage: z.string().optional(),
+      }).optional(),
     }),
   }),
 ]);
@@ -46,6 +49,10 @@ export function agentReply(bytes: Uint8Array, success: boolean) {
     return {
       error_code: reply.error.code,
       ...(restored === undefined ? {} : { restored }),
+      ...(reply.error.code === "caddy.publication_failed" &&
+          reply.error.details?.stage === "validate"
+        ? { stage: "validate" }
+        : {}),
     };
   }
   if (!success) throw new Error("The Node action outcome is uncertain");
