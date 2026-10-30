@@ -1,9 +1,10 @@
 # Direct Schedule control
 
 `operation-schedule-control` runs one Gateway-admitted `schedule.enable` or
-`schedule.run` intent. During the binding canary it uses the existing Node 209
-workers (`pool: migration`); exact `orbit-node-<admitted Node ID>` placement
-follows with the per-Node workers. It uses the shared
+`schedule.run` intent on exactly `orbit-node-<admitted Node ID>`. The temporary
+Node 209 migration-pool placement was used only for the completed binding canary
+and is removed from source. Actual actions remain gated on per-Node workers and
+the approved privilege boundary. It uses the shared
 [direct Operation boundary](direct-operations.md): `StartSwampRun`, the one
 `ORBIT_SWAMP_RUN_TOKEN`, the `swamp.direct_writers` map, `GatewayOperation` and
 `directOperation`. The immutable writer stamp is `schedule_control_writer`.
@@ -68,12 +69,38 @@ native fixture removes placement; it does not prove enrollment, privilege, live
 binding order or systemd. Live latency and the family's negative Gateway net
 remain unfinished until runtime proof and deletion.
 
-The migration-pool authorization covers a binding-only canary: record
-cancellation inside the admission transaction before the after-commit native
-start. The shared template must read that cancellation and project it without
-calling the root-required local action. Use a healthy dev Schedule, keep shared
-writers polled, and record the Gateway Operation/run IDs and native result. This
-proves the real start-binding/read path, not Schedule activation or manual
-execution. It does not permit root actions on Node 209 or claim that a Schedule
-action ran on its owning Node. Restore exact Node placement as part of per-Node
-rollout before full action proof or writer takeover.
+## Live binding proof
+
+The 2026-10-30 migration-pool canary passed for both kinds on the loaded
+`f89832f0382df1f22bfb8b16c87ddb39a509cbd4` source. The Gateway recorded
+cancellation inside each admission transaction before after-commit native start.
+Both native runs succeeded and projected `cancelled`; the local Schedule action
+was never invoked. The dev Schedules kept their prior desired state, status,
+error fields and last-run timestamps.
+
+| Kind              | Gateway Operation | Native run                             | Start acknowledgement | Native run duration |
+| ----------------- | ----------------- | -------------------------------------- | --------------------- | ------------------- |
+| `schedule.run`    | 4740              | `20502013-3ec0-430b-9c0a-eb4ad40df12a` | 926 ms                | 23,826 ms           |
+| `schedule.enable` | 4745              | `8e7fa96b-fc27-4e90-bee3-b29318b6562a` | 82 ms on recovery     | 25,718 ms           |
+
+The initial enable submission was unconfirmed. Filtered native history had no
+run for Operation 4745, and the latest family run was the completed 4740 canary.
+The operator submitted the existing intent once through shared `StartSwampRun`;
+the Gateway bound its returned root ID. No new admission, worker-supplied
+binding or automatic retry was added. A broad native-history query timed out at
+its default 30 seconds; no runtime setting changed.
+
+The grant is `ea06ca4c-dbbd-45b5-b8f7-d393d7554617`, run/read only for the
+existing Gateway principal and this workflow. Actual starts authenticated as
+`user:orbit-gateway`. The preliminary access diagnostic was inconclusive and is
+not permission proof. Both successful read/projection paths used the binding
+checks from Orbit #1711. No Gateway worker, claim attempt or target hold was
+created.
+
+These are binding/read/projection timings, including native dispatch and
+reporting. They are not Schedule-action latencies or a before/after performance
+comparison. Both shared per-kind writers remain `polled`. No root privilege,
+worker-unit or production writer changed. Exact-Node placement restoration in
+source must be loaded normally; full action E2E and production proof still
+precede takeover and deletion. Evidence is recorded under
+`~/swamp-execution/evidence/schedule-binding-canary-20261030` on Beast.
