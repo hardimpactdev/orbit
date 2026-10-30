@@ -1,3 +1,4 @@
+import { assertRetentionTarget } from "./retention-paths.ts";
 /** Bounded, resumable receipt graph and native pruning for the filesystem store. */
 import { DatabaseSync } from "node:sqlite";
 import { join, resolve } from "jsr:@std/path@1.1.4";
@@ -724,6 +725,7 @@ export async function pruneOnline(
               const latest = catalog.prepare(
                 "SELECT version FROM catalog WHERE namespace='' AND type_normalized=? AND model_id=? AND data_name=? AND is_latest=1",
               ).get(r.type_normalized, r.model_id, r.data_name);
+              assertRetentionTarget(repo,source(r));
               if (
                 latest &&
                 await native.deleteVersion({
@@ -783,6 +785,7 @@ export async function pruneOnline(
                   n.path,
                 );
               }
+              assertRetentionTarget(repo,n.path);
               await Deno.remove(n.path);
               removedPaths++;
               db.prepare("DELETE FROM files WHERE path=?").run(n.path);
@@ -814,6 +817,7 @@ export async function pruneOnline(
                 !item.path.startsWith(base + "/") || !file.isFile ||
                 await Deno.realPath(item.path) !== item.path
               ) throw new Error("unsafe_retention_cleanup");
+              assertRetentionTarget(repo,item.path);
               await Deno.remove(item.path);
               removedPaths++;
             }

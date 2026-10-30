@@ -58,6 +58,7 @@ export const behavior={type:"@nckrtl/orbit-group-run",version:"2026.10.28.1",glo
     await Deno.mkdir(join(root,"bin"),{recursive:true});
     await Deno.copyFile("bin/compact-services.ts",join(root,"bin/compact-services.ts"));
     await Deno.copyFile("bin/retention-online.ts",join(root,"bin/retention-online.ts"));
+    await Deno.copyFile("bin/retention-paths.ts",join(root,"bin/retention-paths.ts"));
     await Deno.writeTextFile(join(root,"extensions/behaviors/runtime_retention_executor.ts"),
       (await Deno.readTextFile("extensions/behaviors/runtime_retention_executor.ts")).replace("Date.now()","Date.now()+2*3600000"));
     await Deno.copyFile("extensions/behaviors/runtime_retention.ts",join(root,"extensions/behaviors/runtime_retention.ts"));

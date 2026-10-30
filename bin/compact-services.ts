@@ -3,6 +3,7 @@
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { dirname, join, resolve, relative } from "jsr:@std/path@1.1.4";
 import { DatabaseSync } from "node:sqlite";
+import { assertRetentionTarget } from "./retention-paths.ts";
 
 const DAY = 86400000;
 const terminal = new Set(["succeeded", "failed", "cancelled"]);
@@ -197,6 +198,7 @@ async function compactUnlocked(repo: string, apply = false, now = Date.now(), na
   });
   // Refuse unsafe or unexpected paths before any mutation.
   for (const path of [...remove, ...retire.map((r) => r.path)]) {
+    assertRetentionTarget(repo,path);
     if (relative(repo, path).startsWith("..") || await Deno.realPath(path) !== path) throw new Error("unsafe_compaction_path");
   }
   const plan = { apply, versions: remove.filter((p) => p.startsWith(data + "/")).length, runs: deletedRuns.size, paths: remove.map((p) => relative(repo, p)), more: !!native && remove.length > native.limit, protectedRuns: seen.size, retiredModels: retire.map((r) => r.value.name) };
@@ -220,6 +222,7 @@ async function compactUnlocked(repo: string, apply = false, now = Date.now(), na
     }
     for (const r of retire) {
       const target = join(repo,".swamp/retired-group-definitions",String(r.value.id)+".yaml");
+      assertRetentionTarget(repo,target);
       await Deno.mkdir(dirname(target),{recursive:true});
       if (native) {
         await Deno.copyFile(r.path,target);

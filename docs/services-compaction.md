@@ -129,3 +129,22 @@ Upstream guidance: [Swamp repository retention](https://github.com/swamp-club/sw
 The native catalog has no index for a bare data ID or resource-name/version pair. A live lookup scanned its namespace and took 0.16–0.27 seconds, even for a resource outside the pruner's supported types. The planner now indexes reference keys and native row locators in its private checkpoint during the existing 100-row inventory batches. Graph expansion pages matching locators and cached aliases together in pages of 100 and checks each supported row by native rowid before reading its source. Pending promotion is checked on the authoritative row, including promotion without a new rowid; filtered pages still advance their cursor. A missing or changed row identity restarts the batched locator inventory before any deletion; parsed sources and graph pins remain intact. Unknown references refresh newly appended catalog rows before expansion completes.
 
 An existing checkpoint backfills this metadata index through the inventory cursor. Parsed sources, graph pins, directory progress and the prune cursor are retained. Only locator metadata enters the index, with no resource bodies or credentials. The native catalog remains read-only and its schema is unchanged. Deadlines, removal limits and receipt protection rules stay the same.
+
+## Native control-plane exclusion
+
+Orbit's compactor and inactive online planner exclude the entire `.swamp/_control`
+subtree, including its empty directories. They also refuse to remove an ancestor
+of that subtree. Never recursively clean this native state or recreate its records
+from a directory listing. Native Swamp owns its records and their lifetimes.
+
+For a missing native directory, inspect the verified checkpoint's directory
+metadata and the current runtime source. On Node 209 the native control root and
+its record directories use `orbit:orbit` and mode `0700`; `retention` uses `0755`.
+Restore only a missing directory, without changing records, schedules or serve.
+Compare all checkpoint control directories afterward. Swamp's filesystem control
+store itself removes empty parent directories after deleting a record, so a
+missing empty directory alone does not prove a retention deletion. Its `put()`
+can race that removal between `mkdir` and the atomic temporary-file write in
+pinned release `1602a617`. Orbit's exclusion does not repair that native race.
+Native metadata retention has no documented arbitrary-path exclusion setting;
+keep its supported policy and data-GC prohibition unchanged.
