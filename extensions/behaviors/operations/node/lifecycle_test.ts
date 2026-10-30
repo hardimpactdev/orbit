@@ -428,3 +428,40 @@ Deno.test("network projection executes only the serving Node plan before proving
   ]);
   assertEquals(f.childRows.size, 0);
 });
+
+Deno.test("enrollment re-entry restores after a failed child step without requesting a run receipt", async () => {
+  const f = new LifecycleFixture([
+    child("add-network", "node.network_converge"),
+  ]);
+  f.operation.kind = "node.add";
+  f.operation.steps.push({ name: "add-network", status: "failed" });
+  f.childRows.set("add-network", {
+    id: 24,
+    key: "add-network",
+    kind: "node.network_converge",
+    node_id: 2,
+    status: "failed",
+  });
+  f.compensations = [child("add-restore", "node.enrollment_restore")];
+  f.operation.execution_context = {
+    descriptors: [],
+    result: { node_restore_required: true },
+  };
+  f.replies.set("node-lifecycle-result", {
+    node_plan_proven: true,
+    enrolled: false,
+    error_code: "vpn.peer_ssh_failed",
+    failed_step: "add-network",
+  });
+  const base = f.http;
+  f.http = async (method, path, body) => {
+    if (path.includes("/receipts/")) {
+      throw new Error("operation.execution_forbidden");
+    }
+    return await base(method, path, body);
+  };
+
+  assertEquals((await f.execute("reclaimed-worker")).status, "failed");
+  assertEquals([...f.childRows.keys()], ["add-network", "add-restore"]);
+  assertEquals(f.runs(), ["node.lifecycle-result"]);
+});

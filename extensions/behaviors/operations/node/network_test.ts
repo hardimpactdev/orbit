@@ -57,13 +57,36 @@ class NetworkFixture extends Fixture {
           } else if (
             this.childStatus === "succeeded" &&
             add("network-publish", "wireguard.publish-peer", "bootstrap-ssh") &&
-            add("network-private-ssh", "agent.status") &&
-            add("network-trust", "firewall.rules")
+            add("network-private-ssh", "agent.status")
           ) {
-            add("network-result", "node.network-result", "gateway");
+            const failed = this.receipts.get("network-private-ssh")?.error_code;
+            if (
+              failed
+                ? add(
+                  "network-rollback",
+                  "wireguard.rollback-peer",
+                  "bootstrap-ssh",
+                )
+                : add("network-trust", "firewall.rules")
+            ) {
+              add("network-result", "node.network-result", "gateway");
+            }
           }
         }
         this.operation.execution_context = { descriptors };
+      }
+      if (path.endsWith("/step")) {
+        const existing = this.operation.steps.find((step) =>
+          step.name === body.name
+        );
+        if (existing?.status === "failed" && body.status === "running") {
+          throw new Error("operation.step_finished");
+        }
+        if (existing) existing.status = String(body.status);
+        else {this.operation.steps.push({
+            name: String(body.name),
+            status: String(body.status),
+          });}
       }
       if (path.endsWith("/children")) {
         this.calls.push({ path, body });
@@ -229,4 +252,52 @@ Deno.test("network reconciles an already started peer publication before settlin
     f.calls.some((call) => call.path.endsWith("/receipts/network-publish")),
     true,
   );
+});
+
+Deno.test("network recovers a failed private check receipt and proves rollback without restarting the step", async () => {
+  const f = new NetworkFixture();
+  await f.execute();
+  f.childStatus = "succeeded";
+  f.receipts.set("network-publish", { public_key: "admitted-public-key" });
+  f.operation.step_results["network-publish"] = {
+    public_key: "admitted-public-key",
+  };
+  f.operation.steps.push({ name: "network-publish", status: "succeeded" }, {
+    name: "network-private-ssh",
+    status: "failed",
+  });
+  f.receipts.set("network-private-ssh", {
+    error_code: "operation.execution_uncertain",
+  });
+  f.replies.set("network-rollback", {});
+  f.replies.set("network-result", {
+    network_proven: true,
+    error_code: "operation.execution_uncertain",
+    failed_step: "network-private-ssh",
+  });
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(
+    f.runs().filter((name) => name === "wireguard.rollback-peer").length,
+    1,
+  );
+  assertEquals(f.runs().includes("agent.status"), false);
+  assertEquals(
+    f.calls.at(-1)!.body.error_code,
+    "operation.execution_uncertain",
+  );
+});
+
+Deno.test("network refuses to reuse a failed step without a matching failed Gateway receipt", async () => {
+  const f = new NetworkFixture();
+  await f.execute();
+  f.childStatus = "succeeded";
+  f.receipts.set("network-publish", { public_key: "admitted-public-key" });
+  const runs = f.runs();
+  f.operation.steps.push({ name: "network-private-ssh", status: "failed" });
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.completion_unproven",
+  );
+  assertEquals(f.runs(), runs);
 });

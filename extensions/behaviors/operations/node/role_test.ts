@@ -363,6 +363,7 @@ Deno.test("relocation destination transfers the assignment before admitting its 
 
 Deno.test("first-role refusal starts the recorded peer compensation before final failure", async () => {
   const f = new RoleFixture([runtime()]);
+  f.operation.steps.push({ name: "role-runtime", status: "failed" });
   f.operation.execution_context = {
     descriptors: [],
     result: { role_rollback_required: true },
@@ -397,6 +398,7 @@ Deno.test("first-role refusal starts the recorded peer compensation before final
     "node.network_rollback",
   );
   assertEquals(f.runs(), ["node.prepare-role", "node.role-result"]);
+  assertEquals(f.calls.some((call) => call.path.includes("/receipts/")), false);
 });
 
 Deno.test("cancellation restores the peer through a child and runs no further parent effect", async () => {

@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
   type Context,
+  EffectReceipt,
   Executor,
   ExecutorError,
   Operation,
@@ -79,6 +80,30 @@ export class NodeExecution {
   }
   async refresh() {
     this.operation = Operation.parse(await this.post("heartbeat", {}));
+    for (
+      const run of this.operation.execution_context.descriptors.filter((run) =>
+        this.operation.steps.some((step) =>
+          step.status === "failed" && step.name === run.step
+        )
+      )
+    ) {
+      const receipt = EffectReceipt.parse(
+        await this.get(`receipts/${encodeURIComponent(run.key)}`),
+      );
+      if (
+        !["succeeded", "failed"].includes(receipt.state) ||
+        receipt.result === null ||
+        (receipt.state === "succeeded" && !receipt.result.error_code)
+      ) {
+        throw new ExecutorError("operation.completion_unproven");
+      }
+      this.operation.step_results[run.step] = {
+        ...receipt.result,
+        error_code: ErrorCode.parse(
+          receipt.result.error_code ?? "operation.execution_failed",
+        ),
+      };
+    }
     return this.operation;
   }
   async run(
