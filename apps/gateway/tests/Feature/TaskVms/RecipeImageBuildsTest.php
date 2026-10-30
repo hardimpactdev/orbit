@@ -93,7 +93,7 @@ function recipeImageCurrent(string $document): void
 }
 
 /** @return array{TaskVmImageBuild, Operation, array<string,mixed>} */
-function recipeImageSeedIntent(): array
+function recipeImageSeedIntent(string $kind = 'task_vm.image_finish_seed'): array
 {
     $host = recipeImageHost();
     recipeImageTransport($host);
@@ -104,61 +104,64 @@ function recipeImageSeedIntent(): array
     $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'topology-seed', 'effect_key' => 'finish-seed',
         'location' => ['project' => 'orbit-tasks', 'pool' => 'orbit-tasks'], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => IMAGE_NEW]];
 
+    if ($kind === 'task_vm.image_seed') {
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'topology-seed', 'effect_key' => 'topology-seed',
+            'project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'vm' => $build->builder_vm_name.'-smoke', 'size' => '45GiB', 'fingerprint' => IMAGE_NEW];
+    }
+
     return [$build, $parent, $input];
 }
 
-it('admits seed finalization directly and projects its phase once without Gateway execution', function (): void {
-    [$build, $parent] = recipeImageSeedIntent();
+it('admits the seed effect directly and projects its phase once without Gateway execution', function (string $kind): void {
+    [$build, $parent, $input] = recipeImageSeedIntent($kind);
+    $key = $input['effect_key'];
     $socket = new FakeRoutePublicationSocket;
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-vm-incus', 'runId' => $run]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
-    $child = app(OperationChildren::class)->admit($parent, ['key' => 'finish-seed'])['operation'];
+    $child = app(OperationChildren::class)->admit($parent, ['key' => $key])['operation'];
     expect(DirectOperation::owns($child))->toBeTrue()->and($child->node_id)->toBe($build->host_node_id)
         ->and($child->state['swamp_run_id'])->toBe($run)->and($child->worker)->toBeNull()->and($child->attempts)->toBe(0);
     $projection = app(TaskVmIncusProjection::class);
-    expect($projection->input($child)['intent'])->toEqual([
-        'build_id' => $build->id, 'attempt' => $build->attempt,
-        'location' => ['project' => 'orbit-tasks', 'pool' => 'orbit-tasks'], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => IMAGE_NEW],
-    ]);
+    expect($projection->input($child)['intent'])->toEqual(array_diff_key($input, array_flip(['phase', 'effect_key'])));
     $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true]];
     $projection->apply($child, $outcome);
     $steps = $build->fresh()->steps;
     $this->travel(30)->seconds();
     $projection->apply($child->fresh(), $outcome);
-    expect(app(OperationChildren::class)->requireSucceeded($parent, 'finish-seed')->id)->toBe($child->id)
+    expect(app(OperationChildren::class)->requireSucceeded($parent, $key)->id)->toBe($child->id)
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
-    expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['operations']['finish-seed'])->toBe($child->id);
-});
+    expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['operations'][$key])->toBe($child->id);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed']);
 
-it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change): void {
-    [$build, , $input] = recipeImageSeedIntent();
+it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
+    [$build, , $input] = recipeImageSeedIntent($kind);
     $nodeId = $build->host_node_id;
     match ($change) {
         'host' => $nodeId++,
-        'candidate' => $input['operation']['fingerprint'] = str_repeat('d', 64),
-        'project' => $input['location']['project'] = 'operator-owned',
-        'pool' => $input['location']['pool'] = 'operator-owned',
-        'variant' => $input['operation'] = ['kind' => 'remove', 'name' => 'operator-owned'],
+        'candidate' => $kind === 'task_vm.image_seed' ? $input['fingerprint'] = str_repeat('d', 64) : $input['operation']['fingerprint'] = str_repeat('d', 64),
+        'project' => $kind === 'task_vm.image_seed' ? $input['project'] = 'operator-owned' : $input['location']['project'] = 'operator-owned',
+        'pool' => $kind === 'task_vm.image_seed' ? $input['pool'] = 'operator-owned' : $input['location']['pool'] = 'operator-owned',
+        'variant' => $kind === 'task_vm.image_seed' ? $input['vm'] = 'operator-owned' : $input['operation'] = ['kind' => 'remove', 'name' => 'operator-owned'],
         'attempt' => $input['attempt']++,
         'phase' => $input['phase'] = 'publish',
         'key' => $input['effect_key'] = 'delete-seed',
         'cleanup' => $build->forceFill(['cleanup_started_at' => now()])->save(),
         'finished' => $build->update(['state' => 'succeeded']),
     };
-    expect(fn () => app(TaskVmIncusProjection::class)->admitSeed($build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->where('kind', 'task_vm.image_finish_seed')->count())->toBe(0);
-})->with(['host', 'candidate', 'project', 'pool', 'variant', 'attempt', 'phase', 'key', 'cleanup', 'finished']);
+    expect(fn () => app(TaskVmIncusProjection::class)->admitImage($kind, $build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
+})->with(['host', 'candidate', 'project', 'pool', 'variant', 'attempt', 'phase', 'key', 'cleanup', 'finished'])->with(['task_vm.image_finish_seed', 'task_vm.image_seed']);
 
-it('refuses a polled seed writer after the execution contract is deleted', function (): void {
-    [, $parent] = recipeImageSeedIntent();
-    config(['swamp.direct_writers' => ['task_vm.image_finish_seed' => 'polled']]);
-    expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'finish-seed']))
+it('refuses a polled seed writer after the execution contract is deleted', function (string $kind): void {
+    [, $parent, $input] = recipeImageSeedIntent($kind);
+    config(['swamp.direct_writers' => [$kind => 'polled']]);
+    expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
-    expect(Operation::query()->where('kind', 'task_vm.image_finish_seed')->count())->toBe(0);
-});
+    expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);

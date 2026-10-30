@@ -1257,6 +1257,8 @@ before admission. A worker for another Node cannot execute the action.
 
 `task_vm.image_finish_seed` uses the same direct workflow. Admission records the active image attempt, candidate fingerprint, project, pool and agent digest. The owning Node runs `incus.volume` with the fixed `finish_seed` operation and the existing 180-second command deadline. Only the exact candidate seed name confirms success. The Gateway projects that result onto the image phase. The writer defaults to `direct`; selecting `polled` refuses admission because its old executor is removed. Roll back this cutover by reverting its PR.
 
+`task_vm.image_seed` builds that candidate's topology disk through `incus.build-topology-seed` on the owning Node. Its admitted smoke VM and 45 GiB size cannot change. The command retains its existing 600-second deadline. Internal timing fields stay out of the Operation result; only a confirmed `ready: true` completes the effect. This kind also defaults to direct and has no Gateway execution path.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.
