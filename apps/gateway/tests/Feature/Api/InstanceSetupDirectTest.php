@@ -109,7 +109,7 @@ it('refuses the first unbound read and admits it only after the matching Gateway
     config(['operation_executor.worker_node_ids' => [$this->instance->node_id], 'dependency_detection.services_node_id' => null, 'swamp.run_token' => 'fixture.shared.run.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->instance->node->wireguard_ip]);
     $runId = $this->operation->state['swamp_run_id'];
-    $this->operation->update(['state' => ['instance_step_writer' => 'direct']]);
+    $this->operation->update(['status' => OperationStatus::Queued, 'state' => ['instance_step_writer' => 'direct']]);
     $path = '/api/v1/direct-operations/'.$this->operation->id.'?run_id='.$runId;
     $this->getJson($path)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
     $socket = new FakeRoutePublicationSocket;
