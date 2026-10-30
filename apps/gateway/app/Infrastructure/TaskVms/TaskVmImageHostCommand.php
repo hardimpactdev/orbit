@@ -65,10 +65,9 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
         if ($command === 'incus.vm') {
             $location = ValidatedData::object($input['vm']);
             $effect = ValidatedData::object($input['operation']);
-            $expected = $operation->kind === 'task_vm.image_launch' ? 'create_image' : 'remove_instance';
-            $valid = ($location['project'] ?? null) === $host->project && ($location['cidr'] ?? null) === $host->cidr
-                && in_array($location['name'] ?? null, [$name, $name.'-smoke'], true) && ($effect['kind'] ?? null) === $expected;
-            if ($valid && $expected === 'create_image') {
+            $valid = $operation->kind === 'task_vm.image_launch' && ($location['project'] ?? null) === $host->project && ($location['cidr'] ?? null) === $host->cidr
+                && in_array($location['name'] ?? null, [$name, $name.'-smoke'], true) && ($effect['kind'] ?? null) === 'create_image';
+            if ($valid) {
                 $valid = ($effect['network'] ?? null) === $host->network
                     && ($effect['cpus'] ?? null) === $host->cpus && ($effect['memory'] ?? null) === $host->memory && ($effect['disk'] ?? null) === $host->disk
                     && ($effect['gateway_public_key'] ?? null) === $this->keys->publicKey() && ($effect['builder'] ?? null) === (($location['name'] ?? null) === $name);

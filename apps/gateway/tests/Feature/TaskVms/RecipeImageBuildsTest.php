@@ -115,6 +115,12 @@ function recipeImageDirectIntent(string $kind = 'task_vm.image_finish_seed'): ar
             'project' => 'orbit-tasks', 'operation' => ['kind' => 'prepare_metadata', 'name' => $build->builder_vm_name]];
     }
 
+    if ($kind === 'task_vm.image_remove') {
+        $build->update(['images' => [], 'image_fingerprint' => null]);
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'reset', 'effect_key' => 'reset-builder',
+            'vm' => ['project' => 'orbit-tasks', 'name' => $build->builder_vm_name, 'cidr' => '10.251.77.0/24'], 'operation' => ['kind' => 'remove_instance']];
+    }
+
     return [$build, $parent, $input];
 }
 
@@ -140,7 +146,7 @@ it('admits the image effect directly and projects its phase once without Gateway
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
     expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:'.$input['phase'])['operations'][$key])->toBe($child->id);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove']);
 
 it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
     [$build, , $input] = recipeImageDirectIntent($kind);
@@ -178,13 +184,46 @@ it('refuses metadata intent for another builder host or lifecycle before startin
     expect(Operation::query()->where('kind', 'task_vm.image_metadata')->count())->toBe(0);
 })->with(['host', 'attempt', 'project', 'builder', 'variant', 'phase', 'cleanup', 'finished']);
 
+it('refuses image removal of another Node VM phase or lifecycle before starting Swamp', function (string $change): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_remove');
+    $nodeId = $build->host_node_id;
+    match ($change) {
+        'host' => $nodeId++, 'attempt' => $input['attempt']++,
+        'project' => $input['vm']['project'] = 'operator-owned',
+        'cidr' => $input['vm']['cidr'] = '10.99.0.0/24',
+        'operator-vm' => $input['vm']['name'] = 'operator-ci',
+        'live-task-vm' => $input['vm']['name'] = 'tvm-175',
+        'other-build' => $input['vm']['name'] = 'tvm-image-'.($build->id + 1),
+        'wrong-smoke' => $input['vm']['name'] .= '-smoke',
+        'variant' => $input['operation'] = ['kind' => 'delete', 'pool' => 'orbit-tasks'],
+        'phase' => $input['phase'] = 'publish', 'key' => $input['effect_key'] = 'operator-delete',
+        'cleanup' => $build->forceFill(['cleanup_started_at' => now()])->save(),
+        'finished' => $build->update(['state' => 'succeeded']),
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitImage('task_vm.image_remove', $build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', 'task_vm.image_remove')->count())->toBe(0);
+})->with(['host', 'attempt', 'project', 'cidr', 'operator-vm', 'live-task-vm', 'other-build', 'wrong-smoke', 'variant', 'phase', 'key', 'cleanup', 'finished']);
+
+it('admits each exact image removal key and its matching builder or smoke VM', function (string $key, string $phase, string $suffix): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_remove');
+    $input['effect_key'] = $key;
+    $input['phase'] = $phase;
+    $input['vm']['name'] = $build->builder_vm_name.$suffix;
+    $admitted = app(TaskVmIncusProjection::class)->admitImage('task_vm.image_remove', $build->id, $build->host_node_id, $input);
+    expect($admitted['vm']['name'])->toBe($build->builder_vm_name.$suffix)->and($admitted['operation'])->toBe(['kind' => 'remove_instance']);
+})->with([
+    ['reset-builder', 'reset', ''], ['reset-smoke', 'reset', '-smoke'],
+    ['delete-builder', 'publish', ''], ['delete-smoke', 'topology-seed', '-smoke'],
+    ['reset-seed-smoke', 'topology-seed', '-smoke'],
+]);
+
 it('refuses a polled image writer after the execution contract is deleted', function (string $kind): void {
     [, $parent, $input] = recipeImageDirectIntent($kind);
     config(['swamp.direct_writers' => [$kind => 'polled']]);
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
