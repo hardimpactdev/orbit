@@ -12,7 +12,7 @@ it('boots and resolves every registered family without reading resource records'
 });
 
 it('fails on an unsupported family or completion guarantee', function (string $part): void {
-    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition = OperationKinds::definitions()['firewall.deny'];
     if ($part === 'kind') {
         $definition['unknown_guarantee'] = true;
     } else {
@@ -23,7 +23,7 @@ it('fails on an unsupported family or completion guarantee', function (string $p
 })->with(['kind', 'completion']);
 
 it('fails when a declared handler or named transport cannot resolve', function (string $part): void {
-    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition = OperationKinds::definitions()['firewall.deny'];
     if ($part === 'transport') {
         $definition['runs'][0]['transport'] = 'unregistered';
     } else {
@@ -38,7 +38,7 @@ it('fails when a PHP executor does not implement its contract', function (): voi
 });
 
 it('fails when a Gateway command name has no registered handler', function (): void {
-    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition = OperationKinds::definitions()['firewall.deny'];
     $definition['runs'][0]['transport'] = 'gateway';
     $definition['runs'][0]['name'] = 'test.missing-command';
     expect(fn () => app(OperationRegistryCheck::class)->execute(['test.broken' => $definition]))

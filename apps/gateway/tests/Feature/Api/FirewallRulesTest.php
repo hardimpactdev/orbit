@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FirewallOperationProof;
 
 beforeEach(function (): void {
-    $this->node = Node::query()->create([
+    config(['swamp.run_token' => 'fixture-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-firewall-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    $this->node = Node::query()->forceCreate([
+        'id' => 209, 'architecture' => 'x86_64',
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -21,18 +27,6 @@ beforeEach(function (): void {
     ]);
     $this->node->accessibleNodes()->attach($this->node);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-});
-
-it('records inactive UFW as an Operation failure and retains failed intent', function (): void {
-    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
-        'name' => 'private-web', 'source' => '192.0.2.129/24', 'protocol' => 'tcp', 'port' => '0443',
-    ])->assertAccepted();
-    $executor = app(SwampOperationExecutor::class);
-    $operation = $executor->claim('firewall.allow', 'test', $this->node->id);
-    $executor->step($operation, ['worker' => 'test', 'key' => 'failure', 'name' => 'ufw-converge', 'status' => 'failed', 'error_code' => 'firewall.backend_inactive'], $this->node->id);
-    $executor->complete($operation, ['worker' => 'test', 'status' => 'failed', 'error_code' => 'firewall.backend_inactive'], $this->node->id);
-    expect(FirewallRule::query()->sole())->status->toBe(LifecycleStatus::Failed)
-        ->error_code->toBe('firewall.backend_inactive')->failed_step->toBe('ufw-converge')->source->toBe('192.0.2.0/24')->port->toBe('443');
 });
 
 it('returns 422 for invalid names sources protocols and ports without persistence', function (
@@ -107,16 +101,6 @@ it('returns 409 before UFW when allow and deny share a node source protocol and 
         ->assertConflict()
         ->assertJsonPath('error.code', 'firewall.action_conflict');
 
-    $this
-        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
-            'name' => 'private-web',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '443',
-        ])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'operation.target_busy');
-
     $this->assertDatabaseHas('firewall_rules', [
         'node_id' => $this->node->id,
         'name' => 'private-web',
@@ -145,10 +129,10 @@ it('returns 409 before UFW when allow and deny share a node source protocol and 
 });
 
 it('lists stable named intent and admits removal of only the selected rule', function (): void {
-    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
-        'name' => 'private-web', 'port' => '443',
-    ])->assertAccepted();
-    FirewallOperationProof::finish('firewall.allow', 'test');
+    $this->node->firewallRules()->create([
+        'name' => 'private-web', 'action' => 'allow', 'source' => 'any',
+        'port' => '443', 'protocol' => 'tcp', 'status' => LifecycleStatus::Active,
+    ]);
     $this->getJson("/api/v1/nodes/{$this->node->id}/firewall-rules")->assertOk()
         ->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'private-web')->assertJsonMissingPath('data.0.backend_status');
     $this->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove');

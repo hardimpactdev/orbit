@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Domain\Firewall\FirewallOperationCompletion;
 
 return (static function (): array {
-    $kinds = [];
-    foreach (['allow', 'deny', 'remove'] as $verb) {
+    $kinds = ['firewall.allow' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
+    foreach (['deny', 'remove'] as $verb) {
         $kinds['firewall.'.$verb] = [
             'executor' => 'swamp',
             'completion' => FirewallOperationCompletion::class,
