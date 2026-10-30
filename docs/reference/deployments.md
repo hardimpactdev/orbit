@@ -687,3 +687,33 @@ Deploy and rollback Operations use the generic [executor health](/reference/oper
 To undo this cutover, prepare a revert of Orbit PR #1590 on the Gateway. Drain Gateway deploy workers and stop new deploy admission before switching executors. While the current Gateway still exposes the Swamp contracts, let running Swamp Operations finish, including their runtime children after proven activation. Keep Services and its deployed workflows available until that work settles. Never clear a hold while a worker can still write.
 
 Cancel queued Swamp deploy and rollback Operations through the Operation API. Confirm their terminal status and released Instance holds, then release the Gateway revert and restart native deploy workers. A queued Operation must never reach the restored PHP executor with Swamp-only intent. Reverting the executor leaves application code, database state and deployment history in place. Resume normal automatic admission after the queued work is clean and native workers run the reverted Gateway release.
+
+
+## Direct Swamp web-root preparation
+
+`instance.prepare_served_web_roots` can submit its admitted intent directly to
+`operation-instance-web-roots`. `ORBIT_INSTANCE_WEB_ROOTS_WRITER` selects `polled`
+(the existing Swamp path, the default) or `direct` for new intents. Each Operation
+keeps that choice through later setting changes. Existing unstamped Operations
+stay on the polled Swamp path.
+
+The direct workflow uses one native behavior per Node for web-root preparation. Swamp owns its lock,
+recovery and cancellation. The Gateway validates the admitted Route and Instance,
+runs only the fixed `instance.prepare-served-web-roots` Node primitive, and projects
+bounded native status and results. It accepts no worker-selected Node, command,
+program, environment content or input. It creates no executor claim, lease, child
+Operation, execution receipt or target hold for the direct Operation. The Route
+parent is existing admission context, not a child scheduler in this new path.
+
+A missing start acknowledgement is uncertain. Inspect native run history before
+resubmission; the Gateway does not retry the submission or mark a possibly running
+workflow failed. Native recovery can repeat the convergent Node primitive. It
+checks the selected release and owned links before changing them; this is not an
+exactly-once guarantee. A requested cancellation is checked before the primitive;
+an in-flight primitive must settle before its outcome can be projected.
+
+The default remains polled until the exact direct workflow succeeds on a dev or
+canary target. Record that proof before takeover. Delete the previous family path
+only after the direct replacement succeeds in production. Workflow grants and
+production writer changes require their existing operator approval. This slice
+does not change those settings or prove deploy, rollback, environment or smoke.
