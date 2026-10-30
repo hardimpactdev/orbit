@@ -20,7 +20,9 @@ A settings change that must inspect or prepare an apps root records a `node.sett
 
 Set each kind in the `ORBIT_SWAMP_DIRECT_WRITERS` JSON map. Its default, `{}`, selects the previous polled Swamp path. Setting `node.settings` to `direct` starts `operation-node-settings` after the intent commits. The direct workflow runs the fixed storage action on the admitted Node worker and sends a bounded result to the Gateway. It uses native behavior locking and recovery, with no Gateway claim, lease, target hold, child Operation or effect receipt. Each intent keeps its writer selection through later setting changes.
 
-Keep `polled` until dev proof succeeds; the Node must have its own enrolled worker before selecting `direct`. Keep the old path until production proof succeeds. Local actions that need root wait for the approved thin privilege boundary. Keep the existing worker unit. Cancel and recover through native Swamp tooling. Only the Gateway start response binds the native run ID; the worker reads no input or result before that binding. A failed or cancelled Operation preserves the previous settings.
+Keep `polled` while proving the canary on the existing Node 209 workers in `pool=migration`. During this canary, the workflow accepts only Node 209. Exact Node placement follows per-Node worker enrollment. Lane 16 extends the existing run grant for this workflow with run-and-status access only and records it in `FLEET-CHANGES`.
+
+Keep the old path until production proof succeeds. Local actions that need root wait for the approved thin privilege boundary. Keep the existing worker unit. Cancel and recover through native Swamp tooling. Only the Gateway start response binds the native run ID; the worker reads no input or result before that binding. A failed or cancelled Operation preserves the previous settings.
 
 State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
