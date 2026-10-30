@@ -23,6 +23,6 @@ final readonly class StartWebSocketOperationAction
 
         return $this->operations->execute($kind, $sync ? 'websocket_sync' : 'websocket_revision', $registry->revision, $nodeId,
             ['registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
-                'app' => $registry->result, 'caller_node_id' => $registry->actor_node_id], 'operator', null, $sync ? ['websocket.sync'] : []);
+                'app' => $registry->result, 'caller_node_id' => $registry->actor_node_id], 'operator', null);
     }
 }
