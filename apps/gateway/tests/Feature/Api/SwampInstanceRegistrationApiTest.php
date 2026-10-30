@@ -138,6 +138,54 @@ it('refuses adoption outside resolved source from an ended create without changi
     'changed name' => ['source_resolved', 'failed', 'renamed'],
 ]);
 
+it('refuses a cancelled create checkout while another create owns its Instance or path', function (string $status, bool $sameTarget): void {
+    $path = '/srv/apps/registration/feature';
+    $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
+        'name' => 'feature', 'source_layout' => 'worktree', 'checkout_path' => $path, 'branch' => 'feature',
+        'starting_commit' => str_repeat('b', 40), 'status' => 'source_resolved']);
+    app(CreateRouteAction::class)->ensureForInstance($instance, null);
+    Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $this->node->id, 'status' => 'cancelled', 'input' => ['instance_id' => $instance->id]]);
+    Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance',
+        'target_id' => $sameTarget ? $instance->id : $instance->id + 1000, 'node_id' => $this->node->id,
+        'status' => $status, 'input' => ['checkout' => $sameTarget ? '/another/path' : $path]]);
+    $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts($path, 'feature-work', InstanceSourceLayout::Worktree)]);
+    $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => $path, 'instance_name' => 'feature'])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->branch)->toBe('feature')->and($instance->starting_commit)->toBe(str_repeat('b', 40))
+        ->and($instance->registration_request_id)->toBeNull();
+    expect(Operation::query()->where('kind', 'instance.register')->count())->toBe(0);
+})->with([
+    'queued same Instance' => ['queued', true], 'running same Instance' => ['running', true],
+    'waiting same Instance' => ['waiting', true], 'queued same path' => ['queued', false],
+    'running same path' => ['running', false], 'waiting same path' => ['waiting', false],
+]);
+
+it('refuses ambiguous source path matches without selecting an Instance', function (): void {
+    $path = '/srv/apps/registration/feature';
+    $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
+        'name' => 'feature', 'source_layout' => 'worktree', 'checkout_path' => $path, 'branch' => 'feature',
+        'status' => 'source_resolved']);
+    app(CreateRouteAction::class)->ensureForInstance($instance, null);
+    Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
+        'name' => 'other', 'checkout_path' => '/srv/apps/registration/other', 'status' => 'reserved',
+        'registration_original_path' => $path, 'registration_authoritative_path' => $path,
+        'registration_relocation_state' => 'reserved']);
+    Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $this->node->id, 'status' => 'cancelled', 'input' => ['instance_id' => $instance->id]]);
+    $this->source->shouldReceive('inspect')->once()->andReturn([swamp_registration_facts($path, 'feature-work', InstanceSourceLayout::Worktree)]);
+    $this->configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => $path])->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
+
+    expect($instance->refresh()->branch)->toBe('feature')->and($instance->registration_request_id)->toBeNull();
+    expect(Operation::query()->where('kind', 'instance.register')->count())->toBe(0);
+});
+
 it('refuses to adopt a checkout owned by another Project', function (): void {
     $path = '/srv/apps/registration/feature';
     $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'type' => 'laravel-app', 'root' => 'public',
