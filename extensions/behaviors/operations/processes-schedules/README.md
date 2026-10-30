@@ -94,3 +94,11 @@ The writer map defaults to polled. Vite/Instance child intents remain polled
 until their own parent/traffic conversion. No live kind has switched merely
 because this source is merged. Actual canary and production proofs precede
 takeover and deletion.
+
+For the first real `schedule.run` canary, Node209uses its existing reviewed
+`swamp209-migration-a` token identity, which runs as the Node user with sudo.
+The workflow chooses that identity only for admitted Node209; every other Node
+retains exact `orbit-node-ID` placement. This is explicit placement, with no
+fallback to another Node. Remove the209exception when lane21enrolls its exact
+per-Node identity. The canary owns a future-dated timer whose command is
+`/usr/bin/true`; it changes no serving unit.
