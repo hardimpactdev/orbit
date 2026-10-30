@@ -533,6 +533,8 @@ This is bounded submission recovery, with no job, timer, execution retry or hist
 
 A declaration names the workflow, writer configuration path, immutable writer-state field and a typed projection hook. New families use the common `swamp.direct_writers` map (`ORBIT_SWAMP_DIRECT_WRITERS` JSON keyed by exact kind, default `{}`). Families add no token, controller or HTTP routes. Routes retain their existing per-kind settings and `route_publication_writer` field.
 
+After a kind cuts over and removes its previous executor, its `operation-kinds.php` entry contains only `executor: 'swamp'`, `result_fields`, and optional `admission`. Its matching `direct-operations.php` declaration supplies the workflow and projection. The registry resolves that projection without requiring old `runs`, completion handlers or receipt proofs. These direct-only kinds default to the direct writer; an explicit polled setting, a scope mismatch or a missing direct declaration refuses admission rather than falling back to deleted code. The previous executor's claim, execution and completion paths also refuse them. Rollback reverts the kind's cutover PR.
+
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.

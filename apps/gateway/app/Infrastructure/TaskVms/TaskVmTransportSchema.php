@@ -17,7 +17,7 @@ trait TaskVmTransportSchema
     public function schema(Operation $operation, array $run): array
     {
         $kind = app(OperationKinds::class)->definition($operation->kind);
-        if (! is_array($kind)) {
+        if (! is_array($kind) || ! isset($kind['runs'])) {
             throw new LogicException('The VM kind has no Swamp contract.');
         }
         foreach ($kind['runs'] as $allowed) {

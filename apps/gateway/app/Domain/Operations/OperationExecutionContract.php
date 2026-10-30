@@ -16,7 +16,8 @@ use LogicException;
  * Server-owned capabilities and evidence for one admitted kind.
  *
  * @phpstan-type RunContract array{transport: string, name: string, input_fields?: list<string>, input_values?: array<string, mixed>, bind?: array<string, string>, secrets?: array<string, string>, resumable?: bool, uncertain_error_code?: string, node_field?: string, step?: string, required?: bool, input_schema?: array<string, mixed>}
- * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array<string,mixed>, result_fields: list<string|array<string,mixed>>, admission?:class-string<OperationChildAdmission>, children?:list<array{kind:string,node_from:string,bind?:array<string,string>}>,compensations?:list<string>,cancellation_boundary?:string,cancel_guard?:class-string<OperationCancelGuard>}
+ * @phpstan-type PolledSwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array<string,mixed>, result_fields: list<string|array<string,mixed>>, admission?:class-string<OperationChildAdmission>, children?:list<array{kind:string,node_from:string,bind?:array<string,string>}>,compensations?:list<string>,cancellation_boundary?:string,cancel_guard?:class-string<OperationCancelGuard>}
+ * @phpstan-type SwampDefinition PolledSwampDefinition|array{executor: 'swamp', result_fields: list<string|array<string,mixed>>, admission?:class-string<OperationChildAdmission>}
  *
  * @phpstan-import-type RunInput from SwampOperationExecutor
  */
@@ -35,12 +36,23 @@ final readonly class OperationExecutionContract
         return $definition;
     }
 
+    /** @return PolledSwampDefinition */
+    private function polledDefinition(Operation $operation): array
+    {
+        $definition = $this->definition($operation);
+        if (! isset($definition['runs'])) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'A direct-only kind has no Gateway execution contract.', 422);
+        }
+
+        return $definition;
+    }
+
     /** @param RunInput $data
      * @return RunContract
      */
     public function authorizeRun(Operation $operation, array $data): array
     {
-        foreach ($this->definition($operation)['runs'] as $run) {
+        foreach ($this->polledDefinition($operation)['runs'] as $run) {
             if ($run['transport'] !== $data['transport'] || $run['name'] !== $data['name']) {
                 continue;
             }
@@ -78,7 +90,7 @@ final readonly class OperationExecutionContract
 
     public function execution(Operation $operation): ?OperationFamilyExecution
     {
-        $class = $this->definition($operation)['execution'] ?? null;
+        $class = $this->polledDefinition($operation)['execution'] ?? null;
 
         return $class === null ? null : app($class);
     }
@@ -181,7 +193,7 @@ final readonly class OperationExecutionContract
      */
     public function completionResult(Operation $operation, #[\SensitiveParameter] array $result, bool $successful): array
     {
-        $definition = $this->definition($operation);
+        $definition = $this->polledDefinition($operation);
         $contract = OperationCompletionContracts::select($operation, $definition['completion_contract']);
         if (($contract['children_settled'] ?? []) === []) {
             return $this->result($operation, $result);
@@ -230,7 +242,7 @@ final readonly class OperationExecutionContract
                 throw new ResourceOperationException('operation.completion_unproven', 'The descriptor step has no matching keyed transport receipt.', 409);
             }
         }
-        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+        $contract = OperationCompletionContracts::select($operation, $this->polledDefinition($operation)['completion_contract']);
         if (! isset($contract['step'], $contract['transport'], $contract['name'], $contract['result']) || $name !== $contract['step']) {
             return;
         }
@@ -255,7 +267,7 @@ final readonly class OperationExecutionContract
     /** @param array<string, mixed> $result */
     public function assertCompletion(Operation $operation, array $result): void
     {
-        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+        $contract = OperationCompletionContracts::select($operation, $this->polledDefinition($operation)['completion_contract']);
         if (isset($contract['children_settled'])) {
             app(OperationChildren::class)->assertSettled($operation, $contract['children_settled'], $result);
         }
@@ -280,7 +292,7 @@ final readonly class OperationExecutionContract
      */
     private function canonicalStepResult(Operation $operation, string $name, array $result): array
     {
-        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+        $contract = OperationCompletionContracts::select($operation, $this->polledDefinition($operation)['completion_contract']);
 
         return ($contract['step'] ?? null) === $name && isset($contract['children_settled'])
             ? $this->completionResult($operation, $result, true)
@@ -290,7 +302,7 @@ final readonly class OperationExecutionContract
     /** @param array<string,mixed> $result */
     public function assertSettledChildren(Operation $operation, array $result, bool $successful): void
     {
-        $contract = OperationCompletionContracts::select($operation, $this->definition($operation)['completion_contract']);
+        $contract = OperationCompletionContracts::select($operation, $this->polledDefinition($operation)['completion_contract']);
         if (isset($contract['children_settled'])) {
             app(OperationChildren::class)->assertSettled($operation, $contract['children_settled'], $result, $successful);
         }
