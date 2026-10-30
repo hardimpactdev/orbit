@@ -9,7 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-final class DirectOperationRequest extends ExecutorRequest
+class DirectOperationRequest extends ExecutorRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array

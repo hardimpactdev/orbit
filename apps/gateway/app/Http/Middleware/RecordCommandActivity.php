@@ -554,6 +554,9 @@ final readonly class RecordCommandActivity
     private function activityInput(Request $request): array
     {
         $command = $request->route()?->getName();
+        if (in_array($command, ['operation:direct:private-material', 'operation:direct:secret-output'], true)) {
+            return [];
+        }
 
         foreach ($this->redactions as $redaction) {
             if (in_array($command, $redaction->commands(), true)) {
