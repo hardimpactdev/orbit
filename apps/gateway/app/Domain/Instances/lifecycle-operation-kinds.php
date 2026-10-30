@@ -94,20 +94,23 @@ return (static function (): array {
     if (OperationKinds::supports('cancel_guard')) {
         $kinds['instance.transfer']['cancel_guard'] = InstanceTransferCancelGuard::class;
     }
-    foreach (['instance.transfer_rollback', 'instance.transfer_discard'] as $kind) {
-        $kinds[$kind] = ['executor' => 'swamp', 'execution' => TransferCompensation::class,
-            'completion' => InstanceLifecycleCompletion::class, 'admission' => TransferCompensation::class,
-            'runs' => [['transport' => 'gateway', 'name' => 'instance.transfer-compensation', 'resumable' => true],
-                ...($kind === 'instance.transfer_discard' ? [$agent('instance.transfer-source')] : [])],
-            'children' => $kind === 'instance.transfer_rollback' ? [
-                ['kind' => 'instance.transfer_discard', 'node_from' => 'intent.node_ids'],
-                ['kind' => 'process.instance_runtime', 'node_from' => 'intent.node_ids'],
-                ['kind' => 'database.sqlite_seed_abandon', 'node_from' => 'intent.node_ids'],
-            ] : [],
-            'completion_contract' => ['step' => 'compensation-proof', 'transport' => 'gateway',
-                'name' => 'instance.transfer-compensation', 'result' => ['lifecycle_complete' => true]],
-            'result_fields' => ['recorded', 'seed_abandon_required', 'destination_node_id', 'seed_abandon_node_id', 'restored', 'discarded', 'lifecycle_complete', 'transfer_id', 'error_code']];
-    }
+    $kinds['instance.transfer_rollback'] = [
+        'executor' => 'swamp', 'execution' => TransferCompensation::class,
+        'completion' => InstanceLifecycleCompletion::class, 'admission' => TransferCompensation::class,
+        'runs' => [['transport' => 'gateway', 'name' => 'instance.transfer-compensation', 'resumable' => true]],
+        'children' => [
+            ['kind' => 'instance.transfer_discard', 'node_from' => 'intent.node_ids'],
+            ['kind' => 'process.instance_runtime', 'node_from' => 'intent.node_ids'],
+            ['kind' => 'database.sqlite_seed_abandon', 'node_from' => 'intent.node_ids'],
+        ],
+        'completion_contract' => ['step' => 'compensation-proof', 'transport' => 'gateway',
+            'name' => 'instance.transfer-compensation', 'result' => ['lifecycle_complete' => true]],
+        'result_fields' => ['recorded', 'seed_abandon_required', 'destination_node_id', 'seed_abandon_node_id', 'restored', 'lifecycle_complete', 'transfer_id', 'error_code'],
+    ];
+    $kinds['instance.transfer_discard'] = [
+        'executor' => 'swamp', 'admission' => TransferCompensation::class,
+        'result_fields' => ['discarded', 'error_code'],
+    ];
 
     return $kinds;
 })();

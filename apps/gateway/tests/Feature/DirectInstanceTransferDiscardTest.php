@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationExecutors;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\Operation;
@@ -28,9 +31,9 @@ beforeEach(function (): void {
         'finished_at' => '2026-10-30T19:00:01.000Z', 'result' => ['discarded' => true]];
 });
 
-it('keeps the writer polled by default and reads only the recorded discard intent', function (): void {
+it('uses the direct writer by default and reads only the recorded discard intent', function (): void {
     config(['swamp.direct_writers' => []]);
-    expect(app(DirectOperation::class)->writer('instance.transfer_discard'))->toBe('polled');
+    expect(app(DirectOperation::class)->writer('instance.transfer_discard'))->toBe('direct');
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', $this->intent);
 });
 
@@ -67,4 +70,17 @@ it('refuses an unbound run, a different root, and a foreign Node before reading 
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->operation->update(['state' => ['instance_lifecycle_writer' => 'direct', 'transfer_discard_intent' => $this->intent]]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+});
+
+it('refuses the removed writer instead of admitting an unexecutable cleanup', function (): void {
+    config(['swamp.direct_writers' => ['instance.transfer_discard' => 'polled']]);
+    expect(fn () => app(DirectOperation::class)->writer('instance.transfer_discard'))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('has no polled cleanup executor or Gateway receipt contract', function (): void {
+    $kinds = app(OperationKinds::class);
+    expect($kinds->directOnly('instance.transfer_discard'))->toBeTrue();
+    expect(app(OperationExecutors::class)->polled('instance.transfer_discard'))->toBeFalse();
+    expect($kinds->definition('instance.transfer_discard'))->not->toHaveKeys(['runs', 'execution', 'completion', 'completion_contract']);
 });

@@ -7,7 +7,6 @@ namespace App\Domain\Instances;
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
@@ -83,7 +82,7 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
 
         $operation = $this->operations->execute($intent['kind'], 'instance', ValidatedData::integer($transfer->instance_id), $intent['node_id'],
             $intent['input'], $parent->kind, $parent->request_id);
-        if ($operation->kind === 'instance.transfer_discard' && DirectOperation::owns($operation)) {
+        if ($operation->kind === 'instance.transfer_discard') {
             $operation->update(['state' => [...($operation->state ?? []), 'transfer_discard_intent' => [
                 'agent_sha256' => app(AgentDelivery::class)->pin($transfer->destinationNode),
                 'destination' => $transfer->destination_path,
@@ -96,19 +95,16 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
     public function root(Operation $operation): Operation
     {
         $parent = $operation->parent_operation_id === null ? null : Operation::query()->find($operation->parent_operation_id);
-        $expected = match ($operation->kind) {
-            'instance.transfer_rollback' => ['instance.transfer', 'transfer-rollback'],
-            'instance.transfer_discard' => ['instance.transfer_rollback', 'transfer-discard-destination'],
-            default => throw $this->forbidden(),
-        };
+        $expected = $operation->kind === 'instance.transfer_rollback'
+            ? ['instance.transfer', 'transfer-rollback'] : throw $this->forbidden();
         if ($parent === null || [$parent->kind, $operation->child_key] !== $expected) {
             throw $this->forbidden();
         }
         app(OperationChildren::class)->verify($parent, $operation);
-        $root = $parent->kind === 'instance.transfer' ? $parent : $this->root($parent);
+        $root = $parent;
         $transfer = app(InstanceTransferState::class)->transfer($root);
         $instance = Instance::query()->findOrFail($transfer->instance_id);
-        $node = $operation->kind === 'instance.transfer_discard' ? $transfer->destination_node_id : $transfer->source_node_id;
+        $node = $transfer->source_node_id;
         if ($operation->target_type !== 'instance' || $operation->target_id !== $transfer->instance_id || $operation->node_id !== $node
             || $operation->input !== ['instance_id' => $transfer->instance_id, 'transfer_id' => $transfer->id]
             || $transfer->cutover_at !== null || $instance->node_id !== $transfer->source_node_id || $instance->checkout_path !== $transfer->source_path) {
@@ -120,12 +116,9 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
 
     public function context(Operation $operation): array
     {
-        $root = $this->root($operation);
-        $transfer = app(InstanceTransferState::class)->transfer($root);
-        $commands = $operation->kind === 'instance.transfer_rollback'
-            ? [['rollback-record', 'gateway', 'instance.transfer-compensation', ['action' => 'record']],
-                ['rollback-state', 'gateway', 'instance.transfer-compensation', ['action' => 'restore']]]
-            : [['transfer-discard-checkout', 'instance_lifecycle', 'instance.transfer-source', ['operation' => 'discard', 'destination' => $transfer->destination_path]]];
+        $this->root($operation);
+        $commands = [['rollback-record', 'gateway', 'instance.transfer-compensation', ['action' => 'record']],
+            ['rollback-state', 'gateway', 'instance.transfer-compensation', ['action' => 'restore']]];
         $commands[] = ['compensation-proof', 'gateway', 'instance.transfer-compensation', ['action' => 'prove']];
         $descriptors = [];
         foreach ($commands as [$key, $transport, $name, $input]) {
@@ -154,18 +147,14 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
             }
             $this->proven($operation, $descriptor['key']);
         }
-        if ($operation->kind === 'instance.transfer_discard') {
-            $parent = Operation::query()->findOrFail($operation->parent_operation_id);
-            $this->proven($parent, 'rollback-record');
-            app(InstanceLifecycleExecution::class)->assertChild($parent, 'transfer-restore-source', 'process.instance_runtime');
-        } elseif (in_array($run['key'], ['rollback-state', 'compensation-proof'], true)) {
+        if (in_array($run['key'], ['rollback-state', 'compensation-proof'], true)) {
             $this->childrenProven($operation);
         }
     }
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
-        return $run['key'] === 'transfer-discard-checkout' && ! isset($receipt['error_code']) ? ['discarded' => true] : $receipt;
+        return $receipt;
     }
 
     public function childContext(Operation $parent): array
