@@ -12,7 +12,7 @@ $enabled = ['instance.destroy', 'instance.create', 'instance.rename', 'instance.
 if (OperationKinds::supports('archive_relay') && OperationKinds::supports('compensations') && OperationKinds::supports('cancel_guard')
     && isset($family['instance.transfer_destination'], $family['instance.transfer_activate'])) {
     $enabled = [...$enabled, 'instance.transfer', 'instance.transfer_destination', 'instance.transfer_activate',
-        'instance.transfer_rollback', 'instance.transfer_discard'];
+        'instance.transfer_rollback'];
 }
 $lifecycle = OperationKinds::supports('children') && OperationKinds::supports('receipts') && OperationKinds::supports('list_of')
     ? array_intersect_key($family, array_flip($enabled)) : [];
@@ -21,6 +21,7 @@ return [
     ...require __DIR__.'/environment-operation-kinds.php',
     ...require __DIR__.'/deployment-operation-kinds.php',
     ...$lifecycle,
+    'instance.transfer_discard' => $family['instance.transfer_discard'],
     OperationKinds::InstanceSmoke => InstanceSmokeOperation::class,
     OperationKinds::InstancePolicyEvent => AutomaticDeployEventOperation::class,
 ];
