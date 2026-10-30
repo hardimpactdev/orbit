@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\DatabaseExecutionIntent;
@@ -26,11 +27,11 @@ beforeEach(function (): void {
     $this->worker->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
-    $this->intent = DatabaseExecutionIntent::query()->create(['target_type' => 'instance', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'payload' => ['commands' => ['database-apply' => ['name' => 'instance.copy-sqlite', 'input' => ['operation' => 'cleanup', 'directory' => '/tmp/orbit-sqlite-clone-proof']]], 'projection' => []]]);
+    $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'architecture' => 'amd64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
+    $this->intent = DatabaseExecutionIntent::query()->create(['target_type' => 'instance', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'payload' => ['commands' => ['database-apply' => ['name' => 'instance.copy-sqlite', 'input' => ['operation' => 'cleanup', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']]], 'projection' => []]]);
     $this->operation = Operation::query()->create(['kind' => 'database.sqlite_cleanup', 'target_type' => 'instance',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued,
-        'sequence' => 1, 'state' => ['database_cleanup_writer' => 'direct'], 'input' => ['intent_id' => $this->intent->id]]);
+        'sequence' => 1, 'state' => ['database_cleanup_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => ['intent_id' => $this->intent->id]]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId];
@@ -90,7 +91,7 @@ it('submits once after commit and records a native run without acquiring a targe
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     DB::beginTransaction();
-    $operation = app(StartOperationAction::class)->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['reason' => 'proof'], 'test', null);
+    $operation = app(StartOperationAction::class)->execute('database.sqlite_cleanup', 'instance', $this->node->id, $this->node->id, ['intent_id' => $this->intent->id], 'test', null);
     expect($socket->sent)->toBe([]);
     DB::commit();
     expect($socket->sent)->toHaveCount(1);
@@ -146,11 +147,69 @@ it('keeps pre-rollout Operations with no writer stamp on their original Swamp pa
 
 it('exposes no raw admitted input through the shared read boundary', function (): void {
     $this->operation->update(['input' => [...$this->operation->input, 'private' => 'never-return-this']]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', [])->assertDontSee('never-return-this');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['variant' => 'clone', 'agent_sha256' => app(AgentDelivery::class)->pin($this->node), 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'])->assertDontSee('never-return-this');
 });
 
 it('rejects contradictory success and filters cleanup results to their public fields', function (): void {
     $body = [...$this->body, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'];
     $this->postJson($this->path.'/result', [...$body, 'result' => ['backend' => 'absent', 'error_code' => 'database.failed'], 'error_code' => 'database.failed'])->assertUnprocessable();
     $this->postJson($this->path.'/result', [...$body, 'result' => ['backend' => 'absent', 'state' => 'private-detail', 'bytes' => 999]])->assertOk()->assertJsonPath('data.result', ['backend' => 'absent']);
+});
+
+it('projects only the admitted cleanup variant and never command or private intent fields', function (): void {
+    $payload = $this->intent->payload;
+    $payload['commands']['database-apply']['input']['password'] = 'not-exported';
+    $payload['projection']['private'] = 'not-exported';
+    $this->intent->update(['payload' => $payload]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.input.variant', 'clone')->assertJsonMissingPath('data.input.command')
+        ->assertJsonMissingPath('data.input.password')->assertDontSee('not-exported');
+});
+
+it('refuses a foreign intent and a path outside the admitted cleanup form', function (): void {
+    $this->intent->update(['target_id' => $this->node->id + 100]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+    $payload = $this->intent->payload;
+    $payload['commands']['database-apply']['input']['directory'] = '/tmp/orbit-sqlite-clone-../foreign';
+    $this->intent->update(['target_id' => $this->node->id, 'payload' => $payload]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+    expect($this->agents->calls)->toBe([]);
+});
+
+it('projects bound seed cleanup fields and rejects another target or snapshot identity', function (): void {
+    $identity = str_repeat('b', 64);
+    $input = ['mode' => 'cleanup', 'base' => '/home/orbit/apps/proof/default', 'source_path' => '/home/orbit/apps/proof/default/database.sqlite',
+        'source_user' => 'orbit', 'transport_user' => 'orbit', 'operation' => $identity,
+        'state_dir' => '/var/lib/orbit/app-instance-sqlite-seeds/source-21-target-'.$this->node->id,
+        'snapshot_path' => '/tmp/orbit-sqlite-'.$identity.'.sqlite'];
+    $payload = ['commands' => ['database-apply' => ['name' => 'instance.prepare-sqlite-seed', 'input' => $input]], 'projection' => []];
+    $this->intent->update(['payload' => $payload]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.variant', 'seed')
+        ->assertJsonPath('data.input.operation', $identity)->assertJsonMissingPath('data.input.mode');
+    $payload['commands']['database-apply']['input']['snapshot_path'] = '/tmp/foreign.sqlite';
+    $this->intent->update(['payload' => $payload]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+});
+
+it('refuses first read and projection until the Gateway start response binds the run', function (): void {
+    $this->operation->update(['state' => ['database_cleanup_writer' => 'direct']]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    $this->postJson($this->path.'/result', [...$this->body, 'status' => 'running', 'started_at' => '2026-10-30T12:00:00.000Z'])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-cleanup', 'runId' => $this->runId]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
+    app(StartSwampRun::class)->start($this->operation);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.variant', 'clone');
+    expect($this->agents->calls)->toBe([]);
+});
+
+it('lets a configured Node worker read only its own bound cleanup', function (): void {
+    $this->node->accessibleNodes()->attach($this->worker->accessibleNodes()->first());
+    config(['operation_executor.worker_node_ids' => [$this->node->id, $this->worker->id], 'dependency_detection.services_node_id' => 999999]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 });
