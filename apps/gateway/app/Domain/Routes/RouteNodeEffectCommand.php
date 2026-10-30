@@ -62,7 +62,7 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
     }
 
     /** @return array<string, mixed> */
-    private function prepare(Operation $operation): array
+    public function prepare(Operation $operation): array
     {
         $node = Node::query()->findOrFail($operation->node_id);
         if (str_starts_with($operation->kind, 'route.transfer_')) {
