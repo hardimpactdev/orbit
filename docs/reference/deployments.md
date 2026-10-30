@@ -694,3 +694,9 @@ Cancel queued Swamp deploy and rollback Operations through the Operation API. Co
 `instance.prepare_served_web_roots` uses the polled Swamp deployment workflow. The Route parent admits the Instance and Node, and the Gateway validates ownership before supplying the existing `instance.prepare-served-web-roots` input. A primary-root Route needs no Node action. Preparation of an additional root must finish with its bound receipt before the Route becomes active.
 
 This kind has no direct workflow declaration. A stale per-kind direct-writer setting cannot start a second workflow. Its complete native cutover must replace the current dispatch and execution path in the same change.
+
+### Swamp app-user setup
+
+The direct `instance.run_steps` writer supports operator-started setup on the canonical app account and release layout. Admission records the Project, release directory, ordered command digests and full timeouts without programs or environment values. The workflow reads current commands through the existing Project read API, checks each digest, and runs `sudo -u orbit-app-<ProjectID>` in the admitted release. The Node worker uses its configured Node user's existing sudo. There is no root socket or Gateway execution relay.
+
+The `swamp.direct_writers` map defaults to polled and reversibly selects direct execution per kind. Parent lifecycle lists and teardown keep their previous writer. Missing canonical layouts, changed commands, moved Instances and changed release directories refuse. Canary success is required before takeover; production success is required before deleting the previous path. The package sandbox has no sudo and remains separate.

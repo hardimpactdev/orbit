@@ -210,18 +210,7 @@ final readonly class InstanceStepListExecution implements OperationCompletion, O
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
         $this->assertCompletion($operation, $outcome);
-        if ($operation->input['list'] !== 'setup') {
-            return;
-        }
-        $instance = Instance::query()->whereKey($operation->target_id)->where('node_id', $operation->node_id)->first();
-        if ($instance === null) {
-            return;
-        }
-        if ($outcome->status === OperationStatus::Succeeded) {
-            $instance->update(['failed_step' => null, 'error_code' => null, 'first_setup_pending' => false]);
-        } else {
-            $instance->update(['failed_step' => 'setup', 'error_code' => $outcome->errorCode]);
-        }
+        app(InstanceSetupState::class)->project($operation, $outcome->status, $outcome->errorCode);
     }
 
     public function cancellationBoundary(Operation $operation): ?array

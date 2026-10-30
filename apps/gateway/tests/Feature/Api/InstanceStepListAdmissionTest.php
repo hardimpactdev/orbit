@@ -22,6 +22,7 @@ it('records setup intent and returns a keyed Operation without dispatching PHP',
             'instance_id' => $instance->id,
             'source' => 'project', 'list' => 'setup',
             'configuration_digest' => hash('sha256', '[]'),
+            'project_id' => $instance->project_id, 'release_directory' => $instance->checkout_path, 'steps' => [],
         ]);
     Queue::assertNothingPushed();
 });
