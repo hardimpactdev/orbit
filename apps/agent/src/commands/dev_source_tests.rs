@@ -696,3 +696,77 @@ fn a_branch_held_by_the_seed_uses_a_private_local_branch_without_changing_the_se
     );
     assert_eq!(sh_git(&seed.checkout, &["status", "--porcelain"]), before);
 }
+
+#[test]
+fn environment_template_uses_the_committed_application_blob_and_refuses_changed_identity() {
+    let fixture = Fixture::new();
+    fixture
+        .prepare(fixture.source("proof", Some("attempt")), false, true)
+        .unwrap();
+    let checkout = fixture.source("proof", Some("attempt")).checkout;
+    let app = checkout.join("server app");
+    fs::create_dir_all(&app).unwrap();
+    fs::write(
+        app.join(".env.example"),
+        "APP_NAME=committed\nAPP_SECRET=\n",
+    )
+    .unwrap();
+    fs::write(checkout.join(".env.example"), "APP_NAME=wrong-root\n").unwrap();
+    sh_git(&checkout, &["add", "."]);
+    sh_git(&checkout, &["commit", "--quiet", "-m", "templates"]);
+    let commit = sh_git(&checkout, &["rev-parse", "HEAD"]);
+    fs::write(app.join(".env.example"), "APP_NAME=workload-edit\n").unwrap();
+    fs::write(app.join(".env"), "PRIVATE_TOKEN=never-read\n").unwrap();
+    let read = |application: PathBuf, commit: String| {
+        ReadDevelopmentEnvironmentTemplate::run(
+            EnvironmentTemplateInput {
+                source: fixture.source("proof", Some("attempt")),
+                application,
+                commit,
+            },
+            &context(),
+        )
+    };
+
+    assert_eq!(
+        read(app.clone(), commit.clone())
+            .unwrap()
+            .environment_template,
+        "APP_NAME=committed\nAPP_SECRET=\n"
+    );
+    assert!(read(app, "a".repeat(40)).is_err());
+    assert!(read(checkout.join("../outside"), commit.clone()).is_err());
+    assert_eq!(
+        read(checkout.join("missing"), commit)
+            .unwrap()
+            .environment_template,
+        ""
+    );
+}
+
+#[test]
+fn environment_template_refuses_committed_links_and_oversized_blobs() {
+    for linked in [true, false] {
+        let fixture = Fixture::new();
+        fixture
+            .prepare(fixture.source("proof", None), false, true)
+            .unwrap();
+        let checkout = fixture.source("proof", None).checkout;
+        if linked {
+            std::os::unix::fs::symlink(".env", checkout.join(".env.example")).unwrap();
+        } else {
+            fs::write(checkout.join(".env.example"), vec![b'x'; 131_073]).unwrap();
+        }
+        sh_git(&checkout, &["add", ".env.example"]);
+        sh_git(&checkout, &["commit", "--quiet", "-m", "unsafe template"]);
+        let result = ReadDevelopmentEnvironmentTemplate::run(
+            EnvironmentTemplateInput {
+                source: fixture.source("proof", None),
+                application: checkout.clone(),
+                commit: sh_git(&checkout, &["rev-parse", "HEAD"]),
+            },
+            &context(),
+        );
+        assert!(result.is_err());
+    }
+}

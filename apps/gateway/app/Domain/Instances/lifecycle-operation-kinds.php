@@ -22,7 +22,7 @@ return (static function (): array {
             $agent('instance.prepare-development-source', $git),
             $agent('instance.inspect-development-source'),
             $agent('instance.resolve-development-source', $git),
-            $agent('instance.inspect-development-profile'), $url,
+            $agent('instance.inspect-development-profile'), $agent('instance.read-development-environment-template'),
         ],
         'rename' => [$agent('instance.inspect-development-source')],
         'clone' => [
@@ -72,6 +72,7 @@ return (static function (): array {
                 'captured', 'cleaned', 'database_required', 'seed_required', 'attached', 'written', 'activated', 'environment_copied', 'definitions_captured', 'prepared', 'relocated',
                 'inspected', 'revalidated', 'accepted', 'removal_id', 'route_cleared', 'finalized', 'receipt', 'deleted', 'home_removed', 'detached',
                 'total', 'completed', 'remaining', 'cutover', 'transfer_id',
+                ...($verb === 'create' ? [['name' => 'environment_template', 'secret' => true, 'store' => 'instance.create_environment']] : []),
                 ...($verb === 'transfer' ? ['rollback_pending'] : []),
                 ...($verb === 'rename' ? [] : [
                     ['name' => 'instance_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],

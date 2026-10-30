@@ -319,6 +319,7 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::PrepareDevelopmentSource>(),
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
+        entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
         entry::<registration::InspectRegistrationSource>(),
         entry::<registration::RelocateRegistrationSource>(),
         entry::<registration::LaravelRegistrationReceipt>(),
