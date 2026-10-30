@@ -44,12 +44,12 @@ final class DirectOperationsController extends Controller
 
     public function privateMaterial(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse
     {
-        return $this->respond($request, $material->read($operation))->header('Cache-Control', 'no-store');
+        return $this->respond($request, $material->read($operation, ValidatedData::string($request->validated('run_id'))))->header('Cache-Control', 'no-store');
     }
 
     public function secretOutput(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse
     {
-        return $this->respond($request, ['stored' => $material->write($operation, ValidatedData::object($request->validated('outputs')))])->header('Cache-Control', 'no-store');
+        return $this->respond($request, ['stored' => $material->write($operation, ValidatedData::object($request->validated('outputs')), ValidatedData::string($request->validated('run_id')))])->header('Cache-Control', 'no-store');
     }
 
     /** @return array<string, mixed> */

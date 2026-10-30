@@ -16,9 +16,9 @@ final readonly class DirectOperationPrivateMaterial
     public function __construct(private DirectOperation $direct, private OperationSecrets $sources, private OperationSecretOutputs $outputs) {}
 
     /** @return array<string,mixed> */
-    public function read(Operation $operation): array
+    public function read(Operation $operation, string $runId): array
     {
-        $declaration = $this->declaration($operation, 'private_material');
+        $declaration = $this->declaration($operation, 'private_material', $runId);
         $input = [];
         foreach ($declaration as $parameter => $source) {
             Arr::set($input, $parameter, Arr::get($operation->input, $parameter));
@@ -30,11 +30,11 @@ final readonly class DirectOperationPrivateMaterial
     /** @param array<string,mixed> $values
      * @return array<string,array{'$secret':string,id:int}>
      */
-    public function write(Operation $operation, #[\SensitiveParameter] array $values): array
+    public function write(Operation $operation, #[\SensitiveParameter] array $values, string $runId): array
     {
-        return DB::transaction(function () use ($operation, $values): array {
+        return DB::transaction(function () use ($operation, $values, $runId): array {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            $declaration = $this->declaration($operation, 'secret_outputs');
+            $declaration = $this->declaration($operation, 'secret_outputs', $runId);
             if ($values === [] || array_diff(array_keys($values), array_keys($declaration)) !== [] || strlen(json_encode($values, JSON_THROW_ON_ERROR)) > OperationResultFields::MaximumResultBytes) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'Only declared output fields are accepted.', 422);
             }
@@ -48,10 +48,11 @@ final readonly class DirectOperationPrivateMaterial
     }
 
     /** @return array<string,string> */
-    private function declaration(Operation $operation, string $field): array
+    private function declaration(Operation $operation, string $field, string $runId): array
     {
         $operation->refresh();
         $this->direct->projection($operation);
+        $this->direct->assertRun($operation, $runId);
         if ($operation->status->terminal()) {
             throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
         }
