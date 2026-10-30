@@ -13,7 +13,7 @@ use App\Support\ValidatedData;
 use Throwable;
 
 /** One native Swamp start request. Never polls, retries or waits for completion. */
-final readonly class StartSwampOperation
+final readonly class StartSwampRun
 {
     public function __construct(private WebSocketClient $socket) {}
 
@@ -24,7 +24,7 @@ final readonly class StartSwampOperation
             throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
         }
         $workflow = $declaration['workflow'];
-        $token = config($declaration['token_config']);
+        $token = config('swamp.run_token');
         if (! is_string($token) || $token === '') {
             throw new ResourceOperationException('swamp.start_unavailable', 'The workflow start credential is not configured.', 503);
         }

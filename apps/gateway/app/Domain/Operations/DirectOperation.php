@@ -14,7 +14,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, token_config: string}> */
+    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>}> */
     private array $definitions;
 
     public function __construct()
@@ -23,8 +23,11 @@ final readonly class DirectOperation
         foreach (glob(__DIR__.'/../*/direct-operations.php') ?: [] as $file) {
             foreach (require $file as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'token_config']) !== []
-                    || count($definition) !== 4 || array_any($definition, static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)) {
+                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive']) !== []
+                    || array_diff(['workflow', 'writer_config', 'writer_state', 'projection'], array_keys($definition)) !== []
+                    || array_any(array_intersect_key($definition, array_flip(['workflow', 'writer_config', 'writer_state'])), static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)
+                    || ! is_a($definition['projection'], DirectOperationProjection::class, true)
+                    || (isset($definition['primitive']) && ! is_a($definition['primitive'], DirectOperationPrimitive::class, true))) {
                     throw new LogicException('A direct Operation needs one fixed family declaration.');
                 }
                 $definitions[$kind] = $definition;
@@ -63,7 +66,7 @@ final readonly class DirectOperation
         return $definition === null || $writer === null ? [] : [$definition['writer_state'] => $writer];
     }
 
-    /** @return array{workflow: string, writer_config: string, writer_state: string, token_config: string}|null */
+    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
@@ -75,6 +78,26 @@ final readonly class DirectOperation
         if ($known !== null && $known !== $runId) {
             throw new ResourceOperationException('operation.run_mismatch', 'This status belongs to another Swamp run.', 409);
         }
+    }
+
+    public function projection(Operation $operation): DirectOperationProjection
+    {
+        if (! self::owns($operation)) {
+            throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
+        }
+
+        return app($this->definitions[$operation->kind]['projection']);
+    }
+
+    public function primitive(Operation $operation): DirectOperationPrimitive
+    {
+        $this->projection($operation);
+        $primitive = $this->definitions[$operation->kind]['primitive'] ?? null;
+        if ($primitive === null) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'This intent declares no Gateway primitive.', 422);
+        }
+
+        return app($primitive);
     }
 
     /**

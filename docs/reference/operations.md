@@ -527,9 +527,17 @@ A repeated request after the reset, another assistance code, a terminal Operatio
 
 ## Direct Swamp starts
 
-Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampOperation` sends one native `workflow.run` request after intent commits and records its run ID. It uses the declaration's configured scoped credential. A lost start response stays uncertain; the Gateway does not poll, retry or claim work. Inspect native run history before submitting again.
+Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` sends one native `workflow.run` request after intent commits and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. A lost start response stays uncertain; the Gateway does not poll, retry or claim work. Inspect native run history before submitting again.
 
-A declaration names the workflow, writer configuration path, immutable writer-state field, and token configuration path. Routes retain their existing per-kind settings and `route_publication_writer` field. Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
+A declaration names the workflow, writer configuration path, immutable writer-state field and a typed projection hook. New families use the common `swamp.direct_writers` map (`ORBIT_SWAMP_DIRECT_WRITERS` JSON keyed by exact kind, default `{}`). An optional typed primitive hook runs one fixed admitted action. Families add no token, controller or HTTP routes. Routes retain their existing per-kind settings and `route_publication_writer` field. Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
+
+Read input comes only from the projection hook, never automatically from raw intent. Primitive calls accept only the run ID; the hook selects its command and input from admitted state. Existing Route publication URLs reach the same shared controller during the Swamp rollout.
+
+| Shared endpoint | Contract |
+| --- | --- |
+| `GET /api/v1/direct-operations/{operation}?run_id=UUID` | Safe admitted input, status, result and cancellation request |
+| `POST /api/v1/direct-operations/{operation}/result` | Run ID, status, timestamps, bounded result and error code |
+| `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 

@@ -13,7 +13,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Swamp\StartSwampOperation;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -34,7 +34,7 @@ beforeEach(function (): void {
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued,
         'sequence' => 1, 'state' => ['route_publication_writer' => 'direct'], 'input' => ['reason' => 'private proof']]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $this->path = '/api/v1/route-publications/'.$this->operation->id;
+    $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId];
     $this->agents = new FakeAgentCommandRunner()->answer('caddy.publish', ['result' => 'published']);
     app()->instance(AgentCommandRunner::class, $this->agents);
@@ -42,13 +42,35 @@ beforeEach(function (): void {
 });
 
 it('publishes the stored Node without claims keys or Gateway execution state', function (): void {
-    $this->postJson($this->path.'/publish', $this->body)->assertOk()->assertJsonPath('data.ready', true);
+    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.ready', true);
 
     expect($this->agents->calls)->toHaveCount(1);
     expect($this->agents->calls[0])->toMatchArray(['command' => 'caddy.publish', 'node' => 'private-dev']);
     expect($this->agents->calls[0]['input'])->not->toHaveKeys(['effect_key', 'worker']);
     expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct']);
     expect($this->operation->fresh()->worker)->toBeNull();
+});
+
+it('reads only projection-approved input through the shared endpoint and retains deployed Route URLs', function (): void {
+    $this->operation->update(['input' => ['password' => 'private-input-sentinel', 'command' => 'foreign']]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.input', [])->assertDontSee('private-input-sentinel');
+    $this->getJson('/api/v1/route-publications/'.$this->operation->id.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.id', $this->operation->id);
+    $this->postJson('/api/v1/route-publications/'.$this->operation->id.'/publish', $this->body)
+        ->assertOk()->assertJsonPath('data.ready', true);
+    expect($this->agents->calls)->toHaveCount(1);
+});
+
+it('refuses missing peers malformed run IDs and undeclared kinds on shared endpoints', function (): void {
+    $this->getJson($this->path)->assertUnprocessable();
+    $this->getJson($this->path.'?run_id=foreign')->assertUnprocessable();
+    $this->operation->update(['kind' => 'tool.install']);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
+    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.200']);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
+    expect($this->agents->calls)->toBe([]);
 });
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
@@ -60,11 +82,11 @@ it('excludes direct publications from discovery and refuses the replaced executo
 });
 
 it('requires the existing executor identity and rejects caller Node command and input overrides', function (): void {
-    $this->postJson($this->path.'/publish', [...$this->body, 'node_id' => $this->worker->id])->assertUnprocessable();
-    $this->postJson($this->path.'/publish', [...$this->body, 'input' => ['content' => 'foreign.test {}']])->assertUnprocessable();
-    $this->postJson($this->path.'/publish', [...$this->body, 'command' => 'arbitrary'])->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', [...$this->body, 'node_id' => $this->worker->id])->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', [...$this->body, 'input' => ['content' => 'foreign.test {}']])->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', [...$this->body, 'command' => 'arbitrary'])->assertUnprocessable();
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-    $this->postJson($this->path.'/publish', $this->body)->assertForbidden();
+    $this->postJson($this->path.'/primitive', $this->body)->assertForbidden();
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -88,7 +110,7 @@ it('refuses an unproven success invalid stage and another run before projection'
     $this->postJson($this->path.'/result', [...$body, 'result' => []])->assertUnprocessable();
     $this->postJson($this->path.'/result', [...$body, 'result' => ['ready' => true, 'stage' => 'reload']])->assertUnprocessable();
     $this->operation->update(['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => $this->runId]]);
-    $this->postJson($this->path.'/publish', ['run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'])->assertConflict();
+    $this->postJson($this->path.'/primitive', ['run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'])->assertConflict();
     expect($this->agents->calls)->toBe([]);
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
@@ -100,9 +122,9 @@ it('publishes DNS only on an active VPN owner using the unkeyed fixed program', 
         && $program->name === 'route.publish-dns' && array_keys($input) === ['records', 'catalog'])
         ->andReturn(new ProgramResult('published', ['ready' => true, 'digest' => str_repeat('b', 64)], ''));
     app()->instance(RemoteProgramRunner::class, $runner);
-    $this->postJson($this->path.'/publish', $this->body)->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
     $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
-    $this->postJson($this->path.'/publish', $this->body)->assertOk()->assertJsonPath('data.ready', true);
+    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.ready', true);
 });
 
 it('submits once after commit and records a native run without acquiring a target hold', function (): void {
@@ -126,7 +148,7 @@ it('keeps an uncertain native submission visible and never retries or reports a 
     $socket = new FakeRoutePublicationSocket(false);
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
-    expect(fn () => app(StartSwampOperation::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     expect($socket->sent)->toHaveCount(1);
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
     expect($this->operation->fresh()->attempts)->toBe(0);
@@ -142,7 +164,7 @@ it('keeps the previous Swamp writer by default and binds Operations through swit
     $polled = $start->execute('route.caddy_converge', 'node_route_projection', $this->node->id, $this->node->id, ['reason' => 'before switch'], 'test', null);
     expect($polled->state['route_publication_writer'])->toBe('polled');
     expect($socket->sent)->toBe([]);
-    $this->postJson('/api/v1/route-publications/'.$polled->id.'/publish', $this->body)->assertUnprocessable();
+    $this->postJson('/api/v1/direct-operations/'.$polled->id.'/primitive', $this->body)->assertUnprocessable();
 
     config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'direct']]);
     $direct = $start->execute('route.caddy_converge', 'node_route_projection', $this->node->id, $this->node->id, ['reason' => 'canary'], 'test', null);
@@ -152,7 +174,7 @@ it('keeps the previous Swamp writer by default and binds Operations through swit
 
     config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'polled']]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $direct->kind, 'worker' => 'previous', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
-    $this->postJson('/api/v1/route-publications/'.$direct->id.'/publish', ['run_id' => $direct->fresh()->state['swamp_run_id']])->assertOk()->assertJsonPath('data.ready', true);
+    $this->postJson('/api/v1/direct-operations/'.$direct->id.'/primitive', ['run_id' => $direct->fresh()->state['swamp_run_id']])->assertOk()->assertJsonPath('data.ready', true);
     expect($this->agents->calls)->toHaveCount(1);
 });
 
@@ -168,7 +190,7 @@ it('selects writers per kind and refuses invalid configuration before admission'
 
 it('keeps pre-rollout Operations with no writer stamp on their original Swamp path', function (): void {
     $this->operation->update(['state' => null]);
-    $this->postJson($this->path.'/publish', $this->body)->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'previous', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data.id', $this->operation->id);
     expect($this->agents->calls)->toBe([]);
 });

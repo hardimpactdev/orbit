@@ -6,7 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Swamp\StartSwampOperation;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\ReadOperation;
 use App\Jobs\RunOperation;
 use App\Models\Operation;
@@ -57,7 +57,7 @@ final readonly class OperationDispatcher
     public function dispatch(Operation $operation): void
     {
         if (DirectOperation::owns($operation)) {
-            DB::afterCommit(static fn () => app(StartSwampOperation::class)->start($operation));
+            DB::afterCommit(static fn () => app(StartSwampRun::class)->start($operation));
 
             return;
         }

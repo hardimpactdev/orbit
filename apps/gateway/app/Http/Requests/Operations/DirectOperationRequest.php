@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Requests\Routes;
+namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\DirectOperation;
-use App\Http\Requests\Operations\ExecutorRequest;
 use App\Models\Operation;
 
-final class RoutePublicationRequest extends ExecutorRequest
+final class DirectOperationRequest extends ExecutorRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array

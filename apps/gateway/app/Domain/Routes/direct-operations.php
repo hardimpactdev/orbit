@@ -1,12 +1,15 @@
 <?php
 
 declare(strict_types=1);
+use App\Domain\Routes\DirectRoutePublication;
+use App\Domain\Routes\RoutePublicationProjection;
 
 $publication = [
     'workflow' => 'operation-route-publication',
     'writer_config' => 'swamp.route_publication_writers',
     'writer_state' => 'route_publication_writer',
-    'token_config' => 'swamp.run_token',
+    'projection' => RoutePublicationProjection::class,
+    'primitive' => DirectRoutePublication::class,
 ];
 
 return [

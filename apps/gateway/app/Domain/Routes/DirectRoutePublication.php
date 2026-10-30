@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPrimitive;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
@@ -13,7 +14,7 @@ use App\Models\Node;
 use App\Models\Operation;
 
 /** Named, convergent Node primitives. No dispatch, locks, retries or receipts. */
-final readonly class DirectRoutePublication
+final readonly class DirectRoutePublication implements DirectOperationPrimitive
 {
     public const array Kinds = ['route.caddy_converge', 'route.private_dns_publish'];
 
@@ -40,7 +41,7 @@ final readonly class DirectRoutePublication
     }
 
     /** @return array<string, mixed> */
-    public function publish(Operation $operation): array
+    public function execute(Operation $operation): array
     {
         $this->assertOperation($operation);
         $node = Node::query()->findOrFail($operation->node_id);

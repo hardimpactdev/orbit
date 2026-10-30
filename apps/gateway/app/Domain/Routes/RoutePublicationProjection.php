@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,9 +13,16 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Projects native Swamp run status. No ownership lease or execution decisions. */
-final readonly class RoutePublicationProjection
+final readonly class RoutePublicationProjection implements DirectOperationProjection
 {
     public function __construct(private DirectOperation $direct, private OperationExecutionContract $contract) {}
+
+    public function input(Operation $operation): array
+    {
+        app(DirectRoutePublication::class)->assertOperation($operation);
+
+        return [];
+    }
 
     /** @param array<string, mixed> $data */
     public function apply(Operation $operation, array $data): Operation

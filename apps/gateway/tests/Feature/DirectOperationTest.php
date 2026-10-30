@@ -7,7 +7,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Swamp\StartSwampOperation;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -19,12 +19,12 @@ beforeEach(function (): void {
         'state' => ['route_publication_writer' => 'direct'], 'input' => []]);
 });
 
-it('uses only family-owned workflow and token declarations rather than Operation input', function (): void {
+it('uses only the fixed workflow and shared token rather than Operation input', function (): void {
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
     $this->operation->update(['input' => ['workflow' => 'foreign-workflow', 'token_config' => 'foreign', 'node_id' => 100]]);
-    app(StartSwampOperation::class)->start($this->operation);
+    app(StartSwampRun::class)->start($this->operation);
 
     expect($socket->endpoint->bearerToken)->toBe('private.scoped.fixture');
     expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
@@ -39,7 +39,7 @@ it('rejects undeclared and previous-writer intents before opening a native conne
     config(['swamp.run_token' => 'private.scoped.fixture']);
     foreach ([['kind' => 'tool.install'], ['kind' => 'route.caddy_converge', 'state' => []]] as $changes) {
         $this->operation->update($changes);
-        expect(fn () => app(StartSwampOperation::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+        expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     }
     expect($socket->sent)->toBe([]);
     expect($socket->endpoint)->toBeNull();
@@ -50,7 +50,7 @@ it('fails closed without a configured scoped credential before sending intent', 
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => '']);
-    expect(fn () => app(StartSwampOperation::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     expect($socket->sent)->toBe([]);
     expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct']);
 });
@@ -69,7 +69,7 @@ it('records only the matching root run and closes its single submission connecti
     };
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
-    app(StartSwampOperation::class)->start($this->operation);
+    app(StartSwampRun::class)->start($this->operation);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     expect($socket->sent)->toHaveCount(1);
     expect($socket->closed)->toBeTrue();
@@ -81,7 +81,7 @@ it('keeps a native refusal bounded without persisting the remote diagnostic', fu
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
     try {
-        app(StartSwampOperation::class)->start($this->operation);
+        app(StartSwampRun::class)->start($this->operation);
         $this->fail('Expected native refusal');
     } catch (ResourceOperationException $exception) {
         expect($exception->getMessage())->not->toContain('private.scoped.fixture');
@@ -96,7 +96,7 @@ it('does not overwrite a run already bound by result projection', function (): v
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
     $this->operation->update(['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']]);
-    expect(fn () => app(StartSwampOperation::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('fabd4059-fb6c-49d8-940e-01ae58aa3f38');
     expect($socket->closed)->toBeTrue();
 });

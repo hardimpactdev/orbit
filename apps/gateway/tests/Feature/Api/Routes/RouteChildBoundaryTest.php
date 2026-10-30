@@ -55,9 +55,9 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $run('stage-commit.host-withdraw', ['action' => 'commit', 'stage' => 'host-withdraw'])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
     $this->postJson($path.'/wait', ['worker' => 'parent-one', 'keys' => [$key]])->assertOk()->assertJsonPath('data.status', 'waiting');
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data', null);
-    $childPath = '/api/v1/route-publications/'.$child['id'];
+    $childPath = '/api/v1/direct-operations/'.$child['id'];
     $runId = Operation::query()->findOrFail($child['id'])->state['swamp_run_id'];
-    $result = $this->postJson($childPath.'/publish', ['run_id' => $runId])->assertOk()->json('data');
+    $result = $this->postJson($childPath.'/primitive', ['run_id' => $runId])->assertOk()->json('data');
     $this->postJson($childPath.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'result' => $result,
         'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'])->assertOk();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data.id', $parent->id);
