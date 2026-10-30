@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeLease;
@@ -26,7 +25,7 @@ beforeEach(function (): void {
     $this->process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'direct-proof', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '60']], 'desired_state' => 'stopped', 'status' => 'active', 'restart_policy' => 'never']);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->input = ['process_id' => $this->process->id, 'agent_sha256' => str_repeat('a', 64), 'runtime' => 'systemd', 'name' => 'orbit-process-'.$this->process->id.'-direct-proof.service', 'on_demand' => false, 'vite' => null];
-    $this->operation = Operation::query()->create(['kind' => 'process.start', 'target_type' => 'process', 'target_id' => $this->process->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => [...$this->input, 'preserve_record' => false, 'environment' => 'private-value'], 'state' => ['process_control_writer' => 'direct', 'swamp_run_id' => $this->runId]]);
+    $this->operation = Operation::query()->create(['kind' => 'process.stop', 'target_type' => 'process', 'target_id' => $this->process->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => [...$this->input, 'preserve_record' => false, 'environment' => 'private-value'], 'state' => ['process_control_writer' => 'direct', 'swamp_run_id' => $this->runId]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true, 'state' => 'active']];
     $this->socket = new FakeRoutePublicationSocket;
@@ -38,7 +37,7 @@ beforeEach(function (): void {
 it('exposes only safe admitted Process control input and bypasses old claims', function (): void {
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', $this->input);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.start', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.stop', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
 });
 
 it('projects native controls without keyed receipts and keeps terminal projection idempotent', function (string $verb, string $state, string $desired): void {
@@ -55,7 +54,7 @@ it('projects native controls without keyed receipts and keeps terminal projectio
     expect($this->operation->fresh()->worker)->toBeNull();
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ProcessStatus
         && $event->id === $this->process->id && $event->data['runtime_status'] === $state);
-})->with([['start', 'active', 'running'], ['restart', 'active', 'running'], ['stop', 'inactive', 'stopped']]);
+})->with([['stop', 'inactive', 'stopped']]);
 
 it('requires a bounded runtime state and a matching run before projecting success', function (): void {
     $this->postJson($this->path.'/result', [...$this->body, 'result' => ['ready' => true]])->assertUnprocessable();
@@ -105,16 +104,14 @@ it('admits a Vite stop with safe local control input and no traffic preparation'
         ->assertOk()->assertJsonPath('data.input.vite', null)->assertJsonMissingPath('data.input.vite_plan');
 });
 
-it('keeps Vite traffic and Instance children on their admitted polled path', function (): void {
-    config(['swamp.direct_writers' => ['process.start' => 'direct']]);
-    expect(app(DirectOperation::class)->writer('process.start', ['vite' => null]))->toBe('direct');
-    expect(app(DirectOperation::class)->writer('process.start', ['vite' => ['instance_id' => 8]]))->toBe('polled');
-    app(OperationIdempotency::class)->parent = $this->operation;
-    expect(app(DirectOperation::class)->writer('process.start', ['vite' => null]))->toBe('polled');
+it('keeps unconverted controls polled even with a stale direct setting', function (): void {
+    config(['swamp.direct_writers' => ['process.start' => 'direct', 'process.restart' => 'direct']]);
+    expect(app(DirectOperation::class)->writer('process.start', ['vite' => null]))->toBeNull();
+    expect(app(DirectOperation::class)->writer('process.restart', ['vite' => null]))->toBeNull();
 });
 
 it('projects only a typed native refusal without changing desired state', function (): void {
-    $this->postJson($this->path.'/result', [...$this->body, 'status' => 'failed', 'error_code' => 'process.start_failed', 'result' => ['error_code' => 'process.start_failed', 'output' => 'private']])->assertOk()->assertJsonPath('data.result', ['error_code' => 'process.start_failed']);
+    $this->postJson($this->path.'/result', [...$this->body, 'status' => 'failed', 'error_code' => 'process.stop_failed', 'result' => ['error_code' => 'process.stop_failed', 'output' => 'private']])->assertOk()->assertJsonPath('data.result', ['error_code' => 'process.stop_failed']);
     expect($this->process->fresh()->desired_state->value)->toBe('stopped');
-    expect($this->process->fresh()->error_code)->toBe('process.start_failed');
+    expect($this->process->fresh()->error_code)->toBe('process.stop_failed');
 });
