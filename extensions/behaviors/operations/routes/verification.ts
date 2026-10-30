@@ -78,7 +78,7 @@ export function verification(
     methods: {
       verify: {
         description:
-          "Verify the admitted Route hop on its exact forwarding Node",
+          "Verify the admitted Route endpoint from the control worker",
         arguments: Args,
         execute: async (args: z.infer<typeof Args>, ctx: Context) =>
           await directOperation(

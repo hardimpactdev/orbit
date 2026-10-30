@@ -1,7 +1,7 @@
 id: aea0a4c4-6f74-473d-a245-7cc39f20c54a
 name: operation-route-verification
-description: Verify an admitted Route hop locally on its forwarding Node.
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+description: Verify an admitted Route network endpoint from the control workers.
+labels: { pool: migration }
 vaults: []
 inputs:
   properties:

@@ -24,10 +24,11 @@ class VerificationNative(unittest.TestCase):
         module.write_text('import {fixtureHttp,fixtureVerify} from "./verification_native_fixture.ts";\n' + module.read_text().replace('export const behavior = verification();', 'export const behavior = verification(() => fixtureHttp, fixtureVerify);'))
         (self.repo / 'workflows').mkdir()
         source = ROOT / 'workflows/workflow-operation-route-verification.yaml'
-        self.assertIn('orbit-node-', source.read_text())
+        self.assertIn('labels: { pool: migration }', source.read_text())
+        self.assertNotIn('target:', source.read_text())
         self.assertNotIn('queueTimeout:', source.read_text())
         # The fixture exercises execution/recovery locally, not an enrolled worker.
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith('target:')) + '\n')
+        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith('labels:')) + '\n')
         self.state = {'bound': True, 'probes': 0, 'calls': [], 'operation': {'id': 17, 'kind': 'route.workload_verify', 'node_id': 9, 'status': 'queued', 'cancel_requested': False, 'result': None, 'input': {'protocol': 'tls', 'agent_sha256': 'a' * 64, 'probe': {'address': '192.168.6.18', 'port': 443, 'domain': 'demo.private.test'}}}}
         self.save()
 
