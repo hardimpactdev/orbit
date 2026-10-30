@@ -87,7 +87,7 @@ final readonly class StartToolOperationAction
                 $variant = $intentOnly ? 'version' : ($verb === 'adopt' && in_array($managerName, ['brew', 'brew-cask'], true) ? 'adoption' : 'inventory');
 
                 OperationFamilySpec::assertAvailable('tool.'.$verb);
-                $direct = app(DirectOperation::class)->writer('tool.'.$verb, ['manager' => $managerName], $nodeId) === 'direct';
+                $direct = app(DirectOperation::class)->writer('tool.'.$verb, ['manager' => $managerName, 'tool_status' => $tool?->status->value], $nodeId) === 'direct';
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,

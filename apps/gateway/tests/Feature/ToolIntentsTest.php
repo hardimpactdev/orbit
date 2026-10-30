@@ -183,7 +183,7 @@ it('selects only proven APT root intents and keeps other managers Nodes children
     config(['swamp.direct_writers' => ['tool.adopt' => 'direct', 'tool.manager_converge' => 'direct']]);
     $direct = app(DirectOperation::class);
     foreach (['tool.adopt', 'tool.manager_converge'] as $kind) {
-        expect($direct->writer($kind, ['manager' => 'apt'], 209))->toBe('direct');
+        expect($direct->writer($kind, ['manager' => 'apt', 'tool_status' => 'installed'], 209))->toBe('direct');
         foreach (['vp', 'composer', 'brew', 'brew-cask'] as $manager) {
             expect($direct->writer($kind, ['manager' => $manager], 209))->toBe('polled');
         }
@@ -204,6 +204,8 @@ it('admits APT adoption directly while recording other managers as polled and re
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
+    $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => 'active']);
+    $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'jq', 'status' => 'installed', 'installed_version' => '1.7.1']);
     $apt = app(StartToolOperationAction::class)->execute('adopt', 209, 'apt', 'jq', null);
     expect($apt->state['tool_writer'])->toBe('direct');
     expect($apt->lock_key)->toBeNull();

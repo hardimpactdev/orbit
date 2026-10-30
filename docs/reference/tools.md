@@ -471,6 +471,8 @@ The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the No
 
 ## Direct Swamp execution
 
+When `tool.adopt` selects the direct writer, it also requires the admitted Tool status `installed`, read from an existing managed Tool row. New ownership and failed-Tool adoption retries keep the polled writer. The selected writer is stamped once; changing the writer map or declaration does not reselect an existing or replayed intent.
+
 Tools declares `tool.install`, `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge` on the [shared direct Operation boundary](/reference/operations#direct-swamp-starts). `ORBIT_SWAMP_DIRECT_WRITERS` is a JSON map keyed by exact kind and defaults to `{}`. An absent entry keeps the previous Swamp writer. A `direct` entry records immutable `tool_writer` state and starts `operation-tool-direct` through `StartSwampRun` with the one `ORBIT_SWAMP_RUN_TOKEN`. The Gateway records safe package, manager, enrolled account and recipe intent; the Node worker executes policy and returns a bounded inventory projection. No Tool relay, family credential or Gateway primitive is declared.
 
 APT `tool.manager_converge` and `tool.adopt` admit direct root intents on Node 209 when their exact kind entry is `direct`. The declaration's literal `writer_scope` limits admission to that proven manager and Node. Other managers, Nodes and privileged kinds stay polled. Existing callers that admit manager children also stay polled. The chosen writer is immutable; reverting either entry to `polled` changes new intents only. The public kinds and API stay the same.
