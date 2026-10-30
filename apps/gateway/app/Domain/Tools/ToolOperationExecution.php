@@ -47,9 +47,6 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
             if ($input['platform'] === 'macos' && in_array($manager, ['brew', 'brew-cask'], true)) {
                 $bottle['architecture'] = $input['architecture'];
             }
-            if ($verb === 'update') {
-                $add('package-candidate', 'agent', $prefix.'candidate', $manager === 'composer' ? [...$package, 'operation' => $verb] : $bottle);
-            }
             if ($verb === 'remove' && in_array($manager, ['apt', 'vp', 'composer'], true)) {
                 $add('package-removal-plan', 'agent', $prefix.'removal-plan', $package);
             }
@@ -120,14 +117,6 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
             'tool.adopt' => ($input['tool_status'] ?? null) === 'installed' ? 'unchanged' : 'applied',
             default => $before === $version ? 'unchanged' : 'applied',
         };
-        if ($operation->kind === 'tool.update' && is_string(data_get($operation->state, 'executor_runs.package-candidate.result.version'))) {
-            $candidate = ValidatedData::string(data_get($operation->state, 'executor_runs.package-candidate.result.version'));
-            $constraint = ValidatedData::nullableString($input['version_constraint']);
-            $normalized = $manager?->normalizeVersion($candidate);
-            if ($constraint !== null && $normalized !== null && ! app(VersionConstraint::class)->allows($normalized, $constraint)) {
-                $outcome = 'blocked_by_constraint';
-            }
-        }
 
         return ['installed_version' => $version, 'block' => null, 'outcome' => $outcome];
     }
