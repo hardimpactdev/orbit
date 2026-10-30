@@ -1,0 +1,26 @@
+id: b100f60c-b164-4036-8881-17e603ba3901
+name: operation-node-settings
+description: Prepare one admitted Node apps root through the shared direct boundary.
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [node.settings] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: settings
+    steps:
+      - name: prepare
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-settings"
+          behaviorName: '${{ "node-settings-node-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
