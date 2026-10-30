@@ -98,21 +98,17 @@ it('restricts Node workers to their admitted Node and preserves the control-plan
 });
 
 it('projects a bounded failure without enabling the timer', function (): void {
-    $this->operation->update(['kind' => 'schedule.enable']);
     $this->schedule->update(['desired_timer_state' => 'disabled']);
-    $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.activation_failed', 'result' => ['error_code' => 'other.failure']];
+    $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.run_failed', 'result' => ['error_code' => 'other.failure']];
     $this->postJson($this->path.'/result', $body)->assertUnprocessable();
-    $this->postJson($this->path.'/result', [...$body, 'result' => ['error_code' => 'schedule.activation_failed']])->assertOk();
-    expect($this->schedule->fresh()->error_code)->toBe('schedule.activation_failed');
+    $this->postJson($this->path.'/result', [...$body, 'result' => ['error_code' => 'schedule.run_failed']])->assertOk();
+    expect($this->schedule->fresh()->error_code)->toBe('schedule.run_failed');
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
 });
 
-it('projects a successful enable into desired timer state', function (): void {
-    $this->operation->update(['kind' => 'schedule.enable']);
-    $this->schedule->update(['desired_timer_state' => 'disabled']);
-    $this->postJson($this->path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
-    expect($this->schedule->fresh()->desired_timer_state->value)->toBe('enabled');
-    expect($this->schedule->fresh()->error_code)->toBeNull();
+it('keeps unconverted enable polled even with a stale direct setting', function (): void {
+    config(['swamp.direct_writers' => ['schedule.enable' => 'direct']]);
+    expect(app(DirectOperation::class)->writer('schedule.enable'))->toBeNull();
 });
 
 it('exposes admitted removal input and deletes the Schedule only on native success', function (): void {
