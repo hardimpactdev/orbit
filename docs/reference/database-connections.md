@@ -109,7 +109,7 @@ User creation takes `username`, `password`, optional `read_only`, and optional `
 
 SQL and passwords stay in the encrypted database intent and reach only the shared run-bound private-material callback. Public intent contains the driver, container, username, admitted digest and validation flags. The Gateway projects the recorded user after native success, without a command relay or execution receipt. This direct-only kind has no polled fallback; rollback reverts its cutover PR.
 
-Native resume retries a failed terminal projection from its saved safe outcome without repeating successful SQL. An uncertain SQL step still needs inspection before restarting it; the workflow does not promise exactly-once SQL.
+Native resume retries a failed terminal projection from its saved safe outcome without repeating successful SQL. PostgreSQL checks and creates a new login in one atomic block. If SQL succeeds before its native outcome is saved, replay accepts only the exact password verifier recorded in that intent; it refuses a foreign role. Grant replacement can then run again. This recovery does not promise exactly-once SQL.
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 

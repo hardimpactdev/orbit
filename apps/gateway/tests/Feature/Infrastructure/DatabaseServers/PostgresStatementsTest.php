@@ -42,6 +42,27 @@ it('keeps the immutable PostgreSQL seed after a forked contender exits', functio
     postgres_statements_server(fn (Closure $psql) => expect($psql('SELECT 2;'))->toBe('2'));
 });
 
+it('recovers an unrecorded PostgreSQL login only from the exact admitted verifier', function (): void {
+    postgres_statements_server(function (Closure $psql): void {
+        $sql = new PostgresStatements;
+        $admitted = $sql->ensureUser('pending_reader', 'private-pending-password', knownUser: false);
+
+        // SQL committed but the native create step did not save its outcome.
+        $psql($admitted);
+        $before = $psql("SELECT rolpassword FROM pg_authid WHERE rolname = 'pending_reader';");
+        $psql($admitted);
+        expect($psql("SELECT count(*) FROM pg_roles WHERE rolname = 'pending_reader' AND rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole;"))->toBe('1');
+        expect($psql("SELECT rolpassword FROM pg_authid WHERE rolname = 'pending_reader';"))->toBe($before);
+
+        $foreignIntent = $sql->ensureUser('pending_reader', 'private-pending-password', knownUser: false);
+        expect(fn () => $psql($foreignIntent))->toThrow(ProcessFailedException::class, 'database.name_conflict');
+        expect($psql("SELECT rolpassword FROM pg_authid WHERE rolname = 'pending_reader';"))->toBe($before);
+
+        $psql($sql->ensureUser('pending_reader', 'rotated-known-password', knownUser: true));
+        expect($psql("SELECT rolpassword FROM pg_authid WHERE rolname = 'pending_reader';"))->not->toBe($before);
+    });
+});
+
 it('applies PostgreSQL statements with builtin locale, owner and current and future reader grants on PG18', function (): void {
     postgres_statements_server(function (Closure $psql): void {
         $sql = new PostgresStatements;

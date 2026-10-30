@@ -72,7 +72,7 @@ final readonly class CreateDatabaseUserAction
         $statements = $this->statements->forDriver($server->driver);
         $readOnly = $data->readOnly || $data->replication;
         $ensureUser = $statements instanceof PostgresStatements
-            ? $statements->ensureUser($data->username, $data->password, replication: $data->replication)
+            ? $statements->ensureUser($data->username, $data->password, replication: $data->replication, knownUser: $knownUser)
             : $statements->ensureUser($data->username, $data->password);
 
         return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
