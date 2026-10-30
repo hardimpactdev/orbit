@@ -216,10 +216,10 @@ it('composes the real setup child with its immutable digest and retains the pare
     ($this->record)('source-inspect', $source);
 
     config(['swamp.run_token' => 'fixture.shared.token']);
-    $socket = new \Tests\Support\FakeRoutePublicationSocket;
+    $socket = new FakeRoutePublicationSocket;
     $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-setup-direct', 'runId' => $runId]]];
-    app()->instance(\App\Infrastructure\AgentView\WebSocketClient::class, $socket);
+    app()->instance(WebSocketClient::class, $socket);
     $id = $this->postJson($this->path.'/children', ['worker' => 'proof-worker', 'key' => 'setup'])
         ->assertAccepted()->assertJsonPath('data.input', ['instance_id' => $this->instance->id,
             'source' => 'project', 'list' => 'setup', 'configuration_digest' => $digest,
@@ -233,8 +233,9 @@ it('composes the real setup child with its immutable digest and retains the pare
     $child = '/api/v1/direct-operations/'.$id;
     $this->getJson($child.'?run_id='.$runId)->assertOk()->assertJsonPath('data.input.list', 'setup');
     $result = ['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => true];
-    $this->postJson($child.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => now()->subSecond()->toISOString(),
-        'finished_at' => now()->toISOString(), 'result' => $result, 'error_code' => null])->assertOk();
+    $reply = $this->postJson($child.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => now()->subSecond()->utc()->format('Y-m-d\TH:i:s.v\Z'),
+        'finished_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $result, 'error_code' => null]);
+    $reply->assertOk();
     expect($this->operation->refresh()->lock_key)->toBe($hold);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.create', 'worker' => 'resumed-parent', 'operation_id' => $this->operation->id])
         ->assertOk()->assertJsonPath('data.id', $this->operation->id);
