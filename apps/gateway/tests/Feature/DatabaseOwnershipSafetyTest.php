@@ -73,7 +73,7 @@ it('records successful MySQL creation per name and keeps its proof after intent 
     $drop = app(DropServerDatabaseAction::class)->prepareMany([$connection])[0];
 
     expect($drop->kind)->toBe('database.destroy');
-    expect(DatabaseExecutionIntent::recorded($drop->input['intent_id'])->payload['commands']['database-apply']['transport'])->toBe('database_removal');
+    expect($drop->input['databases'])->toBe(['owned']);
 });
 
 it('rechecks names on clone reservation reuse and resets only proven names', function (): void {
@@ -115,29 +115,6 @@ it('refuses a connection reservation while removal holds the database lock', fun
             ->toThrow(ResourceOperationException::class, 'Another database removal');
     });
     expect(DatabaseConnection::query()->count())->toBe(0);
-});
-
-it('holds the removal lock through final dispatch so a new shared login reservation cannot interleave', function (): void {
-    $this->prepareServerDatabaseFixtures();
-    $connection = DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
-        'database' => 'owned', 'username' => 'owned_user']);
-    databaseCreatedProof($connection);
-    app(DropServerDatabaseAction::class)->execute($connection);
-    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', function (): array {
-        expect(fn () => app(CreateServerDatabaseAction::class)->reserve($this->server, 'interleaved', 'interleaved', $this->instance, null))
-            ->toThrow(ResourceOperationException::class, 'Another database removal');
-
-        return ['output' => ''];
-    });
-    app()->instance(AgentCommandRunner::class, $agents);
-    $executor = app(SwampOperationExecutor::class);
-    $operation = $executor->claim('database.destroy', 'proof', $this->gateway->id);
-    $step = app(DatabaseOperationExecution::class)->context($operation)['descriptors'][0];
-
-    $result = $executor->run($operation, ['worker' => 'proof', 'key' => $step['key'], 'transport' => $step['transport'], 'name' => $step['name'], 'input' => $step['input']], $this->gateway->id);
-
-    expect($result)->toBe(['backend' => 'absent']);
-    expect(DatabaseConnection::query()->pluck('slug')->all())->toBe(['owned']);
 });
 
 it('retains both source and target SQLite intent while an unadmitted lifecycle parent waits', function (): void {

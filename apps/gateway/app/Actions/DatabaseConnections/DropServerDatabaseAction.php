@@ -17,6 +17,7 @@ use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
@@ -103,9 +104,69 @@ final readonly class DropServerDatabaseAction
      */
     public function prepareMany(array $connections, ?int $ownerInstanceId = null): array
     {
-        $serverIds = array_values(array_filter(array_map(static fn (DatabaseConnection $connection): ?int => $connection->database_server_id, $connections)));
+        return $this->prepareDirect($connections, $ownerInstanceId);
+    }
 
-        return $this->removalLock->run($serverIds, fn (): array => $this->prepareLocked($connections, $ownerInstanceId));
+    /** @param list<DatabaseConnection> $connections
+     * @return list<PreparedDatabaseOperation>
+     */
+    private function prepareDirect(array $connections, ?int $ownerInstanceId): array
+    {
+        $groups = [];
+        $ids = array_map(static fn (DatabaseConnection $connection): int => $connection->id, $connections);
+        foreach ($connections as $connection) {
+            $server = $connection->server;
+            if (! $server instanceof DatabaseServer) {
+                throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
+            }
+            if ($connection->targets()->exists() && ($ownerInstanceId === null || $connection->owner_instance_id !== $ownerInstanceId)) {
+                throw new ResourceOperationException('database.connection_attached', 'Detach the connection before removal.', 409);
+            }
+            $names = $server->driver === DatabaseDriver::Redis || $connection->database === null ? [] : [$connection->database];
+            if ($server->driver === DatabaseDriver::Pgsql && $connection->test_database !== null && $connection->test_processes !== null) {
+                $names = [...$names, ...$this->postgresTests->names($connection->test_database, $connection->test_processes)];
+            }
+            if ($server->driver === DatabaseDriver::Mysql) {
+                $names = array_values(array_unique([...$names, ...$this->ownership->mysqlNames($connection)]));
+                $this->ownership->assertMysqlNames($connection, $names);
+            }
+            $prefix = $server->driver === DatabaseDriver::Mysql ? $connection->test_database : null;
+            $prefixOwned = $prefix !== null && $this->ownership->ownsMysqlPrefix($connection, $prefix);
+            $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => [], 'owners' => [], 'by_connection' => [], 'records' => [], 'inventories' => [], 'prefixes' => []];
+            $groups[$server->id]['connections'][] = $connection->id;
+            $groups[$server->id]['records'][$connection->id] = $connection->only(['database', 'test_database', 'test_processes', 'username', 'owner_instance_id']);
+            $groups[$server->id]['by_connection'][$connection->id] = $names;
+            foreach ($names as $name) {
+                $groups[$server->id]['owners'][$name] = $connection->username ?? '';
+            }
+            $groups[$server->id]['databases'] = [...$groups[$server->id]['databases'], ...$names];
+            $groups[$server->id]['users'] = [...$groups[$server->id]['users'], ...$this->unsharedUsers($connection, $server, $ids)];
+            if ($prefix !== null) {
+                $groups[$server->id]['inventories'][] = rtrim(trim($this->statements->databasesNamed($prefix, $prefix)), ';');
+                if ($prefixOwned) {
+                    $groups[$server->id]['prefixes'][] = $prefix;
+                }
+            }
+
+        }
+        $prepared = [];
+        foreach ($groups as $group) {
+            $server = $group['server'];
+            $names = array_values(array_unique($group['databases']));
+            $users = array_values(array_unique($group['users']));
+            $sql = $server->driver === DatabaseDriver::Pgsql ? (new PostgresStatements)->dropFencedDatabases($names, $users, $group['owners']) : '';
+            $restore = $server->driver === DatabaseDriver::Pgsql ? (new PostgresStatements)->restoreDatabaseAdmission($names) : '';
+            $input = ['password' => $server->root_password, 'sql' => $sql, 'restore_sql' => $restore,
+                'inventory_sql' => implode(' UNION ', array_map(static fn (string $query): string => '('.$query.')', $group['inventories'])), 'payload' => (object) ['usernames' => array_values(array_diff($users, ['default', '']))]];
+            $prepared[] = $this->operations->prepare('database.destroy', 'database_server', $server->id, $server->node_id,
+                ['owner_instance_id' => $ownerInstanceId, 'connection_id' => $group['connections'][0], 'connection_ids' => $group['connections'], 'driver' => $server->driver->value,
+                    'container' => $server->process === null ? null : app(DockerProcessRenderer::class)->containerName($server->process),
+                    'host' => $server->node->wireguard_ip, 'port' => $server->port, 'default_open' => $server->default_open, 'databases' => $names, 'users' => $users, 'owned_prefixes' => $group['prefixes'], 'connections' => $group['records']],
+                ['database-apply' => ['name' => 'database.destroy', 'input' => $input, 'protected' => ['password', 'sql', 'restore_sql', 'inventory_sql', 'payload']]],
+                ['delete_connections' => $group['connections'], 'drop_users' => $users, 'drop_databases' => $group['by_connection']]);
+        }
+
+        return $prepared;
     }
 
     /** @param list<DatabaseConnection> $connections
@@ -150,7 +211,6 @@ final readonly class DropServerDatabaseAction
                     ? (new PostgresStatements)->dropFencedDatabases($databases, $users, $group['owners'])
                     : implode('', array_map($this->statements->dropDatabase(...), $databases)).implode('', array_map($this->statements->dropUser(...), $users));
                 $command = DatabaseCommands::sql($server, $sql, 'absent', expectEmpty: true, refusal: 'database.in_use');
-                $command['transport'] = 'database_removal';
             }
             $command['finish_after_effect'] = true;
             $commands = ['database-apply' => $command];
@@ -173,9 +233,6 @@ final readonly class DropServerDatabaseAction
     /** @param array<string,mixed> $input */
     private function assertRemovalStillSafe(array $input, DatabaseExecutionIntent $intent): void
     {
-        if (($input['driver'] ?? null) !== 'mysql') {
-            return;
-        }
         $ids = ValidatedData::integerList($input['connection_ids'] ?? []);
         $connections = DatabaseConnection::query()->whereIn('id', $ids)->with('users', 'server')->get();
         $current = [];
@@ -184,7 +241,9 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'The removal server is missing.', 409);
             }
-            $this->ownership->assertMysqlNames($connection, $intent->payload['projection']['drop_databases'][$connection->id] ?? []);
+            if ($server->driver === DatabaseDriver::Mysql) {
+                $this->ownership->assertMysqlNames($connection, $intent->payload['projection']['drop_databases'][$connection->id] ?? []);
+            }
             $current = [...$current, ...$this->unsharedUsers($connection, $server, $ids)];
         }
         if (array_diff($intent->payload['projection']['drop_users'] ?? [], $current) !== []) {

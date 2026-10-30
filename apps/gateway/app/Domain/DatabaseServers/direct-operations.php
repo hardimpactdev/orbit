@@ -3,12 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseCleanupProjection;
+use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
 use App\Domain\DatabaseServers\DatabaseWriteProjection;
 
-return ['database.write' => [
+return ['database.destroy' => [
+    'workflow' => 'operation-database-destroy',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'database_destroy_writer',
+    'projection' => DatabaseDestroyProjection::class,
+    'private_material' => ['password' => 'database.intent', 'sql' => 'database.intent', 'restore_sql' => 'database.intent', 'inventory_sql' => 'database.intent', 'payload' => 'database.intent'],
+], 'database.write' => [
     'workflow' => 'operation-database-write',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'database_write_writer',

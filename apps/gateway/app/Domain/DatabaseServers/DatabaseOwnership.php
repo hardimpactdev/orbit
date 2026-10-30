@@ -18,6 +18,24 @@ final readonly class DatabaseOwnership
      */
     public function mysqlNames(DatabaseConnection $connection, array $candidates = []): array
     {
+        ['names' => $names, 'prefixes' => $prefixes] = $this->mysqlOwnership($connection);
+        foreach ($candidates as $name) {
+            if (array_any($prefixes, static fn (string $prefix): bool => str_starts_with($name, $prefix))) {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    public function ownsMysqlPrefix(DatabaseConnection $connection, string $prefix): bool
+    {
+        return in_array($prefix, $this->mysqlOwnership($connection)['prefixes'], true);
+    }
+
+    /** @return array{names:list<string>,prefixes:list<string>} */
+    private function mysqlOwnership(DatabaseConnection $connection): array
+    {
         $names = [];
         $prefixes = [];
         foreach ($connection->creation_receipts ?? [] as $proof) {
@@ -41,13 +59,8 @@ final readonly class DatabaseOwnership
                 $prefixes[] = $adoption['prefix'];
             }
         }
-        foreach ($candidates as $name) {
-            if (array_any($prefixes, static fn (string $prefix): bool => str_starts_with($name, $prefix))) {
-                $names[] = $name;
-            }
-        }
 
-        return array_values(array_unique($names));
+        return ['names' => $names, 'prefixes' => $prefixes];
     }
 
     /** @param array{database:string,username:string,server_id:int,scope?:'prefix',activity_id?:int,operation_id?:int,step?:string} $proof */

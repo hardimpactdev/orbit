@@ -100,21 +100,6 @@ def apply(client, action, payload, password):
         except Exception:
             client.command('ACL', 'DELUSER', name)
             raise
-    elif action == 'remove':
-        lines = client.command('ACL', 'LIST')
-        saved = {line.split(' ', 2)[1]: line.split(' ', 2)[2].split() for line in lines}
-        names = [name for name in payload['usernames'] if name != 'default']
-        try:
-            if names:
-                client.command('ACL', 'DELUSER', *names)
-            client.command('ACL', 'SAVE')
-        except Exception:
-            for name in names:
-                if name in saved:
-                    client.command('ACL', 'SETUSER', name, 'reset', *saved[name])
-            client.command('ACL', 'SAVE')
-            raise
-        return 'absent'
     elif action == 'converge':
         expected = {user['name']: user for user in payload['users']}
         live = {}

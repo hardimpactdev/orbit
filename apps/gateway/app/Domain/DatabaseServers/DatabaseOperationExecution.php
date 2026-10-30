@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
-use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Actions\DatabaseConnections\PrepareSqliteSeedAbandonAction;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
@@ -123,21 +122,6 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
         $command = $this->intent($operation)->payload['commands'][$run['key']] ?? [];
         if (isset($command['reset_database'])) {
             app(DatabaseOwnership::class)->assertMysqlNames(DatabaseConnection::query()->findOrFail(ValidatedData::integer($operation->input['connection_id'])), [$command['reset_database']]);
-        }
-        if ($operation->kind === 'database.destroy') {
-            if (($operation->input['driver'] ?? null) === 'mysql') {
-                foreach ($this->intent($operation)->payload['projection']['drop_databases'] ?? [] as $id => $names) {
-                    app(DatabaseOwnership::class)->assertMysqlNames(DatabaseConnection::query()->findOrFail($id), $names);
-                }
-            }
-            app(DropServerDatabaseAction::class)->assertUsersStillUnshared($operation, $this->intent($operation));
-            foreach (ValidatedData::integerList($operation->input['connection_ids'] ?? [$operation->input['connection_id']]) as $id) {
-                $connection = DatabaseConnection::query()->findOrFail($id);
-                $owner = $operation->input['owner_instance_id'] ?? null;
-                if ($connection->targets()->exists() && ($owner === null || $connection->owner_instance_id !== $owner)) {
-                    throw new ResourceOperationException('database.connection_attached', 'Detach the connection before removal.', 409);
-                }
-            }
         }
 
     }
