@@ -42,8 +42,7 @@ final readonly class TaskVmGuestCommand implements OperationEffectTransport
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
         $command = ValidatedData::string($input['command'] ?? null);
-        if (! in_array($command, [...TaskVmCommandContracts::GuestCommands, ...TaskVmCommandContracts::SpecialGuestCommands], true)
-            && ! ($operation->kind === 'task_vm.cache_seed' && $operation->target_type === 'task_vm' && $command === 'package-cache.seed')) {
+        if (! in_array($command, [...TaskVmCommandContracts::GuestCommands, ...TaskVmCommandContracts::SpecialGuestCommands], true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The guest command is not declared.', 422);
         }
         $decoded = json_decode(ValidatedData::string($input['parameters_json']), flags: JSON_THROW_ON_ERROR);

@@ -32,7 +32,7 @@ return (static function (): array {
         ];
     }
 
-    $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::packageCacheKinds(), ...TaskVmCommandContracts::cacheMountKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
+    $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::packageCacheKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
     foreach ($kinds as $kind => &$definition) {
         if ($kind === 'task_vm.destroy') {
             if (! OperationKinds::supports('cancel_guard')) {
