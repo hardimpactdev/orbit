@@ -1,0 +1,29 @@
+id: fe404a82-4210-4047-b440-5f385b8e49c3
+name: operation-process-control
+description: One directly admitted Process control on its exact Node worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: {
+      type: string,
+      enum: [process.start, process.stop, process.restart, process.destroy],
+    }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: node
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    writes: true
+    steps:
+      - name: control
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/process-control"
+          behaviorName: '${{ "process-control-node-" + string(inputs.node_id) }}'
+          methodName: control
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

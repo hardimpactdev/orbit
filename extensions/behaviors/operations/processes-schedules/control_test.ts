@@ -3,7 +3,8 @@ import {
   assertRejects,
   assertThrows,
 } from "jsr:@std/assert@1.0.14";
-import { assertAgent, scheduleControl } from "./control.ts";
+import { scheduleControl } from "./control.ts";
+import { assertAgent } from "./agent.ts";
 const args = {
   operation_id: 17,
   node_id: 9,

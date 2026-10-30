@@ -79,3 +79,18 @@ removal child Schedule Operations retain the old writer until their parent
 moves. The earlier209pre-cancelled canaries proved binding/read/projection only;
 their temporary migration placement was restored live in main e830a3d.
 Production success must precede deletion of the replaced Gateway executor.
+
+## Direct Process controls
+
+`operation-process-control` handles standalone start/stop/restart/destroy for
+systemd or Docker Processes without Vite traffic preparation. It shares the
+family's admitted-digest and bounded sudo invocation with Schedule controls. The
+Node action checks an admitted selected release when required, performs one
+control/removal and reads status. Only ready/state or an error code reaches the
+Gateway; no readiness relay, child Operation or keyed receipt is used. Exact
+Node placement and native behavior locking own dispatch and concurrency.
+
+The writer map defaults to polled. Vite/Instance child intents remain polled
+until their own parent/traffic conversion. No live kind has switched merely
+because this source is merged. Actual canary and production proofs precede
+takeover and deletion.
