@@ -1,10 +1,12 @@
 # Direct Schedule control
 
 `operation-schedule-control` runs one Gateway-admitted `schedule.enable` or
-`schedule.run` intent on exactly `orbit-node-<admitted Node ID>`. It uses the
-shared [direct Operation boundary](direct-operations.md): `StartSwampRun`, the
-one `ORBIT_SWAMP_RUN_TOKEN`, the `swamp.direct_writers` map, `GatewayOperation`
-and `directOperation`. The immutable writer stamp is `schedule_control_writer`.
+`schedule.run` intent. During the binding canary it uses the existing Node 209
+workers (`pool: migration`); exact `orbit-node-<admitted Node ID>` placement
+follows with the per-Node workers. It uses the shared
+[direct Operation boundary](direct-operations.md): `StartSwampRun`, the one
+`ORBIT_SWAMP_RUN_TOKEN`, the `swamp.direct_writers` map, `GatewayOperation` and
+`directOperation`. The immutable writer stamp is `schedule_control_writer`.
 
 The Gateway declaration contains only the workflow, writer configuration/state
 and `ScheduleControlProjection`. Its input method exposes the admitted Schedule
@@ -65,3 +67,13 @@ and four pinned native workflow tests with injected HTTP/local actions. The
 native fixture removes placement; it does not prove enrollment, privilege, live
 binding order or systemd. Live latency and the family's negative Gateway net
 remain unfinished until runtime proof and deletion.
+
+The migration-pool authorization covers a binding-only canary: record
+cancellation inside the admission transaction before the after-commit native
+start. The shared template must read that cancellation and project it without
+calling the root-required local action. Use a healthy dev Schedule, keep shared
+writers polled, and record the Gateway Operation/run IDs and native result. This
+proves the real start-binding/read path, not Schedule activation or manual
+execution. It does not permit root actions on Node 209 or claim that a Schedule
+action ran on its owning Node. Restore exact Node placement as part of per-Node
+rollout before full action proof or writer takeover.

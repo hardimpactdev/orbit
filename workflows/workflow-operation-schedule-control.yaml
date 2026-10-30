@@ -1,6 +1,7 @@
 id: baa6dafa-1638-4565-a5af-cd7103633c42
 name: operation-schedule-control
-description: One directly admitted Schedule control on its exact Node worker.
+description: Schedule binding canary on the existing migration workers.
+labels: { pool: migration }
 vaults: []
 inputs:
   properties:
@@ -10,7 +11,6 @@ inputs:
   required: [operation_id, node_id, kind]
 jobs:
   - name: node
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
     writes: true
     steps:
       - name: control
