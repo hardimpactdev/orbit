@@ -28,6 +28,7 @@ struct Fake {
     containers: BTreeMap<String, FakeContainer>,
     calls: Vec<String>,
     failing: Vec<String>,
+    health_answers: Vec<bool>,
     active: String,
     environment: Vec<(String, u32)>,
 }
@@ -69,6 +70,13 @@ impl Programs for Fake {
             return error("injected failure");
         }
         match (program, arguments) {
+            ("/usr/bin/curl", _) if !self.health_answers.is_empty() => {
+                if self.health_answers.remove(0) {
+                    ok("")
+                } else {
+                    error("not ready")
+                }
+            }
             ("docker", ["container", "inspect", "--format", format, name]) => {
                 match self.containers.get(*name) {
                     None => error(&format!("Error: No such object: {name}")),
@@ -194,6 +202,9 @@ fn container_input(spec: &str, desired: Desired) -> ContainerInput {
             target: "/data".into(),
             read_only: true,
         }],
+        health: None,
+        expected_spec: None,
+        expected_running: None,
         environment: BTreeMap::from([("SECRET".into(), "s3cret".into())]),
     }
 }
@@ -794,4 +805,215 @@ fn container_logs_keep_both_streams_in_order_and_their_end() {
     command.args(["-c", "seq 1 100000"]);
     let output = merged_tail(&mut command, 13).unwrap();
     assert_eq!(output.stdout, "99999\n100000\n");
+}
+
+fn readiness_input() -> ContainerInput {
+    let mut input = container_input(&spec('b'), Desired::Running);
+    input.health = Some(HealthInput {
+        url: "http://127.0.0.1:8080/api/health".into(),
+        attempts: 1,
+        interval_seconds: 0,
+    });
+    input
+}
+
+const PROBE: &str = "/usr/bin/curl -q --fail --silent --show-error --max-time 3 --output /dev/null -- http://127.0.0.1:8080/api/health";
+
+#[test]
+fn readiness_keeps_the_old_container_until_the_probe_succeeds() {
+    let mut s = sandbox();
+    s.node
+        .programs
+        .containers
+        .insert(NAME.into(), owned(&spec('a'), true));
+    converge_container(&mut s.node, &readiness_input()).unwrap();
+    assert!(
+        position(&s.node, &format!("docker container start {NAME}")) < position(&s.node, PROBE)
+    );
+    assert!(
+        position(&s.node, PROBE)
+            < position(
+                &s.node,
+                &format!("docker container rm --force {NAME}-rollback-running")
+            )
+    );
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('b'), true)]);
+}
+
+#[test]
+fn failed_readiness_restores_the_previous_container_before_a_later_stop() {
+    let mut s = sandbox();
+    s.node
+        .programs
+        .containers
+        .insert(NAME.into(), owned(&spec('a'), true));
+    s.node.programs.failing.push(PROBE.into());
+    assert_eq!(
+        converge_container(&mut s.node, &readiness_input()),
+        Err(ProcessError::HealthFailed { restored: true })
+    );
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('a'), true)]);
+    // A later supported stop sees the restored container; no workflow rollback follows it.
+    control(
+        &mut s.node,
+        &ControlInput {
+            process_id: 7,
+            runtime: Runtime::Docker,
+            name: NAME.into(),
+            operation: Operation::Stop,
+            on_demand: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('a'), false)]);
+    assert_eq!(
+        s.node.programs.calls.last().unwrap(),
+        &format!("docker container stop {NAME}")
+    );
+}
+
+#[test]
+fn interrupted_replacement_checks_health_before_discarding_rollback() {
+    let mut s = sandbox();
+    s.node
+        .programs
+        .containers
+        .insert(NAME.into(), owned(&spec('b'), true));
+    s.node
+        .programs
+        .containers
+        .insert(format!("{NAME}-rollback-running"), owned(&spec('a'), false));
+    s.node.programs.failing.push(PROBE.into());
+    assert_eq!(
+        converge_container(&mut s.node, &readiness_input()),
+        Err(ProcessError::HealthFailed { restored: true })
+    );
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('a'), true)]);
+}
+
+#[test]
+fn readiness_checks_new_and_unchanged_containers() {
+    let mut s = sandbox();
+    converge_container(&mut s.node, &readiness_input()).unwrap();
+    s.node.programs.calls.clear();
+    s.node.programs.failing.push(PROBE.into());
+    assert_eq!(
+        converge_container(&mut s.node, &readiness_input()),
+        Err(ProcessError::HealthFailed { restored: false })
+    );
+    assert!(s.node.programs.calls.iter().any(|call| call == PROBE));
+    assert!(!s
+        .node
+        .programs
+        .calls
+        .iter()
+        .any(|call| call.contains(" create ")));
+}
+
+#[test]
+fn invalid_readiness_is_refused_before_container_effects() {
+    let mut s = sandbox();
+    let mut input = readiness_input();
+    input.health.as_mut().unwrap().attempts = 91;
+    assert!(matches!(
+        converge_container(&mut s.node, &input),
+        Err(ProcessError::Invalid { .. })
+    ));
+    assert!(s.node.programs.calls.is_empty());
+}
+
+#[test]
+fn readiness_and_supported_controls_share_the_process_lock() {
+    let update = readiness_input();
+    let stop = ControlInput {
+        process_id: 7,
+        runtime: Runtime::Docker,
+        name: NAME.into(),
+        operation: Operation::Stop,
+        on_demand: false,
+    };
+    assert_eq!(ConvergeContainer::target(&update), Some("process:7".into()));
+    assert_eq!(
+        ControlProcess::target(&stop),
+        ConvergeContainer::target(&update)
+    );
+}
+
+#[test]
+fn recovered_readiness_is_not_repeated_after_the_backup_is_deleted() {
+    let mut s = sandbox();
+    s.node
+        .programs
+        .containers
+        .insert(NAME.into(), owned(&spec('b'), true));
+    s.node
+        .programs
+        .containers
+        .insert(format!("{NAME}-rollback-running"), owned(&spec('a'), false));
+    s.node.programs.health_answers = vec![true, false];
+    converge_container(&mut s.node, &readiness_input()).unwrap();
+    assert_eq!(s.node.programs.health_answers, [false]);
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('b'), true)]);
+}
+
+#[test]
+fn stale_container_replacement_refuses_before_any_runtime_change() {
+    for current in [None, Some(spec('c'))] {
+        let mut s = sandbox();
+        if let Some(spec) = current {
+            s.node
+                .programs
+                .containers
+                .insert(NAME.into(), owned(&spec, true));
+        }
+        let mut input = readiness_input();
+        input.expected_spec = Some(spec('a'));
+        assert_eq!(
+            converge_container(&mut s.node, &input),
+            Err(ProcessError::SpecChanged {})
+        );
+        assert!(s
+            .node
+            .programs
+            .calls
+            .iter()
+            .all(|call| call.contains(" inspect ")));
+    }
+}
+
+#[test]
+fn admitted_replacement_accepts_before_and_completed_after_specs() {
+    let mut s = sandbox();
+    s.node
+        .programs
+        .containers
+        .insert(NAME.into(), owned(&spec('a'), true));
+    let mut input = readiness_input();
+    input.expected_spec = Some(spec('a'));
+    converge_container(&mut s.node, &input).unwrap();
+    converge_container(&mut s.node, &input).unwrap();
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('b'), true)]);
+}
+
+#[test]
+fn a_stop_after_admission_is_not_undone_by_a_version_update() {
+    let mut s = sandbox();
+    s.node
+        .programs
+        .containers
+        .insert(NAME.into(), owned(&spec('a'), false));
+    let mut input = readiness_input();
+    input.expected_spec = Some(spec('a'));
+    input.expected_running = Some(true);
+    assert_eq!(
+        converge_container(&mut s.node, &input),
+        Err(ProcessError::SpecChanged {})
+    );
+    assert_eq!(containers(&s.node), [(NAME.into(), spec('a'), false)]);
+    assert!(s
+        .node
+        .programs
+        .calls
+        .iter()
+        .all(|call| call.contains(" inspect ")));
 }

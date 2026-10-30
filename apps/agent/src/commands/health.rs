@@ -27,7 +27,7 @@ pub struct HealthInput {
 pub struct Healthy {}
 
 /// The process and clock seam: production runs curl and sleeps, tests record the calls.
-trait Host {
+pub(super) trait Host {
     /// Runs curl with `arguments` and answers whether it succeeded.
     fn curl(&mut self, arguments: &[&str]) -> bool;
     fn sleep(&mut self, delay: Duration);
@@ -52,13 +52,13 @@ impl Host for Native {
     }
 }
 
-fn valid(url: &str) -> bool {
+pub(super) fn valid(url: &str) -> bool {
     url.strip_prefix("http://")
         .or_else(|| url.strip_prefix("https://"))
         .is_some_and(|rest| !rest.is_empty())
 }
 
-fn wait(host: &mut impl Host, input: &HealthInput) -> Result<Healthy, HealthError> {
+pub(super) fn wait(host: &mut impl Host, input: &HealthInput) -> Result<Healthy, HealthError> {
     if !valid(&input.url) {
         return Err(HealthError::Invalid {});
     }
