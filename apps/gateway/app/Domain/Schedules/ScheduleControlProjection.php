@@ -21,7 +21,9 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
 
     public function input(Operation $operation): array
     {
-        return Arr::only($operation->input, ['id', 'user', 'working_directory']);
+        return Arr::only($operation->input, $operation->kind === 'schedule.destroy'
+            ? ['id', 'agent_sha256', 'group', 'cascade']
+            : ['id', 'agent_sha256', 'user', 'working_directory']);
     }
 
     public function apply(Operation $operation, array $data): Operation
