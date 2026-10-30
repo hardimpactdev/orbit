@@ -123,6 +123,41 @@ it('admits only existing installed package adoption through its owner as direct'
     expect($socket->sent)->toHaveCount($existing ? 1 : 0);
 })->with(['existing installed package' => true, 'new ownership' => false]);
 
+it('refuses prepared input for another writer before recording or starting an Operation', function (string $configured, string $prepared): void {
+    scopedToolNode(209);
+    $socket = scopedToolSocket();
+    config(['swamp.direct_writers' => ['tool.manager_converge' => $configured]]);
+
+    expect(fn () => app(StartOperationAction::class)->execute('tool.manager_converge', 'node_tools', 209, 209,
+        ['manager' => 'apt'], 'operator', null, expectedWriter: $prepared))
+        ->toThrow(LogicException::class, 'The prepared Operation input must match its admitted writer.');
+
+    $this->assertDatabaseCount('operations', 0);
+    expect($socket->sent)->toBeEmpty();
+})->with([
+    'direct input with polled admission' => ['polled', 'direct'],
+    'polled input with direct admission' => ['direct', 'polled'],
+]);
+
+it('refuses when manager input preparation changes the selected writer', function (): void {
+    $node = scopedToolNode(209);
+    $action = app(ConvergeToolManagerAction::class);
+    $delivery = app(AgentDelivery::class);
+    $socket = scopedToolSocket();
+    config(['swamp.direct_writers' => ['tool.manager_converge' => 'direct']]);
+    app()->bind(AgentDelivery::class, function () use ($delivery): AgentDelivery {
+        config(['swamp.direct_writers' => ['tool.manager_converge' => 'polled']]);
+
+        return $delivery;
+    });
+
+    expect(fn () => $action->execute($node, ToolManagerName::Apt))
+        ->toThrow(LogicException::class, 'The prepared Operation input must match its admitted writer.');
+
+    $this->assertDatabaseCount('operations', 0);
+    expect($socket->sent)->toBeEmpty();
+});
+
 function scopedToolNode(int $id): Node
 {
     return Node::query()->forceCreate(['id' => $id, 'name' => 'scope-'.$id, 'public_ssh_host' => '192.0.2.9',

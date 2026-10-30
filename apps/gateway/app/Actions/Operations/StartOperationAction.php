@@ -44,7 +44,7 @@ final readonly class StartOperationAction
      * @param  array<string, mixed>  $input
      * @param  list<string>  $supersedes  the kinds of a queued operation on the target that this one cancels and replaces
      */
-    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = []): Operation
+    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null): Operation
     {
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
@@ -53,7 +53,7 @@ final readonly class StartOperationAction
         if (! app(OperationExecutors::class)->swamp($kind)) {
             $this->assertAvailable();
         }
-        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $supersedes);
+        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $supersedes, $expectedWriter);
 
         if (! $operation->wasRecentlyCreated) {
             return $operation;
