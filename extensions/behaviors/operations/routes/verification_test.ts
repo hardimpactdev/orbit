@@ -68,14 +68,14 @@ Deno.test("Route verification uses only safe admitted input and shared read/resu
     ready: true,
   });
 });
-Deno.test("an unbound first read refuses before a probe or projection", async () => {
+Deno.test("a foreign run binding refuses before a probe or projection", async () => {
   let effects = 0;
   const paths: string[] = [];
   const http: Http = (_method, path) => {
     paths.push(path);
     return Promise.resolve({
       status: 409,
-      body: { error: { code: "operation.run_unbound" } },
+      body: { error: { code: "operation.run_mismatch" } },
     });
   };
   const action = () => {

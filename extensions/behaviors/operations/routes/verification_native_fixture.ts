@@ -14,7 +14,7 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
       await save(state);
       return {
         status: 409,
-        body: { error: { code: "operation.run_unbound" } },
+        body: { error: { code: "operation.run_mismatch" } },
       };
     }
     await save(state);

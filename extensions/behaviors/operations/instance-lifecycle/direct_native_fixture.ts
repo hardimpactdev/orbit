@@ -15,7 +15,7 @@ export const fixtureHttp: Http = async (method, path, body) => {
     !state.bound || (typeof state.bound === "string" && state.bound !== runId)
   ) {
     save(state);
-    return { status: 409, body: { error: { code: "operation.run_unbound" } } };
+    return { status: 409, body: { error: { code: "operation.run_mismatch" } } };
   }
   // `true` simulates a run already bound by the Gateway start response.
   // The worker fixture never establishes or changes the stored binding.

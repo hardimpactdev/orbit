@@ -260,7 +260,7 @@ Deno.test("shared protocol binds intent before local action and uses no executio
     () => () =>
       Promise.resolve({
         status: 409,
-        body: { error: { code: "operation.run_unbound" } },
+        body: { error: { code: "operation.run_mismatch" } },
       }),
     f.invoke,
   );

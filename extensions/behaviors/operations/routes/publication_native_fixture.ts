@@ -8,6 +8,16 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
   const save = () =>
     Deno.writeTextFile("native-routes.json", JSON.stringify(state));
   if (method === "GET") {
+    if (state.bindingDelay) {
+      state.bindAt ??= Date.now() + state.bindingDelay;
+      if (Date.now() < state.bindAt) {
+        await save();
+        return {
+          status: 409,
+          body: { error: { code: "operation.run_unbound" } },
+        };
+      }
+    }
     await save();
     return { status: 200, body: { data: operation } };
   }

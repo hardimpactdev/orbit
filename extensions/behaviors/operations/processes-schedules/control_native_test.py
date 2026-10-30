@@ -66,7 +66,7 @@ class ScheduleNative(unittest.TestCase):
         self.assertEqual(self.read()['operation']['status'], 'failed')
         self.assertEqual(self.read()['actions'], 1)
 
-    def test_first_read_refuses_until_gateway_binding_then_native_resume_succeeds(self):
+    def test_foreign_binding_refuses_until_corrected_then_native_resume_succeeds(self):
         self.state['unbound'] = True; self.save()
         self.run_workflow(success=False)
         state = self.read()

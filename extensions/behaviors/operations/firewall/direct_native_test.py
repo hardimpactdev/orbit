@@ -76,7 +76,7 @@ class DirectFirewallNative(unittest.TestCase):
         self.assertEqual(self.read()['effects'],2)
         self.assertEqual(self.read()['operation']['status'],'succeeded')
 
-    def test_first_read_waits_for_gateway_binding_without_a_local_retry(self):
+    def test_foreign_binding_requires_native_resume_after_correction(self):
         self.state['bound'] = False
         self.save()
         self.run_workflow(success=False)

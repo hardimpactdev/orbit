@@ -84,7 +84,7 @@ class DirectRenameNative(unittest.TestCase):
         self.assertEqual(self.read()['inspections'], 1)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
-    def test_unbound_first_read_never_reaches_the_node_action(self):
+    def test_foreign_binding_first_read_never_reaches_the_node_action(self):
         self.state['bound'] = False
         self.save()
         self.run_workflow(success=False)

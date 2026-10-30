@@ -80,6 +80,16 @@ class RouteNative(unittest.TestCase):
         self.run_workflow()
         self.assertEqual(self.read()['publications'],1)
 
+    def test_native_first_read_waits_for_start_binding_before_publication(self):
+        self.state['bindingDelay'] = 1500
+        self.save()
+        self.run_workflow()
+        state = self.read()
+        reads = [call for call in state['calls'] if '?run_id=' in call]
+        self.assertGreaterEqual(len(reads), 3)
+        self.assertEqual(state['publications'], 1)
+        self.assertEqual(state['operation']['status'], 'succeeded')
+
     def test_native_behavior_lock_serializes_two_publications_on_the_same_node(self):
         first=self.state.pop('operation')
         self.state['operations']={'17':first,'18':dict(first,id=18)}

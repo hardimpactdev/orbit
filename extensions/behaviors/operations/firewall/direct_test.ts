@@ -42,7 +42,7 @@ class Fixture {
       if (!this.bound) {
         return {
           status: 409,
-          body: { error: { code: "operation.run_unbound" } },
+          body: { error: { code: "operation.run_mismatch" } },
         };
       }
       if (method !== "GET") {

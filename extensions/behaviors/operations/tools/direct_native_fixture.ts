@@ -4,7 +4,7 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
   const body = raw as Record<string, unknown>;
   if (state.unbound) {
     await Deno.writeTextFile("native-tools-direct.json", JSON.stringify(state));
-    return { status: 409, body: { error: { code: "operation.run_unbound" } } };
+    return { status: 409, body: { error: { code: "operation.run_mismatch" } } };
   }
 
   if (method !== "GET") {

@@ -92,7 +92,7 @@ class SettingsNative(unittest.TestCase):
         self.assertFalse(self.apps.exists())
         self.assertEqual(self.read()['calls'][-1]['body']['error_code'], 'node.settings_root_failed')
 
-    def test_unbound_first_read_has_no_effect_then_gateway_binding_allows_recovery(self):
+    def test_foreign_binding_first_read_has_no_effect_then_gateway_binding_allows_recovery(self):
         self.state['bound'] = False
         self.save()
         run = self.run_workflow(success=False)

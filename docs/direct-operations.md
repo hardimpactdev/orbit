@@ -5,7 +5,7 @@ consumer. It reads an admitted intent, checks its ID/kind/Node, projects
 running, executes one family action, and projects the bounded outcome. A
 terminal result is read without repeating the action. An uncertain action or
 projection throws; Swamp's native recover/resume owns what happens next. No
-local retry, claim, heartbeat, child wait or keyed receipt is added.
+effect retry, claim, heartbeat, child wait or keyed receipt is added.
 
 A family behavior supplies `DirectArgs.extend({kind: closedKinds, ...})`, its
 action and a result validator. The shared Gateway endpoints are fixed. The
@@ -58,13 +58,28 @@ Result body is `run_id`, `status`, `started_at`, `finished_at`, `result`,
 `StartSwampRun` records the native run ID after the intent commits. Existing
 Route URLs reach the same shared controller during deployment.
 
-The Gateway alone binds the run ID from its native start response. Read, result
+The Gateway alone binds the run ID from its native start response or an exact
+native history match. It tags each submission with the stable
+`orbit_start_key: operation:<id>`. After a lost response it reads native run
+history once by workflow, key and Operation ID. Only confirmed absence permits
+one immediate resubmission with the same inputs and key. Native tags support
+lookup, not atomic start deduplication. There is no Gateway retry job or poll.
+
+Read, result
 and primitive requests refuse until that binding is recorded. Projection never
 establishes or replaces it. Each canary verifies start-response/first-read
 ordering. Per-Node callers in `worker_node_ids` must match the admitted
 `node_id`; foreign and Gateway-scoped intents are refused. The configured
 control-plane peer retains its existing fleet authority; joining the worker list
 grants no such authority.
+
+Swamp's first read waits only for `409 operation.run_unbound`, once per second
+for up to 90 seconds. This covers the measured 29.316-second native history
+lookup plus the 30-second lost-start response budget. Cancellation stops this
+wait before any effect. A mismatch, access refusal, transport error or any
+mutation fails immediately. Remove this binding wait when native admission and
+Gateway binding have an atomic handoff. The exception is recorded in PLAN.md;
+serve, worker and queue defaults stay unchanged.
 
 Use `swamp workflow create` to obtain the workflow ID, then adapt the existing
 `workflow-operation-route-publication.yaml`. Keep one workflow per family with
@@ -79,6 +94,15 @@ secrets).
 Keep the workflow cancellation signal out of bounded Gateway HTTP calls. Check
 it before the effect; once a primitive starts, let it return and project its
 outcome. Aborting HTTP cannot cancel a Node action already in progress.
+
+During a bounded read-only wait, the family rereads `gateway.read()` between
+status reads and before accepting the final result. If `cancel_requested` or the
+native signal requests cancellation, the action may throw
+`new DirectOperationCancelled({ effectRunning: false })` after confirming that
+no effect is running. Import the sentinel from the shared template. Only this
+sentinel makes the shared helper project `cancelled` with `{}`. An ordinary
+error or native abort during a mutation remains uncertain and propagates. A
+successful mutation still projects success after a late abort.
 
 Native resume does not guarantee exactly once. Use convergent Node primitives or
 observe/reconcile an uncertain external mutation before repeating it. Cancelling

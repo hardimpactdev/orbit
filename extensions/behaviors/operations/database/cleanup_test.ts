@@ -144,14 +144,14 @@ Deno.test("fixed cleanup refuses with its bounded code and native run fails", as
   );
 });
 
-Deno.test("an unbound first read refuses before any local action and native retry sees the binding", async () => {
+Deno.test("a foreign run binding refuses before any local action and native retry sees the binding", async () => {
   const f = new Fixture();
   let bound = false;
   const http: Http = (method, path, body) =>
     !bound
       ? Promise.resolve({
         status: 409,
-        body: { error: { code: "operation.run_unbound" } },
+        body: { error: { code: "operation.run_mismatch" } },
       })
       : f.http(method, path, body);
   const run = () =>

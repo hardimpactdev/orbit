@@ -23,11 +23,45 @@ const Outcome = z.object({
 export type DirectIntent = z.infer<typeof DirectArgs>;
 export type Result = z.infer<typeof DirectResult>;
 
-/** Fixed shared endpoints; not an executor proxy or a retrying client. */
+/** An action may cancel a read-only wait only after confirming no effect is running. */
+export class DirectOperationCancelled extends Error {
+  constructor(evidence: { effectRunning: false }) {
+    super("Direct Operation cancelled with no effect running");
+    if (evidence.effectRunning !== false) {
+      throw new Error(
+        "Cancellation requires confirmation that no effect is running",
+      );
+    }
+  }
+}
+
+const Unbound = z.object({
+  error: z.object({ code: z.literal("operation.run_unbound") }),
+});
+class RunUnbound extends Error {}
+
+async function pauseBinding(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, 1000);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+/** Fixed endpoints. Only the first native read waits for start-response binding. */
 export class GatewayOperation {
   constructor(
     private http: Http,
     private args: DirectIntent,
+    private bindingWait = pauseBinding,
+    private now = Date.now,
   ) {}
   async call(
     method: "GET" | "POST",
@@ -40,12 +74,58 @@ export class GatewayOperation {
       body,
     );
     if (response.status < 200 || response.status >= 300) {
+      if (response.status === 409 && Unbound.safeParse(response.body).success) {
+        throw new RunUnbound("The Gateway has not bound this native run yet");
+      }
       throw new Error("Direct Operation request did not succeed");
     }
     return z.object({ data: z.unknown() }).parse(response.body).data;
   }
-  read() {
-    return this.call("GET", `?run_id=${this.args.run_id}`);
+  async read(signal?: AbortSignal): Promise<unknown> {
+    const deadline = this.now() + 90_000;
+    const timeout = new AbortController();
+    const timer = setTimeout(
+      () => timeout.abort(new Error("Native binding deadline expired")),
+      90_000,
+    );
+    const readSignal = signal && !signal.aborted
+      ? AbortSignal.any([signal, timeout.signal])
+      : timeout.signal;
+    try {
+      while (true) {
+        readSignal.throwIfAborted();
+        if (this.now() >= deadline) {
+          throw new Error("Native binding deadline expired");
+        }
+        try {
+          return await this.readUntilAborted(readSignal);
+        } catch (error) {
+          if (!(error instanceof RunUnbound) || this.now() >= deadline) {
+            throw error;
+          }
+          signal?.throwIfAborted();
+          await this.bindingWait(readSignal);
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async readUntilAborted(signal: AbortSignal): Promise<unknown> {
+    signal.throwIfAborted();
+    let abort = () => {};
+    try {
+      const response = await new Promise<unknown>((resolve, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        this.call("GET", `?run_id=${this.args.run_id}`).then(resolve, reject);
+      });
+      signal.throwIfAborted();
+      return response;
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
   }
   project(body: Record<string, unknown>) {
     return this.call("POST", "/result", { ...body, run_id: this.args.run_id });
@@ -63,7 +143,7 @@ export async function directOperation(
   validateResult: (result: Result) => Result,
   signal?: AbortSignal,
 ) {
-  const current = Outcome.parse(await gateway.read());
+  const current = Outcome.parse(await gateway.read(signal));
   if (
     current.id !== args.operation_id || current.kind !== args.kind ||
     current.node_id !== args.node_id
@@ -81,9 +161,15 @@ export async function directOperation(
   if (current.cancel_requested || signal?.aborted) {
     status = "cancelled";
   } else {
-    result = validateResult(DirectResult.parse(await action(current.input)));
-    if (result.error_code !== undefined) safeCode(result.error_code);
-    status = result.error_code === undefined ? "succeeded" : "failed";
+    try {
+      result = validateResult(DirectResult.parse(await action(current.input)));
+      if (result.error_code !== undefined) safeCode(result.error_code);
+      status = result.error_code === undefined ? "succeeded" : "failed";
+    } catch (error) {
+      if (!(error instanceof DirectOperationCancelled)) throw error;
+      result = {};
+      status = "cancelled";
+    }
   }
   await gateway.project({
     status,

@@ -1,5 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { directOperation, GatewayOperation } from "./direct.ts";
+import {
+  directOperation,
+  DirectOperationCancelled,
+  GatewayOperation,
+} from "./direct.ts";
 
 const args = {
   operation_id: 71,
@@ -153,4 +157,185 @@ Deno.test("shared gateway client binds every projection to the workflow run and 
     Error,
     "Direct Operation request did not succeed",
   );
+});
+
+Deno.test("native first read waits only for an unbound run before any projection or effect", async () => {
+  const f = fixture();
+  const calls: string[] = [];
+  let bound = false;
+  const gateway = new GatewayOperation(
+    async (method, path, body) => {
+      calls.push(method);
+      assertEquals(path.startsWith("/api/v1/direct-operations/71"), true);
+      if (!bound) {
+        assertEquals(method, "GET");
+        assertEquals(f.effects(), 0);
+        return {
+          status: 409,
+          body: { error: { code: "operation.run_unbound" } },
+        };
+      }
+      if (method === "POST") {
+        await f.gateway.project(
+          body as Record<string, unknown>,
+        );
+      }
+      return { status: 200, body: { data: await f.gateway.read() } };
+    },
+    args,
+    () => {
+      bound = true;
+      return Promise.resolve();
+    },
+  );
+
+  await directOperation(args, gateway, f.action, (r) => r);
+
+  assertEquals(calls, ["GET", "GET", "POST", "POST"]);
+  assertEquals(f.effects(), 1);
+});
+
+Deno.test("native binding wait stops on its deadline or cancellation without effects", async () => {
+  for (const cancel of [false, true]) {
+    let now = 0;
+    let reads = 0;
+    const controller = new AbortController();
+    const gateway = new GatewayOperation(
+      () => {
+        reads++;
+        return Promise.resolve({
+          status: 409,
+          body: { error: { code: "operation.run_unbound" } },
+        });
+      },
+      args,
+      () => {
+        now = 90_000;
+        if (cancel) controller.abort(new Error("native cancellation"));
+        return Promise.resolve();
+      },
+      () => now,
+    );
+
+    await assertRejects(
+      () => gateway.read(controller.signal),
+      Error,
+      cancel ? "native cancellation" : "deadline expired",
+    );
+    assertEquals(reads, 1);
+  }
+});
+
+Deno.test("native first read never waits for other errors and never retries a mutation", async () => {
+  for (
+    const [status, code] of [[409, "operation.run_mismatch"], [
+      403,
+      "node.access_denied",
+    ], [503, "operation.run_unbound"]] as const
+  ) {
+    let calls = 0;
+    const gateway = new GatewayOperation(
+      () => {
+        calls++;
+        return Promise.resolve({ status, body: { error: { code } } });
+      },
+      args,
+      () => {
+        throw new Error("must not wait");
+      },
+    );
+    await assertRejects(() => gateway.read(), Error, "request did not succeed");
+    assertEquals(calls, 1);
+  }
+  let calls = 0;
+  const gateway = new GatewayOperation(
+    () => {
+      calls++;
+      return Promise.resolve({
+        status: 409,
+        body: { error: { code: "operation.run_unbound" } },
+      });
+    },
+    args,
+    () => {
+      throw new Error("must not wait");
+    },
+  );
+  await assertRejects(() => gateway.primitive(), Error, "not bound");
+  assertEquals(calls, 1);
+});
+
+Deno.test("native cancellation bounds an unresolved first read without effects", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const gateway = new GatewayOperation(() => {
+    calls++;
+    return new Promise(() => {});
+  }, args);
+  const pending = gateway.read(controller.signal);
+  controller.abort(new Error("cancel pending read"));
+  await assertRejects(() => pending, Error, "cancel pending read");
+  assertEquals(calls, 1);
+});
+
+Deno.test("a read-only pending wait observes Gateway cancellation before accepting an applied result", async () => {
+  const f = fixture();
+  let cancelRequested = false;
+  let status = "pending";
+  const gateway = {
+    ...f.gateway,
+    read: async () => ({
+      ...await f.gateway.read(),
+      cancel_requested: cancelRequested,
+    }),
+  };
+  const result = await directOperation(args, gateway, async () => {
+    assertEquals(status, "pending");
+    cancelRequested = true;
+    status = "applied";
+    const current = await gateway.read();
+    if (current.cancel_requested) {
+      throw new DirectOperationCancelled({ effectRunning: false });
+    }
+    return { status };
+  }, (r) => r);
+
+  assertEquals(result, { status: "cancelled" });
+  assertEquals(f.effects(), 0);
+  assertEquals(f.projected.map((p) => p.status), ["running", "cancelled"]);
+  assertEquals(f.projected[1].result, {});
+  assertEquals(f.projected[1].error_code, null);
+});
+
+Deno.test("only explicit no-effect cancellation can end a running direct action as cancelled", async () => {
+  for (
+    const error of [
+      new Error("uncertain root mutation"),
+      new DOMException("native abort during mutation", "AbortError"),
+    ]
+  ) {
+    const f = fixture();
+    await assertRejects(() =>
+      directOperation(args, f.gateway, () => {
+        throw error;
+      }, (r) => r)
+    );
+    assertEquals(f.projected.map((p) => p.status), ["running"]);
+  }
+  const f = fixture();
+  const controller = new AbortController();
+  assertEquals(
+    await directOperation(
+      args,
+      f.gateway,
+      () => {
+        controller.abort();
+        return Promise.resolve({ applied: true });
+      },
+      (r) => r,
+      controller.signal,
+    ),
+    { status: "succeeded" },
+  );
+  assertEquals(f.projected[1].result, { applied: true });
 });

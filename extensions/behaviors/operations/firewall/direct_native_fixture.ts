@@ -3,7 +3,7 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
   state.calls.push(path);
   if (!state.bound) {
     await Deno.writeTextFile("native-firewall.json", JSON.stringify(state));
-    return { status: 409, body: { error: { code: "operation.run_unbound" } } };
+    return { status: 409, body: { error: { code: "operation.run_mismatch" } } };
   }
   const body = raw as Record<string, unknown>;
   if (method !== "GET") {

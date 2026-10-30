@@ -82,7 +82,7 @@ class DirectToolNative(unittest.TestCase):
             self.assertEqual(self.read()['effects'],1)
             self.assertEqual(self.read()['operation']['status'],'succeeded')
 
-    def test_first_read_refuses_until_gateway_binds_root_start(self):
+    def test_foreign_binding_refuses_until_gateway_corrects_root(self):
         self.state['unbound'] = True
         self.save()
         self.run_workflow(success=False)
