@@ -1259,6 +1259,8 @@ before admission. A worker for another Node cannot execute the action.
 
 `task_vm.image_seed` builds that candidate's topology disk through `incus.build-topology-seed` on the owning Node. Its admitted smoke VM and 45 GiB size cannot change. The command retains its existing 600-second deadline. Internal timing fields stay out of the Operation result; only a confirmed `ready: true` completes the effect. This kind also defaults to direct and has no Gateway execution path.
 
+`task_vm.image_metadata` prepares only the active attempt's recorded builder through the fixed `incus.image` `prepare_metadata` action. It also uses direct execution, the admitted host agent digest and the existing 900-second command deadline. It admits no image publication, promotion or pruning input. The Gateway records the completed effect without running a host command.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.

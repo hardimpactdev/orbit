@@ -93,7 +93,7 @@ function recipeImageCurrent(string $document): void
 }
 
 /** @return array{TaskVmImageBuild, Operation, array<string,mixed>} */
-function recipeImageSeedIntent(string $kind = 'task_vm.image_finish_seed'): array
+function recipeImageDirectIntent(string $kind = 'task_vm.image_finish_seed'): array
 {
     $host = recipeImageHost();
     recipeImageTransport($host);
@@ -109,11 +109,17 @@ function recipeImageSeedIntent(string $kind = 'task_vm.image_finish_seed'): arra
             'project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'vm' => $build->builder_vm_name.'-smoke', 'size' => '45GiB', 'fingerprint' => IMAGE_NEW];
     }
 
+    if ($kind === 'task_vm.image_metadata') {
+        $build->update(['images' => [], 'image_fingerprint' => null]);
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'prepare', 'effect_key' => 'metadata',
+            'project' => 'orbit-tasks', 'operation' => ['kind' => 'prepare_metadata', 'name' => $build->builder_vm_name]];
+    }
+
     return [$build, $parent, $input];
 }
 
-it('admits the seed effect directly and projects its phase once without Gateway execution', function (string $kind): void {
-    [$build, $parent, $input] = recipeImageSeedIntent($kind);
+it('admits the image effect directly and projects its phase once without Gateway execution', function (string $kind): void {
+    [$build, $parent, $input] = recipeImageDirectIntent($kind);
     $key = $input['effect_key'];
     $socket = new FakeRoutePublicationSocket;
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -133,11 +139,11 @@ it('admits the seed effect directly and projects its phase once without Gateway 
     expect(app(OperationChildren::class)->requireSucceeded($parent, $key)->id)->toBe($child->id)
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
-    expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['operations'][$key])->toBe($child->id);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed']);
+    expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:'.$input['phase'])['operations'][$key])->toBe($child->id);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata']);
 
 it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
-    [$build, , $input] = recipeImageSeedIntent($kind);
+    [$build, , $input] = recipeImageDirectIntent($kind);
     $nodeId = $build->host_node_id;
     match ($change) {
         'host' => $nodeId++,
@@ -155,13 +161,30 @@ it('refuses a seed for another host candidate attempt or lifecycle before starti
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
 })->with(['host', 'candidate', 'project', 'pool', 'variant', 'attempt', 'phase', 'key', 'cleanup', 'finished'])->with(['task_vm.image_finish_seed', 'task_vm.image_seed']);
 
-it('refuses a polled seed writer after the execution contract is deleted', function (string $kind): void {
-    [, $parent, $input] = recipeImageSeedIntent($kind);
+it('refuses metadata intent for another builder host or lifecycle before starting Swamp', function (string $change): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_metadata');
+    $nodeId = $build->host_node_id;
+    match ($change) {
+        'host' => $nodeId++,
+        'attempt' => $input['attempt']++,
+        'project' => $input['project'] = 'operator-owned',
+        'builder' => $input['operation']['name'] .= '-smoke',
+        'variant' => $input['operation'] = ['kind' => 'prune', 'pool' => 'orbit-tasks'],
+        'phase' => $input['phase'] = 'publish',
+        'cleanup' => $build->forceFill(['cleanup_started_at' => now()])->save(),
+        'finished' => $build->update(['state' => 'succeeded']),
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitImage('task_vm.image_metadata', $build->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', 'task_vm.image_metadata')->count())->toBe(0);
+})->with(['host', 'attempt', 'project', 'builder', 'variant', 'phase', 'cleanup', 'finished']);
+
+it('refuses a polled image writer after the execution contract is deleted', function (string $kind): void {
+    [, $parent, $input] = recipeImageDirectIntent($kind);
     config(['swamp.direct_writers' => [$kind => 'polled']]);
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);

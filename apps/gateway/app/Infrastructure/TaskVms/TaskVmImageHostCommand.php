@@ -85,14 +85,10 @@ final readonly class TaskVmImageHostCommand implements OperationEffectTransport
             }
         } elseif ($command === 'incus.image') {
             $effect = ValidatedData::object($input['operation']);
-            $expected = $operation->kind === 'task_vm.image_publish' ? 'publish' : 'prepare_metadata';
-            $valid = $input['project'] === $host->project && $effect['kind'] === $expected && ($effect['name'] ?? null) === $name;
-            if ($expected === 'publish') {
-                $alias = $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id);
-                $valid = $valid && ($effect['alias'] ?? null) === $alias;
-                $properties = ValidatedData::object($effect['properties'] ?? []);
-                $valid = $valid && ($properties['orbit.recipe'] ?? null) === $build->recipe_identity && ($properties['orbit.profile'] ?? null) === 'base';
-            }
+            $alias = $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id);
+            $properties = ValidatedData::object($effect['properties'] ?? []);
+            $valid = $operation->kind === 'task_vm.image_publish' && $input['project'] === $host->project && $effect['kind'] === 'publish' && ($effect['name'] ?? null) === $name
+                && ($effect['alias'] ?? null) === $alias && ($properties['orbit.recipe'] ?? null) === $build->recipe_identity && ($properties['orbit.profile'] ?? null) === 'base';
         }
         if (! $valid) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The host effect does not match this image attempt.', 422);
