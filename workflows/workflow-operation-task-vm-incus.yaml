@@ -1,0 +1,34 @@
+id: 2b8f257b-ab0f-45c7-9e62-2447fe725726
+name: operation-task-vm-incus
+description: One admitted Task VM Incus effect on its exact Node worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: {
+      type: string,
+      enum: [
+        task_vm.incus_create,
+        task_vm.incus_start,
+        task_vm.incus_stop,
+        task_vm.incus_delete,
+      ],
+    }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: node
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    steps:
+      - name: incus
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-vm-incus"
+          behaviorName: '${{ "task-vm-incus-node-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
