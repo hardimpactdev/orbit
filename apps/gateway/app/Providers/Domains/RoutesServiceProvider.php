@@ -15,6 +15,8 @@ use App\Domain\Routes\RouteEnvironmentOperationLock;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Http\Controllers\Api\OperationExecutorController;
 use App\Http\Middleware\Routes\SerializeRouteEnvironment;
+use App\Infrastructure\AgentView\StreamWebSocketClient;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\RouteCaddySiteSource;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
@@ -38,6 +40,7 @@ final class RoutesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->bindIf(WebSocketClient::class, StreamWebSocketClient::class);
         $this->app->extend(InstanceEnvironmentOperationLock::class, static fn (InstanceEnvironmentOperationLock $locks): InstanceEnvironmentOperationLock => new RouteEnvironmentOperationLock($locks));
         $this->app->tag([PhpPoolInputSource::class], OperationSecretSource::class);
         $this->app->tag([RouteCaddySiteSource::class], NodeCaddySiteSource::class);

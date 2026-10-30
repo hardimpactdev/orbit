@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
@@ -43,6 +44,9 @@ final readonly class SwampOperationExecutor
             $operation = Operation::query()->where('kind', $kind)->when($operationId !== null, fn ($query) => $query->whereKey($operationId))->where('status', OperationStatus::Running->value)
                 ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)
                 ->where('updated_at', '>', Carbon::now()->subSeconds(self::LeaseSeconds))->first();
+            if ($operation !== null) {
+                $this->assertPolledKind($operation);
+            }
             $replaying = $operation !== null;
             if ($operation === null) {
                 foreach ($this->claimCandidates($kind, $operationId, true) as $candidate) {
@@ -115,6 +119,9 @@ final readonly class SwampOperationExecutor
 
     private function eligible(Operation $candidate, bool $flagAssistance): bool
     {
+        if (DirectRoutePublication::owns($candidate)) {
+            return false;
+        }
         if (($candidate->state['executor_assistance'] ?? null) === ['error_code' => 'operation.reclaim_limit']) {
             return false;
         }
@@ -293,6 +300,7 @@ final readonly class SwampOperationExecutor
      */
     public function run(Operation $operation, array $data, int $nodeId): array
     {
+        $this->assertPolledKind($operation);
         $result = null;
         $held = app(OperationAttemptLease::class)->hold(app(OperationChildren::class)->executionLeaseId($operation), function () use ($operation, $data, $nodeId, &$result): void {
             $result = $this->invoke($operation, $data, $nodeId);
@@ -307,6 +315,7 @@ final readonly class SwampOperationExecutor
     /** @return array<string, mixed> */
     public function receipt(Operation $operation, string $key, int $nodeId): array
     {
+        $this->assertPolledKind($operation);
         $effectKey = $this->effectKey($operation, $key);
         $operation->refresh();
         app(OperationChildren::class)->nodeId($operation);
@@ -637,6 +646,8 @@ final readonly class SwampOperationExecutor
     /** @param Closure(Operation): void $write */
     private function owned(Operation $operation, string $worker, int $nodeId, Closure $write): Operation
     {
+        $this->assertPolledKind($operation);
+
         return DB::transaction(function () use ($operation, $worker, $nodeId, $write): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             if (! $this->executors->swamp($operation->kind) || $operation->status !== OperationStatus::Running
@@ -647,5 +658,12 @@ final readonly class SwampOperationExecutor
 
             return $operation;
         });
+    }
+
+    private function assertPolledKind(Operation $operation): void
+    {
+        if (DirectRoutePublication::owns($operation)) {
+            throw new ResourceOperationException('operation.executor_invalid', 'Route publications run directly in Swamp and have no executor claim.', 422);
+        }
     }
 }

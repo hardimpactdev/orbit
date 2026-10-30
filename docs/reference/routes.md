@@ -18,6 +18,15 @@ A Route is a domain that reaches an Instance or a Node service. This page explai
 
 The Gateway validates Route changes and records intent as an Operation. Swamp executes the Route lifecycle through the shared Operation executor primitives. Each Node effect is a child Operation bound to its own Node. Successful completion requires the recorded child receipts. The Gateway retains Route state, input validation, ownership checks, certificate signing, and read APIs.
 
+Caddy convergence and private DNS publication start a Swamp run directly after
+their intent commits. They do not use scheduled discovery, claims, leases,
+heartbeats or Gateway execution locks. Swamp serializes these publications by
+Node and retains their run history. The Gateway renders committed state, offers
+the named publication primitive and projects its reported result. It does not
+retry a refused or uncertain start. Follow the Swamp run before retrying an
+uncertain admission. The remaining Route lifecycle kinds still use the existing
+executor while their Swamp workflow conversion is in progress.
+
 A Route has one of three kinds. The kind never changes.
 
 | Kind | Owner | Serves |
@@ -763,3 +772,11 @@ Web-root updates record the new root at an explicit phase. Their Instance childr
 Route Operations request `metrics.reconcile` with an empty input only when their planned change alters the sorted public, active hostname catalog grouped by serving Ingress Node, and one active Metrics assignment has an active serving Node. Private-only changes, unchanged publication, target associations and web-root changes leave that catalog unchanged and skip Metrics. FPM monitoring selects active production Instances independently of their Route associations. The Metrics family captures its reconciliation intent when that child is requested.
 
 Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
+
+### Direct publication rollout
+
+The direct publication path starts `operation-route-publication` after intent commits. Swamp serializes the complete publication on its Node, owns retries and projects run results back through the Gateway. Direct Operations use no discovery, claim, lease, heartbeat, target hold, keyed effect receipt or Gateway Node lock. The previous Swamp path remains available during rollout.
+
+`ORBIT_ROUTE_CADDY_WRITER` and `ORBIT_ROUTE_PRIVATE_DNS_WRITER` select `polled` (the previous Swamp workflow, default) or `direct` (native `operation-route-publication`). Each admitted Operation stores its selected writer. Changing the setting affects only new Operations; existing work completes through its original path. Invalid values refuse admission. Rollback selects `polled` for new work, never a PHP executor.
+
+Load both workflows and deploy the dormant Gateway endpoints first. After the live cutover Operations finish, admit a private dev canary through the normal owning action with a request-local direct setting; verify its native run and projected result before changing the shared per-kind setting. Prove production success before deleting the previous Swamp path. Approval and signal permissions implied by the native run grant are inert: this workflow contains no approval or signal-wait steps. Adding either requires checking the credential grant again.

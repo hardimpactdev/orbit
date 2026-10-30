@@ -17,7 +17,7 @@ use App\Models\Operation;
 use SensitiveParameter;
 
 /** The normal Caddy publish primitive, serialized with other whole-Node builds. */
-final readonly class CaddyTransport implements OperationEffectTransport, OperationTransportInput
+final readonly class CaddyTransport implements OperationEffectTransport, OperationTransportInput, RoutePublicationPrimitive
 {
     public function __construct(private AgentCommandRunner $agents, private NodeCaddyBuildLock $lock, private NodeCaddyfileRenderer $renderer) {}
 
@@ -35,24 +35,34 @@ final readonly class CaddyTransport implements OperationEffectTransport, Operati
     {
         $node = Node::query()->findOrFail($operation->node_id);
 
-        return $this->lock->run($node->id, $node->name, function () use ($node, $input, $run): array {
-            $render = $this->renderer->render(Node::query()->findOrFail($node->id));
-            if (! $render->buildable()) {
+        return $this->lock->run($node->id, $node->name, fn (): array => $this->publishChecked($node, $input, $run));
+    }
+
+    public function publish(Operation $operation, #[SensitiveParameter] array $input): array
+    {
+        return $this->publishChecked(Node::query()->findOrFail($operation->node_id), $input);
+    }
+
+    /** @param array<string, mixed> $input
+     * @param  array<string, mixed>|null  $run
+     * @return array<string, mixed>
+     */
+    private function publishChecked(Node $node, #[SensitiveParameter] array $input, ?array $run = null): array
+    {
+        $render = $this->renderer->render(Node::query()->findOrFail($node->id));
+        if (! $render->buildable()) {
+            return ['error_code' => 'caddy.plan_stale'];
+        }
+        foreach (CaddyPublicationPlan::input($render, $node->id) as $field => $value) {
+            if (! array_key_exists($field, $input) || $input[$field] !== $value) {
                 return ['error_code' => 'caddy.plan_stale'];
             }
-
-            foreach (CaddyPublicationPlan::input($render, $node->id) as $field => $value) {
-                if (! array_key_exists($field, $input) || $input[$field] !== $value) {
-                    return ['error_code' => 'caddy.plan_stale'];
-                }
-            }
-
-            try {
-                return $this->agents->run($node, 'caddy.publish', AgentEffectReceipts::input($run, $input));
-            } catch (AgentCommandRefused $refused) {
-                return $this->refusal($refused->errorCode, $refused->details['stage'] ?? null);
-            }
-        });
+        }
+        try {
+            return $this->agents->run($node, 'caddy.publish', $run === null ? $input : AgentEffectReceipts::input($run, $input));
+        } catch (AgentCommandRefused $refused) {
+            return $this->refusal($refused->errorCode, $refused->details['stage'] ?? null);
+        }
     }
 
     public function effectful(Operation $operation, array $run): bool
