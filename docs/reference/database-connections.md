@@ -30,9 +30,9 @@ Version 1 binds a random artifact identity, owning Instance, Node, checkout, age
 
 ### Ordering and projection
 
-Drop owned databases only after schedules and processes stop. The lifecycle caller holds its admission lock across prepare, remove and project, so a new owned connection cannot enter the removal set during destruction.
+Drop owned databases only after schedules and processes stop. The lifecycle caller records the prepared artifacts and the transition to Removing in one short Gateway SQLite `IMMEDIATE` transaction before submitting the native run. Database ownership writes use that same transaction boundary and reject a Removing old or new owner with `database.owner_removing` (409). Removing stays recorded across the native remove and final projection, excluding new owned rows and ownership changes without a PHP lock or lease spanning the run.
 
-Projection accepts that result only after native success. It checks placement and the remaining owned connection set against the saved artifact before deleting records and attachments. A changed or newly owned connection refuses the whole projection; a repeated projection tolerates records already removed. The parent must project databases before deleting the Instance row, and remove SQLite files before removing its checkout.
+Projection accepts that result only after native success. It checks placement and the remaining owned connection set against the saved artifact before deleting records and attachments. Database admission also rejects changes to owned identity fields while the owner is Removing. A changed or newly owned connection refuses the whole projection; a repeated projection tolerates records already removed. The parent must project databases before deleting the Instance row, and remove SQLite files before removing its checkout.
 
 ### Managed database cutover
 
