@@ -247,11 +247,6 @@ final class TaskVmCommandContracts
         foreach (array_keys(TaskVmIncusProjection::CacheFields) as $kind) {
             $kinds[$kind] = ['executor' => 'swamp', 'admission' => TaskVmChildAdmission::class, 'result_fields' => ['ready', 'error_code']];
         }
-        foreach (['cache_mount' => ['incus.package-cache', ['project', 'name'], [], ['ready' => true]]] as $verb => [$name, $fields, $values, $proof]) {
-            $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class, 'execution' => TaskVmAgentExecution::class,
-                'runs' => [['transport' => 'agent', 'name' => $name, 'input_fields' => $fields, 'input_values' => $values, 'resumable' => true]],
-                'completion_contract' => ['step' => str_replace('_', '-', $verb), 'transport' => 'agent', 'name' => $name, 'result' => $proof], 'result_fields' => ['ready', 'error_code']];
-        }
         $kinds['task_vm.cache_seed'] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
             'runs' => [['transport' => 'task_vm_guest', 'name' => 'task_vm.guest', 'input_fields' => ['guest', 'parameters_json'],
                 'input_values' => ['command' => 'package-cache.seed'], 'input_schema' => self::guestInput('package-cache.seed'), 'resumable' => true]],

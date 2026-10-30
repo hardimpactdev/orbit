@@ -174,3 +174,38 @@ it('refuses a polled cache initializer after its old executor is removed', funct
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'cache-initialize']))->toThrow(ResourceOperationException::class);
     expect($this->socket->sent)->toBe([])->and($parent->children()->count())->toBe(0);
 });
+
+it('admits a direct read-only cache mount for exactly its ready VM and host project', function (): void {
+    $parent = directCacheParent();
+    $child = app(OperationChildren::class)->admit($parent, ['key' => 'cache-mount'])['operation'];
+    $path = '/api/v1/direct-operations/'.$child->id;
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.task_vm_id', $this->vm->id)->assertJsonPath('data.input.intent.project', 'orbit-tasks')->assertJsonPath('data.input.intent.name', $this->vm->name);
+    expect(DirectOperation::owns($child))->toBeTrue()->and($child->node_id)->toBe($this->host->id);
+    $this->postJson($path.'/result', $this->outcome)->assertOk();
+    $this->postJson($path.'/result', $this->outcome)->assertOk();
+    expect(app(OperationChildren::class)->requireSucceeded($parent, 'cache-mount')->id)->toBe($child->id)
+        ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
+    expect(fn () => app(SwampOperationExecutor::class)->claim('task_vm.cache_mount', 'old-worker', $this->worker->id))->toThrow(ResourceOperationException::class);
+});
+
+it('refuses a changed cache mount target project path source or lifecycle before starting Swamp', function (string $change): void {
+    directCacheParent();
+    $input = ['effect_key' => 'cache-mount', 'project' => 'orbit-tasks', 'name' => $this->vm->name];
+    $nodeId = $this->host->id;
+    match ($change) {
+        'host' => $nodeId++, 'provider' => $this->vm->update(['provider' => 'upcloud']),
+        'state' => $this->vm->update(['state' => 'parked']), 'project' => $input['project'] = 'operator',
+        'name' => $input['name'] = 'tvm-999', 'path' => $input['path'] = '/operator',
+        'source' => $input['source'] = '/operator', 'readonly' => $input['readonly'] = false,
+        'identity' => $this->vm->update(['name' => 'operator-vm']),
+    };
+    expect(fn () => app(TaskVmIncusProjection::class)->admitCache('task_vm.cache_mount', $this->vm->id, $nodeId, $input))->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toBe([]);
+})->with(['host', 'provider', 'state', 'project', 'name', 'path', 'source', 'readonly', 'identity']);
+
+it('refuses a polled cache mount after its old executor is removed', function (): void {
+    $parent = directCacheParent();
+    config(['swamp.direct_writers' => ['task_vm.cache_mount' => 'polled']]);
+    expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'cache-mount']))->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toBe([])->and($parent->children()->count())->toBe(0);
+});

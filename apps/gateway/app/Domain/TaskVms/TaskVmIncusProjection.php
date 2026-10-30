@@ -39,7 +39,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         'task_vm.image_prune' => ['project', 'operation'],
     ];
 
-    public const array CacheFields = ['task_vm.cache_initialize' => ['operation']];
+    public const array CacheFields = ['task_vm.cache_initialize' => ['operation'], 'task_vm.cache_mount' => ['project', 'name']];
 
     /** @param array<string,mixed> $input
      * @return array<string,mixed>
@@ -122,12 +122,17 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
     {
         $vm = TaskVm::query()->findOrFail($vmId);
         if (! isset(self::CacheFields[$kind]) || $vm->provider !== TaskVmProviderKind::Incus
-            || $vm->host_node_id !== $nodeId || $vm->state !== TaskVmState::Ready || $input !== ['effect_key' => 'cache-initialize']) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'Cache initialization requires its ready Incus VM and owning host.', 422);
+            || $vm->host_node_id !== $nodeId || $vm->state !== TaskVmState::Ready || $vm->name !== 'tvm-'.$vm->id) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Cache preparation requires its ready Incus VM and owning host.', 422);
         }
-        app(TaskVmSettings::class)->host($nodeId);
+        $host = app(TaskVmSettings::class)->host($nodeId);
+        $expected = $kind === 'task_vm.cache_initialize' ? ['effect_key' => 'cache-initialize']
+            : ['effect_key' => 'cache-mount', 'project' => $host->project, 'name' => $vm->name];
+        if (Arr::sortRecursive($input) !== Arr::sortRecursive($expected)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The cache effect must match its fixed owning VM intent.', 422);
+        }
 
-        return [...$input, 'task_vm_id' => $vm->id, 'operation' => 'initialize', 'agent_sha256' => app(AgentDelivery::class)->pin($vm->incusHostNode())];
+        return [...$input, 'task_vm_id' => $vm->id, ...($kind === 'task_vm.cache_initialize' ? ['operation' => 'initialize'] : []), 'agent_sha256' => app(AgentDelivery::class)->pin($vm->incusHostNode())];
     }
 
     public function input(Operation $operation): array
