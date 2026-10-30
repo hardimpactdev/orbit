@@ -139,3 +139,11 @@ it('refuses a changed execution account or complete timeout after admission', fu
     }
     expect(fn () => app(InstanceSetupProjection::class)->input($this->operation))->toThrow(ResourceOperationException::class);
 })->with(['account', 'timeout']);
+
+it('keeps a changed checkout state when an older list result settles', function (): void {
+    $this->instance->update(['checkout_path' => '/srv/new-checkout', 'first_setup_pending' => true, 'error_code' => 'newer.setup_error']);
+    app(InstanceSetupProjection::class)->apply($this->operation, ['run_id' => $this->operation->state['swamp_run_id'], 'status' => 'succeeded',
+        'started_at' => '2026-10-30T18:00:00.000Z', 'finished_at' => '2026-10-30T18:00:01.000Z',
+        'result' => ['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => false], 'error_code' => null]);
+    expect($this->instance->fresh()->first_setup_pending)->toBeTrue()->and($this->instance->fresh()->error_code)->toBe('newer.setup_error');
+});

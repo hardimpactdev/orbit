@@ -16,7 +16,9 @@ final readonly class InstanceSetupState
         if (($operation->input['list'] ?? null) !== 'setup' || ! $status->terminal()) {
             return;
         }
-        $instance = Instance::query()->whereKey($operation->target_id)->where('node_id', $operation->node_id)->first();
+        $instance = Instance::query()->whereKey($operation->target_id)->where('node_id', $operation->node_id)
+            ->where('project_id', $operation->input['project_id'] ?? null)
+            ->where('checkout_path', $operation->input['execution']['directory'] ?? null)->first();
         if ($instance === null) {
             return;
         }
