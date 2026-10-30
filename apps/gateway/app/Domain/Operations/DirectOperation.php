@@ -49,10 +49,11 @@ final readonly class DirectOperation
     {
         $definition = $this->definition($kind);
         if ($definition === null) {
-            return null;
+            return $this->requireWriter($kind, null);
         }
         $writers = config($definition['writer_config'], []);
-        $writer = is_array($writers) ? ($writers[$kind] ?? 'polled') : null;
+        $default = app(OperationKinds::class)->directOnly($kind) ? 'direct' : 'polled';
+        $writer = is_array($writers) ? ($writers[$kind] ?? $default) : null;
         if (! in_array($writer, ['polled', 'direct'], true)) {
             throw new ResourceOperationException('operation.writer_invalid', 'Select polled or direct for the Swamp writer.', 503);
         }
@@ -60,8 +61,17 @@ final readonly class DirectOperation
         $admitted = [...$input, 'node_id' => $nodeId, 'parent_operation_id' => app(OperationIdempotency::class)->parent?->id];
         foreach ($definition['writer_scope'] ?? [] as $field => $value) {
             if (! array_key_exists($field, $admitted) || $admitted[$field] !== $value) {
-                return 'polled';
+                return $this->requireWriter($kind, 'polled');
             }
+        }
+
+        return $this->requireWriter($kind, $writer);
+    }
+
+    private function requireWriter(string $kind, ?string $writer): ?string
+    {
+        if ($writer !== 'direct' && app(OperationKinds::class)->directOnly($kind)) {
+            throw new ResourceOperationException('operation.writer_invalid', 'This kind requires its direct Swamp writer.', 503);
         }
 
         return $writer;

@@ -35,7 +35,7 @@ final readonly class SwampOperationExecutor
 
     public function claim(string $kind, string $worker, int $nodeId, ?int $operationId = null): ?Operation
     {
-        if (! $this->executors->swamp($kind)) {
+        if (! $this->executors->polled($kind)) {
             throw new ResourceOperationException('operation.executor_invalid', 'This kind is not executed by Swamp.', 422);
         }
 
@@ -83,7 +83,7 @@ final readonly class SwampOperationExecutor
     {
         $kinds = [];
         foreach (OperationKinds::names() as $kind) {
-            if (! $this->executors->swamp($kind)) {
+            if (! $this->executors->polled($kind)) {
                 continue;
             }
             $candidates = $this->claimCandidates($kind);
@@ -118,7 +118,7 @@ final readonly class SwampOperationExecutor
 
     private function eligible(Operation $candidate, bool $flagAssistance): bool
     {
-        if (DirectOperation::owns($candidate)) {
+        if (! $this->executors->polled($candidate->kind) || DirectOperation::owns($candidate)) {
             return false;
         }
         if (($candidate->state['executor_assistance'] ?? null) === ['error_code' => 'operation.reclaim_limit']) {
@@ -661,7 +661,7 @@ final readonly class SwampOperationExecutor
 
     private function assertPolledKind(Operation $operation): void
     {
-        if (DirectOperation::owns($operation)) {
+        if (! $this->executors->polled($operation->kind) || DirectOperation::owns($operation)) {
             throw new ResourceOperationException('operation.executor_invalid', 'Direct Swamp Operations have no executor claim.', 422);
         }
     }

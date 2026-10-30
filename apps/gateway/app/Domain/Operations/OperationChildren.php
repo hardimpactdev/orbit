@@ -450,7 +450,7 @@ final readonly class OperationChildren
     private function assertSettledCapacity(Operation $parent, array $intent): void
     {
         $definition = $this->kinds->definition($parent->kind);
-        if (! is_array($definition)) {
+        if (! is_array($definition) || ! isset($definition['completion_contract'])) {
             return;
         }
         $contract = OperationCompletionContracts::select($parent, $definition['completion_contract']);

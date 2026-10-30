@@ -88,7 +88,20 @@ final readonly class OperationKinds
     private static function validateDefinition(string $kind, array $definition): void
     {
         self::assertKeys($kind, 'kind', $definition, ['executor', 'completion', 'execution', 'runs', 'completion_contract', 'result_fields', 'children', 'admission', 'compensations', 'cancellation_boundary', 'cancel_guard']);
-        if (($definition['executor'] ?? null) !== 'swamp' || ! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'] ?? null)) {
+        if (($definition['executor'] ?? null) !== 'swamp') {
+            throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
+        }
+        if (! is_array($definition['result_fields'] ?? null) || ! array_is_list($definition['result_fields'])) {
+            throw new LogicException("Operation kind [{$kind}] needs declared result fields.");
+        }
+        OperationResultFields::validate($definition['result_fields']);
+        if (! array_key_exists('runs', $definition)) {
+            self::assertKeys($kind, 'direct-only kind', $definition, ['executor', 'result_fields', 'admission']);
+            self::validateChildren($kind, $definition);
+
+            return;
+        }
+        if (! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'])) {
             throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
         }
         if (array_key_exists('cancel_guard', $definition) && (! self::supports('cancel_guard')
@@ -113,10 +126,6 @@ final readonly class OperationKinds
         }
 
         OperationCompletionContracts::validate(ValidatedData::object($definition['completion_contract']), array_column(is_array($definition['children'] ?? null) ? $definition['children'] : [], 'kind'));
-        if (! is_array($definition['result_fields'] ?? null) || ! array_is_list($definition['result_fields'])) {
-            throw new LogicException("Operation kind [{$kind}] needs declared result fields.");
-        }
-        OperationResultFields::validate($definition['result_fields']);
         if (OperationSecretOutputs::declarations($definition['result_fields']) !== []) {
             foreach ($definition['runs'] as $run) {
                 $class = is_array($run) && is_string($run['transport'] ?? null) ? (OperationTransports::definitions()[$run['transport']] ?? null) : null;
@@ -207,6 +216,13 @@ final readonly class OperationKinds
     public function definition(string $kind): string|array|null
     {
         return $this->kinds[$kind] ?? null;
+    }
+
+    public function directOnly(string $kind): bool
+    {
+        $definition = $this->definition($kind);
+
+        return is_array($definition) && ! array_key_exists('runs', $definition);
     }
 
     public function for(string $kind): OperationKind

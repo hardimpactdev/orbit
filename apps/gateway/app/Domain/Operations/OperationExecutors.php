@@ -16,6 +16,11 @@ final readonly class OperationExecutors
         return is_array($this->kinds->definition($kind));
     }
 
+    public function polled(string $kind): bool
+    {
+        return $this->swamp($kind) && ! $this->kinds->directOnly($kind);
+    }
+
     public function cancelGuard(string $kind): ?OperationCancelGuard
     {
         $definition = $this->kinds->definition($kind);
@@ -27,7 +32,7 @@ final readonly class OperationExecutors
     public function completion(string $kind): ?OperationCompletion
     {
         $definition = $this->kinds->definition($kind);
-        if (! is_array($definition)) {
+        if (! is_array($definition) || ! isset($definition['completion'])) {
             return null;
         }
         $completion = app($definition['completion']);
