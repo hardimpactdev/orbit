@@ -167,6 +167,13 @@ cancellation still settles all children before the parent completes.
 The family's existing `deadline_at` bounds its own provider and runtime
 observation waits. It is not an outer deadline for child composition.
 
+Provisioning and enrollment checkpoint successful bootstrap observation in Swamp
+before preparing Node enrollment. Re-entry while Node or runtime children finish
+reuses that proof. It does not probe the already-configured guest with the
+original bootstrap deadline. Missing, stopped, wrong-image and expired initial
+boots still refuse before enrollment; an unsuccessful probe creates no
+checkpoint.
+
 Each dispatch is a native nested `operation-task-vm-dispatch` workflow. If its
 first child observation is queued with zero claims, a native `wait_for_signal`
 step opens a 60-second queue window. Native suspension releases the execution

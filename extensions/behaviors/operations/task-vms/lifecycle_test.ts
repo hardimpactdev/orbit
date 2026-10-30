@@ -57,13 +57,24 @@ class Effects implements FamilyEffects {
   onWait = () => {};
   waits = 0;
   failures = new Set<string>();
+  pending = new Set<string>();
+  stages = new Map<string, unknown>();
   receipts = new Map<string, Record<string, unknown>>();
+  async stage<T>(key: string, action: () => Promise<T>): Promise<T> {
+    if (this.stages.has(key)) return this.stages.get(key) as T;
+    const value = await action();
+    this.stages.set(key, value);
+    return value;
+  }
   child(
     key: string,
     kind: string,
     node: number,
     input: Record<string, unknown>,
   ) {
+    if (this.pending.has(key)) {
+      return Promise.reject(new ExecutorError("operation.waiting"));
+    }
     if (this.failures.has(key)) {
       return Promise.reject(new ExecutorError("task_vm.host_command_failed"));
     }
@@ -121,6 +132,53 @@ Deno.test("enrollment of an existing VM never calls create again", async () => {
     "enroll",
     "runtime",
   ]);
+});
+
+for (const kind of ["task_vm.provision", "task_vm.enroll"]) {
+  Deno.test(`${kind} re-entry preserves bootstrap proof while enrollment finishes`, async () => {
+    const effects = new Effects();
+    const input = intent();
+    effects.pending.add("node-enrollment");
+    await assertRejects(
+      () => lifecycle(kind, input, effects),
+      ExecutorError,
+      "operation.waiting",
+    );
+    effects.pending.clear();
+    input.deadline_at = 1;
+    effects.state.bootstrap_ready = false;
+    effects.state.bootstrap_expired = true;
+    assertEquals(await lifecycle(kind, input, effects), {
+      ready: true,
+      node_id: 12,
+    });
+    assertEquals(
+      effects.calls.filter((call) => call.key === "runtime").length,
+      1,
+    );
+  });
+}
+
+Deno.test("failed bootstrap observation cannot checkpoint enrollment readiness", async () => {
+  const effects = new Effects();
+  effects.state.bootstrap_ready = false;
+  effects.state.bootstrap_expired = true;
+  await assertRejects(
+    () => lifecycle("task_vm.enroll", intent(), effects),
+    ExecutorError,
+    "task_vm.bootstrap_timeout",
+  );
+  assertEquals(effects.stages.size, 0);
+  effects.state.bootstrap_expired = false;
+  await assertRejects(
+    () => lifecycle("task_vm.enroll", { ...intent(), deadline_at: 1 }, effects),
+    ExecutorError,
+    "task_vm.bootstrap_timeout",
+  );
+  assertEquals(
+    effects.calls.some((call) => call.key === "prepare-enrollment"),
+    false,
+  );
 });
 
 Deno.test("wrong-image, missing, stopped and expired boots never enroll", async () => {

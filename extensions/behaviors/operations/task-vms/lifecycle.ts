@@ -120,30 +120,38 @@ export async function lifecycle(
     const bootDeadline = typeof created?.effect_finished_at === "string"
       ? Date.parse(created.effect_finished_at) / 1000 + 600
       : input.deadline_at;
-    for (;;) {
-      const state = await effects.read("lifecycle");
-      if (state.present !== true) throw new ExecutorError("task_vm.vm_missing");
-      if (state.running !== true) {
-        if (state.settled === true) {
-          throw new ExecutorError("task_vm.vm_not_running");
+    const bootstrap = async () => {
+      for (;;) {
+        const state = await effects.read("lifecycle");
+        if (state.present !== true) {
+          throw new ExecutorError("task_vm.vm_missing");
         }
-        if (Date.now() / 1000 >= bootDeadline) {
-          throw new ExecutorError("task_vm.bootstrap_timeout");
+        if (state.running !== true) {
+          if (state.settled === true) {
+            throw new ExecutorError("task_vm.vm_not_running");
+          }
+          if (Date.now() / 1000 >= bootDeadline) {
+            throw new ExecutorError("task_vm.bootstrap_timeout");
+          }
+          await effects.wait();
+          continue;
         }
+        if (state.image_matches === false) {
+          throw new ExecutorError("task_vm.image_mismatch");
+        }
+        if (
+          state.bootstrap_ready === true && typeof state.address === "string"
+        ) {
+          return;
+        }
+        if (
+          state.bootstrap_expired === true || Date.now() / 1000 >= bootDeadline
+        ) throw new ExecutorError("task_vm.bootstrap_timeout");
         await effects.wait();
-        continue;
       }
-      if (state.image_matches === false) {
-        throw new ExecutorError("task_vm.image_mismatch");
-      }
-      if (state.bootstrap_ready === true && typeof state.address === "string") {
-        break;
-      }
-      if (
-        state.bootstrap_expired === true || Date.now() / 1000 >= bootDeadline
-      ) throw new ExecutorError("task_vm.bootstrap_timeout");
-      await effects.wait();
-    }
+    };
+    if (effects.stage) await effects.stage("enrollment-bootstrap", bootstrap);
+    else await bootstrap();
     const prepared = await effects.child(
       "prepare-enrollment",
       "task_vm.prepare_enrollment",
