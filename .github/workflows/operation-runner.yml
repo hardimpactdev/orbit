@@ -37,4 +37,4 @@ jobs:
         run: |
           deno fmt --check extensions/behaviors/operation-runner extensions/behaviors/operations
           deno lint extensions/behaviors/operation-runner extensions/behaviors/operations
-          deno check extensions/behaviors/operation-runner/mod.ts extensions/behaviors/operations/*/mod.ts
+          deno check extensions/behaviors/operation-runner/mod.ts extensions/behaviors/operations/*/mod.ts extensions/behaviors/operations/routes/publication.ts extensions/behaviors/operations/_lib/direct_test.ts

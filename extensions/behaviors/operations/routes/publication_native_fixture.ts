@@ -1,7 +1,7 @@
 /** Fake Gateway in a disposable native Swamp repository. */
 export async function fixtureHttp(method: string, path: string, raw?: unknown) {
   const state = JSON.parse(await Deno.readTextFile("native-routes.json"));
-  const id = path.match(/route-publications\/(\d+)/)?.[1];
+  const id = path.match(/direct-operations\/(\d+)/)?.[1];
   const operation = state.operations ? state.operations[id!] : state.operation;
   const body = raw as Record<string, unknown>;
   state.calls.push(path);
@@ -11,7 +11,7 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
     await save();
     return { status: 200, body: { data: operation } };
   }
-  if (path.endsWith("/publish")) {
+  if (path.endsWith("/primitive")) {
     if (state.events) {
       state.events.push(`start-${id}`);
       await save();

@@ -18,7 +18,7 @@ class RouteNative(unittest.TestCase):
         self.repo = Path(self.temp.name)
         shutil.copy(ROOT / '.swamp.yaml', self.repo)
         behavior = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/routes']:
+        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/routes']:
             shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
         module = behavior / 'operations/routes/publication.ts'
         module.write_text('import {fixtureHttp} from "./publication_native_fixture.ts";\n' + module.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => fixtureHttp);'))
@@ -55,7 +55,7 @@ class RouteNative(unittest.TestCase):
         state=self.read()
         self.assertEqual(state['publications'],1)
         self.assertEqual(state['operation']['status'],'succeeded')
-        self.assertTrue(all('/route-publications/' in call for call in state['calls']))
+        self.assertTrue(all('/direct-operations/' in call for call in state['calls']))
         self.assertFalse(any('claim' in call or 'heartbeat' in call or 'receipts' in call for call in state['calls']))
 
     def test_native_retry_after_lost_terminal_projection_does_not_repeat_effect(self):
