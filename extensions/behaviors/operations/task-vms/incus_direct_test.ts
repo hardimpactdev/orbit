@@ -87,10 +87,17 @@ Deno.test("direct Incus binds read/action/projection to one admitted VM and dige
   ]);
 });
 
-Deno.test("a first read before Gateway start binding performs no action or projection", async () => {
+Deno.test("native cancellation of an unbound first read performs no action or projection", async () => {
   const f = new Fixture();
   f.unbound = true;
-  await assertRejects(() => f.execute());
+  const controller = new AbortController();
+  const http = f.http;
+  f.http = (method, path, body, key) => {
+    const response = http(method, path, body, key);
+    controller.abort(new Error("Native run cancelled before binding"));
+    return response;
+  };
+  await assertRejects(() => f.execute(controller.signal));
   assertEquals(f.actions, []);
   assertEquals(f.calls.length, 1);
 });
