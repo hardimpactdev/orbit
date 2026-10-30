@@ -56,7 +56,7 @@ final readonly class RekeyNodeAgentAction
                 $data = ['worker' => $operation->worker ?? '', 'key' => 'footprint-agent',
                     'transport' => 'agent', 'name' => 'agent.configure', 'input' => ValidatedData::object($run['input'])];
                 $this->contract->authorizeRun($operation, $data);
-                $input = [...$data['input'], 'secret_hash' => null];
+                $input = [...$data['input'], 'secret_hash' => null, 'worker_credentials' => null];
                 AgentSchemas::assertInput('agent.configure', $input);
                 // This is a new, operator-requested repair with no target receipt or original effect key.
                 $configured = $this->agents->run($node, 'agent.configure', $input);
