@@ -32,7 +32,9 @@ The `node.worker_credentials` private source also supports an unfinished direct 
 
 A failed delivery re-mints enrollment through native create and delivers it through converge. There is no Gateway renewal timer, claim, lock, polling loop or custom issuer. The old issuer recovery note is not a gate; preserve its live custody until separately reviewed retirement.
 
-Converge publishes root-owned `0600` credential sources under `/etc/orbit/swamp-worker`, with a `0700` parent. Missing or unsafe files fail with `swamp.node_worker_not_ready`. A fixed service runs as root before each start and checks the file custody. systemd loads the sources through credentials, runs the Node user with sudo, logs native worker output to the journal and limits failed starts to three in five minutes. `restart --no-block` and nonblocking opt-out ensure a Node worker never waits for its own drain. Credentials and the private machine cache survive reboot. The canary, rather than the queued restart acknowledgement, proves connectivity and readiness.
+Converge publishes root-owned `0600` credential sources under `/etc/orbit/swamp-worker`, with a `0700` parent. Missing or unsafe files fail with `swamp.node_worker_not_ready`. A fixed service runs as root before each start and checks the file custody. systemd loads the sources through credentials, runs the Node user with sudo, logs native worker output to the journal and limits failed starts to three in five minutes. Converge clears the unit's failed-start limit with `systemctl reset-failed` before queuing start or restart. `restart --no-block` and nonblocking opt-out ensure a Node worker never waits for its own drain.
+
+Credentials and the private machine cache survive reboot. The canary, rather than the queued restart acknowledgement, proves connectivity and readiness.
 
 Doctor reports `node.worker_failed` for a failed unit. The Node exporter exposes its failed state through `node_systemd_unit_state{name="orbit-node-worker.service",state="failed"}`. Inspect `journalctl -u orbit-node-worker.service` for native authentication and restart failures.
 

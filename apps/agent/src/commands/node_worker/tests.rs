@@ -6,10 +6,26 @@ use std::time::Duration;
 struct Fake {
     calls: Vec<Vec<String>>,
     refuse_sudo: bool,
+    needs_reset: bool,
 }
 impl Host for Fake {
     fn execute(&mut self, call: &Invocation) -> Result<Output, Failure> {
         self.calls.push(call.argv.clone());
+        if call.argv == ["systemctl", "reset-failed", UNIT] {
+            self.needs_reset = false;
+        }
+        if self.needs_reset
+            && call.argv.first().is_some_and(|a| a == "systemctl")
+            && call
+                .argv
+                .get(1)
+                .is_some_and(|a| a == "start" || a == "restart")
+        {
+            return Ok(Output {
+                code: 1,
+                ..Output::default()
+            });
+        }
         Ok(Output {
             code: if self.refuse_sudo && call.argv[0] == "/usr/sbin/runuser" {
                 1
@@ -198,4 +214,29 @@ fn missing_credentials_are_not_ready_and_rotation_restarts_without_waiting() {
     )
     .unwrap();
     assert!(check_credentials(&files).is_err());
+}
+
+#[test]
+fn clears_a_failed_start_limit_before_nonblocking_start() {
+    let (_work, files, input, account, mut host) = fixture();
+    publish(&files, &mut host, &input, &account, false, None).unwrap();
+    host.calls.clear();
+    host.needs_reset = true;
+    publish(&files, &mut host, &input, &account, false, None).unwrap();
+    assert_eq!(
+        &host.calls[host.calls.len() - 2..],
+        &[
+            vec![
+                "systemctl".to_string(),
+                "reset-failed".to_string(),
+                UNIT.to_string()
+            ],
+            vec![
+                "systemctl".to_string(),
+                "start".to_string(),
+                "--no-block".to_string(),
+                UNIT.to_string()
+            ],
+        ]
+    );
 }

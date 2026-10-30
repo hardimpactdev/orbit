@@ -118,6 +118,7 @@ fn publish(
         .map_err(|_| invalid())?;
     call(host, &["systemctl", "daemon-reload"])?;
     call(host, &["systemctl", "enable", UNIT])?;
+    call(host, &["systemctl", "reset-failed", UNIT])?;
     call(
         host,
         &[
