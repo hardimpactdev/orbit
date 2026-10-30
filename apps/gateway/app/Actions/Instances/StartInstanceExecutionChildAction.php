@@ -11,7 +11,9 @@ use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
 use App\Domain\Instances\StepLists\InstanceStepListIntent;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -71,8 +73,8 @@ final readonly class StartInstanceExecutionChildAction
             || ! is_string($digest) || $digest !== ($candidate->input['configuration_digest'] ?? null)) {
             throw $this->invalid();
         }
-        $instance = \App\Models\Instance::query()->with(['project', 'node'])->findOrFail($candidate->target_id);
-        $candidate->input = [...$candidate->input, ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, \App\Domain\Projects\LifecyclePhase::from($phase))];
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail($candidate->target_id);
+        $candidate->input = [...$candidate->input, ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::from($phase))];
         app(InstanceStepListIntent::class)->input($candidate);
     }
 

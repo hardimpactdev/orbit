@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceStepListAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
@@ -15,8 +16,10 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -24,6 +27,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     app()->instance(OperationKinds::class, new OperationKinds(app(), [
@@ -262,15 +266,15 @@ it('admits registration setup using the parent digest after its primary member a
     $parent->steps()->create(['name' => $key, 'position' => 1, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
 
     config(['swamp.run_token' => 'fixture.shared.token']);
-    $socket = new \Tests\Support\FakeRoutePublicationSocket;
+    $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-setup-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
-    app()->instance(\App\Infrastructure\AgentView\WebSocketClient::class, $socket);
+    app()->instance(WebSocketClient::class, $socket);
     $path = '/api/v1/operation-executor/'.$parent->id.'/children';
     $response = $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup']);
     $id = $response->assertAccepted()
         ->assertJsonPath('data.kind', 'instance.run_steps')->assertJsonPath('data.parent_operation_id', $parent->id)
         ->assertJsonPath('data.input', ['instance_id' => $instance->id, 'source' => 'project', 'list' => 'setup',
-            'configuration_digest' => $parent->input['setup_digest'], ...app(\App\Actions\Instances\StartInstanceStepListAction::class)->appStepAdmission($instance, \App\Domain\Projects\LifecyclePhase::Setup)])->json('data.id');
+            'configuration_digest' => $parent->input['setup_digest'], ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup)])->json('data.id');
 
     $this->postJson($path, ['worker' => 'register-worker', 'key' => 'setup'])->assertOk()->assertJsonPath('data.id', $id);
     expect(Operation::query()->where('kind', 'instance.run_steps')->count())->toBe(1);
