@@ -37,13 +37,16 @@ final readonly class OperationStore
      *
      * @throws ResourceOperationException `operation.target_busy` while another operation holds the target
      */
-    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = []): Operation
+    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null): Operation
     {
         if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
             throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
         }
 
         $writer = app(DirectOperation::class)->writer($kind, $input, $nodeId);
+        if ($expectedWriter !== null && $writer !== $expectedWriter) {
+            throw new LogicException('The prepared Operation input must match its admitted writer.');
+        }
         $lockKey = $writer === 'direct' ? null : self::lockKey($targetType, $targetId);
         $parent = $this->idempotency->parent;
         if ($parent !== null) {

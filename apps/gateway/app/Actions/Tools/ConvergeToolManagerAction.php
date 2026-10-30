@@ -34,6 +34,6 @@ final readonly class ConvergeToolManagerAction
             'node_id' => $node->id, 'user' => $node->user, 'manager' => $manager->value, 'completion_variant' => $manager->value.':version', 'platform' => $node->platform,
             'architecture' => $node->architecture,
             ...($direct ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []), ...$this->intent->input($node, $manager, $imageProvidesManager, $direct),
-        ], 'system', null);
+        ], 'system', null, expectedWriter: $direct ? 'direct' : 'polled');
     }
 }

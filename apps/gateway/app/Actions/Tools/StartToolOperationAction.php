@@ -101,7 +101,7 @@ final readonly class StartToolOperationAction
                     'completion_variant' => $managerName.':'.$variant,
                     'protected_packages' => $protected,
                     ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name(), direct: $direct) : []),
-                ], 'operator', request()->attributes->getString('orbit.request_id'));
+                ], 'operator', request()->attributes->getString('orbit.request_id'), expectedWriter: $direct ? 'direct' : 'polled');
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.')) {
