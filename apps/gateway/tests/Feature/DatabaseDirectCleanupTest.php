@@ -38,14 +38,9 @@ beforeEach(function (): void {
     app()->instance(AgentCommandRunner::class, $this->agents);
 });
 
-it('publishes the stored Node without claims keys or Gateway execution state', function (): void {
-    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.backend', 'absent');
-
-    expect($this->agents->calls)->toHaveCount(1);
-    expect($this->agents->calls[0])->toMatchArray(['command' => 'instance.copy-sqlite', 'node' => 'private-dev']);
-    expect($this->agents->calls[0]['input'])->not->toHaveKeys(['effect_key', 'worker']);
-    expect($this->operation->fresh()->state)->toBe(['database_cleanup_writer' => 'direct']);
-    expect($this->operation->fresh()->worker)->toBeNull();
+it('declares no Gateway cleanup relay', function (): void {
+    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+    expect($this->agents->calls)->toBe([]);
 });
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
@@ -138,30 +133,14 @@ it('keeps the previous Swamp writer by default and binds Operations through swit
 
     config(['swamp.direct_writers' => ['database.sqlite_cleanup' => 'polled']]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $direct->kind, 'worker' => 'previous', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
-    $this->postJson('/api/v1/direct-operations/'.$direct->id.'/primitive', ['run_id' => $direct->fresh()->state['swamp_run_id']])->assertOk()->assertJsonPath('data.backend', 'absent');
-    expect($this->agents->calls)->toHaveCount(1);
+    $this->getJson('/api/v1/direct-operations/'.$direct->id.'?run_id='.$direct->fresh()->state['swamp_run_id'])->assertOk()->assertJsonPath('data.kind', 'database.sqlite_cleanup');
+    expect($this->agents->calls)->toBe([]);
 });
 
 it('keeps pre-rollout Operations with no writer stamp on their original Swamp path', function (): void {
     $this->operation->update(['state' => null]);
     $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'previous', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data.id', $this->operation->id);
-    expect($this->agents->calls)->toBe([]);
-});
-
-it('runs seed cleanup with only the stored admitted input', function (): void {
-    $input = ['mode' => 'cleanup', 'operation' => 'seed-proof', 'base' => '/home/orbit/apps/proof/default', 'source_path' => '/home/orbit/apps/proof/default/database.sqlite', 'source_user' => 'orbit', 'transport_user' => 'orbit', 'state_dir' => '/var/lib/orbit/app-instance-sqlite-seeds/source-proof', 'snapshot_path' => '/tmp/orbit-sqlite-proof.sqlite'];
-    $this->intent->update(['payload' => ['commands' => ['database-apply' => ['name' => 'instance.prepare-sqlite-seed', 'input' => $input]], 'projection' => []]]);
-    $this->agents->answer('instance.prepare-sqlite-seed', ['state' => 'cleaned']);
-    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.backend', 'absent');
-    expect($this->agents->calls[0]['input'])->toBe($input);
-});
-
-it('refuses a foreign intent or a non-cleanup command before contacting a Node', function (): void {
-    $this->intent->update(['target_id' => $this->node->id + 100]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->intent->update(['target_id' => $this->node->id, 'payload' => ['commands' => ['database-apply' => ['name' => 'instance.copy-sqlite', 'input' => ['operation' => 'remove']]], 'projection' => []]]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
     expect($this->agents->calls)->toBe([]);
 });
 
