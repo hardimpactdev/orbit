@@ -43,7 +43,7 @@ beforeEach(function (): void {
 
 it('selects direct sync by default and binds root starts before exposing safe input', function (): void {
     foreach (['websocket.sync', 'websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate'] as $kind) {
-        expect(app(DirectOperation::class)->writer($kind))->toBe(in_array($kind, ['websocket.sync', 'websocket.app_create'], true) ? 'direct' : null);
+        expect(app(DirectOperation::class)->writer($kind))->toBe(in_array($kind, ['websocket.sync', 'websocket.app_create', 'websocket.app_destroy'], true) ? 'direct' : null);
     }
     $this->operation->update(['state' => ['websocket_registry_writer' => 'direct']]);
     $this->getJson($this->path.'?run_id='.$this->run)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
@@ -190,4 +190,34 @@ it('returns 503 and preserves committed direct app intent when Swamp refuses the
     expect($operation->state)->not->toHaveKey('swamp_run_id');
     expect($socket->sent)->toHaveCount(1);
     $response->assertDontSee($app->secret);
+});
+
+it('confirms app destruction directly without repeating or exposing the saved registry mutation', function (): void {
+    app(ChangeWebSocketRegistryAction::class)->execute('create', 'direct-disposable', $this->gateway->id, 'seed-destroy');
+    $secret = WebSocketApp::query()->where('name', 'direct-disposable')->sole()->secret;
+    $response = $this->withHeader('Idempotency-Key', 'direct-destroy')->deleteJson('/api/v1/websocket-apps/direct-disposable')->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->kind)->toBe('websocket.app_destroy')->and($operation->state['websocket_registry_writer'])->toBe('direct');
+    expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
+    $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
+        'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
+    ])->assertDontSee($secret);
+    WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-destroy',
+        'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
+    $this->postJson($path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertDontSee($secret);
+    $this->deleteJson('/api/v1/websocket-apps/direct-disposable')->assertAccepted()->assertJsonPath('data.id', $operation->id);
+    expect(WebSocketApp::query()->where('name', 'direct-disposable')->exists())->toBeFalse();
+    Http::assertNothingSent();
+});
+
+it('refuses deleted app-destroy polling without deleting the app', function (): void {
+    app(ChangeWebSocketRegistryAction::class)->execute('create', 'refused-disposable', $this->gateway->id, 'seed-refused-destroy');
+    $registry = WebSocketRegistryOperation::query()->count();
+    config(['swamp.direct_writers' => ['websocket.app_destroy' => 'polled']]);
+    $this->withHeader('Idempotency-Key', 'refused-destroy')->deleteJson('/api/v1/websocket-apps/refused-disposable')
+        ->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
+    expect(WebSocketApp::query()->where('name', 'refused-disposable')->exists())->toBeTrue();
 });
