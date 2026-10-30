@@ -48,6 +48,68 @@ fn attached(path: &Path, attach_type: u32) -> bool {
 fn attached(_: &Path, _: u32) -> bool {
     false
 }
+/// Public/NAT addresses come from operator-owned runtime metadata, because
+/// they need not be assigned to a local interface. Also deny every currently
+/// assigned host address, including global IPv6, on each launch.
+pub(super) fn host_addresses(runtime: &Path) -> Result<Vec<String>, Error> {
+    use std::{net::IpAddr, os::unix::fs::MetadataExt};
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Policy {
+        public_addresses: Vec<String>,
+    }
+    let path = runtime.join("network-deny.json");
+    let meta = fs::symlink_metadata(&path).map_err(|_| Error::Unavailable {})?;
+    if !meta.is_file()
+        || meta.uid() != 0
+        || meta.gid() != 0
+        || meta.nlink() != 1
+        || meta.mode() & 0o022 != 0
+        || meta.len() > 8192
+    {
+        return Err(Error::Unavailable {});
+    }
+    let policy: Policy =
+        serde_json::from_slice(&fs::read(path).map_err(|_| Error::Unavailable {})?)
+            .map_err(|_| Error::Unavailable {})?;
+    if policy.public_addresses.is_empty() || policy.public_addresses.len() > 64 {
+        return Err(Error::Unavailable {});
+    }
+    let mut addresses = Vec::new();
+    for address in policy.public_addresses {
+        let ip: IpAddr = address.parse().map_err(|_| Error::Unavailable {})?;
+        if ip.is_unspecified() || ip.is_loopback() {
+            return Err(Error::Unavailable {});
+        }
+        addresses.push(ip.to_string());
+    }
+    let output = std::process::Command::new("/usr/sbin/ip")
+        .args(["-j", "address", "show"])
+        .output()
+        .map_err(|_| Error::Unavailable {})?;
+    if !output.status.success() {
+        return Err(Error::Unavailable {});
+    }
+    let interfaces: Vec<serde_json::Value> =
+        serde_json::from_slice(&output.stdout).map_err(|_| Error::Unavailable {})?;
+    for interface in interfaces {
+        for info in interface
+            .get("addr_info")
+            .and_then(|v| v.as_array())
+            .ok_or(Error::Unavailable {})?
+        {
+            let value = info
+                .get("local")
+                .and_then(|v| v.as_str())
+                .ok_or(Error::Unavailable {})?;
+            let ip: IpAddr = value.parse().map_err(|_| Error::Unavailable {})?;
+            addresses.push(ip.to_string());
+        }
+    }
+    addresses.sort();
+    addresses.dedup();
+    Ok(addresses)
+}
 fn namespaces(cgroup: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
     let Some(unit) = cgroup.file_name() else {
@@ -82,7 +144,12 @@ fn namespaces(cgroup: &Path) -> bool {
 pub(super) fn release(root: &Path, cgroup: &Path, deadline: Instant) -> Result<(), Error> {
     let deadline = deadline.min(Instant::now() + Duration::from_secs(8));
     loop {
-        if attached(cgroup, 0) && attached(cgroup, 1) && namespaces(cgroup) {
+        if attached(cgroup, 0)
+            && attached(cgroup, 1)
+            && attached(cgroup, 8)
+            && attached(cgroup, 9)
+            && namespaces(cgroup)
+        {
             fs::write(
                 root.parent().ok_or(Error::Failed {})?.join("network-ready"),
                 b"ready\n",
@@ -108,6 +175,11 @@ for probe in [lambda:socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM),lambda:sock
  try: probe();sys.exit(78)
  except OSError as error:
   if error.errno not in [errno.EPERM,errno.EAFNOSUPPORT]:sys.exit(78)
+for family,address in [(socket.AF_INET,('0.0.0.0',0)),(socket.AF_INET6,('::',0))]:
+ try:
+  listener=socket.socket(family,socket.SOCK_STREAM);listener.bind(address);sys.exit(78)
+ except OSError as error:
+  if error.errno not in [errno.EPERM,errno.EACCES]:sys.exit(78)
 libc=ctypes.CDLL(None,use_errno=True)
 if libc.syscall(425,0,0)!=-1 or ctypes.get_errno()!=errno.EPERM:sys.exit(78)
 for _ in range(200):

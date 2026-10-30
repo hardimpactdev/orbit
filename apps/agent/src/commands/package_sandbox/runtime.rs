@@ -164,15 +164,6 @@ fn mkdir(path: &Path, account: Option<&Account>, mode: u32) -> Result<(), Error>
     Ok(())
 }
 fn stage(root: &Path, files: &BTreeMap<String, String>, a: &Account) -> Result<(), Error> {
-    if files.is_empty()
-        || files.len() > 512
-        || files
-            .iter()
-            .any(|(p, v)| !manifest(p) || v.len() > MAX_BYTES)
-        || files.values().map(String::len).sum::<usize>() > MAX_BYTES
-    {
-        return Err(Error::Invalid {});
-    }
     for path in ["work", "home", "tmp", "cache"] {
         mkdir(&root.join(path), Some(a), 0o700)?;
     }
@@ -213,10 +204,9 @@ fn stage(root: &Path, files: &BTreeMap<String, String>, a: &Account) -> Result<(
     if !php.starts_with("/usr/bin") {
         return Err(Error::Unavailable {});
     }
-    fs::remove_file(root.join("bin")).map_err(|_| Error::Failed {})?;
-    symlink("usr/bin", root.join("bin")).map_err(|_| Error::Failed {})?;
     mkdir(&root.join("etc/alternatives"), None, 0o755)?;
     symlink(php, root.join("etc/alternatives/php")).map_err(|_| Error::Failed {})?;
+    stage_php(root)?;
     update_files(root, files, a)?;
     Ok(())
 }
@@ -259,6 +249,7 @@ fn arguments(
     parent: &str,
     seconds: u64,
     cwd: &str,
+    host_addresses: &[String],
 ) -> Vec<String> {
     let mut args = vec![
         "--quiet".into(),
@@ -293,12 +284,12 @@ format!("BindsTo={parent}"),format!("After={parent}"),format!("RuntimeMaxSec={se
 "RestrictNamespaces=yes".into(),
 "LockPersonality=yes".into(),
 "ReadWritePaths=+/work +/home +/tmp +/cache".into(),
-"BindReadOnlyPaths=/usr /etc/ssl/certs /etc/php /opt/orbit/swamp-package-runtime:/opt/package-runtime".into(),
+"BindReadOnlyPaths=/usr /etc/ssl/certs /opt/orbit/swamp-package-runtime:/opt/package-runtime".into(),
 "RestrictAddressFamilies=AF_INET AF_INET6".into(),
 "SystemCallArchitectures=native".into(),
 "SystemCallFilter=~socketpair io_uring_setup io_uring_enter io_uring_register".into(),
 "SystemCallErrorNumber=EPERM".into(),
-"IPAddressDeny=0.0.0.0/8 127.0.0.0/8 ::/128 ::1/128 169.254.0.0/16 fe80::/10 224.0.0.0/4 ff00::/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7".into(),
+format!("IPAddressDeny=0.0.0.0/8 127.0.0.0/8 ::/128 ::1/128 169.254.0.0/16 fe80::/10 224.0.0.0/4 ff00::/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 {}",host_addresses.join(" ")),"SocketBindDeny=any".into(),
 "MemoryMax=768M".into(),
 "TasksMax=64".into(),
 "UMask=0077".into()] {args.push(format!("--property={prop}"));}
@@ -382,6 +373,54 @@ with tempfile.TemporaryDirectory(prefix='expo-',dir='/tmp') as tmp:
   if len(value)>3145728: sys.exit(78)
   print(json.dumps(json.loads(value)))
 "#;
+fn php_cli() -> Result<PathBuf, Error> {
+    let binary = fs::canonicalize("/usr/bin/php").map_err(|_| Error::Unavailable {})?;
+    let version = binary
+        .file_name()
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.strip_prefix("php"))
+        .ok_or(Error::Unavailable {})?;
+    if version.is_empty() || !version.bytes().all(|c| c.is_ascii_digit() || c == b'.') {
+        return Err(Error::Unavailable {});
+    }
+    let path = Path::new("/etc/php").join(version).join("cli");
+    directory(&path, 0, false).map_err(|_| Error::Unavailable {})?;
+    Ok(path)
+}
+// Debian CLI-selected modules are symlinks into mods-available. Resolve only
+// those selected INI files into the private root, never expose FPM/pool config.
+fn stage_php(root: &Path) -> Result<(), Error> {
+    use std::os::unix::fs::MetadataExt;
+    let cli = php_cli()?;
+    let version = cli.parent().ok_or(Error::Unavailable {})?;
+    let destination = root.join(cli.strip_prefix("/").map_err(|_| Error::Unavailable {})?);
+    fs::create_dir_all(destination.join("conf.d")).map_err(|_| Error::Failed {})?;
+    let copy = |source: &Path, target: &Path| -> Result<(), Error> {
+        let source = fs::canonicalize(source).map_err(|_| Error::Unavailable {})?;
+        if !source.starts_with(&cli) && !source.starts_with(version.join("mods-available")) {
+            return Err(Error::Unavailable {});
+        }
+        let meta = fs::symlink_metadata(&source).map_err(|_| Error::Unavailable {})?;
+        if !meta.is_file() || meta.uid() != 0 || meta.gid() != 0 || meta.mode() & 0o022 != 0 {
+            return Err(Error::Unavailable {});
+        }
+        fs::copy(source, target).map_err(|_| Error::Failed {})?;
+        fs::set_permissions(target, fs::Permissions::from_mode(0o644))
+            .map_err(|_| Error::Failed {})?;
+        Ok(())
+    };
+    copy(&cli.join("php.ini"), &destination.join("php.ini"))?;
+    for entry in fs::read_dir(cli.join("conf.d")).map_err(|_| Error::Unavailable {})? {
+        let entry = entry.map_err(|_| Error::Unavailable {})?;
+        if entry.path().extension().is_some_and(|s| s == "ini") {
+            copy(
+                &entry.path(),
+                &destination.join("conf.d").join(entry.file_name()),
+            )?;
+        }
+    }
+    Ok(())
+}
 fn execute(
     root: &Path,
     a: &Account,
@@ -408,7 +447,8 @@ fn execute(
     if seconds == 0 {
         return Err(Error::Unavailable {});
     }
-    let mut args = arguments(root, a, &unit.0, &parent, seconds, cwd);
+    let host_addresses = network::host_addresses(Path::new("/opt/orbit/swamp-package-runtime"))?;
+    let mut args = arguments(root, a, &unit.0, &parent, seconds, cwd, &host_addresses);
     let gate = root.parent().ok_or(Error::Failed {})?.join("network-ready");
     fs::write(&gate, b"").map_err(|_| Error::Failed {})?;
     fs::set_permissions(&gate, fs::Permissions::from_mode(0o644)).map_err(|_| Error::Failed {})?;

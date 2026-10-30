@@ -86,6 +86,7 @@ fn package_units_bind_to_their_supervisor_and_confine_entire_cgroups() {
         "orbit-command-package-session-fixture.service",
         30,
         "apps/web",
+        &["80.47.233.206".into(), "2001:db8::209".into()],
     );
     for required in [
         "--uid=998",
@@ -93,6 +94,7 @@ fn package_units_bind_to_their_supervisor_and_confine_entire_cgroups() {
         "--property=KillMode=control-group",
         "--property=BindsTo=orbit-command-package-session-fixture.service",
         "--property=NoNewPrivileges=yes",
+        "--property=SocketBindDeny=any",
         "--property=PrivatePIDs=yes",
         "--property=ProtectControlGroups=yes",
         "--property=CapabilityBoundingSet=",
@@ -148,4 +150,39 @@ fn descriptor_transfer_rejects_hard_links_and_concurrent_parent_swaps() {
     racer.join().unwrap();
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(outside).unwrap();
+}
+
+#[test]
+fn launch_excludes_host_public_addresses_cgnat_and_php_pool_configuration() {
+    let account = Account {
+        uid: 998,
+        gid: 998,
+        home: "/nonexistent".into(),
+        shell: "/usr/sbin/nologin".into(),
+        group: USER.into(),
+        groups: vec![998],
+    };
+    let args = arguments(
+        Path::new("/job/root"),
+        &account,
+        "fixture.service",
+        "fixture-parent.service",
+        30,
+        ".",
+        &["80.47.233.206".into(), "2001:db8::209".into()],
+    );
+    let denies = args
+        .iter()
+        .find(|s| s.starts_with("--property=IPAddressDeny="))
+        .unwrap();
+    for address in ["80.47.233.206", "2001:db8::209", "100.64.0.0/10"] {
+        assert!(denies.contains(address));
+    }
+    let mounts = args
+        .iter()
+        .find(|s| s.starts_with("--property=BindReadOnlyPaths="))
+        .unwrap();
+    assert!(!mounts.contains("/etc/php"));
+    assert!(!mounts.contains(" /etc/php "));
+    assert!(!mounts.contains("fpm"));
 }
