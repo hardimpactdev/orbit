@@ -1265,6 +1265,8 @@ before admission. A worker for another Node cannot execute the action.
 
 `task_vm.image_publish` publishes only the active attempt's builder to its exact candidate alias and recipe properties. Swamp owns preparation order and stops before publication if a preparation step fails. Gateway admission validates the publication intent; its result projection requires a full image fingerprint and records that candidate. The Gateway does not execute publication or keep a second ledger of preparation receipts. The direct workflow retains the existing 900-second agent deadline.
 
+`task_vm.image_launch` records the exact builder or smoke VM, resources, network, Gateway public key and image before Swamp creates it. Orbit reads the stock alias once for a new builder and records its fingerprint; smoke VMs use only the recorded candidate. The worker receives that immutable launch input and runs `incus.vm` `create_image` with the existing 900-second deadline. No VM creation runs in PHP.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.

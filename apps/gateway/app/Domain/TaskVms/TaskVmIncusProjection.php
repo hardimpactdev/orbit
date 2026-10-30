@@ -10,6 +10,8 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
@@ -30,6 +32,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         'task_vm.image_metadata' => ['project', 'operation'],
         'task_vm.image_remove' => ['vm', 'operation'],
         'task_vm.image_publish' => ['project', 'operation'],
+        'task_vm.image_launch' => ['vm', 'operation'],
     ];
 
     /** @param array<string,mixed> $input
@@ -45,6 +48,10 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             'task_vm.image_finish_seed' => ['topology-seed', 'finish-seed'],
             'task_vm.image_metadata' => ['prepare', 'metadata'],
             'task_vm.image_publish' => ['publish', 'publish'],
+            'task_vm.image_launch' => match ($input['effect_key'] ?? null) {
+                'launch' => ['launch', 'launch'], 'launch-smoke' => ['smoke', 'launch-smoke'], 'seed-smoke-launch' => ['topology-seed', 'seed-smoke-launch'],
+                default => throw new ResourceOperationException('operation.execution_forbidden', 'The image launch is not declared.', 422),
+            },
             'task_vm.image_remove' => match ($input['effect_key'] ?? null) {
                 'reset-builder' => ['reset', 'reset-builder'], 'reset-smoke' => ['reset', 'reset-smoke'],
                 'delete-builder' => ['publish', 'delete-builder'], 'delete-smoke' => ['topology-seed', 'delete-smoke'],
@@ -57,7 +64,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             || ($input['attempt'] ?? null) !== $build->attempt || $build->state !== TaskVmImageBuildState::Running
             || $build->cleanup_started_at !== null || ($input['phase'] ?? null) !== $phase
             || ($input['effect_key'] ?? null) !== $key
-            || (in_array($kind, ['task_vm.image_seed', 'task_vm.image_finish_seed'], true) && (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1))) {
+            || ((in_array($kind, ['task_vm.image_seed', 'task_vm.image_finish_seed'], true) || ($kind === 'task_vm.image_launch' && $key !== 'launch')) && (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The effect must belong to this active image attempt.', 422);
         }
         $expected = match ($kind) {
@@ -67,12 +74,22 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             'task_vm.image_publish' => ['project' => $host->project, 'operation' => ['kind' => 'publish', 'name' => $build->builder_vm_name,
                 'alias' => $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id),
                 'properties' => ['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => 'base']]],
+            'task_vm.image_launch' => ['vm' => ['project' => $host->project, 'name' => $build->builder_vm_name.($key === 'launch' ? '' : '-smoke'), 'cidr' => $host->cidr],
+                'operation' => ['kind' => 'create_image', 'image' => $key === 'launch' ? (Arr::get($input, 'operation.image') === TaskVmHost::SourceImage ? TaskVmHost::SourceImage : ($build->source_fingerprint ?? TaskVmHost::SourceImage)) : $fingerprint,
+                    'gateway_public_key' => app(SshKeyProvider::class)->publicKey(), 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk, 'network' => $host->network, 'builder' => $key === 'launch']],
             'task_vm.image_remove' => ['vm' => ['project' => $host->project, 'name' => $build->builder_vm_name.(in_array($key, ['reset-builder', 'delete-builder'], true) ? '' : '-smoke'), 'cidr' => $host->cidr], 'operation' => ['kind' => 'remove_instance']],
         };
         if (Arr::sortRecursive(Arr::only($input, array_keys($expected))) !== Arr::sortRecursive($expected)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The effect does not match the admitted image attempt.', 422);
         }
         app(RecipeImageBuildSteps::class)->assertCurrent($build);
+        if ($kind === 'task_vm.image_launch') {
+            if ($key === 'launch' && $build->source_alias === null) {
+                $build->forceFill(['source_alias' => TaskVmHost::SourceImage,
+                    'source_fingerprint' => app(IncusHost::class)->aliasTarget($host, $build->hostNode, TaskVmHost::SourceImage)])->save();
+            }
+            $input['launch_image'] = $key === 'launch' ? ($build->source_fingerprint ?? TaskVmHost::SourceImage) : $fingerprint;
+        }
 
         return [...$input, 'agent_sha256' => app(AgentDelivery::class)->pin($build->hostNode)];
     }
@@ -87,7 +104,12 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             throw new ResourceOperationException('operation.execution_forbidden', 'The Incus intent has no admitted VM and agent digest.', 422);
         }
 
-        return ['agent_sha256' => $pin, 'intent' => Arr::only($operation->input, $seed ? ['build_id', 'attempt', ...self::ImageFields[$operation->kind]] : ['task_vm_id', 'vm', 'operation'])];
+        $intent = Arr::only($operation->input, $seed ? ['build_id', 'attempt', ...self::ImageFields[$operation->kind]] : ['task_vm_id', 'vm', 'operation']);
+        if ($operation->kind === 'task_vm.image_launch') {
+            $intent['operation'] = [...ValidatedData::object($intent['operation']), 'image' => ValidatedData::string($operation->input['launch_image'])];
+        }
+
+        return ['agent_sha256' => $pin, 'intent' => $intent];
     }
 
     public function apply(Operation $operation, array $data): Operation
