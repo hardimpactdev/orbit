@@ -32,7 +32,8 @@ final readonly class InstanceServedWebRootsExecution implements OperationComplet
         }
         $activating = $this->ownership->preparingRoute($operation);
         $served = array_map(static fn (array $application): array => ['web_root' => $application['web_root'], 'directory' => $application['directory']], RouteWebRoot::servedApplications($instance, $activating));
-        if ($activating !== null && ! array_any($served, static fn (array $application): bool => $application['web_root'] === $activating->web_root)) {
+        if ($activating !== null && RouteWebRoot::poolSuffix($instance, $activating->web_root) !== null
+            && ! array_any($served, static fn (array $application): bool => $application['web_root'] === $activating->web_root)) {
             $served[] = ['web_root' => $activating->web_root, 'directory' => RouteWebRoot::relativeDirectory($activating->web_root)];
         }
         $descriptors = [];

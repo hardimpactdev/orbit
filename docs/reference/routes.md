@@ -216,7 +216,9 @@ A production Instance serves each web root from its selected release, `<home>/cu
 | Removal | The pool leaves with the Route. `<home>/env/` stays. Instance removal first removes these Routes, as in development. |
 | Target set | The Route keeps one target. A target-set change, or a move to a production Instance, returns `route.web_root_unsupported`. |
 
-A web root must not hold a link, the same rule as for the Instance root. So no web root of the Instance, its own root included, may contain the `.env` of a served directory. A web root that is its own application directory, such as `apps/docs`, or one inside the Instance root, such as `public/docs/public`, returns `route.web_root_unsafe`. A web root in the default directory must be the Instance root itself; `apps/site` on root `apps/site/public` returns `route.web_root_unsafe`. Doctor's `APP_URL` check of each directory skips production. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
+A web root must not hold a link, the same rule as for the Instance root. So no web root of the Instance, its own root included, may contain the `.env` of a served directory. A web root that is its own application directory, such as `apps/docs`, or one inside the Instance root, such as `public/docs/public`, returns `route.web_root_unsafe`. A web root in the default directory must be the Instance root itself; `apps/site` on root `apps/site/public` returns `route.web_root_unsafe`.
+
+A Route that repeats the Instance root reuses the primary application, PHP pool and stable `<home>/.env`. Its preparation does not add that root to the list of separate applications or relink its existing `.env`, including before the Route target association is published. Doctor's `APP_URL` check of each directory skips production. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
 
 Follow-up: a transfer that moves a public Route with a web root to another Cluster.
 
