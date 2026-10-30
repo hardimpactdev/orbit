@@ -33,7 +33,21 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 An existing account must match that complete shape. Existing workspace parents must be root-owned directories with mode 0700; symlinks, writable ancestors and an unrelated account are refused. Preparation grants no sudo, socket, worker-cache, token, datastore or vault access. Worker convergence owns its own account and credentials; this primitive never changes them.
 
-Account preparation alone does not enable package execution. Package commands remain blocked until the separate typed launcher proves the UID, filesystem, environment and process boundary on the pilot. Package jobs use private disposable work/home/tmp/cache directories, no shared package cache, and never inherit `SWAMP_HOME` or GitHub credentials. Missing isolation must never cause execution as the worker or `orbit`.
+### Isolated execution
+
+`package.session` accepts only admitted package manifests, a fixed package tool, relative working directory and literal arguments. The bounded binary input carries a JSON manifest map (64 MiB total, 512 files); it never expands the 4 MiB command envelope. It stages a private job under `/var/lib/orbit-swamp-package/jobs`, runs package code as `orbit-swamp-package`, and returns bounded manifest/lockfile output. Package code has a private root, PID and IPC namespaces, no capabilities or sudo, and no host home, worker credential/cache, Swamp datastore or credential mounts. `/proc` contains only that job's processes, so host `/proc/<serve-pid>/root` is unavailable. The trusted caller keeps GitHub credentials for git/gh; the package environment contains none.
+
+### Required enforcement
+
+Linux x86_64 requires systemd 257 or later (`PrivatePIDs`), `openat2`, cgroup-v2 network filters and a root-owned public toolchain at `/opt/orbit/swamp-package-runtime`. A trusted launch guard proves native seccomp syscall denial, PID 1, NoNewPrivileges and zero capabilities, then waits until the root supervisor verifies distinct PID/IPC/mount namespaces and attached ingress, egress and IPv4/IPv6 bind filters. Unix sockets, socketpair, io_uring and non-native syscall ABIs are refused. Missing enforcement refuses before package code starts. Package jobs use public DNS.
+
+Network filters deny loopback, private fleet endpoints, CGNAT (`100.64.0.0/10`) and every assigned host address, including global IPv6. Root-owned `network-deny.json` in the runtime directory names additional public or NAT addresses as `{"public_addresses":["80.47.233.206"]}`; missing or unsafe metadata refuses execution. `SocketBindDeny=any` blocks listeners, and the trusted guard proves that both IPv4 and IPv6 bind calls fail.
+
+Only the active PHP version’s `/etc/php/<version>/cli` configuration is copied into the private root, with selected INI links resolved; pool configuration stays outside the job. Unsupported platforms refuse; there is no execution as `orbit` fallback.
+
+Every package command belongs to the calling native host service's lifetime. Cancellation stops the entire package cgroup, including `setsid` descendants. Before staging, export or removal, the root launcher stops and verifies the previous package cgroup. File transfer uses directory descriptors and rejects symlinks, magic links and hard links. The dedicated UID has no supplementary groups or sudo rule. The managed `orbit` administrator still needs its existing root command authority; it never runs package code.
+
+The native package-boundary CI job runs the real delivered agent on systemd. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
 
 Persistent Node workers share `swamp.start-worker` and `swamp.stop-worker` with task VMs. The Node profile requires the root-owned converge opt-in and runs as its dedicated non-root account. `swamp.issue-node-worker` alone mints the protected 24-hour pair on the Linux issuer; it is excluded from the compiler and Operation transports and refuses keyed effects. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for activation gates.
 

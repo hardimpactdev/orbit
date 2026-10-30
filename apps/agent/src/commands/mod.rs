@@ -413,6 +413,7 @@ pub fn all() -> Vec<Entry> {
         entry::<schedules::RemoveSchedule>(),
         entry::<accounts::LookupAccount>(),
         entry::<package_sandbox::Prepare>(),
+        entry::<package_sandbox::runtime::Session>(),
         entry::<processes::CheckRelease>(),
         entry::<processes::ReadStatus>(),
         entry::<processes::ControlProcess>(),

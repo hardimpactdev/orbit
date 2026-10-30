@@ -4963,6 +4963,22 @@
       ]
     },
     {
+      "name": "package.session",
+      "summary": "Run package tools in a private UID, filesystem and cgroup.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "package.input_invalid",
+        "package.isolation_unavailable",
+        "package.sandbox_failed"
+      ],
+      "input_max_bytes": 268435456
+    },
+    {
       "name": "process.check-release",
       "summary": "Tell whether a production Process has a selected release.",
       "mutates": false,

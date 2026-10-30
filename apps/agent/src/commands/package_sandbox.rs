@@ -11,6 +11,7 @@ use std::{
     process::{Command as Process, Stdio},
     time::Duration,
 };
+pub(super) mod runtime;
 const USER: &str = "orbit-swamp-package";
 const STATE: &str = "/var/lib/orbit-swamp-package";
 command_errors! {
