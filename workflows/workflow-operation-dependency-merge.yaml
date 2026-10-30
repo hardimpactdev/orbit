@@ -1,7 +1,6 @@
 id: 92c89a8c-6487-42f5-a70e-d67be3921b28
 name: operation-dependency-merge
 description: Claim a bounded batch of this family on its placed workers.
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "2 * * * * *"

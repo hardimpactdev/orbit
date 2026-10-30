@@ -2,7 +2,6 @@ id: db4c37e8-7194-4dc9-846c-d17f15597526
 name: observation-retention
 description: Run the bounded Orbit observation retention pass.
 labels: { pool: services-local }
-queueTimeout: 300
 autoResume: true
 concurrency: 1
 trigger:

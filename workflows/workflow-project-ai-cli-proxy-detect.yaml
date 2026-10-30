@@ -1,7 +1,6 @@
 id: bb61fc57-41ee-4d48-acc5-128141d1be89
 name: '@nckrtl/project-ai-cli-proxy/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: ai-cli-proxy detect through its private project extension.
 trigger:
   schedule: 0 4 * * *

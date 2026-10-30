@@ -1,7 +1,6 @@
 id: 4fc30500-d174-4274-bb69-2c9f47d7c842
 name: '@nckrtl/project-operator-website/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: operator-website routine through its private project extension.
 trigger:
   schedule: 20 3 * * 1

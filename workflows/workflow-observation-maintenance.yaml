@@ -2,7 +2,6 @@ id: 8474afdb-4aba-485e-9c39-8a1e63cf1d61
 name: observation-maintenance
 description: Run the bounded Orbit observation maintenance pass.
 labels: { pool: services-local }
-queueTimeout: 300
 autoResume: true
 concurrency: 1
 trigger:

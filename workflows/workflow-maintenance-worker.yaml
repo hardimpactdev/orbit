@@ -2,7 +2,6 @@ id: 49a3af66-d0c5-47e1-9038-12741e8b1033
 name: maintenance-worker
 description: Maintenance extensions on one task group's worker; Gateway owns handoff and commits.
 target: '${{ inputs.worker }}'
-queueTimeout: 120
 writes: true
 inputs:
   properties:

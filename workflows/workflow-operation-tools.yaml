@@ -2,7 +2,6 @@ id: 774d24db-4bb9-4a5c-811d-ef19d16a3888
 name: operation-tools
 description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "2,32 * * * * *"

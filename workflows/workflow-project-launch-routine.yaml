@@ -1,7 +1,6 @@
 id: 21c2dac6-de20-483e-b4d8-a109385c1cc7
 name: '@nckrtl/project-launch/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: launch routine through its private project extension.
 trigger:
   schedule: 20 2 * * 1

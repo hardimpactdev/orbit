@@ -12,3 +12,10 @@
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
 # END swamp managed section
+
+# Native runtime identities and private local vault configuration.
+/models/swamp/enrollment-token/
+/vaults/local_encryption/
+# Retained native scratch worktree model, not a source definition.
+/models/@swamp/git/git-wt-bump-apps-e2e.yaml
+__pycache__/

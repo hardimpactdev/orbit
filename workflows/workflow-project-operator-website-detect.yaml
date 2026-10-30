@@ -1,7 +1,6 @@
 id: 0d4205cb-b8b2-404b-b333-92503030ba46
 name: '@nckrtl/project-operator-website/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: operator-website detect through its private project extension.
 trigger:
   schedule: 20 4 * * *

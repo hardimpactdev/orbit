@@ -1,7 +1,6 @@
 id: c2cd7bf6-c90f-49c5-88c9-9be337ea1a40
 name: '@nckrtl/project-laravel-toolbar-site/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: laravel-toolbar-site detect through its private project extension.
 trigger:
   schedule: 10 4 * * *

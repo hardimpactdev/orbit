@@ -1,0 +1,8 @@
+type: '@nckrtl/project-operator'
+typeVersion: 2026.10.27.1
+id: 025d2184-a921-41a8-841b-34e394c86d72
+name: project-operator
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}

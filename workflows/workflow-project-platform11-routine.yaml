@@ -1,7 +1,6 @@
 id: 0f791014-2b60-42da-8eb4-eabed7ed9002
 name: '@nckrtl/project-platform11/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: platform11 routine through its private project extension.
 trigger:
   schedule: 40 4 * * 1

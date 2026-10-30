@@ -1,7 +1,6 @@
 id: b877e67a-4b8f-449d-bfe1-f72093700025
 name: '@nckrtl/project-recall/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: recall routine through its private project extension.
 trigger:
   schedule: 50 2 * * 1

@@ -1,7 +1,6 @@
 id: c678729b-e79e-457b-956b-f777cfa4475d
 name: '@nckrtl/project-mealou/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: mealou detect through its private project extension.
 trigger:
   schedule: 0 6 * * *

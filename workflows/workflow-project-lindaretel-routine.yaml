@@ -1,7 +1,6 @@
 id: 5968d816-1722-4ca1-be1b-7fd83dca2c3b
 name: '@nckrtl/project-lindaretel/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: lindaretel routine through its private project extension.
 trigger:
   schedule: 0 4 * * 1

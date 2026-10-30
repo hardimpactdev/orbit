@@ -1,7 +1,6 @@
 id: e0b94cfd-2454-464a-8152-21c0078e260b
 name: '@nckrtl/project-fitta/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: fitta detect through its private project extension.
 trigger:
   schedule: 40 4 * * *

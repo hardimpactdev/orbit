@@ -2,7 +2,6 @@ id: f494f606-0050-446e-a025-25b6c160578c
 name: operation-fleet
 description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "4 * * * * *"

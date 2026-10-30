@@ -1,7 +1,6 @@
 id: fffdd21a-c944-40ee-a56c-0adba2e70ace
 name: '@nckrtl/project-laravel-toolbar-site/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: laravel-toolbar-site routine through its private project extension.
 trigger:
   schedule: 10 3 * * 1

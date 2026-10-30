@@ -2,7 +2,6 @@ id: 0eef618f-3b0c-464e-919a-ebb793d6aa9e
 name: operation-certificates
 description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "0,30 * * * * *"

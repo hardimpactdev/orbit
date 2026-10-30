@@ -1,7 +1,6 @@
 id: f2e0ca37-5f66-4c3c-a03c-22645e311312
 name: '@nckrtl/project-treadmill-website/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: treadmill-website detect through its private project extension.
 trigger:
   schedule: 30 3 * * *

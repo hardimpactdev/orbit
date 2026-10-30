@@ -1,7 +1,6 @@
 id: 28974c5b-26ea-415a-a659-c6f07dd83cd6
 name: "@nckrtl/project-nckrtl-com/routine"
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: nckrtl.com routine through its private project extension.
 trigger:
   schedule: 0 2 * * 1

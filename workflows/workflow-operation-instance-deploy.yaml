@@ -2,7 +2,6 @@ id: 7dfea1f8-75c3-48b1-8987-271d3f590d27
 name: operation-instance-deploy
 description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "5,35 * * * * *"

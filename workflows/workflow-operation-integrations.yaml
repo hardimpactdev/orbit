@@ -2,7 +2,6 @@ id: 8e7a8caf-625c-422e-8b08-3ff8d2de4e3b
 name: operation-integrations
 description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "7 * * * * *"

@@ -1,7 +1,6 @@
 id: 00e7b9ff-4117-499d-9b7d-a482ecd3f6b7
 name: dependency-upgrade
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: >-
   Historical host-scratch plan, not task-VM adoption: scan the inventory, compare it
   with Packagist and npm, assert the plan is sound, and stop for approval when

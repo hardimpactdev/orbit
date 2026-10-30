@@ -2,7 +2,6 @@ id: 611f677a-01ac-4d78-8677-36747ee90bd5
 name: operation-routes
 description: Claim a bounded batch of this family on its placed workers.
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "0,30 * * * * *"

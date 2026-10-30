@@ -2,7 +2,6 @@ id: 0f766ab6-d600-46e6-a682-75e4d9feb423
 name: fleet-maintenance
 description: Record recipe maintenance, peer DNS and sequential fleet rollout Operations.
 labels: { pool: migration }
-queueTimeout: 300
 autoResume: true
 trigger:
   schedule: '0 * * * * *'

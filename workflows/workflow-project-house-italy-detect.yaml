@@ -1,7 +1,6 @@
 id: 10ed6ae9-a6f3-49dc-8036-79fe30502ff4
 name: '@nckrtl/project-house-italy/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: house-italy detect through its private project extension.
 trigger:
   schedule: 50 4 * * *

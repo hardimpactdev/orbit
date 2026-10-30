@@ -1,14 +1,14 @@
 swampVersion: 20261028.205235.0-sha.1602a617
-initializedAt: "2026-10-22T09:22:07.812Z"
+initializedAt: '2026-10-22T09:22:07.812Z'
 repoId: 8fbf0f44-23c1-44d5-a7bd-627900f09457
 tools:
-  - claude
+- claude
 defaultVault: default
 gitignoreManaged: true
 telemetryDisabled: true
-
-# Native resource policies trim versions; never age out current state.
 autoGc: true
 garbageCollection:
   automatic: true
   retention: 30d
+  workflowRuns: 1d
+  outputs: 1d

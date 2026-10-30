@@ -1,7 +1,6 @@
 id: e32f4949-d0d6-43cf-a2cd-dd63980bf7b4
 name: '@nckrtl/project-ditis-hr/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: ditis-hr routine through its private project extension.
 trigger:
   schedule: 30 4 * * 1

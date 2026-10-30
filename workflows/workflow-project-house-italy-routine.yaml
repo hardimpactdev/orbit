@@ -1,7 +1,6 @@
 id: de1107c8-7416-4281-b4e7-83808d52b28d
 name: '@nckrtl/project-house-italy/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: house-italy routine through its private project extension.
 trigger:
   schedule: 50 3 * * 1

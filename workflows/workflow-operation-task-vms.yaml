@@ -7,7 +7,6 @@ inputs:
     node_id: { type: integer, minimum: 0, default: 0 }
     kind: { type: string, enum: [poll, task_vm.lifecycle_intent], default: poll }
 labels: { pool: migration }
-queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "1,31 * * * * *"

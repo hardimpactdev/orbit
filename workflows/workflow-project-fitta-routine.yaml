@@ -1,7 +1,6 @@
 id: 47e3a7bd-2ce5-4764-bc39-61bfe95f6b11
 name: '@nckrtl/project-fitta/routine'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: fitta routine through its private project extension.
 trigger:
   schedule: 40 3 * * 1

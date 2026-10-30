@@ -1,7 +1,6 @@
 id: 22db2610-9393-4915-917c-d5a37bb1103f
 name: '@nckrtl/project-hauzer/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: hauzer detect through its private project extension.
 trigger:
   schedule: 50 5 * * *

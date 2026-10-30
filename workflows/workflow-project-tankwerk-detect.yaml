@@ -1,7 +1,6 @@
 id: 63693ce7-cb9c-4803-9302-40ec6ee17ba8
 name: '@nckrtl/project-tankwerk/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: tankwerk detect through its private project extension.
 trigger:
   schedule: 20 5 * * *

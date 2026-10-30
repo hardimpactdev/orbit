@@ -1,7 +1,6 @@
 id: 30a00db9-b819-430f-8440-7c15d2123d33
 name: '@nckrtl/project-lindaretel/detect'
 labels: { pool: migration, node: "209" }
-queueTimeout: 300
 description: lindaretel detect through its private project extension.
 trigger:
   schedule: 0 5 * * *
