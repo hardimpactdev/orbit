@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
@@ -15,6 +16,7 @@ use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -79,8 +81,16 @@ final readonly class TransferCompensation implements OperationChildAdmission, Op
             app(InstanceLifecycleExecution::class)->assertChild($parent, 'transfer-restore-source', 'process.instance_runtime');
         }
 
-        return $this->operations->execute($intent['kind'], 'instance', ValidatedData::integer($transfer->instance_id), $intent['node_id'],
+        $operation = $this->operations->execute($intent['kind'], 'instance', ValidatedData::integer($transfer->instance_id), $intent['node_id'],
             $intent['input'], $parent->kind, $parent->request_id);
+        if ($operation->kind === 'instance.transfer_discard' && DirectOperation::owns($operation)) {
+            $operation->update(['state' => [...($operation->state ?? []), 'transfer_discard_intent' => [
+                'agent_sha256' => app(AgentDelivery::class)->pin($transfer->destinationNode),
+                'destination' => $transfer->destination_path,
+            ]]]);
+        }
+
+        return $operation;
     }
 
     public function root(Operation $operation): Operation
