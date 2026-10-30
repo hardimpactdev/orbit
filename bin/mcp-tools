@@ -25,6 +25,8 @@ OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
 # discovery, watch list, and log stream list, live log streams that need a Reverb socket, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
 # posts, and the two pages that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
+    'operation-direct-private-material',
+    'operation-direct-secret-output',
     'project-dependency-read-token',
     'tasks-agent-stream',
     'realtime-auth',

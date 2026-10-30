@@ -221,8 +221,16 @@ The public app Route already owns DNS, TLS, and firewall publication. Reserving 
 
 ## Operation execution
 
-Registry writes store their change and a normal Operation, then return HTTP 202. Release the Gateway, CLI and PHP SDK together: mutation responses put the Operation in `data` and have no top-level `operation` field. Swamp waits for the registry's fresh process reports through a named probe on the recorded Gateway Node. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. Completion checks the current boot reports again before it succeeds.
+Registry writes store their change and a normal Operation, then return HTTP 202. Release the Gateway, CLI and PHP SDK together: mutation responses put the Operation in `data` and have no top-level `operation` field. For app create, destroy and rotate, Swamp waits for fresh process reports through the named probe on the recorded Gateway Node. Sync uses the direct workflow below. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. Completion checks the current boot reports again before it succeeds.
 
 A missing, stale, or replaced process keeps the Operation pending. If a later registry change supersedes the result before completion, the Operation fails with `websocket.registry_superseded`. Cancelling stops observation and keeps the committed registry intent. The dedicated registry operation URL remains a read of the saved revision and current reports.
 
-Sync observes the current revision under its own `websocket_sync` target, so a pending mutation does not block it. A newer sync replaces a queued sync that has not started. A claimed sync keeps its target until it settles.
+Sync observes the current revision under its own `websocket_sync` identity, so a pending mutation does not block it. Each request starts an independent Swamp confirmation without a Gateway target hold or PHP supersession.
+
+## Direct registry confirmation
+
+`websocket.sync` starts the shared `operation-websocket-registry` workflow directly. Its writer defaults to direct and its old Gateway execution contract is removed in the same cutover. It returns the same HTTP 202 Operation; the CLI and web follow that Operation. App create, destroy and rotate retain their current execution paths until their own one-kind cutovers. Credentials never enter workflow input or results. Reverb keeps its existing 30-second reconciliation; confirmation does not restart it or change applications.
+
+The workflow runs on the existing Node 209 control-plane worker, with its matching Node label. The configured control-plane peer reads and projects the Gateway-owned Operation; it performs no Node-local action. It reads the recorded registry identity and waits for every current required Reverb boot to confirm it. The existing five-minute bound stays in Swamp. A superseded change fails with `websocket.registry_superseded`; a change still pending at the bound fails with `websocket.registry_pending`. Cancellation requests are recorded by the Gateway and honored in the read-only Swamp step. Separate sync requests do not supersede each other in PHP; native workflow concurrency owns their execution.
+
+The Gateway keeps authorization, registry state and bounded result projection. This kind has no PHP wait, remote program or receipt proof. Its workflow and direct writer ship with removal of the old executor after a real canary. An obsolete polled setting refuses with 503; rollback is a revert PR. The existing Python confirmation program remains only for the other three kinds until their cutovers.

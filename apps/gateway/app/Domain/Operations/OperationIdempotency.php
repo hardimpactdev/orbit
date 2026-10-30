@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Support\Facades\DB;
 
 /** Request-scoped start identity, shared by the HTTP boundary and the operation store. */
 final class OperationIdempotency
@@ -44,7 +46,7 @@ final class OperationIdempotency
     }
 
     /**
-     * Reads the current winner; another start can record it between reads.
+     * Replays the current winner, recovering an unbound direct submission after commit.
      *
      * @phpstan-impure
      */
@@ -62,6 +64,10 @@ final class OperationIdempotency
                 'This operation kind already has the Idempotency-Key with another target or input.',
                 409,
             );
+        }
+
+        if ($operation !== null && DirectOperation::owns($operation)) {
+            DB::afterCommit(static fn () => app(StartSwampRun::class)->recover($operation));
         }
 
         return $operation;

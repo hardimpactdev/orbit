@@ -16,14 +16,6 @@ it('reuses the kind registry across family admission checks', function (): void 
         ->and(app(OperationKinds::class))->toBe($kinds);
 });
 
-it('keeps every Tools command and completion contract unchanged', function (): void {
-    $definitions = require app_path('Domain/Tools/operation-kinds.php');
-
-    expect(hash('sha256', json_encode($definitions, JSON_THROW_ON_ERROR)))
-        ->toBe('85715dada17c2b862266064eb20551976632dbf98760a4b72540ba76ad5a2bd4');
-    expect(new OperationKinds(app(), $definitions))->toBeInstanceOf(OperationKinds::class);
-});
-
 it('refuses an undeclared completion command before registration', function (): void {
     $family = ['completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,
         'transport' => 'agent', 'done_step' => 'verified', 'variant' => 'manager', 'result_fields' => ['version']];

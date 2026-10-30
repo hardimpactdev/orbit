@@ -6,13 +6,14 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationRegistryCheck;
 use App\Domain\Shared\ResourceOperationException;
 use Symfony\Component\Process\Process;
+use Tests\Support\PolledOperationFixture;
 
 it('boots and resolves every registered family without reading resource records', function (): void {
     expect(app(OperationRegistryCheck::class)->execute())->toBe(count(OperationKinds::definitions()))->toBeGreaterThan(0);
 });
 
 it('fails on an unsupported family or completion guarantee', function (string $part): void {
-    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition = PolledOperationFixture::definition();
     if ($part === 'kind') {
         $definition['unknown_guarantee'] = true;
     } else {
@@ -23,7 +24,7 @@ it('fails on an unsupported family or completion guarantee', function (string $p
 })->with(['kind', 'completion']);
 
 it('fails when a declared handler or named transport cannot resolve', function (string $part): void {
-    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition = PolledOperationFixture::definition();
     if ($part === 'transport') {
         $definition['runs'][0]['transport'] = 'unregistered';
     } else {
@@ -38,7 +39,7 @@ it('fails when a PHP executor does not implement its contract', function (): voi
 });
 
 it('fails when a Gateway command name has no registered handler', function (): void {
-    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition = PolledOperationFixture::definition();
     $definition['runs'][0]['transport'] = 'gateway';
     $definition['runs'][0]['name'] = 'test.missing-command';
     expect(fn () => app(OperationRegistryCheck::class)->execute(['test.broken' => $definition]))

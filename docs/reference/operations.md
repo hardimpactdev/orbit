@@ -527,7 +527,9 @@ A repeated request after the reset, another assistance code, a terminal Operatio
 
 Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` submits the committed intent through native `workflow.run` and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. The immutable Operation ID supplies the stable `orbit_start_key` runtime tag. Connection and reply budgets follow the native client's 15-second connection and 30-second request defaults.
 
-If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal is not resubmitted.
+If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal ends that submission call without resubmission.
+
+An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. Bound, terminal and cancellation-requested intents make no native request. Reads remain side-effect free. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
 
 This is bounded submission recovery, with no job, timer, execution retry or history poll. Native runtime tags support lookup; they do not provide atomic start deduplication. The recorded run binding remains required before a workflow can read intent or invoke a primitive. Swamp alone waits for this initial binding: its shared first read retries only `409 operation.run_unbound`, once per second for up to 90 seconds. Cancellation ends that wait. Other errors and all mutations remain single attempts.
 
@@ -535,7 +537,15 @@ A declaration names the workflow, writer configuration path, immutable writer-st
 
 After a kind cuts over and removes its previous executor, its `operation-kinds.php` entry contains only `executor: 'swamp'`, `result_fields`, and optional `admission`. Its matching `direct-operations.php` declaration supplies the workflow and projection. The registry resolves that projection without requiring old `runs`, completion handlers or receipt proofs. These direct-only kinds default to the direct writer; an explicit polled setting, a scope mismatch or a missing direct declaration refuses admission rather than falling back to deleted code. The previous executor's claim, execution and completion paths also refuse them. Rollback reverts the kind's cutover PR.
 
+A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
+
+Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
+
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
+
+`firewall.allow`, `firewall.deny` and `firewall.remove` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors, receipt proofs and legacy execution tests are removed. Rollback is a revert PR, which restores both admission and the previous execution contract.
+
+`tool.install` uses direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and install execution policy are removed. Swamp materializes the admitted manager and applies package policy locally. Other Tool kinds retain their existing admission scopes until their own takeover slices.
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 
@@ -554,6 +564,8 @@ Read input comes only from the projection hook, never automatically from raw int
 | `GET /api/v1/direct-operations/{operation}?run_id=UUID` | Safe admitted input, status, result and cancellation request |
 | `POST /api/v1/direct-operations/{operation}/result` | Run ID, status, timestamps, bounded result and error code |
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
+| `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
+| `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 
@@ -561,4 +573,10 @@ On Swamp, use the shared `directOperation` template with family-owned read, acti
 
 The Node action checks repository identity and the requested checked-out branch, then the Gateway projects the recorded branch. Direct mode refuses a domain change before admission until Route's owning workflow can compose it. The previous polled writer retains domain changes. This first slice uses no secrets, Gateway primitive hook or root action.
 
-Prove the new path end to end on a dev or canary target before changing its per-kind writer. Rollback selects the previous Swamp path for new intents; admitted Operations retain their writer. Delete the old path only after production success. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
+Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
+
+### Private material transport
+
+A direct declaration may map `private_material` input paths to registered `OperationSecretSource` names and `secret_outputs` output names to registered `OperationSecretOutputStore` names. The shared endpoints accept no caller-selected source, store, owner or Node. Reads hydrate only those admitted references; writes call the registered store with its existing owner checks and preconditions. They perform no execution and record no receipt.
+
+Both paths require the recorded native run ID, an unfinished direct Operation, and a configured worker whose caller Node equals `Operation.node_id`. The Services peer has no fleet bypass on these paths. Responses use `Cache-Control: no-store`; Activity records no request body, and MCP excludes both endpoints. Private material and output values never enter Operation input, state, results, steps or logs. Swamp consumes them in memory or protected stdin; it must not write them to arguments or resources.

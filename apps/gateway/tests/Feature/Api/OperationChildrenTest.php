@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationCancelGuard;
 use App\Domain\Operations\OperationChildAdmission;
@@ -22,10 +23,13 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationTimeWindow;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolIntentProjection;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 
 final class ChildKitFamily implements OperationCompletion, OperationFamilyChildren, OperationFamilyExecution
 {
@@ -176,6 +180,37 @@ it('admits through the owning family once and proves the recorded enriched child
     $this->getJson($this->path.'/children')->assertOk()->assertJsonPath('data.0.result.backend', 'active');
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded'])->assertOk();
     expect($this->parent->refresh()->lock_key)->toBeNull();
+});
+
+it('presents and replays a direct-only child without a deleted execution context', function (): void {
+    $this->childSpec = ['executor' => 'swamp', 'admission' => ChildKitAdmission::class, 'result_fields' => ['backend', 'error_code']];
+    ($this->register)();
+    $reflection = new ReflectionClass(DirectOperation::class);
+    $direct = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('definitions')->setValue($direct, ['test.effect' => ['workflow' => 'operation-route-publication',
+        'writer_config' => 'swamp.direct_writers', 'writer_state' => 'direct_writer', 'projection' => ToolIntentProjection::class]]);
+    app()->instance(DirectOperation::class, $direct);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.direct_writers' => [], 'swamp.run_token' => 'private.scoped.fixture']);
+
+    $response = $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertAccepted()
+        ->assertJsonPath('data.kind', 'test.effect')->assertJsonPath('data.parent_operation_id', $this->parent->id)
+        ->assertJsonPath('data.child_key', 'apply')->assertJsonMissingPath('data.execution_context')
+        ->assertJsonMissingPath('data.lease_seconds')->assertJsonMissingPath('data.waiting_for');
+    $child = Operation::findOrFail($response->json('data.id'));
+
+    $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertOk()
+        ->assertJsonPath('data.id', $child->id)->assertJsonMissingPath('data.execution_context');
+    expect($this->adapter->calls)->toBe(1);
+    expect($child->run_constraints)->toBe([]);
+    expect($child->state['direct_writer'])->toBe('direct');
+    expect($child->worker)->toBeNull();
+    expect($child->attempts)->toBe(0);
+    expect($child->lock_key)->toBeNull();
+
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($child->fresh()->cancel_requested_at)->not->toBeNull();
+    expect($child->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
 it('refuses free child intent, ineligible keys, wrong relations and missing bindings', function (string $case): void {

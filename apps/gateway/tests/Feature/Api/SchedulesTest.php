@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -18,18 +20,23 @@ use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 use Tests\TestCase;
 
 beforeEach(function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-schedule-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
     $this->gateway = schedules_api_node('gateway', '10.44.0.2');
     $this->markAsGateway($this->gateway);
     $this->targetNode = schedules_api_node('target', '10.44.0.3');
     $this->foreignNode = schedules_api_node('foreign', '10.44.0.4');
     $this->instance = schedules_api_instance($this->targetNode);
     $this->runtime = new FakeScheduleRuntimeManager;
-    $this->agents = (new FakeAgentCommandRunner)->answer('schedule.install', [])->answer('schedule.activate', [])->answer('schedule.run', [])->answer('schedule.remove', []);
+    $this->agents = (new FakeAgentCommandRunner)->answer('schedule.install', [])->answer('schedule.activate', [])->answer('schedule.remove', []);
     app()->instance(AgentCommandRunner::class, $this->agents);
     config(['dependency_detection.services_node_id' => $this->gateway->id]);
 
@@ -134,10 +141,9 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
     $run = $this->postJson("/api/v1/schedules/{$scheduleId}/run")->assertAccepted()->assertJsonPath('data.kind', 'schedule.run');
     schedules_api_finish($this, $run->json('data.id'));
 
-    expect($this->agents->commands())->toBe(['schedule.install', 'schedule.install', 'schedule.run'])
-        ->and(array_column(array_column($this->agents->calls, 'input'), 'id'))->toBe([$scheduleId, $scheduleId, $scheduleId])
+    expect($this->agents->commands())->toBe(['schedule.install', 'schedule.install'])
+        ->and(array_column(array_column($this->agents->calls, 'input'), 'id'))->toBe([$scheduleId, $scheduleId])
         ->and($this->runtime->installed)->toBe([])
-        ->and($this->runtime->ran)->toBe([])
         ->and(Schedule::query()->findOrFail($scheduleId)->desired_timer_state)
         ->toBe(DesiredTimerState::Disabled);
 });
@@ -179,7 +185,7 @@ it('replays a keyed destroy after the Schedule record is removed', function (): 
 
     expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse();
     $this->withHeader('Idempotency-Key', 'schedule-destroy-replay')->deleteJson($url)->assertAccepted()->assertJsonPath('data.id', $id);
-    expect($this->agents->commands())->toBe(['schedule.remove']);
+    expect($this->agents->commands())->toBe([]);
 });
 
 it('rejects malformed duplicate escaped-duplicate unknown and wrongly typed add members without mutation', function (
@@ -234,7 +240,6 @@ it('requires an active peer and explicit Node access for every Schedule operatio
     }
 
     expect($this->runtime->installed)->toBeEmpty()
-        ->and($this->runtime->ran)->toBeEmpty()
         ->and($this->runtime->removed)->toBeEmpty()
         ->and($schedule->refresh()->last_run_at)->toBeNull();
 
@@ -357,8 +362,7 @@ it('returns bounded logs and validates all Schedule operation input before mutat
         $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     }
 
-    expect($this->runtime->ran)->toBeEmpty()
-        ->and($this->runtime->activated)->toBeEmpty()
+    expect($this->runtime->activated)->toBeEmpty()
         ->and($this->runtime->removed)->toBeEmpty()
         ->and(Schedule::query()->whereKey($schedule->id)->exists())->toBeTrue();
 });
@@ -368,7 +372,7 @@ function schedules_api_node(string $name, string $ip): Node
     return Node::query()->create([
         'name' => $name,
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.'.match ($name) {
             'gateway' => '10',
             'target' => '20',
@@ -443,6 +447,11 @@ function schedules_api_payload(
 function schedules_api_finish(TestCase $test, int $id): void
 {
     $operation = Operation::query()->findOrFail($id);
+    if (DirectOperation::owns($operation)) {
+        $test->postJson('/api/v1/direct-operations/'.$id.'/result', ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
+
+        return;
+    }
     $worker = 'schedule-proof-'.$id;
     $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'operation_id' => $id, 'worker' => $worker])->assertOk();
     $descriptor = app(OperationExecutionContract::class)->context($operation->refresh())['descriptors'][0];

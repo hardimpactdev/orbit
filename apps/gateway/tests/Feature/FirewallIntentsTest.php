@@ -9,8 +9,8 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -78,23 +78,26 @@ it('projects refusal and removal only with their corresponding native results', 
 
 it('excludes direct intents from discovery claims and heartbeat writes', function (): void {
     $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'firewall.allow')['claimable'])->toBe(0);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'firewall.allow'))->toBeNull();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
     $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
 });
 
-it('defaults each kind to the previous Swamp path and retains old unstamped work', function (): void {
-    foreach (['firewall.allow', 'firewall.deny', 'firewall.remove'] as $kind) {
-        expect(app(DirectOperation::class)->writer($kind))->toBe('polled');
-    }
+it('selects direct Firewall kinds on the proven Node', function (): void {
+    expect(app(DirectOperation::class)->writer('firewall.allow', [], 209))->toBe('direct');
+    expect(app(DirectOperation::class)->writer('firewall.deny', [], 209))->toBe('direct');
+    expect(app(OperationKinds::class)->directOnly('firewall.deny'))->toBeTrue();
+    expect(app(DirectOperation::class)->writer('firewall.remove', [], 209))->toBe('direct');
+    expect(app(OperationKinds::class)->directOnly('firewall.remove'))->toBeTrue();
+    expect(app(OperationKinds::class)->directOnly('firewall.allow'))->toBeTrue();
     $this->operation->update(['state' => []]);
     config(['swamp.direct_writers' => ['firewall.allow' => 'direct']]);
     expect(DirectOperation::owns($this->operation))->toBeFalse();
-    expect(app(DirectOperation::class)->writer('firewall.deny'))->toBe('polled');
+    expect(app(DirectOperation::class)->writer('firewall.deny', [], 209))->toBe('direct');
     $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
 });
 
-it('starts after commit without a target hold and retains the writer through rollback', function (): void {
+it('starts after commit without a target hold and retains its admitted writer', function (): void {
     config(['swamp.direct_writers' => ['firewall.allow' => 'direct'], 'swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-firewall-direct', 'runId' => $this->runId]]];
@@ -108,9 +111,6 @@ it('starts after commit without a target hold and retains the writer through rol
     expect($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id, 'kind' => 'firewall.allow', 'node_id' => $this->node->id]);
     config(['swamp.direct_writers' => ['firewall.allow' => 'polled']]);
     expect(DirectOperation::owns($operation->fresh()))->toBeTrue();
-    $old = app(OperationStore::class)->create('firewall.allow', 'node_firewall', $this->node->id, $this->node->id, $this->input, 'operator', null);
-    expect(DirectOperation::owns($old))->toBeFalse();
-    expect($old->lock_key)->toBe('node_firewall:'.$this->node->id);
 });
 
 it('leaves uncertain starts visible without fallback or a lease', function (): void {
@@ -172,8 +172,16 @@ it('pins the admitted agent for a direct Firewall action without a Gateway relay
     expect($operation->fresh()->input['agent_sha256'])->toBe($operation->input['agent_sha256']);
 })->with(['allow', 'deny', 'remove']);
 
-it('keeps a foreign Firewall Node polled while the canary workflow is Node 209 only', function (): void {
+it('refuses unavailable allow before recording intent', function (): void {
     config(['swamp.direct_writers' => ['firewall.allow' => 'direct']]);
 
-    expect(app(DirectOperation::class)->writer('firewall.allow', [], 210))->toBe('polled');
+    $this->node->forceFill(['id' => 210]);
+    expect(fn () => app(StoreFirewallRuleAction::class)->execute($this->node, new StoreFirewallRuleData('foreign', FirewallAction::Allow, '192.0.2.102', 'tcp', '45680')))
+        ->toThrow(ResourceOperationException::class, 'requires its direct Swamp writer');
+    $this->node->forceFill(['id' => 209]);
+    config(['swamp.direct_writers' => ['firewall.allow' => 'polled']]);
+    expect(fn () => app(StoreFirewallRuleAction::class)->execute($this->node, new StoreFirewallRuleData('disabled', FirewallAction::Allow, '192.0.2.103', 'tcp', '45681')))
+        ->toThrow(ResourceOperationException::class, 'requires its direct Swamp writer');
+    expect(FirewallRule::query()->count())->toBe(1);
+    expect(Operation::query()->count())->toBe(1);
 });

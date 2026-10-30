@@ -11,7 +11,7 @@ use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Arr;
 use Throwable;
 
-/** Extracts transient outputs into existing family-owned encrypted records under the keyed receipt transaction. */
+/** Extracts transient outputs into existing family-owned encrypted records using their registered owner checks and record writes. */
 final readonly class OperationSecretOutputs
 {
     /** @param iterable<OperationSecretOutputStore> $stores */
@@ -71,23 +71,43 @@ final readonly class OperationSecretOutputs
             }
             try {
                 $bytes += strlen(json_encode($value, JSON_THROW_ON_ERROR));
-                $protected = new OperationSecretValue($value);
-                if (self::containsBoolean($value) || $bytes > OperationResultFields::MaximumResultBytes || ($protected->requiresRedaction() && $protected->strings() === [])) {
+                if ($bytes > OperationResultFields::MaximumResultBytes) {
                     $this->refuse();
                 }
-                $store = $this->store($field['store']);
-                $owner = $this->owner($operation, $store);
-                $store->store($operation, $owner, $value);
+                $reference = $this->write($operation, $field['store'], $value);
             } catch (ResourceOperationException $exception) {
                 throw OperationSecrets::refusal($exception);
             } catch (Throwable) {
                 $this->refuse();
             }
-            $values = [...$values, ...$protected->strings()];
-            Arr::set($result, $field['name'], ['$secret' => $field['store'], 'id' => $owner]);
+            $values = [...$values, ...new OperationSecretValue($value)->strings()];
+            Arr::set($result, $field['name'], $reference);
         }
 
         return ['result' => $result, 'values' => $values];
+    }
+
+    /** Write one transient output through its registered owner store. No Operation state or receipt.
+     * @return array{'$secret':string,id:int}
+     */
+    public function write(Operation $operation, string $name, #[\SensitiveParameter] mixed $value): array
+    {
+        try {
+            $protected = new OperationSecretValue($value);
+            if (self::containsBoolean($value) || strlen(json_encode($value, JSON_THROW_ON_ERROR)) > OperationResultFields::MaximumResultBytes
+                || ($protected->requiresRedaction() && $protected->strings() === [])) {
+                $this->refuse();
+            }
+            $store = $this->store($name);
+            $owner = $this->owner($operation, $store);
+            $store->store($operation, $owner, $value);
+
+            return ['$secret' => $name, 'id' => $owner];
+        } catch (ResourceOperationException $exception) {
+            throw OperationSecrets::refusal($exception);
+        } catch (Throwable) {
+            $this->refuse();
+        }
     }
 
     private static function containsBoolean(#[\SensitiveParameter] mixed $value): bool

@@ -152,3 +152,35 @@ it('keeps inspection input pinned but refuses to update an Instance moved after 
     $this->postJson($path.'/result', $this->body)->assertStatus(409)->assertJsonPath('error.code', 'instance.lifecycle_conflict');
     expect($this->instance->fresh()->branch)->toBe('old')->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
+
+it('recovers the same uncertain intent on an authorized same-key POST without a read-triggered start', function (): void {
+    $this->socket->reply = static fn (array $request): array => [];
+    $path = '/api/v1/instances/'.$this->instance->id.'/rename';
+    $this->withHeader('Idempotency-Key', 'uncertain-rename');
+    $this->postJson($path, ['branch' => 'feature'])->assertStatus(503)->assertJsonPath('error.code', 'swamp.start_uncertain');
+    $operation = Operation::query()->sole();
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
+
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->body['run_id'])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    $this->postJson($path, ['branch' => 'different'])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    $other = Node::query()->create(['name' => 'unrelated', 'status' => 'active', 'platform' => 'linux',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.99', 'public_ssh_host' => '192.0.2.99']);
+    $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
+    $this->postJson($path, ['branch' => 'feature'])->assertForbidden();
+    expect($this->socket->sent)->toHaveCount(2);
+
+    $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.run.search', 'id' => $request['id'],
+        'payload' => ['total' => 1, 'data' => ['results' => [[
+            'workflowName' => 'operation-instance-lifecycle-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'running',
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id],
+            'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
+        ]]]]]];
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->postJson($path, ['branch' => 'feature'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
+
+    $this->assertDatabaseCount('operations', 1);
+    expect($operation->fresh()->state['swamp_run_id'])->toBe($this->body['run_id']);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search', 'workflow.run.search']);
+    expect($operation->fresh()->attempts)->toBe(0)->and($operation->fresh()->lock_key)->toBeNull();
+});

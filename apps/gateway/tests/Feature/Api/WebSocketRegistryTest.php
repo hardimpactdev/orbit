@@ -14,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketOperationCompletion;
 use App\Domain\WebSocket\WebSocketRegistry;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\WebSocketApp;
@@ -22,6 +23,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -33,6 +35,11 @@ beforeEach(function (): void {
         'registry_token' => 'test-registry-secret',
     ]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    config(['swamp.run_token' => 'fixture.shared']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-websocket-registry', 'runId' => (string) Str::uuid()]]];
+    app()->instance(WebSocketClient::class, $socket);
 });
 
 it('commits once and reports pending until both current process boots confirm', function (): void {
@@ -224,7 +231,7 @@ it('binds each registry kind to its admitted identity and rejects unlisted effec
     $operation->state = ['executor_runs' => ['probe' => ['transport' => 'remote_program', 'name' => 'websocket.registry-applied', 'result' => $result]]];
     $contract->assertStep($operation, 'reverb-registry-applied', $result);
     expect($contract->result($operation, [...$result, 'secret' => 'must-not-survive', 'stdout' => 'must-not-survive']))->toBe($result);
-})->with(['create', 'destroy', 'rotate', 'sync']);
+})->with(['create', 'destroy', 'rotate']);
 
 it('rechecks the current boot before completing a proven registry Operation', function (): void {
     $registry = app(ChangeWebSocketRegistryAction::class)->execute('create', 'alpha', $this->gateway->id, 'boot-proof');
@@ -261,14 +268,14 @@ it('admits sync while a registry mutation still waits for a missing Reverb proce
         ->and($mutation->refresh()->status)->toBe(OperationStatus::Queued);
 });
 
-it('replaces an unstarted sync on the same revision without cancelling the mutation', function (): void {
+it('admits independent syncs on the same revision without Gateway supersession', function (): void {
     $created = $this->withHeader('Idempotency-Key', 'parallel-create')->postJson('/api/v1/websocket-apps', ['name' => 'alpha'])->assertAccepted();
     $first = $this->withHeader('Idempotency-Key', 'sync-first')->postJson('/api/v1/websocket-sync')->assertAccepted();
     $second = $this->withHeader('Idempotency-Key', 'sync-second')->postJson('/api/v1/websocket-sync')->assertAccepted();
     expect($second->json('data.id'))->not->toBe($first->json('data.id'));
     $superseded = Operation::query()->findOrFail($first->json('data.id'));
-    expect($superseded->status)->toBe(OperationStatus::Cancelled)
-        ->and($superseded->error_code)->toBe('operation.superseded')
+    expect($superseded->status)->toBe(OperationStatus::Queued)
+        ->and($superseded->error_code)->toBeNull()
         ->and($superseded->lock_key)->toBeNull()
         ->and(Operation::query()->findOrFail($second->json('data.id'))->status)->toBe(OperationStatus::Queued)
         ->and(Operation::query()->findOrFail($created->json('data.id'))->status)->toBe(OperationStatus::Queued);
