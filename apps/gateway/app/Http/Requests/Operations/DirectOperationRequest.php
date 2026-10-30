@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 final class DirectOperationRequest extends ExecutorRequest
 {
@@ -35,9 +37,22 @@ final class DirectOperationRequest extends ExecutorRequest
         parent::authorize();
         $operation = $this->route('operation');
         if ($operation instanceof Operation) {
-            app(DirectOperation::class)->assertRun($operation, is_string($this->input('run_id')) ? $this->input('run_id') : '');
+            $peer = $this->peerNodeId();
+            if (! in_array(config('dependency_detection.services_node_id'), [$peer, (string) $peer], true) && $operation->node_id !== $peer) {
+                throw new ResourceOperationException('operation.executor_forbidden', 'A Node worker may access only its own Node intent.', 403);
+            }
         }
 
         return true;
+    }
+
+    protected function passedValidation(): void
+    {
+        $operation = $this->route('operation');
+        if ($operation instanceof Operation) {
+            $direct = app(DirectOperation::class);
+            $direct->projection($operation);
+            $direct->assertRun($operation, ValidatedData::string($this->validated('run_id')));
+        }
     }
 }

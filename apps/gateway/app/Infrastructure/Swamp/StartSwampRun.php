@@ -45,7 +45,9 @@ final readonly class StartSwampRun
                     if (($message['type'] ?? null) === 'event' && is_array($event) && ($event['kind'] ?? null) === 'started'
                         && ! isset($event['parentRunId']) && ($event['workflowName'] ?? null) === $workflow && is_string($event['runId'] ?? null)) {
                         $operation->refresh();
-                        app(DirectOperation::class)->assertRun($operation, $event['runId']);
+                        if (isset($operation->state['swamp_run_id'])) {
+                            app(DirectOperation::class)->assertRun($operation, $event['runId']);
+                        }
                         $operation->update(['dispatched_at' => now(), 'state' => [...($operation->state ?? []), 'swamp_run_id' => $event['runId']]]);
 
                         return;

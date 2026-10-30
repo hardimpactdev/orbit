@@ -25,6 +25,7 @@ beforeEach(function (): void {
     config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $this->gateway = $gateway;
     $this->worker = Node::query()->create(['name' => 'services', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.17', 'status' => LifecycleStatus::Active]);
     $this->worker->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id]);
@@ -32,7 +33,7 @@ beforeEach(function (): void {
     $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
     $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued,
-        'sequence' => 1, 'state' => ['route_publication_writer' => 'direct'], 'input' => ['reason' => 'private proof']]);
+        'sequence' => 1, 'state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => ['reason' => 'private proof']]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId];
@@ -47,8 +48,41 @@ it('publishes the stored Node without claims keys or Gateway execution state', f
     expect($this->agents->calls)->toHaveCount(1);
     expect($this->agents->calls[0])->toMatchArray(['command' => 'caddy.publish', 'node' => 'private-dev']);
     expect($this->agents->calls[0]['input'])->not->toHaveKeys(['effect_key', 'worker']);
-    expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct']);
+    expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']);
     expect($this->operation->fresh()->worker)->toBeNull();
+});
+
+it('binds enrolled Node workers to their own intent across shared endpoints', function (): void {
+    $this->node->accessibleNodes()->attach($this->gateway);
+    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
+    $this->postJson($this->path.'/primitive', $this->body)->assertOk();
+    $running = [...$this->body, 'status' => 'running', 'started_at' => '2026-10-30T12:00:00.000Z'];
+    $this->postJson($this->path.'/result', $running)->assertOk();
+    foreach ([$this->worker->id, null] as $foreignNode) {
+        $this->operation->update(['node_id' => $foreignNode]);
+        $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
+        $this->postJson($this->path.'/primitive', $this->body)->assertForbidden();
+        $this->postJson($this->path.'/result', $running)->assertForbidden();
+    }
+    expect($this->agents->calls)->toHaveCount(1);
+});
+
+it('refuses every worker request until the Gateway start response binds the run', function (): void {
+    $this->operation->update(['state' => ['route_publication_writer' => 'direct']]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    $this->postJson($this->path.'/primitive', $this->body)->assertConflict();
+    $this->postJson($this->path.'/result', [...$this->body, 'status' => 'running', 'started_at' => '2026-10-30T12:00:00.000Z'])->assertConflict();
+    expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+    expect($this->operation->steps()->count())->toBe(0);
+    expect($this->agents->calls)->toBe([]);
+
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'fixture.fake']);
+    app(StartSwampRun::class)->start($this->operation);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
+    expect($this->operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
 it('reads only projection-approved input through the shared endpoint and retains deployed Route URLs', function (): void {
