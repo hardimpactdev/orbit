@@ -11,6 +11,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationExecutors;
@@ -18,7 +19,6 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationTransport;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\RoutePublicationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -67,8 +67,12 @@ final class RouteSwampGatewayFixture
     public function __construct(private TestCase $test, bool $nativeChildren = false, private bool $httpRuns = false)
     {
         Event::fake([RecordBroadcast::class]);
-        config(['swamp.run_token' => 'fixture.fake', 'swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
-        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+        config(['swamp.direct_writers' => ['route.workload_verify' => 'direct', 'route.public_verify' => 'direct'], 'swamp.run_token' => 'fixture.fake', 'swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
+        $socket = new FakeRoutePublicationSocket;
+        $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        ]]];
+        app()->instance(WebSocketClient::class, $socket);
         RouteForeignChildKinds::register(simulateNodeChildren: ! $nativeChildren);
         $this->foreign = new RouteForeignChildProof;
         app()->instance(RouteForeignChildProof::class, $this->foreign);
@@ -110,7 +114,7 @@ final class RouteSwampGatewayFixture
         $gateway = Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway))->firstOrFail();
         $this->worker = Node::query()->create(['name' => 'route-fixture-worker', 'wireguard_ip' => '10.254.254.251', 'status' => 'active', 'public_ssh_host' => '192.0.2.251']);
         $this->worker->accessibleNodes()->attach($gateway);
-        config(['operation_executor.worker_node_ids' => [$this->worker->id]]);
+        config(['operation_executor.worker_node_ids' => [$this->worker->id], 'dependency_detection.services_node_id' => $this->worker->id]);
         $definitions = OperationKinds::definitions();
         foreach ($definitions as $definition) {
             if (is_array($definition)) {
@@ -178,7 +182,7 @@ final class RouteSwampGatewayFixture
                 throw new RuntimeException('Could not start the Swamp fixture.');
             }
         }
-        fwrite($this->pipes[0], json_encode(['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'run_id' => $operation->state['swamp_run_id'] ?? (string) Str::uuid(), 'kind' => $operation->kind, 'direct' => DirectRoutePublication::owns($operation), 'worker' => 'fixture-'.$operation->id.'-'.++$this->dispatches,
+        fwrite($this->pipes[0], json_encode(['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'run_id' => $operation->state['swamp_run_id'] ?? (string) Str::uuid(), 'kind' => $operation->kind, 'direct' => DirectOperation::owns($operation), 'worker' => 'fixture-'.$operation->id.'-'.++$this->dispatches,
             'foreign' => (app(OperationKinds::class)->definition($operation->kind)['completion'] ?? null) === RouteForeignChildCompletion::class], JSON_THROW_ON_ERROR)."\n");
         while (($line = fgets($this->pipes[1])) !== false) {
             $message = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
@@ -217,16 +221,31 @@ final class RouteSwampGatewayFixture
 
             return $claimed;
         }
-        if (str_contains($path, '/direct-operations/')) {
-            if (str_ends_with($path, '/primitive') && preg_match('~/direct-operations/(\d+)~', $path, $match)) {
-                $direct = Operation::query()->findOrFail((int) $match[1]);
-                if ((app(OperationKinds::class)->definition($direct->kind)['completion'] ?? null) === RouteForeignChildCompletion::class) {
-                    return ['status' => 200, 'body' => ['data' => $this->foreign->run($direct, ['proof' => 'ready'])]];
-                }
+        if (preg_match('~/fixture/route-verification/(\d+)$~', $path, $probe)) {
+            return ['status' => 200, 'body' => ['data' => $this->foreign->run(Operation::query()->findOrFail((int) $probe[1]), ['proof' => 'ready'])]];
+        }
+        if (preg_match('~/direct-operations/(\d+)~', $path, $directMatch)) {
+            $operation = Operation::query()->findOrFail((int) $directMatch[1]);
+            $direct = app(DirectOperation::class);
+            $runId = $body['run_id'] ?? '';
+            if ($method === 'GET') {
+                parse_str(parse_url($path, PHP_URL_QUERY) ?: '', $query);
+                $runId = $query['run_id'] ?? '';
             }
-            $response = $method === 'GET' ? $this->test->getJson($path) : $this->test->postJson($path, $body);
+            $direct->assertRun($operation, $runId);
+            if (str_ends_with($path, '/primitive')) {
+                $value = (app(OperationKinds::class)->definition($operation->kind)['completion'] ?? null) === RouteForeignChildCompletion::class
+                    ? $this->foreign->run($operation, ['proof' => 'ready']) : $direct->primitive($operation)->execute($operation);
 
-            return ['status' => $response->status(), 'body' => $response->json()];
+                return ['status' => 200, 'body' => ['data' => app(OperationExecutionContract::class)->result($operation, $value)]];
+            }
+            if ($method === 'POST') {
+                $operation = $direct->projection($operation)->apply($operation, $body);
+            }
+
+            return ['status' => 200, 'body' => ['data' => ['id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
+                'input' => $direct->projection($operation)->input($operation), 'status' => $operation->status->value,
+                'result' => $operation->result, 'cancel_requested' => $operation->cancel_requested_at !== null]]];
         }
         $executor = app(SwampOperationExecutor::class);
         try {

@@ -7,6 +7,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
@@ -16,7 +17,7 @@ beforeEach(function (): void {
     $node = Node::query()->create(['name' => 'private-dev', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
         'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Queued, 'sequence' => 1,
-        'state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => []]);
+        'state' => ['route_publication_writer' => 'direct'], 'input' => []]);
 });
 
 it('uses only the fixed workflow and shared token rather than Operation input', function (): void {
@@ -28,7 +29,9 @@ it('uses only the fixed workflow and shared token rather than Operation input', 
 
     expect($socket->endpoint->bearerToken)->toBe('private.scoped.fixture');
     expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
-        'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'route.caddy_converge', 'node_id' => $this->operation->node_id]]);
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'route.caddy_converge', 'node_id' => $this->operation->node_id],
+        'runtimeTags' => ['orbit_start_key' => 'operation:'.$this->operation->id]]);
+    expect($socket->connections)->toBe([15.0]);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private.scoped.fixture');
     expect($this->operation->fresh()->state)->not->toHaveKeys(['executor_runs', 'executor_lease_node_id']);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
@@ -64,7 +67,7 @@ it('fails closed without a configured scoped credential before sending intent', 
     config(['swamp.run_token' => '']);
     expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     expect($socket->sent)->toBe([]);
-    expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']);
+    expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct']);
 });
 
 it('records only the matching root run and closes its single submission connection', function (): void {
@@ -103,17 +106,19 @@ it('keeps a native refusal bounded without persisting the remote diagnostic', fu
     expect($socket->closed)->toBeTrue();
 });
 
-it('does not overwrite a run already bound by the Gateway start response', function (): void {
+it('returns an already bound intent without another native submission', function (): void {
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
     $this->operation->update(['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']]);
-    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    app(StartSwampRun::class)->start($this->operation);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('fabd4059-fb6c-49d8-940e-01ae58aa3f38');
-    expect($socket->closed)->toBeTrue();
+    expect($socket->sent)->toBe([]);
+    expect($socket->endpoint)->toBeNull();
 });
 
 it('projects terminal results idempotently and rejects a changed run or outcome', function (): void {
+    $this->operation->update(['state' => [...$this->operation->state, 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
     $direct = app(DirectOperation::class);
     $data = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
         'started_at' => '2026-10-30T12:00:00Z', 'finished_at' => '2026-10-30T12:00:01Z'];
@@ -125,4 +130,125 @@ it('projects terminal results idempotently and rejects a changed run or outcome'
     expect($this->operation->worker)->toBeNull();
     expect(fn () => $direct->project($this->operation, $data, ['ready' => false], 'publish'))->toThrow(ResourceOperationException::class);
     expect(fn () => $direct->project($this->operation, [...$data, 'run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'], ['ready' => true], 'publish'))->toThrow(ResourceOperationException::class);
+});
+
+it('recovers a lost start response from exact native history without resubmission', function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $operation = $this->operation;
+    $socket->reply = static function (array $request) use ($operation): array {
+        if ($request['type'] === 'workflow.run') {
+            return [];
+        }
+
+        expect($request['type'])->toBe('workflow.run.search');
+        expect($request['payload'])->toBe(['workflow' => 'operation-route-publication',
+            'inputs' => ['operation_id' => (string) $operation->id],
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id], 'limit' => 2]);
+
+        return [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
+            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'running',
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id],
+            'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
+        ]]]]]];
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    app(StartSwampRun::class)->start($operation);
+
+    expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
+    expect($socket->closed)->toBeTrue();
+});
+
+it('resubmits once with identical inputs and key only after confirmed empty native history', function (bool $loseSecondResponse): void {
+    $socket = new FakeRoutePublicationSocket;
+    $submissions = 0;
+    $socket->reply = static function (array $request) use (&$submissions, $loseSecondResponse): array {
+        if ($request['type'] === 'workflow.run.search') {
+            return [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['total' => 0, 'data' => ['results' => []]]]];
+        }
+        $submissions++;
+        if ($submissions === 1 || $loseSecondResponse) {
+            return [];
+        }
+
+        return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
+            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    if ($loseSecondResponse) {
+        expect(fn () => app(StartSwampRun::class)->start($this->operation))
+            ->toThrow(ResourceOperationException::class, 'Swamp did not confirm');
+        expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+    } else {
+        app(StartSwampRun::class)->start($this->operation);
+        expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+    }
+
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search', 'workflow.run']);
+    expect($socket->sent[0]['payload'])->toBe($socket->sent[2]['payload']);
+    expect($socket->closed)->toBeTrue();
+})->with([false, true]);
+
+it('keeps history failures and ambiguous or mismatched native runs uncertain without resubmitting', function (string $mode): void {
+    $socket = new FakeRoutePublicationSocket;
+    $operation = $this->operation;
+    $socket->reply = static function (array $request) use ($mode, $operation): array {
+        if ($request['type'] === 'workflow.run') {
+            return [];
+        }
+        $run = ['workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'running',
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id],
+            'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id]];
+        $results = match ($mode) {
+            'ambiguous' => [$run, [...$run, 'runId' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']],
+            'wrong-workflow' => [[...$run, 'workflowName' => 'foreign']],
+            'wrong-key' => [[...$run, 'tags' => ['orbit_start_key' => 'operation:99999']]],
+            'wrong-input' => [[...$run, 'inputs' => [...$run['inputs'], 'node_id' => 99999]]],
+            'missing-run' => [[...$run, 'runId' => null]],
+            'failed-run' => [[...$run, 'status' => 'failed']],
+            'cancelled-run' => [[...$run, 'status' => 'cancelled']],
+            'malformed-tags' => [[...$run, 'tags' => 'invalid']],
+            'typed-input' => [[...$run, 'inputs' => [...$run['inputs'], 'operation_id' => (string) $operation->id]]],
+            default => null,
+        };
+
+        return match ($mode) {
+            'lost-history' => [],
+            'refused-history' => [['type' => 'error', 'id' => $request['id'], 'error' => ['message' => 'private.scoped.fixture']]],
+            default => [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['total' => is_array($results) ? count($results) : null, 'data' => ['results' => $results]]]],
+        };
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    expect(fn () => app(StartSwampRun::class)->start($operation))->toThrow(ResourceOperationException::class, 'Swamp did not confirm');
+
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
+    expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+    expect($socket->closed)->toBeTrue();
+})->with(['lost-history', 'refused-history', 'malformed', 'ambiguous', 'wrong-workflow', 'wrong-key', 'wrong-input', 'missing-run', 'failed-run', 'cancelled-run', 'malformed-tags', 'typed-input']);
+
+it('recovers a connection failure through native history before submitting', function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->onConnect = static function (int $connection): void {
+        if ($connection === 1) {
+            throw new WebSocketException('private.scoped.fixture', 504);
+        }
+    };
+    $socket->reply = static fn (array $request): array => $request['type'] === 'workflow.run.search'
+        ? [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['total' => 0, 'data' => ['results' => []]]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
+            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    app(StartSwampRun::class)->start($this->operation);
+
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run.search', 'workflow.run']);
+    expect($socket->connections)->toBe([15.0, 15.0, 15.0]);
+    expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });

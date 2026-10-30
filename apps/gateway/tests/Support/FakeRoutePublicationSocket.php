@@ -17,6 +17,10 @@ final class FakeRoutePublicationSocket implements WebSocketClient
 
     public ?WebSocketEndpoint $endpoint = null;
 
+    public array $connections = [];
+
+    public ?\Closure $onConnect = null;
+
     private bool $connected = false;
 
     public function __construct(private bool $accepted = true) {}
@@ -24,6 +28,8 @@ final class FakeRoutePublicationSocket implements WebSocketClient
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
     {
         $this->endpoint = $endpoint;
+        $this->connections[] = $timeoutSeconds;
+        ($this->onConnect ?? static function (): void {})(count($this->connections));
         $this->connected = true;
     }
 

@@ -14,7 +14,7 @@ use LogicException;
  */
 final readonly class OperationRegistryCheck
 {
-    public function __construct(private Container $container, private OperationTransports $transports) {}
+    public function __construct(private Container $container, private OperationTransports $transports, private DirectOperation $direct) {}
 
     /**
      * @param  array<string,class-string<OperationKind>|SwampDefinition>|null  $definitions
@@ -26,6 +26,14 @@ final readonly class OperationRegistryCheck
         foreach ($definitions as $name => $definition) {
             if (is_string($definition)) {
                 $kinds->for($name);
+
+                continue;
+            }
+            if (! isset($definition['runs'])) {
+                $direct = $this->direct->definition($name);
+                if ($direct === null || ! $this->container->make($direct['projection']) instanceof DirectOperationProjection) {
+                    throw new LogicException("Direct-only Operation kind [{$name}] needs a direct workflow and projection.");
+                }
 
                 continue;
             }
