@@ -19,6 +19,7 @@ jobs:
     steps:
       - name: claim
         guard: '${{ false }}'
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behavior: '${{ inputs.definition }}'
@@ -32,6 +33,7 @@ jobs:
       - name: drive
         dependsOn: [{ step: claim, condition: { type: succeeded } }]
         guard: '${{ !steps.claim.outputs.admitted }}'
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behavior: '${{ inputs.definition }}'
@@ -46,6 +48,7 @@ jobs:
         dependsOn: [{ step: drive, condition: { type: succeeded } }]
         guard: '${{ steps.drive.outputs.terminal }}'
         allowFailure: true
+        labels: { pool: migration, node: "209" }
         task:
           type: wait_for_signal
           timeout: 10

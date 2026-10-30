@@ -1,3 +1,5 @@
+import { queryWorkerData } from "./_lib/worker_query.ts";
+import { callWorkerModel, type WorkerModelContext } from "./_lib/worker_model.ts";
 // @nckrtl/orbit-driver — the tick-driven reconcile loop for a software factory.
 // One `tick` takes each work item one short, guarded step:
 //   dispatch  record_dispatch once per stage entry, then launch the stage's method
@@ -151,11 +153,11 @@ interface RunResult {
   error?: { message: string };
 }
 
-type Ctx = {
+type Ctx = WorkerModelContext & {
   repoDir?: string;
   globalArgs: GlobalArgs;
   definitionName: string;
-  runModel: (o: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<RunResult>;
+  runModel?: (o: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<RunResult>;
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
   writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
   logger: { info: (msg: string, props?: Record<string, unknown>) => void; warning: (msg: string, props?: Record<string, unknown>) => void };
@@ -164,33 +166,13 @@ type Ctx = {
 
 async function call(ctx: Ctx, definition: string, method: string, args: Record<string, unknown>): Promise<void> {
   ctx.calls = (ctx.calls ?? 0) + 1;
-  const r = await ctx.runModel({ definition, method, arguments: args });
+  const r = await callWorkerModel(ctx, { definition, method, arguments: args });
   if (!r.ok) throw new Error(`${definition}.${method}: ${r.error?.message}`);
 }
 
-/** Standalone invocation acquires the target model lock; runModel only inherits the caller lock. */
-async function runWork(ctx: Ctx, definition: string, method: string, args: Record<string, unknown>) {
-  if (!ctx.repoDir) throw new Error("method work requires its Swamp repository context");
-  const child = new Deno.Command(Deno.execPath(), {
-    args: ["model", "method", "run", definition, method, "--repo-dir", ctx.repoDir, "--stdin", "--literal-inputs", "--json"],
-    stdin: "piped", stdout: "piped", stderr: "piped",
-  }).spawn();
-  const writer = child.stdin.getWriter();
-  await writer.write(new TextEncoder().encode(JSON.stringify(args)));
-  await writer.close();
-  const output = await child.output();
-  if (!output.success) {
-    let reason = "standalone method invocation failed; inspect its Swamp output";
-    try {
-      const result = JSON.parse(new TextDecoder().decode(output.stderr));
-      reason = typeof result.error === "string" ? result.error : result.error?.message ?? reason;
-    } catch { /* Swamp may fail before it can return a JSON failure. */ }
-    throw new Error(`${definition}.${method}: ${String(reason).slice(0, 2000)}`);
-  }
-}
 
 async function latest<T>(ctx: Ctx, model: string, name: string): Promise<T | null> {
-  const rows = (await ctx.queryData(`modelName == "${model}" && name == "${name}"`, "attributes")) as T[];
+  const rows = (await queryWorkerData(ctx, `modelName == "${model}" && name == "${name}"`, "attributes")) as T[];
   return rows[0] ?? null;
 }
 
@@ -247,14 +229,14 @@ function runRecordEnded(repoDir: string, runId: string): string | null {
 
 /** Status of a serve-started run from swamp's run summary, or null while it has none. */
 async function summaryStatus(ctx: Ctx, runId: string): Promise<string | null> {
-  const rows = (await ctx.queryData(
+  const rows = (await queryWorkerData(ctx,
     `name == "report-swamp-workflow-summary-json" && version > 0`,
     "content",
-  )) as (string | null)[];
+  )) as (string | Record<string, unknown> | null)[];
   for (const c of rows) {
     if (!c) continue;
     try {
-      const j = JSON.parse(c) as { workflowRunId?: string; status?: string };
+      const j = (typeof c === "string" ? JSON.parse(c) : c) as { workflowRunId?: string; status?: string };
       if (j.workflowRunId === runId) return j.status ?? "unknown";
     } catch { /* not JSON */ }
   }
@@ -403,11 +385,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
         killIf("after-dispatch", killAt, ctx);
       }
       const m = work.method;
-      if (["routine", "detect", "package"].includes(m.methodName)) {
-        await runWork(ctx, m.modelIdOrName, m.methodName, { ...m.inputs, key });
-      } else {
-        await call(ctx, m.modelIdOrName, m.methodName, { ...m.inputs, key });
-      }
+      await call(ctx, m.modelIdOrName, m.methodName, { ...m.inputs, key });
       const job = (await latest<{
         state: string;
         launchedNow: boolean;
@@ -529,7 +507,7 @@ export const behavior = {
       ) => {
         const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
         const f = ctx.globalArgs.factory;
-        const items = args.workItems ?? ((await ctx.queryData(
+        const items = args.workItems ?? ((await queryWorkerData(ctx,
           `modelName == "${f}" && name.startsWith("state-") && attributes.status == "active"`,
           "attributes.workItem",
         )) as string[]);

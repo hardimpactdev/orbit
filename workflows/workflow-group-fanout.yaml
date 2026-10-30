@@ -33,6 +33,7 @@ jobs:
           item: group
           in: '${{ inputs.groups }}'
         allowFailure: true
+        labels: { pool: migration, node: "209" }
         task:
           type: workflow
           workflowIdOrName: group-supervise
@@ -45,6 +46,7 @@ jobs:
           item: conflict
           in: '${{ inputs.conflicts }}'
         allowFailure: true
+        labels: { pool: migration, node: "209" }
         task:
           type: model_method
           modelIdOrName: orbit-gateway

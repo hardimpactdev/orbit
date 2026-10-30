@@ -14,6 +14,7 @@ jobs:
   - name: group
     steps:
       - name: ensure
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'
@@ -27,6 +28,7 @@ jobs:
             workItem: '${{ inputs.workItem }}'
       - name: recover
         dependsOn: [{ step: ensure, condition: { type: succeeded } }]
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'

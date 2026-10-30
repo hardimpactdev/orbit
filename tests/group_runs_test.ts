@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   claimGroupRun,
@@ -134,7 +135,7 @@ Deno.test("discovery rotates four supervisors per pass and isolates an unavailab
         { factory: "healthy", preapprovalModel: "healthy-driver" },
       ],
     },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       if (predicate.includes('"broken"')) {
         throw new Error("one factory unavailable");
       }
@@ -148,8 +149,8 @@ Deno.test("discovery rotates four supervisors per pass and isolates an unavailab
         );
       }
       return Promise.resolve([]);
-    },
-    runModel: () => {
+    }),
+    invokeModel: () => {
       throw new Error("discovery must not materialize status or reports");
     },
     writeResource: (
@@ -215,7 +216,7 @@ Deno.test("per-group drivers retain and consume pre-approvals from the original 
       preapprovalModel: "original",
     }),
     definition: { name: "orbit-group-tg-7" },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       const match = /modelName == "([^"]+)" && name == "([^"]+)"/.exec(
         predicate,
       );
@@ -223,8 +224,8 @@ Deno.test("per-group drivers retain and consume pre-approvals from the original 
         ? resources.get(`${match[1]}/${match[2]}`)
         : undefined;
       return Promise.resolve(value ? [value] : []);
-    },
-    runModel: ({ method }: { method: string }) => {
+    }),
+    invokeModel: ({ method }: { method: string }) => {
       if (method === "approve") approvals++;
       return Promise.resolve({ ok: true });
     },
@@ -296,7 +297,7 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
         }),
         repoDir: "/fixture",
         definition: { name: definition },
-        queryData: (predicate: string) => {
+        queryData: recordQuery((predicate: string) => {
           const match = /modelName == "([^"]+)" && name == "([^"]+)"/.exec(
             predicate,
           );
@@ -304,8 +305,8 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
             ? records.get(`${match[1]}/${match[2]}`)
             : undefined;
           return Promise.resolve(value ? [value] : []);
-        },
-        runModel: async (call: { definition: string; method: string }) => {
+        }),
+        invokeModel: async (call: { definition: string; method: string }) => {
           calls++;
           totalCalls++;
           if (call.method === "work") {
@@ -396,13 +397,13 @@ Deno.test("failure assistance stays current before status, survives notification
     }),
     repoDir: "/fixture",
     definition: { name: model },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       const name = /name == "([^"]+)"/.exec(predicate)?.[1];
       return Promise.resolve(
         name && records.has(name) ? [records.get(name)!] : [],
       );
-    },
-    runModel: (
+    }),
+    invokeModel: (
       call: { method: string; arguments?: Record<string, unknown> },
     ) => {
       if (call.method === "status") {
@@ -523,7 +524,7 @@ Deno.test("a native workflow failure after successful work still exhausts the ru
     }),
     definition: { name: "orbit-group-tg-7" },
     repoDir: "/fixture",
-    queryData: () => Promise.resolve([failure]),
+    queryData: recordQuery(() => Promise.resolve([failure])),
     writeResource: (
       _spec: string,
       name: string,
@@ -532,7 +533,7 @@ Deno.test("a native workflow failure after successful work still exhausts the ru
       failure = value as RunFailures;
       return Promise.resolve({ name });
     },
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
     logger: { info() {}, warning() {} },
   };
   const run = {
@@ -578,12 +579,12 @@ Deno.test("checkpoint recovery reserves attempts, parks before more work, and re
     }),
     repoDir: "/fixture",
     definition: { name: "orbit-group-tg-7" },
-    queryData: (p: string) => {
+    queryData: recordQuery((p: string) => {
       const name = /name == "([^"]+)"/.exec(p)?.[1];
       return Promise.resolve(
         name && records.has(name) ? [records.get(name)!] : [],
       );
-    },
+    }),
     writeResource: (
       _spec: string,
       name: string,
@@ -592,7 +593,7 @@ Deno.test("checkpoint recovery reserves attempts, parks before more work, and re
       records.set(name, data);
       return Promise.resolve({ name });
     },
-    runModel: (
+    invokeModel: (
       call: { method: string; arguments?: Record<string, unknown> },
     ) => {
       assertEquals(
@@ -662,7 +663,7 @@ Deno.test("many conflicting factory memberships retain assistance identities wit
         preapprovalModel: factory,
       })),
     },
-    queryData: (p: string) => {
+    queryData: recordQuery((p: string) => {
       if (p.includes("schedule-")) return Promise.resolve([]);
       if (p.includes("conflict-")) {
         const name = /name == "([^"]+)"/.exec(p)?.[1];
@@ -677,8 +678,8 @@ Deno.test("many conflicting factory memberships retain assistance identities wit
           ? [{ workItem: "tg-999", status: "active" }]
           : []),
       ]);
-    },
-    runModel: (call: { method: string }) => {
+    }),
+    invokeModel: (call: { method: string }) => {
       assertEquals(
         call.method,
         "status",
@@ -722,7 +723,7 @@ Deno.test("unchanged human waits stay idle; approval changes wake them; terminal
     globalArgs: {
       factories: [{ factory: "factory", preapprovalModel: "original" }],
     },
-    queryData: (p: string) =>
+    queryData: recordQuery((p: string) =>
       Promise.resolve(
         p.includes("modelName in")
           ? [{ approval }]
@@ -734,8 +735,9 @@ Deno.test("unchanged human waits stay idle; approval changes wake them; terminal
             status: "terminal",
           }]
           : [],
-      ),
-    runModel: () => {
+      )
+    ),
+    invokeModel: () => {
       throw new Error("discovery must not run factory methods");
     },
     writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
@@ -767,8 +769,8 @@ Deno.test("a late supervisor cannot launch another generation for a terminal fac
     }),
     definition: { name: "orbit-group-tg-7" },
     repoDir: "/fixture",
-    queryData: () => Promise.resolve([{ status: "terminal" }]),
-    runModel: () => {
+    queryData: recordQuery(() => Promise.resolve([{ status: "terminal" }])),
+    invokeModel: () => {
       throw new Error("must not launch or recover");
     },
     writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
@@ -811,7 +813,7 @@ Deno.test("existing owners hold all four slots across ticks; terminal owners rel
       repoDir: root,
       definition: { name: "orbit-group-runs" },
       globalArgs: { factories: [{ factory: "f", preapprovalModel: "p" }] },
-      queryData: (p: string) =>
+      queryData: recordQuery((p: string) =>
         Promise.resolve(
           p.includes("modelName.startsWith")
             ? owners
@@ -824,8 +826,9 @@ Deno.test("existing owners hold all four slots across ticks; terminal owners rel
               }),
             )
             : [],
-        ),
-      runModel: () => Promise.resolve({ ok: true }),
+        )
+      ),
+      invokeModel: () => Promise.resolve({ ok: true }),
       logger: { warning() {} },
       writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
         result = v;

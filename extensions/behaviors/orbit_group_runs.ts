@@ -1,3 +1,5 @@
+import { queryWorkerData } from "./_lib/worker_query.ts";
+import { SWAMP_REPOSITORY } from "./native_host_method.ts";
 import { z } from "npm:zod@4";
 import { currentOwners, groupFingerprint } from "./_lib/group_activity.ts";
 
@@ -20,7 +22,7 @@ type Context = {
     factories: z.infer<typeof FactorySchema>[];
   };
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
-  runModel: (
+  runModel?: (
     args: {
       definition: string;
       method: string;
@@ -78,7 +80,7 @@ export const behavior = {
         "Read active official factory states for native per-group fan-out",
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, ctx: Context) => {
-        return await discoverGroups(ctx);
+        return await discoverGroups({ ...ctx, repoDir: SWAMP_REPOSITORY });
       },
     },
   },
@@ -92,14 +94,16 @@ export async function discoverGroups(
   const conflicts: z.infer<typeof ConflictSchema>[] = [];
   const errors: { factory: string; error: string }[] = [];
   const completed = new Set(
-    (await ctx.queryData(
+    (await queryWorkerData(
+      ctx,
       'modelName == "orbit-gateway" && name.startsWith("schedule-") && attributes.completed == true',
       "attributes.workItem",
     )) as string[],
   );
   for (const factory of ctx.globalArgs.factories) {
     try {
-      const overview = await ctx.queryData(
+      const overview = await queryWorkerData(
+        ctx,
         `modelName == ${
           JSON.stringify(factory.factory)
         } && name.startsWith("state-")`,
@@ -113,7 +117,8 @@ export async function discoverGroups(
           continue;
         }
         activeWorkItems.add(run.workItem);
-        const activity = (await ctx.queryData(
+        const activity = (await queryWorkerData(
+          ctx,
           `modelName == ${
             JSON.stringify(`orbit-group-${run.workItem}`)
           } && name == "activity"`,
@@ -157,7 +162,8 @@ export async function discoverGroups(
       errors.push({ factory: workItem, error: reason });
       try {
         const definition = ctx.definition.name;
-        const saved = (await ctx.queryData(
+        const saved = (await queryWorkerData(
+          ctx,
           `modelName == ${JSON.stringify(definition)} && name == ${
             JSON.stringify(`conflict-${workItem}`)
           }`,
@@ -184,7 +190,8 @@ export async function discoverGroups(
     }
   }
   const eligible = groups.filter((g) => counts.get(g.workItem) === 1);
-  const prior = (await ctx.queryData(
+  const prior = (await queryWorkerData(
+    ctx,
     `modelName == ${JSON.stringify(ctx.definition.name)} && name == "groups"`,
     "attributes",
   ))[0] as { nextOffset?: number } | undefined;

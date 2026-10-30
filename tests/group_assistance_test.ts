@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 // PR1500 response fixtures; no network, task group, or effect dispatch.
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { type AssistanceRecord, type Http, syncAssistance } from "../extensions/behaviors/_lib/gateway_stage.ts";
@@ -303,10 +304,10 @@ Deno.test("board resolution through driver reconciliation never approves or disp
   const context = {
     globalArgs: driver.globalArguments.parse({ factory: "orbit-groups", assistanceModel: "orbit-gateway" }),
     definition: { name: "orbit-driver-groups" },
-    queryData: (predicate: string) => Promise.resolve(
+    queryData: recordQuery((predicate: string) => Promise.resolve(
       predicate.includes('name == "status-tg-7"') ? [status] :
-      predicate.includes('name == "state-tg-7"') ? [{ workItem: "tg-7", startedAt: ERA }] : []),
-    runModel: async (call: { definition: string; method: string; arguments?: Record<string, unknown> }) => {
+      predicate.includes('name == "state-tg-7"') ? [{ workItem: "tg-7", startedAt: ERA }] : [])),
+    invokeModel: async (call: { definition: string; method: string; arguments?: Record<string, unknown> }) => {
       calls.push(`${call.definition}.${call.method}`);
       if (call.definition === "orbit-gateway" && call.method === "assistance") {
         await syncAssistance(call.arguments as unknown as typeof parked, h.deps);
@@ -599,7 +600,7 @@ Deno.test("Gateway resolves driver assistance only from the group's saved retry 
   const context = {
     globalArgs: { gatewayUrl: `http://127.0.0.1:${server.addr.port}`, caFile: "/dev/null", timeoutSeconds: 2 },
     definition: { name: "orbit-gateway" },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       queries.push(predicate);
       if (predicate.includes('name == "assistance-tg-7"')) return Promise.resolve(h.record() ? [h.record()] : []);
       if (predicate.includes('name == "state-tg-7"')) return Promise.resolve([{ workItem: "tg-7", startedAt: ERA }]);
@@ -607,7 +608,7 @@ Deno.test("Gateway resolves driver assistance only from the group's saved retry 
       // A factory approval with a similar name must never substitute for a driver retry.
       if (predicate.includes('approval-')) return Promise.resolve([approval]);
       return Promise.resolve([]);
-    },
+    }),
     writeResource: async (_spec: string, name: string, value: Record<string, unknown>) => {
       await h.deps.writeRecord(value as unknown as AssistanceRecord);
       return { name };
@@ -662,12 +663,12 @@ Deno.test("Gateway raises factory-conflict assistance from its saved discovery i
   const context = {
     globalArgs: { gatewayUrl: `http://127.0.0.1:${server.addr.port}`, caFile: "/dev/null", timeoutSeconds: 2 },
     definition: { name: "orbit-gateway" },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       queries.push(predicate);
       if (predicate.includes('name == "assistance-tg-7"')) return Promise.resolve(h.record() ? [h.record()] : []);
       if (predicate === 'modelName == "orbit-group-runs" && name == "conflict-tg-7"') return Promise.resolve([{ workItem: "tg-7", startedAt: ERA, factories: ["a", "b"] }]);
       return Promise.resolve([]);
-    },
+    }),
     writeResource: async (_spec: string, name: string, value: Record<string, unknown>) => {
       await h.deps.writeRecord(value as unknown as AssistanceRecord);
       return { name };

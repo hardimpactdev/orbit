@@ -10,6 +10,7 @@ jobs:
   - name: discover
     steps:
       - name: discover
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behaviorType: "@nckrtl/operation-discovery"
@@ -26,6 +27,7 @@ jobs:
         forEach:
           item: work
           in: "${{ has(steps.discover.outputs) ? steps.discover.outputs.work : [] }}"
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-dependency-merge'

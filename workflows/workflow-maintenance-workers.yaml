@@ -9,6 +9,7 @@ jobs:
   - name: cleanup
     steps:
       - name: revoke-ended
+        labels: { pool: migration, node: "209" }
         task:
           type: model_method
           modelIdOrName: orbit-gateway

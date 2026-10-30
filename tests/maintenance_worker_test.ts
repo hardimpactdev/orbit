@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import { impactRows } from "./_support/maintenance_fixture.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
@@ -69,7 +70,7 @@ function workerHarness() {
       caFile: "unused",
     },
     definition: { name: "orbit-gateway" },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       const model = JSON.parse(/modelName == ("[^"]+")/.exec(predicate)![1]);
       const name = JSON.parse(/name == ("[^"]+")/.exec(predicate)![1]);
       if (model.startsWith("worker-") && enrolled) {
@@ -84,7 +85,7 @@ function workerHarness() {
           ? [records.get(`${model}/${name}`)]
           : [],
       );
-    },
+    }),
     writeResource: (
       _spec: string,
       name: string,
@@ -96,7 +97,7 @@ function workerHarness() {
       );
       return Promise.resolve({ name });
     },
-    runModel: (
+    invokeModel: (
       call: {
         name: string;
         method: string;
@@ -994,15 +995,16 @@ Deno.test("worker cleanup continues after one session fails and retries it on th
       caFile: "unused",
     },
     definition: { name: "orbit-gateway" },
-    queryData: (predicate) =>
+    queryData: recordQuery((predicate) =>
       Promise.resolve(
         predicate.includes("startsWith")
           ? sessions.filter((s) => !s.revoked)
           : predicate.includes('modelName == "orbit-gateway"')
           ? [sessions.find((s) => predicate.includes(`worker-${s.group}`))!]
           : [{ state: "used" }],
-      ),
-    runModel: ({ name }) => {
+      )
+    ),
+    invokeModel: ({ name }: { name: string }) => {
       if (name === "task-group-7-1" && broken) {
         throw new Error("revoke transport failed");
       }
@@ -1314,7 +1316,7 @@ Deno.test("exception receipts are saved on the owning project even when a worker
         type: "@nckrtl/project-nckrtl-com",
       }],
     },
-    runModel: (call: unknown) => {
+    invokeModel: (call: unknown) => {
       calls.push(call);
       return Promise.resolve({ ok });
     },

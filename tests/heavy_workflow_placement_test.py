@@ -25,7 +25,7 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
         for path in placed_workflows():
             workflow = yaml.safe_load(path.read_text())
             self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, path.name)
-            self.assertEqual(workflow['queueTimeout'], 300)
+            self.assertNotIn('queueTimeout', workflow)
             for job in workflow['jobs']:
                 for step in job['steps']:
                     task = step['task']
@@ -37,11 +37,18 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
         horizon = yaml.safe_load((REPO / 'workflows/workflow-horizon-new-dawn-detect.yaml').read_text())
         self.assertEqual(horizon['jobs'][1]['target'], '${{ inputs.worker }}')
         self.assertEqual(horizon['jobs'][1]['labels'], {})
-        for name in ('groups-driver', 'subtasks-driver', 'maintenance-workers',
-                     'dependency-results-prune'):
+        for name in ('subtasks-driver', 'dependency-results-prune'):
             path = REPO / f'workflows/workflow-{name}.yaml'
             workflow = yaml.safe_load(path.read_text())
             self.assertNotIn('labels', workflow, name)
+
+    def test_active_coordinators_select_authoritative_workers(self):
+        for name in ('groups-driver', 'group-fanout', 'group-supervise', 'group-run',
+                     'maintenance-workers', 'operation-dependency-merge'):
+            workflow = yaml.safe_load((REPO / f'workflows/workflow-{name}.yaml').read_text())
+            for job in workflow['jobs']:
+                for step in job['steps']:
+                    self.assertEqual(step['labels'], {'pool': 'migration', 'node': '209'}, f"{name}/{step['name']}")
 
     def test_pinned_native_loader_validates_the_shipped_workflows(self):
         with tempfile.TemporaryDirectory(prefix='heavy-workflow-validation-') as tmp:

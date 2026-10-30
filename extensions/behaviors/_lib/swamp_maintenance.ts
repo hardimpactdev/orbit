@@ -1,3 +1,5 @@
+import { queryWorkerData } from "./worker_query.ts";
+import { callWorkerModel, type WorkerModelContext } from "./worker_model.ts";
 import {
   emptyExceptions,
   ExceptionsSchema,
@@ -17,7 +19,7 @@ import {
   type WorkflowRun,
 } from "./maintenance_worker.ts";
 
-export interface MaintenanceContext {
+export interface MaintenanceContext extends WorkerModelContext {
   globalArgs: {
     projectExtensions?: { projectId: number; type: string }[];
     enrollmentVault: string;
@@ -33,7 +35,7 @@ export interface MaintenanceContext {
     name: string,
     data: Record<string, unknown>,
   ) => Promise<{ name: string }>;
-  runModel: (
+  runModel?: (
     args: {
       modelType: string;
       name: string;
@@ -87,7 +89,8 @@ export function workerControl(
   http: Http,
 ): WorkerControl {
   const latest = async <T>(model: string, name: string) =>
-    (await context.queryData(
+    (await queryWorkerData(
+      context,
       `modelName == ${JSON.stringify(model)} && name == ${
         JSON.stringify(name)
       }`,
@@ -99,7 +102,7 @@ export function workerControl(
     args = {},
     modelType = "swamp/enrollment-token",
   ) => {
-    const result = await context.runModel({
+    const result = await callWorkerModel(context, {
       modelType,
       name,
       method,
@@ -154,7 +157,8 @@ export function workerControl(
 export function workflowControl(context: MaintenanceContext): WorkflowControl {
   return {
     read: async (key) =>
-      (await context.queryData(
+      (await queryWorkerData(
+        context,
         `modelName == ${JSON.stringify(context.definition.name)} && name == ${
           JSON.stringify(`maintenance-${key}`)
         }`,
@@ -378,7 +382,7 @@ export async function recordMaintenanceExceptions(
       `no project extension owns exceptions for Project ${projectId}`,
     );
   }
-  const result = await context.runModel({
+  const result = await callWorkerModel(context, {
     modelType: entry.type,
     name: entry.type.slice("@nckrtl/".length),
     method: "record_exceptions",
@@ -499,7 +503,8 @@ export async function reconcileWorkers(
   context: MaintenanceContext,
   http: Http,
 ): Promise<void> {
-  const sessions = await context.queryData(
+  const sessions = await queryWorkerData(
+    context,
     `modelName == ${
       JSON.stringify(context.definition.name)
     } && name.startsWith("worker-") && attributes.revoked == false`,

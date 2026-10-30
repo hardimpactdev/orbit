@@ -10,12 +10,14 @@ jobs:
   - name: groups
     steps:
       - name: discover
+        labels: { pool: migration, node: "209" }
         task:
           type: behavior
           behavior: orbit-group-runs
           methodName: discover
       - name: fanout
         dependsOn: [{ step: discover, condition: { type: succeeded } }]
+        labels: { pool: migration, node: "209" }
         task:
           type: workflow
           workflowIdOrName: group-fanout

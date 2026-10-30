@@ -1,3 +1,6 @@
+import { queryWorkerData } from "./_lib/worker_query.ts";
+import { SWAMP_REPOSITORY } from "./native_host_method.ts";
+import { callWorkerModel } from "./_lib/worker_model.ts";
 import { z } from "npm:zod@4";
 import { behavior as driver } from "./orbit_driver.ts";
 import {
@@ -42,7 +45,8 @@ const RecoverySchema = z.object({
 });
 type Recovery = z.infer<typeof RecoverySchema>;
 async function read<T>(ctx: Context, name: string): Promise<T | null> {
-  return (await ctx.queryData(
+  return (await queryWorkerData(
+    ctx,
     `modelName == ${JSON.stringify(ctx.definition.name)} && name == ${
       JSON.stringify(name)
     }`,
@@ -76,7 +80,7 @@ async function notifyFailure(
   failure: RunFailures,
 ) {
   if (!ctx.globalArgs.assistanceModel) return;
-  const result = await ctx.runModel({
+  const result = await callWorkerModel(ctx, {
     definition: ctx.globalArgs.assistanceModel,
     method: "assistance",
     arguments: {
@@ -219,7 +223,8 @@ export const behavior = {
       description: "Ensure one owning run for this group, keyed by generation",
       arguments: z.object({ workItem: GroupRunSchema.shape.workItem }),
       execute: async (args: { workItem: string }, ctx: Context) => {
-        const state = (await ctx.queryData(
+        const state = (await queryWorkerData(
+          ctx,
           `modelName == ${JSON.stringify(ctx.globalArgs.factory)} && name == ${
             JSON.stringify(`state-${args.workItem}`)
           }`,
@@ -502,7 +507,7 @@ export const behavior = {
         }
         const request = RequestSchema.parse({ ...run.inputs, runId: run.id });
         const checkpoint = async (phase: "begin" | "failed" | "recovered") => {
-          const result = await ctx.runModel({
+          const result = await callWorkerModel(ctx, {
             definition: args.definition,
             method: "checkpoint",
             arguments: { ...request, phase },
@@ -513,7 +518,8 @@ export const behavior = {
         };
         // Reserve before the CLI: a killed recovery spends an attempt too.
         await checkpoint("begin");
-        const recovery = (await ctx.queryData(
+        const recovery = (await queryWorkerData(
+          ctx,
           `modelName == ${
             JSON.stringify(args.definition)
           } && name == "recovery"`,
@@ -533,7 +539,7 @@ export const behavior = {
                 "--run",
                 run.id,
                 "--repo-dir",
-                ctx.repoDir,
+                SWAMP_REPOSITORY,
                 "--json",
               ],
               stdin: "null",

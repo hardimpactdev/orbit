@@ -1,3 +1,4 @@
+import { callWorkerModel } from "../../_lib/worker_model.ts";
 import { z } from "npm:zod@4.4.3";
 import { type ProjectConfigContext } from "../../_lib/project_config.ts";
 import { MergeConfiguration } from "./configuration.ts";
@@ -127,7 +128,7 @@ export function dependencyMerge(
           try {
             let result: unknown = stored;
             if (!result) {
-              const refreshed = await ctx.runModel({
+              const refreshed = await callWorkerModel(ctx, {
                 modelType: "@nckrtl/orbit-gateway",
                 name: "orbit-gateway",
                 method: "dependency_merge_configuration",

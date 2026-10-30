@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
@@ -74,7 +75,7 @@ async function enrollmentFixture() {
     }),
     definition: { name: "orbit-gateway" },
     logger: { info() {} },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       const model = JSON.parse(predicate.match(/modelName == ("[^"]*")/)![1]);
       const name = predicate.match(/name == ("[^"]*")/);
       const prefix = predicate.match(/name.startsWith\(("[^"]*")\)/);
@@ -88,7 +89,7 @@ async function enrollmentFixture() {
             : true)
         ).map(([, value]) => value),
       );
-    },
+    }),
     writeResource: (
       spec: string,
       name: string,
@@ -103,7 +104,7 @@ async function enrollmentFixture() {
       data.set(`orbit-gateway:${name}`, value);
       return Promise.resolve({ name });
     },
-    runModel: (
+    invokeModel: (
       args: {
         name?: string;
         definition?: string;
@@ -148,7 +149,11 @@ async function enrollmentFixture() {
     group,
     settings,
     calls,
-    run: () => behavior.methods.ensure_worker.execute({ group: 456 }, context),
+    run: () =>
+      behavior.methods.ensure_worker.execute({ group: 456 }, {
+        ...context,
+        runModel: context.invokeModel,
+      }),
     noEnrollment: () => {
       assertEquals(calls.minted, 0);
       assertEquals(records, []);

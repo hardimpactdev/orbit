@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import {
   reconcileStageLaunch,
@@ -88,10 +89,11 @@ Deno.test("stage receipts migrate once from the fleet driver and remain private 
   const ctx = {
     definitionName: "orbit-group-tg-7",
     globalArgs: driver.globalArguments.parse({ preapprovalModel: "fleet" }),
-    queryData: (p: string) =>
+    queryData: recordQuery((p: string) =>
       Promise.resolve(
         p.includes('modelName == "fleet"') ? [fleet] : own ? [own] : [],
-      ),
+      )
+    ),
     writeResource: (
       _spec: string,
       name: string,
@@ -101,7 +103,7 @@ Deno.test("stage receipts migrate once from the fleet driver and remain private 
       own = value as unknown as StageLaunch;
       return Promise.resolve({ name });
     },
-    runModel: () => {
+    invokeModel: () => {
       throw new Error("migration cannot dispatch work");
     },
     logger: { info() {}, warning() {} },
@@ -143,7 +145,7 @@ Deno.test("workflow-mode stage saves the per-group intent before starting transp
         scratchRoot: root,
         factory: "factory",
       }),
-      queryData: (p: string) => {
+      queryData: recordQuery((p: string) => {
         if (p.includes('name == "status-tg-7"')) {
           return Promise.resolve([stage]);
         }
@@ -154,7 +156,7 @@ Deno.test("workflow-mode stage saves the per-group intent before starting transp
           }]);
         }
         return Promise.resolve([]);
-      },
+      }),
       writeResource: (
         _spec: string,
         name: string,
@@ -176,7 +178,7 @@ Deno.test("workflow-mode stage saves the per-group intent before starting transp
         }
         return Promise.resolve({ name });
       },
-      runModel: () => Promise.resolve({ ok: true }),
+      invokeModel: () => Promise.resolve({ ok: true }),
       logger: { info() {}, warning() {} },
     };
     await driver.methods.tick.execute(

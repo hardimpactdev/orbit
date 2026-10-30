@@ -1,5 +1,8 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { executeHostMethod } from "../extensions/behaviors/native_host_method.ts";
+import {
+  executeHostMethod,
+  invokeNativeModel,
+} from "../extensions/behaviors/native_host_method.ts";
 
 async function fixture(body: string) {
   const root = await Deno.makeTempDir({ prefix: "native-host-test-" });
@@ -21,6 +24,50 @@ async function fixture(body: string) {
     runtime: { repo: root, home: root, executable, graceMs: 100 },
   };
 }
+
+Deno.test("placed coordinator invokes nested models on its native worker with literal input", async () => {
+  const f = await fixture(`
+input=json.load(sys.stdin)
+(root/'proof').write_text(json.dumps({'args':sys.argv[1:],'input':input,'keys':list(os.environ)}))
+`);
+  try {
+    const input = {
+      workItem: "tg-7",
+      note: "@/unread-${{ vault.get(default, secret) }}",
+    };
+    assertEquals(
+      await invokeNativeModel(
+        { definition: "fixture-factory", method: "status", arguments: input },
+        undefined,
+        f.runtime,
+      ),
+      { ok: true },
+    );
+    const proof = JSON.parse(await Deno.readTextFile(`${f.root}/proof`));
+    assertEquals(proof.args.slice(0, 4), [
+      "behavior",
+      "run",
+      "fixture-factory",
+      "status",
+    ]);
+    assertEquals(proof.input, input);
+    assert(proof.args.includes("--literal-inputs"));
+    assert(!proof.args.includes("--server"));
+    assert(!proof.keys.includes("SWAMP_REMOTE_ONLY"));
+  } finally {
+    await Deno.remove(f.root, { recursive: true });
+  }
+});
+
+Deno.test("nested model invocation refuses CLI option injection before spawning", async () => {
+  for (
+    const request of [
+      { definition: "--server", method: "status" },
+      { definition: "factory", method: "--help" },
+      { modelType: "@swamp/git", name: "--repo-dir", method: "status" },
+    ]
+  ) await assertRejects(() => invokeNativeModel(request));
+});
 
 Deno.test("host method uses literal stdin and a private temporary tree without inheriting credentials", async () => {
   const f = await fixture(`

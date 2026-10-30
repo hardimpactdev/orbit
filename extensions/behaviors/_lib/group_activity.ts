@@ -1,3 +1,4 @@
+import { queryWorkerData } from "./worker_query.ts";
 /** Input identity for a parked group. Status/report materializations are excluded. */
 export async function groupFingerprint(
   ctx: {
@@ -8,7 +9,8 @@ export async function groupFingerprint(
   preapprovalModel: string,
 ) {
   const models = [factory, preapprovalModel, `orbit-group-${workItem}`];
-  const rows = await ctx.queryData(
+  const rows = await queryWorkerData(
+    ctx,
     `modelName in ${JSON.stringify(models)} && (` +
       ["state-", "artifact-", "evidence-", "approval-", "preapproval-"]
         .map((p) => `name.startsWith(${JSON.stringify(p + workItem)})`).join(
@@ -39,7 +41,8 @@ export async function currentOwners(
 ) {
   const busy = new Set<string>(), recover = new Set<string>();
   if (!ctx.repoDir) return { busy, recover };
-  const rows = await ctx.queryData(
+  const rows = await queryWorkerData(
+    ctx,
     'modelName.startsWith("orbit-group-") && (name == "owner" || name == "intent")',
     "attributes",
   ) as { workItem: string; runId: string | null; generation: number }[];

@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 // Pure helpers of @nckrtl/orbit-driver: ~/.swamp/deno/deno test tests/
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { behavior, pendingGateIds, preapprovalName, recordedThisEntry, tickOrder } from "../extensions/behaviors/orbit_driver.ts";
@@ -54,13 +55,13 @@ function parkedDriver(pre: Record<string, unknown> | null = null) {
   const context = {
     globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups", assistanceModel: "orbit-gateway" }),
     definition: { name: "orbit-driver-groups" },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       if (predicate.includes('name == "status-tg-7"')) return Promise.resolve([status]);
       if (predicate.includes('name == "state-tg-7"')) return Promise.resolve([{ workItem: "tg-7", startedAt: era }]);
       if (predicate.includes('name == "preapproval-')) return Promise.resolve(pre ? [pre] : []);
       return Promise.resolve([]);
-    },
-    runModel: (call: (typeof calls)[number]) => {
+    }),
+    invokeModel: (call: (typeof calls)[number]) => {
       calls.push(call);
       if (!["status", "assistance", "approve"].includes(call.method)) throw new Error(`Unexpected effect: ${call.method}`);
       return Promise.resolve({ ok: true });
@@ -105,8 +106,8 @@ Deno.test("a group's failed status never aborts the remaining groups and is reco
     const context = {
       globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups" }),
       definition: { name: "orbit-driver-groups" },
-      queryData: (predicate: string) => Promise.resolve(predicate.includes('name == "status-') ? [status] : []),
-      runModel: (call: { method: string; arguments?: Record<string, unknown> }) => {
+      queryData: recordQuery((predicate: string) => Promise.resolve(predicate.includes('name == "status-') ? [status] : [])),
+      invokeModel: (call: { method: string; arguments?: Record<string, unknown> }) => {
         const item = String(call.arguments?.workItem);
         visited.push(item);
         if (broken && ["tg-7", "tg-9"].includes(item)) {

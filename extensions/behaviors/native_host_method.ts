@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4";
 import { PackageTargetSchema } from "./_lib/package_target.ts";
 
-const REPO = "/home/orbit/apps/orbit-swamp/default";
+export const SWAMP_REPOSITORY = "/home/orbit/apps/orbit-swamp/default";
 const HOME = "/home/orbit";
 const targets = {
   project_scan: ["@nckrtl/dependency-scanner", "scan", 300],
@@ -35,15 +35,70 @@ export async function executeHostMethod(
   input: Record<string, unknown>,
   signal?: AbortSignal,
   runtime = {
-    repo: REPO,
+    repo: SWAMP_REPOSITORY,
     home: HOME,
     executable: `${HOME}/.local/bin/swamp`,
     graceMs: 10_000,
   },
 ) {
-  signal?.throwIfAborted();
   const value: Record<string, unknown> = schemas[action].parse(input);
   const [definition, method, seconds] = targets[action];
+  await executeInvocation(
+    [
+      definition,
+      method,
+      ...(action === "project_scan"
+        ? [`dependency-scanner-${value.projectId}`]
+        : []),
+    ],
+    value,
+    seconds,
+    signal,
+    runtime,
+  );
+  return { dataHandles: [], action, exitCode: 0 };
+}
+
+export interface NativeModelRequest {
+  definition?: string;
+  modelType?: string;
+  name?: string;
+  method: string;
+  arguments?: Record<string, unknown>;
+}
+
+/** Nested model methods execute in a worker-owned native CLI, never serve. */
+export async function invokeNativeModel(
+  request: NativeModelRequest,
+  signal?: AbortSignal,
+  runtime = {
+    repo: SWAMP_REPOSITORY,
+    home: HOME,
+    executable: `${HOME}/.local/bin/swamp`,
+    graceMs: 10_000,
+  },
+) {
+  const name = z.string().regex(/^[A-Za-z0-9_@][A-Za-z0-9_@./-]*$/);
+  const method = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]*$/).parse(
+    request.method,
+  );
+  const definition = name.parse(request.definition ?? request.modelType);
+  const args = [definition, method];
+  if (request.modelType && !request.definition) {
+    args.push(name.parse(request.name));
+  }
+  await executeInvocation(args, request.arguments ?? {}, 120, signal, runtime);
+  return { ok: true };
+}
+
+async function executeInvocation(
+  invocation: string[],
+  value: Record<string, unknown>,
+  seconds: number,
+  signal: AbortSignal | undefined,
+  runtime: { repo: string; home: string; executable: string; graceMs: number },
+) {
+  signal?.throwIfAborted();
   // The pinned compiled Swamp CLI forbids direct /proc reads. This fixed
   // read-only child inherits our cgroup; no caller selects its path or args.
   const cgroup = await new Deno.Command("/usr/bin/cat", {
@@ -141,11 +196,7 @@ export async function executeHostMethod(
         runtime.executable,
         "behavior",
         "run",
-        definition,
-        method,
-        ...(action === "project_scan"
-          ? [`dependency-scanner-${value.projectId}`]
-          : []),
+        ...invocation,
         "--repo-dir",
         runtime.repo,
         "--stdin",
@@ -216,7 +267,7 @@ export async function executeHostMethod(
         .find((code) => new RegExp(`"code"\\s*:\\s*"${code}"`).test(errorText));
       throw new Error(`native_host_method_failed${code ? `:${code}` : ""}`);
     }
-    return { dataHandles: [], action, exitCode: 0 };
+    return;
   } finally {
     await Deno.remove(lease).catch((error) => {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
