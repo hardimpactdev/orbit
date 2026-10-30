@@ -197,6 +197,16 @@ it('projects bounded refusal and cancellation without retaining raw diagnostics'
     expect($operation->fresh()->result)->toBe($status === 'failed' ? ['error_code' => 'vpn.peer_dns_uplink_missing'] : []);
 })->with(['failed', 'cancelled']);
 
+it('projects native unreadable and prepublication repair refusals without diagnostics', function (string $code): void {
+    $operation = fleetDnsOperation($this);
+    $data = [...fleetDnsProjection($this, 'failed'), 'error_code' => $code,
+        'result' => ['error_code' => $code, 'state' => 'private native diagnostic', 'message' => 'private native diagnostic']];
+
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', $data)->assertOk()->assertJsonPath('data.status', 'failed');
+    expect($operation->fresh()->result)->toBe(['error_code' => $code]);
+    expect(json_encode($operation->fresh()->toArray()))->not->toContain('private native diagnostic');
+})->with(['vpn.peer_dns_unreadable', 'vpn.peer_dns_repair_failed']);
+
 it('deletes peer DNS claims receipts and Gateway primitive execution', function (): void {
     $operation = fleetDnsOperation($this);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'fleet.peer_dns', 'worker' => 'retired'])->assertUnprocessable();

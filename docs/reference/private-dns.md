@@ -241,6 +241,7 @@ Each failure reports one code without remote command output. The agent refuses w
 | `node.dns_repair_missing`, `node.dns_repair_inactive` | Nothing changes. Correct the Node name, or restore the Node through its own lifecycle. |
 | `node.dns_repair_operator_owned`, `node.dns_repair_vpn_server`, `node.dns_repair_platform_unsupported`, `node.dns_repair_identity_missing` | The Node is outside this command. Use its own resolver or provisioning workflow. |
 | `vpn.peer_dns_busy` | Another peer operation holds the lock. Wait, then retry. |
+| `vpn.peer_dns_unreadable` | Inspection could not read the saved or live DNS state. Check the peer's files and resolver service, then retry. |
 | `vpn.peer_recovery_pending` | Another peer operation owns the saved candidate or backup. Keep the recovery files and finish that operation first. |
 | `vpn.peer_dns_state_unsupported`, `vpn.peer_dns_candidate_invalid` | Nothing is published. Inspect `orbit.conf` and `orbit.dns-link`, then fix the peer through normal provisioning. |
 | `vpn.peer_dns_apply_failed` | The command restored the previous files and resolver selection. Fix the DNS or systemd-resolved fault, then retry. |
