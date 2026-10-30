@@ -741,6 +741,10 @@ Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `
 
 Instance removal calls `route.withdraw_instance` with `{instance_id}` before it removes source files. This converges shared PHP-FPM pools even when the Instance has no Route. After source removal, `route.cleanup_instance` withdraws Caddy before removing the unused Instance certificate and runtime. A certificate still named by a stored site stays on the Node.
 
+A native development Instance DAG can use the Route family's `RouteWithdrawalArtifacts::forDevelopmentRemoval` data renderer in local composition tests. It retains the withdrawing Route associations and captures separate workload, current Router, transition Router and active VPN inputs. Its Swamp actions withdraw shared PHP before source deletion, publish whole-Node Caddy and private DNS, then remove unused certificate scopes and exact Route LAN rules. Removal still withdraws PHP and local runtime artifacts when no Route exists.
+
+These reusable actions start no child Operations; the owning parent records its intent and projects the final result. Publication remains inactive until foreign Nodes can refresh public artifacts after acquiring the native lock through an approved and proven shared path. Public and production withdrawal remain outside this private development contract.
+
 `route.offline_residue_clean` takes `{removed_node_id: int|null}` on the serving Node. A Node ID scopes cleanup through the removed Node's preserved Route associations. `null` selects retained residue whose Route row is absent. Successful cleanup removes only the captured residue rows that have not changed during execution. Its `removed` result is a redacted list of artifact names. Private DNS residue cleanup runs only on active Nodes with an active VPN role. A separate Gateway consumes private DNS and has no listener to clean.
 
 ### Route child contracts
