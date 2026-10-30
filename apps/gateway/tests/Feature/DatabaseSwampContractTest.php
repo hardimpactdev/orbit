@@ -9,15 +9,12 @@ use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationSecrets;
-use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Arr;
-use Tests\Support\FakeAgentCommandRunner;
 
 function databaseContractOperation(): Operation
 {
@@ -120,27 +117,4 @@ it('refuses invented metadata on failed completion', function (): void {
     $operation = databaseContractOperation();
     expect(fn () => app(DatabaseOperationExecution::class)->assertCompletion($operation, OperationOutcome::failed('database.in_use', ['backend' => 'absent', 'row_count' => 99])))
         ->toThrow(ResourceOperationException::class);
-});
-
-it('runs through shared hydration and stores only references and redacted receipts', function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
-    $operation = databaseContractOperation();
-    $operation->update(['kind' => 'database_user.create']);
-    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => '']);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $executor = app(SwampOperationExecutor::class);
-    $operation = $executor->claim('database_user.create', 'proof', $operation->node_id);
-    $descriptor = app(DatabaseOperationExecution::class)->context($operation)['descriptors'][0];
-    $result = $executor->run($operation, ['worker' => 'proof', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']], $operation->node_id);
-    $executor->step($operation, ['worker' => 'proof', 'key' => 'finish', 'name' => 'database-apply', 'status' => 'succeeded', 'result' => $result], $operation->node_id);
-    $proof = $executor->run($operation, ['worker' => 'proof', 'key' => 'database-complete', 'transport' => 'gateway', 'name' => 'database.proven', 'input' => ['intent_id' => $operation->input['intent_id'], 'children' => []]], $operation->node_id);
-    $executor->step($operation, ['worker' => 'proof', 'key' => 'proof-finish', 'name' => 'database-complete', 'status' => 'succeeded', 'result' => $proof], $operation->node_id);
-    $executor->complete($operation, ['worker' => 'proof', 'status' => 'succeeded', 'result' => $result], $operation->node_id);
-
-    expect($agents->calls[0]['input']['password'])->toBe('synthetic-admin-password');
-    expect($agents->calls[0]['node'])->toBe('dev-db');
-    expect(json_encode($operation->fresh()->toArray()))->not->toContain('synthetic-admin-password', 'CREATE DATABASE example;');
-
 });

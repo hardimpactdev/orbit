@@ -8,8 +8,9 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
+    $direct = ['database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        return [];
+        return $direct;
     }
     $string = ['type' => 'string'];
     $object = ['type' => 'object'];
@@ -46,7 +47,6 @@ return (static function (): array {
         'database_server.close' => [$valkey],
         'database.create' => [$sql, $valkey],
         'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
-        'database_user.create' => [$sql],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],
         'database.sqlite_export' => [$sqliteCopy, $seedSource],
@@ -76,5 +76,5 @@ return (static function (): array {
     }
     unset($definition);
 
-    return $kinds;
+    return [...$direct, ...$kinds];
 })();
