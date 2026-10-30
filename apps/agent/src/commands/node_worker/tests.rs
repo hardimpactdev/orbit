@@ -31,6 +31,17 @@ fn fixture() -> (WorkDir, Files, NodeWorkerConfig, Account, Fake) {
     }
     let uid = rustix::process::getuid().as_raw();
     let gid = rustix::process::getgid().as_raw();
+    fs::create_dir_all(root.join("etc/orbit/swamp-worker")).unwrap();
+    fs::set_permissions(
+        root.join("etc/orbit/swamp-worker"),
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    for name in ["enrollment.token", "server.token"] {
+        let path = root.join("etc/orbit/swamp-worker").join(name);
+        fs::write(&path, "private-secret").unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
     (
         work,
         Files {
@@ -54,7 +65,7 @@ fn fixture() -> (WorkDir, Files, NodeWorkerConfig, Account, Fake) {
 #[test]
 fn converges_a_persistent_node_user_unit_with_sudo_and_stable_identity() {
     let (_work, files, input, account, mut host) = fixture();
-    publish(&files, &mut host, &input, &account, false).unwrap();
+    publish(&files, &mut host, &input, &account, false, None).unwrap();
     let text = fs::read_to_string(files.path(UNIT_PATH)).unwrap();
     for required in [
         "User=nckrtl\n",
@@ -97,22 +108,28 @@ fn converges_a_persistent_node_user_unit_with_sudo_and_stable_identity() {
         0o700
     );
     host.calls.clear();
-    publish(&files, &mut host, &input, &account, false).unwrap();
-    assert_eq!(host.calls.last().unwrap(), &["systemctl", "start", UNIT]);
+    publish(&files, &mut host, &input, &account, false, None).unwrap();
+    assert_eq!(
+        host.calls.last().unwrap(),
+        &["systemctl", "start", "--no-block", UNIT]
+    );
     assert!(!host.calls.iter().any(|c| c.iter().any(|v| v == "restart")));
     host.calls.clear();
-    publish(&files, &mut host, &input, &account, true).unwrap();
-    assert_eq!(host.calls.last().unwrap(), &["systemctl", "restart", UNIT]);
+    publish(&files, &mut host, &input, &account, true, None).unwrap();
+    assert_eq!(
+        host.calls.last().unwrap(),
+        &["systemctl", "restart", "--no-block", UNIT]
+    );
 }
 #[test]
 fn refuses_unprivileged_or_mismatched_accounts_before_publishing() {
     let (_work, files, mut input, account, mut host) = fixture();
     host.refuse_sudo = true;
-    assert!(publish(&files, &mut host, &input, &account, false).is_err());
+    assert!(publish(&files, &mut host, &input, &account, false, None).is_err());
     assert!(!files.path(UNIT_PATH).exists());
     host.calls.clear();
     input.user = "orbit".into();
-    assert!(publish(&files, &mut host, &input, &account, false).is_err());
+    assert!(publish(&files, &mut host, &input, &account, false, None).is_err());
     assert!(host.calls.is_empty());
     for user in [
         "root",
@@ -132,7 +149,7 @@ fn refuses_unprivileged_or_mismatched_accounts_before_publishing() {
 fn refuses_linked_or_readable_credential_sources_and_preserves_secrets() {
     for linked in [false, true] {
         let (_work, files, input, account, mut host) = fixture();
-        fs::create_dir_all(files.path(CREDENTIALS)).unwrap();
+        fs::remove_file(files.path(&format!("{CREDENTIALS}/enrollment.token"))).unwrap();
         let token = files.path(&format!("{CREDENTIALS}/enrollment.token"));
         if linked {
             symlink("/missing", &token).unwrap();
@@ -140,10 +157,45 @@ fn refuses_linked_or_readable_credential_sources_and_preserves_secrets() {
             fs::write(&token, "private-secret").unwrap();
             fs::set_permissions(&token, fs::Permissions::from_mode(0o644)).unwrap();
         }
-        assert!(publish(&files, &mut host, &input, &account, false).is_err());
+        assert!(publish(&files, &mut host, &input, &account, false, None).is_err());
         assert!(!files.path(UNIT_PATH).exists());
         if !linked {
             assert_eq!(fs::read_to_string(token).unwrap(), "private-secret");
         }
     }
+}
+
+#[test]
+fn missing_credentials_are_not_ready_and_rotation_restarts_without_waiting() {
+    let (_work, files, input, account, mut host) = fixture();
+    fs::remove_file(files.path(&format!("{CREDENTIALS}/enrollment.token"))).unwrap();
+    assert_eq!(
+        publish(&files, &mut host, &input, &account, false, None),
+        Err(Error::NotReady {})
+    );
+    assert!(!files.path(UNIT_PATH).exists());
+    let credentials = Credentials {
+        enrollment_token: "orbit-node-9.abcdefghijklmnop".into(),
+        server_token: "orbit-node-9-access.abcdefghijklmnop".into(),
+    };
+    publish(
+        &files,
+        &mut host,
+        &input,
+        &account,
+        false,
+        Some(&credentials),
+    )
+    .unwrap();
+    assert_eq!(
+        host.calls.last().unwrap(),
+        &["systemctl", "restart", "--no-block", UNIT]
+    );
+    assert!(check_credentials(&files).is_ok());
+    fs::set_permissions(
+        files.path(&format!("{CREDENTIALS}/server.token")),
+        fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    assert!(check_credentials(&files).is_err());
 }

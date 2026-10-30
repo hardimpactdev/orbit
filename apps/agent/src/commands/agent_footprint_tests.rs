@@ -77,6 +77,7 @@ fn input(secret_hash: Option<String>) -> ConfigureInput {
         unit: "[Service]\nExecStart=/usr/local/bin/orbit-agent observe\n".into(),
         checkouts: vec![],
         binary_changed: false,
+        worker_credentials: None,
     }
 }
 

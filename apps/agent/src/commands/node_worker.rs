@@ -18,6 +18,7 @@ const CA: &str = "/usr/local/share/ca-certificates/orbit-root.crt";
 
 command_errors! { pub enum Error {
     Failed {} => "swamp.node_worker_failed", "The Node worker installation failed.";
+    NotReady {} => "swamp.node_worker_not_ready", "The Node worker credentials are missing or unsafe.";
     Invalid {} => "swamp.node_worker_invalid", "The Node worker identity or custody is invalid.";
 }}
 fn failed() -> Error {
@@ -58,7 +59,7 @@ pub(super) fn valid(input: &NodeWorkerConfig) -> bool {
         && input.user != "orbit-swamp-package"
 }
 fn unit(input: &NodeWorkerConfig) -> String {
-    format!("[Unit]\nDescription=Orbit Swamp worker for Node {}\nAfter=network-online.target\nWants=network-online.target\nConditionPathExists={CREDENTIALS}/enrollment.token\nConditionPathExists={CREDENTIALS}/server.token\n\n[Service]\nType=exec\nUser={}\nWorkingDirectory={ROOT}\nEnvironment=HOME={ROOT} SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/config\nLoadCredential=enrollment:{CREDENTIALS}/enrollment.token\nLoadCredential=server:{CREDENTIALS}/server.token\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --label node={}\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=null\nStandardError=null\n\n[Install]\nWantedBy=multi-user.target\n", input.node_id, input.user, input.node_id)
+    format!("[Unit]\nDescription=Orbit Swamp worker for Node {}\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=300\nStartLimitBurst=3\n\n[Service]\nType=exec\nUser={}\nWorkingDirectory={ROOT}\nEnvironment=HOME={ROOT} SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/config\nLoadCredential=enrollment:{CREDENTIALS}/enrollment.token\nLoadCredential=server:{CREDENTIALS}/server.token\nExecStartPre=+/usr/local/bin/orbit-agent service node-worker-check\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --label node={}\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n", input.node_id, input.user, input.node_id)
 }
 fn publish(
     files: &Files,
@@ -66,6 +67,7 @@ fn publish(
     input: &NodeWorkerConfig,
     account: &Account,
     binary_changed: bool,
+    credentials: Option<&Credentials>,
 ) -> Result<(), Error> {
     if !valid(input) || account.name != input.user || account.uid == 0 || account.gid == 0 {
         return Err(invalid());
@@ -83,20 +85,34 @@ fn publish(
             "/usr/bin/true",
         ],
     )?;
-    for name in ["enrollment.token", "server.token"] {
-        let path = format!("{CREDENTIALS}/{name}");
-        if fs::symlink_metadata(files.path(&path)).is_ok() {
-            owned_file(files, &path, 0o600)?;
-        }
-    }
     private_dir(files, CREDENTIALS, files.uid, files.gid)?;
+    let credentials_changed = if let Some(credentials) = credentials {
+        credentials.validate(input)?;
+        let mut changed = false;
+        for (name, value) in [
+            ("enrollment.token", &credentials.enrollment_token),
+            ("server.token", &credentials.server_token),
+        ] {
+            let path = files.path(&format!("{CREDENTIALS}/{name}"));
+            changed |= fs::read(&path).ok().as_deref() != Some(value.as_bytes());
+            files
+                .publish(&path, value.as_bytes(), 0o600, files.uid, files.gid, false)
+                .map_err(|_| invalid())?;
+        }
+        changed
+    } else {
+        false
+    };
+    check_credentials(files).map_err(|_| Error::NotReady {})?;
     private_dir(files, ROOT, account.uid, account.gid)?;
     let text = unit(input);
     let path = files.path(UNIT_PATH);
     if fs::symlink_metadata(&path).is_ok() {
         owned_file(files, UNIT_PATH, 0o644)?;
     }
-    let changed = binary_changed || fs::read_to_string(&path).ok().as_deref() != Some(&text);
+    let changed = binary_changed
+        || credentials_changed
+        || fs::read_to_string(&path).ok().as_deref() != Some(&text);
     files
         .publish_root(&path, text.as_bytes())
         .map_err(|_| invalid())?;
@@ -104,16 +120,28 @@ fn publish(
     call(host, &["systemctl", "enable", UNIT])?;
     call(
         host,
-        &["systemctl", if changed { "restart" } else { "start" }, UNIT],
+        &[
+            "systemctl",
+            if changed { "restart" } else { "start" },
+            "--no-block",
+            UNIT,
+        ],
     )
 }
-pub fn configure_native(context: &Context, input: Option<&NodeWorkerConfig>) -> Result<(), Error> {
+pub fn configure_native(
+    context: &Context,
+    input: Option<&NodeWorkerConfig>,
+    credentials: Option<&Credentials>,
+) -> Result<(), Error> {
     let files = Files::system();
     let mut host = recipe::Native(context);
     let Some(input) = input else {
         if fs::symlink_metadata(files.path(UNIT_PATH)).is_ok() {
             owned_file(&files, UNIT_PATH, 0o644)?;
-            call(&mut host, &["systemctl", "disable", "--now", UNIT])?;
+            call(
+                &mut host,
+                &["systemctl", "disable", "--now", "--no-block", UNIT],
+            )?;
             fs::remove_file(files.path(UNIT_PATH)).map_err(|_| failed())?;
             call(&mut host, &["systemctl", "daemon-reload"])?;
         }
@@ -157,7 +185,76 @@ pub fn configure_native(context: &Context, input: Option<&NodeWorkerConfig>) -> 
     {
         return Err(invalid());
     }
-    publish(&files, &mut host, input, &account, binary_changed)
+    publish(
+        &files,
+        &mut host,
+        input,
+        &account,
+        binary_changed,
+        credentials,
+    )
+}
+
+#[derive(schemars::JsonSchema, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Credentials {
+    enrollment_token: String,
+    server_token: String,
+}
+impl Credentials {
+    fn validate(&self, input: &NodeWorkerConfig) -> Result<(), Error> {
+        for (value, name) in [
+            (
+                &self.enrollment_token,
+                format!("orbit-node-{}", input.node_id),
+            ),
+            (
+                &self.server_token,
+                format!("orbit-node-{}-access", input.node_id),
+            ),
+        ] {
+            if value.len() > 4096
+                || value.split_once('.').is_none_or(|(prefix, secret)| {
+                    prefix != name
+                        || secret.len() < 16
+                        || !secret
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+                })
+            {
+                return Err(invalid());
+            }
+        }
+        Ok(())
+    }
+}
+fn check_credentials(files: &Files) -> Result<(), Error> {
+    let directory = fs::symlink_metadata(files.path(CREDENTIALS)).map_err(|_| invalid())?;
+    if !directory.is_dir() || directory.uid() != files.uid || directory.mode() & 0o777 != 0o700 {
+        return Err(invalid());
+    }
+    for name in ["enrollment.token", "server.token"] {
+        owned_file(files, &format!("{CREDENTIALS}/{name}"), 0o600)?;
+    }
+    Ok(())
+}
+/// Fixed systemd pre-start boundary; root source modes are checked on every restart.
+pub struct Check;
+impl orbit_agent_contract::Service for Check {
+    const NAME: &'static str = "node-worker-check";
+    fn supported(platform: crate::command::Platform) -> bool {
+        platform == crate::command::Platform::Linux
+    }
+    fn run(arguments: &[String]) -> i32 {
+        if !arguments.is_empty()
+            || rustix::process::geteuid().as_raw() != 0
+            || check_credentials(&Files::system()).is_err()
+        {
+            eprintln!("Node worker is not ready: credential custody check failed");
+            return 1;
+        }
+        0
+    }
 }
 
 #[cfg(test)]

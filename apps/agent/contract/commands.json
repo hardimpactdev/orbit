@@ -2811,6 +2811,7 @@
       },
       "errors": [
         "agent.update_busy",
+        "swamp.node_worker_not_ready",
         "agent.configure_failed"
       ]
     },
@@ -2825,6 +2826,7 @@
       },
       "errors": [
         "agent.update_busy",
+        "swamp.node_worker_not_ready",
         "agent.configure_failed"
       ]
     },
