@@ -15,6 +15,6 @@ return [
     'tool.install' => $intent,
     'tool.update' => $intent,
     'tool.remove' => $intent,
-    'tool.adopt' => $intent,
-    'tool.manager_converge' => $intent,
+    'tool.adopt' => [...$intent, 'writer_scope' => ['manager' => 'apt', 'node_id' => 209, 'parent_operation_id' => null]],
+    'tool.manager_converge' => [...$intent, 'writer_scope' => ['manager' => 'apt', 'node_id' => 209, 'parent_operation_id' => null]],
 ];

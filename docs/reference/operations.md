@@ -529,7 +529,11 @@ A repeated request after the reset, another assistance code, a terminal Operatio
 
 Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` sends one native `workflow.run` request after intent commits and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. A lost start response stays uncertain; the Gateway does not poll, retry or claim work. Inspect native run history before submitting again.
 
-A declaration names the workflow, writer configuration path, immutable writer-state field and a typed projection hook. New families use the common `swamp.direct_writers` map (`ORBIT_SWAMP_DIRECT_WRITERS` JSON keyed by exact kind, default `{}`). Families add no token, controller or HTTP routes. Routes retain their existing per-kind settings and `route_publication_writer` field. Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
+A declaration names the workflow, writer configuration path, immutable writer-state field and a typed projection hook. New families use the common `swamp.direct_writers` map (`ORBIT_SWAMP_DIRECT_WRITERS` JSON keyed by exact kind, default `{}`). Families add no token, controller or HTTP routes. Routes retain their existing per-kind settings and `route_publication_writer` field.
+
+A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. This selects intent once.
+
+Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
 
 The optional typed primitive hook is reserved for shared generic Gateway primitives, such as Route/Caddy publication or scoped token minting. New family execution relays are refused; family actions run on their Node worker.
 

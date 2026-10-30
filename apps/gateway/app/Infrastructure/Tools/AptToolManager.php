@@ -69,16 +69,6 @@ final readonly class AptToolManager implements ReservesRolePackages, ToolManager
             && preg_match('/[a-z]/', $package) === 1;
     }
 
-    public function managerVersion(Node $node): string
-    {
-        $version = $this->version($node, 'tool.apt-version', [], 'manager-version');
-        if ($version === null) {
-            throw new ToolManagerException('manager-version', 'The agent returned an invalid APT manager version.');
-        }
-
-        return $version;
-    }
-
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $data = $this->command($node, 'tool.apt-inventory', [], 'installed-version');
@@ -86,39 +76,9 @@ final readonly class AptToolManager implements ReservesRolePackages, ToolManager
         return new ToolInventoryReceipt()->parse(ToolManagerName::Apt, $data);
     }
 
-    public function installedVersion(Node $node, string $package): ?string
-    {
-        $this->guardPackage($package);
-
-        return $this->installedInventory($node)->versionFor($package);
-    }
-
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
-    }
-
-    private function guardPackage(string $package): void
-    {
-        if ($this->validatePackage($package)) {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: 'package',
-            message: 'The APT package coordinate is invalid.',
-        );
-    }
-
-    /** @param array<string, mixed> $input */
-    private function version(Node $node, string $command, array $input, string $step): ?string
-    {
-        $data = $this->command($node, $command, $input, $step);
-        if (! array_key_exists('version', $data) || ($data['version'] !== null && ! is_string($data['version']))) {
-            throw new ToolManagerException($step, 'The agent returned an invalid APT version.');
-        }
-
-        return $data['version'];
     }
 
     /** @param array<string, mixed> $input

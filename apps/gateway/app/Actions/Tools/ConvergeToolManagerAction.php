@@ -28,10 +28,12 @@ final readonly class ConvergeToolManagerAction
             throw new LogicException('The requested Tool manager does not support this Node.');
         }
 
+        $direct = app(DirectOperation::class)->writer('tool.manager_converge', ['manager' => $manager->value], $node->id) === 'direct';
+
         return $this->operations->execute('tool.manager_converge', 'node_tools', $node->id, $node->id, [
             'node_id' => $node->id, 'user' => $node->user, 'manager' => $manager->value, 'completion_variant' => $manager->value.':version', 'platform' => $node->platform,
             'architecture' => $node->architecture,
-            ...(app(DirectOperation::class)->writer('tool.manager_converge') === 'direct' ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []), ...$this->intent->input($node, $manager, $imageProvidesManager, app(DirectOperation::class)->writer('tool.manager_converge') === 'direct'),
+            ...($direct ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []), ...$this->intent->input($node, $manager, $imageProvidesManager, $direct),
         ], 'system', null);
     }
 }

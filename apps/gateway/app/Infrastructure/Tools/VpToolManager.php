@@ -167,13 +167,6 @@ final readonly class VpToolManager implements ToolManager
         return new ToolInventoryReceipt()->parse(ToolManagerName::Vp, ['scan_complete' => $inventory['scan_complete'], 'packages' => $inventory['packages']], $this->validatePackage(...));
     }
 
-    public function installedVersion(Node $node, string $package): ?string
-    {
-        $this->guardPackage($package);
-
-        return $this->installedInventory($node)->versionFor($package);
-    }
-
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
@@ -188,18 +181,6 @@ final readonly class VpToolManager implements ToolManager
         throw new ToolManagerException(
             step: 'node',
             message: 'The VP tool manager does not support this node.',
-        );
-    }
-
-    private function guardPackage(string $package): void
-    {
-        if ($this->validatePackage($package)) {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: 'package',
-            message: 'The VP package coordinate is invalid.',
         );
     }
 

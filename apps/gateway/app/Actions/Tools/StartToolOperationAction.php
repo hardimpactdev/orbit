@@ -87,10 +87,11 @@ final readonly class StartToolOperationAction
                 $variant = $intentOnly ? 'version' : ($verb === 'adopt' && in_array($managerName, ['brew', 'brew-cask'], true) ? 'adoption' : 'inventory');
 
                 OperationFamilySpec::assertAvailable('tool.'.$verb);
+                $direct = app(DirectOperation::class)->writer('tool.'.$verb, ['manager' => $managerName], $nodeId) === 'direct';
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
-                    ...(app(DirectOperation::class)->writer('tool.'.$verb) === 'direct' ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
+                    ...($direct ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint, 'constraint_intervals' => $this->intervals->for($constraint),
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
@@ -99,7 +100,7 @@ final readonly class StartToolOperationAction
                     'intent_only' => $intentOnly,
                     'completion_variant' => $managerName.':'.$variant,
                     'protected_packages' => $protected,
-                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name(), direct: app(DirectOperation::class)->writer('tool.install') === 'direct') : []),
+                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name(), direct: $direct) : []),
                 ], 'operator', request()->attributes->getString('orbit.request_id'));
             });
         } catch (ResourceOperationException $error) {
