@@ -13,7 +13,7 @@ inputs:
   required: [operation_id, node_id, kind]
 jobs:
   - name: node
-    target: '${{ inputs.node_id == 209 && inputs.kind == "process.stop" ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
+    target: '${{ inputs.node_id == 209 && inputs.kind in ["process.stop", "process.destroy"] ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
     labels: { node: '${{ string(inputs.node_id) }}' }
     writes: true
     steps:

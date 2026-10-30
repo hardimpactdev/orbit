@@ -96,10 +96,16 @@ action canary. Stopping a Vite Process needs no traffic preparation or private
 input. Other Process controls keep their current writers. Rollback is a revert
 PR.
 
-For the `process.stop` canary on admitted Node209, the workflow chooses the
-existing `swamp209-migration-a` worker. Every other Node and Process kind keeps
-exact `orbit-node-ID` placement. There is no fallback to another Node. The
-canary owns a short-lived sleep Process and changes no serving unit.
+Native destroy also accepts the admitted Vite environment identity. It requires
+the exact `/etc/orbit/vite/app-instance-<Instance ID>.env` path and forwards it
+to the existing local removal primitive, which checks ownership and symlinks.
+Vite startup remains refused until its native preparation steps are converted.
+
+For `process.stop` and `process.destroy` canaries on admitted Node209, the
+workflow chooses the existing `swamp209-migration-a` worker. Every other Node
+and Process kind keeps exact `orbit-node-ID` placement. There is no fallback to
+another Node. The canary owns a short-lived sleep Process and changes no serving
+unit.
 
 For the first real `schedule.run` canary, Node209uses its existing reviewed
 `swamp209-migration-a` token identity, which runs as the Node user with sudo.

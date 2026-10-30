@@ -18,6 +18,14 @@ const Args = DirectArgs.extend({
   kind: Kind,
   node_id: z.number().int().positive(),
 });
+const Removal = z.object({
+  path: z.string().startsWith("/etc/orbit/vite/app-instance-").max(4096),
+  instance_id: z.number().int().positive(),
+}).strict().refine(
+  (value) =>
+    value.path === `/etc/orbit/vite/app-instance-${value.instance_id}.env`,
+  "The environment path must belong to the admitted Instance",
+);
 const Input = z.object({
   process_id: z.number().int().positive(),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -25,7 +33,7 @@ const Input = z.object({
   name: z.string().regex(/^orbit-process-[0-9]+-[a-z0-9-]+(?:\.service)?$/),
   on_demand: z.boolean(),
   directory: z.string().startsWith("/").max(4096).optional(),
-  vite: z.null(),
+  vite: Removal.nullable(),
 }).strict();
 const State = z.string().regex(/^[a-z][a-z_-]{0,63}$/);
 const Result = z.union([
@@ -69,7 +77,7 @@ export function processAction(invoke: Invoke = localAgent) {
       }
     }
     const result = kind === "process.destroy"
-      ? await call("process.remove", { ...artifact, vite: null })
+      ? await call("process.remove", { ...artifact, vite: input.vite })
       : await call("process.control", {
         ...artifact,
         on_demand: input.on_demand,
@@ -103,7 +111,15 @@ export function processControl(
           return await directOperation(
             args,
             gateway,
-            (input) => action(args.kind, Input.parse(input), ctx.signal),
+            (input) => {
+              const admitted = Input.parse(input);
+              if (args.kind !== "process.destroy" && admitted.vite !== null) {
+                throw new Error(
+                  "Vite startup needs its native preparation steps",
+                );
+              }
+              return action(args.kind, admitted, ctx.signal);
+            },
             (result) => {
               const bounded = Result.parse(result);
               if (

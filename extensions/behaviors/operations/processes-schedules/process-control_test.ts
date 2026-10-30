@@ -151,3 +151,53 @@ Deno.test("a Vite plan or unadmitted command refuses before local execution", as
     assertEquals(f.effects(), 0);
   }
 });
+
+Deno.test("native destroy passes only the exact admitted Vite environment", async () => {
+  let removed: Record<string, unknown> | undefined;
+  const vite = { instance_id: 8, path: "/etc/orbit/vite/app-instance-8.env" };
+  const action = processAction((_name, data) => {
+    removed = data;
+    return Promise.resolve({});
+  });
+  assertEquals(await action("process.destroy", { ...input, vite }), {
+    ready: true,
+  });
+  assertEquals(removed, {
+    process_id: input.process_id,
+    runtime: input.runtime,
+    name: input.name,
+    vite,
+  });
+  const f = fixture();
+  f.current.kind = "process.destroy";
+  f.current.input.vite = {
+    instance_id: 8,
+    path: "/etc/orbit/vite/app-instance-8.env",
+  };
+  assertEquals(
+    await f.control.methods.control.execute({
+      ...args,
+      kind: "process.destroy",
+    }, f.ctx),
+    { status: "succeeded" },
+  );
+  assertEquals(f.effects(), 1);
+  for (
+    const path of [
+      "/etc/orbit/vite/app-instance-9.env",
+      "/tmp/app-instance-8.env",
+      "/etc/orbit/vite/app-instance-8.env/../other",
+    ]
+  ) {
+    const invalid = fixture();
+    invalid.current.kind = "process.destroy";
+    invalid.current.input.vite = { instance_id: 8, path };
+    await assertRejects(() =>
+      invalid.control.methods.control.execute({
+        ...args,
+        kind: "process.destroy",
+      }, invalid.ctx)
+    );
+    assertEquals(invalid.effects(), 0);
+  }
+});
