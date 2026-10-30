@@ -545,7 +545,7 @@ A declaration may constrain its writer with literal `writer_scope` admitted fiel
 
 `firewall.allow`, `firewall.deny` and `firewall.remove` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors, receipt proofs and legacy execution tests are removed. Rollback is a revert PR, which restores both admission and the previous execution contract.
 
-`tool.install` uses direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and install execution policy are removed. Swamp materializes the admitted manager and applies package policy locally. Other Tool kinds retain their existing admission scopes until their own takeover slices.
+`tool.install` and `tool.update` use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and install/update execution policy are removed. Swamp materializes the admitted manager and applies package policy locally. Other Tool kinds retain their existing admission scopes until their own takeover slices.
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 

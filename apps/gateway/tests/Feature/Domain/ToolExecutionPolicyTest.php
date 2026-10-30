@@ -12,7 +12,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 
-function toolPolicyOperation(string $verb = 'update'): Operation
+function toolPolicyOperation(string $verb = 'remove'): Operation
 {
     return new Operation(['kind' => 'tool.'.$verb, 'node_id' => 2, 'input' => [
         'manager' => 'vp', 'package' => 'is-number', 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -29,10 +29,10 @@ function toolPolicyReceipt(Operation $operation, string $key, string $name, arra
 it('exposes only the admitted manager and verb in its executable descriptors', function (): void {
     $policy = new ToolOperationExecution;
     $operation = toolPolicyOperation();
-    expect($policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-update']))->toBe(['package' => 'is-number']);
-    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.apt-update']))
+    expect($policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-remove']))->toBe(['package' => 'is-number']);
+    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.apt-remove']))
         ->toThrow(ResourceOperationException::class);
-    expect(fn () => $policy->input($operation, ['key' => 'arbitrary', 'transport' => 'agent', 'name' => 'tool.vp-update']))
+    expect(fn () => $policy->input($operation, ['key' => 'arbitrary', 'transport' => 'agent', 'name' => 'tool.vp-remove']))
         ->toThrow(ResourceOperationException::class);
 });
 
@@ -45,10 +45,11 @@ it('does not authorize mutating adoption or intent-only removal', function (stri
 
 it('projects completed package receipts without executing on the Node', function (): void {
     $node = Node::query()->create(['name' => 'tools-projection', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2']);
-    $operation = toolPolicyOperation();
+    $operation = toolPolicyOperation('install');
+    $operation->state = ['tool_writer' => 'direct'];
     $operation->node_id = $node->id;
     toolPolicyReceipt($operation, 'manager-ready', 'tool.vp-version', ['version' => '1.0.0']);
-    new ToolOperationCompletion()->complete($operation, OperationOutcome::succeeded(['installed_version' => '7.0.0', 'block' => null, 'outcome' => 'applied']));
+    new ToolOperationCompletion()->complete($operation, OperationOutcome::succeeded(['manager_version' => '1.0.0', 'installed_version' => '7.0.0', 'block' => null, 'outcome' => 'applied']));
     $tool = Tool::query()->sole();
     expect($tool->status)->toBe(ToolStatus::Installed)->and($tool->installed_version)->toBe('7.0.0')->and($node->toolManagers()->sole()->status)->toBe(LifecycleStatus::Active);
     $remove = toolPolicyOperation('remove');
