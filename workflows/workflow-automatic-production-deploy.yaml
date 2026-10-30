@@ -13,6 +13,8 @@ inputs:
       uniqueItems: true
       default: []
       description: Optional narrower filter. Empty discovers every enabled production Instance from the Gateway.
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: policy
     steps:

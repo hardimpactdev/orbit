@@ -12,6 +12,8 @@ inputs:
     definition: { type: string }
     preapprovalModel: { type: string }
   required: [workItem, factory, generation, key, definition, preapprovalModel]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: group
     steps:

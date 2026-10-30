@@ -5,6 +5,8 @@ queueTimeout: 300
 description: mealou detect through its private project extension.
 trigger:
   schedule: 0 6 * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

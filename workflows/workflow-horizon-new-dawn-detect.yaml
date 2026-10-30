@@ -9,6 +9,8 @@ inputs:
     worker: { type: string, description: Exact enrollment-bound worker name from the group receipt }
     cwd: { type: string, description: Horizon package checkout inside that group VM }
   required: [group, worker, cwd]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: verify
     labels: {}

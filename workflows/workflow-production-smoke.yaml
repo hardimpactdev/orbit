@@ -9,6 +9,8 @@ inputs:
     projectType: { type: string }
     mode: { type: string, enum: [observe, baseline], default: observe }
   required: [projectId, projectType]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: smoke
     steps:

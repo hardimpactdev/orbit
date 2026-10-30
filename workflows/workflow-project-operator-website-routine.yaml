@@ -5,6 +5,8 @@ queueTimeout: 300
 description: operator-website routine through its private project extension.
 trigger:
   schedule: 20 3 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

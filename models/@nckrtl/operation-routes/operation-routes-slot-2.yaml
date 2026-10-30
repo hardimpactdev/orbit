@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-routes'
+typeVersion: 2026.10.28.1
+id: bbdb91e5-1b11-52e1-87f4-e89cfa9f4ab7
+name: operation-routes-slot-2
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

@@ -7,3 +7,7 @@ tags: {}
 globalArguments:
   repoPath: /fast/apps/orbit-swamp-scratch/wt2/bump-apps-cli
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

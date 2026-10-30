@@ -5,6 +5,8 @@ queueTimeout: 300
 description: recall routine through its private project extension.
 trigger:
   schedule: 50 2 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

@@ -3,6 +3,8 @@ name: maintenance-workers
 description: Revoke group enrollment after every Gateway group-end path.
 trigger:
   schedule: "35 * * * * *"
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: cleanup
     steps:

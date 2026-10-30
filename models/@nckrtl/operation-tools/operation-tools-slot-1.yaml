@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-tools'
+typeVersion: 2026.10.29.4
+id: a4793502-cb7b-5d7b-9dc4-bee193675d07
+name: operation-tools-slot-1
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

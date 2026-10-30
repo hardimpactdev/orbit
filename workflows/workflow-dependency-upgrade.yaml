@@ -13,6 +13,8 @@ inputs:
       type: boolean
       default: false
       description: Stop at the approval gate even when no major upgrade is planned
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: plan
     description: scan → plan → assert

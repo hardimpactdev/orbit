@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-discovery'
+typeVersion: 2026.10.30.3
+id: a8fd64ed-6ecc-47a2-9eea-4363d718b134
+name: operation-node-discovery
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

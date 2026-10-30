@@ -72,7 +72,8 @@ class LivenessTest(unittest.TestCase):
         self.assertEqual(result["inode_alert"], "critical")
 
     def test_inode_warning_is_visible_before_exhaustion(self):
-        self.assertEqual(self.evaluate(free_inodes=80)[0]["inode_alert"], "warning")
+        self.assertEqual(self.evaluate(free_inodes=200)[0]["inode_alert"], "warning")
+        self.assertNotIn("inode_alert", self.evaluate(free_inodes=201)[0])
 
     def test_unavailable_gateway_does_not_prove_a_stall(self):
         result, state = self.evaluate({"unchanged_since": 1, "claimable_heads": {"fleet.peer_dns": 1000}}, heads=None)

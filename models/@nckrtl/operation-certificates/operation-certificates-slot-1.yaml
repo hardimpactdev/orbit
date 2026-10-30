@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-certificates'
+typeVersion: 2026.10.28.1
+id: 02a9a257-42f2-55a6-a06d-36ec01f0836c
+name: operation-certificates-slot-1
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

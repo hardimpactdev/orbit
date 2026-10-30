@@ -3,6 +3,8 @@ name: '@nckrtl/dependencies/prune-results'
 description: Retain seven days of dependency indexes and all exact reports they reference.
 trigger:
   schedule: 30 1 * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: prune
     steps:

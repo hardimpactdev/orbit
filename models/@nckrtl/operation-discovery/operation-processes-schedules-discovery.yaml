@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-discovery'
+typeVersion: 2026.10.30.3
+id: b3bb591e-151a-4f21-ac2a-ff2b14e04899
+name: operation-processes-schedules-discovery
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

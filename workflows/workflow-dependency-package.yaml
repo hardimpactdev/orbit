@@ -9,6 +9,8 @@ inputs:
     workItem: { type: string }
     targets: { type: array, items: { type: object }, minItems: 1 }
   required: [workItem, targets]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: tick
     steps:

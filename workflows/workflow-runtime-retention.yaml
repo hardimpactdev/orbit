@@ -3,6 +3,8 @@ name: runtime-retention
 description: Hourly separate-process retention; preserve current state and live receipt evidence.
 trigger:
   schedule: "20 17 * * * *"
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: retention
     steps:

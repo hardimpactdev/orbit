@@ -211,12 +211,12 @@ export function operationDiscovery(
   const perKind = 4;
   return {
     type: "@nckrtl/operation-discovery",
-    version: "2026.10.30.2",
+    version: "2026.10.30.3",
     globalArguments: Globals,
     resources: {
       dispatch: {
         description:
-          "Latest claimable kinds for one independently scheduled family",
+          "Recoverable nonempty batch for one independently scheduled family",
         schema: z.object({
           work: z.array(
             z.object({
@@ -285,6 +285,7 @@ export function operationDiscovery(
               });
             }
           }
+          if (work.length === 0) return { dataHandles: [], work };
           const handle = await ctx.writeResource("dispatch", args.family, {
             work,
           });

@@ -159,3 +159,7 @@ globalArguments:
   - id: failed
     terminal: true
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

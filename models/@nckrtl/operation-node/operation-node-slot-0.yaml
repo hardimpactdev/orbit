@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-node'
+typeVersion: 2026.10.29.1
+id: cab6baf0-be5e-42da-875d-02513641c88a
+name: operation-node-slot-0
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

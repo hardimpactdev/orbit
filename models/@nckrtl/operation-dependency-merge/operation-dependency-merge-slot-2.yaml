@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-dependency-merge'
+typeVersion: 2026.10.30.1
+id: fa6d12f3-2bf3-5c4f-854f-25cb3794ee8f
+name: operation-dependency-merge-slot-2
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-discovery'
+typeVersion: 2026.10.30.3
+id: f97de315-dc51-4402-b7d4-d995981c53a3
+name: operation-database-discovery
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

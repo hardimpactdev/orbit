@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-discovery'
+typeVersion: 2026.10.30.3
+id: 71c22908-c3c8-4586-a531-57740652d7a9
+name: operation-integrations-discovery
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

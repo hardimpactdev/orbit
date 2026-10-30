@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-discovery'
+typeVersion: 2026.10.30.3
+id: 812ccd93-1656-4376-bb06-127b52cdbb57
+name: operation-fleet-discovery
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

@@ -21,6 +21,8 @@ inputs:
     composerCommon: { type: object }
     jsCommon: { type: object }
   required: [key, name, group, worker, cwd, mode, method, composer, js, composerPaths, jsPaths, summary, composerCommon, jsCommon]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: maintenance
     steps:

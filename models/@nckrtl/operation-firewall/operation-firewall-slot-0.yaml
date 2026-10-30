@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-firewall'
+typeVersion: 2026.10.28.1
+id: 3d6200e9-2ac4-5d28-b1f6-aa06c69bf2f8
+name: operation-firewall-slot-0
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

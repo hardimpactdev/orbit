@@ -11,6 +11,6 @@ telemetryDisabled: true
 garbageCollection:
   automatic: true
   workflowRuns: 7d
-  evaluatedSnapshots: 1d
-  outputs: 1d
+  evaluatedSnapshots: 1h
+  outputs: 1h
   bookkeeping: 1h

@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-instance-deploy'
+typeVersion: 2026.10.28.1
+id: a7c3315d-8c35-5c9d-bbd6-0f612e91a65a
+name: operation-instance-deploy-slot-6
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

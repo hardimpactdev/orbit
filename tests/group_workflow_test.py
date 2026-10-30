@@ -151,8 +151,7 @@ class GroupWorkflowTest(unittest.TestCase):
             def status_is(run, status):
                 record = history(run)
                 if record["status"] == "failed" and status != "failed":
-                    report = command("report", "get", "@swamp/workflow-summary", "--workflow", "group-run")
-                    self.fail("unexpected workflow failure: " + json.dumps(report))
+                    self.fail("unexpected workflow failure: " + json.dumps(record))
                 return record["status"] == status
 
             def until(test, reason):

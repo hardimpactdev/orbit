@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-task-vms'
+typeVersion: 2026.10.28.1
+id: 37df2f65-7471-5766-9114-0198fb5b1411
+name: operation-task-vms-slot-6
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

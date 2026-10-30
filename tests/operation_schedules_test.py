@@ -37,9 +37,36 @@ class OperationSchedulesTest(unittest.TestCase):
                 with self.subTest(family=workflow['name'], slot=slot):
                     self.assertLessEqual(len(prefix[1] + str(slot)), 64)
 
+    def test_stage_summaries_remain_available_to_the_existing_driver(self):
+        for path in ROOT.glob('workflows/workflow-stage-*.yaml'):
+            with self.subTest(workflow=path.name):
+                self.assertNotIn('@swamp/workflow-summary',
+                                 yaml.safe_load(path.read_text()).get('reports', {}).get('skip', []))
+
+    def test_family_models_use_native_report_selection_for_every_fixed_slot(self):
+        definitions = {}
+        ids = set()
+        for path in ROOT.glob('models/@nckrtl/operation-*/*.yaml'):
+            definition = yaml.safe_load(path.read_text())
+            self.assertNotIn(definition['name'], definitions)
+            self.assertNotIn(definition['id'], ids)
+            definitions[definition['name']] = definition
+            ids.add(definition['id'])
+        for path in ROOT.glob('workflows/workflow-operation-*.yaml'):
+            workflow = yaml.safe_load(path.read_text())
+            self.assertIn('@swamp/workflow-summary', workflow['reports']['skip'])
+            discover = workflow['jobs'][0]['steps'][0]['task']
+            execute = workflow['jobs'][1]['steps'][0]['task']
+            prefix = execute['behaviorName'].split('"')[1]
+            for name, model_type in [(discover['behaviorName'], discover['behaviorType']),
+                                     *[(prefix + str(slot), execute['behaviorType']) for slot in range(8)]]:
+                with self.subTest(model=name):
+                    self.assertEqual(definitions[name]['type'], model_type)
+                    self.assertIn('@swamp/method-summary', definitions[name]['reports']['skip'])
+
     def test_retention_bounds_metadata_without_collecting_receipt_data(self):
         policy = yaml.safe_load((ROOT / '.swamp.yaml').read_text())['garbageCollection']
-        self.assertEqual(policy, {'automatic': True, 'workflowRuns': '7d', 'evaluatedSnapshots': '1d', 'outputs': '1d', 'bookkeeping': '1h'})
+        self.assertEqual(policy, {'automatic': True, 'workflowRuns': '7d', 'evaluatedSnapshots': '1h', 'outputs': '1h', 'bookkeeping': '1h'})
         self.assertNotIn('data', policy)
 
     def test_native_four_same_kind_claims_enter_before_any_finishes(self):

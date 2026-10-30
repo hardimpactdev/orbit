@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-fleet'
+typeVersion: 2026.10.30.1
+id: 8799730c-820a-45f3-bb1f-38a0c34e6274
+name: operation-fleet-slot-3
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

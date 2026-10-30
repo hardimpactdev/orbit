@@ -9,3 +9,7 @@ globalArguments:
   serveUrl: ws://127.0.0.1:9417
   serveTokenFile: /home/nckrtl/.config/swamp/serve-driver-token
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

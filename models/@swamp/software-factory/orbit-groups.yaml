@@ -382,5 +382,6 @@ methods: {}
 checks:
   require: [run-started, not-terminal, graph-valid, valid-transition, gates-satisfied, stage-executed, cycle-limits]
 reports:
+  skip: ["@swamp/method-summary"]
   require:
     - { name: "@swamp/software-factory/work-item-summary", methods: [summary] }

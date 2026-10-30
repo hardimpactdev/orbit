@@ -6,12 +6,14 @@ function discover(
   allowed = kinds.map((k) => k.kind),
 ) {
   const calls: string[] = [];
+  const writes: string[] = [];
   const behavior = operationDiscovery(() => (method, path) => {
     calls.push(`${method} ${path}`);
     return Promise.resolve({ status: 200, body: { data: { kinds } } });
   });
   return {
     calls,
+    writes,
     run: () =>
       behavior.methods.discover.execute({
         family: "test",
@@ -23,7 +25,10 @@ function discover(
           caFile: "/dev/null",
         },
         readResource: () => Promise.resolve(null),
-        writeResource: (_spec, name) => Promise.resolve({ name }),
+        writeResource: (_spec, name) => {
+          writes.push(name);
+          return Promise.resolve({ name });
+        },
       }),
   };
 }
@@ -80,7 +85,15 @@ Deno.test("oldest family kinds get one claim each before extra slots; total neve
   assertEquals(result.work.map((w) => w.slot), [0, 1, 2, 3, 4, 5, 6, 7]);
 });
 
-Deno.test("empty family summary produces no speculative claims", async () => {
+Deno.test("empty family summary writes no resource or speculative claim", async () => {
+  const empty = discover([{
+    kind: "fleet.peer_dns",
+    claimable: 0,
+    oldest_at: null,
+  }]);
+  const result = await empty.run();
+  assertEquals(result.dataHandles, []);
+  assertEquals(empty.writes, []);
   assertEquals(
     (await discover([{ kind: "fleet.peer_dns", claimable: 0, oldest_at: null }])
       .run()).work,

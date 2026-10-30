@@ -8,6 +8,8 @@ inputs:
     factory: { type: string }
     preapprovalModel: { type: string }
   required: [workItem, factory, preapprovalModel]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: group
     steps:

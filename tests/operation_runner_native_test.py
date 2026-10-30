@@ -1,11 +1,14 @@
 """Run the pinned native Swamp DAG and resume it in a new process after a lost reply."""
 import json
 import os
+import sqlite3
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SWAMP = os.environ.get("SWAMP_BIN", shutil.which("swamp") or "swamp")
@@ -34,6 +37,9 @@ class OperationRunnerNativeTest(unittest.TestCase):
             source = "\n".join(line for line in source.splitlines()
                                if not line.startswith(("labels:", "queueTimeout:"))) + "\n"
             (self.repo / "workflows" / path.name).write_text(source)
+        # Native declarations suppress summaries; preserve the same identities on resume.
+        for model_type in ("@nckrtl/operation-discovery", "@nckrtl/operation-firewall"):
+            shutil.copytree(ROOT / "models" / model_type, self.repo / "models" / model_type)
         self.state = {"operation": {"id": 7, "kind": "firewall.allow", "node_id": 2,
                      "status": "queued", "cancel_requested": False, "step_results": {}, "steps": [],
                      "input": {"node_id": 2, "name": "proof", "action": "allow", "source": "192.0.2.1/32", "protocol": "tcp", "port": "65431"}},
@@ -60,6 +66,45 @@ class OperationRunnerNativeTest(unittest.TestCase):
         else:
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
+
+    def test_declared_models_adopt_existing_native_identities_and_receipts(self):
+        held = self.repo / 'held-models'
+        (self.repo / 'models').rename(held)
+        self.swamp('workflow', 'run', 'operation-firewall')
+        with sqlite3.connect(self.repo / '.swamp/data/_catalog.db') as catalog:
+            before = catalog.execute("SELECT model_id,data_name,version FROM catalog WHERE type_normalized='@nckrtl/operation-firewall' AND data_name NOT LIKE 'report-%'").fetchall()
+        self.assertTrue(before)
+        import hashlib
+        hashes = {}
+        for model, name, version in before:
+            path = self.repo / '.swamp/data/@nckrtl/operation-firewall' / model / name / str(version) / 'raw'
+            hashes[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+        stored = {yaml.safe_load(p.read_text())['name']: yaml.safe_load(p.read_text())
+                  for p in (self.repo / '.swamp/auto-definitions').rglob('*.yaml')}
+        for p in held.rglob('*.yaml'):
+            value = yaml.safe_load(p.read_text())
+            if value['name'] in stored:
+                value['id'] = stored[value['name']]['id']
+                p.write_text(yaml.safe_dump(value, sort_keys=False))
+        held.rename(self.repo / 'models')
+        self.state = self.read()
+        self.state['operation'].update(id=8, status='queued')
+        self.save()
+        self.swamp('workflow', 'run', 'operation-firewall')
+        for path, checksum in hashes.items():
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), checksum)
+        with sqlite3.connect(self.repo / '.swamp/data/_catalog.db') as catalog:
+            latest = catalog.execute("SELECT DISTINCT model_id FROM catalog WHERE type_normalized='@nckrtl/operation-firewall' AND data_name NOT LIKE 'report-%'").fetchall()
+        self.assertEqual(set(latest), {(model,) for model, _, _ in before})
+
+    def test_empty_ticks_write_no_data_versions_or_effects(self):
+        self.state["operation"]["status"] = "succeeded"
+        self.save()
+        for _ in range(3):
+            self.swamp("workflow", "run", "operation-firewall")
+        self.assertEqual(self.read()["runs"], 0)
+        with sqlite3.connect(self.repo / ".swamp/data/_catalog.db") as catalog:
+            self.assertEqual(catalog.execute("SELECT count(*) FROM catalog").fetchone()[0], 0)
 
     def test_runner_dispatches_allow_then_remove_with_recorded_steps(self):
         self.swamp("workflow", "validate", "operation-firewall")

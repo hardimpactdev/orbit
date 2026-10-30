@@ -6,6 +6,8 @@ queueTimeout: 300
 autoResume: true
 trigger:
   schedule: '0 * * * * *'
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: conn
     steps:

@@ -5,6 +5,8 @@ queueTimeout: 300
 description: launch detect through its private project extension.
 trigger:
   schedule: 20 3 * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

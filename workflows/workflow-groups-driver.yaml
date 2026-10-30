@@ -4,6 +4,8 @@ description: Discover every active group and reconcile independent owning runs.
 trigger:
   # Discovery and fan-out take 35–47 seconds under the first live load.
   schedule: "0 * * * * *"
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: groups
     steps:

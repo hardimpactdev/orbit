@@ -99,7 +99,7 @@ def evaluate(previous, *, now, healthy, heads, free_inodes, total_inodes, serve_
     state = dict(previous)
     free_percent = 100 * free_inodes / total_inodes
     result = {"action": "healthy", "serve_healthy": healthy, "free_inodes": free_inodes, "free_inode_percent": round(free_percent, 2)}
-    if free_percent < 10:
+    if free_percent <= 20:
         result["inode_alert"] = "critical" if free_percent < 2 else "warning"
     if healthy:
         state.pop("unhealthy_since", None)
@@ -143,11 +143,16 @@ def main():
         heads = claimable_heads(read_json("https://gateway.orbit/api/v1/operation-executor/claimable", context=ssl.create_default_context(cafile=CA)))
     except (OSError, ValueError, KeyError, TypeError):
         heads = None
-    filesystem = os.statvfs("/")  # The Node 209 datastore is on the root filesystem.
+    inode_paths = ["/", "/run/swamp-datastore-inode-probe"]
+    inode_filesystem, filesystem = min(
+        ((path, os.statvfs(path)) for path in inode_paths),
+        key=lambda item: item[1].f_favail / item[1].f_files,
+    )
     started = subprocess.run(["systemctl", "show", UNIT, "-p", "ActiveEnterTimestampMonotonic", "--value"], capture_output=True, text=True, check=True, timeout=10)
     serve_age = time.monotonic() - int(started.stdout.strip()) / 1_000_000
     result, state = evaluate(previous, now=now, healthy=healthy, heads=heads,
                              free_inodes=filesystem.f_favail, total_inodes=filesystem.f_files, serve_age=serve_age)
+    result["inode_filesystem"] = inode_filesystem
     if result["action"] == "restart":
         # Persist the cooldown before the effect, including uncertain restart replies.
         state["last_restart"] = now

@@ -7,3 +7,7 @@ tags: {}
 globalArguments:
   factory: orbit-subtask-factory
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

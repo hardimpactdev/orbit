@@ -13,3 +13,7 @@ globalArguments:
   checkoutDir: /fast/apps/orbit-swamp-scratch/base
   branch: main
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

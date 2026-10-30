@@ -5,6 +5,8 @@ queueTimeout: 300
 description: platform11 detect through its private project extension.
 trigger:
   schedule: 40 5 * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

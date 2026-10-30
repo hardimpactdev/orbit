@@ -5,6 +5,8 @@ queueTimeout: 300
 description: ditis-hr detect through its private project extension.
 trigger:
   schedule: 30 5 * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

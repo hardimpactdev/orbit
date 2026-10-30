@@ -15,3 +15,7 @@ globalArguments:
     - factory: dependency-package
       preapprovalModel: orbit-driver-package
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

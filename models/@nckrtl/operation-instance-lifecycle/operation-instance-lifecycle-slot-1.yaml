@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-instance-lifecycle'
+typeVersion: 2026.10.28.1
+id: 662caab1-31b0-5640-a60c-1dd70c8fae96
+name: operation-instance-lifecycle-slot-1
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

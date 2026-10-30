@@ -5,6 +5,8 @@ queueTimeout: 300
 description: Admit scheduled work and reconcile findings and completed group receipts.
 trigger:
   schedule: '40 * * * * *'
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: reconcile
     steps:

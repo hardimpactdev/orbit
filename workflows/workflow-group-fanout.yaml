@@ -23,6 +23,8 @@ inputs:
           factories: { type: array, items: { type: string } }
         required: [workItem, reason, factories]
   required: [groups, conflicts]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: groups
     steps:

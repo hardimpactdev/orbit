@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-processes-schedules'
+typeVersion: 2026.10.28.1
+id: 0426f7bd-5c3b-522f-8771-d392fb4ff229
+name: operation-processes-schedules-slot-1
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

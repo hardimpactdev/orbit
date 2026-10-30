@@ -11,3 +11,7 @@ globalArguments:
   # Raise board assistance on the Orbit group while a run is parked at a human gate.
   assistanceModel: orbit-gateway
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

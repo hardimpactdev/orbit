@@ -6,6 +6,8 @@ queueTimeout: 60
 autoResume: true
 trigger:
   schedule: "0,30 * * * * *"
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: discover
     steps:
@@ -25,7 +27,7 @@ jobs:
       - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
         forEach:
           item: work
-          in: "${{ steps.discover.outputs.work }}"
+          in: "${{ has(steps.discover.outputs) ? steps.discover.outputs.work : [] }}"
         task:
           type: behavior
           behaviorType: '@nckrtl/operation-certificates'

@@ -5,6 +5,8 @@ queueTimeout: 300
 description: nckrtl.com routine through its private project extension.
 trigger:
   schedule: 0 2 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

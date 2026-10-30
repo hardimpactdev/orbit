@@ -49,3 +49,7 @@ globalArguments:
     type: '@nckrtl/project-mealou'
   dependencyProjects: []
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

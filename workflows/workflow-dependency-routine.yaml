@@ -8,6 +8,8 @@ inputs:
   properties:
     workItem: { type: string, description: 'Existing routine work item tg-<group id>' }
   required: [workItem]
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: tick
     steps:

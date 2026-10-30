@@ -10,3 +10,7 @@ globalArguments:
   auth: cli
   defaultModel: claude-opus-5-5
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-database'
+typeVersion: 2026.10.28.1
+id: 0b5038cd-9235-5b70-b8d8-61016de0f5a7
+name: operation-database-slot-3
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

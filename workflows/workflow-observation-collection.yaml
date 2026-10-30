@@ -7,6 +7,8 @@ autoResume: true
 concurrency: 1
 trigger:
   schedule: "15 */10 * * * *"
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
   - name: observation
     steps:

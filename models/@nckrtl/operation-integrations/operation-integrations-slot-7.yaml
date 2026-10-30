@@ -1,0 +1,11 @@
+type: '@nckrtl/operation-integrations'
+typeVersion: 2026.10.28.1
+id: f140bfff-fcf1-5d9a-99a9-36548e2c4b09
+name: operation-integrations-slot-7
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
+reports:
+  skip:
+  - '@swamp/method-summary'

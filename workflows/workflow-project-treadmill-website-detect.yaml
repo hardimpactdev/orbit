@@ -5,6 +5,8 @@ queueTimeout: 300
 description: treadmill-website detect through its private project extension.
 trigger:
   schedule: 30 3 * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
 jobs:
 - name: start
   steps:

@@ -10,3 +10,7 @@ globalArguments:
   # Leave room for nested project-config and worker calls.
   maxCallsPerTick: 60
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]

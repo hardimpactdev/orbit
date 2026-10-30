@@ -11,3 +11,7 @@ globalArguments:
   provider: codex
   version: 0.146.0
 methods: {}
+
+# Native execution history keeps errors; omit duplicate summary versions.
+reports:
+  skip: ["@swamp/method-summary"]
