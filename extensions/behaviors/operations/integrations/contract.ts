@@ -22,7 +22,6 @@ export type Invocation = {
   input: Record<string, unknown>;
   parseResult: (result: unknown) => Record<string, unknown>;
   error: (result: Record<string, unknown>) => string | null;
-  pending?: (result: Record<string, unknown>) => boolean;
   prove: (result: Record<string, unknown>) => boolean;
 };
 
@@ -78,35 +77,6 @@ export function invocation(
       },
       error: remoteError,
       prove: (value) => value.backend === "revoked",
-    };
-  }
-  if (
-    [
-      "websocket.app_rotate",
-    ].includes(kind)
-  ) {
-    const identity = z.string().uuid().parse(input.registry_operation_id);
-    const result = z.union([
-      z.object({ error_code: ErrorCode }),
-      z.object({
-        outcome: z.enum(["succeeded", "pending", "superseded", "failed"]),
-        data: z.object({
-          backend: z.enum(["applied", "pending"]).optional(),
-          error_code: ErrorCode.optional(),
-        }),
-      }),
-    ]);
-    return {
-      step: "reverb-registry-applied",
-      transport: "remote_program",
-      name: "websocket.registry-applied",
-      input: { registry_operation_id: identity },
-      parseResult: (value) => result.parse(value),
-      error: remoteError,
-      pending: (value) => value.outcome === "pending",
-      prove: (value) =>
-        value.outcome === "succeeded" &&
-        (value.data as Record<string, unknown>).backend === "applied",
     };
   }
   if (kind.startsWith("vault.")) {

@@ -44,7 +44,7 @@ class WebSocketDirectNative(NativeTestCase):
         self.assertEqual(state['registryReads'], 1)
         self.assertFalse(any('/primitive' in path or 'claim' in path or 'receipt' in path for path in state['calls']))
     def test_actual_workflow_confirms_mutations_without_replaying_registry_mutation(self):
-        for kind in ['websocket.app_create', 'websocket.app_destroy']:
+        for kind in ['websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate']:
             self.state['operation']['kind'] = kind; self.save()
             self.run_workflow()
             self.assertEqual(self.read()['operation']['status'], 'succeeded')
