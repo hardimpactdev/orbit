@@ -32,18 +32,19 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
-        'target_id' => $this->gateway->id, 'node_id' => $this->gateway->id, 'status' => OperationStatus::Queued,
+    $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node',
+        'target_id' => $this->worker->id, 'node_id' => $this->worker->id, 'status' => OperationStatus::Queued,
         'state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => $this->runId],
-        'input' => ['repository' => 'foreign/repository', 'permissions' => ['administration' => 'write']]]);
+        'input' => ['github' => ['$secret' => 'github.installation', 'id' => $this->worker->id], 'repository' => 'foreign/repository', 'permissions' => ['administration' => 'write']]]);
     // Supply only a test declaration. No production family receives a credential grant in this PR.
     $definition = app(DirectOperation::class)->definition($this->operation->kind);
+    $definition['private_material'] = ['github' => 'github.installation'];
     $definition['github_token'] = ['repository' => 'hardimpactdev/orbit', 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']];
     $reflection = new ReflectionClass(DirectOperation::class);
     $direct = $reflection->newInstanceWithoutConstructor();
     $reflection->getProperty('definitions')->setValue($direct, [$this->operation->kind => $definition]);
     app()->instance(DirectOperation::class, $direct);
-    $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/github-token';
+    $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/private-material';
     $this->body = ['run_id' => $this->runId];
     GitHubTestSupport::storeApp();
     $this->freezeTime();
@@ -65,10 +66,10 @@ it('returns fresh exact-scope credentials privately without changing public resu
     Http::fake(['*/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
     $before = $this->operation->fresh()->toArray();
     foreach ([1, 2] as $_) {
-        $this->postJson($this->path, $this->body)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
-            ->assertJsonPath('data.token', 'ephemeral-sentinel')->assertJsonPath('data.repository', 'hardimpactdev/orbit')
-            ->assertJsonPath('data.permissions', ['contents' => 'write', 'pull_requests' => 'write'])
-            ->assertJsonPath('data.expires_at', $this->reply['expires_at']);
+        $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('data.github.token', 'ephemeral-sentinel')->assertJsonPath('data.github.repository', 'hardimpactdev/orbit')
+            ->assertJsonPath('data.github.permissions', ['contents' => 'write', 'pull_requests' => 'write'])
+            ->assertJsonPath('data.github.expires_at', $this->reply['expires_at']);
     }
     $activities = Activity::query()->where('command', 'operation:github:mint')->get();
     expect($activities)->toHaveCount(2);
@@ -97,43 +98,44 @@ it('refuses an unbound or foreign run before minting', function (?string $run): 
         $state['swamp_run_id'] = $run;
     }
     $this->operation->update(['state' => $state]);
-    $this->postJson($this->path, $this->body)->assertConflict()
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertConflict()
         ->assertJsonPath('error.code', $run === null ? 'operation.run_unbound' : 'operation.run_mismatch');
     Http::assertNothingSent();
 })->with([null, 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']);
 
 it('binds a Node worker credential request to its own Operation Node', function (): void {
     config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => [$this->worker->id]]);
-    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    $this->operation->update(['node_id' => $this->gateway->id]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
     $this->operation->update(['node_id' => $this->worker->id]);
     Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
-    $this->postJson($this->path, $this->body)->assertOk();
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk();
     Http::assertSentCount(2);
 });
 
-it('limits the control-plane mint exception to the active Gateway intent', function (string $target): void {
+it('does not grant a configured control-plane peer private access to another Node intent', function (string $target): void {
     $foreign = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
-    $this->operation->update(['node_id' => $target === 'null' ? null : $foreign->id]);
+    $this->operation->update(['node_id' => $target === 'null' ? null : ($target === 'Gateway' ? $this->gateway->id : $foreign->id)]);
 
-    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 
     Http::assertNothingSent();
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
-})->with(['foreign workload Node', 'null']);
+})->with(['foreign workload Node', 'null', 'Gateway']);
 
-it('refuses the control-plane mint exception after the Gateway role ends', function (): void {
-    $this->gateway->roles()->update(['status' => LifecycleStatus::Failed]);
+it('refuses a direct mint for another Node even for the configured control-plane peer', function (): void {
+    $this->operation->update(['node_id' => $this->gateway->id]);
 
-    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id))
+    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id, $this->runId))
         ->toThrow(ResourceOperationException::class, 'This Node cannot mint for the Operation Node.');
 
     Http::assertNothingSent();
 });
 
 it('refuses an unknown peer and missing Gateway access', function (): void {
-    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.50'])->postJson($this->path, $this->body)->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.50'])->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden();
     $this->worker->accessibleNodes()->detach();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip])->postJson($this->path, $this->body)->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip])->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden();
     Http::assertNothingSent();
 });
 
@@ -144,23 +146,37 @@ it('refuses a cancelled terminal or non-direct intent before minting', function 
         'polled' => $this->operation->update(['state' => ['route_publication_writer' => 'polled', 'swamp_run_id' => $this->runId]]),
         'undeclared' => app()->instance(DirectOperation::class, new DirectOperation),
     };
-    $this->postJson($this->path, $this->body)->assertStatus(match ($condition) {
-        'polled' => 422, 'undeclared' => 403, default => 409
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertStatus(match ($condition) {
+        'polled', 'undeclared' => 422, default => 409
     });
     Http::assertNothingSent();
 })->with(['cancel', 'terminal', 'polled', 'undeclared']);
 
-it('refuses caller-selected repository scope transport and duplicate fields', function (string $body): void {
-    $this->call('POST', $this->path, [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], str_replace('RUN', $this->runId, $body))
-        ->assertUnprocessable();
+it('refuses caller-selected repository scope and transport on the shared private read', function (array $extra): void {
+    $this->getJson($this->path.'?'.http_build_query([...$this->body, ...$extra]))->assertUnprocessable();
     Http::assertNothingSent();
-})->with(['{"run_id":"RUN","repository":"other/repo"}', '{"run_id":"RUN","permissions":{"contents":"write"}}',
-    '{"run_id":"RUN","url":"https://other.test"}', '{"run_id":"RUN","run_id":"RUN"}', '[]', 'not-json']);
+})->with([
+    [['repository' => 'other/repo']],
+    [['permissions' => ['contents' => 'write']]],
+    [['url' => 'https://other.test']],
+]);
 
-it('refuses query scope overrides', function (): void {
-    $this->postJson($this->path.'?repository=other/repo', $this->body)->assertUnprocessable();
+it('has no separate GitHub token POST route', function (): void {
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', $this->body)->assertNotFound();
     Http::assertNothingSent();
 });
+
+it('refuses a missing or foreign admitted credential reference before minting', function (string $change): void {
+    $input = $this->operation->input;
+    match ($change) {
+        'missing' => $input['github'] = null,
+        'owner' => $input['github']['id'] = $this->gateway->id,
+        'source' => $input['github']['$secret'] = 'github.app',
+    };
+    $this->operation->update(['input' => $input]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertUnprocessable();
+    Http::assertNothingSent();
+})->with(['missing', 'owner', 'source']);
 
 it('refuses an upstream scope repository or lifetime mismatch without leaking the credential', function (string $mutation): void {
     match ($mutation) {
@@ -174,14 +190,14 @@ it('refuses an upstream scope repository or lifetime mismatch without leaking th
         'large' => $this->reply['token'] = str_repeat('x', 2049),
     };
     Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
-    $this->postJson($this->path, $this->body)->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.github_token_unavailable')->assertDontSee('ephemeral-sentinel');
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.github_token_unavailable')->assertDontSee('ephemeral-sentinel');
     Http::assertSentCount(2);
 })->with(['scope', 'extra', 'repository', 'multiple', 'expired', 'long', 'empty', 'large']);
 
 it('sanitizes a transport or upstream refusal without serializing private diagnostics', function (bool $connection): void {
     Http::fake($connection ? fn () => throw new ConnectionException('private-upstream-sentinel')
         : ['*/installation' => Http::response(['message' => 'private-upstream-sentinel'], 403)]);
-    $this->postJson($this->path, $this->body)->assertStatus($connection ? 503 : 403)->assertDontSee('private-upstream-sentinel');
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertStatus($connection ? 503 : 403)->assertDontSee('private-upstream-sentinel');
     if ($connection) {
         Http::assertNothingSent();
     } else {
@@ -203,8 +219,19 @@ it('refreshes stale cancellation and terminal state before minting', function (b
     Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
     Operation::query()->whereKey($this->operation->id)->update($cancel
         ? ['cancel_requested_at' => now()] : ['status' => OperationStatus::Succeeded]);
-    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id))
+    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id, $this->runId))
         ->toThrow(ResourceOperationException::class);
     Http::assertNothingSent();
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
 })->with([true, false]);
+
+it('rechecks the requested run after refreshing before any GitHub mint', function (): void {
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Operation::query()->whereKey($this->operation->id)->update(['state' => [
+        'route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38',
+    ]]);
+    expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id, $this->runId))
+        ->toThrow(ResourceOperationException::class, 'This status belongs to another Swamp run.');
+    Http::assertNothingSent();
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+});

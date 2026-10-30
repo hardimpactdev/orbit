@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\GitHub\IssueDirectGitHubTokenAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\OperationExecutionContract;
@@ -36,19 +35,6 @@ final class DirectOperationsController extends Controller
         }
 
         return $this->respond($request, $contract->result($operation, $direct->primitive($operation)->execute($operation)));
-    }
-
-    public function githubToken(DirectOperationRequest $request, Operation $operation, IssueDirectGitHubTokenAction $action): JsonResponse
-    {
-        $issued = $action->handle($operation, $request->peerNodeId());
-        $grant = $issued['grant'];
-
-        return $this->respond($request, [
-            'repository' => $grant->repository->owner.'/'.$grant->repository->name,
-            'permissions' => $grant->permissions,
-            'token' => $issued['credential']->reveal(),
-            'expires_at' => $issued['credential']->expiresAt,
-        ])->header('Cache-Control', 'no-store');
     }
 
     public function result(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
