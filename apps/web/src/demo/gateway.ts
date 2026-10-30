@@ -837,6 +837,11 @@ export function createDemoGateway() {
             ["DELETE", /^\/api\/v1\/tools\/(\d+)$/, ([id = ""]) => removeTool(id)],
             [
                 "GET",
+                /^\/api\/v1\/metrics\/status$/,
+                () => ok(byRoute.get("GET /api/v1/metrics/status#")),
+            ],
+            [
+                "GET",
                 /^\/api\/v1\/metrics\/credentials$/,
                 () => ok(byRoute.get("GET /api/v1/metrics/credentials#")),
             ],

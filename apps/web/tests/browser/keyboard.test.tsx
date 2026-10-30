@@ -6,7 +6,7 @@ import { screenText } from "./screen";
 
 it("jumps to a section with its digit and walks the sidebar with the arrows", async () => {
     const app = await openApp("/");
-    await expect.element(row("Nodes with roles", "beast")).toBeVisible();
+    await expect.element(row("Tracked nodes", "beast")).toBeVisible();
 
     await userEvent.keyboard("2");
     await expect.poll(app.url).toBe("/nodes");
@@ -52,17 +52,17 @@ it("skips disabled extension sections when moving through the nav with arrows", 
 
 it("hovers a pane, focuses it, moves the selection, and opens the row", async () => {
     const app = await openApp("/nodes");
-    await expect.element(row("Nodes with roles", "beast")).toBeVisible();
+    await expect.element(row("Tracked nodes", "beast")).toBeVisible();
 
     await userEvent.keyboard("{ArrowRight}");
-    await expect.element(pane("Nodes with roles")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Tracked nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{Enter}");
-    await expect.element(pane("Nodes with roles")).toHaveAttribute("data-state", "focused");
+    await expect.element(pane("Tracked nodes")).toHaveAttribute("data-state", "focused");
     await expect.element(footer()).toMatchTextContent("Enter or click opens");
 
     await userEvent.keyboard("{ArrowDown}");
-    await expect.element(row("Nodes with roles", "beast")).toHaveAttribute("aria-selected", "true");
+    await expect.element(row("Tracked nodes", "beast")).toHaveAttribute("aria-selected", "true");
 
     await userEvent.keyboard("{Enter}");
     await expect.poll(app.url).toBe("/nodes/2");
@@ -71,10 +71,10 @@ it("hovers a pane, focuses it, moves the selection, and opens the row", async ()
 
 it("moves between the dashboard panes by where they are on the screen", async () => {
     await openApp("/");
-    await expect.element(row("Nodes with roles", "beast")).toBeVisible();
+    await expect.element(row("Tracked nodes", "beast")).toBeVisible();
 
     await userEvent.keyboard("{ArrowRight}");
-    await expect.element(pane("Nodes with roles")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Tracked nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowDown}");
     await expect.element(pane("Projects")).toHaveAttribute("data-state", "hovered");
@@ -89,21 +89,21 @@ it("moves between the dashboard panes by where they are on the screen", async ()
     await expect.element(pane("Processes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowUp}{ArrowUp}");
-    await expect.element(pane("Nodes with roles")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Tracked nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowLeft}");
-    await expect.element(pane("Nodes with roles")).not.toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Tracked nodes")).not.toHaveAttribute("data-state", "hovered");
 });
 
 it("goes back with Esc and finds the row it left selected", async () => {
     const app = await openApp("/nodes");
-    await expect.element(row("Nodes with roles", "beast")).toBeVisible();
+    await expect.element(row("Tracked nodes", "beast")).toBeVisible();
     await userEvent.keyboard("{ArrowRight}{Enter}{ArrowDown}{Enter}");
     await expect.poll(app.url).toBe("/nodes/2");
 
     await userEvent.keyboard("{Escape}");
     await expect.poll(app.url).toBe("/nodes");
-    await expect.element(row("Nodes with roles", "beast")).toHaveAttribute("aria-selected", "true");
+    await expect.element(row("Tracked nodes", "beast")).toHaveAttribute("aria-selected", "true");
 });
 
 it("cycles the node filter with n and keeps it in the URL", async () => {
