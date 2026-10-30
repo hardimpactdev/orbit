@@ -119,3 +119,23 @@ it('refuses the first unbound read and admits it only after the matching Gateway
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe($runId);
     $this->getJson($path)->assertOk()->assertJsonPath('data.input.execution.directory', $this->instance->production_home.'/releases/admitted');
 });
+
+it('supports teardown and lifecycle parent requests with immutable Node-account input', function (): void {
+    app(ProjectLifecycleStepStore::class)->create($this->instance->project, LifecyclePhase::Teardown, new LifecycleStep('remove', 'private teardown program', 30), null, null);
+    $parent = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->instance->node_id, 'status' => 'running', 'input' => []]);
+    $admission = app(StartInstanceStepListAction::class);
+    $this->operation->forceFill(['parent_operation_id' => $parent->id, 'input' => ['instance_id' => $this->instance->id, 'source' => 'project', 'list' => 'teardown',
+        'configuration_digest' => $admission->configurationDigest($this->instance->project, LifecyclePhase::Teardown), ...$admission->appStepAdmission($this->instance, LifecyclePhase::Teardown)]])->save();
+    $input = app(InstanceSetupProjection::class)->input($this->operation);
+    expect($input['list'])->toBe('teardown')->and($input['execution']['user'])->toBe($this->instance->node->user)
+        ->and($input['steps'][0]['command_digest'])->toBe(hash('sha256', 'private teardown program'));
+});
+
+it('refuses a changed execution account or complete timeout after admission', function (string $change): void {
+    if ($change === 'account') {
+        $this->instance->node->update(['user' => 'changed-account']);
+    } else {
+        ProjectLifecycleStep::query()->where('project_id', $this->instance->project_id)->update(['timeout_seconds' => 31]);
+    }
+    expect(fn () => app(InstanceSetupProjection::class)->input($this->operation))->toThrow(ResourceOperationException::class);
+})->with(['account', 'timeout']);

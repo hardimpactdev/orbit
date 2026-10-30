@@ -23,9 +23,7 @@ final readonly class InstanceStepListIntent
         $instance = Instance::query()->with(['project', 'node'])->findOrFail($operation->target_id);
         if ($operation->kind !== 'instance.run_steps' || $operation->target_type !== 'instance'
             || $operation->node_id !== $instance->node_id || ($input['instance_id'] ?? null) !== $instance->id
-            || ($input['source'] ?? null) !== 'project' || $phase === null || $instance->placedOnAppProd()
-            || ! str_starts_with($instance->checkout_path, '/') || str_contains($instance->checkout_path, "\0")
-            || preg_match('/\A[a-z_][a-z0-9_-]{0,63}\z/D', $instance->node->user) !== 1 || $instance->node->user === 'root'
+            || ($input['source'] ?? null) !== 'project' || $phase === null
             || ($input['configuration_digest'] ?? null) !== $this->admission->configurationDigest($instance->project, $phase)) {
             throw $this->refused();
         }

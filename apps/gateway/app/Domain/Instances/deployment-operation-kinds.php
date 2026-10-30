@@ -109,7 +109,7 @@ $instanceExecutionKinds = [
     'instance.run_steps' => [
         ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
         'executor' => 'swamp',
-        'result_fields' => ['budget_seconds', 'timeout_seconds', 'command_timeout_seconds', 'binary', 'exit_code', 'timed_out', 'instance_id', 'outcome', 'failed_step', 'error_code', 'no_op'],
+        'result_fields' => ['instance_id', 'outcome', 'failed_step', 'error_code', 'no_op'],
     ],
 
 ];

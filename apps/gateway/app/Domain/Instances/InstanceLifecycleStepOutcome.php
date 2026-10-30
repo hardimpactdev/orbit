@@ -33,8 +33,9 @@ final readonly class InstanceLifecycleStepOutcome
             return ['outcome' => 'succeeded', 'error_code' => null, 'failed_step' => null];
         }
         if ($child->status === OperationStatus::Failed && in_array($result['outcome'] ?? null, ['failed', 'missing', 'busy', 'deadline'], true)
-            && is_string($result['error_code'] ?? null) && ($result['error_code'] ?? null) === $child->error_code) {
-            return ['outcome' => $result['outcome'], 'error_code' => $result['error_code'], 'failed_step' => $result['failed_step'] ?? null];
+            && is_string($result['error_code'] ?? null) && $result['error_code'] === $child->error_code
+            && (is_string($result['failed_step'] ?? null) || ($result['failed_step'] ?? null) === null)) {
+            return ['outcome' => $result['outcome'], 'error_code' => $result['error_code'], 'failed_step' => is_string($result['failed_step'] ?? null) ? $result['failed_step'] : null];
         }
 
         return $unknown;
