@@ -50,9 +50,12 @@ class NetworkFixture extends Fixture {
         if (
           add("network-prepare", "node.prepare-network", "gateway") &&
           add("network-key", "wireguard.prepare-peer-key", "bootstrap-ssh") &&
-          this.childStatus === "succeeded" && this.childStarted
+          this.childStarted
         ) {
-          if (
+          if (this.childStatus === "cancelled") {
+            add("network-result", "node.network-result", "gateway");
+          } else if (
+            this.childStatus === "succeeded" &&
             add("network-publish", "wireguard.publish-peer", "bootstrap-ssh") &&
             add("network-private-ssh", "agent.status") &&
             add("network-trust", "firewall.rules")
@@ -70,6 +73,10 @@ class NetworkFixture extends Fixture {
           kind: "node.wireguard_hub_converge",
           node_id: 3,
           status: this.childStatus,
+          error_code: this.childStatus === "cancelled"
+            ? "operation.cancelled"
+            : null,
+          result: null,
           input: {},
           cancel_requested: false,
           step_results: {},
@@ -136,4 +143,90 @@ Deno.test("network replays a lost terminal receipt without another peer mutation
   const before = f.runs();
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.runs(), before);
+});
+
+Deno.test("network settles a cancelled final run without successful network proof", async () => {
+  const f = new NetworkFixture();
+  await f.execute();
+  f.childStatus = "cancelled";
+  f.replies.set("network-result", { error_code: "operation.cancelled" });
+  const base = f.http;
+  f.http = async (method, path, raw) => {
+    if (
+      path.endsWith("/run") &&
+      (raw as Record<string, unknown>)?.key === "network-result"
+    ) {
+      f.operation.cancel_requested = true;
+    }
+    return await base(method, path, raw);
+  };
+  assertEquals((await f.execute()).status, "cancelled");
+  assertEquals(f.calls.at(-1)!.body, {
+    worker: "worker-1",
+    status: "cancelled",
+    result: {},
+    error_code: null,
+  });
+  assertEquals(f.runs().includes("wireguard.publish-peer"), false);
+});
+
+Deno.test("network cancels after its pending child settles without restarting a failed step", async () => {
+  const f = new NetworkFixture();
+  await f.execute();
+  f.operation.cancel_requested = true;
+  const runs = f.runs();
+  assertEquals((await f.execute()).status, "waiting");
+  assertEquals(f.calls.at(-1)!.body, {
+    worker: "worker-1",
+    keys: ["network-hub"],
+  });
+  f.childStatus = "cancelled";
+  f.receipts.set("network-result", { error_code: "operation.cancelled" });
+  f.operation.steps.push({ name: "network-result", status: "failed" });
+  const base = f.http;
+  f.http = async (method, path, raw) => {
+    if (
+      path.endsWith("/step") &&
+      (raw as Record<string, unknown>)?.name === "network-result"
+    ) {
+      throw new Error("operation.step_finished");
+    }
+    return await base(method, path, raw);
+  };
+  assertEquals((await f.execute()).status, "cancelled");
+  assertEquals(f.runs(), runs);
+  assertEquals(f.childAdmissions, 1);
+  assertEquals(f.calls.at(-1)!.body.result, {});
+});
+
+Deno.test("network still requires successful network proof after peer publication", async () => {
+  const f = new NetworkFixture();
+  await f.execute();
+  f.childStatus = "succeeded";
+  f.replies.set("network-result", { error_code: "operation.cancelled" });
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.completion_unproven",
+  );
+  assertEquals(f.calls.some((call) => call.path.endsWith("/complete")), false);
+});
+
+Deno.test("network reconciles an already started peer publication before settling cancellation", async () => {
+  const f = new NetworkFixture();
+  await f.execute();
+  f.childStatus = "succeeded";
+  f.lostRun = "network-publish";
+  await assertRejects(() => f.execute(), Error, "Lost run reply");
+  f.operation.cancel_requested = true;
+  f.operation.steps.push({ name: "network-publish", status: "running" });
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(
+    f.runs().filter((name) => name === "wireguard.publish-peer").length,
+    1,
+  );
+  assertEquals(
+    f.calls.some((call) => call.path.endsWith("/receipts/network-publish")),
+    true,
+  );
 });

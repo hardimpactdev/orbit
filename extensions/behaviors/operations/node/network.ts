@@ -31,6 +31,21 @@ export async function network(
 ): Promise<z.infer<typeof Completion> | { waiting: true }> {
   for (let stage = 0; stage < 12; stage++) {
     await execution.refresh();
+    if (
+      execution.operation.cancel_requested &&
+      !Object.hasOwn(execution.operation.step_results, "network-publish") &&
+      !execution.operation.steps.some((step) => step.name === "network-publish")
+    ) {
+      const children = z.array(Child).parse(await execution.get("children"));
+      const pending = children.filter((child) =>
+        ["queued", "running", "waiting"].includes(child.status)
+      );
+      if (pending.length) {
+        await execution.wait(pending.map((child) => child.key));
+        return { waiting: true };
+      }
+      return { status: "cancelled", result: {}, error_code: null };
+    }
     const descriptors = z.array(Descriptor).parse(
       execution.operation.execution_context?.descriptors,
     );
@@ -44,6 +59,12 @@ export async function network(
         next.name,
         next.input,
       );
+      if (
+        result.error_code === "operation.cancelled" &&
+        !Object.hasOwn(execution.operation.step_results, "network-publish")
+      ) {
+        return { status: "cancelled", result: {}, error_code: null };
+      }
       if (next.key === "network-result") {
         const error = result.error_code
           ? ErrorCode.parse(result.error_code)
@@ -60,12 +81,6 @@ export async function network(
           result,
           error_code: error,
         };
-      }
-      if (
-        result.error_code === "operation.cancelled" &&
-        !Object.hasOwn(execution.operation.step_results, "network-publish")
-      ) {
-        return { status: "cancelled", result: {}, error_code: null };
       }
       continue;
     }
