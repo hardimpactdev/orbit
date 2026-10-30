@@ -28,9 +28,17 @@ The database family exposes `PrepareOwnedDatabaseDestructionAction::execute(Inst
 
 Version 1 binds a random artifact identity, owning Instance, Node, checkout, agent build, and ordered connection snapshots. It supports local owned SQLite files and record-only connections without a managed server. SQLite paths must be inside the admitted checkout and recorded on its Node. Attached foreign connections stay untouched. The reusable Swamp `destroyOwnedLocal` helper removes only those exact SQLite paths through the local account's pinned `instance.copy-sqlite` primitive. Place it on the artifact's Node with matching labels and mark the native step as a write. Its bounded result echoes the artifact identity, owner, Node and complete connection ID set.
 
+### Ordering and projection
+
+Drop owned databases only after schedules and processes stop. The lifecycle caller holds its admission lock across prepare, remove and project, so a new owned connection cannot enter the removal set during destruction.
+
 Projection accepts that result only after native success. It checks placement and the remaining owned connection set against the saved artifact before deleting records and attachments. A changed or newly owned connection refuses the whole projection; a repeated projection tolerates records already removed. The parent must project databases before deleting the Instance row, and remove SQLite files before removing its checkout.
 
+### Managed database cutover
+
 Managed servers refuse artifact preparation with `database.native_removal_unavailable`, including a server on the Instance's own Node. The native managed-SQL contract and private material wire are not active. This gate leaves the existing PostgreSQL fenced owner checks, MySQL creation or adoption proof, server removal lock and fresh login-sharing checks intact. No credentials or SQL enter these local artifacts. Retained lifecycle callers continue to use their guarded synchronous paths until their owning cutover.
+
+That cutover must include managed-SQL drops for test and worker-pool databases through the shared private-material path before deleting `DropOwnedDatabasesAction`. The local artifact helpers ship with that complete writer switch and deletion, not as a dormant standalone slice.
 
 ## Instance lifecycle children
 
