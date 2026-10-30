@@ -23,7 +23,7 @@ final readonly class MetricsEffectAdmission implements OperationChildAdmission
         $nodeId = ValidatedData::integer($intent['node_id']);
         $input = ValidatedData::object($intent['input']);
         $node = Node::query()->findOrFail($nodeId);
-        if ($parent->kind !== 'metrics.reconcile' || $node->platform !== 'linux' || ! in_array($kind, MetricsReceiptCommand::Effects, true)) {
+        if (! in_array($parent->kind, ['metrics.reconcile', 'metrics.exporter_enable', 'metrics.exporter_disable'], true) || $node->platform !== 'linux' || ! in_array($kind, MetricsReceiptCommand::Effects, true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This is not an admitted Metrics reconciliation effect.', 422);
         }
         if ($kind === 'metrics.service_caddy_restore') {

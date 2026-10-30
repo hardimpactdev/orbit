@@ -8,7 +8,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use InvalidArgumentException;
 
-/** @phpstan-type Candidate array{node_id: int, name: string, address: string, selected: bool, caddy: bool, fpm: bool, hosts: list<string>, instance_ids: list<int>} */
+/** @phpstan-type Candidate array{node_id: int, name: string, address: string, selected: bool, caddy: bool, caddy_cleanup?: bool, fpm: bool, hosts: list<string>, instance_ids: list<int>} */
 final readonly class MetricsIntent
 {
     /** @return list<Candidate> */
@@ -21,11 +21,21 @@ final readonly class MetricsIntent
         $nodes = [];
         foreach ($raw as $value) {
             $node = ValidatedData::object($value);
-            $nodes[] = ['node_id' => ValidatedData::integer($node['node_id']), 'name' => ValidatedData::string($node['name']), 'address' => ValidatedData::string($node['address']),
+            $candidate = ['node_id' => ValidatedData::integer($node['node_id']), 'name' => ValidatedData::string($node['name']), 'address' => ValidatedData::string($node['address']),
                 'hosts' => ValidatedData::stringList($node['hosts']), 'selected' => self::boolean($node['selected']), 'caddy' => self::boolean($node['caddy']), 'fpm' => self::boolean($node['fpm']), 'instance_ids' => ValidatedData::integerList($node['instance_ids'])];
+            if (array_key_exists('caddy_cleanup', $node)) {
+                $candidate['caddy_cleanup'] = self::boolean($node['caddy_cleanup']);
+            }
+            $nodes[] = $candidate;
         }
 
         return $nodes;
+    }
+
+    /** @param Candidate $node */
+    public static function rebuildsCaddy(array $node): bool
+    {
+        return $node['caddy'] || ($node['caddy_cleanup'] ?? false);
     }
 
     /** @return list<array{name: string, address: string}> */

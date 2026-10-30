@@ -61,7 +61,7 @@ return (static function (): array {
             'completion_contract' => ['step' => 'metrics-effect', 'transport' => 'agent', 'name' => $name, 'result' => $proof],
             'result_fields' => ['changed', 'verified', 'applied', 'error_code']];
     }
-    foreach (['reconcile'] as $verb) {
+    foreach (['reconcile', 'exporter_enable', 'exporter_disable'] as $verb) {
         $kinds['metrics.'.$verb] = ['executor' => 'swamp', 'completion' => MetricsFleetCompletion::class,
             'execution' => MetricsFleetExecution::class,
             'compensations' => ['metrics.node_exporter_restore', 'metrics.cadvisor_restore', 'metrics.service_restore', 'metrics.service_caddy_restore'],
@@ -72,7 +72,7 @@ return (static function (): array {
                     ['metrics.service_caddy_restore', 'metrics.node_exporter_snapshot', 'metrics.node_exporter_converge', 'metrics.node_exporter_remove', 'metrics.node_exporter_restore', 'metrics.cadvisor_snapshot', 'metrics.cadvisor_converge', 'metrics.cadvisor_remove', 'metrics.cadvisor_restore', 'metrics.service_snapshot', 'metrics.service_converge', 'metrics.service_restore', 'route.caddy_converge']),
                 ...array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'input.node_id'], ['metrics.runtime_converge', 'metrics.runtime_verify']),
             ],
-            'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'metrics.receipt', 'result' => ['backend' => 'active']],
+            'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'metrics.receipt', 'result' => []],
             'result_fields' => ['backend', 'error_code']];
     }
     $kinds['metrics.service_caddy_restore'] = [

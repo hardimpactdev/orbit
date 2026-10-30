@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Metrics;
 
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsExporterRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
 
 final class DisableMetricsExporterCommand extends MetricsCommand
 {
+    use FollowsIntegrationOperations;
+
     #[\Override]
-    protected $signature = 'metrics:exporter:disable {node : Node ID or name} {--json : Return machine-readable JSON}';
+    protected $signature = 'metrics:exporter:disable {node : Node ID or name} {--idempotency-key= : Reuse a key to retry this operation start} {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Disable the Metrics exporter on a node.';
@@ -27,13 +29,8 @@ final class DisableMetricsExporterCommand extends MetricsCommand
         if ($nodeId === null) {
             return self::FAILURE;
         }
-        $response = $this->sendWithProgress(
-            $connector,
-            new DisableMetricsExporterRequest($nodeId),
-            MetricsMutationResponse::class,
-            ['Disable Metrics exporter', 'Disabling Metrics exporter', 'Disabled Metrics exporter'],
-        );
 
-        return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+        return $this->integrationOperation($connector, $repository,
+            new DisableMetricsExporterRequest($nodeId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Disable Metrics exporter');
     }
 }

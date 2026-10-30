@@ -22,6 +22,7 @@ use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsRuntimeSecrets;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
+use App\Domain\Metrics\StartMetricsReconcileAction;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
@@ -40,7 +41,6 @@ use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
-use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
@@ -67,7 +67,7 @@ final class MetricsServiceProvider extends ServiceProvider
         ServiceMetricsProjection::class => ServiceMetricsProjection::class,
         MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
         MetricsCadvisorRuntime::class => AgentMetricsCadvisorRuntime::class,
-        MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
+        MetricsFleetReconciler::class => StartMetricsReconcileAction::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,
         MetricsRoleManager::class => NativeMetricsRoleManager::class,
         MetricsRuntimeLifecycle::class => NativeMetricsContainerRuntime::class,

@@ -9,15 +9,18 @@ use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Metrics\MetricsMutationData;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationReport;
+use App\Domain\Metrics\MetricsReconcileAdmission;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 {
@@ -25,7 +28,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         private AddNodeRoleAction $add,
         private RemoveNodeRoleAction $remove,
         private ExporterPreferenceRepository $preferences,
-        private MetricsFleetReconciler $fleet,
+        private MetricsReconcileAdmission $fleet,
         private MetricsPublicationReport $report,
         private ManagedNodeEligibility $eligibility,
     ) {}
@@ -72,7 +75,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         return new MetricsMutationData($node->id, 'removed', $this->report->take());
     }
 
-    public function enableExporter(int $nodeId): MetricsMutationData
+    public function enableExporter(int $nodeId): Operation
     {
         $node = $this->activeNode($nodeId);
         $this->guardLinuxPlatform($node);
@@ -85,23 +88,31 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
             );
         }
 
-        $this->preferences->put($nodeId, ExporterPreference::Enabled);
-        $this->fleet->reconcile();
-
-        return new MetricsMutationData($nodeId, 'enabled');
+        return $this->exporter($nodeId, ExporterPreference::Enabled);
     }
 
-    public function disableExporter(int $nodeId): MetricsMutationData
+    public function disableExporter(int $nodeId): Operation
     {
         $node = $this->activeNode($nodeId);
         $this->guardLinuxPlatform($node);
         if ($node->roles()->where('role', RoleName::Metrics->value)->exists()) {
             throw new RoleAssignmentException('The metrics node exporter cannot be disabled.');
         }
-        $this->preferences->put($nodeId, ExporterPreference::Disabled);
-        $this->fleet->reconcile();
 
-        return new MetricsMutationData($nodeId, 'disabled');
+        return $this->exporter($nodeId, ExporterPreference::Disabled);
+    }
+
+    private function exporter(int $nodeId, ExporterPreference $preference): Operation
+    {
+        if (($replay = app(OperationIdempotency::class)->replay($preference === ExporterPreference::Enabled ? 'metrics.exporter_enable' : 'metrics.exporter_disable')) !== null) {
+            return $replay;
+        }
+
+        return DB::transaction(function () use ($nodeId, $preference): Operation {
+            $this->preferences->put($nodeId, $preference);
+
+            return $this->fleet->exporter(Node::query()->findOrFail($nodeId), $preference === ExporterPreference::Enabled);
+        });
     }
 
     private function activeNode(int $nodeId): Node

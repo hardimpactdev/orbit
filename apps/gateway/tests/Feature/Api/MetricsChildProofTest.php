@@ -89,7 +89,7 @@ it('binds rollback to the successful snapshot of the same parent and refuses tam
 
 it('renders the preference-only receipt without a fleet remove field', function (): void {
     $operation = new Operation(['kind' => 'metrics.exporter_enable', 'input' => ['preference_only' => true]]);
-    expect(app(MetricsFleetExecution::class)->context($operation)['descriptors'][0]['input'])->toBe(['backend' => 'active']);
+    expect(app(MetricsFleetExecution::class)->context($operation)['descriptors'][0]['input'])->toBe(['backend' => 'recorded']);
 });
 
 /** Registers the fleet contract while the unrelated list-result capability remains gated. */
@@ -227,12 +227,13 @@ it('requires a proven restore refusal before accepting rollback failure', functi
     expect(fn () => $execution->assertCompletion($this->parent, OperationOutcome::failed('metrics.install_failed')))->toThrow(ResourceOperationException::class);
 });
 
-it('requires service and Caddy restoration before cancellation can finish', function (): void {
+it('requires service and Caddy restoration before cancellation can finish', function (bool $cleanup): void {
     $fleet = $this->parent->input['fleet'];
-    $fleet[0]['caddy'] = true;
+    $fleet[0]['caddy'] = ! $cleanup;
+    $fleet[0]['caddy_cleanup'] = $cleanup;
     $this->parent->update(['input' => [...$this->parent->input, 'fleet' => $fleet]]);
     $node = $this->nodes[0];
-    $input = ['address' => '10.44.0.'.$node->id, 'metrics_address' => $this->parent->input['metrics_address'], 'instance_ids' => [], 'caddy' => true, 'fpm' => false];
+    $input = ['address' => '10.44.0.'.$node->id, 'metrics_address' => $this->parent->input['metrics_address'], 'instance_ids' => [], 'caddy' => ! $cleanup, 'fpm' => false];
     $sourceKey = 'service-snapshot-'.$node->id;
     $snapshot = recordMetricsChild($this->parent, ['key' => $sourceKey, 'kind' => 'metrics.service_snapshot', 'node_id' => $node->id, 'input' => $input]);
     recordMetricsChild($this->parent, ['key' => 'service-apply-'.$node->id, 'kind' => 'metrics.service_converge', 'node_id' => $node->id, 'input' => $input]);
@@ -245,7 +246,7 @@ it('requires service and Caddy restoration before cancellation can finish', func
     expect(fn () => $execution->assertCompletion($this->parent, $result))->toThrow(ResourceOperationException::class);
     recordMetricsChild($this->parent, ['key' => 'service-caddy-restore-'.$node->id, 'kind' => 'metrics.service_caddy_restore', 'node_id' => $node->id, 'input' => ['restore_key' => $key]]);
     $execution->assertCompletion($this->parent, $result);
-});
+})->with([true, false]);
 
 it('preserves a committed healthy Metrics runtime after a later cancellation', function (): void {
     foreach (metricsChildIntents($this->parent) as $intent) {
@@ -378,9 +379,10 @@ it('refuses success and exposes rollback when local service recovery is interrup
     $execution->assertCompletion($this->parent, OperationOutcome::failed('metrics.rollback_failed'));
 })->with(['service-restore', 'service-caddy-restore'])->with(['node.lock_lost', 'operation.lease_lost', 'operation.cancelled']);
 
-it('never admits service Caddy children for a fleet member without managed Caddy', function (): void {
+it('requires Caddy publication proof only for managed service publication or cleanup', function (bool $cleanup): void {
     $fleet = $this->parent->input['fleet'];
-    $fleet[0]['caddy'] = true;
+    $fleet[0]['caddy'] = ! $cleanup;
+    $fleet[0]['caddy_cleanup'] = $cleanup;
     $this->parent->update(['input' => [...$this->parent->input, 'fleet' => $fleet]]);
     for ($stage = 0; $stage < 20; $stage++) {
         $created = 0;
@@ -403,7 +405,7 @@ it('never admits service Caddy children for a fleet member without managed Caddy
     $this->parent->children()->where('child_key', 'service-caddy-'.$this->nodes[0]->id)->delete();
     expect(fn () => app(MetricsFleetExecution::class)->assertCompletion($this->parent, OperationOutcome::succeeded(['backend' => 'active'])))
         ->toThrow(ResourceOperationException::class);
-});
+})->with([true, false]);
 
 it('accepts service restoration without Caddy proof on a Node without managed Caddy', function (): void {
     $node = $this->nodes[0];

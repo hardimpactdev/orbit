@@ -20,13 +20,13 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
     public function context(Operation $operation): array
     {
         return ['descriptors' => [['key' => 'integration-receipt', 'step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'metrics.receipt',
-            'input' => ['backend' => 'active'], 'resumable' => true, 'required' => true]]];
+            'input' => ['backend' => $this->backend($operation)], 'resumable' => true, 'required' => true]]];
     }
 
     /** @return array{intent: array<string, mixed>, children: list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}>} */
     public function childContext(Operation $operation): array
     {
-        return ['intent' => $operation->input, 'children' => $this->intents->context($operation)];
+        return ['intent' => $operation->input, 'children' => $this->preferenceOnly($operation) ? [] : $this->intents->context($operation)];
     }
 
     public function input(Operation $operation, array $run): array
@@ -47,8 +47,11 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
         if ($outcome->status === OperationStatus::Succeeded) {
+            if (($outcome->result['backend'] ?? null) !== $this->backend($operation)) {
+                $this->unproven();
+            }
             $this->prove($operation);
-        } else {
+        } elseif (! $this->preferenceOnly($operation)) {
             $this->proveRestoration($operation, $outcome);
         }
     }
@@ -85,7 +88,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                     }
                     $this->unproven();
                 }
-                if ($component === 'service' && $node['caddy']) {
+                if ($component === 'service' && MetricsIntent::rebuildsCaddy($node)) {
                     $caddy = $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false);
                     if ($caddy->status !== OperationStatus::Succeeded) {
                         if ($rollbackFailed && ($caddy->status === OperationStatus::Cancelled || ($caddy->status === OperationStatus::Failed && $caddy->error_code !== null))) {
@@ -106,8 +109,28 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
         return null;
     }
 
+    private function preferenceOnly(Operation $operation): bool
+    {
+        return ($operation->input['preference_only'] ?? false) === true;
+    }
+
+    private function backend(Operation $operation): string
+    {
+        return $this->preferenceOnly($operation) ? 'recorded' : 'active';
+    }
+
     private function prove(Operation $operation): void
     {
+        if ($this->preferenceOnly($operation)) {
+            $intent = $operation->input['exporter_intent'] ?? null;
+            if (! is_array($intent) || $operation->target_type !== 'metrics_preference' || $operation->target_id !== $operation->node_id
+                || ($intent['node_id'] ?? null) !== $operation->node_id
+                || ! is_bool($intent['desired'] ?? null) || ($operation->input['fleet'] ?? null) !== []) {
+                $this->unproven();
+            }
+
+            return;
+        }
         $input = $operation->input;
         $healthyServices = [];
         $targets = [];
@@ -150,7 +173,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 if ($apply->status === OperationStatus::Failed) {
                     $key = 'service-restore-'.$node['node_id'];
                     $restore = $this->requireChild($operation, $key, 'metrics.service_restore', $node['node_id'], [...$serviceInput, 'source_operation_id' => $snapshot->id, 'source_key' => 'service-snapshot-'.$node['node_id'], 'restore_key' => $key], false);
-                    $caddy = $node['caddy'] ? $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false) : null;
+                    $caddy = MetricsIntent::rebuildsCaddy($node) ? $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false) : null;
 
                     if (MetricsChildIntent::interrupted($restore) || ($caddy !== null && MetricsChildIntent::interrupted($caddy))) {
                         $this->unproven();
@@ -161,7 +184,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 if ($apply->status !== OperationStatus::Succeeded) {
                     $this->unproven();
                 }
-                if ($node['caddy']) {
+                if (MetricsIntent::rebuildsCaddy($node)) {
                     $this->requireChild($operation, 'service-caddy-'.$node['node_id'], 'route.caddy_converge', $node['node_id'], ['reason' => 'metrics service projection']);
                 }
                 $healthyServices[] = $node;

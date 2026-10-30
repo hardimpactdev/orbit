@@ -17,8 +17,11 @@ use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -447,56 +450,35 @@ it('rejects an unknown node name before any Metrics mutation', function (): void
     $mock->assertNotSent(EnableMetricsRequest::class);
 });
 
-it('resolves exporter node names through the node list', function (): void {
+it('resolves exporter node names and follows the admitted Operation', function (): void {
     $mock = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [metrics_cli_node_payload(id: 3, name: 'app-prod', status: 'active', roles: ['app-prod'])],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
-        DisableMetricsExporterRequest::class => MockResponse::make([
-            'data' => ['node_id' => 3, 'status' => 'active'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        ListNodesRequest::class => MockResponse::make(['data' => [metrics_cli_node_payload(id: 3, name: 'app-prod', status: 'active', roles: ['app-prod'])], 'meta' => ['request_id' => metrics_cli_request_id()]]),
+        DisableMetricsExporterRequest::class => MockResponse::make(['data' => metrics_cli_operation('queued', 'metrics.exporter_disable'), 'meta' => ['request_id' => metrics_cli_request_id()]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => metrics_cli_operation(kind: 'metrics.exporter_disable'), 'meta' => ['request_id' => metrics_cli_request_id()]]),
     ]);
-
-    $this
-        ->artisan('metrics:exporter:disable', ['node' => 'app-prod', '--json' => true])
-        ->assertSuccessful();
-
-    expect($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/metrics/exporters/3');
+    $this->artisan('metrics:exporter:disable', ['node' => 'app-prod', '--json' => true])->assertSuccessful();
+    $mock->assertSent(DisableMetricsExporterRequest::class);
+    $mock->assertSent(ShowOperationRequest::class);
 });
 
-it('sends the selected node through each exporter request', function (
-    string $command,
-    string $requestClass,
-    Method $method,
-): void {
+it('sends exporter intent once and follows its terminal outcome', function (string $command, string $requestClass, bool $succeeded): void {
+    $kind = $requestClass === EnableMetricsExporterRequest::class ? 'metrics.exporter_enable' : 'metrics.exporter_disable';
+    $terminal = metrics_cli_operation($succeeded ? 'succeeded' : 'failed', $kind);
     $mock = MockClient::global([
-        $requestClass => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'active'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        $requestClass => MockResponse::make(['data' => metrics_cli_operation('queued', $kind), 'meta' => ['request_id' => metrics_cli_request_id()]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $terminal, 'meta' => ['request_id' => metrics_cli_request_id()]]),
     ]);
-
-    $this
-        ->artisan($command, ['node' => '7', '--json' => true])
-        ->expectsOutput(json_encode([
-            'node_id' => 7,
-            'status' => 'active',
-            'request_id' => metrics_cli_request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->assertSuccessful();
-
-    expect($mock->getLastRequest())
-        ->toBeInstanceOf($requestClass)
-        ->and($mock->getLastRequest()?->getMethod())
-        ->toBe($method)
-        ->and($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/metrics/exporters/7');
+    $exit = Artisan::call($command, ['node' => '7', '--idempotency-key' => 'metrics-cli-proof', '--json' => true]);
+    expect($exit)->toBe($succeeded ? SymfonyCommand::SUCCESS : SymfonyCommand::FAILURE);
+    expect(json_decode(trim(Artisan::output()), true))->toMatchArray(['id' => 701, 'kind' => $kind, 'status' => $terminal['status']]);
+    $mock->assertSent($requestClass);
+    $mock->assertSent(ShowOperationRequest::class);
 })->with([
-    'enable' => ['metrics:exporter:enable', EnableMetricsExporterRequest::class, Method::PUT],
-    'disable' => ['metrics:exporter:disable', DisableMetricsExporterRequest::class, Method::DELETE],
+    ['metrics:exporter:enable', EnableMetricsExporterRequest::class, true],
+    ['metrics:exporter:disable', DisableMetricsExporterRequest::class, true],
+    ['metrics:exporter:enable', EnableMetricsExporterRequest::class, false],
 ]);
 
 it('renders complete human status tables', function (): void {
@@ -710,4 +692,13 @@ function metrics_cli_display(string $command, array $arguments = []): array
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);
 
     return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
+
+/** @return array<string, mixed> */
+function metrics_cli_operation(string $status = 'succeeded', string $kind = 'metrics.exporter_enable'): array
+{
+    return OperationResponse::fromGatewayData(['id' => 701, 'kind' => $kind, 'target_type' => 'metrics', 'target_id' => 9,
+        'status' => $status, 'sequence' => $status === 'queued' ? 1 : 8, 'poll_after_seconds' => 0,
+        'error_code' => $status === 'failed' ? 'metrics.exporter_service_failed' : null,
+        'result' => $status === 'succeeded' ? ['backend' => 'active'] : null], metrics_cli_request_id())->toArray();
 }

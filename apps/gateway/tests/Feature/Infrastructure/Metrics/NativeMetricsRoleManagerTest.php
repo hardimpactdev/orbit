@@ -97,17 +97,13 @@ function metricsRoleManagerNode(string $name, string $address, RoleName $role = 
     return $node;
 }
 
-it('omits the publication key from mutations that do not touch it', function (): void {
+it('records exporter intent as an Operation without publishing synchronously', function (): void {
     metricsRoleManagerNode('gateway', '10.44.0.1', RoleName::Gateway);
+    metricsRoleManagerNode('metrics', '10.44.0.3');
     $node = metricsRoleManagerNode('worker', '10.44.0.4', RoleName::AppProd);
-    metricsRoleManagerStubBaselines();
-
     $result = app(NativeMetricsRoleManager::class)->enableExporter($node->id);
-
-    expect($result->publication)
-        ->toBeNull()
-        ->and($result->toArray())
-        ->not->toHaveKey('publication');
+    expect($result->kind)->toBe('metrics.exporter_enable')->and($result->status->value)->toBe('queued')
+        ->and($result->input['exporter_intent'])->toBe(['node_id' => $node->id, 'desired' => true]);
 });
 
 it('refuses ineligible exporter enablement before preference or fleet work', function (): void {

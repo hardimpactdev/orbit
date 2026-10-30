@@ -18,7 +18,7 @@ final readonly class MetricsReceiptCommand implements OperationGatewayCommand
     public function schema(): array
     {
         return ['type' => 'object', 'additionalProperties' => false, 'required' => ['backend'],
-            'properties' => ['backend' => ['type' => 'string', 'enum' => ['active']]]];
+            'properties' => ['backend' => ['type' => 'string', 'enum' => ['active', 'recorded']]]];
     }
 
     public function run(Operation $operation, array $input): array
