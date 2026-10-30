@@ -57,7 +57,8 @@ final readonly class InstanceDeploymentIntent
                 'php_version' => null, 'php_runtime' => null, 'php_refresh' => null,
                 'user' => null, 'relative_root' => null, 'application_suffix' => null, 'served' => [], 'shared_paths' => [],
                 'needs_vp' => array_any($development, static fn (DevelopmentDeployStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
-                'project_id' => $instance->project_id, 'branch' => $instance->project->default_branch,
+                'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
+                'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $instance->project->default_branch,
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
             ];
         }
@@ -71,7 +72,8 @@ final readonly class InstanceDeploymentIntent
             'needs_vp' => ! $rollback && array_any($config->steps, static fn (DeploymentStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
             'php' => is_string($instance->selected_php_version), 'php_version' => $instance->selected_php_version,
             'php_runtime' => $runtime, 'php_refresh' => $refresh,
-            'project_id' => $instance->project_id, 'branch' => $config->branch,
+            'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
+            'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $config->branch,
             'repository' => $instance->project->repository_url,
             'home' => $instance->production_home, 'user' => $instance->production_user,
             'relative_root' => $instance->root ?? $instance->project->root,
