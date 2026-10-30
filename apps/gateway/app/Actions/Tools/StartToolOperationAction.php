@@ -11,7 +11,6 @@ use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ReservesRolePackages;
-use App\Domain\Tools\ToolConstraintIntervals;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -38,7 +37,6 @@ final readonly class StartToolOperationAction
         private ToolManagerRegistry $managers,
         private ToolNodeEligibility $eligibility,
         private VersionConstraint $constraints,
-        private ToolConstraintIntervals $intervals,
         private NodeBootstrapPackageCatalog $bootstrapPackages,
     ) {}
 
@@ -93,7 +91,7 @@ final readonly class StartToolOperationAction
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
                     ...($direct ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
                     'platform' => $node->platform, 'architecture' => $node->architecture,
-                    'version_constraint' => $constraint, 'constraint_intervals' => $this->intervals->for($constraint),
+                    'version_constraint' => $constraint,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
                     'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
