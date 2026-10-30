@@ -22,6 +22,16 @@ Database writes that change a Node return an [Operation](/reference/operations) 
 
 The Gateway resolves stored database credentials only when it invokes an authorized named command. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
 
+## Native owned-database destruction artifacts
+
+The database family exposes `PrepareOwnedDatabaseDestructionAction::execute(Instance $target): array` and `ProjectOwnedDatabaseDestructionAction::execute(Instance $target, array $artifact, array $result): void` for a single native lifecycle DAG. The parent authorizes the Instance, stores the returned artifact once in its immutable intent, and passes that stored artifact to projection. Neither helper starts an Operation, executes a Node command, or waits for work.
+
+Version 1 binds a random artifact identity, owning Instance, Node, checkout, agent build, and ordered connection snapshots. It supports local owned SQLite files and record-only connections without a managed server. SQLite paths must be inside the admitted checkout and recorded on its Node. Attached foreign connections stay untouched. The reusable Swamp `destroyOwnedLocal` helper removes only those exact SQLite paths through the local account's pinned `instance.copy-sqlite` primitive. Place it on the artifact's Node with matching labels and mark the native step as a write. Its bounded result echoes the artifact identity, owner, Node and complete connection ID set.
+
+Projection accepts that result only after native success. It checks placement and the remaining owned connection set against the saved artifact before deleting records and attachments. A changed or newly owned connection refuses the whole projection; a repeated projection tolerates records already removed. The parent must project databases before deleting the Instance row, and remove SQLite files before removing its checkout.
+
+Managed servers refuse artifact preparation with `database.native_removal_unavailable`, including a server on the Instance's own Node. The native managed-SQL contract and private material wire are not active. This gate leaves the existing PostgreSQL fenced owner checks, MySQL creation or adoption proof, server removal lock and fresh login-sharing checks intact. No credentials or SQL enter these local artifacts. Retained lifecycle callers continue to use their guarded synchronous paths until their owning cutover.
+
 ## Instance lifecycle children
 
 The database family owns `PrepareDatabaseChildAction` in `apps/gateway/app/Actions/DatabaseConnections/`. Lifecycle calls this Gateway admission action inside its transaction. It records protected intent and returns `{key, kind, node_id, input}`. Preparation performs no Node writes. After activation, lifecycle submits the returned descriptor through Kit v2 child admission with a stable `key`, then waits for the child to succeed.
