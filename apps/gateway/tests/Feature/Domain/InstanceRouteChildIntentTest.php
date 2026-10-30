@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Environment\EnvironmentSyncExecution;
 use App\Domain\Instances\Environment\EnvironmentSyncSecrets;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
@@ -157,3 +158,21 @@ it('publishes shared PHP limits before the Route pool configuration', function (
     expect($descriptors[2]['name'])->toBe('php.configure-runtime')
         ->and($descriptors[2]['input']['runtime_ini'])->toContain('post_max_size = 64M', 'upload_max_filesize = 64M');
 });
+
+it('reuses the primary application environment when a diagnostic Route repeats its web root', function (string $root, bool $associated): void {
+    [$child, , $route, $instance] = routeInstanceChild('instance.prepare_served_web_roots');
+    $instance->update(['root' => $root]);
+    $route->update(['web_root' => $root]);
+    if (! $associated) {
+        $route->targets()->delete();
+    }
+    $execution = app(InstanceServedWebRootsExecution::class);
+
+    // The primary release already links its application .env to <home>/.env.
+    // Sending this root in `served` would ask the agent to replace that with <home>/env/<directory>/.env.
+    expect($execution->context($child)['descriptors'])->toHaveCount(1)
+        ->and($execution->context($child)['descriptors'][0]['name'])->toBe('instance.web-roots-receipt')
+        ->and($execution->result($child))->toBe(['instance_id' => $instance->id, 'confirmed' => true, 'no_op' => true]);
+    $intent = app(InstanceDeploymentIntent::class)->snapshot($instance);
+    expect($intent['served'])->toBe([]);
+})->with(['public', 'apps/site/public'])->with([false, true]);
