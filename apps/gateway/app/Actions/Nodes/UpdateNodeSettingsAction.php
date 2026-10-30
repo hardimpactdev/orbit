@@ -17,9 +17,11 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +58,7 @@ final readonly class UpdateNodeSettingsAction
             $root = $this->validator->validateEffective($normalized, $node, $account);
 
             return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
+                ...(app(DirectOperation::class)->writer('node.settings') === 'direct' ? ['agent_pin' => app(AgentDelivery::class)->pin($node)] : []),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'root' => $root->value, 'user' => $account->user, 'group' => $account->group,
                 'create_missing' => $create, 'settings' => $this->normalizer->stored($normalized),
