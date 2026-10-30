@@ -1267,6 +1267,8 @@ before admission. A worker for another Node cannot execute the action.
 
 `task_vm.image_launch` records the exact builder or smoke VM, resources, network, Gateway public key and image before Swamp creates it. Orbit reads the stock alias once for a new builder and records its fingerprint; smoke VMs use only the recorded candidate. The worker receives that immutable launch input and runs `incus.vm` `create_image` with the existing 900-second deadline. No VM creation runs in PHP.
 
+`task_vm.image_promote` admits the current recipe's recorded publication only after the candidate's smoke and topology phases have succeeded. Swamp switches the exact host alias to that fingerprint through `incus.image` `promote`, with the existing 900-second deadline. Gateway projection requires that same fingerprint and records promotion. It does not lock or re-run the image workflow's child steps.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.

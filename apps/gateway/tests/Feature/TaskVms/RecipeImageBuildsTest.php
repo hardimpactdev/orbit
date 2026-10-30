@@ -22,6 +22,7 @@ use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -135,6 +136,15 @@ function recipeImageDirectIntent(string $kind = 'task_vm.image_finish_seed'): ar
             'operation' => ['kind' => 'create_image', 'image' => $parent->input['source'], 'gateway_public_key' => IMAGE_KEY, 'cpus' => 2, 'memory' => '4GiB', 'disk' => '20GiB', 'network' => 'orbittask0', 'builder' => true]];
     }
 
+    if ($kind === 'task_vm.image_promote') {
+        $build->update(['steps' => [
+            ['step' => 'recipe', 'program' => 'base:smoke', 'started_at' => now()->toISOString(), 'seconds' => 1, 'error' => null],
+            ['step' => 'recipe', 'program' => 'base:topology-seed', 'started_at' => now()->toISOString(), 'seconds' => 1, 'error' => null],
+        ]]);
+        Operation::query()->create(['kind' => 'task_vm.image_publish', 'target_type' => 'task_vm_image', 'target_id' => $build->id, 'node_id' => $host->id, 'input' => ['attempt' => $build->attempt], 'status' => 'succeeded', 'result' => ['ready' => true, 'fingerprint' => IMAGE_NEW]]);
+        $input = ['build_id' => $build->id, 'attempt' => $build->attempt, 'phase' => 'promote', 'effect_key' => 'promote'];
+    }
+
     return [$build, $parent, $input];
 }
 
@@ -155,17 +165,23 @@ it('admits the image effect directly and projects its phase once without Gateway
         $safe['operation']['image'] = IMAGE_STOCK;
         expect($child->input['operation']['image'])->toBe(TaskVmHost::SourceImage)->and($build->fresh()->source_fingerprint)->toBe(IMAGE_STOCK);
     }
+    if ($kind === 'task_vm.image_promote') {
+        $safe += ['project' => 'orbit-tasks', 'operation' => ['kind' => 'promote', 'alias' => TaskVmHost::BaseImage, 'fingerprint' => IMAGE_NEW]];
+    }
     expect($projection->input($child)['intent'])->toEqual($safe);
-    $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true, ...($kind === 'task_vm.image_publish' ? ['fingerprint' => IMAGE_NEW] : [])]];
+    $outcome = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['ready' => true, ...(in_array($kind, ['task_vm.image_publish', 'task_vm.image_promote'], true) ? ['fingerprint' => IMAGE_NEW] : [])]];
     $projection->apply($child, $outcome);
+    if ($kind === 'task_vm.image_promote') {
+        expect($build->fresh()->promoted_at)->not->toBeNull();
+    }
     $steps = $build->fresh()->steps;
     $this->travel(30)->seconds();
     $projection->apply($child->fresh(), $outcome);
     expect(app(OperationChildren::class)->requireSucceeded($parent, $key)->id)->toBe($child->id)
         ->and($build->fresh()->steps)->toBe($steps)->and($child->fresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($child->fresh()->state)->not->toHaveKey('executor_runs');
-    expect(array_find($steps, static fn (array $step): bool => $step['program'] === 'base:'.$input['phase'])['operations'][$key])->toBe($child->id);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch']);
+    expect(array_find($steps, static fn (array $step): bool => ($input['phase'] === 'promote' ? $step['step'] === 'promote' : $step['program'] === 'base:'.$input['phase']))['operations'][$key])->toBe($child->id);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch', 'task_vm.image_promote']);
 
 it('refuses a seed for another host candidate attempt or lifecycle before starting Swamp', function (string $change, string $kind): void {
     [$build, , $input] = recipeImageDirectIntent($kind);
@@ -299,13 +315,54 @@ it('binds each candidate smoke launch to the recorded fingerprint and phase', fu
     expect(fn () => $projection->admitImage('task_vm.image_launch', $build->id, $build->host_node_id, $input))->toThrow(ResourceOperationException::class);
 })->with([['launch-smoke', 'smoke'], ['seed-smoke-launch', 'topology-seed']]);
 
+it('requires smoke topology and a recorded publication before promotion', function (string $change, string $code): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_promote');
+    $steps = $build->steps;
+    if ($change === 'smoke' || $change === 'topology') {
+        $steps[$change === 'smoke' ? 0 : 1]['seconds'] = null;
+        $build->update(['steps' => $steps]);
+    } elseif ($change === 'publication') {
+        Operation::query()->where('kind', 'task_vm.image_publish')->delete();
+    } elseif ($change === 'publication-host') {
+        Operation::query()->where('kind', 'task_vm.image_publish')->update(['node_id' => null]);
+    } elseif ($change === 'candidate') {
+        $build->update(['image_fingerprint' => str_repeat('d', 64)]);
+    } else {
+        DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('d', 64)]);
+    }
+    try {
+        app(TaskVmIncusProjection::class)->admitImage('task_vm.image_promote', $build->id, $build->host_node_id, $input);
+        test()->fail('Promotion admission must refuse this candidate.');
+    } catch (TaskVmException|ResourceOperationException $error) {
+        expect($error->errorCode)->toBe($code);
+    }
+    expect(Operation::query()->where('kind', 'task_vm.image_promote')->count())->toBe(0);
+})->with([
+    ['smoke', 'task_vm.image_build_failed'], ['topology', 'task_vm.image_build_failed'],
+    ['publication', 'operation.completion_unproven'], ['publication-host', 'operation.completion_unproven'],
+    ['candidate', 'task_vm.image_build_failed'], ['recipe', 'task_vm.image_recipe_superseded'],
+]);
+
+it('refuses promotion of another host alias or fingerprint and mismatched result', function (): void {
+    [$build, , $input] = recipeImageDirectIntent('task_vm.image_promote');
+    $projection = app(TaskVmIncusProjection::class);
+    foreach ([['project' => 'operator-owned'], ['operation' => ['kind' => 'promote', 'alias' => 'operator-image', 'fingerprint' => IMAGE_NEW]],
+        ['operation' => ['kind' => 'promote', 'alias' => TaskVmHost::BaseImage, 'fingerprint' => str_repeat('d', 64)]]] as $change) {
+        expect(fn () => $projection->admitImage('task_vm.image_promote', $build->id, $build->host_node_id, [...$input, ...$change]))->toThrow(ResourceOperationException::class);
+    }
+    $admitted = $projection->admitImage('task_vm.image_promote', $build->id, $build->host_node_id, $input);
+    $operation = new Operation(['kind' => 'task_vm.image_promote', 'target_type' => 'task_vm_image', 'target_id' => $build->id, 'node_id' => $build->host_node_id, 'input' => $admitted]);
+    expect(fn () => $projection->apply($operation, ['status' => 'succeeded', 'result' => ['ready' => true, 'fingerprint' => str_repeat('d', 64)]]))->toThrow(ResourceOperationException::class);
+    expect($build->fresh()->promoted_at)->toBeNull();
+});
+
 it('refuses a polled image writer after the execution contract is deleted', function (string $kind): void {
     [, $parent, $input] = recipeImageDirectIntent($kind);
     config(['swamp.direct_writers' => [$kind => 'polled']]);
     expect(fn () => app(OperationChildren::class)->admit($parent, ['key' => $input['effect_key']]))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.writer_invalid'));
     expect(Operation::query()->where('kind', $kind)->count())->toBe(0);
-})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch']);
+})->with(['task_vm.image_finish_seed', 'task_vm.image_seed', 'task_vm.image_metadata', 'task_vm.image_remove', 'task_vm.image_publish', 'task_vm.image_launch', 'task_vm.image_promote']);
 
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);

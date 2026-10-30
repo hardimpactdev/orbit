@@ -33,6 +33,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         'task_vm.image_remove' => ['vm', 'operation'],
         'task_vm.image_publish' => ['project', 'operation'],
         'task_vm.image_launch' => ['vm', 'operation'],
+        'task_vm.image_promote' => ['project', 'operation'],
     ];
 
     /** @param array<string,mixed> $input
@@ -48,6 +49,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             'task_vm.image_finish_seed' => ['topology-seed', 'finish-seed'],
             'task_vm.image_metadata' => ['prepare', 'metadata'],
             'task_vm.image_publish' => ['publish', 'publish'],
+            'task_vm.image_promote' => ['promote', 'promote'],
             'task_vm.image_launch' => match ($input['effect_key'] ?? null) {
                 'launch' => ['launch', 'launch'], 'launch-smoke' => ['smoke', 'launch-smoke'], 'seed-smoke-launch' => ['topology-seed', 'seed-smoke-launch'],
                 default => throw new ResourceOperationException('operation.execution_forbidden', 'The image launch is not declared.', 422),
@@ -71,6 +73,7 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             'task_vm.image_finish_seed' => ['location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => $fingerprint]],
             'task_vm.image_seed' => ['project' => $host->project, 'pool' => $host->pool, 'vm' => $build->builder_vm_name.'-smoke', 'size' => TaskVmVolumes::SeedSize, 'fingerprint' => $fingerprint],
             'task_vm.image_metadata' => ['project' => $host->project, 'operation' => ['kind' => 'prepare_metadata', 'name' => $build->builder_vm_name]],
+            'task_vm.image_promote' => ['project' => $host->project, 'operation' => ['kind' => 'promote', 'alias' => $host->imageAlias, 'fingerprint' => $build->image_fingerprint]],
             'task_vm.image_publish' => ['project' => $host->project, 'operation' => ['kind' => 'publish', 'name' => $build->builder_vm_name,
                 'alias' => $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id),
                 'properties' => ['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => 'base']]],
@@ -79,10 +82,18 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
                     'gateway_public_key' => app(SshKeyProvider::class)->publicKey(), 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk, 'network' => $host->network, 'builder' => $key === 'launch']],
             'task_vm.image_remove' => ['vm' => ['project' => $host->project, 'name' => $build->builder_vm_name.(in_array($key, ['reset-builder', 'delete-builder'], true) ? '' : '-smoke'), 'cidr' => $host->cidr], 'operation' => ['kind' => 'remove_instance']],
         };
+        if ($kind === 'task_vm.image_promote') {
+            $input += $expected;
+        }
         if (Arr::sortRecursive(Arr::only($input, array_keys($expected))) !== Arr::sortRecursive($expected)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The effect does not match the admitted image attempt.', 422);
         }
-        app(RecipeImageBuildSteps::class)->assertCurrent($build);
+        $eligibility = app(RecipeImageBuildSteps::class);
+        if ($kind === 'task_vm.image_promote') {
+            $eligibility->assertPromotion($build);
+        } else {
+            $eligibility->assertCurrent($build);
+        }
         if ($kind === 'task_vm.image_launch') {
             if ($key === 'launch' && $build->source_alias === null) {
                 $build->forceFill(['source_alias' => TaskVmHost::SourceImage,
@@ -119,8 +130,9 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         $result = ValidatedData::object($data['result'] ?? []);
         $valid = match ($status) {
-            OperationStatus::Succeeded => $code === null && ($operation->kind === 'task_vm.image_publish'
+            OperationStatus::Succeeded => $code === null && (in_array($operation->kind, ['task_vm.image_publish', 'task_vm.image_promote'], true)
                 ? count($result) === 2 && ($result['ready'] ?? null) === true && is_string($result['fingerprint'] ?? null) && preg_match('/\A[a-f0-9]{64}\z/D', $result['fingerprint']) === 1
+                    && ($operation->kind !== 'task_vm.image_promote' || $result['fingerprint'] === Arr::get($operation->input, 'operation.fingerprint'))
                 : $result === ['ready' => true]),
             OperationStatus::Failed => $code !== null && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $code) === 1 && $result === ['error_code' => $code],
             OperationStatus::Running, OperationStatus::Cancelled => $result === [] && $code === null,

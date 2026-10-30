@@ -265,12 +265,12 @@ final class TaskVmCommandContracts
     public static function imageKinds(): array
     {
         $kinds = [];
-        foreach (['image_promote', 'image_prune'] as $verb) {
+        foreach (['image_prune'] as $verb) {
             $kinds['task_vm.'.$verb] = self::imageDefinition($verb, 'task_vm.image-host', ['build_id'], [], ['type' => 'object', 'additionalProperties' => false,
                 'required' => ['build_id'], 'properties' => ['build_id' => ['type' => 'integer', 'minimum' => 1]]]);
         }
         foreach (array_keys(TaskVmIncusProjection::ImageFields) as $kind) {
-            $kinds[$kind] = ['executor' => 'swamp', 'admission' => TaskVmChildAdmission::class, 'result_fields' => ['ready', ...($kind === 'task_vm.image_publish' ? ['fingerprint'] : []), 'error_code']];
+            $kinds[$kind] = ['executor' => 'swamp', 'admission' => TaskVmChildAdmission::class, 'result_fields' => ['ready', ...(in_array($kind, ['task_vm.image_publish', 'task_vm.image_promote'], true) ? ['fingerprint'] : []), 'error_code']];
         }
         foreach (['guest_install' => 'agent.install-guest', 'guest_pi_upload' => 'pi.upload-guest'] as $verb => $command) {
             $kinds['task_vm.'.$verb] = self::imageDefinition($verb, 'task_vm.guest', $verb === 'guest_install' ? ['guest'] : ['guest', 'parameters_json'],
