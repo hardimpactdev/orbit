@@ -9,7 +9,7 @@ use App\Domain\Tools\ToolOperationExecution;
 
 return (static function (): array {
     $kinds = [];
-    foreach (['adopt', 'manager_converge'] as $verb) {
+    foreach (['manager_converge'] as $verb) {
         $commands = ['tool.apt-version', 'tool.composer-version', 'tool.vp-version', 'tool.homebrew-version'];
         $map = [];
         foreach (['apt', 'composer', 'vp', 'brew', 'brew-cask'] as $manager) {
@@ -18,24 +18,12 @@ return (static function (): array {
                 default => 'tool.'.$manager.'-',
             };
             $version = in_array($manager, ['brew', 'brew-cask'], true) ? 'tool.homebrew-version' : $prefix.'version';
-            $name = $prefix.'inventory';
-            $variant = $manager.':inventory';
-            if ($verb === 'manager_converge') {
-                $name = $version;
-                $variant = $manager.':version';
-            } elseif (in_array($manager, ['brew', 'brew-cask'], true)) {
-                $name = $prefix.'adoption';
-                $variant = $manager.':adoption';
-            }
+            $name = $version;
+            $variant = $manager.':version';
             $commands[] = $name;
             $map[$variant] = $name;
         }
-        if ($verb === 'adopt') {
-            $commands[] = 'tool.inspect-composer-scope';
-        }
-        if ($verb === 'manager_converge') {
-            $commands = [...$commands, 'tool.materialize-composer', 'tool.materialize-vp', 'tool.materialize-homebrew'];
-        }
+        $commands = [...$commands, 'tool.materialize-composer', 'tool.materialize-vp', 'tool.materialize-homebrew'];
         $kinds['tool.'.$verb] = ['commands' => $commands, 'done_when' => $map];
     }
 
@@ -45,6 +33,7 @@ return (static function (): array {
         'tool.install' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
         'tool.update' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
         'tool.remove' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
+        'tool.adopt' => ['executor' => 'swamp', 'result_fields' => ['manager_version', 'installed_version', 'block', 'outcome', 'error_code', 'native_error_code']],
         ...OperationFamilySpec::compile([
             'requires' => ['children', 'list_of'],
             'completion' => ToolOperationCompletion::class, 'execution' => ToolOperationExecution::class,

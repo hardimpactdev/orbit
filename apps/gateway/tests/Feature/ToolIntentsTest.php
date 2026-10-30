@@ -39,7 +39,9 @@ beforeEach(function (): void {
 });
 
 it('returns typed intent without command descriptors and requires the executor peer', function (): void {
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.manager', 'apt')->assertJsonPath('data.input.user', 'orbit');
+    $this->operation->update(['input' => [...$this->input, 'version_constraint' => '^1.0', 'constraint_intervals' => [['start' => 'discard']]]]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.manager', 'apt')->assertJsonPath('data.input.user', 'orbit')
+        ->assertJsonPath('data.input.version_constraint', '^1.0')->assertJsonMissingPath('data.input.constraint_intervals');
     expect($this->operation->fresh()->state)->toBe(['tool_writer' => 'direct', 'swamp_run_id' => $this->runId]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
@@ -75,7 +77,7 @@ it('projects manager refusal without synthesizing Gateway executor state', funct
 });
 
 it('requires direct install without legacy discovery or claims and retains immutable ownership', function (): void {
-    foreach (['tool.adopt', 'tool.manager_converge'] as $kind) {
+    foreach (['tool.manager_converge'] as $kind) {
         expect(app(DirectOperation::class)->writer($kind))->toBe('polled');
     }
     $direct = app(DirectOperation::class);
@@ -187,7 +189,7 @@ it('admits direct package and manager intents with immutable account pin and rec
 it('selects only proven APT root intents and keeps other managers Nodes children and privileged kinds polled', function (): void {
     config(['swamp.direct_writers' => ['tool.adopt' => 'direct', 'tool.manager_converge' => 'direct']]);
     $direct = app(DirectOperation::class);
-    foreach (['tool.adopt', 'tool.manager_converge'] as $kind) {
+    foreach (['tool.manager_converge'] as $kind) {
         expect($direct->writer($kind, ['manager' => 'apt', 'tool_status' => 'installed'], 209))->toBe('direct');
         foreach (['vp', 'composer', 'brew', 'brew-cask'] as $manager) {
             expect($direct->writer($kind, ['manager' => $manager], 209))->toBe('polled');
@@ -219,5 +221,5 @@ it('admits APT adoption directly while recording other managers as polled and re
     expect($socket->sent)->toHaveCount(1);
     config(['swamp.direct_writers' => ['tool.adopt' => 'polled', 'tool.manager_converge' => 'polled']]);
     expect(DirectOperation::owns($apt->fresh()))->toBeTrue();
-    expect(app(DirectOperation::class)->writer('tool.adopt', ['manager' => 'apt'], 209))->toBe('polled');
+    expect(fn () => app(DirectOperation::class)->writer('tool.adopt', ['manager' => 'apt'], 209))->toThrow(ResourceOperationException::class);
 });

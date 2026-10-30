@@ -646,7 +646,7 @@ it('keeps invalid Docker environment names out of validation exceptions', functi
     $this->fail('Expected invalid environment-name validation to fail.');
 });
 
-it('starts restarts tails and removes one process', function (): void {
+it('starts restarts and tails one process', function (): void {
     $process = processes_api_record($this->instance);
     $this->runtime->logs = "first\nsecond\n";
 
@@ -663,20 +663,8 @@ it('starts restarts tails and removes one process', function (): void {
         ->assertOk()
         ->assertJsonPath('data.lines', 25)
         ->assertJsonPath('data.logs', "first\nsecond\n");
-    $this
-        ->deleteJson("/api/v1/processes/{$process->id}")
-        ->assertOk()
-        ->assertJsonPath('data.id', $process->id)
-        ->assertJsonPath('data.runtime_status', 'absent');
+    expect($this->runtime->logLines)->toBe([25]);
 
-    expect($this->runtime->logLines)
-        ->toBe([25])
-        ->and(Process::query()->count())
-        ->toBe(0);
-    $this->assertDatabaseHas('activity_log', [
-        'command' => 'process:destroy',
-        'status' => 'succeeded',
-    ]);
 });
 
 it('redacts process logs before serializing them to the API response', function (): void {

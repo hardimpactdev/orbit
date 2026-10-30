@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\WebSocket;
 
+use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -16,7 +16,7 @@ use App\Support\ValidatedData;
 /** Registry state stays here; confirmation waits belong to Swamp. */
 final readonly class DirectWebSocketProjection implements DirectOperationProjection
 {
-    public function __construct(private DirectOperation $direct, private WebSocketOperationCompletion $completion) {}
+    public function __construct(private DirectOperation $direct, private ReadWebSocketApplyStatusAction $status) {}
 
     public function input(Operation $operation): array
     {
@@ -49,7 +49,14 @@ final readonly class DirectWebSocketProjection implements DirectOperationProject
             }
             $result = ['outcome' => 'succeeded', 'data' => ['backend' => 'applied']];
             if (! $operation->status->terminal()) {
-                $this->completion->complete($operation, OperationOutcome::succeeded($result));
+                $registry = WebSocketRegistryOperation::query()->findOrFail(ValidatedData::string($operation->input['registry_operation_id']));
+                $state = $this->status->execute($registry)['state'];
+                if ($state === 'superseded') {
+                    throw new ResourceOperationException('websocket.registry_superseded', 'A later registry change superseded this result.', 409);
+                }
+                if ($state !== 'applied') {
+                    throw new ResourceOperationException('websocket.registry_pending', 'Every current Reverb process must confirm the registry revision.', 409);
+                }
             }
         } elseif ($status === OperationStatus::Failed) {
             if (! in_array($code, ['websocket.registry_pending', 'websocket.registry_superseded'], true) || ($raw['error_code'] ?? null) !== $code) {
@@ -64,7 +71,7 @@ final readonly class DirectWebSocketProjection implements DirectOperationProject
     private function assertKind(Operation $operation): void
     {
         if (! DirectOperation::owns($operation) || $operation->node_id === null
-            || ! in_array($operation->kind, ['websocket.sync', 'websocket.app_create'], true)) {
+            || ! in_array($operation->kind, ['websocket.sync', 'websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate'], true)) {
             throw new ResourceOperationException('operation.direct_invalid', 'A Node-bound WebSocket registry Operation is required.', 422);
         }
     }

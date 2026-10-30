@@ -33,24 +33,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
             $add('manager-materialize', 'agent', ValidatedData::string($input['materialize_command']), array_intersect_key($input, array_flip(ValidatedData::stringList($input['materialize_fields']))), true);
         }
         $add('manager-ready', 'agent', $version, [], true);
-        if ($verb === 'manager_converge') {
-            $add('tool-verified', 'agent', $version, [], true);
-
-            return ['descriptors' => $descriptors];
-        }
-        $inventory = $prefix.'inventory';
-        if ($verb === 'adopt' && in_array($manager, ['brew', 'brew-cask'], true)) {
-            $adoptionInput = ['package' => $input['package']];
-            if ($input['platform'] === 'macos') {
-                $adoptionInput['architecture'] = $input['architecture'];
-            }
-            $add('tool-verified', 'agent', $prefix.'adoption', $adoptionInput, true);
-        } else {
-            if ($verb === 'adopt' && $manager === 'composer') {
-                $add('adoption-scope', 'agent', 'tool.inspect-composer-scope', []);
-            }
-            $add('tool-verified', 'agent', $inventory, [], true);
-        }
+        $add('tool-verified', 'agent', $version, [], true);
 
         return ['descriptors' => $descriptors];
     }
@@ -77,28 +60,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
      */
     public function received(Operation $operation, array $run, array $receipt): array
     {
-        if (str_ends_with(ValidatedData::string($run['name']), '-adoption') && ! isset($receipt['error_code'])) {
-            return [...$receipt, 'outcome' => ($operation->input['tool_status'] ?? null) === 'installed' ? 'unchanged' : 'applied'];
-        }
-        if (isset($receipt['error_code']) || ! str_ends_with(ValidatedData::string($run['name']), '-inventory')) {
-            return $receipt;
-        }
-        $input = $operation->input;
-        $managerName = ToolManagerName::from(ValidatedData::string($input['manager']));
-        $manager = app(ToolManagerRegistry::class)->find($managerName->value);
-        $validatePackage = null;
-        if ($manager !== null) {
-            $validatePackage = $manager->validatePackage(...);
-        }
-        try {
-            $inventory = new ToolInventoryReceipt()->parse($managerName, $receipt, $validatePackage);
-            $version = $inventory->versionFor(ValidatedData::string($input['package']));
-        } catch (ToolManagerException) {
-            return ['error_code' => 'tool.version_probe_failed'];
-        }
-        $outcome = ($input['tool_status'] ?? null) === 'installed' ? 'unchanged' : 'applied';
-
-        return ['installed_version' => $version, 'block' => null, 'outcome' => $outcome];
+        return $receipt;
     }
 
     /** @return array{key: string, transport: string, name: string, result: array<string, mixed>}|null */
