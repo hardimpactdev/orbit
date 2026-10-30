@@ -695,8 +695,10 @@ Cancel queued Swamp deploy and rollback Operations through the Operation API. Co
 
 This kind has no direct workflow declaration. A stale per-kind direct-writer setting cannot start a second workflow. Its complete native cutover must replace the current dispatch and execution path in the same change.
 
-### Swamp app-user setup
+### Swamp setup and teardown steps
 
-The direct `instance.run_steps` writer supports operator-started setup on the canonical app account and release layout. Admission records the Project, release directory, ordered command digests and full timeouts without programs or environment values. The workflow reads current commands through the existing Project read API, checks each digest, and runs `sudo -u orbit-app-<ProjectID>` in the admitted release. The Node worker uses its configured Node user's existing sudo. There is no root socket or Gateway execution relay.
+`instance.run_steps` runs every admitted Project setup or teardown list through Swamp, including lists requested by Instance lifecycle parents. The Gateway records the Node, Project, checkout, execution account, ordered command digests and complete timeouts. It validates current target and configuration on reads, and projects bounded outcomes. It keeps no PHP step executor, command budget, execution receipt or completion proof for this kind.
 
-The `swamp.direct_writers` map defaults to polled and reversibly selects direct execution per kind. Parent lifecycle lists and teardown keep their previous writer. Missing canonical layouts, changed commands, moved Instances and changed release directories refuse. Canary success is required before takeover; production success is required before deleting the previous path. The package sandbox has no sudo and remains separate.
+Development checkouts run as their admitted Node account, matching their ownership. Production deploy steps run as `orbit-app-<ProjectID>` in the admitted release. Both use direct sudo from the Node-user worker, a cleared environment, checked directories and command digests, full step timeouts, bounded redacted output and process cleanup. Setup's `@orbit/ci-caches` command is a fixed workflow-owned action. Teardown refuses that setup-only action. The package sandbox stays separate and has no sudo.
+
+The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. Roll back by reverting the cutover PR. A complete dev or Node 209 canary gates merge; the same cutover includes the writer selection and old execution/test deletion.

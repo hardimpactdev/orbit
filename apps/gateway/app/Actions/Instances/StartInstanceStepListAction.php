@@ -27,7 +27,11 @@ final readonly class StartInstanceStepListAction
     /** @return array<string, mixed> Safe admission only; programs remain in the Project read API. */
     public function appStepAdmission(Instance $instance, LifecyclePhase $phase): array
     {
-        return ['project_id' => $instance->project_id, 'release_directory' => $instance->checkout_path,
+        return ['project_id' => $instance->project_id, 'execution' => [
+            'variant' => 'checkout', 'user' => $instance->node->user, 'directory' => $instance->checkout_path,
+            'seed_path' => $phase === LifecyclePhase::Setup && $instance->seed_path !== $instance->checkout_path ? ($instance->seed_path ?? '') : '',
+            'seed_commit' => $phase === LifecyclePhase::Setup && $instance->seed_path !== $instance->checkout_path ? ($instance->seed_commit ?? '') : '',
+        ],
             'steps' => array_map(static fn (LifecycleStep $step): array => [
                 'name' => $step->name, 'command_digest' => hash('sha256', $step->command), 'timeout_seconds' => $step->timeoutSeconds,
             ], $this->steps->ordered($instance->project, $phase))];

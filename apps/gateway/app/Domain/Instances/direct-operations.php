@@ -11,7 +11,6 @@ return [
         'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'instance_step_writer',
         'projection' => InstanceSetupProjection::class,
-        'writer_scope' => ['list' => 'setup', 'parent_operation_id' => null],
     ],
     'instance.transfer_discard' => [
         'workflow' => 'operation-instance-lifecycle-direct',
