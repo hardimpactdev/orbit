@@ -29,6 +29,7 @@ command_errors! {
         UpdateBusy {} => "agent.update_busy", "A self-update held the update lock for too long.";
         WorkerNotReady {} => "swamp.node_worker_not_ready", "The Node worker credentials are missing or unsafe.";
         WorkerMemoryLow {} => "swamp.node_worker_memory_low", "Available RAM must cover the pinned Swamp binary plus 256 MiB headroom.";
+        SecretMismatch {} => "agent.secret_mismatch", "Direct convergence requires the existing recorded agent secret.";
         Failed { step: String } => "agent.configure_failed", "An agent file or unit step failed.";
     }
 }
@@ -126,6 +127,9 @@ fn kept(installed: Option<&[u8]>, recorded: Option<&str>) -> bool {
 pub struct ConfigureInput {
     /// The hash of the secret the Gateway recorded, if any; a file that matches it is kept.
     pub secret_hash: Option<String>,
+    /// Direct convergence cannot rotate a secret owned by enrollment or explicit recovery.
+    #[serde(default = "allow_secret_rotation")]
+    pub allow_secret_rotation: bool,
     pub configuration: String,
     pub certificate: String,
     pub unit: String,
@@ -134,6 +138,10 @@ pub struct ConfigureInput {
     /// The binary changed just before, so the observer restarts.
     pub binary_changed: bool,
     pub worker_credentials: Option<super::node_worker::Credentials>,
+}
+
+fn allow_secret_rotation() -> bool {
+    true
 }
 
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
@@ -154,6 +162,11 @@ fn configure(
     if worker_configuration(&input.configuration)?.is_some() {
         super::node_worker::check_memory(files).map_err(|_| FootprintError::WorkerMemoryLow {})?;
     }
+    let installed = fs::read(files.path(SECRET_PATH)).ok();
+    let keep = kept(installed.as_deref(), input.secret_hash.as_deref());
+    if !input.allow_secret_rotation && !keep {
+        return Err(FootprintError::SecretMismatch {});
+    }
     let directory = &files.path(LOCK_PATH);
     if !directory.is_dir() {
         fs::DirBuilder::new()
@@ -164,8 +177,6 @@ fn configure(
     }
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
         .map_err(|_| failed("agent-directory"))?;
-    let installed = fs::read(files.path(SECRET_PATH)).ok();
-    let keep = kept(installed.as_deref(), input.secret_hash.as_deref());
     let secret_hash = if let (true, Some(recorded)) = (keep, &input.secret_hash) {
         recorded.clone()
     } else {
