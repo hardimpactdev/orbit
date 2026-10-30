@@ -75,7 +75,10 @@ final readonly class DirectOperation
     public function assertRun(Operation $operation, string $runId): void
     {
         $known = $operation->state['swamp_run_id'] ?? null;
-        if ($known !== null && $known !== $runId) {
+        if (! is_string($known) || $known === '') {
+            throw new ResourceOperationException('operation.run_unbound', 'The Gateway has not recorded the native start response.', 409);
+        }
+        if ($known !== $runId) {
             throw new ResourceOperationException('operation.run_mismatch', 'This status belongs to another Swamp run.', 409);
         }
     }
@@ -127,7 +130,7 @@ final readonly class DirectOperation
         ]);
         $startedAt = Carbon::parse(ValidatedData::string($data['started_at']));
         $finishedAt = $status->terminal() ? Carbon::parse(ValidatedData::string($data['finished_at'] ?? '')) : null;
-        $state = [...($operation->state ?? []), 'swamp_run_id' => $data['run_id']];
+        $state = $operation->state ?? [];
         if ($status === OperationStatus::Succeeded) {
             $state['steps'] = [...ValidatedData::object($state['steps'] ?? []), $stepName => $result];
         }
