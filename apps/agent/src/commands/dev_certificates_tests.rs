@@ -771,3 +771,46 @@ fn removal_fails_when_a_tree_cannot_be_deleted() {
         Err(failed("certificate-remove"))
     );
 }
+
+#[test]
+fn retrying_the_same_leaf_version_reuses_its_key_and_public_request() {
+    let mut sandbox = Sandbox::new();
+    let first = sandbox.request("one").unwrap();
+    let key = sandbox.user_tree().join("versions/one.candidate/key.pem");
+    let public_before = public_key("key", &key).unwrap();
+    let second = sandbox.request("one").unwrap();
+    assert_eq!(first, second);
+    assert_eq!(public_key("key", &key).unwrap(), public_before);
+}
+
+#[test]
+fn a_partial_request_reuses_its_key_and_an_invalid_key_is_never_replaced() {
+    let mut sandbox = Sandbox::new();
+    let first = sandbox.request("one").unwrap();
+    let candidate = sandbox.user_tree().join("versions/one.candidate");
+    fs::remove_file(candidate.join("request.pem")).unwrap();
+    assert_eq!(sandbox.request("one").unwrap(), first);
+    fs::write(candidate.join("key.pem"), "incomplete key").unwrap();
+    assert_eq!(sandbox.request("one"), Err(failed("certificate-request")));
+    assert_eq!(
+        fs::read_to_string(candidate.join("key.pem")).unwrap(),
+        "incomplete key"
+    );
+}
+
+#[test]
+fn a_partly_published_version_never_generates_a_replacement_key() {
+    let mut sandbox = Sandbox::new();
+    sandbox.converge("one");
+    let key = sandbox.user_tree().join("versions/one/key.pem");
+    let public_before = public_key("key", &key).unwrap();
+    fs::remove_file(sandbox.caddy_tree().join("current/cert.pem")).unwrap();
+    sandbox.host.calls.clear();
+    assert_eq!(sandbox.request("one"), Err(failed("certificate-request")));
+    assert_eq!(public_key("key", &key).unwrap(), public_before);
+    assert!(!sandbox
+        .host
+        .calls
+        .iter()
+        .any(|call| call.starts_with("openssl genrsa")));
+}

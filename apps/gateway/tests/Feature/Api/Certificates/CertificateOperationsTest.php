@@ -3,115 +3,27 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\CertificateChildAdmission;
+use App\Actions\Routes\StartCertificateOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $services = Node::query()->create(['name' => 'services', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.17', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    $services->accessibleNodes()->attach($gateway);
-    config(['dependency_detection.services_node_id' => $services->id]);
-    $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
-    $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    $this->operation = Operation::query()->create(['kind' => 'certificate.converge', 'target_type' => 'node_certificate', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'worker' => 'worker', 'sequence' => 1,
-        'input' => ['scope' => 'route-7-router', 'domain' => 'private.test', 'version' => '0123456789abcdef', 'root_hash' => str_repeat('a', 64), 'user' => 'orbit', 'home' => '/home/orbit']]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'worker'])->assertOk()->assertJsonPath('data.id', $this->operation->id);
-    $this->operation->refresh();
-    $this->path = '/api/v1/operation-executor/'.$this->operation->id;
-    $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
-    $request = openssl_csr_new(['commonName' => 'private.test'], $key);
-    openssl_csr_export($request, $this->csr);
-    $this->agents = new FakeAgentCommandRunner()->answer('certificate.request-leaf', ['state' => 'request', 'request' => $this->csr])
-        ->answer('certificate.publish-leaf', [])->answer('certificate.inspect-leaf', ['present' => true])->answer('certificate.remove-leaf', []);
-    app()->instance(AgentCommandRunner::class, $this->agents);
-    $this->signer = new class implements LeafCertificateSigner
-    {
-        public int $calls = 0;
-
-        public function sign(string $hostname, string $certificateRequest): string
-        {
-            $this->calls++;
-            expect($hostname)->toBe('private.test')->and($certificateRequest)->toStartWith('-----BEGIN CERTIFICATE REQUEST-----');
-
-            return "-----BEGIN CERTIFICATE-----\npublic leaf\n-----END CERTIFICATE-----\n";
-        }
-
-        public function rootCertificate(): string
-        {
-            return "-----BEGIN CERTIFICATE-----\npublic root\n-----END CERTIFICATE-----\n";
-        }
-    };
-    app()->instance(LeafCertificateSigner::class, $this->signer);
-    $this->runStep = function (string $key): array {
-        $descriptors = $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->json('data.execution_context.descriptors');
-        $descriptor = array_find($descriptors, static fn (array $d): bool => $d['key'] === $key);
-        expect($descriptor)->not->toBeNull();
-        $result = $this->postJson($this->path.'/run', ['worker' => 'worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))])->assertOk()->json('data');
-        $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => $key.':finish', 'name' => $key, 'status' => 'succeeded', 'result' => $result])->assertOk();
-
-        return $result;
-    };
-});
-
-it('keeps the public CSR usable through redaction and hydrates only this Operation signature at publication', function (): void {
-    expect(strlen(base64_encode($this->csr)))->toBeGreaterThan(1024);
-    $request = ($this->runStep)('certificate-request');
-    expect(base64_decode($request['request_base64'], true))->toBe($this->csr)->and($request)->not->toHaveKey('request');
-    ($this->runStep)('certificate-sign');
-    ($this->runStep)('certificate-publish');
-    $result = ($this->runStep)('certificate-inspect');
-    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    expect($this->signer->calls)->toBe(1)->and($this->agents->calls)->toHaveCount(3)
-        ->and($this->agents->calls[1]['input']['certificate'])->toContain('public leaf');
-    $state = json_encode($this->operation->fresh()->state);
-    expect($state)->not->toContain('-----BEGIN', 'PRIVATE KEY');
-});
-
-it('never signs or republishes a current leaf but still requires final inspection proof', function (): void {
-    $this->agents->answer('certificate.request-leaf', ['state' => 'current']);
-    ($this->runStep)('certificate-request');
-    $result = ($this->runStep)('certificate-inspect');
-    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    expect($this->signer->calls)->toBe(0)->and($this->agents->calls)->toHaveCount(2);
-});
-
-it('refuses an unrelated secret reference and forged final inspection', function (): void {
-    ($this->runStep)('certificate-request');
-    ($this->runStep)('certificate-sign');
-    $this->postJson($this->path.'/run', ['worker' => 'worker', 'key' => 'certificate-publish', 'transport' => 'agent', 'name' => 'certificate.publish-leaf', 'input' => [...$this->operation->input, 'certificate' => ['$secret' => 'certificate.leaf', 'id' => $this->operation->id + 1], 'root_certificate' => ['$secret' => 'certificate.leaf', 'id' => $this->operation->id]]])->assertUnprocessable();
-    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'forged', 'name' => 'certificate-inspect', 'status' => 'succeeded', 'result' => ['present' => true]])->assertConflict();
-    expect($this->agents->calls)->toHaveCount(1);
-});
-
-it('recovers and encodes the original public CSR from sanitized evidence without another request', function (): void {
-    expect(strlen(base64_encode($this->csr)))->toBeGreaterThan(1024);
-    $this->agents->answer('certificate.request-leaf', static fn (): array => throw new RuntimeException('Lost reply after key generation.'));
-    $descriptor = $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->json('data.execution_context.descriptors.0');
-    $run = ['worker' => 'worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))];
-    $this->postJson($this->path.'/run', $run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
-    $effectKey = 'op-'.$this->operation->id.'.certificate-request';
-    $this->agents->answer('agent.effect-receipt', ['command' => 'certificate.request-leaf', 'effect_key' => $effectKey, 'state' => 'succeeded', 'result' => ['ok' => true, 'data' => ['state' => 'request', 'request' => $this->csr]], 'result_digest' => str_repeat('a', 64), 'sanitized' => true, 'effect_nonce' => $this->operation->fresh()->state['executor_effect_identity']['nonce'], 'effect_created_at' => $this->operation->fresh()->state['executor_effect_identity']['created_at'], 'exit_code' => 0, 'finished_at' => '2026-10-28T22:00:00Z']);
-    $receipt = $this->getJson($this->path.'/receipts/certificate-request')->assertOk()->json('data.result');
-    expect(base64_decode($receipt['request_base64'], true))->toBe($this->csr)->and($receipt)->not->toHaveKey('request');
-    ($this->runStep)('certificate-request');
-    ($this->runStep)('certificate-sign');
-    ($this->runStep)('certificate-publish');
-    ($this->runStep)('certificate-inspect');
-    expect(array_column($this->agents->calls, 'command'))->toBe(['certificate.request-leaf', 'agent.effect-receipt', 'certificate.publish-leaf', 'certificate.inspect-leaf']);
-});
-
-it('preserves the parent actor and request when admitting a certificate child', function (string $kind, ?string $actor): void {
-    $node = Node::query()->create(['name' => 'child-cert', 'public_ssh_host' => '192.0.2.4', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->create(['name' => 'certificate-node', 'public_ssh_host' => '192.0.2.209', 'wireguard_ip' => '10.44.0.209', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $manifest = tempnam(sys_get_temp_dir(), 'certificate-agent-');
+    file_put_contents($manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($manifest, sys_get_temp_dir()));
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
     {
         public function resolve(Node $node): ManagedUserAccount
@@ -119,9 +31,137 @@ it('preserves the parent actor and request when admitting a certificate child', 
             return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
         }
     });
-    $parent = new Operation(['kind' => 'test.parent', 'triggered_by' => $actor, 'request_id' => 'certificate-parent-request']);
-    $input = ['scope' => 'route-7-router', ...($kind === 'certificate.converge' ? ['domain' => 'private.test'] : [])];
-    $child = app(CertificateChildAdmission::class)->admit($parent, ['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
-    expect($child->triggered_by)->toBe($actor)->and($child->request_id)->toBe($parent->request_id)
-        ->and($child->node_id)->toBe($node->id)->and($this->agents->calls)->toBe([]);
-})->with(['certificate.converge'])->with(['peer:proof', null]);
+    $this->agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $this->agents);
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-certificate-converge', 'runId' => $this->runId]]];
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['dependency_detection.services_node_id' => $this->node->id, 'swamp.run_token' => 'fixture.fake', 'swamp.direct_writers' => []]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->signer = new class implements LeafCertificateSigner
+    {
+        public int $calls = 0;
+
+        public bool $fail = false;
+
+        public function rootCertificate(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\npublic root\n-----END CERTIFICATE-----\n";
+        }
+
+        public function sign(string $hostname, string $certificateRequest): string
+        {
+            $this->calls++;
+            expect($hostname)->toBe('private.test')->and($certificateRequest)->toStartWith('-----BEGIN CERTIFICATE REQUEST-----');
+            if ($this->fail) {
+                throw new RuntimeException('private-signer-diagnostic');
+            }
+
+            return "-----BEGIN CERTIFICATE-----\npublic leaf\n-----END CERTIFICATE-----\n";
+        }
+    };
+    app()->instance(LeafCertificateSigner::class, $this->signer);
+    $this->admit = fn () => app(StartCertificateOperationAction::class)->converge($this->node, 'route-700-router', 'private.test');
+    $this->csr = static function (): string {
+        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+        $request = openssl_csr_new(['commonName' => 'private.test'], $key);
+        openssl_csr_export($request, $pem);
+
+        return $pem;
+    };
+    $this->body = ['run_id' => $this->runId, 'status' => 'running', 'started_at' => '2026-10-30T20:00:00.000Z'];
+});
+
+it('records direct certificate intent without Node execution or a Gateway claim', function (): void {
+    $operation = ($this->admit)();
+    expect(app(DirectOperation::class)->writer('certificate.converge'))->toBe('direct')
+        ->and($operation->state['swamp_run_id'])->toBe($this->runId)->and($operation->worker)->toBeNull()->and($operation->lock_key)->toBeNull();
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.input.agent_sha256', str_repeat('a', 64))->assertJsonPath('data.input.domain', 'private.test');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'certificate.converge', 'worker' => 'old'])->assertUnprocessable();
+    expect($this->signer->calls)->toBe(0)->and($this->agents->calls)->toBe([]);
+});
+
+it('records only public CSR bytes and signs only the admitted domain through the generic primitive', function (): void {
+    $operation = ($this->admit)();
+    $encoded = base64_encode(($this->csr)());
+    expect(strlen($encoded))->toBeGreaterThan(1024);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->postJson($path.'/result', [...$this->body, 'result' => ['request_base64' => $encoded]])->assertOk();
+    $signed = $this->postJson($path.'/primitive', ['run_id' => $this->runId])->assertOk()->assertJsonPath('data.signed', true)->json('data');
+    expect(base64_decode($signed['certificate_base64']))->toContain('public leaf')
+        ->and(base64_decode($signed['root_certificate_base64']))->toContain('public root')
+        ->and($operation->fresh()->state['certificate_request'])->toBe($encoded)
+        ->and($operation->fresh()->state)->not->toHaveKey('executor_runs')
+        ->and($this->signer->calls)->toBe(1)->and($this->agents->calls)->toBe([]);
+});
+
+it('cannot sign before its public request or before the native run is bound', function (): void {
+    $reply = $this->socket->reply;
+    $this->socket->reply = function (array $request) use ($reply): array {
+        $op = Operation::query()->latest('id')->firstOrFail();
+        $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id='.$this->runId)->assertConflict();
+        $this->postJson('/api/v1/direct-operations/'.$op->id.'/primitive', ['run_id' => $this->runId])->assertConflict();
+
+        return $reply($request);
+    };
+    $operation = ($this->admit)();
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
+    expect($this->signer->calls)->toBe(0);
+});
+
+it('refuses private PEM, malformed CSR and a changed request without replacing product state', function (): void {
+    $operation = ($this->admit)();
+    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
+    foreach (["-----BEGIN PRIVATE KEY-----\nnot public\n-----END PRIVATE KEY-----\n", "-----BEGIN CERTIFICATE REQUEST-----\nbroken\n-----END CERTIFICATE REQUEST-----\n", ($this->csr)()."-----BEGIN PRIVATE KEY-----\nprivate\n-----END PRIVATE KEY-----\n"] as $invalid) {
+        $this->postJson($path, [...$this->body, 'result' => ['request_base64' => base64_encode($invalid)]])->assertUnprocessable();
+    }
+    $first = base64_encode(($this->csr)());
+    $this->postJson($path, [...$this->body, 'result' => ['request_base64' => $first]])->assertOk();
+    $this->postJson($path, [...$this->body, 'result' => ['request_base64' => $first]])->assertOk();
+    $this->postJson($path, [...$this->body, 'result' => ['request_base64' => base64_encode(($this->csr)())]])->assertUnprocessable();
+    expect($operation->fresh()->state['certificate_request'])->toBe($first)->and($this->signer->calls)->toBe(0)->and($this->agents->calls)->toBe([]);
+});
+
+it('projects final presence for a current leaf without requiring a new signature', function (): void {
+    $operation = ($this->admit)();
+    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
+    $body = [...$this->body, 'status' => 'succeeded', 'finished_at' => '2026-10-30T20:00:01.000Z', 'result' => ['present' => true, 'stderr' => 'private-diagnostic']];
+    $this->postJson($path, [...$body, 'result' => ['present' => false]])->assertUnprocessable();
+    $this->postJson($path, $body)->assertOk()->assertDontSee('private-diagnostic');
+    $this->postJson($path, $body)->assertOk();
+    expect($operation->fresh()->result)->toBe(['present' => true])->and($operation->fresh()->state)->not->toHaveKey('certificate_request')
+        ->and($this->signer->calls)->toBe(0)->and($this->agents->calls)->toBe([]);
+});
+
+it('returns only a bounded signing refusal and keeps private diagnostics out of the response', function (): void {
+    $operation = ($this->admit)();
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->postJson($path.'/result', [...$this->body, 'result' => ['request_base64' => base64_encode(($this->csr)())]])->assertOk();
+    $this->signer->fail = true;
+    $this->postJson($path.'/primitive', ['run_id' => $this->runId])->assertOk()->assertJsonPath('data.error_code', 'app-dev.certificate_sign_failed')->assertDontSee('private-signer-diagnostic');
+    expect($this->signer->calls)->toBe(1)->and($this->agents->calls)->toBe([]);
+});
+
+it('refuses a removed writer before creating another certificate intent', function (): void {
+    config(['swamp.direct_writers' => ['certificate.converge' => 'polled']]);
+    expect($this->admit)->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
+});
+
+it('keeps the parent actor and request on direct certificate admission', function (?string $actor): void {
+    $parent = new Operation(['kind' => 'route.converge', 'triggered_by' => $actor, 'request_id' => 'certificate-parent']);
+    $child = app(CertificateChildAdmission::class)->admit($parent, ['kind' => 'certificate.converge', 'node_id' => $this->node->id, 'input' => ['scope' => 'route-700-router', 'domain' => 'private.test']]);
+    expect($child->triggered_by)->toBe($actor)->and($child->request_id)->toBe('certificate-parent')->and($this->agents->calls)->toBe([]);
+})->with(['peer:proof', null]);
+
+it('refuses signing from another enrolled Node even with Gateway access', function (): void {
+    $operation = ($this->admit)();
+    $foreign = Node::query()->create(['name' => 'foreign-certificate-worker', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $foreign->accessibleNodes()->attach($this->node);
+    config(['operation_executor.worker_node_ids' => [$foreign->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip]);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/primitive', ['run_id' => $this->runId])->assertForbidden();
+    expect($this->signer->calls)->toBe(0)->and($this->agents->calls)->toBe([]);
+});

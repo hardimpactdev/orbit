@@ -27,7 +27,7 @@ final readonly class StartCertificateOperationAction
 
         return $this->operations->execute('certificate.converge', 'node_certificate', $node->id, $node->id,
             ['scope' => $scope, 'domain' => RouteDomain::validate($domain), 'version' => bin2hex(random_bytes(8)),
-                'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user, 'home' => $account->home],
+                'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user, 'home' => $account->home, 'agent_sha256' => $this->agents->pin($node)],
             $triggeredBy, $requestId);
     }
 

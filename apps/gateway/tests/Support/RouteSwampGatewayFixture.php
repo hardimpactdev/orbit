@@ -222,7 +222,7 @@ final class RouteSwampGatewayFixture
 
             return $claimed;
         }
-        if (preg_match('~/fixture/route-verification/(\d+)$~', $path, $probe)) {
+        if (preg_match('~/fixture/(?:route-verification|route-certificate)/(\d+)$~', $path, $probe)) {
             return ['status' => 200, 'body' => ['data' => $this->foreign->run(Operation::query()->findOrFail((int) $probe[1]), ['proof' => 'ready'])]];
         }
         if (preg_match('~/direct-operations/(\d+)~', $path, $directMatch)) {

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Domain\Certificates\GatewayCertificateIssuer;
-use App\Domain\Certificates\CertificateLeafSource;
-use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
@@ -20,7 +18,6 @@ final class CertificatesServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->tag([CertificateLeafSource::class], OperationSecretSource::class);
         $this->app->singleton(
             LeafCertificateSigner::class,
             static fn (): LeafCertificateSigner => new OpenSslLeafCertificateSigner(

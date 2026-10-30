@@ -514,7 +514,9 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 | `route-<replacement id>-router` | Router | Cleanup | Route removal |
 | `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router drops its site |
 
-Swamp executes `certificate.converge` on one recorded Node and certificate scope. A leaf request returns only a public CSR. The Gateway signs it, then resolves protected certificate references at publication. Completion requires the request, signing, publication and inspection receipts, or proof that the current leaf was inspected. Lost replies recover the original sanitized target receipt without generating another key.
+`certificate.converge` starts its Swamp workflow directly on the admitted Node. Swamp requests the public CSR, obtains the CA signature through the existing Gateway signing primitive, publishes the leaf on the Node, and requires final presence inspection. A valid current leaf skips signing and publication. The private CA key keeps its existing Gateway custody; leaf keys never leave their Node. The Gateway stores only the public signing request and projects the bounded result. No Gateway claims, leases or keyed effect receipts remain for this kind.
+
+A retry of the same admitted leaf version reuses its candidate key and public CSR. An incomplete CSR can be rebuilt from that key; a corrupt existing key refuses instead of being replaced. Native resume observes a valid published leaf before repeating publication. Both Node certificate trees and the system trust check must pass the existing primitive before success.
 
 Certificate removal starts `operation-certificate-remove` directly on the admitted Node worker. The Node-user worker runs the pinned agent with sudo, removes only the admitted scope, and verifies that its leaf is absent. A stored Caddy site still using that scope refuses removal. Swamp owns locking, cancellation and recovery; the Gateway keeps admission and the bounded `present: false` result. The old claim-based removal executor is deleted; rollback uses a revert PR.
 
