@@ -16,6 +16,8 @@ final readonly class NodeWorkerRollout
     {
         return in_array($node->id, Config::array('swamp_workers.nodes'), true)
             && app(ManagedNodeEligibility::class)->allows($node)
-            && TaskVm::query()->where('node_id', $node->id)->doesntExist();
+            && in_array($node->architecture, ['x86_64', 'amd64'], true)
+            && ($node->settings['task_vms'] ?? null) === null
+            && TaskVm::query()->where('node_id', $node->id)->orWhere('host_node_id', $node->id)->doesntExist();
     }
 }

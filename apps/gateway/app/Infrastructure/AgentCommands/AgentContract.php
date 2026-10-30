@@ -33,7 +33,7 @@ final class AgentContract
         return $this->commands()[$name] ?? throw new LogicException("The agent contract has no command [{$name}].");
     }
 
-    private const array OperatorOnly = ['swamp.issue-node-worker', 'swamp.converge-node-worker'];
+    private const array OperatorOnly = ['swamp.issue-node-worker'];
 
     public function operationCommand(string $name): AgentCommandSpec
     {

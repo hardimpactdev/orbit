@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NodeWorkerRollout;
@@ -17,7 +16,7 @@ use Throwable;
 /** Bootstrap/rotation through existing pinned SSH. Credentials never enter a job or receipt. */
 final readonly class ConvergeNodeWorkerAction
 {
-    public function __construct(private AgentCommandRunner $agents, private NodeAgentRuntime $runtime, private NodeWorkerRollout $rollout) {}
+    public function __construct(private AgentCommandRunner $agents, private NodeWorkerRollout $rollout) {}
 
     public function execute(Node $node): void
     {
@@ -25,13 +24,14 @@ final readonly class ConvergeNodeWorkerAction
             return;
         }
         try {
-            $lock = Cache::lock('swamp:node-worker:'.$node->id, 1800);
+            $lock = Cache::lock('swamp:node-worker:'.$node->id, 360);
             $lock->block(1);
             try {
-                $this->runtime->converge($node);
-                $state = $this->agents->run($node, 'swamp.converge-node-worker', []);
-                if (count($state) !== 2 || ! is_bool($state['ready'] ?? null) || ! is_bool($state['drained'] ?? null)
-                    || ($state['ready'] && $state['drained'])) {
+                $input = ['node' => true, 'enrollment_id' => 'node-worker', 'workspace' => '/var/lib/orbit-node-worker/home',
+                    'orchestrator_url' => 'wss://swamp.orbit', 'labels' => ['role' => 'node'], 'server_token_required' => true];
+                $state = $this->agents->run($node, 'swamp.start-worker', $input);
+                if (count($state) !== 2 || ! is_bool($state['started'] ?? null) || ! is_bool($state['drained'] ?? null)
+                    || ($state['started'] && $state['drained'])) {
                     throw new \RuntimeException;
                 }
                 if (! $state['drained']) {
@@ -48,8 +48,8 @@ final readonly class ConvergeNodeWorkerAction
                     || ! str_starts_with($pair['server_token'], 'orbit-node-'.$node->id.'-access.')) {
                     throw new \RuntimeException;
                 }
-                $started = $this->agents->run($node, 'swamp.converge-node-worker', ['credentials' => $pair]);
-                if (($started['ready'] ?? null) !== true || ($started['drained'] ?? null) !== false) {
+                $started = $this->agents->run($node, 'swamp.start-worker', $input + $pair);
+                if (($started['started'] ?? null) !== true || ($started['drained'] ?? null) !== false) {
                     throw new \RuntimeException;
                 }
             } finally {

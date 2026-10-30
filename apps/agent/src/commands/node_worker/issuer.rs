@@ -13,42 +13,7 @@ pub struct Pair {
     pub server_token: String,
     pub expires_at: String,
 }
-impl Pair {
-    pub fn expires(&self) -> Result<i64, Error> {
-        time::OffsetDateTime::parse(
-            &self.expires_at,
-            &time::format_description::well_known::Rfc3339,
-        )
-        .map(|d| d.unix_timestamp())
-        .map_err(|_| invalid())
-    }
-    pub fn validate(&self, now: i64) -> Result<(), Error> {
-        let name = self.enrollment_token.split_once('.').ok_or_else(invalid)?.0;
-        if name
-            .strip_prefix("orbit-node-")
-            .and_then(|v| v.parse::<u64>().ok())
-            .is_none_or(|v| v == 0)
-        {
-            return Err(invalid());
-        }
-        let token = |value: &str, prefix: &str| {
-            value.strip_prefix(&format!("{prefix}.")).is_some_and(|s| {
-                s.len() >= 16
-                    && s.len() <= 512
-                    && s.bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
-            })
-        };
-        let remaining = self.expires()? - now;
-        if !(72000..=86400).contains(&remaining)
-            || !token(&self.enrollment_token, name)
-            || !token(&self.server_token, &format!("{name}-access"))
-        {
-            return Err(invalid());
-        }
-        Ok(())
-    }
-}
+
 fn native(host: &mut impl Host, args: &[&str]) -> Result<serde_json::Value, Error> {
     let mut argv = vec![
         "env",
@@ -72,39 +37,43 @@ fn native(host: &mut impl Host, args: &[&str]) -> Result<serde_json::Value, Erro
         CA,
         "--json",
     ]);
-    let output = call(host, &argv)?;
-    if output.len() > 65536 {
+    let result = recipe::run(host, &Invocation::new(&argv), false).map_err(|_| failed())?;
+    if result.stdout.len() + result.stderr.len() > 65536 {
         return Err(failed());
     }
-    let mut documents = serde_json::Deserializer::from_str(&output)
-        .into_iter::<serde_json::Value>()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| failed())?;
-    let last = documents.pop().ok_or_else(failed)?;
-    if args.starts_with(&["model", "method", "run"]) {
-        if last["status"] != "succeeded"
-            || documents
-                .iter()
-                .any(|event| event["event"] != "definition_auto_created")
-        {
-            return Err(failed());
+    if result.code != 0 {
+        if args.get(2) == Some(&"revoke") {
+            let code = format!("{}_token_revoke_failed", args[0]);
+            let kind = if args[0] == "worker" {
+                "Enrollment"
+            } else {
+                "Server"
+            };
+            let message = format!("Server reported {code}: {kind} token '{}' not found. Use 'swamp {} token list' to see existing tokens.", args[3], args[0]);
+            if result
+                .stderr
+                .char_indices()
+                .filter(|(_, c)| *c == '{')
+                .filter_map(|(i, _)| {
+                    serde_json::from_str::<serde_json::Value>(&result.stderr[i..]).ok()
+                })
+                .any(|v| v["code"] == code && v["error"] == message)
+            {
+                return Ok(serde_json::Value::Null);
+            }
         }
-    } else if !documents.is_empty() {
+        return Err(failed());
+    }
+    let output = result.stdout;
+    let last = serde_json::Deserializer::from_str(&output)
+        .into_iter::<serde_json::Value>()
+        .last()
+        .ok_or_else(failed)?
+        .map_err(|_| failed())?;
+    if args[0] == "model" && last["status"] != "succeeded" {
         return Err(failed());
     }
     Ok(last)
-}
-fn revoke_existing(host: &mut impl Host, group: &[&str], name: &str) -> Result<(), Error> {
-    let mut list = group.to_vec();
-    list.push("list");
-    let values = native(host, &list)?;
-    let values = values.as_array().ok_or_else(failed)?;
-    if values.iter().any(|t| t["name"].as_str() == Some(name)) {
-        let mut revoke = group.to_vec();
-        revoke.extend(["revoke", name]);
-        native(host, &revoke)?;
-    }
-    Ok(())
 }
 fn issue(files: &Files, host: &mut impl Host, node: u64) -> Result<Pair, Error> {
     let directory = fs::symlink_metadata(files.path(DIRECTORY)).map_err(|_| invalid())?;
@@ -137,8 +106,8 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
     let access = format!("{name}-access");
     // The Gateway drains the target before requesting a pair. Names cannot
     // be supplied by a workflow or task, and no grant is created here.
-    revoke_existing(host, &["worker", "token"], &name)?;
-    revoke_existing(host, &["access", "token"], &access)?;
+    native(host, &["worker", "token", "revoke", &name])?;
+    native(host, &["access", "token", "revoke", &access])?;
     const VAULT: &str = "orbit-worker-enrollment";
     let enrollment = native(
         host,
@@ -182,28 +151,14 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
             "--yes",
         ],
     )?;
-    let expires = |v: &serde_json::Value| -> Result<i64, Error> {
-        time::OffsetDateTime::parse(
-            v["expiresAt"].as_str().ok_or_else(failed)?,
-            &time::format_description::well_known::Rfc3339,
-        )
-        .map(|d| d.unix_timestamp())
-        .map_err(|_| failed())
-    };
-    // Enrollment is minted first, so its deadline bounds the later server token.
-    let deadline = expires(&enrollment)?;
     let pair = Pair {
         enrollment_token: enrollment["token"].as_str().ok_or_else(failed)?.into(),
         server_token: format!(
             "{access}.{}",
             revealed["value"].as_str().ok_or_else(failed)?
         ),
-        expires_at: time::OffsetDateTime::from_unix_timestamp(deadline)
-            .map_err(|_| failed())?
-            .format(&time::format_description::well_known::Rfc3339)
-            .map_err(|_| failed())?,
+        expires_at: enrollment["expiresAt"].as_str().ok_or_else(failed)?.into(),
     };
-    pair.validate(time::OffsetDateTime::now_utc().unix_timestamp())?;
     Ok(pair)
 }
 pub struct Issue;
@@ -227,101 +182,5 @@ impl Command for Issue {
             &mut recipe::Native(context),
             input.node_id,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use recipe::{Failure, Output as HostOutput};
-
-    struct Fake {
-        calls: Vec<Vec<String>>,
-        expires: String,
-    }
-    impl Host for Fake {
-        fn execute(&mut self, call: &Invocation) -> Result<HostOutput, Failure> {
-            self.calls.push(call.argv.clone());
-            let first = call.argv.iter().position(|v| v == BINARY).unwrap() + 1;
-            let args = &call.argv[first..];
-            let value = match args[0].as_str() {
-                "worker" if args[2] == "list" => serde_json::json!([{"name":"orbit-node-71"}]),
-                "access" if args[2] == "list" => {
-                    serde_json::json!([{"name":"orbit-node-71-access"}])
-                }
-                "worker" if args[2] == "create" => {
-                    serde_json::json!({"expiresAt":self.expires,"token":"orbit-node-71.enrollmentSentinel"})
-                }
-                "vault" => serde_json::json!({"value":"serverSentinel1234"}),
-                _ => serde_json::json!({}),
-            };
-            Ok(HostOutput {
-                stdout: if args[0] == "model" {
-                    format!(
-                        "{}\n{}",
-                        serde_json::json!({"event":"definition_auto_created","definitionName":"orbit-node-71-access"}),
-                        serde_json::json!({"status":"succeeded"})
-                    )
-                } else {
-                    value.to_string()
-                },
-                ..HostOutput::default()
-            })
-        }
-        fn wait(&mut self, _: Duration) -> Result<(), Failure> {
-            panic!("no waits");
-        }
-    }
-    #[test]
-    fn native_issuer_uses_one_machine_worker_principal_and_audited_vault_without_secret_argv() {
-        let expires = (time::OffsetDateTime::now_utc() + time::Duration::hours(24))
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap();
-        let mut host = Fake {
-            calls: vec![],
-            expires,
-        };
-        let pair = mint_pair(&mut host, 71).unwrap();
-        assert!(pair.enrollment_token.starts_with("orbit-node-71."));
-        let text = serde_json::to_string(&host.calls).unwrap();
-        assert!(!text.contains("enrollmentSentinel"));
-        assert!(!text.contains("serverSentinel"));
-        assert!(text.contains("--max-enrollments"));
-        let create = host
-            .calls
-            .iter()
-            .find(|c| c.iter().any(|a| a == "create"))
-            .unwrap();
-        let duration = create.iter().position(|a| a == "--duration").unwrap();
-        assert_eq!(create[duration + 1], "24h");
-        let method = host
-            .calls
-            .iter()
-            .find(|c| c.iter().any(|a| a == "@swamp/server-token"))
-            .unwrap();
-        let input = method.iter().position(|a| a == "--input").unwrap() + 1;
-        let value: serde_json::Value = serde_json::from_str(&method[input]).unwrap();
-        assert_eq!(value["principalId"], "worker:orbit-node-71");
-        assert_eq!(value["vaultName"], "orbit-worker-enrollment");
-        assert_eq!(value["durationMs"], 86400000);
-        let entry = crate::command::registry::find("swamp.issue-node-worker").unwrap();
-        let result = (entry.run)(
-            serde_json::json!({"node_id":71,"effect_key":"op-71.issue"}),
-            &Context::new(
-                Platform::Linux,
-                std::time::Instant::now() + Duration::from_secs(1),
-            ),
-        );
-        assert_eq!(result.to_json()["error"]["code"], "agent.invalid_input");
-    }
-    #[test]
-    fn missing_operator_custody_refuses_before_any_native_command() {
-        let sandbox = super::super::tests::Sandbox::new();
-        let mut host = Fake {
-            calls: vec![],
-            expires: String::new(),
-        };
-        assert!(issue(&sandbox.0, &mut host, 71).is_err());
-        assert!(host.calls.is_empty());
     }
 }

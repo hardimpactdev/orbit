@@ -243,7 +243,6 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_runtime::Configure>(),
         entry::<swamp_worker::Start>(),
         entry::<node_worker::issuer::Issue>(),
-        entry::<node_worker::lifecycle::Converge>(),
         entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),
         entry::<gateway_web::PrepareDirectory>(),

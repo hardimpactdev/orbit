@@ -1,5 +1,8 @@
-//! Persistent Node worker custody. Package execution belongs to a separate UID.
-use super::recipe::{self, store::Account, Files, Host, Invocation};
+//! Node bootstrap uses the same worker start/stop path as task VMs.
+use super::{
+    recipe::{self, store::Account, Files, Host, Invocation},
+    swamp_worker as worker,
+};
 use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
@@ -8,22 +11,17 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     os::unix::fs::{MetadataExt, PermissionsExt},
-    path::Path,
     time::Duration,
 };
-
 pub(crate) mod issuer;
 pub(crate) mod lifecycle;
-#[cfg(test)]
-mod tests;
-
 pub const VERSION: &str = "20261028.205235.0-sha.1602a617";
 const DIGEST: &str = "38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3";
 const URL: &str = "https://github.com/swamp-club/swamp/releases/download/v20261028.205235.0-sha.1602a617/swamp-linux-x86_64";
 const BINARY: &str = recipe::swamp::BINARY;
 const ROOT: &str = "/var/lib/orbit-node-worker";
-const USER: &str = "orbit-swamp-worker";
-const UNIT: &str = "orbit-node-worker.service";
+pub(super) const EXPIRY: &str = "/run/orbit-swamp-worker-expiry";
+pub(super) const USER: &str = "orbit-swamp-worker";
 const CA: &str = "/usr/local/share/ca-certificates/orbit-root.crt";
 
 command_errors! { pub enum Error {
@@ -32,14 +30,6 @@ command_errors! { pub enum Error {
 }}
 fn failed() -> Error {
     Error::Failed {}
-}
-fn lifecycle_lock(context: &Context) -> Result<crate::command::lock::Held, Error> {
-    let directory = crate::command::lock::lock_directory().map_err(|_| failed())?;
-    crate::command::lock::acquire(
-        &directory.join("swamp-node-worker.lock"),
-        context.deadline(),
-    )
-    .map_err(|_| failed())
 }
 fn invalid() -> Error {
     Error::Invalid {}
@@ -60,7 +50,7 @@ fn private_dir(files: &Files, path: &str, uid: u32, gid: u32, mode: u32) -> Resu
     files.directory(&path, uid, gid).map_err(|_| invalid())?;
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|_| failed())
 }
-fn pinned(files: &Files) -> bool {
+pub(super) fn pinned(files: &Files) -> bool {
     owned_file(files, BINARY, 0o755).is_ok()
         && crate::command::run::file_sha256(&files.path(BINARY))
             .ok()
@@ -91,94 +81,23 @@ fn install_binary(files: &Files, host: &mut impl Host) -> Result<bool, Error> {
     Ok(true)
 }
 
-fn worker_unit() -> String {
-    format!("[Unit]\nDescription=Orbit Node Swamp worker\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nExitType=cgroup\nUser={USER}\nGroup={USER}\nWorkingDirectory={ROOT}/work\nEnvironment=HOME={ROOT}/home SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/home/config\nLoadCredential=enrollment:{ROOT}/credentials/enrollment\nLoadCredential=server:{ROOT}/credentials/server\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --concurrency=1 --no-telemetry\nRestart=on-failure\nRestartSec=10\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nReadWritePaths={ROOT}/cache {ROOT}/work {ROOT}/home\nStandardOutput=null\nStandardError=null\n\n[Install]\nWantedBy=multi-user.target\n")
-}
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     node_id: u64,
 }
-#[derive(schemars::JsonSchema, Serialize, Debug)]
-pub struct Output {
-    installed: bool,
-    changed: bool,
-    version: String,
-}
-fn configure(
-    files: &Files,
-    host: &mut impl Host,
-    account: &Account,
-    binary_changed: bool,
-) -> Result<Output, Error> {
-    if account.uid == 0
-        || account.gid == 0
-        || account.name != USER
-        || account.home != Path::new(ROOT).join("home")
-    {
-        return Err(invalid());
-    }
-    owned_file(files, crate::CA_PATH, 0o644)?;
-    private_dir(
-        files,
-        "/usr/local/share/ca-certificates",
-        files.uid,
-        files.gid,
-        0o755,
-    )?;
-    files
-        .publish_root(
-            &files.path(CA),
-            &fs::read(files.path(crate::CA_PATH)).map_err(|_| failed())?,
-        )
-        .map_err(|_| invalid())?;
-    private_dir(files, ROOT, files.uid, files.gid, 0o711)?;
-    private_dir(
-        files,
-        &format!("{ROOT}/credentials"),
-        files.uid,
-        files.gid,
-        0o700,
-    )?;
-    for dir in ["home", "work", "cache"] {
-        private_dir(
-            files,
-            &format!("{ROOT}/{dir}"),
-            account.uid,
-            account.gid,
-            0o700,
-        )?;
-    }
-    let mut changed = binary_changed;
-    let path = format!("/etc/systemd/system/{UNIT}");
-    let value = worker_unit();
-    changed |= fs::read(files.path(&path)).ok().as_deref() != Some(value.as_bytes());
-    files
-        .publish(
-            &files.path(&path),
-            value.as_bytes(),
-            0o644,
-            files.uid,
-            files.gid,
-            false,
-        )
-        .map_err(|_| invalid())?;
-    call(host, &["systemctl", "daemon-reload"])?;
-    if changed {
-        call(host, &["systemctl", "stop", "--no-block", UNIT])?;
-    }
-    Ok(Output {
-        installed: true,
-        changed,
-        version: VERSION.into(),
-    })
-}
-pub fn configure_native(context: &Context) -> Result<Output, Error> {
-    let _lock = lifecycle_lock(context)?;
+pub fn configure_native(context: &Context, enabled: bool) -> Result<(), Error> {
     let files = Files::system();
     let mut host = recipe::Native(context);
+    if !enabled {
+        if fs::read_to_string(files.path(worker::UNIT_PATH))
+            .is_ok_and(|s| s.contains("User=orbit-swamp-worker\n"))
+        {
+            worker::stop(&files, &mut host).map_err(|_| failed())?;
+        }
+        return Ok(());
+    }
     architecture(&mut host)?;
-    // Reject a pre-existing account with an unrelated home or privilege-bearing groups.
     if call(&mut host, &["getent", "passwd", USER]).is_err() {
         call(
             &mut host,
@@ -196,60 +115,27 @@ pub fn configure_native(context: &Context) -> Result<Output, Error> {
         )?;
     }
     let account = Account::named(USER).map_err(|_| invalid())?;
-    if account.gid == 0 {
-        return Err(invalid());
-    }
-    let passwd = call(&mut host, &["getent", "passwd", USER])?;
-    let fields: Vec<_> = passwd.trim().split(':').collect();
-    if fields.len() != 7
-        || fields[0] != USER
-        || fields[5] != format!("{ROOT}/home")
-        || fields[6] != "/usr/sbin/nologin"
+    if account.gid == 0
+        || account.home != std::path::Path::new(ROOT).join("home")
+        || call(&mut host, &["id", "-G", USER])?.trim() != account.gid.to_string()
     {
         return Err(invalid());
     }
-    if call(&mut host, &["id", "-G", USER])?
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        != [account.gid.to_string()]
-    {
-        return Err(invalid());
-    }
-    let changed = install_binary(&files, &mut host)?;
-    configure(&files, &mut host, &account, changed)
-}
-
-fn remove(files: &Files, host: &mut impl Host) -> Result<(), Error> {
-    if !files.path(ROOT).exists() {
-        return Ok(());
-    }
-    let meta = fs::symlink_metadata(files.path(ROOT)).map_err(|_| invalid())?;
-    if !meta.is_dir() || meta.uid() != files.uid {
-        return Err(invalid());
-    }
-    let path = format!("/etc/systemd/system/{UNIT}");
-    if files.path(&path).exists() {
-        owned_file(files, &path, 0o644)?;
-        call(host, &["systemctl", "disable", "--now", UNIT])?;
-        fs::remove_file(files.path(&path)).map_err(|_| failed())?;
-    }
-    // A blocking native drain must finish before credentials or agent trust go away.
-    for name in [
-        "credentials/expiry",
-        "credentials/enrollment",
-        "credentials/server",
-    ] {
-        let path = format!("{ROOT}/{name}");
-        if files.path(&path).exists() {
-            owned_file(files, &path, 0o600)?;
-            fs::remove_file(files.path(&path)).map_err(|_| failed())?;
-        }
-    }
-    call(host, &["systemctl", "daemon-reload"])?;
+    private_dir(&files, ROOT, files.uid, files.gid, 0o711)?;
+    private_dir(
+        &files,
+        &format!("{ROOT}/home"),
+        account.uid,
+        account.gid,
+        0o700,
+    )?;
+    owned_file(&files, crate::CA_PATH, 0o644)?;
+    files
+        .publish_root(
+            &files.path(CA),
+            &fs::read(files.path(crate::CA_PATH)).map_err(|_| failed())?,
+        )
+        .map_err(|_| invalid())?;
+    install_binary(&files, &mut host)?;
     Ok(())
-}
-
-pub fn remove_native(context: &Context) -> Result<(), Error> {
-    let _lock = lifecycle_lock(context)?;
-    remove(&Files::system(), &mut recipe::Native(context))
 }

@@ -52,7 +52,7 @@ describe(AgentContract::class, function (): void {
         expect(fn () => app(OperationAgentTransport::class)
             ->schema(new Operation, ['name' => $name]))
             ->toThrow(LogicException::class, 'Operator-only command.');
-    })->with(['swamp.issue-node-worker', 'swamp.converge-node-worker']);
+    })->with(['swamp.issue-node-worker']);
 
     it('refuses an unknown command as a programming error', function (): void {
         expect(fn () => app(AgentContract::class)->command('no.such'))->toThrow(LogicException::class);
