@@ -241,3 +241,7 @@ The Gateway reaches mysql and pgsql through PDO. A SQLite file exists only on it
 ### Secrets stay off the command line
 
 The SQL, the path, and the token travel on protected standard input, so they never show in a process list. SSH from the Gateway is the authorization boundary for the hidden command, and WireGuard membership is the boundary for the fleet. The token does not add protection by default.
+
+## Direct SQLite cleanup
+
+The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map selects `polled` (default) or `direct` for `database.sqlite_cleanup`; for example, `{"database.sqlite_cleanup":"direct"}` selects only this kind. Admission records the choice, so changing the setting affects only new intents. The shared `StartSwampRun` helper starts `operation-database-cleanup` after commit with `ORBIT_SWAMP_RUN_TOKEN`. Swamp owns execution and recovery; the Gateway projects its bounded result. Direct cleanup has no Gateway claim, lease, target hold, keyed receipt or Node lock. The previous Swamp path remains available until live proof permits its removal.
