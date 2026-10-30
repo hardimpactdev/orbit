@@ -188,16 +188,16 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The Gateway resolves the Operation's secret reference into an encrypted snapshot of the submitted credentials and wanted Database items. Swamp receives only safe metadata and the published item identifiers. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The shared private-material route resolves the Operation's secret reference into its encrypted snapshot of the submitted credentials and wanted Database items. Only the exact recorded run on that Node can read it while the Operation is unfinished.
+
+Swamp uses the private material in memory and through protected stdin; only safe metadata and published item identifiers reach its resources. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
 
 A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 
-Teardown receipts, and direct setup and sync results, carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
-
-Merge waits for orbit-swamp#75 to run `operation-integrations` on a placed worker. A queued Operation keeps the Vault target hold until a worker completes it or the operator cancels it; the scheduler never silently drops that intent.
+Direct setup, sync, and teardown results carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
 
 ## Direct Swamp writer
 
-`vault.sync` and `vault.setup` start `operation-vault-direct` through the shared helper and require their direct writers. An explicit `polled` setting refuses because its old execution contract is removed. Teardown retains its current path until its owning takeover. Rollback reverts the owning PR.
+`vault.sync`, `vault.setup`, and `vault.teardown` start `operation-vault-direct` through the shared helper and require their direct writers. An explicit `polled` setting refuses because its old execution contract is removed. Rollback reverts the owning PR.
 
-The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway projects bounded ledger metadata through its existing completion and removes terminal credential snapshots. No family route, token or relay is added.
+The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its 900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway projects bounded ledger metadata through its existing completion and removes terminal credential snapshots. No family route, token or relay is added.
