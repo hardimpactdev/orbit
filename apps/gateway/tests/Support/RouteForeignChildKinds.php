@@ -35,7 +35,7 @@ final class RouteForeignChildKinds
         }
         foreach ($names as $kind) {
             $definitions[$kind] = [
-                'executor' => 'swamp', 'admission' => $definitions[$kind]['admission'] ?? RouteForeignChildAdmission::class, 'completion' => RouteForeignChildCompletion::class,
+                'executor' => 'swamp', 'admission' => in_array($kind, self::Names, true) ? RouteForeignChildAdmission::class : ($definitions[$kind]['admission'] ?? RouteForeignChildAdmission::class), 'completion' => RouteForeignChildCompletion::class,
                 'runs' => [['transport' => 'gateway', 'name' => 'route-fixture.prove-child', 'input_fields' => [], 'input_values' => ['proof' => 'ready']]],
                 'completion_contract' => ['step' => 'fixture-proof', 'transport' => 'gateway', 'name' => 'route-fixture.prove-child', 'result' => ['ready' => true]],
                 'result_fields' => ['ready', 'error_code'],

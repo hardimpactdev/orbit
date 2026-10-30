@@ -102,22 +102,16 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
 
             return $this->roleFirewall($node, RoleName::AppProd);
         }
-        if (in_array($operation->kind, ['route.lan_converge', 'route.workload_verify'], true)) {
+        if ($operation->kind === 'route.lan_converge') {
             $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
             if (! $route->targets->contains('instance_id', $instance->id) && ! new RoutePreparedWorkloads()->contains($operation, $route, $instance)) {
                 throw new ResourceOperationException('route.target_conflict', 'The workload must remain a stored Route target.', 409);
             }
-            $router = $route->cluster?->routerAssignment?->node;
-            $routerId = $operation->kind === 'route.lan_converge' ? ValidatedData::integer($operation->input['router_node_id']) : $node->id;
-            // Router replacement can prepare the recorded candidate before it becomes active.
-            if ($router?->id !== $routerId && ($route->cluster_id === null || ! Node::query()->whereKey($routerId)->whereHas('roles', fn ($query) => $query
-                ->where('cluster_id', $route->cluster_id)->where('role', RoleName::Router)->whereIn('status', ['provisioning', 'failed']))->exists())) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'The probe or firewall requires the recorded current or candidate Router.', 422);
-            }
-            $router = Node::query()->findOrFail($routerId);
-            $input = $operation->kind === 'route.lan_converge' ? $this->hops->firewall($instance, $route, $router, $node->id) : $this->hops->verify($instance, $route, $router, $node->id);
+            $routerId = ValidatedData::integer($operation->input['router_node_id']);
+            $router = $this->router($route, $routerId);
+            $input = $this->hops->firewall($instance, $route, $router, $node->id);
 
-            return $input === null ? ['skip' => true] : ['command' => $operation->kind === 'route.lan_converge' ? 'firewall.route-lan' : 'route.verify-certificate', 'input' => $input];
+            return $input === null ? ['skip' => true] : ['command' => 'firewall.route-lan', 'input' => $input];
         }
         if (in_array($operation->kind, ['route.lan_remove', 'route.shared_php_withdraw'], true)) {
             if ($route->sites_published || (! $route->targets->contains(static fn ($target): bool => $target->instance->node_id === $node->id)
@@ -134,22 +128,7 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
         if ($operation->kind === 'route.public_firewall') {
             return $this->roleFirewall($node, RoleName::Ingress);
         }
-        if ($route->isCustomProxy()) {
-            $process = $route->customProxy?->process;
-            if ($process === null || ! $this->processFirewall->matches($route, $ingress)) {
-                throw new ResourceOperationException('route.upstream_firewall_mismatch', 'The Process Node must allow the stored Ingress to reach its listener.', 409);
-            }
-            $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
-
-            return ['command' => 'route.verify-http', 'input' => ['address' => $upstream->host, 'port' => $upstream->port, 'domain' => $route->domain]];
-        }
-        $router = $this->sites->routerNode($route);
-        $override = $this->sites->privateOverride($route);
-        if (is_string($router->lan_ip) && $router->lan_ip !== '' && $override->routerAddress !== $router->lan_ip) {
-            throw new ResourceOperationException('route.lan_unreachable', 'The Ingress path must use the recorded Router LAN address.', 409);
-        }
-
-        return ['command' => 'route.verify-certificate', 'input' => ['address' => $override->routerAddress, 'port' => 443, 'domain' => $route->domain]];
+        throw new ResourceOperationException('operation.execution_forbidden', 'This kind has no retained Route Node executor.', 422);
     }
 
     /**
@@ -159,23 +138,51 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
      */
     public function networkVerification(Operation $operation): array
     {
-        if (! in_array($operation->kind, RouteVerificationProjection::Kinds, true)) {
+        if (! in_array($operation->kind, RouteVerificationProjection::Kinds, true) || $operation->node_id === null) {
             throw new ResourceOperationException('operation.execution_forbidden', 'A Route network verification is required.', 422);
         }
-        $plan = $this->prepare($operation);
-        if (($plan['command'] ?? null) === 'route.verify-http') {
-            return ['command' => 'route.verify-http', 'input' => ValidatedData::object($plan['input'])];
+        $route = Route::query()->with('targets.instance')->findOrFail(ValidatedData::integer($operation->input['route_id']));
+        if ($operation->kind === 'route.workload_verify') {
+            $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+            if (! $route->targets->contains('instance_id', $instance->id) && ! new RoutePreparedWorkloads()->contains($operation, $route, $instance)) {
+                throw new ResourceOperationException('route.target_conflict', 'The workload must remain a stored Route target.', 409);
+            }
+            $this->router($route, $operation->node_id);
+            $target = $instance->node;
+        } else {
+            $ingress = $this->sites->ingressNode($route);
+            if ($ingress->id !== $operation->node_id) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The public verification belongs to the stored Ingress Node.', 422);
+            }
+            if ($route->isCustomProxy()) {
+                $process = $route->customProxy?->process;
+                if ($process === null || ! $this->processFirewall->matches($route, $ingress)) {
+                    throw new ResourceOperationException('route.upstream_firewall_mismatch', 'The Process Node must allow the stored Ingress to reach its listener.', 409);
+                }
+                $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
+
+                return ['command' => 'route.verify-http', 'input' => ['address' => $upstream->host, 'port' => $upstream->port, 'domain' => $route->domain]];
+            }
+            $target = $this->sites->routerNode($route);
         }
-        $route = Route::query()->findOrFail(ValidatedData::integer($operation->input['route_id']));
-        $target = $operation->kind === 'route.workload_verify'
-            ? Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']))->node
-            : $this->sites->routerNode($route);
         $address = $target->wireguard_ip;
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {
             throw new ResourceOperationException('route.workload_address_missing', 'Network verification requires its stored WireGuard endpoint.', 409);
         }
 
         return ['command' => 'route.verify-certificate', 'input' => ['address' => $address, 'port' => 443, 'domain' => $route->domain]];
+    }
+
+    private function router(Route $route, int $nodeId): Node
+    {
+        $route->loadMissing('cluster.routerAssignment.node');
+        if ($route->cluster?->routerAssignment?->node_id !== $nodeId && ($route->cluster_id === null
+            || ! Node::query()->whereKey($nodeId)->whereHas('roles', fn ($query) => $query
+                ->where('cluster_id', $route->cluster_id)->where('role', RoleName::Router)->whereIn('status', ['provisioning', 'failed']))->exists())) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The probe or firewall requires the recorded current or candidate Router.', 422);
+        }
+
+        return Node::query()->findOrFail($nodeId);
     }
 
     /** @return array<string, mixed> */

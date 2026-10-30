@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
@@ -189,7 +190,7 @@ it('keeps an uncertain native submission visible and never retries or reports a 
     expect($socket->closed)->toBeTrue();
 });
 
-it('keeps the previous Swamp writer by default and binds Operations through switch and rollback', function (): void {
+it('keeps the recorded direct writer even when selection is later disabled', function (): void {
     config(['swamp.route_publication_writers' => []]);
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
@@ -204,7 +205,7 @@ it('keeps the previous Swamp writer by default and binds Operations through swit
     $direct = $start->execute('route.caddy_converge', 'node_route_projection', $this->node->id, $this->node->id, ['reason' => 'canary'], 'test', null);
     expect($direct->fresh()->state['route_publication_writer'])->toBe('direct');
     expect($socket->sent)->toHaveCount(1);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $polled->kind, 'worker' => 'previous', 'operation_id' => $polled->id])->assertOk()->assertJsonPath('data.id', $polled->id);
+    expect(app(OperationExecutionContract::class)->context($polled)['descriptors'])->toBe([]);
 
     config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'polled']]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $direct->kind, 'worker' => 'previous', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
@@ -222,9 +223,9 @@ it('selects writers per kind and refuses invalid configuration before admission'
     expect(Operation::query()->count())->toBe($before);
 });
 
-it('keeps pre-rollout Operations with no writer stamp on their original Swamp path', function (): void {
+it('gives pre-rollout Operations no removed publication executor', function (): void {
     $this->operation->update(['state' => null]);
     $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'previous', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data.id', $this->operation->id);
+    expect(app(OperationExecutionContract::class)->context($this->operation->fresh())['descriptors'])->toBe([]);
     expect($this->agents->calls)->toBe([]);
 });
