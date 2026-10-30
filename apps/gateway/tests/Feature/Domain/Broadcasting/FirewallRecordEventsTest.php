@@ -8,15 +8,13 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallAction;
-use App\Domain\Firewall\FirewallIntentProjection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\FirewallRule;
 use App\Models\Node;
-use App\Models\Operation;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRoutePublicationSocket;
-use Tests\Support\FirewallOperationProof;
+use Tests\Support\FirewallProjectionFixture;
 
 beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture-token']);
@@ -34,14 +32,6 @@ beforeEach(function (): void {
     ]);
 });
 
-function projectFirewallAllow(Operation $operation): void
-{
-    app(FirewallIntentProjection::class)->apply($operation->fresh(), [
-        'run_id' => $operation->fresh()->state['swamp_run_id'], 'status' => 'succeeded',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['backend' => 'active'],
-    ]);
-}
-
 describe('FirewallRule record events', function (): void {
     it('broadcasts firewall.created when a new rule is stored', function (): void {
         Event::fake([RecordBroadcast::class]);
@@ -55,7 +45,7 @@ describe('FirewallRule record events', function (): void {
         );
 
         $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
-        projectFirewallAllow($operation);
+        FirewallProjectionFixture::finish($operation);
 
         Event::assertDispatched(
             RecordBroadcast::class,
@@ -73,12 +63,12 @@ describe('FirewallRule record events', function (): void {
             protocol: 'tcp',
             port: '8443',
         );
-        projectFirewallAllow(app(StoreFirewallRuleAction::class)->execute($this->node, $data));
+        FirewallProjectionFixture::finish(app(StoreFirewallRuleAction::class)->execute($this->node, $data));
 
         Event::fake([RecordBroadcast::class]);
 
         $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
-        projectFirewallAllow($operation);
+        FirewallProjectionFixture::finish($operation);
 
         Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallCreated);
     });
@@ -96,8 +86,7 @@ describe('FirewallRule record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        app(RemoveFirewallRuleAction::class)->execute($rule);
-        FirewallOperationProof::finish('firewall.remove', 'test');
+        FirewallProjectionFixture::finish(app(RemoveFirewallRuleAction::class)->execute($rule));
 
         Event::assertDispatched(
             RecordBroadcast::class,

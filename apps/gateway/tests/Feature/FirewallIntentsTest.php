@@ -83,11 +83,12 @@ it('excludes direct intents from discovery claims and heartbeat writes', functio
     $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
 });
 
-it('selects direct allow and deny on the proven Node and retains remove', function (): void {
+it('selects direct Firewall kinds on the proven Node', function (): void {
     expect(app(DirectOperation::class)->writer('firewall.allow', [], 209))->toBe('direct');
     expect(app(DirectOperation::class)->writer('firewall.deny', [], 209))->toBe('direct');
     expect(app(OperationKinds::class)->directOnly('firewall.deny'))->toBeTrue();
-    expect(app(DirectOperation::class)->writer('firewall.remove', [], 209))->toBe('polled');
+    expect(app(DirectOperation::class)->writer('firewall.remove', [], 209))->toBe('direct');
+    expect(app(OperationKinds::class)->directOnly('firewall.remove'))->toBeTrue();
     expect(app(OperationKinds::class)->directOnly('firewall.allow'))->toBeTrue();
     $this->operation->update(['state' => []]);
     config(['swamp.direct_writers' => ['firewall.allow' => 'direct']]);

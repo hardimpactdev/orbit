@@ -7,8 +7,9 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
-use Tests\Support\FirewallOperationProof;
+use Tests\Support\FirewallProjectionFixture;
 
 beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture-token']);
@@ -135,10 +136,11 @@ it('lists stable named intent and admits removal of only the selected rule', fun
     ]);
     $this->getJson("/api/v1/nodes/{$this->node->id}/firewall-rules")->assertOk()
         ->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'private-web')->assertJsonMissingPath('data.0.backend_status');
-    $this->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove');
+    $id = $this->withHeader('Idempotency-Key', 'remove-proof')->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove')->json('data.id');
     expect(FirewallRule::query()->sole()->status)->toBe(LifecycleStatus::Removing);
-    FirewallOperationProof::finish('firewall.remove', 'remove-test');
+    FirewallProjectionFixture::finish(Operation::findOrFail($id));
     expect(FirewallRule::query()->count())->toBe(0);
+    $this->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.id', $id);
 });
 
 it('returns 404 without exposing a rule that belongs to another node', function (): void {
@@ -199,11 +201,11 @@ it('binds identical firewall rule names through the requested node', function ()
             'status' => LifecycleStatus::Active,
         ]);
 
-    $this
+    $id = $this
         ->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")
-        ->assertAccepted();
+        ->assertAccepted()->json('data.id');
 
-    FirewallOperationProof::finish('firewall.remove', 'test');
+    FirewallProjectionFixture::finish(Operation::findOrFail($id));
     $this->assertDatabaseHas('firewall_rules', ['id' => $otherRule->id]);
     $this->assertDatabaseMissing('firewall_rules', ['id' => $requestedRule->id]);
 
