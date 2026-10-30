@@ -116,7 +116,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $root = $this->instanceRoot($node);
         $configuration = "gateway_url = \"https://gateway.orbit\"\ngateway_address = \"{$gatewayAddress}\"\n";
         if (app(NodeWorkerRollout::class)->allows($node)) {
-            $configuration .= 'swamp_worker = true'."\n";
+            $configuration .= "[swamp_worker]\nnode_id = {$node->id}\nuser = ".json_encode($node->user, JSON_THROW_ON_ERROR)."\n";
         }
         $certificate = $this->certificates->rootCertificate();
         $unit = implode("\n", [

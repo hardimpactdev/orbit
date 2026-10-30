@@ -1,31 +1,23 @@
-//! Node bootstrap uses the same worker start/stop path as task VMs.
-use super::{
-    recipe::{self, store::Account, Files, Host, Invocation},
-    swamp_worker as worker,
-};
-use crate::{
-    command::{Command, Context, Platform, Privilege},
-    command_errors,
-};
-use serde::{Deserialize, Serialize};
+//! Declarative Node worker installation. Swamp owns execution and token lifecycle.
+use super::recipe::{self, store::Account, Files, Host, Invocation};
+use crate::{command::Context, command_errors, NodeWorkerConfig};
 use std::{
     fs,
     os::unix::fs::{MetadataExt, PermissionsExt},
-    time::Duration,
 };
-pub(crate) mod issuer;
-pub(crate) mod lifecycle;
+
 pub const VERSION: &str = "20261028.205235.0-sha.1602a617";
 const DIGEST: &str = "38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3";
 const URL: &str = "https://github.com/swamp-club/swamp/releases/download/v20261028.205235.0-sha.1602a617/swamp-linux-x86_64";
 const BINARY: &str = recipe::swamp::BINARY;
 const ROOT: &str = "/var/lib/orbit-node-worker";
-pub(super) const EXPIRY: &str = "/run/orbit-swamp-worker-expiry";
-pub(super) const USER: &str = "orbit-swamp-worker";
+const CREDENTIALS: &str = "/etc/orbit/swamp-worker";
+const UNIT: &str = "orbit-node-worker.service";
+const UNIT_PATH: &str = "/etc/systemd/system/orbit-node-worker.service";
 const CA: &str = "/usr/local/share/ca-certificates/orbit-root.crt";
 
 command_errors! { pub enum Error {
-    Failed {} => "swamp.node_worker_failed", "The Node worker lifecycle step failed.";
+    Failed {} => "swamp.node_worker_failed", "The Node worker installation failed.";
     Invalid {} => "swamp.node_worker_invalid", "The Node worker identity or custody is invalid.";
 }}
 fn failed() -> Error {
@@ -34,9 +26,9 @@ fn failed() -> Error {
 fn invalid() -> Error {
     Error::Invalid {}
 }
-fn call(host: &mut impl Host, args: &[&str]) -> Result<String, Error> {
-    let output = recipe::run(host, &Invocation::new(args), true).map_err(|_| failed())?;
-    Ok(output.stdout)
+fn call(host: &mut impl Host, args: &[&str]) -> Result<(), Error> {
+    recipe::run(host, &Invocation::new(args), true).map_err(|_| failed())?;
+    Ok(())
 }
 fn owned_file(files: &Files, path: &str, mode: u32) -> Result<(), Error> {
     let m = fs::symlink_metadata(files.path(path)).map_err(|_| invalid())?;
@@ -45,90 +37,97 @@ fn owned_file(files: &Files, path: &str, mode: u32) -> Result<(), Error> {
     }
     Ok(())
 }
-fn private_dir(files: &Files, path: &str, uid: u32, gid: u32, mode: u32) -> Result<(), Error> {
+fn private_dir(files: &Files, path: &str, uid: u32, gid: u32) -> Result<(), Error> {
     let path = files.path(path);
     files.directory(&path, uid, gid).map_err(|_| invalid())?;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|_| failed())
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|_| failed())
 }
-pub(super) fn pinned(files: &Files) -> bool {
-    owned_file(files, BINARY, 0o755).is_ok()
-        && crate::command::run::file_sha256(&files.path(BINARY))
-            .ok()
-            .as_deref()
-            == Some(DIGEST)
+pub(super) fn valid(input: &NodeWorkerConfig) -> bool {
+    input.node_id > 0
+        && input.user.len() <= 32
+        && input
+            .user
+            .bytes()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c == b'_')
+        && input
+            .user
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"_-".contains(&c))
+        && input.user != "root"
+        && input.user != "orbit-swamp-package"
 }
-fn architecture(host: &mut impl Host) -> Result<(), Error> {
-    if call(host, &["uname", "-m"])?.trim() != "x86_64" {
+fn unit(input: &NodeWorkerConfig) -> String {
+    format!("[Unit]\nDescription=Orbit Swamp worker for Node {}\nAfter=network-online.target\nWants=network-online.target\nConditionPathExists={CREDENTIALS}/enrollment.token\nConditionPathExists={CREDENTIALS}/server.token\n\n[Service]\nType=exec\nUser={}\nWorkingDirectory={ROOT}\nEnvironment=HOME={ROOT} SWAMP_HOME={ROOT}/home SWAMP_CONFIG_DIR={ROOT}/config\nLoadCredential=enrollment:{CREDENTIALS}/enrollment.token\nLoadCredential=server:{CREDENTIALS}/server.token\nExecStart={BINARY} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert={CA} --cache-dir={ROOT}/cache --label node={}\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=null\nStandardError=null\n\n[Install]\nWantedBy=multi-user.target\n", input.node_id, input.user, input.node_id)
+}
+fn publish(
+    files: &Files,
+    host: &mut impl Host,
+    input: &NodeWorkerConfig,
+    account: &Account,
+    binary_changed: bool,
+) -> Result<(), Error> {
+    if !valid(input) || account.name != input.user || account.uid == 0 || account.gid == 0 {
         return Err(invalid());
     }
-    Ok(())
-}
-fn install_binary(files: &Files, host: &mut impl Host) -> Result<bool, Error> {
-    architecture(host)?;
-    if pinned(files) {
-        return Ok(false);
+    // Verify existing authority; never add a sudo rule or silently use another account.
+    call(
+        host,
+        &[
+            "/usr/sbin/runuser",
+            "-u",
+            &account.name,
+            "--",
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/bin/true",
+        ],
+    )?;
+    for name in ["enrollment.token", "server.token"] {
+        let path = format!("{CREDENTIALS}/{name}");
+        if fs::symlink_metadata(files.path(&path)).is_ok() {
+            owned_file(files, &path, 0o600)?;
+        }
     }
-    let input = serde_json::from_value(serde_json::json!({
-        "user": USER, "snapshot": "20261028T000000Z", "architecture": "amd64",
-        "tools": {"swamp": {"source": "artifact", "version": VERSION,
-            "artifacts": {"amd64": {"url": URL, "sha256": DIGEST}}}}
-    }))
-    .map_err(|_| invalid())?;
-    recipe::swamp::install(host, files, &input).map_err(|_| failed())?;
-    if !pinned(files) {
-        return Err(invalid());
+    private_dir(files, CREDENTIALS, files.uid, files.gid)?;
+    private_dir(files, ROOT, account.uid, account.gid)?;
+    let text = unit(input);
+    let path = files.path(UNIT_PATH);
+    if fs::symlink_metadata(&path).is_ok() {
+        owned_file(files, UNIT_PATH, 0o644)?;
     }
-    Ok(true)
+    let changed = binary_changed || fs::read_to_string(&path).ok().as_deref() != Some(&text);
+    files
+        .publish_root(&path, text.as_bytes())
+        .map_err(|_| invalid())?;
+    call(host, &["systemctl", "daemon-reload"])?;
+    call(host, &["systemctl", "enable", UNIT])?;
+    call(
+        host,
+        &["systemctl", if changed { "restart" } else { "start" }, UNIT],
+    )
 }
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Input {
-    node_id: u64,
-}
-pub fn configure_native(context: &Context, enabled: bool) -> Result<(), Error> {
+pub fn configure_native(context: &Context, input: Option<&NodeWorkerConfig>) -> Result<(), Error> {
     let files = Files::system();
     let mut host = recipe::Native(context);
-    if !enabled {
-        if fs::read_to_string(files.path(worker::UNIT_PATH))
-            .is_ok_and(|s| s.contains("User=orbit-swamp-worker\n"))
-        {
-            worker::stop(&files, &mut host).map_err(|_| failed())?;
+    let Some(input) = input else {
+        if fs::symlink_metadata(files.path(UNIT_PATH)).is_ok() {
+            owned_file(&files, UNIT_PATH, 0o644)?;
+            call(&mut host, &["systemctl", "disable", "--now", UNIT])?;
+            fs::remove_file(files.path(UNIT_PATH)).map_err(|_| failed())?;
+            call(&mut host, &["systemctl", "daemon-reload"])?;
         }
         return Ok(());
-    }
-    architecture(&mut host)?;
-    if call(&mut host, &["getent", "passwd", USER]).is_err() {
-        call(
-            &mut host,
-            &[
-                "useradd",
-                "--system",
-                "--user-group",
-                "--home-dir",
-                &format!("{ROOT}/home"),
-                "--no-create-home",
-                "--shell",
-                "/usr/sbin/nologin",
-                USER,
-            ],
-        )?;
-    }
-    let account = Account::named(USER).map_err(|_| invalid())?;
-    if account.gid == 0
-        || account.home != std::path::Path::new(ROOT).join("home")
-        || call(&mut host, &["id", "-G", USER])?.trim() != account.gid.to_string()
-    {
+    };
+    if !valid(input) {
         return Err(invalid());
     }
-    private_dir(&files, ROOT, files.uid, files.gid, 0o711)?;
-    private_dir(
-        &files,
-        &format!("{ROOT}/home"),
-        account.uid,
-        account.gid,
-        0o700,
-    )?;
+    let account = Account::named(&input.user).map_err(|_| invalid())?;
+    let architecture =
+        recipe::run(&mut host, &Invocation::new(&["uname", "-m"]), true).map_err(|_| failed())?;
+    if architecture.stdout.trim() != "x86_64" {
+        return Err(invalid());
+    }
     owned_file(&files, crate::CA_PATH, 0o644)?;
     files
         .publish_root(
@@ -136,6 +135,30 @@ pub fn configure_native(context: &Context, enabled: bool) -> Result<(), Error> {
             &fs::read(files.path(crate::CA_PATH)).map_err(|_| failed())?,
         )
         .map_err(|_| invalid())?;
-    install_binary(&files, &mut host)?;
-    Ok(())
+    let binary_changed = owned_file(&files, BINARY, 0o755).is_err()
+        || crate::command::run::file_sha256(&files.path(BINARY))
+            .ok()
+            .as_deref()
+            != Some(DIGEST);
+    if binary_changed {
+        let recipe = serde_json::from_value(serde_json::json!({
+            "user": input.user, "snapshot": "20261028T000000Z", "architecture": "amd64",
+            "tools": {"swamp": {"source": "artifact", "version": VERSION,
+                "artifacts": {"amd64": {"url": URL, "sha256": DIGEST}}}}
+        }))
+        .map_err(|_| invalid())?;
+        recipe::swamp::install(&mut host, &files, &recipe).map_err(|_| failed())?;
+    }
+    owned_file(&files, BINARY, 0o755)?;
+    if crate::command::run::file_sha256(&files.path(BINARY))
+        .ok()
+        .as_deref()
+        != Some(DIGEST)
+    {
+        return Err(invalid());
+    }
+    publish(&files, &mut host, input, &account, binary_changed)
 }
+
+#[cfg(test)]
+mod tests;

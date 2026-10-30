@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Models\Node;
-use App\Models\Operation;
 use Illuminate\Support\Facades\Http;
 
 function deliveryNode(string $architecture = 'x86_64', string $platform = 'linux'): Node
@@ -45,14 +43,11 @@ describe(AgentContract::class, function (): void {
             ->and($contract->command('task-vm.export-git-pack')->needsSudo('linux'))->toBeFalse();
     });
 
-    it('keeps worker lifecycle outside Operations while retaining the operator command', function (string $name): void {
+    it('removes the custom Node worker issuer from every transport', function (): void {
         $contract = app(AgentContract::class);
-        expect($contract->command($name)->mutates)->toBeTrue()
-            ->and($contract->operationNames())->not->toContain($name);
-        expect(fn () => app(OperationAgentTransport::class)
-            ->schema(new Operation, ['name' => $name]))
-            ->toThrow(LogicException::class, 'Operator-only command.');
-    })->with(['swamp.issue-node-worker']);
+        expect($contract->names())->not->toContain('swamp.issue-node-worker');
+        expect(fn () => $contract->operationCommand('swamp.issue-node-worker'))->toThrow(LogicException::class);
+    });
 
     it('refuses an unknown command as a programming error', function (): void {
         expect(fn () => app(AgentContract::class)->command('no.such'))->toThrow(LogicException::class);

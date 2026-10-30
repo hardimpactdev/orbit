@@ -81,11 +81,19 @@ fn input(secret_hash: Option<String>) -> ConfigureInput {
 }
 
 #[test]
-fn worker_opt_in_uses_a_boolean_without_an_extra_node_identity() {
-    assert!(!worker_enabled("gateway_url = 'https://gateway.orbit'\n").unwrap());
-    assert!(worker_enabled("swamp_worker = true\n").unwrap());
-    for value in ["0", "-1", "'71'", "[]"] {
-        assert!(worker_enabled(&format!("swamp_worker = {value}\n")).is_err());
+fn worker_configuration_carries_the_admitted_identity_and_user() {
+    assert!(
+        worker_configuration("gateway_url = 'https://gateway.orbit'\n")
+            .unwrap()
+            .is_none()
+    );
+    let worker = worker_configuration("[swamp_worker]\nnode_id = 9\nuser = 'nckrtl'\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(worker.node_id, 9);
+    assert_eq!(worker.user, "nckrtl");
+    for value in ["true", "0", "'71'", "[]", "{node_id=9}"] {
+        assert!(worker_configuration(&format!("swamp_worker = {value}\n")).is_err());
     }
 }
 

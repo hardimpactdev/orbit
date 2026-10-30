@@ -242,23 +242,34 @@ impl Command for ConfigureAgent {
     }
 
     fn run(input: ConfigureInput, context: &Context) -> Result<Configured, FootprintError> {
-        let worker = worker_enabled(&input.configuration)?;
+        let worker = worker_configuration(&input.configuration)?;
         let configured = configure(
             &Files::system(),
             &mut Native,
             &input,
             lock::answer_by(context.deadline()).min(Instant::now() + UPDATE_WAIT),
         )?;
-        super::node_worker::configure_native(context, worker).map_err(|_| failed("node-worker"))?;
+        super::node_worker::configure_native(context, worker.as_ref())
+            .map_err(|_| failed("node-worker"))?;
         Ok(configured)
     }
 }
 
-fn worker_enabled(configuration: &str) -> Result<bool, FootprintError> {
+fn worker_configuration(
+    configuration: &str,
+) -> Result<Option<crate::NodeWorkerConfig>, FootprintError> {
     let value: toml::Value = toml::from_str(configuration).map_err(|_| failed("node-worker"))?;
-    value.get("swamp_worker").map_or(Ok(false), |v| {
-        v.as_bool().ok_or_else(|| failed("node-worker"))
-    })
+    let worker: Option<crate::NodeWorkerConfig> = value
+        .get("swamp_worker")
+        .map(|v| v.clone().try_into().map_err(|_| failed("node-worker")))
+        .transpose()?;
+    if worker
+        .as_ref()
+        .is_some_and(|w| !super::node_worker::valid(w))
+    {
+        return Err(failed("node-worker"));
+    }
+    Ok(worker)
 }
 
 pub struct RemoveAgent;
@@ -280,7 +291,7 @@ impl Command for RemoveAgent {
     }
 
     fn run(_: RemoveInput, context: &Context) -> Result<Removed, FootprintError> {
-        super::node_worker::configure_native(context, false)
+        super::node_worker::configure_native(context, None)
             .map_err(|_| failed("node-worker-stop"))?;
         remove(
             &Files::system(),
