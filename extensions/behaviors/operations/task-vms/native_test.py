@@ -1,26 +1,21 @@
 """Run the pinned native Swamp DAG and resume it in a new process after a lost reply."""
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get("SWAMP_BIN", shutil.which("swamp") or "swamp")
+sys.path.insert(0, str(ROOT / "tests"))
+from native_harness import NativeTestCase
 
 
-class TaskVmNativeTest(unittest.TestCase):
+class TaskVmNativeTest(NativeTestCase):
+    native_timeout = 45
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="task-vm-native-")
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / ".swamp.yaml", self.repo)
-        for name in ("automatic-deploy", "operation-runner"):
-            shutil.copytree(ROOT / "extensions/behaviors" / name, self.repo / "extensions/behaviors" / name)
-        shutil.copytree(ROOT / "extensions/behaviors/operations/task-vms", self.repo / "extensions/behaviors/operations/task-vms")
-        shutil.copytree(ROOT / "extensions/behaviors/operations/_lib", self.repo / "extensions/behaviors/operations/_lib")
+        super().setUp()
+        self.copy_behaviors("automatic-deploy", "operation-runner", "operations/task-vms", "operations/_lib")
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "extensions/behaviors/operations/task-vms/native-fixture.ts", fixture)
@@ -31,7 +26,6 @@ class TaskVmNativeTest(unittest.TestCase):
         direct = self.repo / 'extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts'
         direct.write_text('import { fixtureHttp } from "../../_test/executor.ts";\n' + direct.read_text().replace(
             '...lifecycleIntent()', '...lifecycleIntent(() => fixtureHttp)'))
-        (self.repo / "workflows").mkdir()
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
             # Local receipt recovery uses fresh processes; worker placement has its own harness.
             source = "\n".join(line for line in path.read_text().splitlines()
@@ -49,26 +43,10 @@ class TaskVmNativeTest(unittest.TestCase):
     def read(self):
         return json.loads((self.repo / "native-executor.json").read_text())
 
-    def swamp(self, *args, success=True):
-        if args[:2] == ("workflow", "resume"):
-            args = (*args[:3], "--run", self.last_run_id)
-        result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
-                                capture_output=True, timeout=45,
-                                env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
-        if args[:2] == ("workflow", "run"):
-            self.assertTrue(result.stdout.strip(), result.stderr)
-            value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
-            self.last_run_id = value.get("id")
-        if success:
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        else:
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        return result
-
     def test_runner_dispatches_the_vm_family_with_proven_steps(self):
         for workflow in ("operation-task-vms",):
-            self.swamp("workflow", "validate", workflow)
-        self.swamp("workflow", "run", "operation-task-vms")
+            self.cli("workflow", "validate", workflow)
+        self.cli("workflow", "run", "operation-task-vms")
         state = self.read()
         self.assertEqual(state["operation"]["status"], "succeeded")
         self.assertEqual(state["operation"]["steps"], [{"name":"incus-start", "status":"succeeded"}])
@@ -77,10 +55,11 @@ class TaskVmNativeTest(unittest.TestCase):
     def test_resume_after_lost_run_reply_reuses_the_node_receipt(self):
         self.state["loseRunReply"] = True
         self.save()
-        self.swamp("workflow", "run", "operation-task-vms", success=False)
+        failed = self.cli("workflow", "run", "operation-task-vms", success=False)
+        run_id = json.JSONDecoder().raw_decode(failed.stdout.lstrip())[0]["id"]
         self.assertEqual(self.read()["runs"], 1)
         self.assertEqual(self.read()["completions"], [])
-        self.swamp("workflow", "resume", "operation-task-vms")
+        self.cli("workflow", "resume", "operation-task-vms", "--run", run_id)
         state = self.read()
         self.assertEqual(state["runs"], 1)
         self.assertEqual(state["operation"]["status"], "succeeded")
@@ -98,7 +77,7 @@ class TaskVmNativeTest(unittest.TestCase):
         self.save()
 
     def run_direct(self, success=True):
-        return self.swamp('workflow', 'run', 'operation-task-vms', '--input',
+        return self.cli('workflow', 'run', 'operation-task-vms', '--input',
                           json.dumps({'operation_id': 19, 'kind': 'task_vm.lifecycle_intent', 'node_id': 3}),
                           success=success)
 
@@ -116,9 +95,10 @@ class TaskVmNativeTest(unittest.TestCase):
         self.prepare_direct_acknowledgement()
         self.state['loseDirectReply'] = True
         self.save()
-        self.run_direct(success=False)
+        failed = self.run_direct(success=False)
+        run_id = json.JSONDecoder().raw_decode(failed.stdout.lstrip())[0]["id"]
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
-        self.swamp('workflow', 'resume', 'operation-task-vms')
+        self.cli('workflow', 'resume', 'operation-task-vms', '--run', run_id)
         state = self.read()
         self.assertEqual(state['runs'], 0)
         self.assertEqual(len(state['directCalls']), 4)
@@ -132,7 +112,6 @@ class TaskVmNativeTest(unittest.TestCase):
         self.assertEqual(state['operation']['status'], 'cancelled')
         self.assertEqual(state['operation']['result'], {})
         self.assertEqual(state['runs'], 0)
-
 
 
 if __name__ == "__main__":
