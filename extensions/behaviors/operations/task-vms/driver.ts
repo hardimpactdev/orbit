@@ -9,11 +9,10 @@ const Child = z.object({
   result: z.record(z.string(), z.unknown()).nullable().optional(),
   error_code: z.string().nullable().optional(),
   finished_at: z.string().nullable().optional(),
-  attempts: z.number().int().nonnegative(),
 });
 export const ChildIntent = z.object({ key: z.string() });
 export class FamilyWaiting extends ExecutorError {
-  constructor(readonly unclaimedChildId: number | null = null) {
+  constructor() {
     super("operation.waiting");
   }
 }
@@ -107,11 +106,7 @@ export class FamilyDriver implements FamilyEffects {
       if (child.status === "failed" || child.status === "cancelled") {
         throw new ChildFailed(child.error_code ?? "operation.cancelled");
       }
-      await this.yieldFor(
-        [key],
-        false,
-        child.status === "queued" && child.attempts === 0 ? id : null,
-      );
+      await this.yieldFor([key], false);
     }
   }
 
@@ -154,14 +149,13 @@ export class FamilyDriver implements FamilyEffects {
   private async yieldFor(
     keys: string[],
     enforceDeadline = true,
-    unclaimedChildId: number | null = null,
   ): Promise<never> {
     if (enforceDeadline) this.checkDeadline();
     await this.request("POST", `operation-executor/${this.operationId}/wait`, {
       worker: this.worker,
       keys,
     });
-    throw new FamilyWaiting(unclaimedChildId);
+    throw new FamilyWaiting();
   }
 
   private checkDeadline() {

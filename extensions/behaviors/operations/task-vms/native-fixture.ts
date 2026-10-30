@@ -20,18 +20,6 @@ export async function fixtureHttp(
     await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
     return { status: 200, body: { data: state.operation } };
   }
-  if (state.child && path === `/api/v1/operations/${state.child.id}`) {
-    return { status: 200, body: { data: state.child } };
-  }
-  if (state.child && path === `/api/v1/operations/${state.child.id}/cancel`) {
-    state.cancellations = (state.cancellations ?? 0) + 1;
-    state.child.status = "cancelled";
-    const lost = state.loseCancelReply === true;
-    state.loseCancelReply = false;
-    await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
-    if (lost) throw new Error("Lost child cancellation response");
-    return { status: 200, body: { data: state.child } };
-  }
   if (path === `/api/v1/operations/${state.operation.id}`) {
     return {
       status: 200,
@@ -91,8 +79,6 @@ export async function fixtureHttp(
   } else if (input.worker !== state.operation.worker) {
     return { status: 409, body: { error: { code: "operation.lease_lost" } } };
   }
-  if (path.endsWith("/children")) data = state.child;
-  if (path.endsWith("/wait")) state.operation.status = "waiting";
   if (path.endsWith("/step")) {
     state.operation.steps = [{ name: input.name, status: input.status }];
     if (input.status === "succeeded") {

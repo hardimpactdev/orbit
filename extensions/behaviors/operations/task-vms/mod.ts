@@ -59,13 +59,6 @@ export function taskVms(
         lifetime: "infinite",
         garbageCollection: 10,
       },
-      queueWait: {
-        description:
-          "Child identity retained across native queue-timer suspension",
-        schema: z.object({ unclaimed_child_id: z.number().int().positive() }),
-        lifetime: "7d",
-        garbageCollection: 1,
-      },
       receipt: {
         description: "Permanent completion intent for a task VM effect",
         schema: Completion,
@@ -74,47 +67,6 @@ export function taskVms(
       },
     },
     methods: {
-      cancelUnclaimedChild: {
-        description:
-          "After a native queue wait expires, cancel only a child never claimed",
-        arguments: z.object({ worker: z.string().min(1) }),
-        execute: async (args: { worker: string }, ctx: Context) => {
-          const queued = z.object({
-            unclaimed_child_id: z.number().int().positive(),
-          }).parse(await ctx.readResource(`queue-wait-${args.worker}`));
-          const childId = queued.unclaimed_child_id;
-          const http = makeHttp(ctx);
-          const response = await http(
-            "GET",
-            `/api/v1/operations/${childId}`,
-          );
-          if (response.status !== 200) {
-            throw new ExecutorError("operation.outcome_unknown");
-          }
-          const child = z.object({
-            data: z.object({
-              id: z.number().int().positive(),
-              status: z.string(),
-              attempts: z.number().int().nonnegative(),
-            }),
-          }).parse(response.body).data;
-          if (child.id !== childId) {
-            throw new Error("Wrong child Operation");
-          }
-          if (child.status !== "queued" || child.attempts !== 0) {
-            return { status: "preserved" };
-          }
-          const cancelled = await http(
-            "POST",
-            `/api/v1/operations/${child.id}/cancel`,
-            {},
-          );
-          if (cancelled.status < 200 || cancelled.status >= 300) {
-            throw new ExecutorError("operation.outcome_unknown");
-          }
-          return { status: "cancel_requested" };
-        },
-      },
       execute: {
         description: "Claim and execute a task VM kind on one placed worker",
         arguments: z.object({
@@ -141,26 +93,10 @@ export function taskVms(
           ctx: Context,
         ): Promise<{
           status: string;
-          unclaimed_child_id?: number | null;
           dataHandles?: { name: string }[];
         }> => {
           const http = makeHttp(ctx);
           const executor = new Executor(http);
-          const waiting = async (error: FamilyWaiting) => {
-            if (error.unclaimedChildId === null) return { status: "waiting" };
-            const handle = await ctx.writeResource(
-              "queueWait",
-              `queue-wait-${args.worker}`,
-              {
-                unclaimed_child_id: error.unclaimedChildId,
-              },
-            );
-            return {
-              status: "waiting",
-              unclaimed_child_id: error.unclaimedChildId,
-              dataHandles: [handle],
-            };
-          };
           const assignment = `assignment-${args.worker}`;
           const assigned = await ctx.readResource(assignment);
           let operation: z.infer<typeof Operation>;
@@ -338,7 +274,7 @@ export function taskVms(
                   await driver.cancelChildren();
                 } catch (error) {
                   if (error instanceof FamilyWaiting) {
-                    return await waiting(error);
+                    return { status: "waiting" };
                   }
                   throw error;
                 }
@@ -368,7 +304,7 @@ export function taskVms(
                   };
                 } catch (error) {
                   if (error instanceof FamilyWaiting) {
-                    return await waiting(error);
+                    return { status: "waiting" };
                   }
                   if (
                     !(error instanceof ExecutorError) ||

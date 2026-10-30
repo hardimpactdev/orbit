@@ -174,23 +174,12 @@ original bootstrap deadline. Missing, stopped, wrong-image and expired initial
 boots still refuse before enrollment; an unsuccessful probe creates no
 checkpoint.
 
-Each dispatch is a native nested `operation-task-vm-dispatch` workflow. If its
-first child observation is queued with zero claims, a native `wait_for_signal`
-step opens a 60-second queue window. Native suspension releases the execution
-slot. Swamp persists and expires the wait, then auto-resumes the workflow to
-read the child again and request normal cancellation only if it is still queued
-with zero attempts. Running, waiting, retried and terminal children are left
-alone. The cancellation endpoint rechecks domain cancellation guards. A lost
-cancel response fails this step; native resume repeats the read first. No
-Gateway no-progress alert or reclaim cap supplies this queue bound.
-
-The timeout is required by the native signal-wait schema; there is no implicit
-signal timeout. It matches this family's existing 60-second dispatch queue
-window. The wait has no external key. It is a timer, not a completion signal. It
-does not claim that a running child has completed or impose the VM parent's old
-observation budget on enrollment. A child already running at the first
-observation stays under its owning workflow's execution policy.
+Each dispatch is a native nested `operation-task-vm-dispatch` workflow. It uses
+Swamp's default queue timeout. There is no family signal timer, saved queue-wait
+resource or automatic cancellation request for an unclaimed child. Operators
+cancel the native run with `swamp workflow cancel`; the family adds no separate
+queue or cancellation policy.
 
 The image observation loop still yields on its last admitted child. Replacing
 that completed-child yield with a native observation wait belongs to the direct
-start slice; do not pause active image builds for this queue-wait fix.
+start slice; do not pause active image builds for this removal.

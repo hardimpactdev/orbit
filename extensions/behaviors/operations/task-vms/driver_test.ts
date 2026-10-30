@@ -256,17 +256,27 @@ Deno.test("an expired parent preserves its child's terminal failure instead of r
   );
 });
 
-Deno.test("a never-claimed child carries its identity into the native queue timer", async () => {
-  const f = new Fixture();
-  const waiting = await assertRejects(
-    () => f.driver().child("node-enrollment", "node.add", 3, {}),
-    FamilyWaiting,
-  );
-  assertEquals(waiting.unclaimedChildId, 56);
-  f.status = "running";
-  const running = await assertRejects(
-    () => f.driver().child("node-enrollment", "node.add", 3, {}),
-    FamilyWaiting,
-  );
-  assertEquals(running.unclaimedChildId, null);
-});
+for (const status of ["queued", "running"]) {
+  Deno.test(`a ${status} child yields without a family timer or cancellation`, async () => {
+    const f = new Fixture();
+    f.status = status;
+    const waiting = await assertRejects(
+      () => f.driver().child("node-enrollment", "node.add", 3, {}),
+      FamilyWaiting,
+    );
+    assertEquals("unclaimedChildId" in waiting, false);
+    assertEquals(
+      f.calls.filter((call) => call.path.endsWith("/wait")).map((call) =>
+        call.body
+      ),
+      [
+        { worker: "parent-worker", keys: ["node-enrollment"] },
+      ],
+    );
+    assertEquals(f.calls.some((call) => call.path.endsWith("/cancel")), false);
+    assertEquals(
+      [...f.resources.keys()].some((key) => key.startsWith("queue-wait-")),
+      false,
+    );
+  });
+}

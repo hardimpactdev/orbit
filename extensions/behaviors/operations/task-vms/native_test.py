@@ -5,7 +5,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -37,7 +36,7 @@ class TaskVmNativeTest(unittest.TestCase):
             # Local receipt recovery uses fresh processes; worker placement has its own harness.
             source = "\n".join(line for line in path.read_text().splitlines()
                                if not line.startswith(("labels:", "queueTimeout:"))) + "\n"
-            (self.repo / "workflows" / path.name).write_text(source.replace("timeout: 60", "timeout: 1"))
+            (self.repo / "workflows" / path.name).write_text(source)
         self.state = {"operation": {"id": 19, "kind": "task_vm.incus_start", "node_id": 3,
                      "status": "queued", "cancel_requested": False, "step_results": {}, "steps": [],
                      "input": {"task_vm_id": 5, "vm": {"project":"tasks", "name":"tvm-5", "cidr":"10.1.0.1/24"}, "operation":{"kind":"start"}}},
@@ -134,44 +133,6 @@ class TaskVmNativeTest(unittest.TestCase):
         self.assertEqual(state['operation']['result'], {})
         self.assertEqual(state['runs'], 0)
 
-    def queued_child(self):
-        self.state["operation"].update({"kind": "task_vm.fill_package_cache", "input": {
-            "host_node_id": 3, "batches": [{"artifacts": [], "conflicts": []}],
-            "deadline_at": 4000000000}})
-        self.state["child"] = {"id": 56, "status": "queued", "attempts": 0}
-        self.save()
-
-    def test_native_queue_timeout_survives_a_fresh_process_and_cancels_unclaimed_child(self):
-        self.queued_child()
-        first = self.swamp("workflow", "run", "operation-task-vm-dispatch", "--input", json.dumps({"kind": self.state["operation"]["kind"], "worker": "native-parent", "behavior": "native-parent"}))
-        self.assertEqual(json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["status"], "suspended")
-        self.assertEqual(self.read().get("cancellations", 0), 0)
-        time.sleep(1.1)  # Expire the native fixture's one-second persisted wait.
-        self.swamp("workflow", "resume", "operation-task-vm-dispatch")
-        self.assertEqual(self.read()["child"]["status"], "cancelled")
-        self.assertEqual(self.read()["cancellations"], 1)
-
-    def test_native_queue_timeout_preserves_a_child_claimed_while_suspended(self):
-        self.queued_child()
-        self.swamp("workflow", "run", "operation-task-vm-dispatch", "--input", json.dumps({"kind": self.state["operation"]["kind"], "worker": "native-parent", "behavior": "native-parent"}))
-        self.state = self.read()
-        self.state["child"].update({"status": "running", "attempts": 1})
-        self.save()
-        time.sleep(1.1)
-        self.swamp("workflow", "resume", "operation-task-vm-dispatch")
-        self.assertEqual(self.read()["child"]["status"], "running")
-        self.assertEqual(self.read().get("cancellations", 0), 0)
-
-    def test_lost_cancel_response_resumes_by_reading_the_same_child(self):
-        self.queued_child()
-        self.state["loseCancelReply"] = True
-        self.save()
-        self.swamp("workflow", "run", "operation-task-vm-dispatch", "--input", json.dumps({"kind": self.state["operation"]["kind"], "worker": "native-parent", "behavior": "native-parent"}))
-        time.sleep(1.1)
-        self.swamp("workflow", "resume", "operation-task-vm-dispatch", success=False)
-        self.assertEqual(self.read()["child"]["status"], "cancelled")
-        self.swamp("workflow", "resume", "operation-task-vm-dispatch")
-        self.assertEqual(self.read()["cancellations"], 1)
 
 
 if __name__ == "__main__":
