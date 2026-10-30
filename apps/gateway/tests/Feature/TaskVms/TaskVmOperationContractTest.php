@@ -8,7 +8,6 @@ use App\Actions\TaskVms\AdmitTaskVmChildAction;
 use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
 use App\Actions\TaskVms\StartTaskVmIncusEffectAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
-use App\Actions\TaskVms\StartTaskVmPackageCacheMountAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildren;
@@ -37,7 +36,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -346,34 +344,9 @@ it('rechecks workspace preservation before accepting the destruction boundary', 
     expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
 });
 
-it('admits cache preparation for only the ready VM’s Project and retains its selected inventory', function (): void {
-    $prior = taskVmEffectFixture();
-    $prior->delete();
-    $vm = TaskVm::query()->sole();
-    $project = Project::query()->create(['name' => 'Cache', 'slug' => 'cache', 'repository_url' => 'https://github.com/example/cache.git']);
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Cache workspace', 'brief' => 'Seed selected inventory', 'status' => 'running',
-        'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
-    $vm->update(['group_id' => $group->id, 'state' => 'ready']);
-    $snapshot = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => []]);
-    $agents = Mockery::mock(AgentCommandRunner::class);
-    $agents->shouldNotReceive('run');
-    app()->instance(AgentCommandRunner::class, $agents);
-    $action = app(StartTaskVmPackageCacheMountAction::class);
-    $operation = $action->execute($vm, $project);
-    expect($action->execute($vm, $project)->id)->toBe($operation->id);
-    expect($operation->input['artifacts_json'])->toBe('{"artifacts":[]}');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'cache-parent'])->assertOk();
-    foreach (['cache-initialize', 'cache-mount', 'cache-seed'] as $key) {
-        $this->postJson("/api/v1/operation-executor/{$operation->id}/children", ['worker' => 'cache-parent', 'key' => $key])->assertAccepted();
-    }
-    $seed = $operation->children()->where('child_key', 'cache-seed')->sole();
-    expect($seed->node_id)->toBe($vm->host_node_id);
-    expect($seed->input['guest']['name'])->toBe($vm->name);
-    $snapshot->update(['artifacts' => [['manager' => 'npm', 'package' => 'left-pad', 'version' => '1.3.0', 'url' => 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz', 'integrity' => null, 'key' => 'new-selection']]]);
-    expect($seed->fresh()->input['parameters_json'])->toBe('{"artifacts":[]}');
-    $foreign = Project::query()->create(['name' => 'Foreign', 'slug' => 'foreign', 'repository_url' => 'https://github.com/example/foreign.git']);
-    expect(fn () => $action->execute($vm, $foreign))->toThrow(TaskVmException::class, 'Cache preparation requires this Project');
-});
+it('does not register unused cache-preparation Operations', function (string $kind): void {
+    expect(app(OperationKinds::class)->definition($kind))->toBeNull();
+})->with(['task_vm.prepare_package_cache', 'task_vm.cache_initialize', 'task_vm.cache_mount', 'task_vm.cache_seed']);
 
 it('retains workspace records until the exact owning Route child succeeds', function (): void {
     $parent = taskVmParkParent();
