@@ -14,7 +14,10 @@ class Fixture {
   loseCompletion = false;
   uncertainReply = false;
   domain: string | null = null;
+  kind = "instance.rename";
+  cancelRequested = false;
   childStatus = "queued";
+  childRefusal: string | null = null;
   status = "running";
   result: Receipt | null = null;
   errorCode: string | null = null;
@@ -26,12 +29,12 @@ class Fixture {
       this.calls.push({ path, body });
       let data: unknown = {
         id: 100,
-        kind: "instance.rename",
+        kind: this.kind,
         node_id: 9,
         status: this.status,
         result: this.result,
         error_code: this.errorCode,
-        cancel_requested: false,
+        cancel_requested: this.cancelRequested,
         step_results: this.steps,
         input: { instance_id: 501, domain: this.domain, route_id: 30 },
         child_context: {
@@ -70,6 +73,11 @@ class Fixture {
         this.status = String(body.status);
         this.result = body.result as Receipt;
         this.errorCode = body.error_code as string | null;
+      }
+      if (
+        path.endsWith("/children") && _method === "POST" && this.childRefusal
+      ) {
+        return { status: 409, body: { error: { code: this.childRefusal } } };
       }
       if (path.endsWith("/children")) {
         data = _method === "GET"
@@ -148,7 +156,7 @@ class Fixture {
   }
   execute() {
     return instanceLifecycle(() => this.http).methods.execute.execute({
-      kind: "instance.rename",
+      kind: this.kind,
       worker: this.worker,
     }, this.context());
   }
@@ -258,4 +266,67 @@ Deno.test("a saved completion refuses a mismatched terminal result", async () =>
     "Unproven saved lifecycle completion",
   );
   assertEquals(f.calls.filter((c) => c.path.endsWith("/complete")).length, 1);
+});
+
+Deno.test("a cancelled child admission settles the lifecycle instead of reclaiming forever", async () => {
+  const f = new Fixture();
+  f.domain = "preview.test";
+  f.steps["rename-inspect"] = { source_verified: true, branch: "feature" };
+  f.childRefusal = "operation.cancelled";
+  assertEquals((await f.execute()).status, "cancelled");
+  assertEquals(f.status, "cancelled");
+  assertEquals(f.errorCode, "operation.cancelled");
+  assertEquals(f.effects.size, 0);
+  assertEquals(f.resources.get("operation-100"), {
+    status: "cancelled",
+    result: {},
+    error_code: "operation.cancelled",
+  });
+});
+
+for (const code of ["operation.execution_uncertain", "operation.target_busy"]) {
+  Deno.test(`a child admission ${code} does not save terminal cancellation`, async () => {
+    const f = new Fixture();
+    f.domain = "preview.test";
+    f.childRefusal = code;
+    await assertRejects(() => f.execute(), Error, code);
+    assertEquals(f.resources.has("operation-100"), false);
+    assertEquals(
+      f.calls.some((call) => call.path.endsWith("/complete")),
+      false,
+    );
+  });
+}
+
+Deno.test("an accepted create cancellation replaces a saved failed completion", async () => {
+  const f = new Fixture();
+  f.kind = "instance.create";
+  f.cancelRequested = true;
+  f.resources.set("operation-100", {
+    status: "failed",
+    result: { instance_id: 501, error_code: "tool.store_invalid" },
+    error_code: "tool.store_invalid",
+  });
+  assertEquals((await f.execute()).status, "cancelled");
+  assertEquals(f.status, "cancelled");
+  assertEquals(f.errorCode, "operation.cancelled");
+  assertEquals(f.effects.size, 0);
+  assertEquals(f.resources.get("operation-100"), {
+    status: "cancelled",
+    result: {},
+    error_code: "operation.cancelled",
+  });
+});
+
+Deno.test("a saved create failure without cancellation keeps its original outcome", async () => {
+  const f = new Fixture();
+  f.kind = "instance.create";
+  f.resources.set("operation-100", {
+    status: "failed",
+    result: { instance_id: 501 },
+    error_code: "tool.store_invalid",
+  });
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.errorCode, "tool.store_invalid");
+  assertEquals(f.effects.size, 0);
 });

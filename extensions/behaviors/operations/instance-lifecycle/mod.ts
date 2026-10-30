@@ -158,7 +158,18 @@ export function instanceLifecycle(
           const resource = `operation-${operationId}`;
           const saved = await ctx.readResource(resource);
           if (saved !== null) {
-            const completion = Completion.parse(saved);
+            let completion = Completion.parse(saved);
+            if (
+              operation.kind === "instance.create" &&
+              operation.cancel_requested && completion.status === "failed"
+            ) {
+              completion = {
+                status: "cancelled",
+                result: {},
+                error_code: "operation.cancelled",
+              };
+              await ctx.writeResource("receipt", resource, completion);
+            }
             await executor.post(`${operationId}/complete`, {
               worker: args.worker,
               ...completion,

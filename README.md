@@ -330,4 +330,6 @@ Swamp account, native workflow execution, PHP or Node setup.
 If branch protection requires either removed check, the repository owner must
 remove that requirement. This PR does not change repository settings.
 
+Lifecycle workflows complete as cancelled when the Gateway refuses an effect or child admission with `operation.cancelled`. They do not retry forward work after that definite refusal. An accepted create cancellation also replaces a saved failed completion, so replay cannot keep posting the old failure after cancellation. Transport errors and uncertain execution still leave completion unresolved.
+
 Lifecycle removal cancellation before `removal-accept` closes that Gateway step without replaying its transaction. The Gateway cancel guard and the acceptance transaction share the parent lock: an accepted cancellation proves removal has not been accepted and can no longer commit. Native effects still require their receipts.

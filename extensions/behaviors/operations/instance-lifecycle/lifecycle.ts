@@ -604,6 +604,11 @@ export async function lifecycle(s: Session): Promise<Completion> {
     if (!execute) throw new Error("Wrong instance lifecycle kind");
     return { status: "succeeded", result: await execute(s), error_code: null };
   } catch (error) {
+    if (
+      error instanceof ExecutorError && error.code === "operation.cancelled"
+    ) {
+      return { status: "cancelled", result: {}, error_code: error.code };
+    }
     if (!(error instanceof Refused)) throw error;
     return {
       status: error.code === "operation.cancelled" ? "cancelled" : "failed",
