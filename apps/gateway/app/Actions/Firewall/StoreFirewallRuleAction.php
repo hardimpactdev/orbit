@@ -30,6 +30,7 @@ final readonly class StoreFirewallRuleAction
             $this->guardLinuxPlatform($node);
             $this->guardRecoverySsh($node, $data);
             $this->guardActionConflict($node, $data);
+            $writer = app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
             $rule = FirewallRule::query()->firstOrNew([
                 'node_id' => $node->id,
                 'name' => $data->name,
@@ -57,8 +58,6 @@ final readonly class StoreFirewallRuleAction
                 'error_code' => null,
             ])->save();
             $rule->setRelation('node', $node);
-
-            $writer = app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
 
             return $this->operations->execute('firewall.'.$data->action->value, 'node_firewall', $node->id, $node->id, [
                 'rule_id' => $rule->id, 'created' => $created, 'name' => $rule->name, 'action' => $rule->action->value,

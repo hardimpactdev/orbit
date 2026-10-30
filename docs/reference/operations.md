@@ -537,6 +537,8 @@ After a kind cuts over and removes its previous executor, its `operation-kinds.p
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
+`firewall.allow` starts `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Its Gateway agent-run descriptor and receipt proof are removed. `firewall.deny` and `firewall.remove` retain their previous Swamp path until their own canaries pass. Rollback is a revert PR, which restores both admission and the previous execution contract.
+
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 
 Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
@@ -561,4 +563,4 @@ On Swamp, use the shared `directOperation` template with family-owned read, acti
 
 The Node action checks repository identity and the requested checked-out branch, then the Gateway projects the recorded branch. Direct mode refuses a domain change before admission until Route's owning workflow can compose it. The previous polled writer retains domain changes. This first slice uses no secrets, Gateway primitive hook or root action.
 
-Prove the new path end to end on a dev or canary target before changing its per-kind writer. Rollback selects the previous Swamp path for new intents; admitted Operations retain their writer. Delete the old path only after production success. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
+Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
