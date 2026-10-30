@@ -81,6 +81,9 @@ it('keeps the admitted writer through declaration changes and idempotent replay'
     $context->fingerprint = 'admitted-intent';
     config(['swamp.direct_writers' => [$kind => $writer]]);
     $operation = scopedToolStore($kind, 209, ['manager' => 'apt']);
+    if ($writer === 'direct') {
+        $operation->update(['state' => [...$operation->state, 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'dispatched_at' => now()]);
+    }
     config(['swamp.direct_writers' => [$kind => $writer === 'direct' ? 'polled' : 'direct']]);
     $definition = app(DirectOperation::class)->definition($kind);
     $definition['writer_scope']['node_id'] = 210;

@@ -38,23 +38,8 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
 
             return ['descriptors' => $descriptors];
         }
-        $observation = [];
         $inventory = $prefix.'inventory';
-        if (! ($input['intent_only'] ?? false) && $verb !== 'adopt') {
-            $add('package-before', 'agent', $inventory, $observation);
-            $package = ['package' => $input['package']];
-            $bottle = $package;
-            if ($input['platform'] === 'macos' && in_array($manager, ['brew', 'brew-cask'], true)) {
-                $bottle['architecture'] = $input['architecture'];
-            }
-            if ($verb === 'remove' && in_array($manager, ['apt', 'vp', 'composer'], true)) {
-                $add('package-removal-plan', 'agent', $prefix.'removal-plan', $package);
-            }
-            $add('package-mutate', 'agent', $prefix.$verb, $manager === 'brew' && $verb === 'remove' ? $package : $bottle);
-        }
-        if ($input['intent_only'] ?? false) {
-            $add('tool-verified', 'agent', $version, [], true);
-        } elseif ($verb === 'adopt' && in_array($manager, ['brew', 'brew-cask'], true)) {
+        if ($verb === 'adopt' && in_array($manager, ['brew', 'brew-cask'], true)) {
             $adoptionInput = ['package' => $input['package']];
             if ($input['platform'] === 'macos') {
                 $adoptionInput['architecture'] = $input['architecture'];
@@ -111,12 +96,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
         } catch (ToolManagerException) {
             return ['error_code' => 'tool.version_probe_failed'];
         }
-        $before = data_get($operation->state, 'executor_runs.package-before.result.installed_version');
-        $outcome = match ($operation->kind) {
-            'tool.remove' => 'applied',
-            'tool.adopt' => ($input['tool_status'] ?? null) === 'installed' ? 'unchanged' : 'applied',
-            default => $before === $version ? 'unchanged' : 'applied',
-        };
+        $outcome = ($input['tool_status'] ?? null) === 'installed' ? 'unchanged' : 'applied';
 
         return ['installed_version' => $version, 'block' => null, 'outcome' => $outcome];
     }
@@ -124,7 +104,7 @@ final readonly class ToolOperationExecution implements OperationFamilyExecution
     /** @return array{key: string, transport: string, name: string, result: array<string, mixed>}|null */
     public function cancellationBoundary(Operation $operation): ?array
     {
-        $key = $operation->kind === 'tool.manager_converge' ? 'manager-materialize' : 'package-mutate';
+        $key = 'manager-materialize';
         foreach ($this->context($operation)['descriptors'] as $descriptor) {
             if ($descriptor['key'] === $key) {
                 return ['key' => $key, 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'result' => []];

@@ -12,7 +12,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 
-function toolPolicyOperation(string $verb = 'remove'): Operation
+function toolPolicyOperation(string $verb = 'adopt'): Operation
 {
     return new Operation(['kind' => 'tool.'.$verb, 'node_id' => 2, 'input' => [
         'manager' => 'vp', 'package' => 'is-number', 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -26,22 +26,14 @@ function toolPolicyReceipt(Operation $operation, string $key, string $name, arra
         $key => ['transport' => $transport, 'name' => $name, 'result' => $result]]];
 }
 
-it('exposes only the admitted manager and verb in its executable descriptors', function (): void {
+it('exposes only adoption observations without a package mutation', function (): void {
     $policy = new ToolOperationExecution;
     $operation = toolPolicyOperation();
-    expect($policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-remove']))->toBe(['package' => 'is-number']);
-    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.apt-remove']))
+    expect($policy->input($operation, ['key' => 'tool-verified', 'transport' => 'agent', 'name' => 'tool.vp-inventory']))->toBe([]);
+    expect(fn () => $policy->input($operation, ['key' => 'package-mutate', 'transport' => 'agent', 'name' => 'tool.vp-remove']))
         ->toThrow(ResourceOperationException::class);
-    expect(fn () => $policy->input($operation, ['key' => 'arbitrary', 'transport' => 'agent', 'name' => 'tool.vp-remove']))
-        ->toThrow(ResourceOperationException::class);
+    expect(array_column($policy->context($operation)['descriptors'], 'key'))->toBe(['manager-ready', 'tool-verified']);
 });
-
-it('does not authorize mutating adoption or intent-only removal', function (string $verb, bool $intentOnly): void {
-    $operation = toolPolicyOperation($verb);
-    $operation->input = [...$operation->input, 'intent_only' => $intentOnly];
-    $names = array_column(new ToolOperationExecution()->context($operation)['descriptors'], 'key');
-    expect($names)->toBe(['manager-ready', 'tool-verified']);
-})->with([['adopt', false], ['remove', true]]);
 
 it('projects completed package receipts without executing on the Node', function (): void {
     $node = Node::query()->create(['name' => 'tools-projection', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2']);
