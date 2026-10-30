@@ -32,11 +32,11 @@ keeps that Operation and never claims a different one.
   skips.
 
 Both Fleet workflows run on the `migration` worker pool on Node 209. The family
-executor has a 60-second queue timeout and claims a bounded batch each 30-second
-tick; maintenance retains its 300-second queue timeout. Each family reads its
-own claimable summary on the configured orchestrator Node. Native recovery tests
-use local copies with placement removed; deployed workflows keep their worker
-labels.
+executor has a 60-second queue timeout and claims a bounded batch each
+one-minute tick; maintenance retains its 300-second queue timeout. Each family
+reads its own claimable summary on the configured orchestrator Node. Native
+recovery tests use local copies with placement removed; deployed workflows keep
+their worker labels.
 
 The maintenance workflow runs each minute. It refreshes desired fleet state
 every five minutes and reads `/api/v1/fleet/peer-dns/plan` each minute. The
@@ -107,3 +107,19 @@ deployed SHAs.
 Roll out the paired Gateway peer-DNS plan endpoint before this maintenance
 behavior. Existing target-list reads remain a projection of the same plan. No
 new authority, standing credential or Node access is added.
+
+## Discovery during direct-start migration
+
+The retained Fleet discovery schedule runs once per minute at second 4. It ends
+when the last polled Fleet kind moves to direct admission. The orchestrator's
+2026-10-30 Node 209 profile measured 40 runs in about ten minutes: 31 were
+empty, while 9 executed recipe-PR work. Those runs left 1,240 new surviving
+inodes. The live cadence was 10 seconds; the prior source cadence was 30
+seconds. This measured exception reduces empty discovery while the direct
+writers are being proven.
+
+The maximum scheduled wait grows from 10 to 60 seconds. Actual claim latency
+also includes worker queue time. After loading, measure actual run spacing and
+surviving inode growth rather than infer an achieved reduction from source.
+Evidence: `~/swamp-execution/evidence/run-producers-20261030/attribution.json`
+on Beast. No new Gateway scheduler or execution machinery is introduced.

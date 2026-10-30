@@ -5,7 +5,7 @@ labels: { pool: migration }
 queueTimeout: 60
 autoResume: true
 trigger:
-  schedule: "4,34 * * * * *"
+  schedule: "4 * * * * *"
 reports:
   skip: ["@swamp/workflow-summary"]
 jobs:
@@ -19,7 +19,13 @@ jobs:
           methodName: discover
           inputs:
             family: operation-fleet
-            kinds: ["fleet.peer_dns", "fleet.recipe", "fleet.rollout", "fleet.recipe_pr", "fleet.cli_converge"]
+            kinds: [
+              "fleet.peer_dns",
+              "fleet.recipe",
+              "fleet.rollout",
+              "fleet.recipe_pr",
+              "fleet.cli_converge",
+            ]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
@@ -35,4 +41,4 @@ jobs:
           methodName: execute
           inputs:
             kind: "${{ self.work.kind }}"
-            worker: '${{ self.work.worker }}'
+            worker: "${{ self.work.worker }}"
