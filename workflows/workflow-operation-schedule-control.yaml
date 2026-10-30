@@ -14,6 +14,7 @@ inputs:
 jobs:
   - name: node
     target: '${{ inputs.node_id == 209 ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
     writes: true
     steps:
       - name: control

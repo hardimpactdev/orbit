@@ -19,6 +19,7 @@ inputs:
 jobs:
   - name: node
     target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
     steps:
       - name: incus
         writes: true

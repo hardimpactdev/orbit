@@ -1,0 +1,32 @@
+id: 98cfa3d9-207c-4309-ab35-e5454d54340a
+name: node-worker-enroll
+description: Native enrollment or redelivery through Node converge followed by an exact Node canary.
+target: swamp209-services
+labels: { node: "209", pool: services-local }
+vaults: []
+inputs:
+  properties:
+    node_id: {type: integer, minimum: 1}
+  required: [node_id]
+jobs:
+  - name: converge
+    steps:
+      - name: deliver
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-worker-lifecycle'
+          behaviorName: node-worker-lifecycle
+          methodName: converge
+          inputs:
+            node_id: '${{ inputs.node_id }}'
+  - name: prove
+    dependsOn: [{job: converge, condition: {type: succeeded}}]
+    steps:
+      - name: canary
+        task:
+          type: workflow
+          workflowIdOrName: node-worker-canary
+          inputs:
+            node_id: '${{ inputs.node_id }}'
+            user: '${{ steps.deliver.outputs.user }}'

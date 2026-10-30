@@ -3,6 +3,8 @@ Run: SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s tests -p no
 """
 import json
 import os
+import pwd
+import shutil
 from pathlib import Path
 import socket
 import subprocess
@@ -48,8 +50,17 @@ class NativeWorkerTest(unittest.TestCase):
                 return str(path)
 
             command('init', str(root))
-            command('vault', 'create', 'local_encryption', 'operator-enrollment', '--config',
-                    json.dumps({'auto_generate': True, 'key_file': str(root / 'operator.key')}))
+            source = Path(__file__).resolve().parents[1]
+            shutil.copytree(source / 'extensions/behaviors/node-worker', root / 'extensions/behaviors/node-worker')
+            shutil.copy(source / 'workflows/workflow-node-worker-canary.yaml', root / 'workflows/workflow-node-worker-canary.yaml')
+            identity_file = root / 'root-node-config.toml'
+            identity_file.write_text("[swamp_worker]\nnode_id = 71\nuser = \"" + pwd.getpwuid(os.getuid()).pw_name + "\"\n")
+            identity_file.chmod(0o644)
+            subprocess.run(['/usr/bin/sudo', '-n', '/usr/bin/chown', '0:0', str(identity_file)], check=True, capture_output=True)
+            canary_source = root / 'extensions/behaviors/node-worker/canary.ts'
+            canary_source.write_text(canary_source.read_text().replace('"/etc/orbit/agent/config.toml"', json.dumps(str(identity_file))))
+
+            command('workflow', 'validate', 'node-worker-canary')
             command('access', 'token', 'mint', 'fixture-admin', '--principal', 'user:fixture')
             admin = secret_file('admin', command('access', 'token', 'reveal', 'fixture-admin', '--yes')['token'])
             with socket.socket() as sock:
@@ -86,17 +97,12 @@ class NativeWorkerTest(unittest.TestCase):
                     message = f"Server reported {code}: {kind} token 'missing-node-token' not found. Use 'swamp {group} token list' to see existing tokens."
                     self.assertTrue(any(item.get('code') == code and item.get('error') == message for item in errors), 'native missing-token response')
                 name = 'orbit-node-71'
-                enrollment = secret_file('enrollment', command('worker', 'token', 'create', name, '--duration', '24h',
-                                         '--max-enrollments', '1', '--vault', 'operator-enrollment', *flags)['token'])
-                minted = command('model', 'method', 'run', '@swamp/server-token', 'mint', name + '-access',
-                                 '--literal-inputs', '--input', json.dumps({'principalId': 'worker:' + name,
-                                 'principalEmail': 'fixture@node.invalid', 'durationMs': 86400000,
-                                 'vaultName': 'operator-enrollment'}), *flags)
-                self.assertEqual(minted['status'], 'succeeded')
-                access = secret_file('access', name + '-access.' + command('vault', 'read-secret',
-                                     'operator-enrollment', 'server-token-' + name + '-access', '--yes', *flags)['value'])
+                minted = command('worker', 'token', 'create', name, '--duration', '30d', *flags)['token']
+                enrollment = secret_file('enrollment', minted)
+                command('access', 'token', 'mint', name + '-access', '--principal', 'worker:' + name, *flags)
+                access = secret_file('access', command('access', 'token', 'reveal', name + '-access', '--yes')['token'])
                 worker_args = [binary, 'worker', 'connect', url, '--token-file', enrollment, '--server-token-file', access,
-                               '--cache-dir', str(root / 'cache'), '--concurrency=1', '--no-telemetry']
+                               '--cache-dir', str(root / 'cache'), '--label', 'node=71', '--no-telemetry']
                 worker_env = dict(env, SWAMP_CONFIG_DIR=str(root / 'worker-config'))
                 worker_env.pop('SWAMP_API_KEY_FILE', None)
                 for attempt in range(2):
@@ -106,10 +112,21 @@ class NativeWorkerTest(unittest.TestCase):
                     while True:
                         workers = command('worker', 'list', *flags)['workers']
                         if any(item.get('tokenName') == name and item.get('status') == 'idle' for item in workers):
+                            matched = next(item for item in workers if item.get('tokenName') == name)
+                            self.assertEqual(matched['labels']['node'], '71')
+                            self.assertEqual(matched['capacity'], 1)
                             break
                         self.assertIsNone(worker.poll(), 'native restart refused')
                         self.assertLess(time.monotonic(), deadline, 'native worker enrollment')
                         time.sleep(.1)
+                    if attempt == 0:
+                        canary = command('workflow', 'run', 'node-worker-canary', '--input', 'node_id=71', '--input', 'user=' + pwd.getpwuid(os.getuid()).pw_name, *flags)
+                        self.assertEqual(canary['status'], 'succeeded')
+                        self.assertTrue(any(artifact.get('name') == 'proof' for job in canary['jobs'] for step in job['steps'] for artifact in step.get('dataArtifacts', [])))
+                        command('workflow', 'run', 'node-worker-canary', '--input', 'node_id=71', '--input', 'user=wrong-worker-account', *flags, success=False)
+                        subprocess.run(['/usr/bin/sudo', '-n', '/usr/bin/tee', str(identity_file)], input=b'[swamp_worker]\nnode_id = 72\nuser = "nckrtl"\n', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                        command('workflow', 'run', 'node-worker-canary', '--input', 'node_id=71', '--input', 'user=' + pwd.getpwuid(os.getuid()).pw_name, *flags, success=False)
+
                     machine = (root / 'cache/machine-id').read_text()
                     if attempt == 0:
                         identity = machine
@@ -122,9 +139,21 @@ class NativeWorkerTest(unittest.TestCase):
                     while any(item.get('tokenName') == name for item in command('worker', 'list', *flags)['workers']):
                         self.assertLess(time.monotonic(), deadline, 'native worker disconnect')
                         time.sleep(.1)
+                    if attempt == 0:
+                        command('worker', 'token', 'revoke', name, *flags)
+                        replacement = command('worker', 'token', 'create', name, '--duration', '30d', *flags)['token']
+                        self.assertNotEqual(replacement, minted, 'native retry re-mints enrollment')
+                        (root / 'enrollment').write_text(replacement)
                 token = next(item for item in command('worker', 'token', 'list', *flags) if item['name'] == name)
                 self.assertEqual(token['maxEnrollments'], 1)
                 self.assertEqual(len(token['bindings']), 1)
+                expired = command('worker', 'token', 'create', 'orbit-node-revoked', '--duration', '30d', *flags)['token']
+                expired_file = secret_file('expired', expired)
+                command('worker', 'token', 'revoke', 'orbit-node-revoked', *flags)
+                expired_worker = subprocess.run([binary, 'worker', 'connect', url, '--token-file', expired_file,
+                    '--server-token-file', access, '--cache-dir', str(root / 'expired-cache')], cwd=root,
+                    env=worker_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                self.assertNotEqual(expired_worker.returncode, 0, 'dead enrollment must exit for systemd StartLimit')
                 revoked = command('access', 'token', 'revoke', name + '-access', *flags)
                 self.assertEqual(revoked['state'], 'revoked')
                 tokens = command('access', 'token', 'list', *flags)

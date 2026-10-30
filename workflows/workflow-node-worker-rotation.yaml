@@ -1,0 +1,30 @@
+id: 88da6cc9-c5b3-4aa8-9ee2-771ad191f778
+name: node-worker-rotation
+description: Rotate existing Node enrollments by day20 using native tokens, converge and canary.
+target: swamp209-services
+labels: { node: "209", pool: services-local }
+vaults: []
+trigger:
+  schedule: "0 * * * *"
+jobs:
+  - name: plan
+    steps:
+      - name: plan
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-worker-lifecycle'
+          behaviorName: node-worker-lifecycle
+          methodName: plan
+          inputs: {}
+  - name: rotate
+    dependsOn: [{job: plan, condition: {type: succeeded}}]
+    steps:
+      - name: rotate-${{ self.node.node_id }}
+        forEach:
+          item: node
+          in: '${{ steps.plan.outputs.nodes }}'
+        task:
+          type: workflow
+          workflowIdOrName: node-worker-enroll
+          inputs:
+            node_id: '${{ self.node.node_id }}'

@@ -1,0 +1,21 @@
+name: Node worker trust contract
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  node-workers:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Enforce reviewed local code and both Node placement selectors
+        run: deno run --allow-read bin/lint-node-workers.ts
+      - name: Check worker lifecycle code
+        run: |
+          deno check extensions/behaviors/node-worker/canary.ts extensions/behaviors/node-worker/rotation.ts
+          deno fmt --check extensions/behaviors/node-worker bin/lint-node-workers.ts

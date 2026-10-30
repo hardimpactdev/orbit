@@ -1,0 +1,24 @@
+id: b5399b34-6011-4635-b7ef-9a2c88aae757
+name: node-worker-canary
+description: Read-only proof of exact Node placement, configured account and sudo.
+inputs:
+  properties:
+    node_id: {type: integer, minimum: 1}
+    user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,31}$'}
+  required: [node_id, user]
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels:
+  node: '${{ string(inputs.node_id) }}'
+vaults: []
+jobs:
+  - name: canary
+    steps:
+      - name: inspect
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-worker-canary'
+          behaviorName: '${{ "node-worker-canary-" + string(inputs.node_id) }}'
+          methodName: inspect
+          inputs:
+            node_id: '${{ inputs.node_id }}'
+            user: '${{ inputs.user }}'
