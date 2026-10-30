@@ -9,6 +9,7 @@ use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -16,20 +17,26 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>}> */
+    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>}> */
     private array $definitions;
 
-    public function __construct()
+    /** @param iterable<DirectOperationContribution> $contributions */
+    public function __construct(#[Tag(DirectOperationContribution::class)] iterable $contributions = [])
     {
         $definitions = [];
-        foreach (glob(__DIR__.'/../*/direct-operations.php') ?: [] as $file) {
-            foreach (require $file as $kind => $definition) {
+        $families = array_map(static fn (string $file): array => require $file, glob(__DIR__.'/../*/direct-operations.php') ?: []);
+        foreach ($contributions as $contribution) {
+            $families[] = $contribution->definitions();
+        }
+        foreach ($families as $family) {
+            foreach ($family as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs']) !== []
+                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'result_hook']) !== []
                     || array_diff(['workflow', 'writer_config', 'writer_state', 'projection'], array_keys($definition)) !== []
                     || array_any(array_intersect_key($definition, array_flip(['workflow', 'writer_config', 'writer_state'])), static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)
                     || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
                     || ! self::validSecretMap($definition['private_material'] ?? []) || ! self::validSecretMap($definition['secret_outputs'] ?? [])
+                    || (isset($definition['result_hook']) && ! is_a($definition['result_hook'], DirectOperationResultHook::class, true))
                     || ! is_a($definition['projection'], DirectOperationProjection::class, true)
                     || (isset($definition['primitive']) && ! is_a($definition['primitive'], DirectOperationPrimitive::class, true))) {
                     throw new LogicException('A direct Operation needs one fixed family declaration.');
@@ -94,7 +101,7 @@ final readonly class DirectOperation
         return $definition === null || $writer === null ? [] : [$definition['writer_state'] => $writer];
     }
 
-    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>}|null */
+    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
