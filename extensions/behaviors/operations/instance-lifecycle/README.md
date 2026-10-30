@@ -1,3 +1,24 @@
+# Direct branch recording canary
+
+`operation-instance-lifecycle-direct` handles branch-only `instance.rename` on
+exactly `orbit-node-<admittedNodeId>`. It uses the shared direct Operation
+read/result protocol and the existing read-only account agent command. It does
+not change HEAD, files or the origin. Repository identity and the requested
+checked-out branch must match before the Gateway records the branch.
+
+The writer defaults to `polled` through `ORBIT_SWAMP_DIRECT_WRITERS={}`. A
+canary requires an approved grant on the existing shared run token, the exact
+Node worker running as the enrolled account, and the admitted agent pin already
+installed. No worker unit, root privilege boundary, token or grant changes are
+part of this slice. Use native defaults, `vaults: []` and a stable behavior per
+Node. Verify Gateway start binding before the first worker read. Unbound reads
+refuse without a local agent call; native recovery owns retry. Cancellation
+before inspection skips it; an in-flight inspection finishes before projection.
+
+In direct mode a request containing a domain change refuses before admission.
+Route composition and the other lifecycle kinds remain on their existing Swamp
+path. Keep that path until dev/canary and production proof, then delete it.
+
 # Instance lifecycle execution
 
 Swamp chooses the order of lifecycle effects. The Gateway validates requests,
