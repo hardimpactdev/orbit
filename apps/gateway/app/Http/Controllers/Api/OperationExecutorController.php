@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationExecutorJson;
@@ -101,11 +102,13 @@ final class OperationExecutorController extends Controller
         return $this->json->operation($operation, [...OperationsController::withSteps($operation, null, null),
             'node_id' => app(OperationChildren::class)->nodeId($operation),
             'parent_operation_id' => $operation->parent_operation_id, 'child_key' => $operation->child_key,
-            'worker' => $operation->worker,
-            'lease_seconds' => $operation->status === OperationStatus::Waiting ? 0 : SwampOperationExecutor::LeaseSeconds,
-            'waiting_for' => array_map(static fn (mixed $tuple): array => ['key' => ValidatedData::object($tuple)['key'], 'id' => ValidatedData::object($tuple)['id']], $tuples),
-            'step_results' => $operation->state['steps'] ?? [],
-            'execution_context' => app(OperationExecutionContract::class)->context($operation),
+            ...(DirectOperation::owns($operation) ? [] : [
+                'worker' => $operation->worker,
+                'lease_seconds' => $operation->status === OperationStatus::Waiting ? 0 : SwampOperationExecutor::LeaseSeconds,
+                'waiting_for' => array_map(static fn (mixed $tuple): array => ['key' => ValidatedData::object($tuple)['key'], 'id' => ValidatedData::object($tuple)['id']], $tuples),
+                'step_results' => $operation->state['steps'] ?? [],
+                'execution_context' => app(OperationExecutionContract::class)->context($operation),
+            ]),
         ]);
     }
 }

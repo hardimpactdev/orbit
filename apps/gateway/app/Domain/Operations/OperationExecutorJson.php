@@ -22,6 +22,9 @@ final readonly class OperationExecutorJson
     {
         $record['input'] = (object) ValidatedData::object($record['input']);
         $record = self::receipt($record);
+        if (DirectOperation::owns($operation)) {
+            return $record;
+        }
         $steps = ValidatedData::object($record['step_results']);
         foreach ($steps as $name => $result) {
             $steps[$name] = (object) ValidatedData::object($result);
