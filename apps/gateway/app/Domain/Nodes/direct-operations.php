@@ -7,12 +7,22 @@ use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeRemovalEnvironmentSource;
 use App\Domain\Nodes\NodeRemovalProjection;
+use App\Domain\Nodes\NodeRetargetProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\NodeWireGuardHubProjection;
+use App\Domain\Nodes\NodeWireGuardKeyProjection;
 
-return ['node.wireguard_hub_converge' => [
+return ['node.retarget' => [
+    'workflow' => 'operation-node-retarget',
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'retarget', 'step' => 'terminal'],
+    'projection' => NodeRetargetProjection::class,
+], 'node.wireguard_key' => [
+    'workflow' => 'operation-node-wireguard-key',
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'hub', 'step' => 'terminal'],
+    'projection' => NodeWireGuardKeyProjection::class,
+], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
     'workflow_inputs' => true, 'terminal_result' => ['job' => 'hub', 'step' => 'terminal'],
     'projection' => NodeWireGuardHubProjection::class,

@@ -9,28 +9,24 @@ covers:
 
 # Node retarget
 
-`php artisan orbit:node-retarget NAME HOST [--ssh-port=PORT]` changes the public SSH target of an active Node. It runs on the Gateway machine. The Node keeps its pinned host key, its WireGuard address, and every other identity field.
+`php artisan orbit:node-retarget NAME HOST [--ssh-port=PORT]` admits one `node.retarget` Operation. Swamp verifies the admitted endpoint through official SSH. The Gateway records the new public SSH host and port only after native terminal success. The pinned host key, WireGuard address and other identity fields stay unchanged.
 
 ## One lifecycle owner per Node name
 
-`node:add`, `node:remove`, `node:rename`, and retarget each take one lock for the Node name. They hold it from the lookup to the last remote step and rollback. Another operation on the same name fails with `node.provisioning_busy` (HTTP 409) before it changes anything. A retry reads the Node again after it gets the lock. Operations on different names run at the same time. The lock does not block role or settings changes. A lock that nobody releases expires after one hour.
+Admission takes the existing Node-name lifecycle lock, reads the actual active Node again and records its Operation hold. A competing admission fails before changing its endpoint. Swamp owns the remote steps and their compensation. Different Nodes can proceed independently.
 
 ## Two paths
 
-Retarget picks its path from the Node's role assignments. Any assignment counts, also a `provisioning` or `failed` one, because a failed convergence can already have closed public SSH. When the first role is assigned, the Gateway moves the Node from operator DNS to managed DNS and removes its public SSH recovery rule; roleless retarget uses public SSH to converge the WireGuard peer before switching to the tunnel. [Public SSH](/reference/node-provisioning#public-ssh) describes that boundary.
+Any role assignment selects the WireGuard path, including a failed or provisioning assignment. A roleless Node uses its new public SSH endpoint to prepare and publish its peer configuration, publish the exact context on the shared hub, start the tunnel and verify pinned SSH over WireGuard. The shared hub action preserves unrelated newer peers and the local hub private key.
 
-| Node | Path |
+| Node | Native path |
 | --- | --- |
-| No role | Public SSH |
-| Any role | WireGuard |
+| No role | Pinned public SSH, peer and hub publication, then pinned WireGuard SSH |
+| Any role | Pinned WireGuard SSH verification |
 
-On the public SSH path, the Gateway scans the host key at the new address and requires the pinned fingerprint. It publishes the WireGuard peer over public SSH, using operator DNS mode for a Node with no role, probes SSH over WireGuard, and pins the key for both addresses.
+For a Node with roles, verification precedes the public endpoint record change. The roleless path captures its prior peer files and service state before mutation. Native compensation restores those files and the exact prior hub entry when a later step fails. Its terminal result reports `restored`; an uncertain compensation remains a failed Operation. The Gateway keeps the old endpoint after failure or cancellation.
 
-On the WireGuard path, the Gateway scans the host key over the WireGuard address and requires the pinned fingerprint. It stores the new target, probes SSH over WireGuard, and pins the key for the new address.
-
-Both paths prove the private connection with `agent.status` through the pinned SSH adapter. The runner handles a mismatched agent pin before repeating that read. A refused command or transport failure restores the old public target and records `vpn.peer_ssh_failed`.
-
-The WireGuard path never opens a public SSH connection and never rewrites the Node's WireGuard configuration, because a restart of `wg-quick@orbit` would cut the session that drives it.
+The native workflow uses official SSH and public step results. It performs no agent action or synchronous Gateway host work. Follow the Operation to distinguish admission from completion.
 
 ## Repair a tunnel that is down
 
@@ -51,15 +47,14 @@ The Incus harness runs the same repair in `apps/e2e/resources/guest/retarget-vpn
 
 ## Failure codes
 
-Each failure names its step and the Node record it leaves.
+Admission refusals leave the endpoint unchanged. Native failures belong to the recorded Operation.
 
-| Code | Step | Node record |
-| --- | --- | --- |
-| `node.public_ssh_host_invalid`, `node.public_ssh_port_invalid` | `validation` | Unchanged |
-| `node.provisioning_busy` | lifecycle owner | Unchanged |
-| `node.not_active` | `lookup` | Unchanged |
-| `node.retarget_requires_vpn` | `wireguard-ssh` | Unchanged and active |
-| `node.ssh_host_key_scan_failed`, `node.ssh_host_key_mismatch` | `ssh-host-key` | `failed` |
-| `vpn.peer_address_missing` | `wireguard-address` | `failed` |
-| `vpn.peer_ssh_failed`, any other WireGuard peer error | `wireguard-*` | `failed`, with the old public target restored |
-| `node.retarget_failed` | `retarget` | `failed`, with the old public target restored |
+| Code | Meaning |
+| --- | --- |
+| `node.public_ssh_host_invalid` | The public endpoint intent is invalid. |
+| `node.provisioning_busy` | Another admission holds the Node-name lifecycle lock. |
+| `node.not_active` | The selected Node does not exist. |
+| `node.retarget_requires_vpn` | The Node is inactive or lacks its recorded pinned WireGuard identity. |
+| `node.bootstrap_gateway_unavailable` | There is no active Gateway control worker. |
+| `node.bootstrap_identity_unavailable` | The existing Gateway SSH execution identity is unavailable. |
+| `operation.native_failed` | A native verification or effect failed; inspect the Operation and native run. |

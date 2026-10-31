@@ -130,12 +130,12 @@ final class NodesController extends Controller
         Node $node,
         SetNodeWireGuardKeyAction $action,
     ): JsonResponse {
-        $node = $action->execute($node, $request->publicKey());
+        $operation = $action->execute($node, $request->publicKey());
 
         return response()->json([
-            'data' => NodeData::fromModel($node)->toArray(),
+            'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ]);
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]

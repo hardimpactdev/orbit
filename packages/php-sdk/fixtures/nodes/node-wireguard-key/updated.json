@@ -2,30 +2,64 @@
     "schema": 1,
     "request": "Orbit\\Sdk\\Requests\\Nodes\\SetNodeWireGuardKeyRequest",
     "route": "PATCH /api/v1/nodes/{node}/wireguard-key",
-    "status": 200,
+    "status": 202,
     "body": {
         "data": {
-            "id": 2,
-            "cluster_id": null,
-            "name": "laptop",
-            "status": "active",
-            "platform": "linux",
-            "architecture": null,
-            "tld": null,
-            "public_ssh_host": "192.0.2.2",
-            "public_ssh_port": 22,
-            "user": "orbit",
-            "wireguard_ip": "10.44.0.2",
-            "lan_ip": null,
-            "wireguard_public_key": "bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4=",
-            "wireguard_endpoint_override": null,
-            "dns_server_override": null,
-            "ssh_host_fingerprint": null,
+            "id": 1,
+            "kind": "node.wireguard_key",
+            "target_type": "node",
+            "target_id": 3,
+            "input": {
+                "hub_intent": {
+                    "schema_version": 1,
+                    "hub_id": 1,
+                    "hub_address": "10.44.0.11/24",
+                    "port": 51820,
+                    "context_node_id": 3,
+                    "inventory": [
+                        {
+                            "node_id": 3,
+                            "name": "key-peer",
+                            "address": "10.44.0.13",
+                            "public_key": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+                        }
+                    ],
+                    "before": {
+                        "node_id": 3,
+                        "name": "key-peer",
+                        "address": "10.44.0.13",
+                        "public_key": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+                    },
+                    "desired": {
+                        "node_id": 3,
+                        "name": "key-peer",
+                        "address": "10.44.0.13",
+                        "public_key": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+                    }
+                },
+                "public_key": "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=",
+                "participant_node_ids": [
+                    3,
+                    1,
+                    209
+                ]
+            },
+            "status": "running",
+            "sequence": 3,
+            "current_step": null,
             "failed_step": null,
             "error_code": null,
-            "roles": [],
-            "settings": null,
-            "updating": null
+            "result": null,
+            "cancel_requested": false,
+            "attempts": 0,
+            "triggered_by": "operator",
+            "caller_node_id": null,
+            "caller_node_name": null,
+            "created_at": "2026-10-31T12:00:00+00:00",
+            "started_at": "2026-10-31T12:00:00+00:00",
+            "finished_at": null,
+            "poll_after_seconds": null,
+            "assistance": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

@@ -1,0 +1,1167 @@
+{
+  "id": "acc7e20c-3c8f-4892-b92e-ac8a979ccdea",
+  "name": "operation-node-retarget",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "operation_id": {
+        "type": "integer"
+      },
+      "node_id": {
+        "type": "integer"
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "node.retarget"
+        ]
+      },
+      "intent": {
+        "type": "object"
+      },
+      "execution_secrets": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "object",
+            "properties": {
+              "vault": {
+                "type": "string",
+                "enum": [
+                  "orbit-control-inputs"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^bootstrap-identity-node-[1-9][0-9]*$"
+              }
+            },
+            "required": [
+              "vault",
+              "key"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "operation_id",
+      "node_id",
+      "kind",
+      "intent",
+      "execution_secrets"
+    ],
+    "additionalProperties": false
+  },
+  "jobs": [
+    {
+      "name": "retarget",
+      "steps": [
+        {
+          "name": "verify_endpoint",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(inputs.intent.node_id) }}",
+            "methodName": "exec",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(inputs.intent.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ inputs.intent.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ inputs.intent.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ inputs.intent.target.host }}",
+                  "transport": {
+                    "port": "${{ inputs.intent.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "argv": [
+                "/usr/bin/true"
+              ]
+            }
+          }
+        },
+        {
+          "name": "snapshot_asset",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "verify_endpoint",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "snapshot-asset",
+            "methodName": "read",
+            "inputs": {
+              "action": "snapshot",
+              "input": "${{ {} }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "snapshot_command",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "snapshot_asset",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"snapshot_asset-0\"].outputs.script_body }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "snapshot",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "snapshot_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "snapshot-result",
+            "methodName": "decode",
+            "inputs": {
+              "stdout": "${{ steps[\"snapshot_command-0\"].outputs.stdout }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "key_asset",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "snapshot",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "key-asset",
+            "methodName": "read",
+            "inputs": {
+              "action": "prepare_key",
+              "input": "${{ {\"existing_key\": self.candidate.network.existing_key} }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "key_command",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "key_asset",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"key_asset-0\"].outputs.script_body }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "key",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "key_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "key-result",
+            "methodName": "decode",
+            "inputs": {
+              "stdout": "${{ steps[\"key_command-0\"].outputs.stdout }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "hub_publish_assets",
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-hub-command",
+            "behaviorName": "${{ \"wireguard-hub-assets-\" + string(self.candidate.hub.hub_id) }}",
+            "methodName": "read",
+            "inputs": {
+              "intent": "${{ self.candidate.hub }}",
+              "mode": "publish",
+              "prepared_peer": "${{ {\"node_id\": self.candidate.node_id, \"public_key\": steps[\"key-0\"].outputs.public_key} }}"
+            }
+          },
+          "guard": "${{ inputs.intent.has_roles }}",
+          "dependsOn": [
+            {
+              "step": "key",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "hub_publish_command",
+          "writes": true,
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "dependsOn": [
+            {
+              "step": "hub_publish_assets",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"wireguard-hub-\" + string(self.candidate.hub.hub_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"wireguard-hub-\" + string(self.candidate.hub.hub_id) }}",
+              "transport": "${{ model[\"wireguard-hub-\" + string(self.candidate.hub.hub_id)].input.globalArguments.transport }}",
+              "hosts": "${{ model[\"wireguard-hub-\" + string(self.candidate.hub.hub_id)].input.globalArguments.hosts }}"
+            },
+            "inputs": {
+              "hosts": "name:hub",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"hub_publish_assets-0\"].outputs.script_body }}"
+            }
+          },
+          "guard": "${{ inputs.intent.has_roles }}",
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "hub_publish",
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "dependsOn": [
+            {
+              "step": "hub_publish_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-hub-command",
+            "behaviorName": "${{ \"wireguard-hub-result-\" + string(self.candidate.hub.hub_id) }}",
+            "methodName": "result",
+            "inputs": {
+              "hub_id": "${{ self.candidate.hub.hub_id }}",
+              "stdout": "${{ steps[\"hub_publish_command-0\"].outputs.stdout }}"
+            }
+          },
+          "guard": "${{ inputs.intent.has_roles }}",
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "peer_file_asset",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "hub_publish",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "peer_file-asset",
+            "methodName": "read",
+            "inputs": {
+              "action": "publish",
+              "input": "${{ {\"peer\": self.candidate.network.peer} }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "peer_file_command",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "peer_file_asset",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"peer_file_asset-0\"].outputs.script_body }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "peer_file",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "peer_file_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "peer_file-result",
+            "methodName": "decode",
+            "inputs": {
+              "stdout": "${{ steps[\"peer_file_command-0\"].outputs.stdout }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "enable_peer",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "peer_file",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "exec",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "sudo": true,
+              "argv": [
+                "/usr/bin/systemctl",
+                "enable",
+                "wg-quick@orbit.service"
+              ]
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "start_peer",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "enable_peer",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "exec",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "sudo": true,
+              "argv": [
+                "/usr/bin/systemctl",
+                "restart",
+                "wg-quick@orbit.service"
+              ]
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "record_dns_asset",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "start_peer",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "record_dns-asset",
+            "methodName": "read",
+            "inputs": {
+              "action": "record_dns",
+              "input": "${{ {\"peer\": self.candidate.network.peer, \"snapshot\": steps[\"snapshot-0\"].outputs} }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "record_dns_command",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "record_dns_asset",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"record_dns_asset-0\"].outputs.script_body }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "record_dns",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "record_dns_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "record_dns-result",
+            "methodName": "decode",
+            "inputs": {
+              "stdout": "${{ steps[\"record_dns_command-0\"].outputs.stdout }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "verify_peer",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "record_dns",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "exec",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.network.peer.address.split(\"/\")[0] }}"
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "argv": [
+                "/usr/bin/true"
+              ]
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "restore_peer_asset",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "snapshot",
+              "condition": {
+                "type": "succeeded"
+              }
+            },
+            {
+              "step": "verify_peer",
+              "condition": {
+                "type": "always"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "restore_peer-asset",
+            "methodName": "read",
+            "inputs": {
+              "action": "restore",
+              "input": "${{ {\"snapshot\": steps[\"snapshot-0\"].outputs} }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "restore_peer_command",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "restore_peer_asset",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"restore_peer_asset-0\"].outputs.script_body }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "restore_peer",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "restore_peer_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "restore_peer-result",
+            "methodName": "decode",
+            "inputs": {
+              "stdout": "${{ steps[\"restore_peer_command-0\"].outputs.stdout }}"
+            }
+          },
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "restore_hub_assets",
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-hub-command",
+            "behaviorName": "${{ \"wireguard-hub-assets-\" + string(self.candidate.hub.hub_id) }}",
+            "methodName": "read",
+            "inputs": {
+              "intent": "${{ self.candidate.hub }}",
+              "mode": "restore-publish",
+              "prepared_peer": "${{ {\"node_id\": self.candidate.node_id, \"public_key\": steps[\"key-0\"].outputs.public_key} }}"
+            }
+          },
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") || !(\"key-0\" in steps && \"outputs\" in steps[\"key-0\"]) || !(\"hub_publish_command-0\" in steps && steps[\"hub_publish_command-0\"].status != \"skipped\") }}",
+          "dependsOn": [
+            {
+              "step": "restore_peer",
+              "condition": {
+                "type": "always"
+              }
+            }
+          ],
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "restore_hub_command",
+          "writes": true,
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "dependsOn": [
+            {
+              "step": "restore_hub_assets",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"wireguard-hub-\" + string(self.candidate.hub.hub_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"wireguard-hub-\" + string(self.candidate.hub.hub_id) }}",
+              "transport": "${{ model[\"wireguard-hub-\" + string(self.candidate.hub.hub_id)].input.globalArguments.transport }}",
+              "hosts": "${{ model[\"wireguard-hub-\" + string(self.candidate.hub.hub_id)].input.globalArguments.hosts }}"
+            },
+            "inputs": {
+              "hosts": "name:hub",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"restore_hub_assets-0\"].outputs.script_body }}"
+            }
+          },
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") || !(\"key-0\" in steps && \"outputs\" in steps[\"key-0\"]) || !(\"hub_publish_command-0\" in steps && steps[\"hub_publish_command-0\"].status != \"skipped\") }}",
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "restore_hub",
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "dependsOn": [
+            {
+              "step": "restore_hub_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-hub-command",
+            "behaviorName": "${{ \"wireguard-hub-result-\" + string(self.candidate.hub.hub_id) }}",
+            "methodName": "result",
+            "inputs": {
+              "hub_id": "${{ self.candidate.hub.hub_id }}",
+              "stdout": "${{ steps[\"restore_hub_command-0\"].outputs.stdout }}"
+            }
+          },
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") || !(\"key-0\" in steps && \"outputs\" in steps[\"key-0\"]) || !(\"hub_publish_command-0\" in steps && steps[\"hub_publish_command-0\"].status != \"skipped\") }}",
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "cleanup_asset",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "snapshot",
+              "condition": {
+                "type": "succeeded"
+              }
+            },
+            {
+              "step": "restore_hub",
+              "condition": {
+                "type": "always"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (!(\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") && !(\"restore_hub-0\" in steps && steps[\"restore_hub-0\"].status == \"succeeded\")) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "cleanup-asset",
+            "methodName": "read",
+            "inputs": {
+              "action": "cleanup",
+              "input": "${{ {\"snapshot\": steps[\"snapshot-0\"].outputs} }}"
+            }
+          },
+          "allowFailure": true,
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "cleanup_command",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "cleanup_asset",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (!(\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") && !(\"restore_hub-0\" in steps && steps[\"restore_hub-0\"].status == \"succeeded\")) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@swamp/ssh",
+            "behaviorName": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+            "methodName": "script",
+            "globalArgs": {
+              "name": "${{ \"node-retarget-\" + string(self.candidate.node_id) }}",
+              "transport": {
+                "kind": "ssh",
+                "user": "${{ self.candidate.target.user }}",
+                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "hostKeys": "${{ self.candidate.target.host_keys }}"
+              },
+              "hosts": [
+                {
+                  "name": "peer",
+                  "address": "${{ self.candidate.target.host }}",
+                  "transport": {
+                    "port": "${{ self.candidate.target.port }}"
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "hosts": "name:peer",
+              "interpreter": "python3",
+              "sudo": true,
+              "script": "${{ steps[\"cleanup_asset-0\"].outputs.script_body }}"
+            }
+          },
+          "allowFailure": true,
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "cleanup",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "cleanup_command",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "guard": "${{ inputs.intent.has_roles || !(\"snapshot-0\" in steps && \"outputs\" in steps[\"snapshot-0\"]) || (!(\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") && !(\"restore_hub-0\" in steps && steps[\"restore_hub-0\"].status == \"succeeded\")) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "cleanup-result",
+            "methodName": "decode",
+            "inputs": {
+              "stdout": "${{ steps[\"cleanup_command-0\"].outputs.stdout }}"
+            }
+          },
+          "allowFailure": true,
+          "forEach": {
+            "item": "candidate",
+            "in": "${{ inputs.intent.has_roles ? [] : [inputs.intent] }}"
+          }
+        },
+        {
+          "name": "terminal",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "dependsOn": [
+            {
+              "step": "cleanup",
+              "condition": {
+                "type": "always"
+              }
+            },
+            {
+              "step": "verify_endpoint",
+              "condition": {
+                "type": "always"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-peer-command",
+            "behaviorName": "${{ \"retarget-terminal-\" + string(inputs.intent.node_id) }}",
+            "methodName": "retarget_result",
+            "inputs": {
+              "success": "${{ inputs.intent.has_roles ? (\"verify_endpoint\" in steps && steps.verify_endpoint.status == \"succeeded\") : (\"verify_peer-0\" in steps && steps[\"verify_peer-0\"].status == \"succeeded\") }}",
+              "restored": "${{ !inputs.intent.has_roles && (\"restore_peer-0\" in steps && steps[\"restore_peer-0\"].status == \"succeeded\") && ((\"restore_hub-0\" in steps && steps[\"restore_hub-0\"].status == \"succeeded\") || !(\"key-0\" in steps && \"outputs\" in steps[\"key-0\"])) }}",
+              "public_key": "${{ (\"key-0\" in steps && \"outputs\" in steps[\"key-0\"]) ? steps[\"key-0\"].outputs.public_key : null }}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

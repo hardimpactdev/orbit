@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class SetNodeWireGuardKeyCommand extends NodeCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'node:wireguard-key
         {node? : Node ID or name}
@@ -88,23 +91,17 @@ final class SetNodeWireGuardKeyCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $node = $this->sendWithProgress($connector, new SetNodeWireGuardKeyRequest($nodeId, $publicKey), NodeResponse::class,
-            ['Set Node WireGuard key', 'Setting Node WireGuard key', 'Set Node WireGuard key']);
+        $operation = $this->sendWithProgress($connector, new SetNodeWireGuardKeyRequest($nodeId, $publicKey), OperationResponse::class,
+            ['Set Node WireGuard key', 'Recording Node WireGuard key operation', 'Node WireGuard key Operation recorded']);
 
-        if (! $node instanceof NodeResponse) {
+        if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($node->toArray());
+        $profile = $this->activeGatewayProfile($repository);
 
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("WireGuard public key set for Node #{$node->id} [{$node->name}].");
-        $this->writeHumanMessage("Request ID: {$node->requestId}");
-
-        return self::SUCCESS;
+        return $profile === null ? self::FAILURE
+            : $this->followOperation($connector, $profile, $operation, 'Set Node WireGuard key', 'Node WireGuard key');
     }
 
     private function validKey(string $value): bool

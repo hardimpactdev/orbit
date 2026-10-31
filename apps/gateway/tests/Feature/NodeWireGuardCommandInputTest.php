@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeNetworkInput;
 use App\Domain\Nodes\NodeWireGuardCommandInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -68,3 +69,19 @@ it('refuses an invalid candidate name without changing the actual Node', functio
     expect(fn () => app(NodeWireGuardCommandInput::class)->capture($this->peer, null, $name))
         ->toThrow(ResourceOperationException::class);
 })->with(['', 'invalid name', 'bad\nname', str_repeat('a', 64)]);
+
+it('renders an admitted network identity through canonical DNS policy without changing the actual Node', function (): void {
+    @mkdir(config('orbit.home').'/wireguard', 0700, true);
+    file_put_contents(config('orbit.home').'/wireguard/public.key', base64_encode(str_repeat('h', 32)));
+    $this->peer->update(['tld' => 'prior.test']);
+    $prior = $this->peer->only(['tld', 'wireguard_ip', 'wireguard_endpoint_override', 'dns_server_override', 'wireguard_public_key']);
+    $input = app(NodeNetworkInput::class)->forAdmitted($this->peer, '10.44.0.240',
+        '192.0.2.100:51820', '10.44.0.241', 'candidate.test');
+    expect($input['node_id'])->toBe($this->peer->id)
+        ->and($input['existing_key'])->toBe($this->peer->wireguard_public_key)
+        ->and($input['peer']['address'])->toBe('10.44.0.240/24')
+        ->and($input['peer']['endpoint'])->toBe('192.0.2.100:51820')
+        ->and($input['peer']['dns_server'])->toBe('10.44.0.241')
+        ->and($input['peer']['domains'])->toContain('candidate.test')->not->toContain('prior.test')
+        ->and($this->peer->refresh()->only(array_keys($prior)))->toBe($prior);
+});

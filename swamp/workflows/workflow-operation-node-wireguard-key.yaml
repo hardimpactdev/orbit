@@ -1,0 +1,84 @@
+id: 099a96d1-e5e2-44e7-893f-ded01f976c22
+name: operation-node-wireguard-key
+description: Publish one admitted unmanaged peer key through the shared stable hub
+  model.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+    node_id:
+      type: integer
+    kind:
+      type: string
+      enum:
+      - node.wireguard_key
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: hub
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs.intent.hub.hub_id)
+        }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent.hub }}
+        mode: publish
+        prepared_peer: ${{ inputs.intent.prepared_peer }}
+  - name: mutate
+    writes: true
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs.intent.hub.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps.assets.outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.intent.hub.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.intent.hub.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.intent.hub.hub_id)].input.globalArguments.hosts
+          }}
+  - name: terminal
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: mutate
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-key-terminal-" + string(inputs.node_id) }}
+      methodName: terminal
+      inputs:
+        stdout: ${{ steps.mutate.outputs.stdout }}
