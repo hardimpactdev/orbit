@@ -1,0 +1,148 @@
+id: 38356821-a5bb-4272-afab-60acf0a9cf22
+name: operation-schedule-destroy
+description: Stop and remove a Schedule through official cfgmgmt on 209.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [schedule.destroy]}
+    intent:
+      type: object
+      properties:
+        schedule:
+          type: object
+          properties: {id: {type: string, format: uuid}}
+          required: [id]
+        cascade: {type: boolean}
+        ssh_execution: {type: object}
+      required: [schedule, cascade, ssh_execution]
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: schedule
+    target: orbit-node-209
+    labels: &placement {node: "209"}
+    steps:
+      - name: idle
+        target: orbit-node-209
+        labels: *placement
+        guard: ${{ inputs.intent.cascade }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: ${{ "schedule-active-check-" + string(inputs.operation_id) }}
+          methodName: exec
+          globalArgs:
+            name: ${{ "schedule-active-check-" + string(inputs.operation_id) }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+                transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv:
+              - /bin/sh
+              - -c
+              - |
+                state=$(systemctl is-active "$1" || :)
+                case "$state" in inactive|failed|unknown) exit 0;; *) exit 1;; esac
+              - sh
+              - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
+      - name: stop_timer
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: idle, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/systemd'
+          behaviorName: ${{ "schedule-stop_timer-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            service: ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+            enabled: false
+            ensure: stopped
+          inputs: {}
+      - name: stop_service
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: stop_timer, condition: {type: succeeded}}]
+        guard: ${{ !inputs.intent.cascade }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/exec'
+          behaviorName: ${{ "schedule-stop_service-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            command: ${{ "systemctl stop orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
+          inputs: {}
+      - name: remove_files
+        target: orbit-node-209
+        labels: *placement
+        dependsOn:
+          - {step: stop_timer, condition: {type: succeeded}}
+          - {step: stop_service, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+        forEach:
+          item: path
+          in: ${{ ["/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id + ".timer", "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id + ".service", "/etc/orbit/schedules/" + inputs.intent.schedule.id + ".sh", "/etc/orbit/schedules/" + inputs.intent.schedule.id + ".complete"] }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: ${{ "schedule-remove_files-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            path: ${{ self.path }}
+            ensure: absent
+          inputs: {}
+      - name: reload
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: remove_files, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/exec'
+          behaviorName: ${{ "schedule-reload-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            command: systemctl daemon-reload
+          inputs: {}
+      - name: result
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: reload, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "schedule-result-" + string(inputs.operation_id) }}
+          methodName: execute
+          inputs:
+            run: |
+              printf '%s\n' '{"ready":true}'

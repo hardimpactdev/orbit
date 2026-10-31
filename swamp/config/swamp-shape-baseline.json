@@ -2351,18 +2351,9 @@
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET https://gateway.orbit/api/v1/schedules/<dynamic>/complete"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
       "rule": "multi-action",
-      "count": 8,
+      "count": 7,
       "evidence": [
-        "/usr/bin/getent",
         "/usr/bin/mktemp",
         "/usr/bin/rm",
         "/usr/bin/stat",

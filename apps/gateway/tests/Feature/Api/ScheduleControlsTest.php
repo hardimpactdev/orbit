@@ -114,7 +114,7 @@ it('projects a successful enable into desired timer state', function (): void {
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated && $event->id === $this->schedule->id);
 });
 
-it('admits native installation without a Gateway lock and restricts private command reads to the bound run', function (): void {
+it('admits public native installation through 209 SSH without copying the private command', function (): void {
     $lock = Mockery::mock(ProcessAdmissionLock::class);
     $lock->shouldNotReceive('run');
     app()->instance(ProcessAdmissionLock::class, $lock);
@@ -131,13 +131,27 @@ it('admits native installation without a Gateway lock and restricts private comm
     expect($response->getContent())->not->toContain($command);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonMissingPath('data.input.command');
-    $private = $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertJsonPath('data.command', $command);
-    expect($private->headers->get('Cache-Control'))->toContain('no-store');
-    $this->getJson($path.'/private-material?run_id=93472cba-f750-45dd-bd6f-8d665f57f0d6')->assertConflict();
-    $schedule = Schedule::query()->findOrFail($operation->input['id']);
-    $schedule->update(['command' => '/usr/bin/false']);
+    $inputs = $this->socket->sent[0]['payload']['inputs'];
+    expect($this->socket->sent)->toHaveCount(1);
+    expect($inputs['intent']['schedule']['command_hash'])->toBe(hash('sha256', $command));
+    expect($inputs['intent']['ssh_execution']['control_node_id'])->toBe(209);
+    expect($inputs['intent']['ssh_execution']['target']['host'])->toBe($this->node->wireguard_ip);
+    expect($inputs['intent']['ssh_execution']['target']['host_keys'])->toBe(['ssh-ed25519 fixture-host-key']);
+    expect((array) $inputs['execution_secrets'])->toBe([]);
+    expect(json_encode($inputs))->not->toContain($command);
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $schedule = Schedule::query()->findOrFail($operation->input['id']);
     expect($schedule->fresh()->status->value)->toBe('provisioning');
+});
+
+it('restricts retained enable private command reads to the bound run and admitted hash', function (): void {
+    $this->operation->update(['input' => [...$this->operation->input, 'command_hash' => hash('sha256', $this->schedule->command), 'command' => ['$secret' => 'schedule.command', 'id' => $this->node->id]]]);
+    $private = $this->getJson($this->path.'/private-material?run_id='.$this->runId)
+        ->assertOk()->assertJsonPath('data.command', $this->schedule->command);
+    expect($private->headers->get('Cache-Control'))->toContain('no-store');
+    $this->getJson($this->path.'/private-material?run_id=93472cba-f750-45dd-bd6f-8d665f57f0d6')->assertConflict();
+    $this->schedule->update(['command' => '/usr/bin/false']);
+    $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
 });
 
 it('projects installation failure and retries the same Schedule UUID before broadcasting native success', function (): void {
@@ -180,8 +194,17 @@ it('starts native enable on an executor Node without invoking the PHP runtime', 
 });
 
 it('exposes admitted removal input and deletes the Schedule only on native success', function (): void {
-    $this->operation->update(['kind' => 'schedule.destroy', 'input' => ['id' => $this->schedule->id, 'group' => 'orbit', 'cascade' => false, 'command' => 'private-command']]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['id' => $this->schedule->id, 'group' => 'orbit', 'cascade' => false]);
+    $public = ['id' => $this->schedule->id, 'command_hash' => hash('sha256', $this->schedule->command),
+        'user' => 'orbit', 'group' => 'orbit', 'home' => '/home/orbit', 'shell' => '/bin/sh',
+        'working_directory' => '/home/orbit', 'login_shell' => false, 'calendar' => '*:0/5',
+        'timeout_seconds' => 60, 'desired' => 'enabled'];
+    $this->operation->update(['kind' => 'schedule.destroy', 'input' => [...$public, 'cascade' => false, 'command' => 'private-command']]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.input.intent.schedule', $public)
+        ->assertJsonPath('data.input.intent.cascade', false)
+        ->assertJsonPath('data.input.intent.ssh_execution.control_node_id', 209)
+        ->assertJsonMissingPath('data.input.intent.schedule.command')
+        ->assertJsonPath('data.input.execution_secrets', []);
     expect($this->schedule->fresh())->not->toBeNull();
     Event::fake([RecordBroadcast::class]);
     $body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]];
@@ -191,7 +214,7 @@ it('exposes admitted removal input and deletes the Schedule only on native succe
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleDeleted && $event->id === $this->schedule->id);
 });
 
-it('admits destroy on a worker Node without invoking the PHP runtime', function (): void {
+it('admits destroy with full public SSH input without invoking the PHP runtime', function (): void {
     config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
     app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
@@ -202,6 +225,12 @@ it('admits destroy on a worker Node without invoking the PHP runtime', function 
     expect($operation->lock_key)->toBeNull();
     expect($this->schedule->fresh()->status->value)->toBe('removing');
     expect($this->socket->sent)->toHaveCount(1);
+    $payload = $this->socket->sent[0]['payload'];
+    expect($payload['workflowIdOrName'])->toBe('operation-schedule-destroy');
+    expect($payload['inputs']['intent']['schedule']['id'])->toBe($this->schedule->id);
+    expect($payload['inputs']['intent']['ssh_execution']['control_node_id'])->toBe(209);
+    expect((array) $payload['inputs']['execution_secrets'])->toBe([]);
+    expect(json_encode($payload))->not->toContain('private-command');
 });
 
 it('keeps a refused native removal recorded for a later retry', function (): void {

@@ -2,19 +2,8 @@ import { z } from "npm:zod@4.4.3";
 import type { GatewayOperation } from "../_lib/direct.ts";
 import { scheduleSystem } from "./schedule-system.ts";
 
-export const ScheduleInstallation = z.object({
-  id: z.string().uuid(),
-  command_hash: z.string().regex(/^[a-f0-9]{64}$/),
-  user: z.string().regex(/^[a-z_][a-z0-9_-]*$/),
-  group: z.string().regex(/^[a-z_][a-z0-9_-]*$/),
-  home: z.string().startsWith("/").max(4096),
-  working_directory: z.string().startsWith("/").max(4096),
-  shell: z.string().startsWith("/").max(4096),
-  login_shell: z.boolean(),
-  calendar: z.string().min(1).max(255),
-  timeout_seconds: z.number().int().min(1).max(86400),
-  desired: z.enum(["enabled", "disabled"]),
-}).strict();
+import { PublicInstall as ScheduleInstallation } from "./contract.ts";
+export { PublicInstall as ScheduleInstallation } from "./contract.ts";
 
 type Material = Pick<GatewayOperation, "withPrivateMaterial">;
 type Refusal = { error_code: string };
