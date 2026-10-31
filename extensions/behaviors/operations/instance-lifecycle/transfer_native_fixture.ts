@@ -59,6 +59,14 @@ export const transferHttp =
           input: {
             ...operation.input,
             publication: { node_id: node },
+            process_runtime: {
+              node_id: node,
+              field: node === 9
+                ? "source_installations"
+                : "destination_installations",
+              members: [],
+              ports: [],
+            },
             workloads: operation.input.direct_transfer.cutover && node === 17
               ? [{
                 route_id: 1,
@@ -220,3 +228,31 @@ export function fixtureSharedBehavior(type: string) {
     methods,
   };
 }
+
+export const fixtureRuntime = {
+  ready: () => Promise.resolve(),
+  pause: () => {
+    effect("pause-runtime");
+    return Promise.resolve();
+  },
+  prepare: () => {
+    effect("prepare-runtime");
+    return Promise.resolve();
+  },
+  install: () => {
+    effect("install-runtime");
+    return Promise.resolve();
+  },
+  verify: () => {
+    effect("verify-runtime");
+    return Promise.resolve();
+  },
+  restore: () => {
+    effect("restore-runtime");
+    return Promise.resolve();
+  },
+  retire: () => {
+    effect("retire-runtime");
+    return Promise.resolve();
+  },
+};

@@ -25,3 +25,12 @@ replacement. Temporary local archive and extraction files are removed when an
 action ends. Native archive resources use the workflow lifetime.
 
 No transfer action invokes orbit-agent. The agent source remains frozen.
+
+Process batches use the canonical Process installer and local account templates.
+The DAG verifies admitted destination ports, pauses source runtime, then
+captures the archive. After atomic Instance and Process path relocation, it
+prepares Vite traffic, publishes PHP/Caddy/DNS, installs the destination batch,
+and verifies running Vite listeners. Only then does it retire source units and
+files. A failed partial pause records native restoration intent before the first
+stop; recovery restores source runtime before discarding destination resources.
+No source installation material is readable after cutover.

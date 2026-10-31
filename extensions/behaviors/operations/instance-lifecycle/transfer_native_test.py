@@ -20,7 +20,7 @@ class TransferNative(NativeTestCase):
                 step.pop('target',None);step.pop('labels',None)
         (self.repo/'workflows'/source.name).write_text(yaml.safe_dump(workflow,sort_keys=False))
         module=self.repo/'extensions/behaviors/operations/instance-lifecycle/transfer_root.ts'
-        module.write_text('import {transferHttp,transferEffects,fixtureTargetActions,fixtureRemovalActions} from "./transfer_native_fixture.ts";\n'+module.read_text().replace('transferRoot();','transferRoot((_ctx,args)=>transferHttp(args),transferEffects,fixtureTargetActions,fixtureRemovalActions);'))
+        module.write_text('import {transferHttp,transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime} from "./transfer_native_fixture.ts";\n'+module.read_text().replace('transferRoot();','transferRoot((_ctx,args)=>transferHttp(args),transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime);'))
         for file,kind in [('routes/publication.ts','@nckrtl/route-publication'),('certificates/mod.ts','@nckrtl/certificates')]:
             (self.repo/'extensions/behaviors/operations'/file).write_text('import {fixtureSharedBehavior} from "../instance-lifecycle/transfer_native_fixture.ts";\nexport const behavior = { ...fixtureSharedBehavior("'+kind+'"), type: "'+kind+'" };\n')
         failure=self.repo/'extensions/behaviors/operations/failure.ts'
@@ -47,7 +47,10 @@ class TransferNative(NativeTestCase):
         names=[row['name'] for row in actual['effects']]
         self.assertEqual(actual['operation']['status'],'succeeded')
         self.assertTrue(actual['cutover'])
+        self.assertLess(names.index('pause-runtime'),names.index('capture'))
         self.assertLess(names.index('materialize'),names.index('prepare'))
+        self.assertLess(names.index('publishCaddy'),names.index('install-runtime'))
+        self.assertLess(names.index('verify-runtime'),names.index('retire-runtime'))
         self.assertLess(names.index('publishCaddy'),names.index('remove-source'))
         self.assertTrue(all(row.get('run_id') for row in actual['callbacks']))
         self.assertEqual(actual['operation']['node_id'],9)
@@ -64,7 +67,9 @@ class TransferNative(NativeTestCase):
         self.assertTrue(actual['rolled_back'])
         self.assertEqual(actual['operation']['status'],'cancelled')
         self.assertNotIn('remove-source',[row['name'] for row in actual['effects']])
-        self.assertIn('discard-destination',[row['name'] for row in actual['effects']])
+        names=[row['name'] for row in actual['effects']]
+        self.assertIn('discard-destination',names)
+        self.assertLess(names.index('restore-runtime'),names.index('discard-destination'))
     def test_failure_after_cutover_never_rolls_back_or_discards_destination(self):
         self.state['fail_effect']='publishCaddy'
         actual=self.run_transfer(success=False)
@@ -72,5 +77,13 @@ class TransferNative(NativeTestCase):
         self.assertFalse(actual.get('rolled_back',False))
         self.assertNotIn('discard-destination',[row['name'] for row in actual['effects']])
         self.assertNotIn('remove-source',[row['name'] for row in actual['effects']])
+        self.assertNotIn('restore-runtime',[row['name'] for row in actual['effects']])
         self.assertEqual(actual['operation']['status'],'failed')
+    def test_partial_source_pause_restores_before_destination_cleanup(self):
+        self.state['fail_effect']='pause-runtime'
+        actual=self.run_transfer(success=False)
+        names=[row['name'] for row in actual['effects']]
+        self.assertIn('restore-runtime',names)
+        self.assertNotIn('capture',names)
+        self.assertFalse(actual.get('cutover',False))
 if __name__=='__main__': unittest.main()

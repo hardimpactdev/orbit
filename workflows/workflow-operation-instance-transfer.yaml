@@ -54,9 +54,31 @@ jobs:
     - step: admission
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
+  - name: pause-source
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ inputs.node_id }}
+        phase: pause
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: destination-ready
+      condition:
+        type: succeeded
   - name: capture
     writes: true
     task:
@@ -70,7 +92,7 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
     dependsOn:
-    - step: destination-ready
+    - step: pause-source
       condition:
         type: succeeded
   - name: materialize
@@ -91,7 +113,8 @@ jobs:
     - step: capture
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
 - name: requests
@@ -141,7 +164,8 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
         leaves: ${{ steps.admission.outputs.certificates }}
-        requests: ${{ steps.filter(n, n.startsWith("cert-request-")).map(n, steps[n].outputs.requests) }}
+        requests: ${{ steps.filter(n, n.startsWith("cert-request-")).map(n, steps[n].outputs.requests)
+          }}
     target: ${{ "orbit-node-" + string(209) }}
     labels:
       node: ${{ string(209) }}
@@ -215,7 +239,8 @@ jobs:
     - step: cutover
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   - name: environment
@@ -236,9 +261,32 @@ jobs:
     - step: prepare
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
+  - name: prepare-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ steps.admission.outputs.destination_node_id }}
+        phase: prepare
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
+    labels:
+      node: ${{ string(steps.admission.outputs.destination_node_id) }}
+    dependsOn:
+    - step: environment
+      condition:
+        type: succeeded
   - name: lan
     writes: true
     task:
@@ -254,10 +302,11 @@ jobs:
         phase: lan
         target_node_id: ${{ steps.admission.outputs.destination_node_id }}
     dependsOn:
-    - step: environment
+    - step: prepare-runtime
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   dependsOn:
@@ -351,6 +400,55 @@ jobs:
   - job: caddy
     condition:
       type: succeeded
+- name: activate-runtime
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: dns
+    condition:
+      type: succeeded
+  steps:
+  - name: install-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ steps.admission.outputs.destination_node_id }}
+        phase: install
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
+    labels:
+      node: ${{ string(steps.admission.outputs.destination_node_id) }}
+  - name: verify-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ steps.admission.outputs.destination_node_id }}
+        phase: verify
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
+      }}
+    labels:
+      node: ${{ string(steps.admission.outputs.destination_node_id) }}
+    dependsOn:
+    - step: install-runtime
+      condition:
+        type: succeeded
 - name: retirement
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
@@ -377,7 +475,7 @@ jobs:
       item: member
       in: ${{ steps.admission.outputs.caddy_node_ids }}
   dependsOn:
-  - job: dns
+  - job: activate-runtime
     condition:
       type: succeeded
 - name: completion
@@ -385,6 +483,23 @@ jobs:
   labels:
     node: ${{ string(inputs.node_id) }}
   steps:
+  - name: retire-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ inputs.node_id }}
+        phase: retire
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
   - name: source-remove
     writes: true
     task:
@@ -398,6 +513,10 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
         captured: ${{ steps.capture.outputs }}
+    dependsOn:
+    - step: retire-runtime
+      condition:
+        type: succeeded
   - name: retire
     writes: true
     task:
@@ -470,7 +589,8 @@ jobs:
     - step: recovery
       condition:
         type: succeeded
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
+      }}
   dependsOn:
   - job: completion
     condition:
@@ -499,9 +619,10 @@ jobs:
       node: ${{ string(self.member) }}
     forEach:
       item: member
-      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids : []
-        }}'
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
+      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids
+        : [] }}'
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
+      }}
   dependsOn:
   - job: recover-state
     condition:
@@ -530,12 +651,42 @@ jobs:
       node: ${{ string(self.member) }}
     forEach:
       item: member
-      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.dns_node_ids : [] }}'
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
+      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.dns_node_ids
+        : [] }}'
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
+      }}
   dependsOn:
   - job: recover-caddy
     condition:
       type: succeeded
+- name: recover-runtime
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: recover-dns
+    condition:
+      type: succeeded
+  steps:
+  - name: restore-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ inputs.node_id }}
+        phase: restore
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
+      }}
 - name: recover-leaves
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
@@ -560,11 +711,12 @@ jobs:
       node: ${{ string(self.member) }}
     forEach:
       item: member
-      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids : []
-        }}'
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
+      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids
+        : [] }}'
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
+      }}
   dependsOn:
-  - job: recover-dns
+  - job: recover-runtime
     condition:
       type: succeeded
 - name: recover-cleanup
@@ -586,10 +738,12 @@ jobs:
         run_id: ${{ run.id }}
         decision: ${{ steps.recovery.outputs }}
         target_node_id: ${{ steps.recovery.outputs.destination_node_id }}
-    target: ${{ "orbit-node-" + string(steps.recovery.outputs.destination_node_id) }}
+    target: ${{ "orbit-node-" + string(steps.recovery.outputs.destination_node_id)
+      }}
     labels:
       node: ${{ string(steps.recovery.outputs.destination_node_id) }}
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
+      }}
   - name: failed
     writes: true
     task:

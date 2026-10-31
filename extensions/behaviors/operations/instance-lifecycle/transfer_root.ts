@@ -20,6 +20,8 @@ import {
 import { removalActions } from "../routes/removal-local.ts";
 import type { FileContext } from "../database/sqlite_actions.ts";
 
+import { TransferRuntime, transferRuntimeActions } from "./transfer_runtime.ts";
+
 const Args = DirectArgs.extend({
   kind: z.enum(["instance.transfer", "instance.transfer_rollback"]),
   node_id: z.number().int().positive(),
@@ -48,6 +50,7 @@ const Current = z.object({
   cancel_requested: z.boolean(),
   input: z.object({
     direct_transfer: Plan,
+    process_runtime: TransferRuntime,
     target: z.object({
       live_certificates: z.array(
         z.object({ node_id: z.number() }).passthrough(),
@@ -93,6 +96,7 @@ export function transferRoot(
   },
   targetActions = routeTargetActions,
   retirement = removalActions,
+  runtime = transferRuntimeActions(),
 ) {
   const gateway = (args: Args, ctx: Context) =>
     new GatewayOperation(makeHttp(ctx, args), args);
@@ -146,6 +150,11 @@ export function transferRoot(
     globalArguments: Globals,
     files: { archive: archiveFile },
     resources: {
+      paused: {
+        schema: z.object({ attempted: z.literal(true) }),
+        lifetime: "workflow",
+        garbageCollection: 1,
+      },
       inventory: {
         schema: z.object({
           source_node_id: z.number(),
@@ -215,11 +224,79 @@ export function transferRoot(
           const plan = current.input.direct_transfer;
           placed(current, args, plan.destination_node_id);
           if (plan.cutover) return { ready: true };
+          await runtime.ready(current.input.process_runtime);
           return effects.ready(
             plan.destination.destination,
             plan.destination.root,
             plan.destination.user,
           );
+        },
+      },
+      runtime: {
+        arguments: Effect.extend({
+          phase: z.enum([
+            "pause",
+            "prepare",
+            "install",
+            "verify",
+            "restore",
+            "retire",
+          ]),
+        }),
+        description:
+          "Apply the captured Process batch on its admitted placement without child Operations",
+        execute: async (
+          args: Effect & {
+            phase:
+              | "pause"
+              | "prepare"
+              | "install"
+              | "verify"
+              | "restore"
+              | "retire";
+          },
+          ctx: Context,
+        ) => {
+          const recovery = args.phase === "restore";
+          const current = await read(args, ctx, recovery);
+          const plan = current.input.direct_transfer;
+          const source = ["pause", "restore", "retire"].includes(args.phase);
+          placed(
+            current,
+            args,
+            source ? plan.source_node_id : plan.destination_node_id,
+          );
+          const batch = current.input.process_runtime;
+          if (batch.node_id !== args.target_node_id) {
+            throw new Error("instance.transfer_runtime_invalid");
+          }
+          if (args.phase === "restore") {
+            if (plan.cutover) return { ready: true };
+            let paused: unknown;
+            try {
+              paused = await ctx.readResource("paused");
+            } catch {
+              return { ready: true };
+            }
+            if (!paused) return { ready: true };
+            z.object({ attempted: z.literal(true) }).strict().parse(paused);
+            await runtime.restore(batch, gateway(args, ctx));
+          } else if (args.phase === "pause") {
+            if (plan.cutover) {
+              throw new Error("instance.transfer_already_cutover");
+            }
+            await output(ctx, "paused", "paused", { attempted: true });
+            await runtime.pause(batch, ctx.signal);
+          } else {
+            if (!plan.cutover) throw new Error("instance.transfer_not_cutover");
+            if (args.phase === "prepare") await runtime.prepare(batch);
+            if (args.phase === "install") {
+              await runtime.install(batch, gateway(args, ctx));
+            }
+            if (args.phase === "verify") await runtime.verify(batch);
+            if (args.phase === "retire") await runtime.retire(batch);
+          }
+          return { ready: true };
         },
       },
       capture: {
