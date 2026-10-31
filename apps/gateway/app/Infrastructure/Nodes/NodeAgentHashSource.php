@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
@@ -26,13 +27,18 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function ownerId(Operation $operation): ?int
     {
+        if (in_array($operation->kind, ['node.role_add', 'node.role_remove'], true)) {
+            return NodeRoleDirectInput::ownerId($operation);
+        }
+
         return $operation->kind === 'node.converge' && $operation->target_type === 'node'
             && $operation->target_id === $operation->node_id && Node::query()->whereKey($operation->node_id)->exists() ? $operation->node_id : null;
     }
 
     public function store(Operation $operation, int $ownerId, #[\SensitiveParameter] mixed $value): void
     {
-        if ($ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
+        if (in_array($operation->kind, ['node.role_add', 'node.role_remove'], true)
+            || $ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
             throw new ResourceOperationException('operation.secret_output_unavailable', 'The agent hash must belong to the admitted Node.', 409);
         }
         app(NodeLocks::class)->renewHeld();
