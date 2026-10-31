@@ -24,11 +24,9 @@ inputs:
 jobs:
   - name: schedule
     target: orbit-node-209
-    labels: &placement {node: "209"}
     steps:
       - name: idle
         target: orbit-node-209
-        labels: *placement
         guard: ${{ inputs.intent.cascade }}
         task:
           type: behavior
@@ -59,7 +57,6 @@ jobs:
               - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
       - name: stop_timer
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: idle, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
           type: behavior
@@ -78,7 +75,6 @@ jobs:
           inputs: {}
       - name: stop_service
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: stop_timer, condition: {type: succeeded}}]
         guard: ${{ !inputs.intent.cascade }}
         task:
@@ -96,7 +92,6 @@ jobs:
           inputs: {}
       - name: remove_files
         target: orbit-node-209
-        labels: *placement
         dependsOn:
           - {step: stop_timer, condition: {type: succeeded}}
           - {step: stop_service, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -119,7 +114,6 @@ jobs:
           inputs: {}
       - name: reload
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: remove_files, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -136,7 +130,6 @@ jobs:
           inputs: {}
       - name: result
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
           type: behavior
