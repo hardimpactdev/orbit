@@ -3,20 +3,25 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\PrepareOwnedDatabaseDestructionAction;
-use App\Domain\DatabaseServers\DatabaseOperationCompletion;
+use App\Actions\DatabaseServers\CreateDatabaseServerAction;
+use App\Data\DatabaseServers\CreateDatabaseServerData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
-use App\Models\DatabaseExecutionIntent;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
-use App\Models\Operation;
+use App\Models\Node;
+use App\Models\Process;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\EnvironmentConcurrencySchemaFixture;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\ForkedGatewayProcess;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
@@ -87,19 +92,31 @@ it('permits ordinary additions and ownership changes before removal admission', 
     expect($connection->fresh()->owner_instance_id)->toBeNull();
 });
 
-it('routes server adoption completion through owned identity admission', function (bool $removing): void {
-    $intent = DatabaseExecutionIntent::query()->create(['target_type' => 'database_server', 'target_id' => $this->server->id,
-        'node_id' => $this->server->node_id, 'payload' => ['commands' => [], 'projection' => ['adopted_connection' => $this->owned->slug]]]);
-    $operation = Operation::query()->create(['kind' => 'database_server.create', 'target_type' => 'database_server', 'target_id' => $this->server->id,
-        'node_id' => $this->server->node_id, 'status' => 'running', 'input' => ['intent_id' => $intent->id]]);
+it('routes direct server adoption projection through owned identity admission', function (bool $removing): void {
+    $this->owned->update(['driver' => 'redis', 'path' => null, 'host' => $this->dbNode->wireguard_ip, 'port' => 6379, 'password' => 'adoption-test-password']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->dbNode->id,
+        'name' => 'operator-valkey', 'runtime' => 'docker', 'runtime_config' => ['image' => 'valkey/valkey:8.0',
+            'command' => ['valkey-server'], 'environment' => [], 'ports' => [$this->dbNode->wireguard_ip.':6379:6379'],
+            'volumes' => [['source' => 'operator-valkey-data', 'target' => '/data', 'read_only' => false]]],
+        'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+    $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => $runId]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
+    $operation = app(CreateDatabaseServerAction::class)->execute(new CreateDatabaseServerData('adopt-proof', $this->dbNode->id, DatabaseDriver::Redis, '8.0', null, $process->id, $this->owned->slug));
+    $data = ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T04:00:00.000Z',
+        'finished_at' => '2026-10-31T04:00:01.000Z', 'result' => ['backend' => 'active']];
     if ($removing) {
         admitDatabaseOwnerRemoval($this->instance);
-        expect(fn () => app(DatabaseOperationCompletion::class)->complete($operation, OperationOutcome::succeeded()))
+        expect(fn () => app(DatabaseServerCreateProjection::class)->apply($operation, $data))
             ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.owner_removing'));
+        expect($operation->fresh()->status->value)->toBe('queued');
         expect($this->owned->fresh()->database_server_id)->toBeNull();
     } else {
-        app(DatabaseOperationCompletion::class)->complete($operation, OperationOutcome::succeeded());
-        expect($this->owned->fresh()->database_server_id)->toBe($this->server->id);
+        app(DatabaseServerCreateProjection::class)->apply($operation, $data);
+        expect($this->owned->fresh()->database_server_id)->toBe($operation->target_id);
+        expect($operation->fresh()->status->value)->toBe('succeeded');
     }
 })->with([true, false]);
 
@@ -227,14 +244,13 @@ it('serializes owner admission and removal with a real SQLite transaction barrie
     }
 })->with([true, false]);
 
-
 it('refuses a new attachment to a database whose stored owner is Removing', function (): void {
     $foreign = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id,
         'name' => 'attachment-other', 'checkout_path' => '/srv/apps/attachment-other', 'source_layout' => 'checkout', 'status' => 'reserved']);
     admitDatabaseOwnerRemoval($this->instance->fresh());
 
-    expect(fn () => \App\Models\DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
+    expect(fn () => DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
         'instance_id' => $foreign->id, 'prefix' => 'DB']))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.owner_removing'));
-    expect(\App\Models\DatabaseConnectionTarget::query()->where('database_connection_id', $this->owned->id)->count())->toBe(0);
+    expect(DatabaseConnectionTarget::query()->where('database_connection_id', $this->owned->id)->count())->toBe(0);
 });
