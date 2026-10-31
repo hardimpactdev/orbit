@@ -6,10 +6,12 @@ namespace Orbit\Extensions\Vault;
 
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationSecretSource;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use Orbit\Extensions\Vault\Console\Commands\VaultSyncCommand;
+use Orbit\Extensions\Vault\Domain\VaultDirectOperations;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 
 /** The vault extension: database credentials published to Vaultwarden ([Vaultwarden](/reference/vaultwarden)). */
@@ -27,6 +29,7 @@ final class VaultServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
+        $this->contribute(DirectOperationContribution::class, VaultDirectOperations::class);
         $this->contribute(OperationSecretSource::class, VaultOperationSecrets::class);
     }
 
