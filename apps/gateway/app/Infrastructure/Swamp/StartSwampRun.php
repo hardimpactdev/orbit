@@ -26,6 +26,7 @@ final readonly class StartSwampRun
     {
         $started = microtime(true);
         $outcome = 'unavailable';
+        $accepted = false;
         try {
             if (! $this->begin($operation)) {
                 return;
@@ -40,6 +41,7 @@ final readonly class StartSwampRun
                 'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
             ]);
+            $accepted = true;
             $this->bind($operation, $response['run_id']);
             if ($response['failed']) {
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
@@ -47,7 +49,8 @@ final readonly class StartSwampRun
             $outcome = 'started';
         } catch (Throwable $exception) {
             $safe = $exception instanceof ResourceOperationException
-                ? $exception : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503);
+                ? $exception : ($accepted ? $this->uncertain()
+                    : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
             $outcome = $safe->errorCode;
             $this->fail($operation, $safe->errorCode);
             throw new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);

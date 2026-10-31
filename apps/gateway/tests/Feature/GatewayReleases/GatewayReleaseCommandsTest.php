@@ -197,16 +197,43 @@ it('accepts a native Caddy submission in the serving handoff report', function (
     expect($this->agents->commands())->toBe(['gateway.handoff-release']);
 });
 
-it('rejects an invalid Caddy submission without retrying the handoff', function (array $report): void {
+it('accepts an unchanged Caddy handoff without an Operation', function (): void {
+    $report = ['caddy' => 'unchanged', 'caddy_operation_id' => null, 'fpm' => 'unchanged'];
     $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $report]);
 
-    expect(fn () => $this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'))
-        ->toThrow(GatewayReleaseException::class);
+    expect($this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'))->toBe($report);
+});
+
+it('records the target release report without imposing the callers phase schema', function (string $phase, array $report): void {
+    $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $report]);
+
+    expect($this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', $phase, '/home/orbit/.orbit/gateway-release-step.lock'))->toBe($report);
     expect($this->agents->commands())->toBe(['gateway.handoff-release']);
 })->with([
-    'missing operation' => [['caddy' => 'submitted']],
-    'invalid operation' => [['caddy' => 'submitted', 'caddy_operation_id' => 0]],
-    'noninteger operation' => [['caddy' => 'submitted', 'caddy_operation_id' => '5898']],
-    'unsubmitted operation' => [['caddy' => 'failed', 'caddy_operation_id' => 5898]],
-    'retired inline publication' => [['caddy' => 'reloaded']],
+    'new serving outcome' => ['serve', ['caddy' => 'kept', 'publication' => ['changed' => false], 'horizon' => 'started']],
+    'new schedule report' => ['schedule', ['schedule' => ['outcome' => 'running']]],
+]);
+
+it('fails on the target exit status and preserves its domain error without repeating the handoff', function (): void {
+    $this->agents->answer('gateway.handoff-release', ['succeeded' => false, 'report' => [
+        'error_code' => 'gateway.release_units_failed', 'message' => 'Runtime handoff step [horizon] failed.',
+    ]]);
+
+    $error = release_failure(fn () => $this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'));
+
+    expect($error->errorCode)->toBe('gateway.release_units_failed')
+        ->and($error->getMessage())->toBe('Runtime handoff step [horizon] failed.')
+        ->and($this->agents->commands())->toBe(['gateway.handoff-release']);
+});
+
+it('rejects a malformed stable handoff envelope', function (array $result): void {
+    $this->agents->answerMalformed('gateway.handoff-release', static fn (): array => $result);
+
+    expect(fn () => $this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'))->toThrow(GatewayReleaseException::class);
+})->with([
+    'missing exit status' => [['report' => ['caddy' => 'unchanged']]],
+    'wrong exit status type' => [['succeeded' => 'yes', 'report' => []]],
+    'missing report' => [['succeeded' => true]],
+    'report is not an object' => [['succeeded' => true, 'report' => 'done']],
+    'report has numeric keys' => [['succeeded' => true, 'report' => ['done']]],
 ]);
