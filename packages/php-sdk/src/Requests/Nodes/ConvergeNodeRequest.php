@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Nodes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Nodes\NodeConvergeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -29,9 +29,9 @@ final class ConvergeNodeRequest extends GatewayRequest implements HasBody
         return "/api/v1/nodes/{$this->nodeId}/converge";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeConvergeResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return NodeConvergeResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response), $response->status());
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
     /** @return array<string, string> */
