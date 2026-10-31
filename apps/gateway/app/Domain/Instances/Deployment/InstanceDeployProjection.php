@@ -62,10 +62,13 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $historyId = $row->id;
                 $this->operations->change($locked, ['state' => [...($locked->state ?? []), 'deployment_id' => $historyId]]);
             }
-            if ($result !== null && ! is_int($historyId)) {
-                throw new ResourceOperationException('operation.result_invalid', 'A native deployment must start its history before projecting its outcome.', 422);
+            $public = [];
+            if ($result !== null) {
+                if (! is_int($historyId)) {
+                    throw new ResourceOperationException('operation.result_invalid', 'A native deployment must start its history before projecting its outcome.', 422);
+                }
+                $public = $result->publicResult($historyId);
             }
-            $public = $result?->publicResult($historyId) ?? [];
             $projected = $this->direct->project($locked, $data, $public, 'deployment');
             if (! $terminal && $runtime !== null) {
                 $this->vp->recordReference($instance, InstanceDeploymentIntent::admitted($locked)['home'],
