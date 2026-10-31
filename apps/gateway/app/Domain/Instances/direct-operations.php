@@ -13,9 +13,6 @@ return [
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
-        'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'instance_deploy_writer',
-        'writer_scope' => ['development' => true],
         'projection' => InstanceDeployProjection::class,
         'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment'],
     ],
