@@ -7,18 +7,16 @@ namespace App\Domain\Routes;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
 
 /** Full public before/after capture, before any physical cutover or terminal database projection. */
 final readonly class NativeRouteTransferPublication
 {
-    public function __construct(private DevelopmentSiteRepository $sites, private RoutePublicationSites $view) {}
+    public function __construct(private DevelopmentSiteRepository $sites, private NativeRoutePublicationInput $publications) {}
 
     /** The parent holds its admission transaction and records this immutable result as run input.
      * @param  array<string,mixed>  $plan
@@ -90,29 +88,9 @@ final readonly class NativeRouteTransferPublication
             $node = Node::query()->findOrFail($nodeId);
             $nodes[] = ['node_id' => $node->id, 'user' => $node->user,
                 ...app(NativeCaddyPublicationInput::class)->connectionForNode($node),
-                'before' => $this->publication($node, $before), 'after' => $this->publication($node, $after)];
+                'before' => $this->publications->snapshot($node, $before), 'after' => $this->publications->snapshot($node, $after)];
         }
 
         return ['schema_version' => 1, 'nodes' => $nodes];
-    }
-
-    /** @param Collection<int,DevelopmentSite> $sites
-     * @return array<string,mixed>
-     */
-    private function publication(Node $node, Collection $sites): array
-    {
-        return $this->view->render($sites, function () use ($node, $sites): array {
-            $caddy = app(NodeCaddyfileRenderer::class)->render($node);
-            if (! $caddy->buildable()) {
-                throw new ResourceOperationException('caddy.render_failed', 'The captured transfer publication cannot be rendered.', 409);
-            }
-            $scopes = $sites->where('nodeId', $node->id)->reject(static fn (DevelopmentSite $site): bool => $site->publicListener)
-                ->map(static fn (DevelopmentSite $site): string => $site->certificateScope ?? $site->scope)->unique()->sort()->values()->all();
-
-            return ['caddy' => [...CaddyPublicationPlan::input($caddy, $node->id), 'blocks' => $caddy->blocks],
-                'php' => app(SharedPhpPoolInput::class)->forNode($node),
-                'dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists() ? app(NativeRoutePublicationInput::class)->dns($node) : null,
-                'certificate_scopes' => $scopes];
-        });
     }
 }

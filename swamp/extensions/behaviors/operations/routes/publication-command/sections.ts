@@ -1,19 +1,32 @@
 /** Pure format-aware policy; no host I/O, scripts, locks or transport. */
-function applyDelta<T>(
+export function mergeSections<T>(
     before: Map<string, T>,
     after: Map<string, T>,
     current: Map<string, T>,
     family: string,
+    alternatives: Map<string, T>[] = [],
 ) {
     const result = new Map(current);
     const same = (a: T | undefined, b: T | undefined) =>
         JSON.stringify(a) === JSON.stringify(b);
-    for (const key of new Set([...before.keys(), ...after.keys()])) {
+    for (
+        const key of new Set([
+            ...before.keys(),
+            ...after.keys(),
+            ...alternatives.flatMap((state) => [...state.keys()]),
+        ])
+    ) {
         const previous = before.get(key),
             desired = after.get(key),
             actual = current.get(key);
-        if (same(previous, desired)) continue;
-        if (!same(actual, previous) && !same(actual, desired)) {
+        if (
+            same(previous, desired) &&
+            alternatives.every((state) => same(state.get(key), desired))
+        ) continue;
+        if (
+            !same(actual, previous) && !same(actual, desired) &&
+            !alternatives.some((state) => same(actual, state.get(key)))
+        ) {
             throw new Error(`${family}.owned_revision_conflict`);
         }
         if (desired === undefined) result.delete(key);
@@ -42,7 +55,13 @@ export function caddySections(content: string) {
     });
     return { header, groups };
 }
-export function mergeCaddy(before: string, after: string, current: string) {
+export function mergeCaddy(
+    before: string,
+    after: string,
+    current: string,
+    alternatives: string[] = [],
+    retainRemoved = false,
+) {
     const original = caddySections(before), desired = caddySections(after);
     if (!current) {
         if (original.groups.size) {
@@ -52,17 +71,26 @@ export function mergeCaddy(before: string, after: string, current: string) {
     }
     const observed = caddySections(current);
     if (
-        original.header !== desired.header ||
-        observed.header !== original.header
+        ![
+            original.header,
+            desired.header,
+            ...alternatives.map((state) => caddySections(state).header),
+        ].includes(observed.header)
     ) throw new Error("caddy.global_revision_conflict");
-    const groups = applyDelta(
+    const groups = mergeSections(
         original.groups,
         desired.groups,
         observed.groups,
         "caddy",
+        alternatives.map((state) => caddySections(state).groups),
     );
+    if (retainRemoved) {
+        for (const [key, blocks] of observed.groups) {
+            if (!desired.groups.has(key)) groups.set(key, blocks);
+        }
+    }
     const blocks = [...groups.values()].flat();
-    return original.header + (blocks.length ? "\n" + blocks.join("\n") : "");
+    return desired.header + (blocks.length ? "\n" + blocks.join("\n") : "");
 }
 export function phpSections(text: string) {
     let prefix = "", name: string | undefined;
@@ -98,7 +126,7 @@ export function mergePhp(before: string, after: string, current: string) {
     const original = phpSections(before),
         desired = phpSections(after),
         observed = phpSections(current);
-    const groups = applyDelta(
+    const groups = mergeSections(
         original.groups,
         desired.groups,
         observed.groups,
