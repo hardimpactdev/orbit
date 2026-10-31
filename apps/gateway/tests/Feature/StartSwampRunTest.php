@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketException;
@@ -42,6 +43,9 @@ it('submits once after admission commits and leaves confirmed native work runnin
     DB::beginTransaction();
     $operation = app(StartOperationAction::class)->execute('route.private_dns_publish', 'node_route_projection', $node->id, $node->id, [], null, null);
     expect($socket->sent)->toBe([]);
+    expect($operation->fresh()->state)->toBe(['swamp_start' => [
+        'key' => 'operation:'.$operation->id, 'workflow' => 'operation-route-publication',
+    ]]);
 
     DB::commit();
 
@@ -53,6 +57,68 @@ it('submits once after admission commits and leaves confirmed native work runnin
     expect(Schema::hasTable('operation_steps'))->toBeFalse();
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
 });
+
+it('rolls back creation when the admission receipt cannot be stored', function (): void {
+    $node = Node::query()->create(['name' => 'receipt-fixture', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    $dispatcher = Operation::getEventDispatcher();
+    Operation::setEventDispatcher(clone $dispatcher);
+    Operation::saving(static function (Operation $operation): void {
+        if (isset($operation->state['swamp_start'])) {
+            throw new RuntimeException('Receipt write refused.');
+        }
+    });
+    try {
+        expect(fn () => app(StartOperationAction::class)->execute('route.private_dns_publish', 'node_route_projection', $node->id, $node->id, [], null, null))
+            ->toThrow(RuntimeException::class, 'Receipt write refused.');
+        expect(Operation::query()->where('node_id', $node->id)->exists())->toBeFalse();
+        expect($socket->sent)->toBe([]);
+    } finally {
+        Operation::setEventDispatcher($dispatcher);
+    }
+});
+
+it('preserves unrelated state when adding the admission receipt', function (): void {
+    $node = Node::query()->create(['name' => 'receipt-fixture', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $dispatcher = Operation::getEventDispatcher();
+    Operation::setEventDispatcher(clone $dispatcher);
+    Operation::creating(static function (Operation $operation): void {
+        $operation->state = [...($operation->state ?? []), 'public_fixture' => 'retained'];
+    });
+    try {
+        $operation = app(OperationStore::class)->create('route.private_dns_publish', 'node_route_projection', $node->id, $node->id, [], null, null);
+        expect($operation->fresh()->state)->toBe([
+            'public_fixture' => 'retained',
+            'swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-route-publication'],
+        ]);
+        expect($operation->status)->toBe(OperationStatus::Queued);
+    } finally {
+        Operation::setEventDispatcher($dispatcher);
+    }
+});
+
+it('leaves replayed and fenced admissions untouched without submitting', function (bool $fenced): void {
+    $node = Node::query()->create(['name' => 'receipt-fixture', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $identity = app(OperationIdempotency::class);
+    $identity->kind = 'route.private_dns_publish';
+    $identity->key = 'receipt-replay';
+    $identity->fingerprint = str_repeat('a', 64);
+    $operation = $fenced
+        ? app(OperationStore::class)->fenceAdmission($identity->kind, $identity->key, $identity->fingerprint, 'node_route_projection', $node->id, $node->id, [], 'fixture', 'fixture')
+        : Operation::query()->create(['kind' => $identity->kind, 'idempotency_key' => $identity->key, 'idempotency_fingerprint' => $identity->fingerprint,
+            'target_type' => 'node_route_projection', 'target_id' => $node->id, 'node_id' => $node->id, 'input' => [],
+            'state' => ['retained' => true], 'status' => OperationStatus::Queued, 'sequence' => 1]);
+    $before = $operation->fresh()->getAttributes();
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+
+    $replayed = app(StartOperationAction::class)->execute($identity->kind, 'node_route_projection', $node->id, $node->id, [], 'fixture', 'fixture');
+
+    expect($replayed->id)->toBe($operation->id);
+    expect($replayed->fresh()->getAttributes())->toBe($before);
+    expect($socket->sent)->toBe([]);
+})->with(['existing intent' => false, 'admission fence' => true]);
 
 it('makes configuration failures terminal before any native submission', function (string $setting, mixed $value): void {
     $operation = startIntent();
