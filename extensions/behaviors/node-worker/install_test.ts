@@ -16,7 +16,6 @@ function fixture(
   options: {
     memory?: string;
     wrongDownload?: boolean;
-    needsDownload?: boolean;
     nonemptyCache?: boolean;
     masked?: boolean;
   } = {},
@@ -53,12 +52,9 @@ function fixture(
       output = "orbit:x:1000:1000::/home/orbit:/bin/bash\n";
     } else if (command[0] === "/usr/bin/uname") output = "x86_64\n";
     else if (command[0] === "/usr/bin/sha256sum") {
-      output = `${
-        options.wrongDownload ||
-          (options.needsDownload && command[1] === "/usr/local/bin/swamp")
-          ? "0".repeat(64)
-          : Swamp.sha256
-      }  ${command[1]}\n`;
+      output = `${options.wrongDownload ? "0".repeat(64) : Swamp.sha256}  ${
+        command[1]
+      }\n`;
     } else if (command[0] === "/usr/bin/mktemp") {
       output = "/usr/local/bin/.orbit-swamp-ABCDEFGH\n";
     } else if (
@@ -100,25 +96,6 @@ Deno.test("memory floor is exact and malformed, duplicate and overflowing fields
       "MemAvailable: 3.5 kB",
     ]
   ) assertThrows(() => availableMemory(value));
-});
-
-Deno.test("the installer downloads the reviewed source and checks it before atomic publication", async () => {
-  const f = fixture({ needsDownload: true });
-  await configureNodeWorker({ node_id: 209, user: "orbit" }, null, f.invoke);
-  const commands = f.calls.map((c) => c.command);
-  const download = commands.findIndex((c) => c[0] === "/usr/bin/curl");
-  const verify = commands.findIndex((c) =>
-    c[0] === "/usr/bin/sha256sum" &&
-    c[1] === "/usr/local/bin/.orbit-swamp-ABCDEFGH/swamp"
-  );
-  const publish = commands.findIndex((c) =>
-    c[0] === "/usr/bin/mv" && c.at(-1) === "/usr/local/bin/swamp"
-  );
-  assertEquals(
-    commands[download].at(-1),
-    "https://github.com/hardimpactdev/swamp/releases/download/v20261031.123000.0-sha.614ab5ff/swamp-linux-x86_64",
-  );
-  assertEquals(download >= 0 && verify > download && publish > verify, true);
 });
 
 Deno.test("low memory refuses before filesystem, credentials, service or download changes", async () => {

@@ -20,10 +20,9 @@ export type WorkerCredentials = {
   server_token: string;
 };
 export const Swamp = {
-  repository: "hardimpactdev/swamp",
-  version: "20261031.123000.0-sha.614ab5ff",
-  sha256: "47546faadc8051df2ac59ce2259c2f8136c3ba15958632090fc65f3e1e04efca",
-  bytes: 405881080,
+  version: "20261031.063736.0-sha.e459d219",
+  sha256: "bfd72a112412ce48d4c11e8e80a35caefa811683146f7e30795d498382b20768",
+  bytes: 405875640,
   headroom: 256 * 1024 * 1024,
 };
 export const WorkerCaFile = "/usr/local/share/ca-certificates/orbit-root.crt";
@@ -190,7 +189,7 @@ export async function configureNodeWorker(
         "300",
         "--output",
         staged,
-        `https://github.com/${Swamp.repository}/releases/download/v${Swamp.version}/swamp-linux-x86_64`,
+        `https://github.com/swamp-club/swamp/releases/download/v${Swamp.version}/swamp-linux-x86_64`,
       ]);
       if (
         text(await required(invoke, ["/usr/bin/sha256sum", staged])) !==
