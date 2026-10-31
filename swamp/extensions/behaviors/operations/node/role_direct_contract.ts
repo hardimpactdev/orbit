@@ -5,7 +5,7 @@ import { ParentManagerInput } from "./manager_parent.ts";
 import { RoleRuntime } from "./role_runtime_local.ts";
 import { z } from "npm:zod@4.4.3";
 import { CliConvergePlan as CliPlan } from "../fleet/cli_converge_local.ts";
-import { DirectArgs } from "../_lib/direct.ts";
+import { DirectArgs } from "../_lib/direct-input.ts";
 import { Snapshot as Footprint } from "./converge_direct_contract.ts";
 
 export const Role = z.enum([

@@ -1838,18 +1838,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/agent_configure_system.ts",
       "rule": "custom-control",
       "count": 4,

@@ -21,15 +21,14 @@ const Configured = z.object({
 });
 /** Reuses the Node configuration boundary on an admitted local or guest transport.
  * The parent owns Node/Operation binding, agent installation and exact worker attestation.
- * Private values and the returned hash remain inside the supplied callback.
+ * The parent supplies resolved data inside its existing private-data boundary.
+ * The result contains only public change or refusal fields.
  */
 export async function configureNodeAgent(
   raw: z.infer<typeof Agent>,
   agentSha256: string,
   binaryChanged: boolean,
-  withPrivateMaterial: (
-    action: (material: Record<string, unknown>) => Promise<void>,
-  ) => Promise<void>,
+  rawMaterial: Record<string, unknown>,
   invoke: SystemTransport,
   accountFor: (user: string) => Promise<{ home: string; group: string }>,
   signal?: AbortSignal,
@@ -54,50 +53,39 @@ export async function configureNodeAgent(
     /^ProtectHome=yes$/m,
     "ProtectHome=tmpfs" + (underHome ? `\nBindReadOnlyPaths=-${root}` : ""),
   );
-  let safe: z.infer<typeof Configured> | undefined;
-  let refusal: string | undefined;
-  await withPrivateMaterial(async (raw) => {
-    const material = Private.parse({
-      secret_hash: raw.secret_hash,
-      ...(Object.hasOwn(raw, "worker_credentials")
-        ? { worker_credentials: raw.worker_credentials }
-        : {}),
-    });
-    const result = await configureAgent(
-      {
-        agent_sha256: pin,
-        configuration: input.configuration,
-        certificate: input.certificate,
-        unit,
-        checkouts: input.checkouts.filter((path) =>
-          path.startsWith(root + "/")
-        ),
-        binary_changed: binaryChanged,
-        allow_secret_rotation: false,
-        secret_hash: material.secret_hash,
-        ...(Object.hasOwn(material, "worker_credentials")
-          ? { worker_credentials: material.worker_credentials }
-          : {}),
-      },
-      invoke,
-      signal,
-    );
-    if (!result.configured) {
-      refusal = Code.parse(result.error_code);
-    } else {
-      const configured = Configured.parse(result);
-      const workerResult = await installWorker(
-        worker,
-        material.worker_credentials ?? null,
-        nodeWorkerCommand(invoke, signal),
-      );
-      safe = {
-        ...configured,
-        restarted: configured.restarted || workerResult.changed,
-      };
-    }
+  const material = Private.parse({
+    secret_hash: rawMaterial.secret_hash,
+    ...(Object.hasOwn(rawMaterial, "worker_credentials")
+      ? { worker_credentials: rawMaterial.worker_credentials }
+      : {}),
   });
-  if (refusal) return { changed: false, error_code: refusal };
-  if (!safe) throw new Error("Agent configuration has no proven safe result");
-  return { changed: binaryChanged || safe.restarted };
+  const result = await configureAgent(
+    {
+      agent_sha256: pin,
+      configuration: input.configuration,
+      certificate: input.certificate,
+      unit,
+      checkouts: input.checkouts.filter((path) => path.startsWith(root + "/")),
+      binary_changed: binaryChanged,
+      allow_secret_rotation: false,
+      secret_hash: material.secret_hash,
+      ...(Object.hasOwn(material, "worker_credentials")
+        ? { worker_credentials: material.worker_credentials }
+        : {}),
+    },
+    invoke,
+    signal,
+  );
+  if (!result.configured) {
+    return { changed: false, error_code: Code.parse(result.error_code) };
+  }
+  const configured = Configured.parse(result);
+  const workerResult = await installWorker(
+    worker,
+    material.worker_credentials ?? null,
+    nodeWorkerCommand(invoke, signal),
+  );
+  return {
+    changed: binaryChanged || configured.restarted || workerResult.changed,
+  };
 }
