@@ -42,6 +42,8 @@ function databaseAdmissionServer(Node $node, string $driver = 'mysql'): Database
 }
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'fake.token']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
     }
