@@ -25,6 +25,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteRemovalResidue;
 use App\Models\TaskVm;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
@@ -135,6 +136,7 @@ it('captures fresh root participant state without changing the immutable admissi
     FleetFixtures::bind();
     $root = FleetFixtures::node('removal-serving-root');
     $node = FleetFixtures::node('removal-fresh-owner');
+    RouteRemovalResidue::query()->create(['node_id' => $root->id, 'route_id' => 987653, 'domain' => 'gone.orbit', 'steps' => ['caddy']]);
     $snapshot = app(NodeRemovalPlan::class)->build($node, true);
     $operation = new Operation(['kind' => 'node.remove', 'status' => 'running', 'node_id' => $root->id, 'input' => [
         'participant_node_ids' => [$root->id, $node->id], '_node_removal' => $snapshot,

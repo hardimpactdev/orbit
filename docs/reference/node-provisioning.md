@@ -665,6 +665,8 @@ Peer convergence still runs over SSH. It generates or reads the peer key and ins
 
 ## Remove a Node
 
+Removal selects serving participants by their actual network, Route, private DNS and stale Route residue contributions. An unrelated roleless TaskVM receives no work. Route and DNS owners remain required even without a Node access edge; an unavailable worker refuses required work instead of hiding its owner. The hub and Metrics participants retain their separate parent-owned captures.
+
 `orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation and follows its native Swamp run. The Gateway validates ownership, confirmation and resource guards, records Route withdrawal intent, and retains every Node and Route association until cleanup finishes. Swamp owns reachability checks, ordering, exact Node placement, host effects and compensation. Removal begin and restoration are steps in this run.
 
 Remove Instances, Database servers, Schedules, active Routes and firewall rules first. Online removal also requires no remaining roles or Processes. The caller, Gateway and VPN Nodes are protected. Drain a task VM host and clear `settings.task_vms` before removing it. A TaskVM guest is removed through its owning native TaskVM workflow after provider deletion; provider absence alone never proves Node cleanup.

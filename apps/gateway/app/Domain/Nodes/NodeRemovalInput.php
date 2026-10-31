@@ -41,28 +41,7 @@ final readonly class NodeRemovalInput
         $intent = app()->makeWith(NativeRouteRemovalIntent::class, ['accounts' => $accounts]);
         $routes = (new NativeRouteRemovalPlan($intent))->captureForNode($context,
             ValidatedData::integerList($snapshot['route_ids']), $snapshot['offline'] ? [$context->id] : []);
-        $members = is_array($snapshot['participants']) ? $snapshot['participants'] : [];
-        foreach (is_array($routes['nodes']) ? $routes['nodes'] : [] as $member) {
-            $id = ValidatedData::integer(ValidatedData::object($member)['node_id']);
-            if ($id === $context->id && $snapshot['offline']) {
-                continue;
-            }
-            $index = array_find_key($members, static fn (mixed $row): bool => is_array($row) && ($row['node_id'] ?? null) === $id);
-            if ($index === null) {
-                $members[] = ['node_id' => $id, 'peer' => false, 'routes' => true, 'residue' => false, 'dns' => false];
-            } else {
-                $members[$index] = [...ValidatedData::object($members[$index]), 'routes' => true];
-            }
-        }
-        foreach (ValidatedData::integerList($routes['dns_node_ids']) as $id) {
-            $index = array_find_key($members, static fn (mixed $row): bool => is_array($row) && ($row['node_id'] ?? null) === $id);
-            if ($index === null) {
-                $members[] = ['node_id' => $id, 'peer' => false, 'routes' => false, 'residue' => false, 'dns' => true];
-            } else {
-                $members[$index] = [...ValidatedData::object($members[$index]), 'dns' => true];
-            }
-        }
-        usort($members, static fn (mixed $a, mixed $b): int => ValidatedData::integer(ValidatedData::object($a)['node_id']) <=> ValidatedData::integer(ValidatedData::object($b)['node_id']));
+        $members = app(NodeRemovalParticipants::class)->capture($context, $routes, excludeContext: $snapshot['offline'] === true);
         $snapshot['participants'] = $members;
         $ids = array_map(static fn (mixed $row): int => ValidatedData::integer(ValidatedData::object($row)['node_id']),
             $members);

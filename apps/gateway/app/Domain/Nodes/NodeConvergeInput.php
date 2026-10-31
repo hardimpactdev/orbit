@@ -28,6 +28,7 @@ use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
+use Illuminate\Database\Eloquent\Builder;
 
 /** Captures desired records and templates only. It never probes or changes a Node. */
 final readonly class NodeConvergeInput
@@ -135,11 +136,17 @@ final readonly class NodeConvergeInput
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n"];
     }
 
+    /** @return Builder<RouteRemovalResidue> */
+    public static function residueRows(Node $node): Builder
+    {
+        return RouteRemovalResidue::query()->where('node_id', $node->id)
+            ->whereNotIn('route_id', Route::query()->select('id'))->orderBy('id');
+    }
+
     /** @return array<string,mixed> */
     public function residue(Node $node): array
     {
-        $rows = RouteRemovalResidue::query()->where('node_id', $node->id)->orderBy('id')->get()
-            ->filter(static fn (RouteRemovalResidue $row): bool => ! Route::query()->whereKey($row->route_id)->exists())->values();
+        $rows = self::residueRows($node)->get();
         $sites = app(DevelopmentSiteRepository::class)->forNode($node);
         $configurations = [];
         if ($rows->contains(static fn (RouteRemovalResidue $row): bool => in_array('php', $row->steps, true))) {

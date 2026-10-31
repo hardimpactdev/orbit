@@ -75,8 +75,8 @@ final readonly class NodeRemovalPublicInput
             throw new ResourceOperationException('operation.execution_forbidden', 'The Node is outside the admitted removal inventory.', 403);
         }
 
-        return [...$base, 'network' => app(NodeNetworkParticipantInput::class)->capture($participant, $context, ! $restoring),
-            'residue' => app(NodeConvergeInput::class)->residue($participant),
+        return [...$base, 'network' => $admitted['peer'] ? app(NodeNetworkParticipantInput::class)->capture($participant, $context, ! $restoring) : null,
+            'residue' => $admitted['residue'] ? app(NodeConvergeInput::class)->residue($participant) : null,
             'dns' => $admitted['dns'] ? app(NodeConvergeInput::class)->dns() : null,
             'route_removal' => $routeRemoval];
     }
