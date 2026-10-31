@@ -40,18 +40,8 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
             return $operation->kind === 'route.caddy_converge'
                 ? ['caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id))] : [];
         }
-        if (! in_array($operation->kind, [...self::Kinds, ...self::LocalKinds], true) || $operation->target_type !== 'route_effect' || $operation->node_id === null) {
+        if (! in_array($operation->kind, self::Kinds, true) || $operation->target_type !== 'route_effect' || $operation->node_id === null) {
             throw new ResourceOperationException('operation.direct_invalid', 'A Node-bound Route operation is required.', 422);
-        }
-        if ($operation->kind === 'route.lan_remove') {
-            app(RouteNodeEffectCommand::class)->prepare($operation);
-            $input = ValidatedData::object($operation->input['lan_removal'] ?? []);
-            if (($input['route_id'] ?? null) !== $operation->target_id || $input['route_id'] !== ($operation->input['route_id'] ?? null)
-                || ! is_string($input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $input['agent_sha256']) !== 1) {
-                throw new ResourceOperationException('route.lan_removal_invalid', 'The admitted Route LAN removal is missing.', 422);
-            }
-
-            return Arr::only($input, ['route_id', 'agent_sha256']);
         }
         $input = ValidatedData::object($operation->input['verification'] ?? []);
         if (! in_array($input['protocol'] ?? null, ['tls', 'http'], true)

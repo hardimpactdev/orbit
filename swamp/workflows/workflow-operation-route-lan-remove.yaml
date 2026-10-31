@@ -1,26 +1,87 @@
 id: 7df4d92e-034f-4a2e-bd17-8265aec18b11
 name: operation-route-lan-remove
-description: Remove one withdrawn Route LAN allowance on its admitted Node.
+description: Withdraw the exact destination-scoped Route LAN allowance under the UFW host lock.
 vaults: []
 inputs:
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [route.lan_remove] }
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [route.lan_remove]}
+    intent:
+      type: object
+      additionalProperties: false
+      properties:
+        route_id: {type: integer, minimum: 1}
+        node_id: {type: integer, minimum: 1}
+        destination: {type: string, format: ipv4}
+      required: [route_id, node_id, destination]
+    execution_secrets: {type: object, additionalProperties: false, properties: {}}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
 jobs:
-  - name: publication
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
+  - name: withdrawal
     steps:
       - name: remove-lan
+        target: '${{ "orbit-node-" + string(inputs.intent.node_id) }}'
+        labels: {node: '${{ string(inputs.intent.node_id) }}'}
         task:
           type: behavior
-          behaviorType: "@nckrtl/route-publication"
-          behaviorName: '${{ "route-publication-node-" + string(inputs.node_id) }}'
-          methodName: removeLan
+          behaviorType: command/shell
+          behaviorName: '${{ "route-lan-remove-" + string(inputs.intent.node_id) }}'
+          methodName: execute
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+            env:
+              ORBIT_ROUTE_ID: '${{ string(inputs.intent.route_id) }}'
+              ORBIT_ROUTE_DESTINATION: '${{ inputs.intent.destination }}'
+            run: |
+              set -eu
+              sudo --preserve-env=ORBIT_ROUTE_ID,ORBIT_ROUTE_DESTINATION /usr/bin/python3 - <<'PYTHON'
+              import fcntl
+              import ipaddress
+              import json
+              import os
+              import re
+              import subprocess
+
+
+              def ufw(*args):
+                  result = subprocess.run(["/usr/sbin/ufw", *args], capture_output=True, text=True, check=True)
+                  return result.stdout
+
+
+              def matching_rules(destination, comment):
+                  status = ufw("status", "numbered")
+                  if not re.search(r"(?m)^Status: active$", status):
+                      raise ValueError("UFW must be active")
+                  numbers = []
+                  for line in status.splitlines():
+                      rule, separator, tag = line.partition("#")
+                      if not separator or tag.strip() != comment:
+                          continue
+                      match = re.fullmatch(r"\s*\[\s*([1-9][0-9]*)\]\s+(\S+)\s+443/tcp\s+ALLOW IN\s+\S+\s*", rule)
+                      if match is None:
+                          raise ValueError("Malformed Route allowance")
+                      if match[2] == destination:
+                          numbers.append(int(match[1]))
+                  return sorted(set(numbers), reverse=True)
+
+
+              try:
+                  route_id = os.environ["ORBIT_ROUTE_ID"]
+                  if re.fullmatch(r"[1-9][0-9]*", route_id) is None:
+                      raise ValueError("Invalid Route ID")
+                  destination = str(ipaddress.IPv4Address(os.environ["ORBIT_ROUTE_DESTINATION"]))
+                  comment = "orbit:route-" + route_id + "-lan"
+                  descriptor = os.open("/run/lock/orbit-firewall.lock", os.O_RDWR | os.O_CREAT, 0o600)
+                  try:
+                      fcntl.flock(descriptor, fcntl.LOCK_EX)
+                      for number in matching_rules(destination, comment):
+                          ufw("--force", "delete", str(number))
+                      if matching_rules(destination, comment):
+                          raise ValueError("Route allowance remains")
+                  finally:
+                      os.close(descriptor)
+              except (KeyError, ValueError, OSError, subprocess.SubprocessError):
+                  print(json.dumps({"error_code": "firewall.withdrawal_failed"}))
+                  raise SystemExit(1) from None
+              print(json.dumps({"ready": True}))
+              PYTHON
