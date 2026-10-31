@@ -23,3 +23,17 @@ The platform owner manages worker enrollment, runtime loads and credential
 custody. A family conversion does not grant new access or permission to edit a
 live checkout. Read native run history and worker state before claiming a
 workflow has executed on its target.
+
+## Credential recovery and public trust
+
+Persistent-worker rotation refuses before any credential mutation or full Node
+converge. Keep its hourly schedule paused during recovery until a
+credential-only native delivery path is ready. Do not revoke the installed pair
+and then depend on unrelated convergence to deliver a replacement. Proxy
+credential recovery remains scoped to the existing protected files on 209.
+
+The only permitted step-to-Gateway calls are the GitHub mint and
+certificate-sign primitives in the binding guide. Their transport uses the
+caller's explicitly configured public CA path on the owning Node; it does not
+substitute an agent configuration path or add an identity header. The GitHub App
+key and Orbit CA private key never leave the Gateway or enter a Swamp vault.
