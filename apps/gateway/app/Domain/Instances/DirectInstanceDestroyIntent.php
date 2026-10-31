@@ -9,7 +9,6 @@ use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Routes\RouteWithdrawalArtifacts;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
@@ -25,14 +24,14 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
-/** Records owned dev-removal facts. Swamp owns ordering, effects and recovery. */
+/** Records owned removal facts. Swamp owns ordering, effects and recovery. */
 final readonly class DirectInstanceDestroyIntent
 {
     public function __construct(
         private ProcessOperationAdmission $processes,
         private ScheduleOperationAdmission $schedules,
         private PrepareOwnedDatabaseDestructionAction $databases,
-        private RouteWithdrawalArtifacts $routes,
+        private InstanceDestroyWithdrawal $routes,
     ) {}
 
     /** Records intent atomically after source/Route validation.
@@ -62,7 +61,7 @@ final readonly class DirectInstanceDestroyIntent
         $ids = ValidatedData::integerList(array_column($members, 'instance_id'));
         if ($members === [] || count(array_unique($ids)) !== count($ids)
             || ! in_array($input['instance_id'] ?? null, $ids, true)
-            || array_any($members, static fn (array $member): bool => $member['environment'] !== 'development' || $member['node_id'] !== $input['node_id'])) {
+            || array_any($members, static fn (array $member): bool => ! in_array($member['environment'], ['development', 'production'], true) || $member['environment'] !== ($input['environment'] ?? 'development') || $member['node_id'] !== $input['node_id'])) {
             throw new ResourceOperationException('instance.destroy_unsupported', 'Direct development removal requires its recorded source Node.', 409);
         }
         foreach ($members as $member) {
@@ -97,7 +96,7 @@ final readonly class DirectInstanceDestroyIntent
         $teardown = [];
         foreach ($members as $member) {
             $instance = Instance::query()->with('project')->findOrFail(ValidatedData::integer($member['instance_id']));
-            if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()) {
+            if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || $instance->placementEnvironment() !== ($input['environment'] ?? 'development')) {
                 throw new ResourceOperationException('instance.removal_conflict', 'The removal member changed placement.', 409);
             }
             $ownedRoutes = $attached->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $instance->id))->modelKeys();
@@ -113,13 +112,13 @@ final readonly class DirectInstanceDestroyIntent
                 'instance_id' => $instance->id, 'source' => [
                     'root' => $member['source_root'], 'operation' => $removal->id, 'member' => (string) $record->id,
                     'digest' => $member['source_digest'], 'user' => $member['user'], 'group' => $member['group'],
-                    'checkout' => $member['checkout_path'], 'common_repository' => $member['common_repository_path'],
-                    'layout' => $member['source_layout'], 'source_identity' => $member['source_identity'],
+                    'checkout' => $instance->placedOnAppProd() ? $instance->production_home : $member['checkout_path'], 'common_repository' => $member['common_repository_path'],
+                    'layout' => $instance->placedOnAppProd() ? 'release' : $member['source_layout'], 'source_identity' => $member['source_identity'],
                 ],
                 'branch' => $member['branch'] ?? '', 'receipt' => hash('sha256', $removal->id."\0".$record->id."\0".ValidatedData::string($member['source_digest'])."\0finalized"),
                 'force' => $input['force'] || ! $member['runtime_published'] && $member['starting_commit'] === null,
                 'origin' => $member['origin'], 'worktrees' => $member['worktree_inventory'],
-                'commit' => $member['source_commit'] ?? '', 'grouping_directory' => dirname(ValidatedData::string($member['checkout_path'])),
+                'commit' => $member['source_commit'] ?? '', 'grouping_directory' => $instance->placedOnAppProd() ? '/home' : dirname(ValidatedData::string($member['checkout_path'])),
                 'unresolved' => $member['starting_commit'] === null && ! $member['runtime_published'],
                 'independent_worktree' => $input['force'] && $member['source_layout'] === 'worktree'
                     && array_all($members, static fn (array $peer): bool => $peer['source_layout'] !== 'checkout'),
@@ -132,8 +131,8 @@ final readonly class DirectInstanceDestroyIntent
                 $runtime['schedules'][] = Arr::only($this->schedules->inputFor($schedule, 'destroy', cascade: true), ['id', 'group', 'cascade']);
             }
             $steps = $member['run_teardown'] ? app(ProjectLifecycleStepStore::class)->ordered($instance->project, LifecyclePhase::Teardown) : [];
-            $teardown[] = ['instance_id' => $instance->id, 'checkout' => $instance->checkout_path,
-                'user' => $node->user,
+            $teardown[] = ['instance_id' => $instance->id, 'checkout' => $instance->placedOnAppProd() ? $instance->applicationDirectory() : $instance->checkout_path,
+                'user' => $instance->placedOnAppProd() ? $instance->production_user : $node->user,
                 'steps' => array_map(static fn ($step): array => ['name' => $step->name, 'timeout_seconds' => $step->timeoutSeconds,
                     'sha256' => hash('sha256', $step->command)], $steps)];
         }
@@ -148,7 +147,7 @@ final readonly class DirectInstanceDestroyIntent
         $nodes = [$node->id];
         foreach ($parentOwnsRoutes ? [] : $ids as $id) {
             $target = Instance::query()->with(['node', 'project'])->findOrFail($id);
-            $artifact = $this->routes->forDevelopmentRemoval($target,
+            $artifact = $this->routes->forInstance($target,
                 $routes->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $id)));
             $withdrawals[] = $artifact;
             $nodes = [...$nodes, ...$this->participantIds($artifact['nodes']), ...$this->participantIds($artifact['dns'])];
@@ -159,7 +158,7 @@ final readonly class DirectInstanceDestroyIntent
         $databaseNodes = array_values(array_unique(array_column($databases['servers'], 'node_id')));
         $participants = array_values(array_unique([...$nodes, ...$databaseNodes]));
 
-        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $participants, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $participants, 'environment' => $input['environment'] ?? 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
             'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
             'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
             'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
@@ -200,9 +199,11 @@ final readonly class DirectInstanceDestroyIntent
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
         $detail = ValidatedData::object($saved['direct_destroy']);
         $detail['routes'] = array_map(static function (array $route): array {
-            $php = ValidatedData::object($route['php']);
-            $php['configurations'] = (object) ValidatedData::object($php['configurations']);
-            $route['php'] = $php;
+            if (isset($route['php'])) {
+                $php = ValidatedData::object($route['php']);
+                $php['configurations'] = (object) ValidatedData::object($php['configurations']);
+                $route['php'] = $php;
+            }
 
             return $route;
         }, InstanceLifecycleInput::members(['members' => $detail['routes']]));

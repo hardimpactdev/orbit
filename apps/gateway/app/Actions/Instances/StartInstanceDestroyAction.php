@@ -21,7 +21,6 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -66,7 +65,7 @@ final readonly class StartInstanceDestroyAction
     /** @return array<string, mixed> */
     public function snapshot(Instance $instance, bool $force, ?Operation $parent = null, bool $routesOwnedByParent = false): array
     {
-        if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
+        if (! $instance->placedOnAppDev() && ! $instance->placedOnAppProd()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
         }
         $instance->load($this->removalRelations());
@@ -89,6 +88,11 @@ final readonly class StartInstanceDestroyAction
             $this->conflict($instance);
         }
         $this->assertSupported($instance);
+        if ($instance->placedOnAppProd() && ($instance->production_user !== 'orbit-app-'.$instance->project_id
+            || $instance->production_home !== '/home/'.$instance->production_user || ! $instance->usesProductionReleaseLayout()
+            || Instance::query()->where('node_id', $instance->node_id)->where('production_user', $instance->production_user)->whereKeyNot($instance->id)->exists())) {
+            throw new ResourceOperationException('instance.removal_conflict', 'Production removal requires its exclusive recorded application account.', 409);
+        }
         $this->assertMemberPathAvailable($instance);
         $members = collect([$instance]);
         $snapshots = [];
@@ -104,13 +108,14 @@ final readonly class StartInstanceDestroyAction
                 'position' => $position, 'instance_id' => $member->id, 'project_id' => $member->project_id, 'node_id' => $member->node_id,
                 'route_id' => $route?->id, 'route_node_id' => $this->routeNode($route), 'name' => $member->name, 'environment' => $member->defaultAppEnv(),
                 'source_layout' => $member->source_layout, 'repository_identity' => $member->project->repository_identity,
-                'checkout_path' => $member->checkout_path, 'root' => $member->effectiveRoot(),
+                'checkout_path' => $member->checkout_path, 'root' => $member->root ?? $member->project->root,
                 'branch' => $member->branch, 'starting_commit' => $member->starting_commit, 'source_commit' => $member->starting_commit ?? '',
                 'common_repository_path' => dirname((string) $member->checkout_path), 'source_identity' => 'pending',
                 'linked_worktree_paths' => [], 'source_digest' => str_repeat('0', 64),
                 'runtime_published' => $member->status === InstanceState::Active,
-                'source_root' => $this->boundaries->instanceGroupingDirectory($member)->parent()?->value,
-                'user' => $member->node->user, 'group' => null,
+                'source_root' => $member->placedOnAppProd() ? '/home' : $this->boundaries->instanceGroupingDirectory($member)->parent()?->value,
+                'user' => $member->placedOnAppProd() ? $member->production_user : $member->node->user, 'group' => null,
+                'production_home' => $member->production_home,
                 'run_teardown' => ! $this->failedCreation($member),
                 'teardown_digest' => $this->teardownDigest($member->project),
                 'worktree_inventory' => null, 'origin' => null,
@@ -121,7 +126,7 @@ final readonly class StartInstanceDestroyAction
             ];
         }
 
-        return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
+        return ['environment' => $instance->placementEnvironment(), 'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
             'name' => $instance->name, 'force' => $force, 'removal_id' => (string) Str::uuid(),
             'inventory_digest' => hash('sha256', json_encode($snapshots, JSON_THROW_ON_ERROR)),
             'source_pending' => true,
@@ -211,7 +216,8 @@ final readonly class StartInstanceDestroyAction
 
     private function assertMemberPathAvailable(Instance $member): void
     {
-        $path = StoragePath::tryParse($member->checkout_path);
+        $recordedPath = $member->placedOnAppProd() ? $member->production_home : $member->checkout_path;
+        $path = is_string($recordedPath) ? StoragePath::tryParse($recordedPath) : null;
 
         if (! $path instanceof StoragePath) {
             throw new ResourceOperationException(
@@ -301,7 +307,10 @@ final readonly class StartInstanceDestroyAction
 
     private function failedCreation(Instance $instance): bool
     {
-        return InstanceCreationRecovery::isPreActivation($instance);
+        return InstanceCreationRecovery::isPreActivation($instance)
+            || $instance->placedOnAppProd()
+                && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
+                && $instance->failed_step !== null && $instance->error_code !== null;
     }
 
     private function removableState(Instance $instance): bool

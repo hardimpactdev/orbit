@@ -34,7 +34,7 @@ final readonly class InstanceDestroyPhpSecret implements OperationSecretSource
         return $operation->kind === 'instance.destroy' && $operation->target_type === 'instance'
             && $target !== null && $target->id === ($operation->input['instance_id'] ?? null)
             && $target->node_id === $operation->node_id && $target->status === InstanceState::Removing
-            && $target->placedOnAppDev() ? $target->id : null;
+            && ($target->placedOnAppDev() || $target->placedOnAppProd()) ? $target->id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
@@ -49,6 +49,13 @@ final readonly class InstanceDestroyPhpSecret implements OperationSecretSource
         }
         $value = ['node_id' => $target->node_id, 'user' => ValidatedData::string($detail['node_user']),
             ...app(SharedPhpPoolInput::class)->forAccount($target->node, new ManagedUserAccount(RouteWithdrawalArtifacts::User, RouteWithdrawalArtifacts::Group, RouteWithdrawalArtifacts::Home))];
+
+        if ($target->placedOnAppProd()) {
+            $identity = $target->production_php_service === null ? null : ProductionPhpRuntimeIdentity::from($target);
+            $value['production_runtime'] = $identity === null ? [] : [[
+                'user' => $identity->user, 'version' => $identity->version, 'marker' => $identity->marker(),
+            ]];
+        }
 
         return new OperationSecretValue($value, [json_encode($value, JSON_THROW_ON_ERROR)]);
     }

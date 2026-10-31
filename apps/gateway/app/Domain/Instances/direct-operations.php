@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
+use App\Domain\Instances\InstanceDestroyCancelGuard;
 use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRenameResult;
@@ -30,6 +31,7 @@ return [
     'instance.destroy' => [
         'workflow' => 'operation-instance-destroy',
         'projection' => InstanceDestroyProjection::class,
+        'cancel_guard' => InstanceDestroyCancelGuard::class,
         'private_material' => ['git_read' => 'instance.lifecycle_git', 'teardown' => 'instance.destroy_teardown', 'php' => 'instance.destroy_php', 'database_material' => 'database.intent'],
     ],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],

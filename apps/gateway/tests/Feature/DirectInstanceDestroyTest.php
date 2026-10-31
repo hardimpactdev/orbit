@@ -8,6 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
+use App\Domain\Instances\InstanceDestroyWorkflowInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretValue;
@@ -62,6 +63,35 @@ it('resolves only the admitted teardown scripts in a protected memory value', fu
         ->and(json_encode($value))->toBe('"[REDACTED]"')
         ->and(print_r($value, true))->not->toContain($this->command)
         ->and(json_encode($this->operation->toArray()))->not->toContain($this->command);
+});
+
+it('passes complete public destroy intent without private-material references or rerendering on the worker', function (): void {
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued', 'input' => $intent]);
+    $inputs = app(InstanceDestroyWorkflowInput::class)->forOperation($operation);
+
+    expect($inputs['operation_id'])->toBe($operation->id)
+        ->and($inputs['node_id'])->toBe($this->node->id)
+        ->and($inputs['intent']['members'])->toBe($intent['members'])
+        ->and($inputs['intent']['direct_destroy']['database'])->toBe($intent['direct_destroy']['database'])
+        ->and($inputs['intent']['direct_destroy']['runtime'])->toBe($intent['direct_destroy']['runtime'])
+        ->and($inputs['intent']['direct_destroy']['routes'][0])->not->toHaveKey('php')
+        ->and($inputs['intent'])->not->toHaveKeys(['git_read', 'teardown', 'php', 'database_material', 'private_bindings'])
+        ->and(json_encode($inputs))->not->toContain('$secret', $this->command);
+});
+
+it('carries the original native source capture into a retried run', function (): void {
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $capture = ['members' => [['instance_id' => $this->instance->id, 'origin' => 'https://github.com/example/original.git',
+        'worktree_inventory' => base64_encode('original-inventory'), 'source_identity' => '12:34']]];
+    InstanceRemoval::query()->whereKey($intent['removal_id'])->update(['native_sources' => $capture]);
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued', 'input' => $intent]);
+
+    expect(app(InstanceDestroyWorkflowInput::class)->forOperation($operation)['intent']['captured_sources'])->toBe($capture);
 });
 
 it('refuses scripts changed since admission', function (array $change): void {
@@ -528,35 +558,27 @@ it('replays the saved admission after failure without recapturing database artif
     expect($removal->refresh()->status->value)->toBe('removing');
 });
 
-it('records native cancellation and leaves accepted removal retryable without restoring active intent', function (): void {
+it('refuses cancellation after removal intent is accepted', function (bool $started): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $input = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $run = (string) Str::uuid();
     $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
-        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued',
-        'input' => $input, 'state' => ['swamp_run_id' => $run]]);
-
-    app(CancelOperationAction::class)->execute($operation);
-    expect($operation->refresh()->status->value)->toBe('queued')
-        ->and($operation->cancel_requested_at)->not->toBeNull()
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => $started ? 'running' : 'queued',
+        'input' => $input, 'state' => $started ? ['swamp_run_id' => (string) Str::uuid()] : []]);
+    expect(fn () => app(CancelOperationAction::class)->execute($operation))
+        ->toThrow(ResourceOperationException::class, 'Accepted Instance removal must finish or resume.');
+    expect($operation->refresh()->cancel_requested_at)->toBeNull()
+        ->and($operation->status->value)->toBe($started ? 'running' : 'queued')
         ->and($this->instance->refresh()->status->value)->toBe('removing');
-    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'cancelled',
-        'started_at' => '2026-10-31T04:00:00Z', 'finished_at' => '2026-10-31T04:00:01Z',
-        'result' => ['error_code' => 'operation.cancelled', 'failed_step' => 'runtime'], 'error_code' => 'operation.cancelled']);
-    expect($operation->refresh()->status->value)->toBe('cancelled')
-        ->and($this->instance->refresh()->status->value)->toBe('removing');
-    $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance, true);
-    expect(app(DirectInstanceDestroyIntent::class)->record($retry))->toEqual($input);
-});
+})->with([false, true]);
 
-it('projects native failure with its exact failed phase and retries the complete saved admission', function (): void {
+it('projects native failure with its exact failed phase and retries the complete saved admission', function (string $phase, string $step): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
     $run = (string) Str::uuid();
     $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
-    $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'];
+    $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => $phase];
 
     app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
@@ -564,11 +586,11 @@ it('projects native failure with its exact failed phase and retries the complete
 
     expect($operation->refresh()->status->value)->toBe('failed');
     expect($operation->result)->toBe($result);
-    expect(InstanceRemoval::query()->sole()->failed_step->value)->toBe('runtime_cleanup');
+    expect(InstanceRemoval::query()->sole()->failed_step->value)->toBe($step);
     $snapshot = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
     expect(app(DirectInstanceDestroyIntent::class)->record($snapshot))->toEqual($intent);
     $this->assertModelExists($this->instance);
-});
+})->with([['databases', 'runtime_cleanup'], ['firewall', 'route_target_clear']]);
 
 it('upgrades a saved standalone worktree retry to independent forced removal', function (): void {
     $this->instance->update(['source_layout' => 'worktree', 'task_workspace_routed' => false]);

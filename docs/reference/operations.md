@@ -242,7 +242,7 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 `operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A waiting operation calls its current step’s stop hook at once and becomes `cancelled` only after the hook confirms the stop. Orbit records the cancel request before calling the hook. When the hook cannot confirm the stop, the request answers with that step’s error, such as HTTP 502. The operation and step stay `waiting`, keep the target, and retry the stop on the next delayed read.
 
-A Swamp kind may declare `cancel_guard: GuardClass`, implementing `OperationCancelGuard::assertCancellable(Operation): void`. The Gateway checks the root and every nonterminal descendant under the parent lock in the cancel transaction, before recording a cancel or changing any child. Guards read Gateway-recorded proof only and perform no effects. A typed refusal, such as `operation.cancel_refused` with HTTP 409, leaves the whole tree unchanged. Terminal Operations remain unchanged without invoking a guard. Kind loading rejects an invalid guard class; `OperationKinds::supports("cancel_guard")` reports this capability.
+A family may declare `cancel_guard: GuardClass` in its `direct-operations.php` entry. The class implements `OperationCancelGuard::assertCancellable(Operation): void`. The Gateway checks that guard on the nonterminal root under its row lock before cancelling unstarted intent or recording a request for a bound run. Guards read stored domain state and perform no effects. A typed refusal, such as `operation.cancel_refused` with HTTP 409, leaves the Operation unchanged. Terminal Operations remain unchanged without invoking a guard. Direct declaration loading rejects an invalid guard class. Native workflows have no child Operations to cancel.
 
 When a waiting `tasks.publish` has started its push, cancellation is deferred without an error. It returns the waiting record and keeps the group held until the job records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
@@ -604,6 +604,8 @@ On Swamp, use the shared `directOperation` template with family-owned read, acti
 Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
 
 ### Private material transport
+
+The same direct declaration may supply an optional `cancel_guard` class as described in [Cancel an operation](#cancel-an-operation).
 
 A direct declaration may map `private_material` input paths to registered `OperationSecretSource` names and `secret_outputs` output names to registered `OperationSecretOutputStore` names. The shared endpoints accept no caller-selected source, store, owner or Node. Reads hydrate only those admitted references; writes call the registered store with its existing owner checks and preconditions. They perform no execution and record no receipt.
 

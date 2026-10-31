@@ -25,8 +25,8 @@ final readonly class PrepareOwnedDatabaseDestructionAction
         $memberIds = $memberIds === [] ? [$target->id] : $memberIds;
         $owners = Instance::query()->whereKey($memberIds)->orderBy('id')->get();
         if (! in_array($target->id, $memberIds, true) || $owners->count() !== count(array_unique($memberIds))
-            || $owners->contains(static fn (Instance $owner): bool => $owner->project_id !== $target->project_id || $owner->node_id !== $target->node_id || $owner->defaultAppEnv() !== 'development')) {
-            throw new ResourceOperationException('database.removal_conflict', 'Database owners must belong to the admitted development removal set.', 409);
+            || $owners->contains(static fn (Instance $owner): bool => $owner->project_id !== $target->project_id || $owner->node_id !== $target->node_id || $owner->placementEnvironment() !== $target->placementEnvironment())) {
+            throw new ResourceOperationException('database.removal_conflict', 'Database owners must belong to the admitted removal set.', 409);
         }
         $snapshot = $this->databases->snapshot(array_values($owners->all()));
         $passwords = $snapshot['passwords'];

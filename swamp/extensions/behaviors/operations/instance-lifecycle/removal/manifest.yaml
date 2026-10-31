@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: '@nckrtl/instance-removal-inputs'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public input and result shaping for placed Instance removal commands.
+behaviors:
+  - operations/instance-lifecycle/removal/inputs.ts
+additionalFiles:
+  - identity.py

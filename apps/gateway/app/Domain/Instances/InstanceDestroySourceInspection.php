@@ -99,6 +99,9 @@ final readonly class InstanceDestroySourceInspection
                 'receipt' => hash('sha256', ValidatedData::string($base['operation'])."\0".ValidatedData::string($base['member'])."\0".$digest."\0finalized"),
             ];
         }, InstanceLifecycleInput::members(['members' => $detail['members']]));
+        if (isset($inspection['production'])) {
+            $detail['production'] = [...ValidatedData::object($inspection['production']), 'force' => $input['force']];
+        }
         $input['direct_destroy'] = $detail;
         $input['source_pending'] = false;
 

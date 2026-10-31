@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationCancelGuard;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
@@ -20,6 +22,12 @@ final readonly class CancelOperationAction
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             if ($operation->status->terminal()) {
                 return;
+            }
+            $guard = app(DirectOperation::class)->definition($operation->kind)['cancel_guard'] ?? null;
+            if (is_string($guard)) {
+                $instance = app($guard);
+                assert($instance instanceof OperationCancelGuard);
+                $instance->assertCancellable($operation);
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running], true)
                 && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0) {

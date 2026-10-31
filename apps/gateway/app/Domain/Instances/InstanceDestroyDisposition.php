@@ -20,6 +20,10 @@ final readonly class InstanceDestroyDisposition
      */
     public function prepare(Instance $instance): array
     {
+        if (! $instance->placedOnAppDev()) {
+            throw new ResourceOperationException('route.target_cleanup_unavailable', 'This parent removal disposition requires development source.', 409);
+        }
+
         return DB::transaction(fn (): array => app(DirectInstanceDestroyIntent::class)->record(
             app(StartInstanceDestroyAction::class)->snapshot($instance, true, routesOwnedByParent: true), parentOwnsRoutes: true,
         ));

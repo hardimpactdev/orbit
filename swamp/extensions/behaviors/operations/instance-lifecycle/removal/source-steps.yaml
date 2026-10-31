@@ -1,0 +1,326 @@
+# Composition source for the owning operation-instance-destroy workflow.
+# The parent inserts the Route/DB owners' placed steps at the marked boundary.
+# This file is not a separately admitted or nested workflow.
+jobs:
+  - name: capture_sources
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    steps:
+      - name: public-inputs
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-removal-inputs'
+          behaviorName: '${{ "irm-s-1-" + run.id }}'
+          methodName: read
+          inputs: {intent: '${{ inputs.intent }}'}
+      - name: inspect-sources
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        dependsOn: [{step: public-inputs, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "irm-s-2-" + run.id }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              if [ "$ORBIT_ENVIRONMENT" = production ]; then
+                set -- sudo -n --preserve-env=PYTHONPATH,ORBIT_REMOVAL_INTENT
+              else
+                set --
+              fi
+              "$@" /usr/bin/python3 - <<'PY'
+              import json
+              import os
+              import sys
+
+              from identity import Refusal, capture_member
+
+              try:
+                  intent = json.loads(os.environ['ORBIT_REMOVAL_INTENT'])
+                  prior = intent.get('captured_sources')
+                  captures = prior if prior is not None else {
+                      'members': [capture_member(member, intent) for member in intent['members']]
+                  }
+                  print(json.dumps(captures, separators=(',', ':')))
+              except (Refusal, OSError, KeyError, ValueError) as error:
+                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.source_identity_invalid')}))
+                  sys.exit(1)
+              PY
+            env:
+              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
+              ORBIT_REMOVAL_INTENT: '${{ steps["public-inputs"].outputs.intent_json }}'
+              ORBIT_ENVIRONMENT: '${{ inputs.intent.environment }}'
+      - name: captured-inputs
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        dependsOn: [{step: inspect-sources, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-removal-inputs'
+          behaviorName: '${{ "irm-s-3-" + run.id }}'
+          methodName: capture
+          inputs:
+            intent: '${{ inputs.intent }}'
+            stdout: '${{ steps["inspect-sources"].outputs.stdout }}'
+
+  # Runtime stop, individual teardown and source verification precede publication.
+  # Canonical PHP/Caddy/DNS/firewall/DB steps go here in the SAME parent graph.
+  # finalize_sources depends on the final owner cleanup job, not capture_sources.
+  - name: finalize_sources
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    dependsOn: [{job: cleanup, condition: {type: succeeded}}]
+    steps:
+      - name: quarantine-${{ self.member.instance_id }}
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        forEach:
+          item: member
+          in: '${{ steps["captured-inputs"].outputs.members }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "irm-s-4-" + run.id + "-" + string(self._index) }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              if [ "$ORBIT_ENVIRONMENT" = production ]; then
+                set -- sudo -n --preserve-env=PYTHONPATH,ORBIT_REMOVAL_MEMBER
+              else
+                set --
+              fi
+              "$@" /usr/bin/python3 - <<'PY'
+              import json
+              import os
+              import sys
+
+              from identity import (
+                  Refusal,
+                  account,
+                  git,
+                  identity,
+                  info,
+                  quarantine_path,
+                  require,
+                  verify_source,
+              )
+
+              try:
+                  value = json.loads(os.environ['ORBIT_REMOVAL_MEMBER'])
+                  member, capture, intent = value['member'], value['capture'], value['intent']
+                  verify_source(member, capture, intent, allow_quarantine=True)
+                  source = capture['source']
+                  target = quarantine_path(member, capture, intent['removal_id'])
+                  if info(source) is not None:
+                      if capture['environment'] == 'development' and member['source_layout'] == 'worktree':
+                          owner = account(member, False)
+                          git(capture['common_repository_path'], ['worktree', 'move', '--', source, target], owner)
+                      else:
+                          os.rename(source, target)
+                  if info(target) is not None:
+                      require(identity(target) == capture['source_identity'])
+                  print(json.dumps({'instance_id': member['instance_id'], 'quarantined': info(target) is not None}))
+              except (Refusal, OSError, KeyError, ValueError) as error:
+                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.source_finalization_failed')}))
+                  sys.exit(1)
+              PY
+            env:
+              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
+              ORBIT_REMOVAL_MEMBER: '${{ self.member.input_json }}'
+              ORBIT_ENVIRONMENT: '${{ inputs.intent.environment }}'
+      - name: delete-tree-${{ self.member.instance_id }}
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        forEach:
+          item: member
+          in: '${{ steps["captured-inputs"].outputs.members }}'
+        dependsOn: [{step: 'quarantine-${{ self.member.instance_id }}', condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "irm-s-5-" + run.id + "-" + string(self._index) }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              if [ "$ORBIT_ENVIRONMENT" = production ]; then
+                set -- sudo -n --preserve-env=PYTHONPATH,ORBIT_REMOVAL_MEMBER
+              else
+                set --
+              fi
+              "$@" /usr/bin/python3 - <<'PY'
+              import json
+              import os
+              import shutil
+              import sys
+
+              from identity import Refusal, directory, identity, info, quarantine_path, require
+
+              try:
+                  value = json.loads(os.environ['ORBIT_REMOVAL_MEMBER'])
+                  member, capture, intent = value['member'], value['capture'], value['intent']
+                  require(info(capture['source']) is None)
+                  target = quarantine_path(member, capture, intent['removal_id'])
+                  if info(target) is not None:
+                      require(identity(target) == capture['source_identity'])
+                      directory(target, capture['uid'], capture['gid'])
+                      shutil.rmtree(target)
+                  print(json.dumps({'instance_id': member['instance_id'], 'source_absent': True}))
+              except (Refusal, OSError, KeyError, ValueError) as error:
+                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.source_finalization_failed')}))
+                  sys.exit(1)
+              PY
+            env:
+              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
+              ORBIT_REMOVAL_MEMBER: '${{ self.member.input_json }}'
+              ORBIT_ENVIRONMENT: '${{ inputs.intent.environment }}'
+      - name: delete-worktree-metadata-${{ self.member.instance_id }}
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        forEach:
+          item: member
+          in: '${{ steps["captured-inputs"].outputs.members }}'
+        guard: '${{ inputs.intent.environment == "production" }}'
+        dependsOn: [{step: 'delete-tree-${{ self.member.instance_id }}', condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "irm-s-6-" + run.id + "-" + string(self._index) }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              /usr/bin/python3 - <<'PY'
+              import json
+              import os
+              import shutil
+              import sys
+
+              from identity import (
+                  Refusal,
+                  directory,
+                  identity,
+                  info,
+                  quarantine_path,
+                  read_regular,
+                  require,
+              )
+
+              try:
+                  value = json.loads(os.environ['ORBIT_REMOVAL_MEMBER'])
+                  member, capture, intent = value['member'], value['capture'], value['intent']
+                  if member['source_layout'] == 'worktree' and capture['git_admin'] is not None:
+                      require(info(capture['source']) is None)
+                      quarantine = quarantine_path(member, capture, intent['removal_id'])
+                      require(info(quarantine) is None)
+                      common, admin = capture['git_common'], capture['git_admin']
+                      directory(common, capture['uid'], capture['gid'])
+                      require(identity(common) == capture['git_common_identity'])
+                      require(os.path.dirname(admin) == common + '/worktrees')
+                      if info(admin) is not None:
+                          directory(admin, capture['uid'], capture['gid'])
+                          require(identity(admin) == capture['git_admin_identity'])
+                          require(read_regular(admin + '/gitdir') == (quarantine + '/.git\n').encode())
+                          shutil.rmtree(admin)
+                  print(json.dumps({'instance_id': member['instance_id'], 'metadata_absent': True}))
+              except (Refusal, OSError, KeyError, ValueError) as error:
+                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.source_finalization_failed')}))
+                  sys.exit(1)
+              PY
+            env:
+              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
+              ORBIT_REMOVAL_MEMBER: '${{ self.member.input_json }}'
+      - name: delete-account-${{ self.member.instance_id }}
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        forEach:
+          item: member
+          in: '${{ steps["captured-inputs"].outputs.members }}'
+        guard: '${{ inputs.intent.environment != "production" }}'
+        dependsOn: [{step: 'delete-tree-${{ self.member.instance_id }}', condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "irm-s-7-" + run.id + "-" + string(self._index) }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              sudo -n --preserve-env=PYTHONPATH,ORBIT_REMOVAL_MEMBER /usr/bin/python3 - <<'PY'
+              import json
+              import os
+              import subprocess
+              import sys
+
+              from identity import Refusal, account, info, quarantine_path, require
+
+              try:
+                  value = json.loads(os.environ['ORBIT_REMOVAL_MEMBER'])
+                  member, capture, intent = value['member'], value['capture'], value['intent']
+                  require(info(capture['source']) is None)
+                  require(info(quarantine_path(member, capture, intent['removal_id'])) is None)
+                  owner = account(member, True)
+                  if owner is not None:
+                      require(owner.pw_uid == capture['uid'] and owner.pw_gid == capture['gid'])
+                      for entry in os.scandir('/proc'):
+                          if entry.name.isdecimal():
+                              try:
+                                  require(entry.stat().st_uid != owner.pw_uid, 'instance.processes_still_running')
+                              except FileNotFoundError:
+                                  pass
+                      subprocess.run(['/usr/sbin/userdel', '--', member['user']], check=True,
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  print(json.dumps({'instance_id': member['instance_id'], 'account_absent': True}))
+              except (Refusal, OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
+                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.source_finalization_failed')}))
+                  sys.exit(1)
+              PY
+            env:
+              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
+              ORBIT_REMOVAL_MEMBER: '${{ self.member.input_json }}'
+      - name: delete-marker-${{ self.member.instance_id }}
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        forEach:
+          item: member
+          in: '${{ steps["captured-inputs"].outputs.members }}'
+        guard: '${{ inputs.intent.environment != "production" }}'
+        dependsOn: [{step: 'delete-account-${{ self.member.instance_id }}', condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "irm-s-8-" + run.id + "-" + string(self._index) }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              sudo -n --preserve-env=PYTHONPATH,ORBIT_REMOVAL_MEMBER /usr/bin/python3 - <<'PY'
+              import json
+              import os
+              import shutil
+              import sys
+
+              from identity import Refusal, account, directory, identity, info, require
+
+              try:
+                  value = json.loads(os.environ['ORBIT_REMOVAL_MEMBER'])
+                  member, capture = value['member'], value['capture']
+                  require(account(member, True) is None and info(capture['source']) is None)
+                  marker = capture['marker']
+                  if marker['present'] and info(marker['path']) is not None:
+                      directory(marker['path'], 0, 0)
+                      require(identity(marker['path']) == marker['identity'])
+                      shutil.rmtree(marker['path'])
+                  print(json.dumps({'instance_id': member['instance_id'], 'marker_absent': True}))
+              except (Refusal, OSError, KeyError, ValueError) as error:
+                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.source_finalization_failed')}))
+                  sys.exit(1)
+              PY
+            env:
+              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
+              ORBIT_REMOVAL_MEMBER: '${{ self.member.input_json }}'
