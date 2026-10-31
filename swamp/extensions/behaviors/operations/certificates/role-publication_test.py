@@ -1,8 +1,8 @@
 """Role certificate publication uses the canonical Caddy lock and a real key pair."""
 import os,pathlib,re,subprocess,tempfile,types,unittest
 HERE=pathlib.Path(__file__).parent
-BASE=(HERE/'scripts/role_policy.py').read_text().split('# END PAIR')[0]
-EXT=re.search(r'String.raw`(.*?)`;', (HERE/'role-publication.ts').read_text(),re.S)[1]
+BASE=(HERE/'retained_role_policy.py').read_text().split('# BEGIN HOST\n')[1].split('# END PAIR')[0].replace('from role_paths import KEY_ROOT, role_paths\n','')
+EXT=re.search(r'String.raw`(.*?)`;', (HERE/'role-publication.ts').read_text(), re.S)[1]
 class RoleCertificateTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

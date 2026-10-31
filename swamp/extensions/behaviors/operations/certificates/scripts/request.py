@@ -1,10 +1,9 @@
 """Reuse a current leaf or request a public CSR with a Node-local key."""
 
-import base64
 import os
 import re
 
-from local import account, directory, emit, openssl, valid
+from local import account, directory, emit, request_for_key, valid
 
 
 def request(leaf):
@@ -22,12 +21,9 @@ def request(leaf):
     candidate = root / "versions" / (version + ".candidate")
     directory(candidate, user.pw_uid, user.pw_gid, 0o700)
     key = candidate / "key.pem"
-    if not key.exists():
-        openssl("genrsa", "-out", key, "2048")
-    key.chmod(0o600)
+    result = request_for_key(key, leaf["domain"])
     os.chown(key, user.pw_uid, user.pw_gid)
-    csr = openssl("req", "-new", "-key", key, "-subj", "/CN=" + leaf["domain"])
-    return {"state": "request", "request_base64": base64.b64encode(csr).decode()}
+    return result
 
 
 if __name__ == "__main__":

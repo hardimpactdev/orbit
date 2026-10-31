@@ -13,34 +13,45 @@ const ctx = {
     extensionFile: (path: string) => new URL(path, import.meta.url).pathname,
     writeResource: (...args: unknown[]) => Promise.resolve(writes.push(args)),
 };
-Deno.test("role native asset has one action and excludes the retained whole-Node engine", async () => {
-    const result = await behavior.methods.read.execute({
-        action: "request",
-        leaf,
-    }, ctx);
-    assert(result.script_body.includes('\\"operation\\":\\"request\\"'));
-    for (
-        const forbidden of [
-            "publication_lock",
-            "flock",
-            "time.sleep",
-            "reserve_backup",
-            "def publish(value)",
-        ]
-    ) {
-        assertEquals(result.script_body.includes(forbidden), false, forbidden);
-    }
-    await assertRejects(() =>
-        behavior.methods.read.execute({ action: "publish", leaf }, ctx)
-    );
+Deno.test("role metadata resolves one script directory and validates public intent", async () => {
+    const result = await behavior.methods.read.execute({ leaf }, ctx);
+    assertEquals(JSON.parse(result.input_json), leaf);
+    assert(result.scripts_directory.endsWith("/scripts"));
     await assertRejects(() =>
         behavior.methods.read.execute({
-            action: "request",
             leaf: { ...leaf, scope: "route-1" as "role-metrics" },
         }, ctx)
     );
+    const scripts = [
+        "role_request.py",
+        "role_publish.py",
+        "role_paths.py",
+        "local.py",
+    ];
+    for (const script of scripts) {
+        const source = await Deno.readTextFile(
+            new URL("scripts/" + script, import.meta.url),
+        );
+        for (
+            const forbidden of [
+                "publication_lock",
+                "flock",
+                "time.sleep",
+                "ctypes",
+                ".previous",
+                "def restore(",
+                "def finish(",
+            ]
+        ) {
+            assertEquals(
+                source.includes(forbidden),
+                false,
+                script + ": " + forbidden,
+            );
+        }
+    }
 });
-Deno.test("role decoder refuses private CSR, foreign signer response and restored readiness", async () => {
+Deno.test("role decoder refuses private CSR, foreign signer response and failed publication", async () => {
     await assertRejects(() =>
         behavior.methods.decodeRequest.execute({
             leaf,
@@ -64,21 +75,12 @@ Deno.test("role decoder refuses private CSR, foreign signer response and restore
     await assertRejects(() =>
         behavior.methods.result.execute({
             leaf,
-            restored: true,
-            stdout: '{"applied":true}',
-        }, ctx)
-    );
-    await assertRejects(() =>
-        behavior.methods.result.execute({
-            leaf,
-            restored: false,
             stdout: '{"error_code":"certificate.role_failed"}',
         }, ctx)
     );
     assertEquals(
         await behavior.methods.result.execute({
             leaf,
-            restored: false,
             stdout: '{"applied":true}',
         }, ctx),
         { ready: true, node_id: 9, scope: leaf.scope, version: leaf.version },

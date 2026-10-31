@@ -1,5 +1,5 @@
-/** Source sections keep retained callers on the same Python policy as the native child. */
-import source from "./scripts/role_policy.py" with { type: "text" };
+/** Source sections for retained local certificate callers. */
+import source from "./retained_role_policy.py" with { type: "text" };
 export function roleSection(
     source: string,
     section: "HOST" | "PAIR" | "ACTIONS",
@@ -8,6 +8,11 @@ export function roleSection(
         "# END " + section,
     )[0];
 }
-export const roleHostProgram = roleSection(source, "HOST");
+export const roleHostProgram = roleSection(source, "HOST").replace(
+    "from role_paths import KEY_ROOT, role_paths\n",
+    "",
+);
 export const rolePairProgram = roleSection(source, "PAIR");
 export type ExtensionFile = (path: string) => string | Promise<string>;
+
+export const retainedRoleActionsProgram = roleSection(source, "ACTIONS");
