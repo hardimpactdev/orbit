@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiModel;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -85,7 +86,7 @@ final readonly class TaskTurnIntent
             return $this->start->execute('tasks.turn', 'task_group', $group->id, $instance->node_id, [
                 ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
                 'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
-                'model' => $model, 'effort' => $thread->effort, 'pi_port' => config('orbit.pi.port', 3774),
+                'model' => $model, 'effort' => $thread->effort, 'pi_port' => app(PiConnection::class)->port(),
                 'pi_host' => $instance->node->wireguard_ip, 'candidate' => $candidate,
                 'deliverables' => $task->deliverables ?? [], 'analysis_evidence' => $analysis,
             ], $caller, $request);
