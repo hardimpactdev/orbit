@@ -159,7 +159,8 @@ it('activates an Instance Schedule from an empty body idempotently and rejects i
     }
 
     expect($this->runtime->activated)->toBe([])
-        ->and($this->agents->commands())->toBe([]);
+        ->and($this->agents->commands())->toBe(['schedule.activate', 'schedule.activate'])
+        ->and(array_column(array_column($this->agents->calls, 'input'), 'id'))->toBe([$schedule->id, $schedule->id]);
 
     $nodeSchedule = schedules_api_record($this->targetNode, $this->targetNode, name: 'node-health');
 
