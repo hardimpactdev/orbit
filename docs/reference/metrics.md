@@ -222,12 +222,38 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
 
 
-## Reconciliation child Operation
+## Native fleet reconciliation
 
-Route parents request `metrics.reconcile {}` on the one active Metrics serving Node only when their public, active host catalog changes. The catalog maps each host to its serving Ingress Node; FPM Instance selection does not depend on Route targets. Metrics validates that assignment and captures its exporter fleet and service Instances when the child is requested. The parent cannot provide credentials, a fleet or another serving Node. Planning creates no runnable child.
+`metrics.reconcile` records the complete fleet and starts one native Swamp DAG. Each Node runs its own exporter, service and Caddy stages. The Gateway records the native result without reconstructing execution proofs. The former PHP fleet orchestrator and all polled Metrics child registrations are deleted. Unported parent commands return `operation.kind_unavailable`.
 
-Swamp snapshots exporters and service monitoring before changing them. It then refreshes the Metrics runtime, verifies Grafana credentials and proves service Caddy updates through the owning Route child only for fleet Nodes with Orbit-managed Caddy (`caddy: true` in the captured intent).
+Admission retains every selected Node, including vpn1 and usexit18. Each stage uses that Node's exact worker target and label, including when a proxy hosts the worker. Missing workers fail before snapshots or host changes. Private runtime configuration uses the existing Grafana credential through shared private material.
 
-Service restoration uses the same restriction. Exporters and other service monitoring still run on Nodes without managed Caddy; unrelated Caddy Processes stay untouched. Reconciliation keeps the existing Metrics publication; it makes no certificate or private DNS change. Only proven matching child results permit successful completion. Failed or cancelled reconciliation requires restoration from the same parent's successful snapshots before it ends. A lost Node lock, lost Operation lease or cancelled service recovery stops reconciliation and requires fleet rollback. A refused or cancelled rollback completes as `metrics.rollback_failed`. Once the new runtime succeeds, later failure preserves it for recovery.
+Caddy publication follows fresh desired state. Exporter, FPM and service snapshots can restore local runtime. Recovery does not claim to restore a Caddy snapshot or republish Caddy.
 
-Runtime configuration and credentials are resolved inside the Gateway through owner-bound secret references. Receipts keep only declared redacted metadata. Retained Gateway callers keep the synchronous fleet reconciler and its tests until their owning parent composition converts them. This child adds no HTTP cutover and deletes no retained executor.
+### Role changes with unchanged monitoring intent
+
+The Metrics owner compares complete before and after captures through `MetricsRoleReconcileImpact::compare`. It requires reconciliation when the desired fleet projection differs. A verified identical projection makes reconciliation nonapplicable; this is not evidence that any host action ran.
+
+The comparison retains every selected Node, including Nodes 1 and 18. It includes Node identity, addresses, exporter selection, Caddy/FPM flags, hosts, Instance and pool plans, and public runtime files. Worker availability, executable delivery, Ingress publication capability and the reason for an unchanged selection do not change desired monitoring configuration. The native publisher still rebuilds managed Ingress Nodes when desired Caddy monitoring is false, so an old scrape site can be removed.
+
+Adding or removing a CI runner or database role while Shark retains app-dev leaves this projection unchanged. The role owner must capture both sides around its admitted intent; it cannot supply a reduced Node list or substitute its own equality rule. An unported owning root refuses the change when reconciliation is required.
+
+### Native commands and retained observations
+
+Exporter enable and disable return HTTP 202 with the `metrics.exporter_enable` or `metrics.exporter_disable` Operation. Credential reset returns its `metrics.credentials_reset` Operation. The CLI follows each root to its native terminal result. A password reset does not return the password; read credentials separately after success.
+
+Metrics enable and disable use the owning `node.role_add` and `node.role_remove` admission paths and return HTTP 202 with that Operation. They do not call PHP role executors. Until those Node roots are registered, they return `operation.kind_unavailable`.
+
+Swamp runs exporter packages, systemd, UFW, PHP monitoring, Docker and credential effects directly through the canonical Node command transport. Nodes 1 and 18 use that same placement contract through their SSH proxy workers. The agent is frozen at its published pin. Existing `metrics.node-exporter` observation with `action.operation=actual`, `metrics.runtime-health`, and `metrics.credentials` verification remain read-only Gateway observations.
+
+`MetricsFleetCapture::captureRetiring(Node)` supplies the complete desired fleet for an owning Node retirement. It disables the retiring member without removing other members. When that Node owns Metrics and no surviving Metrics assignment exists, it disables the whole desired fleet. The parent owns unreachable-target residue and publication cleanup; the capture proves no host effects. The native lower functions can be composed as steps in that parent's one root.
+
+Node role and removal parents compose the same fleet within their one native root. The fixed private field is `metrics_runtime => metrics.fleet_runtime`, with reference `{"$secret":"metrics.fleet_runtime","id":<Metrics Node>}`. Admission binds that field to the Metrics Node as owner and sole reader, with no writers.
+
+Canonical public captures live at `_role.metrics_fleet` (add/converge), `_role_remove.metrics_fleet`, `_relocate.metrics_fleet`, or `_removal.metrics_fleet` (remove/restore).
+
+Other-role and removal parents read only the Metrics owner's existing encrypted active password. An own-Metrics add, converge or relocate root may initialize a missing password through the existing credential manager only while its captured assignment is provisioning and its target, placed Node and Metrics owner match. Existing credentials are reused, never replaced.
+
+An exact public `input.role=metrics` runs runtime once, then credential verification. Other roles verify first. If verification fails after runtime converged, the runtime stays committed and the fleet is not rolled back. The prior Metrics role-runtime baseline is omitted to prevent double initialization.
+
+Swamp consumes the returned `runtime` and `verify` actions inside its private callback on the exact Metrics worker. The root and unrelated participants receive no credential. Parent admission owns the captured desired transition; it is not replaced by the currently active fleet during private hydration.

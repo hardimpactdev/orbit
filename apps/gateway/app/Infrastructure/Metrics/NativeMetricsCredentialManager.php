@@ -112,52 +112,6 @@ final readonly class NativeMetricsCredentialManager implements MetricsCredential
         return $this->data($this->activePassword($this->assignedNode()));
     }
 
-    public function reset(): MetricsCredentialsData
-    {
-        $node = $this->assignedNode();
-
-        return $this->operations->run($node->id, function () use ($node): MetricsCredentialsData {
-            $scope = $this->scope($node);
-            $active = $this->activePassword($node);
-            $pending = $this->settings->get($scope, self::PendingPasswordKey);
-            $isRetry = is_string($pending) && $pending !== '';
-
-            if (! $isRetry) {
-                $pending = Str::random(self::PasswordLength);
-                $this->settings->put(
-                    $scope,
-                    self::PendingPasswordKey,
-                    $pending,
-                    SettingValueProtection::Secret,
-                );
-            }
-
-            if (! $isRetry || ! $this->runtime->verify($node, $pending)) {
-                $this->runtime->apply($node, $active, $pending);
-
-                if (! $this->runtime->verify($node, $pending)) {
-                    throw new ResourceOperationException(
-                        'metrics.credentials_reset_unverified',
-                        'Grafana did not verify the pending credential.',
-                        502,
-                    );
-                }
-            }
-
-            DB::transaction(function () use ($scope, $pending): void {
-                $this->settings->put(
-                    $scope,
-                    self::ActivePasswordKey,
-                    $pending,
-                    SettingValueProtection::Secret,
-                );
-                $this->settings->delete($scope, self::PendingPasswordKey);
-            });
-
-            return $this->data($pending);
-        });
-    }
-
     private function assignedNode(): Node
     {
         $assignments = NodeRole::query()

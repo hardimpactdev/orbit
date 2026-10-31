@@ -1,0 +1,270 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Metrics\AdmitMetricsFleetAction;
+use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsFleetCapture;
+use App\Domain\Metrics\MetricsFleetProjection;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPrivateMaterial;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Settings\SettingRepository;
+use App\Domain\Settings\SettingScope;
+use App\Domain\Settings\SettingScopeType;
+use App\Domain\Settings\SettingValueProtection;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
+use App\Models\Activity;
+use App\Models\Node;
+use App\Models\Operation;
+use Tests\Support\FakeRoutePublicationSocket;
+
+beforeEach(function (): void {
+    $this->manifest = tempnam(sys_get_temp_dir(), 'fleet-direct-agent-');
+    file_put_contents($this->manifest, json_encode(['commit' => str_repeat('c', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64)]]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
+    $this->node = Node::query()->forceCreate(['id' => 9, 'name' => 'metrics', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'ssh_host_fingerprint' => 'fixture']);
+    $this->node->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    config(['swamp_workers.nodes' => [9]]);
+    $this->plan = app(MetricsFleetCapture::class)->capture();
+    $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $this->operation = Operation::query()->create(['kind' => 'metrics.reconcile', 'target_type' => 'metrics', 'target_id' => 9, 'node_id' => 9, 'status' => OperationStatus::Queued, 'sequence' => 1,
+        'state' => ['swamp_run_id' => $this->run],
+        'input' => ['participant_node_ids' => [9], 'metrics_fleet' => $this->plan, 'fleet_runtime' => ['$secret' => 'metrics.fleet_runtime', 'id' => 9]]]);
+    $this->credentials = Mockery::mock(MetricsCredentialManager::class);
+    app()->instance(MetricsCredentialManager::class, $this->credentials);
+    $this->result = ['ready' => true, 'missing_worker_ids' => [], 'verified_node_ids' => [9], 'restored_node_ids' => [], 'unknown_node_ids' => [], 'runtime_committed' => true];
+    $this->completion = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00Z', 'finished_at' => '2026-10-31T03:00:01Z', 'error_code' => null, 'result' => $this->result];
+});
+afterEach(function (): void {
+    unlink($this->manifest);
+});
+
+it('hydrates only the declared owned runtime through the real shared reader without persisting bytes', function (): void {
+    $this->credentials->shouldReceive('passwordForConvergence')->once()->withArgs(fn (Node $node): bool => $node->id === 9)->andReturn('fleet-private-sentinel');
+    $before = $this->operation->fresh()->getAttributes();
+    $material = app(DirectOperationPrivateMaterial::class)->read($this->operation);
+    expect($material['fleet_runtime']['runtime']['configuration']['/etc/orbit/metrics/grafana/admin-password'])->toBe('fleet-private-sentinel');
+    expect($material['fleet_runtime']['verify'])->toBe(['operation' => 'verify', 'password' => 'fleet-private-sentinel']);
+    expect($this->operation->fresh()->getAttributes())->toBe($before);
+    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()], JSON_THROW_ON_ERROR))->not->toContain('fleet-private-sentinel');
+    expect(app(MetricsFleetProjection::class)->input($this->operation))->toBe(['participant_node_ids' => [9], 'metrics_fleet' => $this->plan]);
+});
+it('refuses foreign ownership unbound roots terminal roots and workerless captures before reading credentials', function (string $change): void {
+    $this->credentials->shouldNotReceive('passwordForConvergence');
+    if ($change === 'owner') {
+        $this->operation->update(['target_id' => 13]);
+    } elseif ($change === 'unbound') {
+        $this->operation->update(['state' => []]);
+    } elseif ($change === 'terminal') {
+        $this->operation->update(['status' => OperationStatus::Failed]);
+    } else {
+        $plan = $this->plan;
+        $plan['fleet'][0]['worker'] = false;
+        unset($plan['digest']);
+        $plan['digest'] = MetricsFleetCapture::digest($plan);
+        $this->operation->update(['input' => [...$this->operation->input, 'metrics_fleet' => $plan]]);
+    }
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation))->toThrow(ResourceOperationException::class);
+})->with(['owner', 'unbound', 'terminal', 'workerless']);
+it('projects one complete root and accepts only its exact terminal replay', function (): void {
+    $projection = app(MetricsFleetProjection::class);
+    $done = $projection->apply($this->operation, $this->completion);
+    expect($done->status)->toBe(OperationStatus::Succeeded)->and($done->result)->toBe($this->result);
+    $sequence = $done->sequence;
+    expect($projection->apply($done, $this->completion)->sequence)->toBe($sequence);
+    expect(Operation::query()->count())->toBe(1);
+});
+it('records the native result without reconstructing its fleet proof in PHP', function (): void {
+    $result = [...$this->result, 'verified_node_ids' => [9, 9], 'runtime_committed' => false];
+    $done = app(MetricsFleetProjection::class)->apply($this->operation, [...$this->completion, 'result' => $result]);
+    expect($done->status)->toBe(OperationStatus::Succeeded)->and($done->result)->toBe($result);
+});
+it('projects an explicit workerless failure without pretending reconciliation succeeded', function (): void {
+    $plan = $this->plan;
+    $plan['fleet'][0]['worker'] = false;
+    unset($plan['digest']);
+    $plan['digest'] = MetricsFleetCapture::digest($plan);
+    $this->operation->update(['input' => [...$this->operation->input, 'metrics_fleet' => $plan]]);
+    $result = ['ready' => false, 'error_code' => 'metrics.no_worker', 'missing_worker_ids' => [9], 'verified_node_ids' => [], 'restored_node_ids' => [], 'unknown_node_ids' => [], 'runtime_committed' => false];
+    $done = app(MetricsFleetProjection::class)->apply($this->operation, [...$this->completion, 'status' => 'failed', 'error_code' => 'metrics.no_worker', 'result' => $result]);
+    expect($done->status)->toBe(OperationStatus::Failed)->and($done->error_code)->toBe('metrics.no_worker')->and($done->result)->toBe($result);
+});
+
+it('refuses a changed desired runtime before reading its credential', function (): void {
+    $this->credentials->shouldNotReceive('passwordForConvergence');
+    $this->node->update(['name' => 'changed-after-capture']);
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation))->toThrow(ResourceOperationException::class);
+});
+
+it('records and starts one native root without executing or awaiting the fleet in PHP', function (): void {
+    $this->operation->update(['status' => OperationStatus::Cancelled]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-metrics-fleet', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'scoped-fixture']);
+    $operation = app(AdmitMetricsFleetAction::class)->execute();
+    expect($operation->status)->toBe(OperationStatus::Running)
+        ->and($operation->state['swamp_run_id'])->toBe($this->run);
+    expect($socket->sent)->toHaveCount(1);
+});
+
+it('serves only fresh admitted Caddy public input to a foreign Node and keeps mutations private', function (): void {
+    $gateway = $this->markAsGateway(Node::query()->forceCreate(['id' => 14, 'name' => 'gateway', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14']));
+    $participant = Node::query()->forceCreate(['id' => 13, 'name' => 'shark', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.13', 'wireguard_ip' => '10.44.0.13']);
+    $participant->accessibleNodes()->attach($gateway);
+    $plan = $this->plan;
+    $plan['fleet'][] = [...$plan['fleet'][0], 'node_id' => 13, 'caddy_managed' => true];
+    $this->operation->update(['input' => [...$this->operation->input, 'participant_node_ids' => [9, 13], 'metrics_fleet' => $plan], 'result' => ['root_only' => true]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $participant->wireguard_ip]);
+    $path = '/api/v1/direct-operations/'.$this->operation->id;
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('data.node_id', 9)->assertJsonPath('data.input.caddy_publication.node_id', 13)
+        ->assertJsonMissingPath('data.input.metrics_fleet')->assertJsonMissingPath('data.result');
+    $this->getJson($path.'?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict();
+    $this->getJson($path.'/private-material?run_id='.$this->run)->assertForbidden();
+    $this->postJson($path.'/result', [...$this->completion, 'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z'])->assertForbidden();
+    $this->operation->update(['input' => [...$this->operation->input, 'participant_node_ids' => [9]]]);
+    $this->getJson($path.'?run_id='.$this->run)->assertForbidden();
+});
+
+it('records a terminal native admission failure when submission is unconfigured', function (): void {
+    $this->operation->update(['kind' => 'metrics.credentials_reset', 'status' => OperationStatus::Running]);
+    expect(fn () => app(AdmitMetricsFleetAction::class)->execute())->toThrow(ResourceOperationException::class, 'The native workflow start is not configured.');
+    expect(Operation::query()->count())->toBe(2);
+    expect(Operation::query()->latest('id')->firstOrFail()->status)->toBe(OperationStatus::Failed);
+});
+
+describe('same-root Node parent runtime custody', function (): void {
+    beforeEach(function (): void {
+        $this->parentNode = Node::query()->forceCreate(['id' => 14, 'name' => 'parent', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14']);
+        $this->plan = app(MetricsFleetCapture::class)->capture();
+        $direct = app(DirectOperation::class);
+        $definitions = $direct->definitions();
+        foreach (['node.role_add', 'node.role_converge', 'node.role_remove', 'node.role_relocate', 'node.remove'] as $kind) {
+            $definitions[$kind] = ['workflow' => 'fixture-node-parent', 'projection' => MetricsFleetProjection::class,
+                'private_material' => ['metrics_runtime' => 'metrics.fleet_runtime']];
+        }
+        $reflection = new ReflectionClass($direct);
+        $isolated = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('definitions')->setValue($isolated, $definitions);
+        app()->instance(DirectOperation::class, $isolated);
+        $this->scope = new SettingScope(SettingScopeType::Node, 9);
+        app(SettingRepository::class)->put($this->scope, NativeMetricsCredentialManager::ActivePasswordKey, 'existing-parent-private-sentinel', SettingValueProtection::Secret);
+        $this->credentials->shouldNotReceive('passwordForConvergence');
+        $this->operation->update(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => 14, 'node_id' => 14,
+            'input' => ['participant_node_ids' => [9, 14], '_role' => ['metrics_fleet' => $this->plan],
+                'metrics_runtime' => ['$secret' => 'metrics.fleet_runtime', 'id' => 9],
+                'private_bindings' => ['metrics_runtime' => ['owner_node_id' => 9, 'read_node_ids' => [9], 'write_node_ids' => []]]]]);
+    });
+
+    it('hydrates each exact parent capture only on the Metrics owner without minting or persisting material', function (string $kind, string $capture, bool $restoring = false): void {
+        $input = $this->operation->input;
+        unset($input['_role']);
+        $input[$capture] = [$restoring ? 'restore_metrics_fleet' : 'metrics_fleet' => $this->plan];
+        $this->operation->update(['kind' => $kind, 'input' => $input, 'result' => $restoring ? ['restoring' => true] : null]);
+        $before = $this->operation->fresh()->getAttributes();
+        $material = app(DirectOperationPrivateMaterial::class)->read($this->operation, 9)['metrics_runtime'];
+        expect($material['runtime']['configuration']['/etc/orbit/metrics/grafana/admin-password'])->toBe('existing-parent-private-sentinel')
+            ->and($material['runtime']['configuration']['/etc/orbit/metrics/prometheus.yml'])->toBe($this->plan['runtime_files']['/etc/orbit/metrics/prometheus.yml'])
+            ->and($material['verify'])->toBe(['operation' => 'verify', 'password' => 'existing-parent-private-sentinel'])
+            ->and($this->operation->fresh()->getAttributes())->toBe($before);
+        expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()], JSON_THROW_ON_ERROR))->not->toContain('existing-parent-private-sentinel');
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 14))->toThrow(ResourceOperationException::class);
+    })->with([
+        ['node.role_add', '_role'], ['node.role_converge', '_role'], ['node.role_remove', '_role_remove'],
+        ['node.role_relocate', '_relocate'], ['node.remove', '_removal'], ['node.remove', '_removal', true],
+    ]);
+
+    it('refuses wrong owner readers writers references paths assignments and owner drift', function (string $change): void {
+        $input = $this->operation->input;
+        if ($change === 'owner') {
+            $input['private_bindings']['metrics_runtime']['owner_node_id'] = 14;
+        } elseif ($change === 'reader') {
+            $input['private_bindings']['metrics_runtime']['read_node_ids'][] = 14;
+        } elseif ($change === 'writer') {
+            $input['private_bindings']['metrics_runtime']['write_node_ids'] = [9];
+        } elseif ($change === 'reference') {
+            $input['metrics_runtime']['id'] = 14;
+        } elseif ($change === 'path') {
+            $input['_role_remove'] = $input['_role'];
+            unset($input['_role']);
+        } elseif ($change === 'assignment') {
+            $this->node->roles()->where('role', 'metrics')->update(['status' => 'failed']);
+        } elseif ($change === 'address') {
+            $this->node->update(['wireguard_ip' => '10.44.0.99']);
+        } elseif ($change === 'unbound') {
+            $this->operation->update(['state' => []]);
+        } else {
+            $input['participant_node_ids'] = [14];
+        }
+        $this->operation->update(['input' => $input]);
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
+    })->with(['owner', 'reader', 'writer', 'reference', 'path', 'assignment', 'address', 'unbound', 'participant']);
+
+    it('uses the admitted post-transition capture instead of silently replacing it with current fleet intent', function (): void {
+        $plan = app(MetricsFleetCapture::class)->captureRetiring($this->parentNode);
+        $input = $this->operation->input;
+        unset($input['_role']);
+        $input['_removal'] = ['metrics_fleet' => $plan];
+        $this->operation->update(['kind' => 'node.remove', 'input' => $input]);
+        $material = app(DirectOperationPrivateMaterial::class)->read($this->operation, 9)['metrics_runtime'];
+        expect($material['runtime']['configuration']['/etc/orbit/metrics/prometheus.yml'])->toBe($plan['runtime_files']['/etc/orbit/metrics/prometheus.yml']);
+    });
+
+    it('refuses a missing existing password without creating a replacement', function (): void {
+        app(SettingRepository::class)->delete($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
+        expect(app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey))->toBeNull();
+    });
+
+    it('initializes the existing credential type once for its exact provisioning Metrics root', function (string $kind, string $capture): void {
+        app(SettingRepository::class)->delete($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        $this->node->roles()->where('role', 'metrics')->update(['status' => 'provisioning']);
+        app()->instance(MetricsCredentialManager::class, app(NativeMetricsCredentialManager::class));
+        $input = $this->operation->input;
+        unset($input['_role']);
+        $input[$capture] = ['metrics_fleet' => $this->plan];
+        $this->operation->update(['kind' => $kind, 'target_id' => 9, 'node_id' => 9, 'input' => [...$input, 'role' => 'metrics']]);
+        $reader = app(DirectOperationPrivateMaterial::class);
+        $first = $reader->read($this->operation, 9)['metrics_runtime'];
+        $second = $reader->read($this->operation, 9)['metrics_runtime'];
+        $password = app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        expect($password)->toBeString()->toHaveLength(32);
+        expect($second)->toBe($first)
+            ->and($first['runtime']['configuration']['/etc/orbit/metrics/grafana/admin-password'])->toBe($password)
+            ->and($first['verify'])->toBe(['operation' => 'verify', 'password' => $password]);
+        expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()], JSON_THROW_ON_ERROR))->not->toContain($password);
+    })->with([['node.role_add', '_role'], ['node.role_converge', '_role'], ['node.role_relocate', '_relocate']]);
+
+    it('never bootstraps an active misplaced removal or different-role root', function (string $change): void {
+        app(SettingRepository::class)->delete($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        $this->node->roles()->where('role', 'metrics')->update(['status' => $change === 'active' ? 'active' : 'provisioning']);
+        $input = [...$this->operation->input, 'role' => $change === 'role' ? 'app-dev' : 'metrics'];
+        $kind = 'node.role_add';
+        if ($change === 'removal') {
+            $kind = 'node.role_remove';
+            $input['_role_remove'] = $input['_role'];
+            unset($input['_role']);
+        }
+        $this->operation->update(['kind' => $kind, 'target_id' => $change === 'target' ? 14 : 9,
+            'node_id' => $change === 'placement' ? 14 : 9, 'input' => $input]);
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
+        expect(app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey))->toBeNull();
+    })->with(['active', 'role', 'target', 'placement', 'removal']);
+
+    it('keeps an existing provisioning-owner credential and refuses an empty one instead of replacing it', function (): void {
+        $this->node->roles()->where('role', 'metrics')->update(['status' => 'provisioning']);
+        $this->operation->update(['target_id' => 9, 'node_id' => 9, 'input' => [...$this->operation->input, 'role' => 'metrics']]);
+        expect(app(DirectOperationPrivateMaterial::class)->read($this->operation, 9)['metrics_runtime']['verify']['password'])->toBe('existing-parent-private-sentinel');
+        app(SettingRepository::class)->put($this->scope, NativeMetricsCredentialManager::ActivePasswordKey, '', SettingValueProtection::Secret);
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
+        expect(app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey))->toBe('');
+    });
+
+});

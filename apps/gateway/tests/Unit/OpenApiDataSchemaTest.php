@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Data\Activities\ActivityData;
 use App\Data\Metrics\MetricsAssignmentData;
 use App\Data\Metrics\MetricsExporterData;
-use App\Data\Metrics\MetricsMutationData;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterSelectionReason;
 use App\Domain\Metrics\MetricsPublicationCleanup;
@@ -34,11 +33,6 @@ it('publishes data class schemas with the keys those classes produce', function 
             status: 'active',
             failedStep: null,
             errorCode: null,
-        )->toArray()))
-        ->and(openapi_schema_property_names('MetricsMutation'))->toBe(array_keys(new MetricsMutationData(
-            nodeId: 7,
-            status: 'active',
-            publication: MetricsPublicationCleanup::Cleaned,
         )->toArray()))
         ->and(openapi_schema_property_names('MetricsExporter'))->toBe(array_keys(new MetricsExporterData(
             id: 1,

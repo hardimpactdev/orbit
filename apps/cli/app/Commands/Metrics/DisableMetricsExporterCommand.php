@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Metrics;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsExporterRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DisableMetricsExporterCommand extends MetricsCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'metrics:exporter:disable {node : Node ID or name} {--json : Return machine-readable JSON}';
 
@@ -30,10 +33,15 @@ final class DisableMetricsExporterCommand extends MetricsCommand
         $response = $this->sendWithProgress(
             $connector,
             new DisableMetricsExporterRequest($nodeId),
-            MetricsMutationResponse::class,
-            ['Disable Metrics exporter', 'Disabling Metrics exporter', 'Disabled Metrics exporter'],
+            OperationResponse::class,
+            ['Disable Metrics exporter', 'Recording exporter intent', 'Exporter request accepted'],
         );
 
-        return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+        if (! $response instanceof OperationResponse) {
+            return self::FAILURE;
+        }
+        $profile = $this->activeGatewayProfile($repository);
+
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $response, 'Disable Metrics exporter', 'Metrics exporter');
     }
 }

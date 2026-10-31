@@ -9,7 +9,6 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Files\AtomicSymlinkPublisher;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
-use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -214,8 +213,6 @@ it('keeps an issued generation stable while later certificates are published', f
         $second = $issuer->issue('gateway.orbit', '10.44.0.2');
         $publications = new FakeAgentCommandRunner()->answer('gateway.publish-certificate', ['changed' => true]);
         new NativeGatewayCertificatePublisher($publications, $orbitHome)->publish(new Node(['name' => 'gateway']), $first);
-        $agents = new FakeAgentCommandRunner()->answer('metrics.certificate', ['change' => 'created', 'previous' => null]);
-        new MetricsCertificatePublisher($agents)->publish(new Node(['name' => 'gateway']), $first);
 
         expect($first->certificatePath)
             ->toStartWith($orbitHome.'/ca/gateway-versions/')
@@ -228,7 +225,6 @@ it('keeps an issued generation stable while later certificates are published', f
         expect(file_get_contents($first->privateKeyPath))
             ->toBe($firstPrivateKey);
         expect($publications->calls[0]['input'])->toBe(['certificate' => $firstCertificate, 'key' => $firstPrivateKey, 'root_certificate' => file_get_contents($orbitHome.'/ca/root.pem')]);
-        expect($agents->calls[0]['input'])->toMatchArray(['certificate' => $firstCertificate, 'key' => $firstPrivateKey]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

@@ -73,6 +73,12 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
         }
         $password = $path === null ? $this->credentials->passwordForConvergence($node)
             : $this->settings->get(new SettingScope(SettingScopeType::Node, $id), NativeMetricsCredentialManager::ActivePasswordKey);
+        if ($path !== null && $password === null && ($operation->input['role'] ?? null) === RoleName::Metrics->value
+            && in_array($operation->kind, ['node.role_add', 'node.role_converge', 'node.role_relocate'], true)
+            && $operation->target_id === $id && $operation->node_id === $id
+            && NodeRole::query()->whereKey($plan['assignment_id'])->where('node_id', $id)->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Provisioning)->exists()) {
+            $password = $this->credentials->passwordForConvergence($node);
+        }
         if (! is_string($password) || $password === '') {
             throw new ResourceOperationException('metrics.credentials_missing', 'The recorded Grafana credential is unavailable.', 409);
         }

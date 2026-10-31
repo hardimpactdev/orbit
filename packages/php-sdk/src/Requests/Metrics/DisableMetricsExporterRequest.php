@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Metrics;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
@@ -24,9 +24,9 @@ final class DisableMetricsExporterRequest extends GatewayRequest
         return '/api/v1/metrics/exporters/'.$this->nodeId;
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): MetricsMutationResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
     {
-        return MetricsMutationResponse::fromGatewayData(
+        return OperationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
         );

@@ -14,6 +14,8 @@ use App\Data\Processes\AddProcessData;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Metrics\AdmitMetricsExporterPreferenceAction;
+use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
@@ -59,12 +61,12 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(NativeMetricsRoleManager::class)->enableExporter($node->id))
+    expect(fn () => app(AdmitMetricsExporterPreferenceAction::class)->execute($node->id, ExporterPreference::Enabled))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(NativeMetricsRoleManager::class)->disableExporter($node->id))
+    expect(fn () => app(AdmitMetricsExporterPreferenceAction::class)->execute($node->id, ExporterPreference::Disabled))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);

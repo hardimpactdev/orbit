@@ -3,7 +3,7 @@ title: "Service metrics"
 description: "Caddy proxy traffic and dedicated production PHP-FPM capacity monitoring."
 covers:
   - apps/gateway/app/Infrastructure/Metrics/ServiceMetrics*.php
-  - apps/gateway/app/Infrastructure/Metrics/NativeServiceMetrics*.php
+  - apps/gateway/app/Domain/Metrics/MetricsFleet*.php
   - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
   - apps/gateway/app/Infrastructure/Instances/ProductionPhpRuntimeConfigRenderer.php
@@ -126,3 +126,5 @@ A shared master would reduce monitoring cost. It would also break independent de
 ### No automatic tuning
 
 Observing a service and changing its capacity have different effects. So Metrics enablement never tunes PHP-FPM, resets caches, or runs application commands. FPM Tune and Laravel metrics need their own opt-in.
+
+Swamp applies service monitoring through native placed system commands. The agent stays frozen at its published pin and supplies observations. The Metrics fleet root captures desired service configuration and publishes Caddy through its canonical per-Node native lock.

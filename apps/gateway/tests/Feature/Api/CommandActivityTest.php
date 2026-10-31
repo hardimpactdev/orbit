@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Data\Metrics\MetricsMutationData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
@@ -10,9 +9,9 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
+use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -20,6 +19,8 @@ use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -37,6 +38,7 @@ use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Tool;
@@ -174,18 +176,28 @@ it('records a metrics disable request as metrics:disable', function (): void {
         'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
+    $definitions = app(DirectOperation::class)->definitions();
+    $definitions['node.role_remove'] = ['workflow' => 'operation-node-role-remove', 'projection' => NodeConvergeProjection::class];
+    $reflection = new ReflectionClass(DirectOperation::class);
+    $direct = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('definitions')->setValue($direct, $definitions);
+    app()->instance(DirectOperation::class, $direct);
+    $operation = Operation::query()->create(['kind' => 'node.role_remove', 'target_type' => 'node', 'target_id' => $gateway->id,
+        'node_id' => $gateway->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0, 'input' => ['role' => 'metrics'], 'state' => []]);
     $manager = Mockery::mock(MetricsRoleManager::class);
     $manager
         ->shouldReceive('remove')
         ->once()
         ->with(true, true)
-        ->andReturn(new MetricsMutationData($gateway->id, 'removed', MetricsPublicationCleanup::Uncleaned));
+        ->andReturn($operation);
     app()->instance(MetricsRoleManager::class, $manager);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
-        ->assertOk();
+        ->assertAccepted()
+        ->assertJsonPath('data.id', $operation->id)
+        ->assertJsonPath('data.kind', 'node.role_remove');
 
     expect(Activity::query()->sole()->command)->toBe('metrics:disable');
 });
