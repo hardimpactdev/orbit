@@ -561,7 +561,9 @@ Undeclared or unstamped Operations stay on their previous Swamp path. The helper
 
 The optional typed primitive hook is reserved for shared generic Gateway primitives, such as Route/Caddy publication or scoped token minting. New family execution relays are refused; family actions run on their Node worker.
 
-Direct workers authenticate as active WireGuard peers. The direct request authorizes the bound run and immutable participant and field bindings without requiring a fleet-wide Gateway access edge. A TaskVM participant receives only its admitted public view and readable private fields; it may store only explicitly writable fields. Only the root Node may send result, failure or primitive requests. Other Gateway APIs keep their Node access checks. Direct requests do not use the legacy executor’s `worker_node_ids` allowlist. The configured control-plane peer keeps its existing fleet authority; adding a Node to `worker_node_ids` does not grant that authority. Gateway-scoped intents are refused to per-Node workers.
+Direct workers authenticate as active WireGuard peers. Direct requests authorize the bound run and immutable participant and field bindings. They require no Gateway access grant. A TaskVM participant receives only its admitted public view and readable private fields, and may store only explicitly writable fields.
+
+Only the root Node may send result, failure or primitive requests. Other Gateway APIs keep their Node access checks. Participation never grants general access to the Gateway or another Node.
 
 Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase without remote diagnostics or credentials.
 
