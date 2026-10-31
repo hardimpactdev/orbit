@@ -100,3 +100,64 @@ it('refuses mismatched history or unavailable public JSON without projecting', f
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
     expect($this->node->fresh()->ssh_host_key)->toBeNull();
 })->with(['run', 'workflow', 'owner', 'status', 'missing', 'array', 'json']);
+
+it('recovers a late attachment from one terminal history read without inventing status', function (string $native, OperationStatus $expected): void {
+    $this->history['status'] = $native;
+    if ($native !== 'succeeded') {
+        $this->history['jobs'][0]['steps'][1] = ['name' => 'probe-host', 'status' => 'skipped'];
+    }
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId], $this->selector);
+
+    expect($result->status)->toBe($expected);
+    expect($this->socket->sent)->toHaveCount(1);
+})->with([
+    ['succeeded', OperationStatus::Succeeded], ['failed', OperationStatus::Failed],
+    ['cancelled', OperationStatus::Cancelled], ['interrupted', OperationStatus::Failed],
+]);
+
+it('leaves late attachment unchanged when history is active missing forbidden or unreachable', function (string $condition): void {
+    if ($condition === 'active') {
+        $this->history['status'] = 'running';
+    } elseif ($condition === 'transport') {
+        $this->socket->reply = static fn (): never => throw new RuntimeException('synthetic-private-diagnostic');
+    } else {
+        $this->socket->reply = fn (array $request): array => [['type' => 'error', 'id' => $request['id'],
+            'code' => $condition === 'missing' ? 'not_found' : 'forbidden', 'message' => 'synthetic-private-diagnostic']];
+    }
+    expect(fn () => $this->step->projectTerminal($this->operation, ['id' => $this->runId], $this->selector))
+        ->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toHaveCount(1);
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($this->node->fresh()->ssh_host_key)->toBeNull();
+})->with(['active', 'missing', 'auth', 'transport']);
+
+it('preserves a terminal result recorded while history is in flight', function (): void {
+    $this->socket->reply = function (array $request): array {
+        Operation::query()->whereKey($this->operation->id)->update([
+            'status' => OperationStatus::Cancelled, 'result' => ['cancelled_elsewhere' => true],
+        ]);
+
+        return [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $this->history]]];
+    };
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId], $this->selector);
+
+    expect($result->status)->toBe(OperationStatus::Cancelled);
+    expect($result->result)->toBe(['cancelled_elsewhere' => true]);
+    expect($this->socket->sent)->toHaveCount(1);
+    expect($this->node->fresh()->architecture)->toBeNull();
+});
+
+it('refuses a binding replaced while history is in flight', function (): void {
+    $this->socket->reply = function (array $request): array {
+        Operation::query()->whereKey($this->operation->id)->update(['state' => ['swamp_run_id' => 'replacement-run']]);
+
+        return [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $this->history]]];
+    };
+
+    expect(fn () => $this->step->projectTerminal($this->operation, ['id' => $this->runId], $this->selector))
+        ->toThrow(ResourceOperationException::class, 'This status belongs to another Swamp run.');
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($this->operation->fresh()->state['swamp_run_id'])->toBe('replacement-run');
+    expect($this->node->fresh()->architecture)->toBeNull();
+});
