@@ -24,7 +24,11 @@ class NativeProcessFixture(harness.NativeTestCase):
         self.copy_behaviors("operations/process-commands")
         contracts = self.repo / "extensions/behaviors/operations/processes-schedules"
         contracts.mkdir()
-        for name in ["process-input.ts", "installation-input.ts"]:
+        for name in [
+            "process-input.ts",
+            "installation-input.ts",
+            "required-mount-paths.ts",
+        ]:
             shutil.copy(
                 ROOT / "extensions/behaviors/operations/processes-schedules" / name,
                 contracts / name,
@@ -151,6 +155,7 @@ class NativeProcessFixture(harness.NativeTestCase):
                 except ValueError:
                     pass
         self.fail("Native run result missing")
+
 
 class NativeProcessComponents(NativeProcessFixture):
     def test_delivered_control_stops_then_verifies_without_boot_policy_mutation(self):
