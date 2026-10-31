@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\InstanceProvisioning;
-use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -35,18 +33,6 @@ beforeEach(function (): void {
         'repository_url' => 'git@example.test:backlog-demo.git',
         'default_branch' => 'main',
     ]);
-    $this->provisioning = new class implements InstanceProvisioning
-    {
-        public int $calls = 0;
-
-        public function provision(InstanceProvisionIntent $intent): ?Instance
-        {
-            $this->calls++;
-
-            return null;
-        }
-    };
-    app()->instance(InstanceProvisioning::class, $this->provisioning);
     app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
     {
         public function defaultBranchCommit(Project $project): string
@@ -96,15 +82,7 @@ it('stores a new group in backlog and does not claim it', function (): void {
     $this->getJson('/api/v1/task-groups')->assertOk()->assertJsonMissingPath('data.task_groups.0.execution_mode');
 
     expect($group['status'])->toBe('backlog')
-        ->and($group['tasks'][0]['status'])->toBe('todo')
-        ->and($this->provisioning->calls)->toBe(0);
-});
-
-it('claims a group created in todo', function (): void {
-    $group = backlog_group($this, extra: ['status' => 'todo']);
-
-    expect($group['status'])->toBe('todo')
-        ->and($this->provisioning->calls)->toBe(1);
+        ->and($group['tasks'][0]['status'])->toBe('todo');
 });
 
 it('refuses todo for a group without subtasks', function (): void {
@@ -123,24 +101,7 @@ it('refuses todo for a group without subtasks', function (): void {
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'tasks.no_subtasks');
 
-    expect(Task::topLevel()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Backlog)
-        ->and($this->provisioning->calls)->toBe(0);
-});
-
-it('moves a group between backlog and todo and claims it on todo', function (): void {
-    $group = backlog_group($this);
-
-    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])
-        ->assertOk()
-        ->assertJsonPath('data.status', 'todo');
-
-    expect($this->provisioning->calls)->toBe(1);
-
-    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'backlog'])
-        ->assertOk()
-        ->assertJsonPath('data.status', 'backlog');
-
-    expect($this->provisioning->calls)->toBe(1);
+    expect(Task::topLevel()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Backlog);
 });
 
 it('changes the title and brief only in backlog', function (): void {
@@ -539,8 +500,7 @@ describe('subtask deliverables', function (): void {
             ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing')
             ->assertJsonPath('error.details.subtasks', "#{$bare['id']} \"Bare\"");
 
-        expect(Task::topLevel()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Backlog)
-            ->and($this->provisioning->calls)->toBe(0);
+        expect(Task::topLevel()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Backlog);
     });
 
     it('refuses to create a group in todo while a subtask has no deliverables', function (): void {

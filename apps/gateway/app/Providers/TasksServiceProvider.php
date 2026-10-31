@@ -13,10 +13,8 @@ use App\Console\Commands\TaskGitHubReviewsCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\SwampRunReader;
-use App\Domain\Tasks\TaskAnalysisRunner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
@@ -37,7 +35,6 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceOperationRecovery;
-use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\ModelKeyIssuer;
@@ -61,7 +58,6 @@ use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
-use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Task;
@@ -75,8 +71,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
-        TaskWorkspaceRoute::class => TaskWorkspaceProvisioner::class,
         TaskTopologyAdmission::class => TaskVmTopologyAdmission::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
@@ -86,7 +80,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
-        TaskAnalysisRunner::class => RemoteTaskCheckRunner::class,
         DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,

@@ -68,10 +68,12 @@ final readonly class TaskVmProvisionIntent
 
     public function owned(Operation $operation, bool $lock = false): TaskVm
     {
-        $vm = TaskVm::query()->when($lock, static fn ($query) => $query->lockForUpdate())->findOrFail($operation->target_id);
+        $taskRoot = $operation->kind === 'tasks.provision' && $operation->target_type === 'task_group';
+        $vm = TaskVm::query()->when($lock, static fn ($query) => $query->lockForUpdate())->findOrFail($taskRoot ? ValidatedData::integer($operation->input['task_vm_id']) : $operation->target_id);
         $input = $operation->input;
         $guest = $vm->node;
-        if ($operation->kind !== 'task_vm.provision' || $operation->target_type !== 'task_vm'
+        if ((! $taskRoot && ($operation->kind !== 'task_vm.provision' || $operation->target_type !== 'task_vm'))
+            || ($taskRoot && $vm->group_id !== $operation->target_id)
             || ($input['task_vm_id'] ?? null) !== $vm->id || ($input['node_id'] ?? null) !== $operation->node_id
             || ($input['host_node_id'] ?? null) !== $vm->host_node_id || ($input['name'] ?? null) !== $vm->name
             || ($input['provider'] ?? null) !== $vm->provider->value || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip
@@ -92,6 +94,6 @@ final readonly class TaskVmProvisionIntent
 
         return [...Arr::except($operation->input, ['upcloud_token', 'installation', 'configuration', 'first_visit', 'model_key', 'model_router', 'pi_token', 'pi_artifact_file', 'pi_artifact', 'secret_hash', 'worker_credentials', 'provider_bootstrap']),
             'enrollment' => [...ValidatedData::object($operation->input['enrollment']), 'wireguard_public_key' => $vm->node?->wireguard_public_key],
-            'eligible' => $vm->state === TaskVmState::Provisioning];
+            'eligible' => $vm->state === TaskVmState::Provisioning || ($operation->kind === 'tasks.provision' && $vm->state === TaskVmState::Ready)];
     }
 }

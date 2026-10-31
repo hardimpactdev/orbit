@@ -5,21 +5,24 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\TaskWorkerData;
-use App\Domain\Operations\OperationKinds;
-use App\Domain\Tasks\TaskOperations;
-use App\Domain\Tasks\TaskProvisionOperation;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskProvisionIntent;
 use App\Models\Operation;
 use App\Models\Task;
 use SensitiveParameter;
 
 final readonly class StartTaskProvisionAction
 {
-    public function __construct(private RequireTasksExtensionAction $extension, private TaskOperations $operations) {}
+    public function __construct(private RequireTasksExtensionAction $extension, private TaskProvisionIntent $intent) {}
 
     public function execute(Task $group, string $triggeredBy, ?string $requestId, #[SensitiveParameter] ?TaskWorkerData $worker = null): Operation
     {
         $this->extension->execute();
 
-        return $this->operations->startWithWorker($group, OperationKinds::TasksProvision, $worker, TaskProvisionOperation::requireTodo(...), $triggeredBy, $requestId);
+        if ($worker !== null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Native provisioning issues its own Node worker credentials.', 503);
+        }
+
+        return $this->intent->start($group, $triggeredBy, $requestId);
     }
 }
