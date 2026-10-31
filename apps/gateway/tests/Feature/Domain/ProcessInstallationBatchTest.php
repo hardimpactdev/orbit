@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessInstallationBatch;
-use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Shared\ResourceOperationException;
@@ -33,14 +30,6 @@ beforeEach(function (): void {
             throw new RuntimeException('Account discovery must not run in batch admission or private hydration.');
         }
     });
-    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
-    {
-        public function definitions(): array
-        {
-            return ['instance.transfer' => ['workflow' => 'operation-instance-transfer', 'projection' => ProcessInstanceOperation::class,
-                'private_material' => ['source_installations' => 'process.installation', 'destination_installations' => 'process.installation']]];
-        }
-    }]));
     $this->batch = app(ProcessInstallationBatch::class);
     $this->target = function (Node $node, string $checkout): ProcessTarget {
         $placed = clone $this->instance;
