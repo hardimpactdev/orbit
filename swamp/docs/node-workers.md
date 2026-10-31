@@ -14,6 +14,13 @@ vpn1 (Node 1) and usexit18 (Node 18) use the SSH proxy workers on 209. Their
 pinned SSH identities stay on 209. Do not install a local worker on either light
 Node or route another Node's effects through an unrelated worker.
 
+A direct builtin selector may use a nested input such as
+`inputs.intent.target_node_id` only when every property in that path is required,
+every intermediate schema is an object, and the integer leaf explicitly excludes
+Nodes 1 and 18. A family owns that exclusion policy. A nested selector alone does
+not prove physical placement; legitimate light-Node effects use the shared SSH
+transport instead.
+
 Use the native worker queue timeout, concurrency and token defaults unless the
 execution plan records a measured exception. Credential values are not workflow
 inputs, process arguments or logs. Operational steps resolve execution secrets
