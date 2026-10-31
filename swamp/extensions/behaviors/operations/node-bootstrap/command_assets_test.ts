@@ -112,3 +112,34 @@ Deno.test("asset delivery serializes public data into a shipped action without e
         })
     );
 });
+
+Deno.test("observer delivery reads its canonical asset from the artifact alone", async () => {
+    const writes: unknown[] = [];
+    const result = await behavior.methods.observer.execute(artifact, {
+        extensionFile: (name) => new URL(name, import.meta.url).pathname,
+        writeResource: (...values) => Promise.resolve(writes.push(values)),
+    });
+    const source = await Deno.readTextFile(
+        new URL("scripts/bootstrap_observer.py", import.meta.url),
+    );
+    assertEquals(
+        result.script_body,
+        source.replace(
+            "BOOTSTRAP_INPUT = None",
+            "BOOTSTRAP_INPUT = json.loads(" +
+                JSON.stringify(JSON.stringify(artifact)) + ")",
+        ),
+    );
+    assertEquals(writes, [["assets", "assets", result]]);
+    assertThrows(() =>
+        behavior.methods.observer.execute({
+            ...artifact,
+            url: "http://example.test/observer",
+        }, {
+            extensionFile: () => {
+                throw new Error("Invalid delivery read an asset");
+            },
+            writeResource: () => Promise.resolve(),
+        })
+    );
+});
