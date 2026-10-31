@@ -1,0 +1,92 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterReplacementStep;
+use App\Domain\Routes\ClusterRouterTransition;
+use App\Domain\Routes\NativeClusterRouterIntent;
+use App\Domain\Routes\NativeClusterRouterProjection;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\Cluster;
+use App\Models\Node;
+use App\Models\Operation;
+
+beforeEach(function (): void {
+    $cluster = Cluster::query()->create(['name' => 'Router transition']);
+    $this->old = Node::query()->create(['name' => 'old-router', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $this->candidate = Node::query()->create(['name' => 'candidate-router', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $this->oldRole = $this->old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'active']);
+    $this->newRole = $this->candidate->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'provisioning']);
+    $this->operation = new Operation(['kind' => 'cluster.router_set', 'target_id' => $cluster->id, 'input' => ['cluster_router' => ['candidate' => ['assignment_id' => $this->newRole->id], 'old_nodes' => [['assignment_id' => $this->oldRole->id]]]]]);
+});
+
+it('projects serving, authoritative selection and old cleanup without Gateway execution proof', function (): void {
+    $projection = app(NativeClusterRouterProjection::class);
+    $projection->project($this->operation, ['status' => 'running', 'result' => ['checkpoint' => 'router-serving']]);
+    expect($this->newRole->fresh()->failed_step)->toBe(ClusterRouterReplacementStep::RouterCaddy->value)
+        ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
+    $projection->project($this->operation, ['status' => 'running', 'result' => ['checkpoint' => 'router-selected']]);
+    expect($this->newRole->fresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Removing)
+        ->and($this->oldRole->fresh()->failed_step)->toBeNull();
+    $projection->project($this->operation, ['status' => 'running', 'result' => ['checkpoint' => 'old-router-withdrawn']]);
+    expect($this->oldRole->fresh()->failed_step)->toBe(ClusterRouterTransition::OldRouterCleanup);
+    $projection->project($this->operation, ['status' => 'succeeded', 'result' => ['ready' => true]]);
+    expect($this->oldRole->fresh())->toBeNull()->and($this->newRole->fresh()->failed_step)->toBeNull();
+});
+
+it('keeps the authoritative candidate active after a later native DNS failure', function (): void {
+    $this->oldRole->update(['status' => LifecycleStatus::Removing]);
+    $this->newRole->update(['status' => LifecycleStatus::Active]);
+    app(NativeClusterRouterProjection::class)->project($this->operation, ['status' => 'failed', 'error_code' => 'private_dns.activation_failed', 'result' => ['failed_step' => 'dns']]);
+    expect($this->newRole->fresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($this->newRole->fresh()->error_code)->toBe('private_dns.activation_failed')
+        ->and($this->oldRole->fresh())->not->toBeNull();
+});
+
+it('clears only admitted obsolete assignments after a native unset completes', function (): void {
+    $this->operation->kind = 'cluster.router_unset';
+    $this->operation->input = ['cluster_router' => ['candidate' => null, 'old_nodes' => [['assignment_id' => $this->oldRole->id]]]];
+    app(NativeClusterRouterProjection::class)->project($this->operation, ['status' => 'succeeded', 'result' => ['ready' => true]]);
+    expect($this->oldRole->fresh())->toBeNull()->and($this->newRole->fresh())->not->toBeNull();
+});
+
+it('captures the complete obsolete Router baseline for unset without changing assignment state', function (): void {
+    $manifest = tempnam(sys_get_temp_dir(), 'cluster-agent-');
+    file_put_contents($manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($manifest, sys_get_temp_dir()));
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
+    $this->old->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9']);
+    $this->candidate->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.18']);
+    $this->operation->kind = 'cluster.router_unset';
+    $this->operation->input = ['cluster_id' => $this->old->cluster_id];
+    try {
+        $intent = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+        expect($intent['candidate'])->toBeNull()->and($intent['old_nodes'])->toHaveCount(2)
+            ->and(array_column($intent['old_nodes'], 'assignment_id'))->toBe([$this->oldRole->id, $this->newRole->id])
+            ->and($intent['old_nodes'][0]['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
+            ->and($intent['old_nodes'][0]['router_lan'])->toBe(['desired' => [], 'expand' => false, 'prune' => true])
+            ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
+        $this->operation->kind = 'cluster.router_set';
+        $this->operation->node_id = $this->candidate->id;
+        $this->operation->input = ['cluster_id' => $this->old->cluster_id, 'candidate_role_id' => $this->newRole->id];
+        $setting = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+        expect($setting['candidate']['assignment_id'])->toBe($this->newRole->id)
+            ->and($setting['candidate']['prerequisites'])->toHaveKeys(['user', 'group', 'home', 'packages'])
+            ->and($setting['candidate']['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
+            ->and($setting['old_nodes'])->toHaveCount(1)
+            ->and($this->newRole->fresh()->status)->toBe(LifecycleStatus::Provisioning);
+    } finally {
+        unlink($manifest);
+    }
+});
