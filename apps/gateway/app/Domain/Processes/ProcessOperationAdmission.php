@@ -34,6 +34,9 @@ final readonly class ProcessOperationAdmission
 
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
+            if ($verb === 'create') {
+                $input['installation'] = ['$secret' => 'process.installation', 'id' => $process->id];
+            }
             $nodeId = ValidatedData::integer($input['node_id']);
             $writer = app(DirectOperation::class)->writer('process.'.$verb, $input, $nodeId);
             if ($writer === 'direct') {

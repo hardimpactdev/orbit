@@ -152,19 +152,13 @@ final readonly class CreateProcessAction
     {
         $this->specifications->assertOptions($data);
         $this->targets->resolve($data->targetType, $data->targetId);
-        $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
-        return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(function () use ($data, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($data, $caller, $requestId): Operation {
             $admission = $this->reserveAdmission($data);
+            $process = $admission['process'];
+            $process->fill($admission['attributes'])->save();
 
-            return $this->lease->run($admission['process'], function (Process $fresh) use ($admission, $caller, $requestId): Operation {
-                if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
-                    throw new ResourceOperationException('process.name_taken', "Process [{$fresh->name}] already exists with different configuration.", 409);
-                }
-                $fresh->fill($admission['attributes'])->save();
-
-                return app(ProcessOperationAdmission::class)->execute($fresh, 'create', $admission['created'], caller: $caller, requestId: $requestId);
-            });
-        }));
+            return app(ProcessOperationAdmission::class)->execute($process, 'create', $admission['created'], caller: $caller, requestId: $requestId);
+        });
     }
 }
