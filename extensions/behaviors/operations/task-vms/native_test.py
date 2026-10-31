@@ -26,6 +26,9 @@ class TaskVmNativeTest(NativeTestCase):
         direct = self.repo / 'extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts'
         direct.write_text('import { fixtureHttp } from "../../_test/executor.ts";\n' + direct.read_text().replace(
             '...lifecycleIntent()', '...lifecycleIntent(() => fixtureHttp)'))
+        sweep = self.repo / 'extensions/behaviors/operations/task-vms/sweep.ts'
+        sweep.write_text('import { fixtureSweepHttp, fixtureSweepAgent, fixtureSweepCloud } from "./sweep-native-fixture.ts";\n' + sweep.read_text().replace(
+            '...nativeSweep()', '...nativeSweep((ctx) => fixtureSweepHttp(ctx.globalArgs), fixtureSweepAgent, fixtureSweepCloud)'))
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
             # Local receipt recovery uses fresh processes; worker placement has its own harness.
             source = "\n".join(line for line in path.read_text().splitlines()
@@ -120,6 +123,67 @@ class TaskVmNativeTest(NativeTestCase):
         self.assertEqual(state['operation']['status'], 'cancelled')
         self.assertEqual(state['operation']['result'], {})
         self.assertEqual(state['runs'], 0)
+
+
+    def prepare_native_sweep(self, provider='incus'):
+        path = self.repo / 'workflows/workflow-operation-task-vm-sweep.yaml'
+        source = path.read_text()
+        self.assertIn('target:', source)
+        self.assertNotIn('trigger:', source)
+        self.assertNotIn('queueTimeout:', source)
+        self.cli('workflow', 'validate', 'operation-task-vm-sweep')
+        path.write_text('\n'.join(line for line in source.splitlines()
+                                  if not line.strip().startswith(('target:', 'labels:'))) + '\n')
+        self.state['operation'].update(kind='task_vm.sweep_host', result=None, input={
+            'node_id': 3, 'provider': provider, 'deadline_at': 4000000000, 'ci_runner': False, 'stray_vm_ids': [],
+            'agent_sha256': 'a'*64, 'host': None if provider == 'upcloud' else {
+                'project': 'orbit-tasks', 'pool': 'orbit-tasks', 'cidr': '10.1.0.1/24', 'operator_owned': []},
+            'retired_build_ids': [], 'live_names': ['tvm-5'], 'protected_build_ids': [], 'recorded_build_ids': [], 'running_stamps': []})
+        self.state.update(hostNames=['tvm-5', 'tvm-999', 'operator-vm'],
+                          hostVolumes=['tvm-5-topology-seed', 'tvm-999-topology-seed', 'operator-data'])
+        self.save()
+
+    def run_native_sweep(self, success=True):
+        return self.cli('workflow', 'run', 'operation-task-vm-sweep', '--input',
+                        json.dumps({'operation_id': 19, 'node_id': 3, 'kind': 'task_vm.sweep_host'}), success=success)
+
+    def test_native_sweep_has_no_claim_child_or_receipt_path_and_preserves_live_operator_resources(self):
+        self.prepare_native_sweep()
+        self.run_native_sweep()
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'succeeded')
+        self.assertEqual(state['hostNames'], ['tvm-5', 'operator-vm'])
+        self.assertEqual(state['hostVolumes'], ['tvm-5-topology-seed', 'operator-data'])
+        self.assertEqual(state.get('discoveryCalls', 0), 0)
+        self.assertEqual(state['runs'], 0)
+        self.assertEqual(state['operation']['result']['deleted_names'], ['tvm-999', 'tvm-999-topology-seed'])
+
+    def test_native_sweep_terminal_reply_loss_replays_the_same_root_without_more_deletion(self):
+        self.prepare_native_sweep()
+        self.state['loseDirectReply'] = True
+        self.save()
+        failed = self.run_native_sweep(success=False)
+        run_id = json.JSONDecoder().raw_decode(failed.stdout.lstrip())[0]['id']
+        before = self.read()['sweepCalls']
+        self.cli('workflow', 'resume', 'operation-task-vm-sweep', '--run', run_id)
+        self.assertEqual(self.read()['sweepCalls'], before)
+        self.assertEqual(self.read()['operation']['status'], 'succeeded')
+
+    def test_native_upcloud_sweep_hydrates_existing_material_without_retaining_it(self):
+        import secrets
+        token = 'ucat_' + secrets.token_hex(24)
+        self.secrets = (token,)
+        self.native_env['SWEEP_PRIVATE_FIXTURE'] = token
+        self.prepare_native_sweep('upcloud')
+        self.state['cloudServer'] = {'uuid': '0753940c-1382-456a-9b45-63601e6c7dd1',
+            'title': 'tvm-999', 'hostname': 'tvm-999', 'state': 'stopped',
+            'labels': {'label': [{'key': 'orbit-task-vm', 'value': '999'}]}}
+        self.save()
+        self.run_native_sweep()
+        state = self.read()
+        self.assertIsNone(state['cloudServer'])
+        self.assertEqual(state['operation']['result']['deleted_names'], ['tvm-999'])
+        self.assertEqual(state['operation']['status'], 'succeeded')
 
 
 if __name__ == "__main__":

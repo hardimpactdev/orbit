@@ -1,0 +1,27 @@
+id: aa946b88-1dfe-4010-a85d-bd9ddfe9110a
+name: operation-task-vm-sweep
+description: Sweep one exact admitted host and project its observation in one native run.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [task_vm.sweep_host] }
+  required: [operation_id, node_id, kind]
+vaults: []
+jobs:
+  - name: sweep
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: sweep-host
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-vm-sweep"
+          behaviorName: task-vm-sweep
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

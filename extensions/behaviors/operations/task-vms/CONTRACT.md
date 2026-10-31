@@ -91,9 +91,29 @@ newest two verified templates and templates pinned by allocations. Swamp owns
 all provider polling, graceful stop escalation and deletion waits; a Gateway
 UpCloud primitive submits one fixed API action.
 
-Each host sweep is independent. The Gateway supplies owned orphan candidates and
-reports strays. Deletion rechecks ownership. Two distinct sweep Operations must
-miss a VM before its row fails; a replay of one observation cannot count twice.
+Each host sweep is one direct `task_vm.sweep_host` root in
+`operation-task-vm-sweep`, placed on `orbit-node-<admittedNodeId>` with the
+matching Node label. The sweep children (`sweep_observe`, `sweep_delete`,
+`sweep_delete_upcloud`, `sweep_stop_upcloud`), Gateway inventory/transport/read
+route and polled claim/discovery registrations are deleted. The Gateway records
+host scope and expired build retirement intent; Swamp reads inventory, rechecks
+current DB ownership before deletion and reports strays. The native UpCloud step
+uses callback-local `upcloud.api` material only on the admitted Gateway worker,
+checks the exact UUID/name/hostname/label, waits for stopped power, and observes
+absence after deletion. It never forwards credentials to a foreign worker.
+
+Shared Gateway calls use the Node worker's installed public CA at
+`/usr/local/share/ca-certificates/orbit-root.crt`. A retained explicit model CA
+setting remains an override; source acceptance must verify the served default
+and the sweep model's saved arguments before canary admission.
+
+Native terminal results contain bounded `observed_names` and `deleted_names`,
+plus `ready:true` or a bounded failure code. An unreadable inventory returns a
+failure without an observation. Two distinct successful inventory observations
+must miss a VM before its row fails; neither native root recovery nor an old
+terminal result replay can count twice or restore stale missing evidence. No
+native queue override or family child wait is added. The existing 30-minute host
+deadline is immutable across native resume.
 
 Results are closed scalar fields such as `ready`, `changed`, Node/Process IDs,
 fingerprints, template UUIDs and native phase state. Each cache fill batch uses

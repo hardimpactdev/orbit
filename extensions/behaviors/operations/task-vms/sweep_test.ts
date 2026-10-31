@@ -1,243 +1,295 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { ExecutorError } from "../../operation-runner/mod.ts";
-import { sweepHost, SweepInput } from "./sweep.ts";
-import type { FamilyEffects } from "./runtime.ts";
-const input = (provider = "incus") =>
-  SweepInput.parse({
-    node_id: 4,
-    provider,
-    sweep_id: 27,
-    deadline_at: 4_000_000_000,
+import { DirectOperationCancelled } from "../_lib/direct.ts";
+import {
+  type Agent,
+  orphanInstance,
+  orphanVolume,
+  sweepIncus,
+  SweepIntent,
+} from "./sweep.ts";
+
+export const sweepInput = () =>
+  SweepIntent.parse({
+    node_id: 13,
+    ci_runner: false,
+    stray_vm_ids: [],
+    provider: "incus",
+    deadline_at: 4000000000,
+    agent_sha256: "a".repeat(64),
+    host: {
+      project: "orbit-tasks",
+      pool: "orbit-tasks",
+      cidr: "10.251.77.0/24",
+      operator_owned: [],
+    },
+    retired_build_ids: [],
+    live_names: [],
+    protected_build_ids: [],
+    recorded_build_ids: [],
+    running_stamps: [],
   });
-class Effects implements FamilyEffects {
-  calls: { key: string; kind: string; input: Record<string, unknown> }[] = [];
+class Host {
+  input = sweepInput();
+  names = ["tvm-1", "tvm-999", "operator-vm", "tvm-image-custom"];
+  volumes = [
+    "tvm-1-topology-seed",
+    "tvm-999-topology-seed",
+    "orbit-topology-seed-abc",
+    "operator-data",
+  ];
+  calls: { name: string; input: Record<string, unknown> }[] = [];
+  reads = 0;
+  cancelled = false;
   refuse: string | null = null;
-  read() {
-    return Promise.resolve({
-      deletions: [{ kind: "instance", name: "tvm-100" }, {
-        kind: "volume",
-        name: "tvm-200-topology-seed",
-      }],
-    });
-  }
-  child(
-    key: string,
-    kind: string,
-    _node: number,
-    data: Record<string, unknown>,
-  ) {
-    this.calls.push({ key, kind, input: data });
-    if (key === this.refuse) {
-      return Promise.reject(new ExecutorError("task_vm.host_command_failed"));
+  loseReply = false;
+  inventoryBroken = false;
+  afterVolumes = () => {};
+  beforeRead = () => {};
+  gateway = {
+    read: () => {
+      this.reads++;
+      this.beforeRead();
+      return Promise.resolve({
+        status: "running",
+        cancel_requested: this.cancelled,
+        input: structuredClone(this.input),
+      });
+    },
+    withPrivateMaterial: () =>
+      Promise.reject(new Error("Incus cannot fetch provider credentials")),
+  };
+  agent: Agent = (call) => {
+    this.calls.push({ name: call.name, input: call.input });
+    assertEquals(call.pin, "a".repeat(64));
+    assertEquals(call.sudo, true);
+    if (this.inventoryBroken) {
+      return Promise.resolve({ error_code: "task_vm.host_command_failed" });
     }
-    return Promise.resolve({ ready: true });
+    switch (call.name) {
+      case "incus.instances":
+        assertEquals(call.input.project, "orbit-tasks");
+        return Promise.resolve({ names: [...this.names] });
+      case "incus.volumes":
+        assertEquals(call.input, {
+          project: "orbit-tasks",
+          pool: "orbit-tasks",
+        });
+        this.afterVolumes();
+        return Promise.resolve({ names: [...this.volumes] });
+      case "incus.inventory":
+        return Promise.resolve({
+          instances: this.names.map((name) => ({
+            project: "orbit-tasks",
+            name,
+          })),
+          volumes: this.volumes.map((name) => ({
+            project: "orbit-tasks",
+            pool: "orbit-tasks",
+            name,
+          })),
+        });
+      case "incus.images":
+        return Promise.resolve({ images: {} });
+      case "incus.vm": {
+        const vm = call.input.vm as { name: string; project: string };
+        assertEquals(vm.project, "orbit-tasks");
+        assertEquals(call.input.operation, { kind: "remove_instance" });
+        if (vm.name === this.refuse) {
+          return Promise.resolve({ error_code: "task_vm.host_command_failed" });
+        }
+        this.names = this.names.filter((name) => name !== vm.name);
+        if (this.loseReply) {
+          this.loseReply = false;
+          return Promise.reject(new Error("lost reply"));
+        }
+        return Promise.resolve({ ready: true });
+      }
+      case "incus.volume": {
+        const operation = call.input.operation as {
+          name: string;
+          kind: string;
+        };
+        assertEquals(call.input.location, {
+          project: "orbit-tasks",
+          pool: "orbit-tasks",
+        });
+        assertEquals(operation.kind, "remove");
+        this.volumes = this.volumes.filter((name) => name !== operation.name);
+        return Promise.resolve({ name: operation.name });
+      }
+      default:
+        throw new Error("Unexpected agent primitive");
+    }
+  };
+  execute() {
+    return sweepIncus(structuredClone(this.input), this.gateway, this.agent);
   }
-  wait() {
-    return Promise.resolve();
+  mutations() {
+    return this.calls.filter((call) =>
+      ["incus.vm", "incus.volume"].includes(call.name)
+    );
   }
 }
-Deno.test("sweep deletes only Gateway-owned candidates and records one observation identity", async () => {
-  const effects = new Effects();
-  await sweepHost(input(), effects);
-  assertEquals(effects.calls.map((call) => call.key), [
-    "delete-instance-tvm-100",
-    "delete-volume-tvm-200-topology-seed",
-    "observe",
-  ]);
-  assertEquals(effects.calls.every((call) => call.input.sweep_id === 27), true);
-});
-Deno.test("one refused deletion does not prevent other candidates or missing observations", async () => {
-  const effects = new Effects();
-  effects.refuse = "delete-instance-tvm-100";
-  await assertRejects(
-    () => sweepHost(input(), effects),
-    ExecutorError,
-    "task_vm.host_command_failed",
-  );
-  assertEquals(effects.calls.at(-1)!.key, "observe");
-  assertEquals(effects.calls.length, 3);
-});
-Deno.test("sweep lease loss stops before another effect", async () => {
-  const effects = new Effects();
-  effects.child = () =>
-    Promise.reject(new ExecutorError("operation.lease_lost"));
-  await assertRejects(
-    () => sweepHost(input(), effects),
-    ExecutorError,
-    "operation.lease_lost",
-  );
-  assertEquals(effects.calls, []);
-});
-Deno.test("UpCloud sweep carries an owner-bound reference instead of a credential", async () => {
-  const effects = new Effects();
-  await sweepHost(input("upcloud"), effects);
-  assertEquals(effects.calls[0].kind, "task_vm.sweep_delete_upcloud");
-  assertEquals(effects.calls[0].input.token, { $secret: "upcloud.api", id: 4 });
-});
-
-Deno.test("UpCloud sweep hard-stops an owned orphan and waits for its deletion", async () => {
-  const effects = new Effects();
-  const deletion = {
-    kind: "server",
-    name: "tvm-100",
-    uuid: "owned-server",
-    label: "orbit-task-vm",
-    value: "100",
-  };
-  let state: string | undefined = "started";
-  let waits = 0;
-  effects.read = () =>
-    Promise.resolve({
-      deletions: [deletion],
-      server_states: state ? { "owned-server": state } : {},
-    });
-  effects.wait = () => {
-    waits++;
-    state =
-      effects.calls.some((call) => call.kind === "task_vm.sweep_delete_upcloud")
-        ? undefined
-        : "stopped";
-    return Promise.resolve();
-  };
-  await sweepHost(input("upcloud"), effects);
-  assertEquals(effects.calls.map((call) => call.kind), [
-    "task_vm.sweep_stop_upcloud",
-    "task_vm.sweep_delete_upcloud",
-    "task_vm.sweep_observe",
-  ]);
-  assertEquals(waits, 2);
-});
-
-Deno.test("clone sweep reuses its admitted orphan deletion after a lost reply and preserves other volumes", async () => {
-  const effects = new Effects();
-  const volumes = new Set([
-    "tvm-5-topology-seed",
-    "tvm-999-topology-seed",
-    "orbit-topology-seed-cccccccccccc",
+Deno.test("native sweep deletes only tvm-number orphans in its admitted project/pool and preserves live/operator resources", async () => {
+  const f = new Host();
+  f.input.live_names = ["tvm-1"];
+  const result = await f.execute();
+  assertEquals(result, {
+    ready: true,
+    observed_names: ["tvm-1", "operator-vm", "tvm-image-custom"],
+    deleted_names: ["tvm-999", "tvm-999-topology-seed"],
+  });
+  assertEquals(f.volumes, [
+    "tvm-1-topology-seed",
+    "orbit-topology-seed-abc",
     "operator-data",
   ]);
-  const calls: {
-    key: string;
-    kind: string;
-    node: number;
-    data: Record<string, unknown>;
-  }[] = [];
-  const receipts = new Map<string, { ready: boolean }>();
-  let lost = false;
-  effects.read = () =>
-    Promise.resolve({
-      deletions: [{ kind: "volume", name: "tvm-999-topology-seed" }],
-    });
-  effects.child = (key, kind, node, data) => {
-    if (!receipts.has(key)) {
-      calls.push({ key, kind, node, data });
-      if (kind === "task_vm.sweep_delete") {
-        volumes.delete(String((data.deletion as Record<string, unknown>).name));
-      }
-      receipts.set(key, { ready: true });
-      if (!lost) {
-        lost = true;
-        return Promise.reject(new ExecutorError("operation.outcome_unknown"));
-      }
-    }
-    return Promise.resolve(receipts.get(key)!);
-  };
-
-  await assertRejects(
-    () => sweepHost(input(), effects),
-    ExecutorError,
-    "operation.outcome_unknown",
-  );
-  assertEquals(await sweepHost(input(), effects), { ready: true });
-  assertEquals(calls, [
-    {
-      key: "delete-volume-tvm-999-topology-seed",
-      kind: "task_vm.sweep_delete",
-      node: 4,
-      data: {
-        node_id: 4,
-        provider: "incus",
-        sweep_id: 27,
-        deletion: { kind: "volume", name: "tvm-999-topology-seed" },
-      },
-    },
-    {
-      key: "observe",
-      kind: "task_vm.sweep_observe",
-      node: 4,
-      data: { node_id: 4, provider: "incus", sweep_id: 27 },
-    },
-  ]);
-  assertEquals([...volumes], [
-    "tvm-5-topology-seed",
-    "orbit-topology-seed-cccccccccccc",
-    "operator-data",
-  ]);
+  assertEquals(f.mutations().length, 2);
 });
-
-Deno.test("a refused clone deletion remains failed while other cleanup and observation finish", async () => {
-  const effects = new Effects();
-  effects.refuse = "delete-volume-tvm-200-topology-seed";
-
-  await assertRejects(
-    () => sweepHost(input(), effects),
-    ExecutorError,
+Deno.test("operator-owned exact names and wildcard project exclusions prevent deletion", async () => {
+  for (const exclusion of ["orbit-tasks/tvm-999", "orbit-tasks/*"]) {
+    const f = new Host();
+    f.input.live_names = ["tvm-1"];
+    f.input.host!.operator_owned = [exclusion];
+    await f.execute();
+    assertEquals(f.names.includes("tvm-999"), true);
+  }
+});
+Deno.test("live ownership is read after both instance and volume inventories", async () => {
+  const f = new Host();
+  f.afterVolumes = () => {
+    f.input.live_names = ["tvm-1", "tvm-999"];
+  };
+  await f.execute();
+  assertEquals(f.mutations(), []);
+});
+Deno.test("a VM claimed after the first ownership snapshot is rechecked before deletion", async () => {
+  const f = new Host();
+  f.beforeRead = () => {
+    if (f.reads === 2) f.input.live_names = ["tvm-1", "tvm-999"];
+  };
+  await f.execute();
+  assertEquals(f.mutations(), []);
+});
+Deno.test("an unavailable host project produces no observation and no deletion", async () => {
+  const f = new Host();
+  f.inventoryBroken = true;
+  await assertRejects(() => f.execute(), Error, "task_vm.host_command_failed");
+  assertEquals(f.mutations(), []);
+  assertEquals(f.reads, 0);
+});
+Deno.test("one proven deletion refusal still observes the host and processes other orphans", async () => {
+  const f = new Host();
+  f.refuse = "tvm-1";
+  const result = await f.execute();
+  assertEquals(
+    "error_code" in result ? result.error_code : null,
     "task_vm.host_command_failed",
   );
-
-  assertEquals(effects.calls.map((call) => call.key), [
-    "delete-instance-tvm-100",
-    "delete-volume-tvm-200-topology-seed",
-    "observe",
-  ]);
+  assertEquals(result.observed_names.includes("tvm-1"), true);
+  assertEquals(f.names.includes("tvm-999"), false);
+});
+Deno.test("lost delete reply resumes by fresh inventory without repeating a completed mutation", async () => {
+  const f = new Host();
+  f.loseReply = true;
+  await assertRejects(() => f.execute(), Error, "lost reply");
+  assertEquals(f.mutations().length, 1);
+  await f.execute();
+  assertEquals(
+    f.mutations().filter((call) =>
+      (call.input.vm as { name?: string } | undefined)?.name === "tvm-1"
+    ).length,
+    1,
+  );
+});
+Deno.test("native cancellation stops before another effect", async () => {
+  const f = new Host();
+  f.cancelled = true;
+  await assertRejects(() => f.execute(), DirectOperationCancelled);
+  assertEquals(f.mutations(), []);
+});
+for (const suffix of ["", "-smoke", "-attempt-2", "-attempt-2-smoke"]) {
+  Deno.test(`only a retired nonrunning image builder may be deleted: ${suffix || "builder"}`, async () => {
+    const f = new Host();
+    f.names = [`tvm-image-5${suffix}`];
+    f.volumes = [];
+    f.input.retired_build_ids = [5];
+    assertEquals(
+      (await f.execute()).deleted_names,
+      f.calls.filter((call) => call.name === "incus.vm").map((call) =>
+        (call.input.vm as { name: string }).name
+      ),
+    );
+    assertEquals(f.names, []);
+    const running = new Host();
+    running.names = [`tvm-image-5${suffix}`];
+    running.volumes = [];
+    running.input.retired_build_ids = [5];
+    running.input.protected_build_ids = [5];
+    await running.execute();
+    assertEquals(running.mutations(), []);
+  });
+}
+Deno.test("resume-winning ownership observed after inventory preserves builder and smoke", async () => {
+  const f = new Host();
+  f.names = ["tvm-image-5", "tvm-image-5-smoke"];
+  f.volumes = [];
+  f.input.retired_build_ids = [5];
+  f.afterVolumes = () => {
+    f.input.protected_build_ids = [5];
+  };
+  await f.execute();
+  assertEquals(f.mutations(), []);
+});
+Deno.test("ownership becoming running before a builder mutation is checked again", async () => {
+  const f = new Host();
+  f.names = ["tvm-image-5", "tvm-image-5-smoke"];
+  f.volumes = [];
+  f.input.retired_build_ids = [5];
+  f.beforeRead = () => {
+    if (f.reads === 2) f.input.protected_build_ids = [5];
+  };
+  await f.execute();
+  assertEquals(f.mutations(), []);
+});
+Deno.test("unsafe builder aliases, unretired builds and source volumes are never eligible", () => {
+  const input = sweepInput();
+  input.recorded_build_ids = [5];
+  for (
+    const name of [
+      "tvm-image-5",
+      "tvm-image-20261030000000-sync-smoke",
+      "tvm-5-other",
+      "../tvm-1",
+    ]
+  ) assertEquals(orphanInstance(input, name), false);
+  for (
+    const name of [
+      "tvm-1",
+      "orbit-topology-seed-abc",
+      "tvm-other-topology-seed",
+    ]
+  ) assertEquals(orphanVolume(input, name), false);
 });
 
-Deno.test("UpCloud orphan deletion resumes its accepted request and waits for absence before observation", async () => {
-  const effects = new Effects();
-  const deletion = {
-    kind: "server",
-    name: "tvm-100",
-    uuid: "owned-server",
-    label: "orbit-task-vm",
-    value: "100",
+Deno.test("absent build rows permit orphan cleanup but a newly recorded owner wins before deletion", async () => {
+  const f = new Host();
+  f.names = ["tvm-image-50"];
+  f.volumes = [];
+  await f.execute();
+  assertEquals(f.names, []);
+  const claimed = new Host();
+  claimed.names = ["tvm-image-50"];
+  claimed.volumes = [];
+  claimed.beforeRead = () => {
+    if (claimed.reads === 2) claimed.input.recorded_build_ids = [50];
   };
-  let state: string | undefined = "started";
-  let lost = false;
-  const receipts = new Map<string, { ready: boolean }>();
-  effects.read = () =>
-    Promise.resolve({
-      deletions: [deletion],
-      server_states: state ? { "owned-server": state } : {},
-    });
-  effects.child = (key, kind, node, data) => {
-    assertEquals(node, 4);
-    if (!receipts.has(key)) {
-      effects.calls.push({ key, kind, input: data });
-      receipts.set(key, { ready: true });
-    }
-    if (kind === "task_vm.sweep_delete_upcloud" && !lost) {
-      lost = true;
-      state = "maintenance";
-      return Promise.reject(new ExecutorError("operation.outcome_unknown"));
-    }
-    if (key === "observe") assertEquals(state, undefined);
-    return Promise.resolve(receipts.get(key)!);
-  };
-  effects.wait = () => {
-    state = lost ? undefined : "stopped";
-    return Promise.resolve();
-  };
-
-  await assertRejects(
-    () => sweepHost(input("upcloud"), effects),
-    ExecutorError,
-    "operation.outcome_unknown",
-  );
-  assertEquals(effects.calls.some((call) => call.key === "observe"), false);
-  assertEquals(await sweepHost(input("upcloud"), effects), { ready: true });
-  assertEquals(effects.calls.map((call) => call.kind), [
-    "task_vm.sweep_stop_upcloud",
-    "task_vm.sweep_delete_upcloud",
-    "task_vm.sweep_observe",
-  ]);
+  await claimed.execute();
+  assertEquals(claimed.mutations(), []);
+});
+Deno.test("an expired admitted sweep performs no deletion", async () => {
+  const f = new Host();
+  f.input.deadline_at = 1;
+  await assertRejects(() => f.execute(), Error, "task_vm.host_command_failed");
+  assertEquals(f.mutations(), []);
 });

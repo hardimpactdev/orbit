@@ -4,7 +4,7 @@ import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
 export const Globals = z.object({
   gatewayUrl: z.string().url().default("https://gateway.orbit"),
   caFile: z.string().min(1).default(
-    "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+    "/usr/local/share/ca-certificates/orbit-root.crt",
   ),
 });
 export const Operation = z.object({
