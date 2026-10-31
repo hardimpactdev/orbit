@@ -21,7 +21,6 @@ jobs:
             kinds: [
               "database_server.create",
               "database_server.destroy",
-              "database.create",
               "database.destroy",
               "database.write",
               "database.clone",
