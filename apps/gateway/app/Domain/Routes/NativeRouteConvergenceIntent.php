@@ -178,13 +178,13 @@ final readonly class NativeRouteConvergenceIntent
             foreach ($route->targets()->with('instance.node')->get() as $target) {
                 if ($target->instance->node_id !== $callerNodeId) {
                     $probes[] = ['protocol' => 'tls', 'agent_sha256' => app(AgentDelivery::class)->pin($node),
-                        'probe' => ['address' => $target->instance->node->wireguard_ip, 'port' => 443, 'domain' => $route->domain]];
+                        'probe' => ['address' => app(RouteRenderContext::class)->wireguardIp($target->instance->node), 'port' => 443, 'domain' => $route->domain]];
                 }
             }
         }
         if ($route->isApp() && $callerNodeId === $intent['ingress_node_id'] && is_int($intent['router_node_id'])) {
             $target = Node::query()->findOrFail($intent['router_node_id']);
-            $probes[] = ['protocol' => 'tls', 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'probe' => ['address' => $target->wireguard_ip, 'port' => 443, 'domain' => $route->domain]];
+            $probes[] = ['protocol' => 'tls', 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'probe' => ['address' => app(RouteRenderContext::class)->wireguardIp($target), 'port' => 443, 'domain' => $route->domain]];
         }
 
         $upstreamFirewall = null;
