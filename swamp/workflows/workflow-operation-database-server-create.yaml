@@ -1,76 +1,193 @@
 id: f497279b-80cd-4dc8-82bb-1a6622d977e4
 name: operation-database-server-create
-description: Provision the admitted server locally and project sanitized records.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Provision and scrub a recorded database server through official SSH from
+  209; project native terminal output.
 writes: true
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database_server.create
-  required:
-  - operation_id
-  - node_id
-  - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database_server.create]}
+    intent: {type: object, properties: {driver: {type: string}, process_id: {type: integer}, container: {type: string}, container_input: {type: object}, spec: {type: string}, scrub_spec: {type: string}, initialize: {type: boolean}, validate_existing: {type: boolean}, was_active: {type: boolean}, default_open: {type: boolean}, host: {type: string}, port: {type: integer}, ssh: {type: object}}, required: [driver, process_id, container, container_input, spec, scrub_spec, initialize, validate_existing, was_active, default_open, host, port, ssh], additionalProperties: true}
+    execution_secrets: {type: object, properties: {server_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-server-create-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [server_create], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
 - name: server
+  target: orbit-node-209
+  labels: {node: '209'}
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: prepare_database_assets
+    <<: &placed {target: orbit-node-209, labels: {node: '209'}}
+    writes: false
+    task:
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-server-assets-" + run.id }}'}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: prepare_process_assets
+    <<: *placed
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-server-create'
-      behaviorName: ${{ "database-server-create-" + string(inputs.node_id) }}
-      methodName: apply
+      behaviorType: '@nckrtl/process-command-assets'
+      behaviorName: ${{ "db-process-assets-" + run.id }}
+      methodName: read
+      inputs:
+        control: {process_id: '${{ inputs.intent.process_id }}', runtime: docker, name: '${{ inputs.intent.container }}', vite: null, on_demand: false}
+  - name: prepare_prepare_directory
+    <<: &remote {target: orbit-node-209, labels: {node: '209'}, allowFailure: true}
+    writes: false
+    task:
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.operation_id) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) }}']
+        okExitCodes: [0, 1]
+  - name: prepare_copy_process
+    <<: *remote
+    dependsOn: [{step: prepare_process_assets, condition: {type: always}}, {step: prepare_prepare_directory, condition: {type: always}}]
+    guard: ${{ !((has(steps.prepare_prepare_directory) && has(steps.prepare_prepare_directory.outputs) && has(steps.prepare_prepare_directory.outputs.exitCode) && steps.prepare_prepare_directory.outputs.exitCode == 0)) }}
+    writes: false
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs:
+        hosts: name:server
+        src: ${{ steps.prepare_process_assets.outputs.scripts_directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}
+        direction: to
+        recursive: true
+  - name: prepare_copy_database
+    <<: *remote
+    dependsOn: [{step: prepare_database_assets, condition: {type: always}}, {step: prepare_prepare_directory, condition: {type: always}}]
+    guard: ${{ !((has(steps.prepare_prepare_directory) && has(steps.prepare_prepare_directory.outputs) && has(steps.prepare_prepare_directory.outputs.exitCode) && steps.prepare_prepare_directory.outputs.exitCode == 0)) }}
+    writes: false
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs:
+        hosts: name:server
+        src: ${{ steps.prepare_database_assets.outputs.directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database" }}
+        direction: to
+        recursive: true
+  - name: prepare_prepared
+    <<: *placed
+    dependsOn: [{step: prepare_copy_process, condition: {type: always}}, {step: prepare_copy_database, condition: {type: always}}]
+    writes: false
+    task:
+      type: assert
+      expr: 'steps.prepare_prepare_directory.outputs.exitCode == 0 && (has(steps.prepare_copy_process) ? steps.prepare_copy_process.status : "skipped") == "succeeded" && (has(steps.prepare_copy_database) ? steps.prepare_copy_database.status : "skipped") == "succeeded"'
+      severity: high
+      message: Database server action did not complete successfully.
+  - name: policy_inspect_policy
+    <<: *remote
+    dependsOn: [{step: prepare_prepared, condition: {type: succeeded}}]
+    writes: false
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/inspect_policy.py" }}', '${{ steps.prepare_database_assets.outputs.intent_json }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: policy_policy_checked
+    <<: *placed
+    dependsOn: [{step: policy_inspect_policy, condition: {type: always}}, {step: prepare_prepared, condition: {type: succeeded}}]
+    writes: false
+    task:
+      type: assert
+      expr: (has(steps.policy_inspect_policy) && has(steps.policy_inspect_policy.outputs) && has(steps.policy_inspect_policy.outputs.exitCode) && steps.policy_inspect_policy.outputs.exitCode == 0)
+      severity: high
+      message: Database server action did not complete successfully.
+  - name: policy_write_acl
+    <<: *remote
+    dependsOn: [{step: policy_policy_checked, condition: {type: always}}, {step: prepare_prepared, condition: {type: succeeded}}]
+    guard: '${{ !((has(steps.policy_policy_checked) ? steps.policy_policy_checked.status : "skipped") == "succeeded" && inputs.intent.driver == "redis" && steps.policy_inspect_policy.outputs.stdout == ''{"rebuild": true}\n'') }}'
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/write_acl.py" }}', '${{ steps.prepare_database_assets.outputs.intent_json }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: policy_acl_written
+    <<: *placed
+    dependsOn: [{step: policy_write_acl, condition: {type: always}}, {step: prepare_prepared, condition: {type: succeeded}}]
+    writes: false
+    task:
+      type: assert
+      expr: '(has(steps.policy_policy_checked) ? steps.policy_policy_checked.status : "skipped") == "succeeded" && ((has(steps.policy_write_acl) ? steps.policy_write_acl.status : "skipped") == "skipped" || (has(steps.policy_write_acl) && has(steps.policy_write_acl.outputs) && has(steps.policy_write_acl.outputs.exitCode) && steps.policy_write_acl.outputs.exitCode == 0))'
+      severity: high
+      message: Database server action did not complete successfully.
+  - name: initial
+    <<: *placed
+    dependsOn: [{step: policy_acl_written, condition: {type: succeeded}}]
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: database-server-container
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
-    dependsOn:
-    - step: apply
-      condition:
-        type: succeeded
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.prepare_database_assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        phase: initial
+        spec: ${{ inputs.intent.spec }}
+        scrub: false
+        rebuild_acl: '${{ has(steps.policy_inspect_policy.outputs) && steps.policy_inspect_policy.outputs.stdout == ''{"rebuild": true}\n'' }}'
+  - name: scrub
+    <<: *placed
+    dependsOn: [{step: initial, condition: {type: succeeded}}]
+    guard: ${{ !inputs.intent.initialize || !(has(steps.initial) && has(steps.initial.outputs) && has(steps.initial.outputs.result) && steps.initial.outputs.result.exitCode == 0) }}
+    allowFailure: true
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-server-create'
-      behaviorName: ${{ "database-server-create-" + string(inputs.node_id) }}
-      methodName: project
+      type: workflow
+      workflowIdOrName: database-server-container
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
-  - name: failure-apply
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    dependsOn:
-    - step: apply
-      condition:
-        type: failed
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.prepare_database_assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        phase: scrub
+        spec: ${{ inputs.intent.scrub_spec }}
+        scrub: true
+        rebuild_acl: '${{ has(steps.policy_inspect_policy.outputs) && steps.policy_inspect_policy.outputs.stdout == ''{"rebuild": true}\n'' }}'
+  - name: cleanup_sources
+    <<: *remote
+    dependsOn: [{step: initial, condition: {type: always}}, {step: scrub, condition: {type: always}}]
+    guard: ${{ !((has(steps.initial) && has(steps.initial.outputs) && has(steps.initial.outputs.result) && steps.initial.outputs.result.exitCode == 0) && (!inputs.intent.initialize || (has(steps.scrub) && has(steps.scrub.outputs) && has(steps.scrub.outputs.result) && steps.scrub.outputs.result.exitCode == 0))) }}
+    writes: true
     task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      <<: *ssh
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        hosts: name:server
+        argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) }}']
+        okExitCodes: [0, 1]
+  - name: result
+    <<: *placed
+    dependsOn: [{step: prepare_database_assets, condition: {type: always}}, {step: prepare_process_assets, condition: {type: always}}, {step: prepare_prepare_directory, condition: {type: always}}, {step: prepare_copy_process, condition: {type: always}}, {step: prepare_copy_database, condition: {type: always}}, {step: prepare_prepared, condition: {type: always}}, {step: policy_inspect_policy, condition: {type: always}}, {step: policy_policy_checked, condition: {type: always}}, {step: policy_write_acl, condition: {type: always}}, {step: policy_acl_written, condition: {type: always}}, {step: initial, condition: {type: always}}, {step: scrub, condition: {type: always}}, {step: cleanup_sources, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: result
+      inputs:
+        completed: ${{ (has(steps.initial) && has(steps.initial.outputs) && has(steps.initial.outputs.result) && steps.initial.outputs.result.exitCode == 0) && (!inputs.intent.initialize || (has(steps.scrub) && has(steps.scrub.outputs) && has(steps.scrub.outputs.result) && steps.scrub.outputs.result.exitCode == 0)) }}
+        steps: ${{ steps }}
+  - name: accept_result
+    <<: *placed
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    writes: false
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: Database server action did not complete successfully.

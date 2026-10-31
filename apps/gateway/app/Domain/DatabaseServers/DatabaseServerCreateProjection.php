@@ -7,9 +7,11 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,20 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
 {
     public function input(Operation $operation): array
     {
-        return $this->admittedInput($operation);
+        $intent = $this->intent($operation);
+        $input = $this->admittedInput($operation);
+        $node = Node::query()->findOrFail($operation->node_id);
+
+        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-server-create-intent-'.$intent->id];
+        if (! $operation->status->terminal()) {
+            $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'],
+                json_encode($intent->payload['commands']['database-apply']['input'], JSON_THROW_ON_ERROR));
+        }
+
+        return ['intent' => [...$input, 'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
+            'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]],
+            'execution_secrets' => ['server_create' => $copy]];
     }
 
     /** @return array<string, mixed> */
@@ -37,14 +52,13 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
+        $raw = ValidatedData::object($data['result'] ?? []);
+        $result = ($raw['backend'] ?? null) === 'active' ? ['backend' => 'active'] : [];
+        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
+            $result['error_code'] = $raw['error_code'];
+        }
         $status = ValidatedData::string($data['status']);
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        if (($status === 'succeeded' && ($result !== ['backend' => 'active'] || $code !== null))
-            || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
-            || ($status === 'failed' && ($result !== ['error_code' => $code] || ! in_array($code, ['agent.version_mismatch', 'database.server_adoption_refused', 'database.server_policy_changed', 'database.server_command_failed', 'database.server_admin_invalid', 'database.server_admin_failed', 'database.server_not_ready', 'database.valkey_acl_invalid', 'database.valkey_acl_failed', 'process.invalid', 'process.name_collision', 'process.start_failed', 'process.stop_failed', 'process.restart_failed', 'process.converge_failed', 'process.recovery_required'], true)))) {
-            throw new ResourceOperationException('operation.result_invalid', 'Server creation needs its closed native result.', 422);
-        }
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $code): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
