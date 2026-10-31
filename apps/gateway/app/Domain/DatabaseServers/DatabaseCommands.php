@@ -53,6 +53,34 @@ final readonly class DatabaseCommands
         ], 'protected' => ['password', 'payload'], 'backend' => $backend, 'redactions' => [$server->root_password]];
     }
 
+    /** @param non-empty-list<string> $names
+     * @param  list<string>  $owned
+     * @return array{commands:array<string,Command>,creates:array<string,string>}
+     */
+    public static function mysqlCreate(DatabaseServer $server, array $names, string $username, #[SensitiveParameter] string $password, array $owned = [], ?string $testPrefix = null): array
+    {
+        $statements = new MysqlStatements;
+        $commands = [];
+        $creates = [];
+        $query = $statements->databasesNamed($names[0], $testPrefix);
+        if ($owned !== []) {
+            $query = rtrim(trim($query), ';');
+            $query = 'SELECT SCHEMA_NAME FROM ('.$query.') existing_names WHERE SCHEMA_NAME NOT IN ('.implode(', ', array_map($statements->string(...), $owned)).");\n";
+        }
+        $commands['preflight'] = [...self::sql($server, $query, expectEmpty: true), 'read_only' => true];
+        foreach ($names as $index => $name) {
+            $key = 'create-database-'.$index;
+            $commands[$key] = [...self::sql($server, (in_array($name, $owned, true) ? $statements->dropDatabase($name) : '').$statements->createDatabase($name)),
+                ...(in_array($name, $owned, true) ? ['reset_database' => $name] : [])];
+            $creates[$key] = $name;
+        }
+        $commands['prepare-owner'] = self::sql($server, $statements->ensureUser($username, $password), redactions: [$password]);
+        $grant = $statements->grantAll($names[0], $username).($testPrefix === null ? '' : $statements->grantAllWithPrefix($testPrefix, $username));
+        $commands['database-apply'] = [...self::sql($server, $grant), ...($testPrefix === null ? [] : ['grant_prefix' => $testPrefix])];
+
+        return ['commands' => $commands, 'creates' => $creates];
+    }
+
     public static function createSqlDatabase(DatabaseServer $server, string $name, string $username, ?string $locale): string
     {
         if ($server->driver === DatabaseDriver::Mysql) {

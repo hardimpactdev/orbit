@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Processes\CascadeInstanceProcessesAction;
+use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
-use App\Actions\Processes\RecordProcessIntentAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
@@ -81,11 +81,13 @@ it('serializes fixed-set owners across processes in stable identifier order', fu
     }
 });
 
-it('refuses Process intent once removal has accepted the owner', function (): void {
+it('refuses a stale add when removal accepts after initial resolution and before admission', function (): void {
     $instance = orb131_process_admission_instance();
     $runtime = new Orb131AdmissionRuntimeManager;
-    $lock = new Orb131QueuedProcessAdmissionLock;
-    $action = app(RecordProcessIntentAction::class);
+    $lock = new Orb131RemovalAcceptingProcessAdmissionLock(
+        fn () => orb131_accept_process_removal($instance),
+    );
+    $action = new CreateProcessAction(new ProcessTargetResolver, $runtime, $lock);
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $instance->id,
@@ -101,9 +103,7 @@ it('refuses Process intent once removal has accepted the owner', function (): vo
         start: false,
     );
 
-    orb131_accept_process_removal($instance);
-
-    expect(fn () => DB::transaction(fn () => $action->execute($data, new ProcessTargetResolver()->forAdmission($instance->refresh()))))
+    expect(fn () => $action->execute($data))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('process.target_inactive');
         });
@@ -116,10 +116,17 @@ it('refuses Process intent once removal has accepted the owner', function (): vo
         ->toBe(0);
 });
 
-it('includes recorded pending Process intent in owner removal cleanup', function (): void {
+it('finishes an admitted Process before removal acceptance includes it in cleanup', function (): void {
     $instance = orb131_process_admission_instance();
     $lock = new Orb131QueuedProcessAdmissionLock;
     $runtime = new Orb131AdmissionRuntimeManager;
+    $runtime->duringConverge = fn () => $lock->run(
+        [$instance->id],
+        function () use ($instance): void {
+            expect(Process::query()->sole()->status)->toBe(LifecycleStatus::Active);
+            orb131_accept_process_removal($instance);
+        },
+    );
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $instance->id,
@@ -135,11 +142,10 @@ it('includes recorded pending Process intent in owner removal cleanup', function
         start: false,
     );
 
-    $result = DB::transaction(fn () => app(RecordProcessIntentAction::class)->execute($data, new ProcessTargetResolver()->forAdmission($instance->refresh())));
-    orb131_accept_process_removal($instance);
+    $result = new CreateProcessAction(new ProcessTargetResolver, $runtime, $lock)->execute($data);
 
     expect($result['process']->status)
-        ->toBe(LifecycleStatus::Provisioning)
+        ->toBe(LifecycleStatus::Active)
         ->and($instance->refresh()->status)
         ->toBe(InstanceState::Removing);
     $this->assertDatabaseHas('processes', ['id' => $result['process']->id]);

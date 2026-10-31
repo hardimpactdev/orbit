@@ -22,7 +22,7 @@ Process create, update, start, stop, restart, and destroy record an Operation an
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
-When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
+When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Create returns HTTP 201 for a new Process or 200 for an existing one. Update, start and restart return HTTP 200 with Process data. Stop and destroy return HTTP 202 and start Swamp directly on every Node.
 
 Placement uses the configured Node identities; renaming a Process cannot bypass it. Unconverted Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
 
@@ -324,12 +324,6 @@ The Gateway starts `operation-process-control` directly and binds its native run
 
 Every Process job targets exactly `orbit-node-<admitted Node ID>` with a matching Node label, including Node 209. There is no fallback to another Node. Each remaining kind changes in one PR: native path, writer switch and old executor/test deletion together. Update and Instance composition keep their existing path until their own conversion.
 
-### Native Process create
-
-Process creation records its owned definition and starts one native Process DAG. Its safe input contains the admitted artifact identity, desired state, agent digest and specification hash. The exact owning Node reads installation material through the shared private endpoint; the Gateway checks that the stored definition still matches the admitted hash. Unit content and container command or environment values do not enter public workflow input, output or logs.
-
-The Node installs the captured definition through the pinned local agent. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
-
 ### Native Process start
 
 `process.start` records intent and starts one native Swamp run. Admission takes no Gateway runtime lease or execution lock. The exact Node worker checks the selected release and prepares Vite traffic when needed. Vite startup publishes current Caddy configuration through the canonical Node publication behavior in the same root run, then starts the Process, proves its owned listener ready, and marks traffic awake.
@@ -341,17 +335,3 @@ The Caddy method reads the bound Process intent after acquiring its native publi
 Ordinary process restart records one direct intent and runs the native Process DAG on its admitted Node. A Vite restart suspends traffic, stops its owned runtime, writes the admitted environment and publishes Caddy in the same root run. It then starts that runtime and proves its owned listener ready. Restart preserves the existing hibernation wake policy; only an explicit start marks traffic awake. A Process without Vite uses its local restart primitive and returns bounded runtime status.
 
 The kind requires its direct writer. Its old polled discovery, claim/run contract, Gateway readiness proof and admission lease are removed together. The Gateway retains the existing synchronous executor-Node recovery exception. Rollback is a revert PR.
-
-### Native installation input
-
-A native Process installation step receives only the admitted Process ID, owned artifact name, runtime, desired state, agent digest and content or container-spec digest. The shared private-material callback supplies rendered systemd unit content or the complete Docker definition. The `process.installation` source checks the recorded Process, Node, runtime and admitted digest before returning those bytes.
-
-A parent native DAG selects its own admitted material and calls the local installation export; it starts no child Operation and projects only its root result. When a Process changes runtime, the local action removes its recorded artifact from the previous runtime. It stages and conditionally activates systemd or converges Docker, then reads bounded status. Command and environment bytes stay inside the callback and sudo stdin.
-
-Ordinary Process creation records one direct intent and uses the same native root for Vite preparation, canonical Caddy publication, installation and readiness. Its old Gateway run descriptors, receipt proof and admission lease are removed. Rollback is a revert PR.
-
-### Internal bootstrap completion
-
-Process creation through HTTP and MCP always admits the direct `process.create` intent, including executor Nodes. Admission returns HTTP 202 and leaves installation and completion to the native root. Record-only composition uses `RecordProcessIntentAction` inside its owning transaction and performs no runtime work.
-
-Four internal callers still require synchronous bootstrap completion: AI Router clears source activation and completes credential cutover; Plausible waits for container health before publication; Task VM preparation marks Pi ready for work; Gateway release handoff starts Horizon before release verification. These callers use closed bootstrap methods for their fixed Node Process names, runtimes, and commands. They cannot install arbitrary Processes. The next Process PR removes these temporary bootstrap methods together with their completion dependencies.

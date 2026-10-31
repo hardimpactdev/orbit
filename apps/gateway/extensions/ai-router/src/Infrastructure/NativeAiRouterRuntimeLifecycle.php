@@ -50,7 +50,7 @@ final readonly class NativeAiRouterRuntimeLifecycle implements AiRouterRuntimeLi
         $data = AiRouterProcess::data($node, $environment);
 
         try {
-            $result = $this->add->bootstrapCollector($data);
+            $result = $this->add->execute($data);
             $process = $result['process'];
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode !== 'process.name_taken') {

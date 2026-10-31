@@ -7,6 +7,7 @@ use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Domain\TaskVms\TaskVmLifecycleIntentProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
+use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
 return array_fill_keys(TaskVmIncusProjection::Kinds, [
     'workflow' => 'operation-task-vm-incus',
@@ -36,4 +37,11 @@ return array_fill_keys(TaskVmIncusProjection::Kinds, [
     'writer_state' => 'task_vm_sweep_writer',
     'projection' => TaskVmSweepProjection::class,
     'private_material' => ['upcloud_token' => 'upcloud.api'],
+], 'task_vm.upcloud_image_build' => [
+    'workflow' => 'operation-task-vm-upcloud-image-build',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'task_vm_upcloud_image_writer',
+    'projection' => TaskVmUpCloudImageProjection::class,
+    'private_material' => ['upcloud_token' => 'upcloud.api', 'bootstrap' => 'task_vm.image_bootstrap', 'pi_artifact_file' => 'task_vm.image_artifact'],
+    'secret_outputs' => ['bootstrap' => 'task_vm.image_bootstrap'],
 ]];
