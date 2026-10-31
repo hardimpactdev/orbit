@@ -7,6 +7,7 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\DatabaseConnections\PdoDatabaseInspector;
 use App\Infrastructure\DatabaseConnections\SqliteNodeDatabaseInspector;
@@ -24,10 +25,7 @@ final readonly class DatabaseWriteProjection implements DirectOperationProjectio
         $command = $intent?->payload['commands']['database-apply'] ?? [];
         $input = $command['input'] ?? [];
         $connection = DatabaseConnection::query()->find($operation->target_id);
-        if ($operation->kind !== 'database.write' || $operation->target_type !== 'database_connection'
-            || $connection === null || $intent === null || count($intent->payload['commands']) !== 1
-            || ($intent->payload['projection'] ?? []) !== []
-            || ! in_array($connection->driver->value, ['sqlite', 'mysql', 'pgsql'], true)
+        if ($connection === null || $intent === null
             || ($operation->input['connection_node_id'] ?? null) !== $connection->node_id
             || ($operation->input['connection_id'] ?? null) !== $connection->id || ($operation->input['driver'] ?? null) !== $connection->driver->value
             || ($command['protected'] ?? []) !== ['password', 'sql', 'dsn', 'username']) {
@@ -56,15 +54,7 @@ final readonly class DatabaseWriteProjection implements DirectOperationProjectio
     public function apply(Operation $operation, array $data): Operation
     {
         $this->input($operation);
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code', 'row_count', 'truncated']));
-        $status = ValidatedData::string($data['status']);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        if (($status === 'succeeded' && (array_diff_key($result, array_flip(['backend', 'row_count', 'truncated'])) !== []
-                || ($result['backend'] ?? null) !== 'active' || ! is_int($result['row_count'] ?? null) || $result['row_count'] < 0 || ! is_bool($result['truncated'] ?? null) || $code !== null))
-            || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
-            || ($status === 'failed' && ($result !== ['error_code' => $code] || ! in_array($code, ['agent.version_mismatch', 'database.sqlite_unreadable', 'database.query_failed'], true)))) {
-            throw new ResourceOperationException('operation.result_invalid', 'SQL write needs its bounded native row count.', 422);
-        }
+        $result = app(OperationExecutionContract::class)->result($operation, ValidatedData::object($data['result'] ?? []));
 
         return app(DirectOperation::class)->project($operation, $data, $result, 'database-apply');
     }
