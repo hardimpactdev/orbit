@@ -17,7 +17,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $node = Node::query()->create(['name' => 'private-dev', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
+    $this->operation = Operation::query()->create(['kind' => 'route.private_dns_publish', 'target_type' => 'node_route_projection',
         'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Queued, 'sequence' => 1,
         'state' => ['route_publication_writer' => 'direct'], 'input' => []]);
 });
@@ -31,7 +31,7 @@ it('uses only the fixed workflow and shared token rather than Operation input', 
 
     expect($socket->endpoint->bearerToken)->toBe('private.scoped.fixture');
     expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
-        'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'route.caddy_converge', 'node_id' => $this->operation->node_id],
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'route.private_dns_publish', 'node_id' => $this->operation->node_id],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$this->operation->id]]);
     expect($socket->connections)->toBe([15.0]);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private.scoped.fixture');
@@ -54,7 +54,7 @@ it('rejects undeclared and previous-writer intents before opening a native conne
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
-    foreach ([['kind' => 'unknown.intent'], ['kind' => 'route.caddy_converge', 'state' => []]] as $changes) {
+    foreach ([['kind' => 'unknown.intent'], ['kind' => 'route.private_dns_publish', 'state' => []]] as $changes) {
         $this->operation->update($changes);
         expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     }
