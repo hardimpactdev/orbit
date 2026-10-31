@@ -4,28 +4,32 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from tests.native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[4]
 SWAMP = os.environ.get('SWAMP_BIN', shutil.which('swamp') or 'swamp')
 
 
-class RouteNative(unittest.TestCase):
+class RouteNative(NativeTestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='orbit-routes-direct-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        behavior = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/routes']:
-            shutil.copytree(ROOT / 'extensions/behaviors' / family, behavior / family)
-        module = behavior / 'operations/routes/publication.ts'
-        module.write_text('import {fixtureHttp} from "./publication_native_fixture.ts";\n' + module.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => fixtureHttp);'))
-        (self.repo / 'workflows').mkdir()
-        source = ROOT / 'workflows/workflow-operation-route-publication.yaml'
-        (self.repo / 'workflows' / source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.startswith('labels:'))+'\n')
-        self.state = {'operation':{'id':17,'kind':'route.caddy_converge','node_id':9,'status':'queued','result':None,'cancel_requested':False},'calls':[],'publications':0}
+        super().setUp()
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/routes')
+        module = self.repo / 'extensions/behaviors/operations/routes/publication.ts'
+        module.write_text('import {fixtureHttp, fixtureCaddy, fixtureDns} from "./publication_native_fixture.ts";\n' + module.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => fixtureHttp, fixtureCaddy, fixtureDns);'))
+        for name in ('publication', 'caddy'):
+            source = ROOT / f'workflows/workflow-operation-route-{name}.yaml'
+            text = source.read_text()
+            self.assertIn('target: \'${{ "orbit-node-" + string(inputs.node_id) }}\'', text)
+            self.assertIn('labels: { node: \'${{ string(inputs.node_id) }}\' }', text)
+            # Local harness replaces worker dispatch only; production placement is asserted above.
+            (self.repo / 'workflows' / source.name).write_text('\n'.join(
+                line for line in text.splitlines() if not line.lstrip().startswith(('target:', 'labels:'))) + '\n')
+        caddy = {'node_id':9,'user':'nckrtl','agent_sha256':'a'*64,'caddy':{'content':'','version':'e3b0c44298fc1c149afbf4c8996fb924','listen_addresses':['10.44.0.9'],'unserved':False}}
+        dns = {'node_id':9,'records':'','catalog':'{}','digest':'44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'}
+        self.state = {'operation':{'id':17,'kind':'route.caddy_converge','node_id':9,'status':'queued','result':None,'cancel_requested':False,'input':{'caddy_publication':caddy,'private_dns_publication':dns}},'calls':[],'publications':0}
         self.save()
 
     def save(self):
@@ -34,19 +38,9 @@ class RouteNative(unittest.TestCase):
     def read(self):
         return json.loads((self.repo/'native-routes.json').read_text())
 
-    def cli(self, *args, success=True):
-        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        for key in ('SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT'):
-            env.pop(key,None)
-        result = subprocess.run([SWAMP,*args,'--json'],cwd=self.repo,env=env,text=True,capture_output=True,timeout=60)
-        if success:
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        else:
-            self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
-        return result
-
     def run_workflow(self, success=True):
-        result = self.cli('workflow','run','operation-route-publication','--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
+        self.workflow = 'operation-route-caddy' if self.state['operation']['kind'] == 'route.caddy_converge' else 'operation-route-publication'
+        result = self.cli('workflow','run',self.workflow,'--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
         return result
 
@@ -62,17 +56,17 @@ class RouteNative(unittest.TestCase):
         self.state['loseCompletion']=True
         self.save()
         self.run_workflow(success=False)
-        self.cli('workflow','resume','operation-route-publication','--run',self.run_id,'--from','publish')
+        self.cli('workflow','resume',self.workflow,'--run',self.run_id,'--from','publish')
         self.assertEqual(self.read()['publications'],1)
 
-    def test_native_retry_can_repeat_convergent_publication_without_a_gateway_receipt(self):
+    def test_failed_terminal_intent_cannot_repeat_an_uncertain_effect(self):
         self.state['losePublication']=True
         self.save()
         self.run_workflow(success=False)
-        self.cli('workflow','resume','operation-route-publication','--run',self.run_id,'--from','publish')
+        self.cli('workflow','resume',self.workflow,'--run',self.run_id,'--from','publish',success=False)
         state=self.read()
-        self.assertEqual(state['publications'],2)
-        self.assertEqual(state['operation']['status'],'succeeded')
+        self.assertEqual(state['publications'],1)
+        self.assertEqual(state['operation']['status'],'failed')
 
     def test_private_dns_uses_the_same_direct_workflow(self):
         self.state['operation']['kind']='route.private_dns_publish'
@@ -99,7 +93,7 @@ class RouteNative(unittest.TestCase):
         processes=[]
         try:
             for operation in (17,18):
-                processes.append(subprocess.Popen([SWAMP,'workflow','run','operation-route-publication','--input',f'operation_id={operation}','--input','node_id=9','--input','kind=route.caddy_converge','--json'],cwd=self.repo,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE))
+                processes.append(subprocess.Popen([SWAMP,'workflow','run','operation-route-caddy','--input',f'operation_id={operation}','--input','node_id=9','--input','kind=route.caddy_converge','--json'],cwd=self.repo,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE))
             for process in processes:
                 stdout,stderr=process.communicate(timeout=60)
                 self.assertEqual(process.returncode,0,stdout+stderr)

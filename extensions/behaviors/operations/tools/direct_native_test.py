@@ -1,5 +1,7 @@
 """Pinned native direct Tool DAG and checkpoint recovery; no fleet changes."""
 import json
+import shutil
+import yaml
 from pathlib import Path
 import unittest
 import sys
@@ -15,14 +17,28 @@ class DirectToolNative(NativeTestCase):
         super().setUp()
         behavior = self.repo / 'extensions/behaviors'
         self.copy_behaviors('automatic-deploy', 'operations/tools', 'operations/_lib')
+        failure = behavior / 'operations/failure.ts'
+        shutil.copy(ROOT / 'extensions/behaviors/operations/failure.ts', failure)
+        failure.write_text('import {fixtureHttp} from "./tools/direct_native_fixture.ts";\n' + failure.read_text().replace('nativeFailure();', 'nativeFailure(() => fixtureHttp);'))
         direct = behavior / 'operations/tools/direct.ts'
-        direct.write_text('import {fixtureHttp, fixtureTool} from "./direct_native_fixture.ts";\n' + direct.read_text().replace('...directTool()', '...directTool(() => fixtureHttp, fixtureTool)'))
+        direct.write_text('import {fixtureHttp, fixtureTool, engineRefused} from "./direct_native_fixture.ts";\n' + direct.read_text().replace('export const behavior = { ...directTool(), type: "@nckrtl/tool-direct" };', '''
+const fixture = directTool(() => fixtureHttp, fixtureTool);
+export const behavior = {...fixture, methods: {...fixture.methods, apply: {...fixture.methods.apply,
+execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
+  if (await engineRefused()) throw new Error("Tool bundle refused before first callback");
+  return await fixture.methods.apply.execute(...args);
+}}}};
+'''))
         for filename in ('workflow-operation-tool-direct.yaml', 'workflow-operation-tool-install-direct.yaml'):
             source = ROOT / 'workflows' / filename
-            # Fixture proof only; live exact worker placement is a separate canary gate.
-            text = '\n'.join(line for line in source.read_text().splitlines() if 'labels:' not in line and not line.strip().startswith('target:')) + '\n'
-            (self.repo / 'workflows' / source.name).write_text(text)
-        self.state = {'operation':{'id':17,'node_id':209,'kind':'tool.install','input':{'node_id':209,'manager':'apt','package':'jq','version_constraint':None,'user':'orbit','agent_sha256':'a'*64,'platform':'linux','architecture':'x86_64','tool_id':None},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'commands':[],'installed':None}
+            # Remove exact placement only in this disposable native fixture.
+            workflow = yaml.safe_load(source.read_text())
+            self.assertEqual([job['name'] for job in workflow['jobs']], ['tools', 'failure'])
+            for job in workflow['jobs']:
+                self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
+                self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
+            (self.repo / 'workflows' / source.name).write_text(yaml.safe_dump(workflow, sort_keys=False))
+        self.state = {'operation':{'id':17,'node_id':209,'kind':'tool.install','input':{'node_id':209,'manager':'apt','package':'jq','version_constraint':None,'user':'orbit','platform':'linux','architecture':'x86_64','tool_id':None},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'commands':[],'installed':None}
         self.save()
 
     def save(self):
@@ -58,7 +74,7 @@ class DirectToolNative(NativeTestCase):
         self.assertEqual(self.read()['effects'],1)
         self.assertEqual(self.read()['operation']['status'],'succeeded')
 
-    def test_uncertain_node_action_is_reconciled_by_native_resume(self):
+    def test_uncertain_node_action_keeps_terminal_failure_without_repeating_effect(self):
         for kind in ('tool.install','tool.update','tool.remove'):
             self.state['operation']['kind'] = kind
             self.state['operation']['status'] = 'queued'
@@ -67,9 +83,27 @@ class DirectToolNative(NativeTestCase):
             self.state['loseNode'] = True
             self.save()
             self.run_workflow(success=False)
-            self.cli('workflow','resume','operation-tool-install-direct' if self.state['operation']['kind'] == 'tool.install' else 'operation-tool-direct','--run',self.run_id,'--from','apply')
+            self.assertEqual(self.read()['operation']['status'], 'failed')
+            self.assertEqual(self.read()['operation']['result'], {'error_code': 'operation.native_outcome_unknown'})
+            self.cli('workflow','resume','operation-tool-install-direct' if self.state['operation']['kind'] == 'tool.install' else 'operation-tool-direct','--run',self.run_id,'--from','apply',success=False)
             self.assertEqual(self.read()['effects'],1)
-            self.assertEqual(self.read()['operation']['status'],'succeeded')
+            self.assertEqual(self.read()['operation']['status'],'failed')
+
+    def test_engine_failure_before_first_callback_closes_each_kind_without_effects(self):
+        self.state['engineRefused'] = True
+        for kind in ('tool.install','tool.update','tool.remove','tool.adopt','tool.manager_converge'):
+            self.state['operation']['kind'] = kind
+            self.state['operation']['status'] = 'queued'
+            self.state['calls'] = []
+            self.save()
+            self.run_workflow(success=False)
+            state = self.read()
+            self.assertEqual(state['operation']['status'], 'failed')
+            self.assertEqual(state['operation']['error_code'], 'operation.native_failed')
+            self.assertEqual(state['operation']['result'], {})
+            self.assertEqual(state['calls'], ['/api/v1/direct-operations/17/failure'])
+            self.assertEqual(state['effects'], 0)
+            self.assertEqual(state['commands'], [])
 
     def test_foreign_binding_refuses_until_gateway_corrects_root(self):
         self.state['unbound'] = True

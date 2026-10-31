@@ -7,7 +7,15 @@ export async function fixtureHttp(method: string, path: string, raw?: unknown) {
     return { status: 409, body: { error: { code: "operation.run_mismatch" } } };
   }
 
-  if (method !== "GET") {
+  if (path.endsWith("/failure")) {
+    if (
+      !["succeeded", "failed", "cancelled"].includes(state.operation.status)
+    ) {
+      state.operation.status = "failed";
+      state.operation.result = {};
+      state.operation.error_code = "operation.native_failed";
+    }
+  } else if (method !== "GET") {
     state.operation.status = body.status;
     state.operation.result = body.result ?? null;
   }
@@ -46,4 +54,9 @@ export async function fixtureTool(
   await Deno.writeTextFile("native-tools-direct.json", JSON.stringify(state));
   if (lost) throw new Error("uncertain local Tool response");
   return result;
+}
+
+export async function engineRefused() {
+  return JSON.parse(await Deno.readTextFile("native-tools-direct.json"))
+    .engineRefused === true;
 }

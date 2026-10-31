@@ -1,4 +1,0 @@
-{
-  "kinds": ["certificate.converge", "certificate.remove"],
-  "workflow": "operation-certificates"
-}

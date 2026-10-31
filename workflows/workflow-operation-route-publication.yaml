@@ -1,18 +1,19 @@
 id: 2cd61bc8-5189-4365-b79d-41c614fac8a1
 name: operation-route-publication
 description: Publish one admitted Route Node directly, without discovery or claims.
-labels: { pool: migration }
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
     node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
-      enum: [route.caddy_converge, route.private_dns_publish],
+      enum: [route.private_dns_publish],
     }
   required: [operation_id, node_id, kind]
 jobs:
   - name: publication
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
     steps:
       - name: publish
         task:
