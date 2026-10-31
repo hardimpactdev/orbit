@@ -5,13 +5,12 @@ const expr = (source: string) => "${{ " + source + " }}";
 export function bootstrapCommandSteps(
     name: string,
     intent: string,
-    identity: string,
-    executor = "inputs.node_id",
+    identityFile = intent + ".identity_file",
     guard?: string,
 ): Fields[] {
     const placement = {
-        target: expr('"orbit-node-" + string(' + executor + ")"),
-        labels: { node: expr("string(" + executor + ")") },
+        target: "orbit-node-209",
+        labels: { node: "209" },
     };
     const observed = 'steps["' + name + '_observed"].outputs';
     const modelName = expr('"bootstrap-ssh-" + string(inputs.operation_id)');
@@ -21,7 +20,7 @@ export function bootstrapCommandSteps(
             kind: "ssh",
             user: expr(intent + (candidate ? ".managed_user" : ".target.user")),
             port: expr(intent + ".target.port"),
-            identityContent: expr(identity),
+            identityFile: expr(identityFile),
         },
         hosts: [{
             name: "target",

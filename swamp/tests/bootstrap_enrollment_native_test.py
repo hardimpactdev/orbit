@@ -54,13 +54,12 @@ else:
         result = subprocess.run([deno, 'eval', generator], capture_output=True, text=True, check=True)
         steps = json.loads(result.stdout)
         for step in steps:
-            self.assertEqual(step.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
-            self.assertEqual(step.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
+            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'node': '209'})
             task = step['task']
             if task['behaviorType'] == '@swamp/ssh':
                 globals_ = task['globalArgs']
                 globals_['sshBinary'] = str(fixture)
-                globals_['transport'].pop('identityContent')
                 globals_['transport']['identityFile'] = str(identity)
         workflow = {'id': '69b6306c-71c0-4df9-ac3f-fd6a5d7fb0c5', 'name': 'bootstrap-enrollment-fixture',
                     'inputs': {'type': 'object', 'properties': {'operation_id': {'type': 'integer'},

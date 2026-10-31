@@ -63,7 +63,7 @@ if body: print(json.dumps(result))
         self.identity = identity
         public = 'A' * 43 + '='
         peer = {'node_id': 2, 'name': 'old', 'address': '10.44.0.2', 'public_key': public}
-        self.input = {'intent': {'node_id': 2, 'executor_node_id': 14, 'mode': 'linux',
+        self.input = {'intent': {'node_id': 2, 'mode': 'linux',
             'bootstrap': {'managed_user': 'orbit', 'target': {'user': 'root', 'host': 'dev.invalid', 'port': 22}},
             'network': {'existing_key': public, 'peer': {'server_public_key': 'H' * 43 + '=',
                 'endpoint': '192.0.2.1:51820', 'address': '10.44.0.3/24', 'subnet': '10.44.0.0/24',
@@ -100,14 +100,13 @@ if body: print(json.dumps(result))
         if not late_failure:
             settled['guard'] = '${{ !("network_verify-0" in steps && steps["network_verify-0"].status == "succeeded") }}'
         for step in generated:
-            step.pop('target')
-            step.pop('labels')
+            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'node': '209'})
             task = step['task']
             if task['behaviorType'] == '@swamp/ssh':
                 current = task['globalArgs']
                 current['sshBinary'] = str(self.ssh)
                 if isinstance(current['transport'], dict):
-                    current['transport'].pop('identityContent')
                     current['transport']['identityFile'] = str(self.identity)
                 else:
                     current['transport'] = globals_['transport']
