@@ -1,12 +1,11 @@
 id: 4093f46d-9dd2-4e67-a151-dd5bb9addb0c
 name: operation-firewall-direct
 description: Execute one admitted Firewall intent on its Node without polling.
-labels: { pool: migration }
 vaults: []
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, enum: [209] }
+    node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
       enum: [firewall.allow, firewall.deny, firewall.remove],
@@ -14,6 +13,8 @@ inputs:
   required: [operation_id, node_id, kind]
 jobs:
   - name: firewall
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
     steps:
       - name: apply
         writes: true

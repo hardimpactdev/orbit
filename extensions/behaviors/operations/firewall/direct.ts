@@ -6,21 +6,12 @@ import {
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { localRule } from "./local.ts";
+import { localRule, Rule } from "./local.ts";
 
 const Kind = z.enum(["firewall.allow", "firewall.deny", "firewall.remove"]);
 const Args = DirectArgs.extend({
   kind: Kind,
   node_id: z.number().int().positive(),
-});
-const Rule = z.object({
-  node_id: z.number().int().positive(),
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  name: z.string(),
-  action: z.enum(["allow", "deny"]),
-  source: z.string(),
-  protocol: z.enum(["tcp", "udp"]),
-  port: z.string(),
 });
 const Result = z.object({
   backend: z.enum(["active", "inactive", "absent"]).optional(),
@@ -36,7 +27,7 @@ export function directFirewall(
 ) {
   return {
     type: "@nckrtl/firewall-direct",
-    version: "2026.10.30.3",
+    version: "2026.10.31.1",
     globalArguments: Globals,
     methods: {
       apply: {
@@ -62,7 +53,7 @@ export function directFirewall(
                   operation: args.kind === "firewall.remove"
                     ? "remove"
                     : "converge",
-                }),
+                }, ctx.signal),
               );
               const error_code = result.error_code ??
                 (result.backend === "inactive"

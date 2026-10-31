@@ -18,7 +18,6 @@ class Fixture {
     kind: "firewall.allow",
     input: {
       node_id: 9,
-      agent_sha256: "a".repeat(64),
       name: "canary",
       action: "allow",
       source: "192.0.2.100",
@@ -117,12 +116,16 @@ Deno.test("lost terminal projection reads completion without repeating the actio
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.effects, 1);
 });
-Deno.test("uncertain action escapes to native recovery and convergent repetition", async () => {
+Deno.test("uncertain action records failure and cannot repeat a terminal effect", async () => {
   const f = new Fixture();
   f.loseNode = true;
   await assertRejects(() => f.execute());
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.effects, 2);
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.native_outcome_unknown",
+  );
+  assertEquals(f.effects, 1);
 });
 Deno.test("bounded refusal and inactive backend fail the native run after projection", async () => {
   for (const code of ["firewall.apply_failed", "firewall.backend_inactive"]) {
@@ -134,10 +137,31 @@ Deno.test("bounded refusal and inactive backend fail the native run after projec
   }
 });
 
-Deno.test("production adapter refuses without the admitted agent digest", async () => {
+Deno.test("production adapter refuses missing named rule intent", async () => {
   await assertRejects(
     () => localRule({}),
     Error,
-    "admitted agent digest",
   );
+});
+
+Deno.test("named Firewall uses the canonical fixed local program without an agent contract", async () => {
+  const { applyNamedRule } = await import("./local.ts");
+  const f = new Fixture();
+  let effect: unknown;
+  assertEquals(
+    await applyNamedRule(
+      { ...f.operation.input, operation: "converge" },
+      (program, input) => {
+        assertEquals(program.includes("/run/lock/orbit-firewall.lock"), true);
+        effect = input;
+        return Promise.resolve({ backend: "active" });
+      },
+    ),
+    { backend: "active" },
+  );
+  assertEquals(effect, {
+    mode: "named",
+    ...f.operation.input,
+    operation: "converge",
+  });
 });

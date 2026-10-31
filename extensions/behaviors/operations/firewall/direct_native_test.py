@@ -14,14 +14,16 @@ class DirectFirewallNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         behavior = self.repo / 'extensions/behaviors'
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/firewall')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/firewall', 'operations/routes')
         direct = behavior / 'operations/firewall/direct.ts'
         direct.write_text('import {fixtureHttp, fixtureRule} from "./direct_native_fixture.ts";\n' + direct.read_text().replace('...directFirewall()', '...directFirewall(() => fixtureHttp, fixtureRule)'))
         source = ROOT / 'workflows/workflow-operation-firewall-direct.yaml'
-        # Unit DAG proof only: live worker placement is a separate canary gate.
+        self.assertIn('target: \'${{ "orbit-node-" + string(inputs.node_id) }}\'', source.read_text())
+        self.assertIn('labels: { node: \'${{ string(inputs.node_id) }}\' }', source.read_text())
+        # Local harness replaces dispatch; production selector is asserted above.
         text = '\n'.join(line for line in source.read_text().splitlines() if 'labels:' not in line and not line.strip().startswith('target:')) + '\n'
         (self.repo / 'workflows' / source.name).write_text(text)
-        self.state = {'operation':{'id':17,'node_id':209,'kind':'firewall.allow','input':{'node_id':209,'agent_sha256':'a'*64,'name':'canary','action':'allow','source':'192.0.2.100','protocol':'tcp','port':'45678'},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'bound':True}
+        self.state = {'operation':{'id':17,'node_id':209,'kind':'firewall.allow','input':{'node_id':209,'name':'canary','action':'allow','source':'192.0.2.100','protocol':'tcp','port':'45678'},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'bound':True}
         self.save()
 
     def save(self):
@@ -55,13 +57,13 @@ class DirectFirewallNative(NativeTestCase):
         self.assertEqual(self.read()['effects'],1)
         self.assertEqual(self.read()['operation']['status'],'succeeded')
 
-    def test_uncertain_node_action_is_reconciled_by_convergent_native_resume(self):
+    def test_uncertain_terminal_failure_cannot_repeat_an_effect(self):
         self.state['loseNode'] = True
         self.save()
         self.run_workflow(success=False)
-        self.cli('workflow','resume','operation-firewall-direct','--run',self.run_id,'--from','apply')
-        self.assertEqual(self.read()['effects'],2)
-        self.assertEqual(self.read()['operation']['status'],'succeeded')
+        self.cli('workflow','resume','operation-firewall-direct','--run',self.run_id,'--from','apply',success=False)
+        self.assertEqual(self.read()['effects'],1)
+        self.assertEqual(self.read()['operation']['status'],'failed')
 
     def test_foreign_binding_requires_native_resume_after_correction(self):
         self.state['bound'] = False
@@ -74,11 +76,11 @@ class DirectFirewallNative(NativeTestCase):
         self.cli('workflow','resume','operation-firewall-direct','--run',self.run_id,'--from','apply')
         self.assertEqual(self.read()['effects'],1)
 
-    def test_migration_pool_refuses_a_foreign_node_before_dispatch(self):
+    def test_mismatched_admitted_node_refuses_before_effect(self):
         self.cli('workflow','run','operation-firewall-direct','--input','operation_id=17','--input','node_id=210','--input','kind=firewall.allow',success=False)
         state = self.read()
         self.assertEqual(state['effects'], 0)
-        self.assertEqual(state['calls'], [])
+        self.assertEqual(len(state['calls']), 1)
 
 if __name__ == '__main__':
     unittest.main()
