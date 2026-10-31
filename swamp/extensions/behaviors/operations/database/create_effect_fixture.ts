@@ -9,7 +9,7 @@ const randomPassword = () =>
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[b % 62],
   ).join("");
 
-for (const driver of ["mysql", "pgsql"] as const) {
+export function registerCreateEffect(driver: "mysql" | "pgsql") {
   Deno.test({
     name: `disposable ${driver} create, replay and foreign ownership refusal`,
     fn: async () => {
@@ -185,138 +185,140 @@ for (const driver of ["mysql", "pgsql"] as const) {
   });
 }
 
-Deno.test({
-  name: "disposable Valkey ACL create, replay and foreign password refusal",
-  fn: async () => {
-    const { ValkeyClient } = await import("./valkey_client.ts");
-    const container = `orbit-process-999999-database-create-${
-      crypto.randomUUID().slice(0, 8)
-    }`;
-    const password = randomPassword();
-    const ownedPassword = randomPassword();
-    let started = false;
-    let client: InstanceType<typeof ValkeyClient> | undefined;
-    try {
-      const start = await new Deno.Command("docker", {
-        args: [
-          "run",
-          "--detach",
-          "--name",
-          container,
-          "--publish",
-          "127.0.0.1::6379",
-          "valkey/valkey:8.1",
-          "sh",
-          "-c",
-          "touch /tmp/users.acl; exec valkey-server --aclfile /tmp/users.acl",
-        ],
-        stdout: "null",
-        stderr: "null",
-      }).output();
-      assertEquals(start.success, true);
-      started = true;
-      const publication = await new Deno.Command("docker", {
-        args: ["port", container, "6379/tcp"],
-        stdout: "piped",
-        stderr: "null",
-      }).output();
-      const port = Number(
-        new TextDecoder().decode(publication.stdout).trim().split(":").at(-1),
-      );
-      const expires = Date.now() + 10_000;
-      while (Date.now() < expires) {
-        try {
-          client = await ValkeyClient.connect("127.0.0.1", port);
-          await client.command("PING");
-          break;
-        } catch {
-          client?.close();
-          client = undefined;
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-      }
-      if (!client) throw new Error("Disposable Valkey did not become ready");
-      const hash = Array.from(
-        new Uint8Array(
-          await crypto.subtle.digest(
-            "SHA-256",
-            new TextEncoder().encode(password),
-          ),
-        ),
-        (b) => b.toString(16).padStart(2, "0"),
-      ).join("");
-      await client.command(
-        "ACL",
-        "SETUSER",
-        "default",
-        "on",
-        "resetpass",
-        `#${hash}`,
-        "~*",
-        "&*",
-        "+@all",
-      );
-      await client.command("AUTH", "default", password);
-      await client.command("ACL", "SAVE");
-      const input = {
-        repair: false,
-        driver: "redis",
-        username: "proof-queue",
-        databases: [],
-        test_prefix: null,
-        locale: null,
-        host: "127.0.0.1",
-        port,
-        container: null,
-        index: 15,
-        patterns: ["proof:*"],
-        allow: ["@connection", "@list"],
-      };
-      const material = (
-        effect: (m: Record<string, unknown>) => Promise<void>,
-      ) =>
-        effect({
-          password,
-          payload: { password: ownedPassword, salt: btoa("a".repeat(16)) },
-        });
-      assertEquals(await createDatabase(input, material), {
-        backend: "active",
-      });
-      assertEquals(await createDatabase(input, material), {
-        backend: "active",
-      });
-      assertEquals(await createDatabase({ ...input, index: 16 }, material), {
-        error_code: "database.index_invalid",
-      });
-      const wrong = (effect: (m: Record<string, unknown>) => Promise<void>) =>
-        effect({
-          password,
-          payload: { password: randomPassword(), salt: btoa("a".repeat(16)) },
-        });
-      assertEquals(await createDatabase(input, wrong), {
-        error_code: "database.name_conflict",
-      });
-      const app = await ValkeyClient.connect("127.0.0.1", port);
+export function registerValkeyCreateEffect() {
+  Deno.test({
+    name: "disposable Valkey ACL create, replay and foreign password refusal",
+    fn: async () => {
+      const { ValkeyClient } = await import("./valkey_client.ts");
+      const container = `orbit-process-999999-database-create-${
+        crypto.randomUUID().slice(0, 8)
+      }`;
+      const password = randomPassword();
+      const ownedPassword = randomPassword();
+      let started = false;
+      let client: InstanceType<typeof ValkeyClient> | undefined;
       try {
-        await app.command("AUTH", "proof-queue", ownedPassword);
-        assertEquals(await app.command("PING"), "PONG");
-      } finally {
-        app.close();
-      }
-    } finally {
-      client?.close();
-      if (started) {
-        const removed = await new Deno.Command("docker", {
-          args: ["rm", "--force", "--volumes", container],
+        const start = await new Deno.Command("docker", {
+          args: [
+            "run",
+            "--detach",
+            "--name",
+            container,
+            "--publish",
+            "127.0.0.1::6379",
+            "valkey/valkey:8.1",
+            "sh",
+            "-c",
+            "touch /tmp/users.acl; exec valkey-server --aclfile /tmp/users.acl",
+          ],
           stdout: "null",
           stderr: "null",
         }).output();
-        assertEquals(
-          removed.success,
-          true,
-          "Disposable fixture retirement failed",
+        assertEquals(start.success, true);
+        started = true;
+        const publication = await new Deno.Command("docker", {
+          args: ["port", container, "6379/tcp"],
+          stdout: "piped",
+          stderr: "null",
+        }).output();
+        const port = Number(
+          new TextDecoder().decode(publication.stdout).trim().split(":").at(-1),
         );
+        const expires = Date.now() + 10_000;
+        while (Date.now() < expires) {
+          try {
+            client = await ValkeyClient.connect("127.0.0.1", port);
+            await client.command("PING");
+            break;
+          } catch {
+            client?.close();
+            client = undefined;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
+        if (!client) throw new Error("Disposable Valkey did not become ready");
+        const hash = Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(password),
+            ),
+          ),
+          (b) => b.toString(16).padStart(2, "0"),
+        ).join("");
+        await client.command(
+          "ACL",
+          "SETUSER",
+          "default",
+          "on",
+          "resetpass",
+          `#${hash}`,
+          "~*",
+          "&*",
+          "+@all",
+        );
+        await client.command("AUTH", "default", password);
+        await client.command("ACL", "SAVE");
+        const input = {
+          repair: false,
+          driver: "redis",
+          username: "proof-queue",
+          databases: [],
+          test_prefix: null,
+          locale: null,
+          host: "127.0.0.1",
+          port,
+          container: null,
+          index: 15,
+          patterns: ["proof:*"],
+          allow: ["@connection", "@list"],
+        };
+        const material = (
+          effect: (m: Record<string, unknown>) => Promise<void>,
+        ) =>
+          effect({
+            password,
+            payload: { password: ownedPassword, salt: btoa("a".repeat(16)) },
+          });
+        assertEquals(await createDatabase(input, material), {
+          backend: "active",
+        });
+        assertEquals(await createDatabase(input, material), {
+          backend: "active",
+        });
+        assertEquals(await createDatabase({ ...input, index: 16 }, material), {
+          error_code: "database.index_invalid",
+        });
+        const wrong = (effect: (m: Record<string, unknown>) => Promise<void>) =>
+          effect({
+            password,
+            payload: { password: randomPassword(), salt: btoa("a".repeat(16)) },
+          });
+        assertEquals(await createDatabase(input, wrong), {
+          error_code: "database.name_conflict",
+        });
+        const app = await ValkeyClient.connect("127.0.0.1", port);
+        try {
+          await app.command("AUTH", "proof-queue", ownedPassword);
+          assertEquals(await app.command("PING"), "PONG");
+        } finally {
+          app.close();
+        }
+      } finally {
+        client?.close();
+        if (started) {
+          const removed = await new Deno.Command("docker", {
+            args: ["rm", "--force", "--volumes", container],
+            stdout: "null",
+            stderr: "null",
+          }).output();
+          assertEquals(
+            removed.success,
+            true,
+            "Disposable fixture retirement failed",
+          );
+        }
       }
-    }
-  },
-});
+    },
+  });
+}
