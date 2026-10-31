@@ -8,7 +8,7 @@ covers:
   - apps/e2e/app/E2E/**
   - apps/e2e/resources/**
   - apps/e2e/tests/{Support/GuestScripts.php,Unit/E2E/GuestScriptsTest.php}
-  - apps/gateway/app/Console/Commands/RenderNodeProgramsCommand.php
+  - apps/gateway/app/Console/Commands/RenderNodeRecipeCommand.php
 ---
 
 # Incus topologies
@@ -98,7 +98,7 @@ Cloud-init creates fresh SSH keys; the harness waits through its seed reboot bef
 
 Before the first migration, `converge-gateway.sh prerequisites` ensures that Caddy and dnsmasq are installed, installing only missing packages.
 
-The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. It first installs the pinned agent from the mounted worktree, because the programs call it. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths. The JavaScript recipe supplies Vite+, role prerequisites supply Composer, and Swamp owns Tool convergence.
+`orbit:node-recipe` exports public Node metadata, bootstrap input and the stored machine recipe for native bootstrap and image consumers. It emits no executable programs, agent actions or command fingerprints. The topology reads this metadata and installs the frozen observer from the mounted worktree. Guest preparation waits for stable first boot and sets test DNS; it does not stage an action agent or repair package managers. Gateway bootstrap and workload enrollment use their normal product paths; Swamp owns the effects. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image.
 
 Every Node keeps the template's root disk, which has the size of the base image's disk. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
 
