@@ -2,6 +2,7 @@ import { z } from "npm:zod@4.4.3";
 
 export const PublicationConnection = z.object({
     nodeHost: z.string().min(1),
+    nodePort: z.number().int().min(1).max(65535),
     nodeUser: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
     nodeIdentityFile: z.string().startsWith("/"),
     become: z.literal(true),
@@ -13,14 +14,15 @@ export const CaddyInput = z.object({
     unserved: z.boolean(),
 }).strict();
 export const CaddyPublication = z.object({
-    node_id: z.number().int().positive().refine((id) => id !== 1 && id !== 18),
+    node_id: z.number().int().positive(),
     user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
     caddy: CaddyInput,
-    control_node_id: z.number().int().positive(),
+    control_node_id: z.literal(209),
+    host_keys: z.array(z.string().min(1)).min(1),
     connection: PublicationConnection,
 }).strict();
 
-/** Validate public intent; official cfgmgmt owns all file operations. */
+/** Validate public intent; official SSH owns target effects. */
 export async function prepareCaddyInput(raw: unknown) {
     const publication = CaddyPublication.parse(raw);
     const digest = Array.from(
@@ -44,7 +46,7 @@ export async function prepareCaddyInput(raw: unknown) {
 }
 export const behavior = {
     type: "@nckrtl/caddy-public-input",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     resources: {
         input: {
             schema: CaddyPublication,

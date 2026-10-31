@@ -53,12 +53,22 @@ export function routeMutationSteps(
         required[childName] = expr(`size(${list})`);
     }
     const pubs = `${side}.publications.filter(p,p.serves_routes)`;
+    function targetIntent(payload: string) {
+        const publication =
+            `${side}.publications.filter(p,p.node_id == self.part.node_id)[0]`;
+        return {
+            [payload]: expr("self.part"),
+            control_node_id: 209,
+            connection: expr(`${publication}.connection`),
+            host_keys: expr(`${publication}.host_keys`),
+        };
+    }
     function certificates(suffix: string, list: string, remove = false) {
         child(
             suffix,
             remove ? "route-certificate-remove" : "route-certificate-publish",
             list,
-            expr("self.part"),
+            targetIntent("leaf"),
             {},
             { parent_run_id: expr("run.id"), restoring: mode === "restore" },
         );
@@ -72,6 +82,7 @@ export function routeMutationSteps(
         child(suffix, "operation-route-caddy-delta", pubs, {
             node_id: expr("self.part.node_id"),
             user: expr("self.part.user"),
+            host_keys: expr("self.part.host_keys"),
             control_node_id: expr("self.part.control_node_id"),
             connection: expr("self.part.connection"),
             before: expr(`self.part.${from}.caddy`),
@@ -118,19 +129,20 @@ export function routeMutationSteps(
     child("php", "operation-route-php-delta", pubs, {
         node_id: expr("self.part.node_id"),
         user: expr("self.part.user"),
+        host_keys: expr("self.part.host_keys"),
         control_node_id: expr("self.part.control_node_id"),
         connection: expr("self.part.connection"),
         before: expr("self.part.before.php"),
         after: expr("self.part.after.php"),
         direction: mode,
     });
-    child("lan", "route-lan-apply", `${side}.lan`, expr("self.part"));
+    child("lan", "route-lan-apply", `${side}.lan`, targetIntent("rule"));
     if (mode === "forward") caddy("prepare_caddy", "before", "prepared");
     child(
         "urls",
         "route-environment-write",
         `${side}.url_writes`,
-        expr("self.part"),
+        targetIntent("write"),
         { material: expr("inputs.execution_secrets[self.part.secret_field]") },
     );
     if (mode === "forward") {
@@ -151,7 +163,7 @@ export function routeMutationSteps(
         "retire_lan",
         "route-lan-apply",
         `${side}.retire_lan`,
-        expr("self.part"),
+        targetIntent("rule"),
     );
     steps.push({
         name,

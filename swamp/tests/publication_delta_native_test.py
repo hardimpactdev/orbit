@@ -1,6 +1,5 @@
 """Native transfer publication DAGs with the unmodified official file extension."""
 
-import grp
 import hashlib
 import json
 import os
@@ -12,8 +11,8 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tests.cfgmgmt_fixture import install_cfgmgmt
 from tests.native_harness import NativeTestCase
+from tests.route_ssh_fixture import PIN, install_ssh
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = "# Managed by Orbit: Node Caddy build\n{ admin off }\n"
@@ -44,7 +43,7 @@ class PublicationDeltaNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.connection = dict(
-            install_cfgmgmt(self), nodeIdentityFile="/fixture/existing-key", become=True
+            install_ssh(self), nodeIdentityFile="/fixture/existing-key", become=True
         )
         self.copy_behaviors("operations/routes/publication-command")
         shutil.copy(
@@ -77,44 +76,41 @@ if name in ('caddy','php-fpm8.4') and os.environ.get('FIXTURE_FAIL')=='validate'
                     ROOT / f"workflows/workflow-operation-route-{family}-delta.yaml"
                 ).read_text()
             )
+
+            def patch_strings(value):
+                if isinstance(value, str):
+                    return (
+                        value.replace("/etc/caddy/Caddyfile", str(self.live))
+                        .replace("/etc/php/", str(self.host / "php") + "/")
+                        .replace("/usr/bin/caddy", str(self.commands / "caddy"))
+                        .replace("/usr/sbin/php-fpm", str(self.commands / "php-fpm"))
+                        .replace("/usr/bin/systemctl", str(self.commands / "systemctl"))
+                    )
+                if isinstance(value, list):
+                    return [patch_strings(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: patch_strings(item) for key, item in value.items()}
+                return value
+
+            workflow = patch_strings(workflow)
+            if family == "php":
+                apply = next(
+                    step
+                    for job in workflow["jobs"]
+                    for step in job["steps"]
+                    if step["name"] == "apply-pool"
+                )
+                apply["task"]["inputs"]["argv"][-1] = (
+                    "${{ '"
+                    + str(self.host / "php")
+                    + "/' + self.pool.version + '/fpm/pool.d/orbit-scopes.conf' }}"
+                )
             for job in workflow["jobs"]:
                 job.pop("target")
                 job.pop("labels")
                 for step in job["steps"]:
-                    self.assertIn("target", step)
-                    self.assertIn("labels", step)
-                    step.pop("target")
-                    step.pop("labels")
-                    task = step["task"]
-                    if task["behaviorType"] == "command/shell":
-                        task["inputs"]["run"] = (
-                            task["inputs"]["run"]
-                            .replace("sudo --preserve-env=ORBIT_PHP_VERSIONS ", "")
-                            .replace("sudo -u caddy ", "")
-                            .replace("sudo ", "")
-                            .replace("/etc/caddy/Caddyfile", str(self.live))
-                            .replace("/etc/php/", str(self.host / "php") + "/")
-                            .replace("/usr/bin/caddy", str(self.commands / "caddy"))
-                            .replace(
-                                "/usr/sbin/php-fpm", str(self.commands / "php-fpm")
-                            )
-                            .replace(
-                                "/usr/bin/systemctl", str(self.commands / "systemctl")
-                            )
-                        )
-                    if task["behaviorType"] == "@swamp/cfgmgmt/file":
-                        task["globalArgs"].update(
-                            owner=pwd.getpwuid(os.getuid()).pw_name,
-                            group=grp.getgrgid(os.getgid()).gr_name,
-                            become=False,
-                        )
-                        task["globalArgs"]["path"] = (
-                            str(self.live)
-                            if family == "caddy"
-                            else '${{ "'
-                            + str(self.host / "php")
-                            + '/" + self.pool.version + "/fpm/pool.d/orbit-scopes.conf" }}'
-                        )
+                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"node": "209"})
             (
                 self.repo / f"workflows/workflow-operation-route-{family}-delta.yaml"
             ).write_text(yaml.safe_dump(workflow, sort_keys=False))
@@ -129,7 +125,8 @@ if name in ('caddy','php-fpm8.4') and os.environ.get('FIXTURE_FAIL')=='validate'
             "intent": {
                 "node_id": 9,
                 "user": self.user,
-                "control_node_id": 14,
+                "control_node_id": 209,
+                "host_keys": [PIN],
                 "connection": self.connection,
                 "before": before,
                 "after": after,

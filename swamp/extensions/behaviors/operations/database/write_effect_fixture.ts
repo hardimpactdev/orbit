@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { pdoWrite, writeDatabase } from "./write.ts";
+import { pdoWrite, writeDatabase } from "../../../../tests/_support/database_write_command.ts";
 
 export function registerWriteEffect(driver: "mysql" | "pgsql") {
   Deno.test({

@@ -30,7 +30,7 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
 }},
 }};'''))
         publication=self.repo/'extensions/behaviors/operations/routes/publication.ts'
-        publication.write_text('import {fixtureHttp, fixtureInvoke, fixturePhp} from "../instance-lifecycle/fixtures/destroy_native.ts";\n'+publication.read_text().replace('export const behavior = publication();','export const behavior = publication(() => fixtureHttp, fixtureInvoke, undefined, undefined, undefined, undefined, fixturePhp);'))
+        publication.write_text('import {fixtureHttp, fixtureInvoke, fixturePhp} from "../instance-lifecycle/fixtures/destroy_native.ts";\n'+publication.read_text().replace('export const behavior = publication();','export const behavior = publication(() => fixtureHttp, fixtureInvoke, undefined, undefined, undefined, fixturePhp);'))
         failure=self.repo/'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {fixtureHttp} from "./instance-lifecycle/fixtures/destroy_native.ts";\n'+failure.read_text().replace('nativeFailure();','nativeFailure(() => fixtureHttp);'))
         source=ROOT/'workflows/workflow-operation-instance-destroy.yaml'

@@ -6,6 +6,7 @@ import pwd
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -132,7 +133,7 @@ def apply(value, private):
 if __name__ == "__main__":
     try:
         value = json.loads(os.environ["ORBIT_ROUTE_INPUT"])
-        apply(value, json.loads(os.environ["ORBIT_ROUTE_MATERIAL"]))
+        apply(value, json.load(sys.stdin))
         print(json.dumps({"ready": True, "route_id": value["route_id"], "instance_id": value["instance_id"]}))
     except (KeyError, ValueError, OSError, subprocess.SubprocessError):
         print('{"error_code":"route.environment_write_failed"}')

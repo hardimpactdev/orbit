@@ -22,15 +22,11 @@ inputs:
         node_id:
           type: integer
           minimum: 1
-          not:
-            enum:
-            - 1
-            - 18
         user:
           type: string
         control_node_id:
           type: integer
-          minimum: 1
+          const: 209
         connection:
           type: object
           properties:
@@ -43,11 +39,16 @@ inputs:
             become:
               type: boolean
               const: true
+            nodePort:
+              type: integer
+              minimum: 1
+              maximum: 65535
           required:
           - nodeHost
           - nodeUser
           - nodeIdentityFile
           - become
+          - nodePort
           additionalProperties: false
         before:
           type: object
@@ -64,6 +65,11 @@ inputs:
           - restore
         retain_removed:
           type: boolean
+        host_keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
       required:
       - node_id
       - user
@@ -72,6 +78,7 @@ inputs:
       - before
       - after
       - direction
+      - host_keys
       additionalProperties: false
   required:
   - operation_id
@@ -82,27 +89,44 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.node_id) }}
+    node: '209'
   steps:
   - name: read-current
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-read-current-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-read-current-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
-        run: 'set -eu
-
-          if sudo /usr/bin/test -f /etc/caddy/Caddyfile; then sudo /usr/bin/cat /etc/caddy/Caddyfile; fi'
+        hosts: name:target
+        argv:
+        - env
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          if sudo /usr/bin/test -f /etc/caddy/Caddyfile; then sudo /usr/bin/cat /etc/caddy/Caddyfile; fi
   - name: compose
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -119,78 +143,93 @@ jobs:
         current: ${{ steps["read-current"].outputs.stdout }}
         alternatives: '${{ "alternatives" in inputs.intent ? inputs.intent.alternatives : [] }}'
         retain_removed: '${{ "retain_removed" in inputs.intent ? inputs.intent.retain_removed : false }}'
+        host_keys: ${{ inputs.intent.host_keys }}
     dependsOn:
     - step: read-current
       condition:
         type: succeeded
   - name: apply-config
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.control_node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "route-delta-apply-config-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        path: /etc/caddy/Caddyfile
-        ensure: present
-        content: ${{ steps.compose.outputs.caddy.content }}
-        owner: root
-        group: caddy
-        mode: '0640'
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-apply-config-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          /usr/bin/install -m 0640 -o root -g caddy /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - route-file
+        - /etc/caddy/Caddyfile
+        stdin: ${{ steps.compose.outputs.caddy.content }}
+        sudo: true
     dependsOn:
     - step: compose
       condition:
         type: succeeded
   - name: validate
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-validate-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+        hosts: name:target
+        argv:
+        - env
+        - /bin/sh
+        - -c
+        - sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
     dependsOn:
     - step: apply-config
       condition:
         type: succeeded
   - name: reload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-reload-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo /usr/bin/systemctl reload caddy
+        hosts: name:target
+        argv:
+        - env
+        - /bin/sh
+        - -c
+        - sudo /usr/bin/systemctl reload caddy
     dependsOn:
     - step: validate
       condition:
         type: succeeded
 - name: completion
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.node_id) }}
+    node: '209'
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

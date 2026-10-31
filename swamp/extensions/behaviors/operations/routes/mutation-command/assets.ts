@@ -28,8 +28,13 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
+        ready: {
+            lifetime: "infinite",
+            garbageCollection: 10,
+            schema: z.object({ ready: z.literal(true) }),
+        },
         dns: {
             lifetime: "infinite",
             garbageCollection: 10,
@@ -59,7 +64,11 @@ export const behavior = {
         assets: {
             lifetime: "infinite",
             garbageCollection: 10,
-            schema: z.object({ script: z.string(), input_json: z.string() }),
+            schema: z.object({
+                script: z.string(),
+                scripts_directory: z.string(),
+                input_json: z.string(),
+            }),
         },
         result: {
             lifetime: "infinite",
@@ -72,6 +81,19 @@ export const behavior = {
         },
     },
     methods: {
+        lanResult: {
+            description: "Decode one completed Route LAN action",
+            arguments: z.object({ stdout: z.string() }),
+            execute: async (args: { stdout: string }, ctx: Context) => {
+                const ready = z.object({ ready: z.literal(true) }).strict()
+                    .parse(JSON.parse(args.stdout));
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("ready", "ready", ready),
+                    ],
+                };
+            },
+        },
         dns: {
             description:
                 "Compose captured DNS changes with current public files",
@@ -126,6 +148,7 @@ export const behavior = {
                 dataHandles: [
                     await ctx.writeResource("assets", "assets", {
                         script: ctx.extensionFile("scripts/route_lan.py"),
+                        scripts_directory: ctx.extensionFile("scripts"),
                         input_json: JSON.stringify(args.intent),
                     }),
                 ],
@@ -256,6 +279,7 @@ export const behavior = {
                 const value = Write.parse(args.intent);
                 const output = {
                     script: ctx.extensionFile("scripts/write_environment.py"),
+                    scripts_directory: ctx.extensionFile("scripts"),
                     input_json: JSON.stringify(value),
                 };
                 return {

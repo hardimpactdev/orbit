@@ -9,9 +9,10 @@ import { mergeCaddy, mergePhp, phpSections } from "./sections.ts";
 const Name = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Version = z.string().regex(/^[1-9][0-9]*\.[0-9]+$/);
 const Placement = z.object({
-    node_id: z.number().int().positive().refine((id) => id !== 1 && id !== 18),
+    node_id: z.number().int().positive(),
     user: Name,
-    control_node_id: z.number().int().positive(),
+    control_node_id: z.literal(209),
+    host_keys: z.array(z.string().min(1)).min(1),
     connection: PublicationConnection,
     direction: z.enum(["forward", "restore"]),
 });
@@ -35,6 +36,7 @@ export async function composeCaddy(raw: unknown) {
             node_id: value.node_id,
             user: value.user,
             control_node_id: value.control_node_id,
+            host_keys: value.host_keys,
             connection: value.connection,
             caddy: input,
         });
@@ -62,6 +64,7 @@ export async function composeCaddy(raw: unknown) {
         node_id: value.node_id,
         user: value.user,
         control_node_id: value.control_node_id,
+        host_keys: value.host_keys,
         connection: value.connection,
         caddy: {
             content,
@@ -164,7 +167,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.10.31.3",
+    version: "2026.10.31.4",
     resources: {
         caddy: {
             schema: CaddyPublication,

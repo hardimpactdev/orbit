@@ -7,7 +7,9 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -17,18 +19,28 @@ final readonly class DatabaseWriteProjection implements DirectOperationProjectio
     {
         $id = app(DatabaseIntentSource::class)->ownerId($operation);
         $intent = $id === null ? null : DatabaseExecutionIntent::recorded($id);
-        $command = $intent?->payload['commands']['database-apply'] ?? [];
-        $input = $command['input'] ?? [];
+        $input = $intent?->payload['commands']['database-apply']['input'] ?? [];
         $driver = $operation->input['driver'] ?? null;
         if ($operation->kind !== 'database.write' || $operation->target_type !== 'database_connection' || $intent === null
             || ! in_array($driver, ['mysql', 'pgsql', 'sqlite'], true)) {
             $this->invalid();
         }
+        $node = Node::query()->findOrFail($operation->node_id);
+        $public = ['connection_id' => $operation->input['connection_id'], 'driver' => $driver,
+            'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
+                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]];
         if ($driver === 'sqlite') {
-            return ['driver' => $driver, 'owner' => ValidatedData::string($input['owner']), 'path' => ValidatedData::string($input['path'])];
+            $public += ['owner' => ValidatedData::string($input['owner']), 'path' => ValidatedData::string($input['path'])];
         }
+        $material = array_intersect_key($input, array_flip(['password', 'sql', 'dsn', 'username']));
 
-        return ['driver' => $driver];
+        return [
+            'intent' => $public,
+            'execution_secrets' => ['database_write' => app(SwampCommandStep::class)->executionCopy(
+                'orbit-control-inputs', 'database-write-intent-'.$intent->id, json_encode($material, JSON_THROW_ON_ERROR),
+            )],
+        ];
     }
 
     public function apply(Operation $operation, array $data): Operation

@@ -12,12 +12,16 @@ use Tests\Support\FakeRoutePublicationSocket;
 const DATABASE_INSPECTION_SECRET = 'db-query-secret-6c2e';
 
 beforeEach(function (): void {
-    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1']));
+    $this->node = $this->markAsGateway(Node::query()->forceCreate(['id' => 14, 'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-    config(['swamp.run_token' => 'fake.token']);
+    config(['swamp.run_token' => 'fake.token', 'swamp.ca_path' => '/public/ca.pem']);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
+    $socket->reply = fn (array $sent): array => $sent['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => [
+            'vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption',
+        ]]]]
+        : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
 });
 

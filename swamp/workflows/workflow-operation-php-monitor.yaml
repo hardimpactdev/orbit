@@ -24,13 +24,9 @@ inputs:
         node_id:
           type: integer
           minimum: 1
-          not:
-            enum:
-            - 1
-            - 18
         control_node_id:
           type: integer
-          minimum: 1
+          const: 209
         connection:
           type: object
           properties:
@@ -43,17 +39,28 @@ inputs:
             become:
               type: boolean
               const: true
+            nodePort:
+              type: integer
+              minimum: 1
+              maximum: 65535
           required:
           - nodeHost
           - nodeUser
           - nodeIdentityFile
           - become
+          - nodePort
           additionalProperties: false
+        host_keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
       required:
       - php_runtime
       - node_id
       - control_node_id
       - connection
+      - host_keys
       additionalProperties: false
   required:
   - operation_id
@@ -64,35 +71,48 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.node_id) }}
+    node: '209'
   steps:
   - name: probe
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "probe-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-probe-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
-        run: 'set -eu
-
-          if sudo /usr/bin/test -f "/etc/orbit/php-fpm/$ORBIT_PHP_USER/generated/php-fpm.conf"; then present=true; else present=false;
-          fi
-
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_PHP_USER=' + string(inputs.intent.php_runtime.user) }}
+        - ${{ 'ORBIT_PHP_HOME=' + string(inputs.intent.php_runtime.home) }}
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          if sudo /usr/bin/test -f "/etc/orbit/php-fpm/$ORBIT_PHP_USER/generated/php-fpm.conf"; then present=true; else present=false; fi
           if sudo /usr/bin/test -d "$ORBIT_PHP_HOME/current"; then initial=false; else initial=true; fi
-
-          printf ''{"present":%s,"initial":%s}\n'' "$present" "$initial"'
-        env:
-          ORBIT_PHP_USER: ${{ inputs.intent.php_runtime.user }}
-          ORBIT_PHP_HOME: ${{ inputs.intent.php_runtime.home }}
+          printf '{"present":%s,"initial":%s}\n' "$present" "$initial"
   - name: input
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
@@ -106,82 +126,94 @@ jobs:
       condition:
         type: succeeded
   - name: apply-pool
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.control_node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "apply-pool-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        path: ${{ steps.input.outputs.path }}
-        ensure: present
-        content: ${{ steps.input.outputs.pool }}
-        owner: root
-        group: root
-        mode: '0644'
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-apply-pool-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          /usr/bin/install -m 0644 -o root -g root /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - route-file
+        - ${{ steps.input.outputs.path }}
+        stdin: ${{ steps.input.outputs.pool }}
+        sudo: true
     dependsOn:
     - step: input
       condition:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
   - name: validate
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "validate-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo --preserve-env=PHP_INI_SCAN_DIR "/usr/sbin/php-fpm$ORBIT_PHP_VERSION" -t --fpm-config "$ORBIT_PHP_MAIN"
-        env:
-          PHP_INI_SCAN_DIR: ${{ steps.input.outputs.scan_dir }}
-          ORBIT_PHP_VERSION: ${{ steps.input.outputs.version }}
-          ORBIT_PHP_MAIN: ${{ steps.input.outputs.main }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'PHP_INI_SCAN_DIR=' + string(steps.input.outputs.scan_dir) }}
+        - ${{ 'ORBIT_PHP_VERSION=' + string(steps.input.outputs.version) }}
+        - ${{ 'ORBIT_PHP_MAIN=' + string(steps.input.outputs.main) }}
+        - /bin/sh
+        - -c
+        - sudo --preserve-env=PHP_INI_SCAN_DIR "/usr/sbin/php-fpm$ORBIT_PHP_VERSION" -t --fpm-config "$ORBIT_PHP_MAIN"
     dependsOn:
     - step: apply-pool
       condition:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
   - name: reload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "reload-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo /usr/bin/systemctl reload "$ORBIT_PHP_SERVICE"
-        env:
-          ORBIT_PHP_SERVICE: ${{ steps.input.outputs.service }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_PHP_SERVICE=' + string(steps.input.outputs.service) }}
+        - /bin/sh
+        - -c
+        - sudo /usr/bin/systemctl reload "$ORBIT_PHP_SERVICE"
     dependsOn:
     - step: validate
       condition:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
 - name: completion
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.node_id) }}
+    node: '209'
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

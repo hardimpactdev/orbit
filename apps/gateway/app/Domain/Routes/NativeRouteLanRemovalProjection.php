@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -23,7 +24,8 @@ final readonly class NativeRouteLanRemovalProjection implements DirectOperationP
             throw new ResourceOperationException('route.lan_removal_invalid', 'The admitted Route LAN destination is missing.', 422);
         }
 
-        return ['intent' => array_intersect_key($intent, array_flip(['route_id', 'node_id', 'destination'])), 'execution_secrets' => []];
+        return ['intent' => [...array_intersect_key($intent, array_flip(['route_id', 'node_id', 'destination'])),
+            ...app(NativeCaddyPublicationInput::class)->connectionForNode(Node::query()->findOrFail($operation->node_id))], 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
