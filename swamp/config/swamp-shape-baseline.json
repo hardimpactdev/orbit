@@ -668,14 +668,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/certificates/mod.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/certificates/role-actions.ts",
       "rule": "custom-control",
       "count": 3,

@@ -10,10 +10,13 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create(['name' => 'native-certificate', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8',
@@ -56,8 +59,9 @@ afterEach(function (): void {
 
 it('admits the exact local leaf scope account root and agent pin without executing', function (): void {
     $input = app(StartCertificateOperationAction::class)->convergenceInput($this->node, 'route-81-router', 'private.test');
-    expect($input)->toMatchArray(['node_id' => $this->node->id, 'scope' => 'route-81-router', 'home' => '/home/orbit', 'user' => 'orbit',
+    expect($input)->toMatchArray(['node_id' => $this->node->id, 'scope' => 'route-81-router', 'user' => 'orbit',
         'domain' => 'private.test', 'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'agent_sha256' => str_repeat('a', 64)])
+        ->and($input)->not->toHaveKey('home')
         ->and($input['version'])->toMatch('/\A[a-f0-9]{16}\z/')
         ->and($this->agents->calls)->toBe([])->and($this->signer->calls)->toBe([]);
 });
@@ -77,7 +81,7 @@ it('admits removal only after stored caddy sites stop using its leaf', function 
     $route->customProxy()->create(['node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:4788']);
     $scope = 'route-'.$route->id;
     $input = app(StartCertificateOperationAction::class)->removalInput($this->node, $scope);
-    expect($input)->toBe(['node_id' => $this->node->id, 'scope' => $scope, 'home' => '/home/orbit', 'agent_sha256' => str_repeat('a', 64), 'in_use' => false]);
+    expect($input)->toBe(['node_id' => $this->node->id, 'user' => 'orbit', 'scope' => $scope, 'agent_sha256' => str_repeat('a', 64), 'in_use' => false]);
     $route->publishSites();
     expect(fn () => app(StartCertificateOperationAction::class)->removalInput($this->node, $scope))->toThrow(ResourceOperationException::class);
     expect($this->agents->calls)->toBe([])->and(Operation::query()->count())->toBe(0);
@@ -89,3 +93,36 @@ it('declares native certificate workflows without a Gateway signing primitive', 
         expect($direct->definition($kind))->not->toHaveKey('primitive');
     }
 });
+
+it('starts standalone leaf workflows with complete public input and fixed terminal output', function (string $kind): void {
+    $input = $kind === 'certificate.converge'
+        ? app(StartCertificateOperationAction::class)->convergenceInput($this->node, 'route-81-router', 'private.test')
+        : app(StartCertificateOperationAction::class)->removalInput($this->node, 'route-81-router');
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'node_certificate',
+        'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => 'queued', 'sequence' => 1,
+        'input' => $input, 'state' => []]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.start-token']);
+
+    app(StartSwampRun::class)->start($operation);
+
+    $sent = $socket->sent[0]['payload']['inputs'];
+    expect($sent['intent'])->toBe($input);
+    expect($sent['operation_id'])->toBe($operation->id);
+    expect($sent['node_id'])->toBe($this->node->id);
+    expect((array) $sent['execution_secrets'])->toBe([]);
+    expect(app(DirectOperation::class)->definition($kind)['terminal_result'])->toBe(['job' => 'certificate', 'step' => 'inspect']);
+    expect($this->agents->calls)->toBe([]);
+    expect($this->signer->calls)->toBe([]);
+})->with(['certificate.converge', 'certificate.remove']);
+
+it('refuses builtin certificate admission on unproved proxy identities', function (int $nodeId): void {
+    $this->node->id = $nodeId;
+    expect(fn () => app(StartCertificateOperationAction::class)->converge($this->node, 'route-81-router', 'private.test'))
+        ->toThrow(ResourceOperationException::class);
+    expect(fn () => app(StartCertificateOperationAction::class)->remove($this->node, 'route-81-router'))
+        ->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(0);
+    expect($this->agents->calls)->toBe([]);
+})->with([1, 18]);

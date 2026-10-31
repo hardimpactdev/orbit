@@ -19,12 +19,16 @@ final readonly class StartCertificateOperationAction
 
     public function converge(Node $node, string $scope, string $domain, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
+        $this->assertDirectWorker($node);
+
         return $this->operations->execute('certificate.converge', 'node_certificate', $node->id, $node->id,
             $this->convergenceInput($node, $scope, $domain), $triggeredBy, $requestId);
     }
 
     public function remove(Node $node, string $scope, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
+        $this->assertDirectWorker($node);
+
         return $this->operations->execute('certificate.remove', 'node_certificate', $node->id, $node->id,
             $this->removalInput($node, $scope), $triggeredBy, $requestId);
     }
@@ -55,5 +59,12 @@ final readonly class StartCertificateOperationAction
     private function scopeInput(Node $node, string $scope): array
     {
         return app(NativeRouteCertificateInput::class)->scopeInput($node, $scope);
+    }
+
+    private function assertDirectWorker(Node $node): void
+    {
+        if (in_array($node->id, [1, 18], true)) {
+            throw new ResourceOperationException('certificate.proxy_transport_unavailable', 'Native certificate commands need the shared proxy transport for this Node.', 503);
+        }
     }
 }

@@ -1,9 +1,10 @@
 id: eabb9794-3ff8-4ee9-a7bb-52172837668b
 name: operation-certificate-remove
-description: Remove an admitted certificate with native local steps.
+description: One admitted local leaf, visible command actions, and terminal public presence.
 writes: true
 vaults: []
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -15,111 +16,95 @@ inputs:
       type: string
       enum:
       - certificate.remove
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+        scope:
+          type: string
+          pattern: ^(app-instance-[1-9][0-9]*(-hostname-change)?|route-[1-9][0-9]*(-router(-hostname-change)?|-ingress)?)$
+        user:
+          type: string
+          pattern: ^[a-z_][a-z0-9_-]{0,31}$
+        home:
+          type: string
+        agent_sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        in_use:
+          type: boolean
+          const: false
+      required:
+      - node_id
+      - scope
+      - user
+      - agent_sha256
+      - in_use
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
 - name: certificate
   steps:
-  - name: admit
+  - name: assets
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels:
       node: ${{ string(inputs.node_id) }}
+    writes: true
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
-      methodName: admit
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: ${{ "certificate-assets-" + string(inputs.operation_id) }}
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        intent: ${{ inputs.intent }}
   - name: remove
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels:
       node: ${{ string(inputs.node_id) }}
+    writes: true
     dependsOn:
-    - step: admit
+    - step: assets
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
-      methodName: remove
+      behaviorType: command/shell
+      behaviorName: ${{ "certificate-command-remove-" + string(inputs.operation_id) }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        leaf: ${{ steps.admit.outputs.intent.leaf }}
-        cancelled: ${{ steps.admit.outputs.intent.cancelled }}
+        run: sudo -n --preserve-env=ORBIT_CERTIFICATE_INPUT /usr/bin/python3 "${{ steps.assets.outputs.remove_script }}"
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
   - name: inspect
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels:
       node: ${{ string(inputs.node_id) }}
+    writes: true
     dependsOn:
     - step: remove
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
-      methodName: inspect
+      behaviorType: command/shell
+      behaviorName: ${{ "certificate-command-inspect-" + string(inputs.operation_id) }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        leaf:
-          node_id: ${{ steps.admit.outputs.intent.leaf.node_id }}
-          scope: ${{ steps.admit.outputs.intent.leaf.scope }}
-          user: ${{ steps.admit.outputs.intent.leaf.user }}
-          agent_sha256: ${{ steps.admit.outputs.intent.leaf.agent_sha256 }}
-        previous: ${{ steps.remove.outputs.applied }}
-  - name: project
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
-      methodName: project
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        presence: ${{ steps.inspect.outputs.presence }}
-- name: terminal-failure
-  dependsOn:
-  - job: certificate
-    condition:
-      type: or
-      conditions:
-      - type: failed
-      - type: skipped
-  steps:
-  - name: report-native-failure
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: certificate-cluster-failure
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
+        run: sudo -n --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_EXPECT_PRESENT /usr/bin/python3 "${{ steps.assets.outputs.inspect_script
+          }}"
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_CERTIFICATE_EXPECT_PRESENT: 'false'

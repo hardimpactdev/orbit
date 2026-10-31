@@ -24,7 +24,7 @@ class RoleCertificatesNative(NativeTestCase):
         module = self.repo / "extensions/behaviors/operations/certificates/mod.ts"
         module.write_text('import {fixtureSignBatch,fixtureRoleActions} from "../node/role_certificates_native_fixture.ts";\n' +
                           module.read_text().replace('export const behavior = { ...certificates(), type: "@nckrtl/certificates" };',
-                              'export const behavior = certificates(undefined,undefined,fixtureSignBatch,fixtureRoleActions());'))
+                              'export const behavior = certificates(undefined,fixtureSignBatch,fixtureRoleActions());'))
         script = '''import {roleCertificateJobs} from "./extensions/behaviors/operations/node/role_certificates_workflow.ts";
 const generated=roleCertificateJobs("prepared");
 console.log(JSON.stringify({id:"c466ef02-dae7-4309-bf18-a38c11a6777c",name:"role-certificate-fixture",inputs:{type:"object",properties:{operation_id:{type:"integer"},node_id:{type:"integer"},kind:{type:"string"}},required:["operation_id","node_id","kind"]},jobs:[{name:"prepared",steps:[{name:"prepared",task:{type:"assert",expr:"true",severity:"high",message:"prepared"}}]},...generated.jobs]}));'''

@@ -139,7 +139,7 @@ class AnalyticsFixture(NativeTestCase):
         cert = self.repo/'extensions/behaviors/operations/certificates/mod.ts'
         source = cert.read_text()
         self.assertIn('...certificates()', source)
-        cert.write_text('import {signCertificateBatch as fixtureSign} from "../analytics/native_effects.ts";\n'+source.replace('...certificates()', '...certificates(undefined, undefined, fixtureSign)'))
+        cert.write_text('import {signCertificateBatch as fixtureSign} from "../analytics/native_effects.ts";\n'+source.replace('...certificates()', '...certificates(undefined, fixtureSign)'))
         pub = self.repo/'extensions/behaviors/operations/routes/publication.ts'
         source = pub.read_text().replace('CaddyPublication, publishCaddy as applyCaddy','CaddyPublication')
         # Analytics never calls the Instance-destruction PHP method on this shared model.

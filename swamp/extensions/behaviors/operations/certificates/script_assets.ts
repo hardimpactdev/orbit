@@ -25,6 +25,27 @@ type Context = {
   ) => Promise<unknown>;
 };
 
+function publicRequest(
+  stdout: string,
+): Exclude<z.infer<typeof Request>, { error_code: string }> {
+  try {
+    const request = Request.parse(JSON.parse(stdout));
+    if ("error_code" in request) throw new Error();
+    if (request.state === "request") {
+      const pem = atob(request.request_base64);
+      if (
+        !pem.startsWith("-----BEGIN CERTIFICATE REQUEST-----") ||
+        pem.includes("PRIVATE KEY")
+      ) {
+        throw new Error();
+      }
+    }
+    return request;
+  } catch {
+    throw new Error("certificate.request_invalid");
+  }
+}
+
 /** Public metadata and typed decoders only. Native command steps own every effect. */
 export const behavior = {
   type: "@nckrtl/certificate-script-assets",
@@ -73,17 +94,7 @@ export const behavior = {
         ctx: Context,
       ) => {
         const leaf = Leaf.parse(args.leaf);
-        const request = Request.parse(JSON.parse(args.stdout));
-        if ("error_code" in request) throw new Error(request.error_code);
-        if (request.state === "request") {
-          const pem = atob(request.request_base64);
-          if (
-            !pem.startsWith("-----BEGIN CERTIFICATE REQUEST-----") ||
-            pem.includes("PRIVATE KEY")
-          ) {
-            throw new Error("certificate.request_invalid");
-          }
-        }
+        const request = publicRequest(args.stdout);
         const result = RequestOutput.parse({
           request,
           record: { node_id: leaf.node_id, scope: leaf.scope, ...request },

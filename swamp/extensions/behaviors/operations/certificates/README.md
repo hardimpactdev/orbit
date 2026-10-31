@@ -74,3 +74,24 @@ existing owned version link is accepted only within that role's fixed versions
 directory. The shared Caddy lock covers key preparation and each complete
 publication transaction, including reload and rollback. The Gateway projects
 role state only after the native stages succeed.
+
+## Standalone native command workflows
+
+`certificate.converge` and `certificate.remove` receive their complete public
+leaf intent as workflow inputs. The Gateway uses `workflow_inputs` and a fixed
+`terminal_result` selector. Neither workflow reads intent or posts status from a
+worker. Their final inspection step prints the public `{present}` result; the
+shared terminal subscriber reads native history and projects it once.
+
+The certificate script manifest ships one request, publication, removal and
+inspection entry point plus their local certificate functions. A pure metadata
+step resolves the cached paths and serializes public input. Each effect is one
+placed builtin shell step. Signing remains the sole Gateway call. The request
+and publication steps keep the private key on its effect Node. No CA vault or
+execution-secret copy is needed by these standalone workflows.
+
+A current valid leaf skips native signing and publication with workflow guards.
+Failures skip subsequent actions and are projected from the terminal run; native
+resume is the recovery path. Nodes 1 and 18 remain blocked for builtin shell
+until the shared proxy transport is ready. Existing parent lower methods remain
+owned by their parent rewrites; standalone workflows no longer use them.

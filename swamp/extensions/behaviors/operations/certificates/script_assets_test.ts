@@ -94,9 +94,11 @@ Deno.test("typed CSR decoding refuses private or malformed output before writing
     ]
   ) {
     const ctx = context();
-    await assertRejects(() =>
-      behavior.methods.decodeRequest.execute({ leaf, stdout }, ctx)
+    const error = await assertRejects(
+      () => behavior.methods.decodeRequest.execute({ leaf, stdout }, ctx),
+      Error,
     );
+    assertEquals(error.message, "certificate.request_invalid");
     assertEquals(ctx.resources, []);
   }
 });

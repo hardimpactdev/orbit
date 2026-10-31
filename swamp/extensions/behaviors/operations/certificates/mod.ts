@@ -1,10 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
-import {
-  DirectArgs,
-  GatewayOperation,
-  Globals as SharedGlobals,
-} from "../_lib/direct.ts";
+import { DirectArgs, Globals as SharedGlobals } from "../_lib/direct.ts";
 import { certificateActions } from "./actions.ts";
 import { signCertificateBatch, SigningLeaf } from "./signing.ts";
 import { RoleLeaf } from "./role-input.ts";
@@ -24,11 +19,6 @@ const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
   target_node_id: z.number().int().positive().optional(),
 });
-const Intent = z.object({
-  leaf: z.union([Leaf, Removal]),
-  cancelled: z.boolean(),
-});
-const InputResult = z.record(z.string(), z.unknown());
 type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
@@ -63,8 +53,6 @@ const SignedBatch = z.object({ certificates: z.array(SignedRecord).max(256) })
   .strict();
 
 export function certificates(
-  makeHttp: (ctx: Context) => Http = (ctx) =>
-    gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   actions = certificateActions(),
   signBatch: (
     leaves: unknown,
@@ -78,8 +66,6 @@ export function certificates(
   const output = async (ctx: Context, spec: string, value: unknown) => ({
     dataHandles: [await ctx.writeResource(spec, spec, { [spec]: value })],
   });
-  const gateway = (args: ArgsType, ctx: Context) =>
-    new GatewayOperation(makeHttp(ctx), args);
   const target = (args: ArgsType, leaf: { node_id: number }) => {
     if ((args.target_node_id ?? args.node_id) !== leaf.node_id) {
       throw new Error(
@@ -119,11 +105,6 @@ export function certificates(
         garbageCollection: 1,
       },
 
-      intent: {
-        schema: z.object({ intent: Intent }),
-        lifetime: "1d",
-        garbageCollection: 1,
-      },
       request: {
         schema: z.object({ request: Request }),
         lifetime: "1d",
@@ -141,11 +122,6 @@ export function certificates(
       },
       presence: {
         schema: z.object({ presence: Presence }),
-        lifetime: "1d",
-        garbageCollection: 1,
-      },
-      result: {
-        schema: z.object({ result: InputResult }),
         lifetime: "1d",
         garbageCollection: 1,
       },
@@ -404,32 +380,6 @@ export function certificates(
         },
       },
 
-      admit: {
-        description: "Read standalone admitted public certificate intent",
-        arguments: Args,
-        execute: async (args: ArgsType, ctx: Context) => {
-          const g = gateway(args, ctx);
-          const current = z.object({
-            id: z.literal(args.operation_id),
-            kind: z.literal(args.kind),
-            node_id: z.literal(args.node_id),
-            input: z.unknown(),
-            cancel_requested: z.boolean(),
-          }).parse(await g.read(ctx.signal));
-          const leaf = args.kind === "certificate.converge"
-            ? Leaf.parse(current.input)
-            : Removal.parse(current.input);
-          target(args, leaf);
-          await g.project({
-            status: "running",
-            started_at: new Date().toISOString(),
-          });
-          return output(ctx, "intent", {
-            leaf,
-            cancelled: current.cancel_requested,
-          });
-        },
-      },
       request: {
         description: "Prepare local key and public CSR",
         arguments: Args.extend({
@@ -540,37 +490,6 @@ export function certificates(
             "presence",
             await actions.inspect(args.leaf, args.previous, ctx.signal),
           );
-        },
-      },
-      project: {
-        description: "Project standalone bounded presence or refusal",
-        arguments: Args.extend({ presence: Presence }),
-        execute: async (
-          args: ArgsType & { presence: z.infer<typeof Presence> },
-          ctx: Context,
-        ) => {
-          const p = args.presence;
-          let result: Record<string, unknown> = p;
-          let status = "error_code" in p
-            ? (p.error_code === "operation.cancelled" ? "cancelled" : "failed")
-            : "succeeded";
-          if (
-            "present" in p &&
-            p.present !== (args.kind === "certificate.converge")
-          ) {
-            status = "failed";
-            result = { error_code: "certificate.presence_mismatch" };
-          }
-          if (status === "cancelled") result = {};
-          await gateway(args, ctx).project({
-            status,
-            started_at: new Date().toISOString(),
-            finished_at: new Date().toISOString(),
-            result,
-            error_code: result.error_code ?? null,
-          });
-          if (status === "failed") throw new Error(String(result.error_code));
-          return output(ctx, "result", { status });
         },
       },
     },

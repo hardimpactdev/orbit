@@ -1,6 +1,9 @@
 """Run the existing real OpenSSL contract against the shipped Python functions."""
 
+import contextlib
 import importlib.util
+import io
+import json
 import unittest
 from pathlib import Path
 
@@ -33,6 +36,24 @@ def execute(action, raw):
     raise ValueError("unexpected fixture action")
 """
     )
+
+
+class PublicCertificateFailureTest(unittest.TestCase):
+    def test_fixed_failures_keep_their_code_and_other_exceptions_stay_opaque(self):
+        namespace = {"__name__": "fixture"}
+        exec((BASE / "scripts/public_input.py").read_text(), namespace)
+        for code, expected in (
+            ("certificate.presence_mismatch", "certificate.presence_mismatch"),
+            ("raw fixture diagnostic", "certificate.leaf_failed"),
+        ):
+
+            def fail():
+                raise ValueError(code)
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
+                namespace["emit"](fail)
+            self.assertEqual({"error_code": expected}, json.loads(output.getvalue()))
 
 
 if __name__ == "__main__":
