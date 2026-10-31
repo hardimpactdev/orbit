@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Extensions\Vault\Actions\SetupVaultAction;
 use Orbit\Extensions\Vault\Actions\SyncVaultAction;
+use Orbit\Extensions\Vault\Actions\TeardownVaultAction;
 use Orbit\Extensions\Vault\Data\SetupVaultData;
 use Orbit\Extensions\Vault\Domain\VaultConfiguration;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
@@ -170,6 +171,9 @@ try {
     {
         $private = vaultFixtureData();
         $needles = [$private['configuration']['master_password'], $private['configuration']['client_secret'], $private['configuration']['client_id'], $private['hidden']];
+        if (isset($private['backend_token'])) {
+            $needles[] = $private['backend_token'];
+        }
         foreach ($needles as $value) {
             $needles[] = urlencode($value);
             $needles[] = base64_encode($value);
@@ -177,6 +181,19 @@ try {
         }
 
         return array_unique($needles);
+    }
+    function collectionCiphers(array $configuration, string $token): array
+    {
+        $snapshot = api('GET', '/api/sync?excludeDomains=true', token: $token);
+        $ciphers = [];
+        foreach (item($snapshot, 'ciphers') as $cipher) {
+            if (item($cipher, 'organizationId') === $configuration['organization_id']
+                && in_array($configuration['collection_id'], item($cipher, 'collectionIds'), true)) {
+                $ciphers[item($cipher, 'id')] = $cipher;
+            }
+        }
+
+        return $ciphers;
     }
     function vaultFixtureScan(string $bytes): void
     {
@@ -239,6 +256,45 @@ try {
         }
         DatabaseConnection::create(['slug' => 'vault-dev', 'driver' => 'pgsql', 'node_id' => 9,
             'host' => '127.0.0.1', 'port' => 5432, 'database' => 'isolated', 'username' => 'fixture', 'password' => $hidden]);
+        if (getenv('VAULT_TEST_ACTION') === 'teardown') {
+            $marked = [];
+            $foreign = null;
+            $collections = [$config['collection_id']];
+            if (getenv('VAULT_TEST_SHARED_ITEM') === '1') {
+                $other = api('POST', '/api/organizations/'.$orgId.'/collections',
+                    ['name' => seal('Unrelated collection', $orgKey), 'groups' => [], 'users' => []], $token);
+                insist(is_string(item($other, 'id')), 'fixture_collection_missing');
+                $collections[] = item($other, 'id');
+            }
+            foreach (['database-connection:1', 'database-user:gone', null] as $index => $source) {
+                $fields = [['type' => 1, 'name' => seal('password', $orgKey), 'value' => seal($hidden, $orgKey), 'linkedId' => null]];
+                if ($source !== null) {
+                    $fields[] = ['type' => 0, 'name' => seal('orbit.source', $orgKey), 'value' => seal($source, $orgKey), 'linkedId' => null];
+                }
+                $cipher = api('POST', '/api/ciphers/create', ['collectionIds' => $index === 0 ? $collections : [$config['collection_id']],
+                    'cipher' => ['type' => 2, 'organizationId' => $orgId, 'folderId' => null,
+                        'name' => seal('Isolated teardown item', $orgKey), 'notes' => seal('Private fixture', $orgKey),
+                        'favorite' => false, 'reprompt' => 0, 'secureNote' => ['type' => 0],
+                        'fields' => $fields, 'lastKnownRevisionDate' => null, 'encryptedFor' => item($profile, 'id')]], $token);
+                $identity = item($cipher, 'id');
+                insist(is_string($identity), 'fixture_cipher_missing');
+                if ($source === null) {
+                    $foreign = $identity;
+                } else {
+                    $marked[] = $identity;
+                }
+            }
+            // A stale ledger must not turn a foreign item into a deletion target.
+            foreach (['database-connection:1' => $marked[0], 'database-user:stale' => $foreign] as $source => $identity) {
+                VaultItem::create(['source' => $source, 'cipher_id' => $identity, 'fingerprint' => str_repeat('a', 64)]);
+            }
+            $before = collectionCiphers($config, $token);
+            insist(count($before) === 3 && VaultItem::count() === 2, 'fixture_teardown_seed_incomplete');
+            app(SettingRepository::class)->put(fixtureScope(), 'vault.fixture', json_encode([
+                'configuration' => $config, 'hidden' => $hidden, 'backend_token' => $token,
+                'published_id' => $marked[0], 'marker_only_id' => $marked[1], 'foreign_id' => $foreign, 'ciphers_before' => $before,
+            ], JSON_THROW_ON_ERROR), SettingValueProtection::Secret);
+        }
         echo json_encode(['initialized' => true, 'node_id' => 9, 'isolated' => true]);
     } elseif ($mode === 'admit') {
         if (getenv('VAULT_TEST_ACTION') === 'setup') {
@@ -247,6 +303,9 @@ try {
             $operation = app(SetupVaultAction::class)->execute(
                 new SetupVaultData($config['url'], $config['client_id'],
                     $config['client_secret'], $config['master_password'], $config['organization_id'], $config['collection_id']));
+        } elseif (getenv('VAULT_TEST_ACTION') === 'teardown') {
+            insist(app(VaultSettings::class)->configuration() !== null && VaultItem::count() === 2, 'fixture_teardown_not_seeded');
+            $operation = app(TeardownVaultAction::class)->execute(getenv('VAULT_TEST_KEEP_ITEMS') === '1');
         } else {
             $operation = app(SyncVaultAction::class)->execute('isolated-real-http-canary');
         }
@@ -267,6 +326,25 @@ try {
             'items' => VaultItem::count(), 'configured' => $stored !== null, 'configuration_matches_fixture' => $matches]);
         vaultFixtureScan($bytes);
         echo $bytes;
+    } elseif ($mode === 'verify-backend') {
+        insist(getenv('VAULT_TEST_ACTION') === 'teardown', 'fixture_backend_check_invalid');
+        $private = vaultFixtureData();
+        $after = collectionCiphers($private['configuration'], $private['backend_token']);
+        $before = $private['ciphers_before'];
+        $keep = getenv('VAULT_TEST_KEEP_ITEMS') === '1';
+        $sharedRefusal = ! $keep && getenv('VAULT_TEST_SHARED_ITEM') === '1';
+        $foreign = $private['foreign_id'];
+        $copy = $private['marker_only_id'];
+        insist(isset($after[$foreign]) && $after[$foreign] === $before[$foreign], 'fixture_foreign_item_changed');
+        insist(isset($after[$copy]) && $after[$copy] === $before[$copy], 'fixture_marker_only_item_changed');
+        insist($keep || $sharedRefusal ? $after == $before : count($after) === 2
+            && ! isset($after[$private['published_id']]), 'fixture_published_item_outcome_invalid');
+        insist((app(VaultSettings::class)->configuration() === null) === ! $sharedRefusal
+            && VaultItem::count() === ($sharedRefusal ? 2 : 0), 'fixture_teardown_not_projected');
+        echo json_encode(['published_before' => 1, 'published_after' => $keep || $sharedRefusal ? 1 : 0,
+            'marker_only_preserved' => 1, 'marker_only_unchanged' => true, 'foreign_preserved' => 1,
+            'foreign_unchanged' => true, 'keep_items' => $keep, 'shared_item_refused' => $sharedRefusal,
+            'configuration_cleared' => ! $sharedRefusal, 'ledger_cleared' => ! $sharedRefusal]);
     } elseif ($mode === 'diagnose') {
         $operation = Operation::where('kind', 'vault.'.getenv('VAULT_TEST_ACTION'))->sole();
         $socket = app(WebSocketClient::class);

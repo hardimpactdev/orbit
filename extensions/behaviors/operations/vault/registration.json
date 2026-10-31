@@ -1,7 +1,8 @@
 {
   "kinds": [
     "vault.sync",
-    "vault.setup"
+    "vault.setup",
+    "vault.teardown"
   ],
   "workflow": "operation-vault-direct"
 }

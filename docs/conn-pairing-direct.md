@@ -1,9 +1,9 @@
-# Direct Conn pairing creation
+# Direct Conn operations
 
-All three Conn kinds start `operation-conn-direct`. Its owning Gateway slice
-selects the direct writer and removes the PHP issue command, pairing HTTP relay
-and receipt tests. Vault kinds retain their existing paths until their own
-takeover. Rollback reverts the owning PR.
+All three Conn kinds start `operation-conn-direct`. Each owning Gateway slice
+selects its direct writer and removes its PHP command, HTTP relay and receipt
+tests. Vault kinds use their own direct workflow. Rollback reverts the owning
+PR.
 
 Workflow input contains only Operation, kind and Node identifiers. The shared
 private-material endpoint requires the Gateway-recorded run, exact caller Node
@@ -26,7 +26,7 @@ The workflow reads the Node's installed public CA at
 The native behavior and checkpoint are keyed per Operation. An uncertain issue
 without a saved credential fails instead of creating another link. A stored
 credential recovers a lost completion without issuing again. The approved
-HTTP201/read-once pairing and bounded wait remain unchanged.
+HTTP 201/read-once pairing and bounded wait remain unchanged.
 
 The shared secrets base is merged; each owning credential consumer still
 requires orchestrator approval. If its direct writer requires released code,
@@ -53,7 +53,7 @@ registrations are removed in the same cutover; rollback reverts the owning PR.
 
 Gateway cleanup admits a recorded registration revision, selects only the
 Gateway client label, and preserves the current admin. A changed cleanup
-revision refuses the shared read with409; completion marks only its admitted
+revision refuses the shared read with 409; completion marks only its admitted
 revision so a newer registration stays pending. The old Conn executor, HTTP
 revocation methods and polled integration paths are removed. The periodic
 maintenance method still only admits intent.

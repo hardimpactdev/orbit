@@ -59,49 +59,6 @@ export function invocation(
         (value.data as Record<string, unknown>).backend === "applied",
     };
   }
-  if (["vault.teardown"].includes(kind)) {
-    const action = z.enum(["setup", "sync", "teardown"]).parse(kind.slice(6));
-    const reference = z.object({
-      $secret: z.literal("vault.credentials"),
-      id: z.number().int().positive(),
-    }).strict().parse(input.configuration);
-    const lists = z.array(z.string()).max(10000);
-    const metadata = z.object({
-      backend: z.enum(["configured", "synced", "absent"]).optional(),
-      error_code: ErrorCode.optional(),
-      email: z.string().optional(),
-      organization_id: z.string().optional(),
-      organization_name: z.string().optional(),
-      collection_id: z.string().optional(),
-      collection_name: z.string().optional(),
-      sources: lists.optional(),
-      cipher_ids: lists.optional(),
-      revisions: lists.optional(),
-      fingerprints: lists.optional(),
-    });
-    const result = z.union([
-      z.object({ error_code: ErrorCode }),
-      z.object({ outcome: z.enum(["succeeded", "failed"]), data: metadata }),
-    ]);
-    return {
-      step: `vault-${action}`,
-      transport: "remote_program",
-      name: "vault.collection",
-      input: { action, configuration: reference },
-      parseResult: (value) => result.parse(value),
-      error: (value) =>
-        typeof value.error_code === "string"
-          ? ErrorCode.parse(value.error_code)
-          : typeof (value.data as Record<string, unknown> | undefined)
-              ?.error_code === "string"
-          ? ErrorCode.parse((value.data as Record<string, unknown>).error_code)
-          : null,
-      prove: (value) =>
-        value.outcome === "succeeded" &&
-        (value.data as Record<string, unknown>).backend ===
-          ({ setup: "configured", sync: "synced", teardown: "absent" }[action]),
-    };
-  }
   const match = /^metrics\.(node_exporter|cadvisor)_(converge|remove)$/.exec(
     kind,
   );

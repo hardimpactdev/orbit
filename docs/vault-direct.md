@@ -1,7 +1,7 @@
 # Direct Vault collection operations
 
-`vault.sync` and `vault.setup` run the collection program locally on the exact admitted Node
-worker. Teardown keeps its old execution path until its owning slice. Shared private-material supplies the encrypted admission snapshot only
+`vault.sync`, `vault.setup` and `vault.teardown` run the collection program locally on the exact admitted Node
+worker. Shared private-material supplies the encrypted admission snapshot only
 inside an effect-only callback; credentials use protected stdin, never workflow
 arguments, native resources or logs. Public metadata is bounded and refuses
 master password, client secret and hidden-field echoes before any public
@@ -13,7 +13,7 @@ admitted Gateway Node14, it uses the existing public CA file
 workflow and the verified worker TLS configuration. Injected native fixtures override
 only this file path with `/dev/null`. A native
 behavior lock serializes the Gateway's collection operations. HTTP deadlines and
-the original900-second overall program deadline remain. Existing source
+the original 900-second overall program deadline remain. Existing source
 matching, crypto, duplicate/orphan adoption, Orbit-only TLS and foreign-item
 preservation remain in the ported collection program.
 
@@ -24,8 +24,9 @@ are preserved; only Orbit-owned orphan entries may be deleted in this canary.
 The preflight refuses duplicate-source or deleted-but-wanted entries whose
 reconciliation would need another deletion.
 
-The owning Gateway PRs switch sync and setup in separate per-kind slices and remove each old run/receipt
-contract and tests. Rollback is revert. Credential approval, the exact loaded
+The owning Gateway PRs switch all three kinds in separate per-kind slices and
+remove each old run/receipt contract and tests. The teardown slice also deletes
+the Gateway collection program. Rollback is revert. Credential approval, the exact loaded
 workflow and installed Gateway-token run/read grant are required before writer
 release. The real HTTP dev proof below supplements the authorized production
 sync canary; injected transport regressions do not establish that proof. No production collection,
@@ -41,6 +42,8 @@ logs for private values. Injected Http fixtures alone do not satisfy that proof.
 The polled integrations schedule does not discover `vault.sync`. Its executor registration is removed in the same cutover; rollback reverts the owning PR.
 
 The polled integrations schedule does not discover `vault.setup`. Its executor registration is removed in the same cutover; rollback reverts the owning PR.
+
+The polled integrations schedule does not discover `vault.teardown`. Its executor registration is removed in the same cutover; rollback reverts the owning PR.
 
 Native regressions reuse `tests/native_harness.py` for scratch setup, CLI calls
 and secret scans. Vault fixtures retain injection, placement and domain checks.
@@ -64,6 +67,18 @@ Set `VAULT_TEST_ACTION=setup` to prove first setup with the same fixture. Its
 Gateway starts without Vault configuration, admits the real setup action, and
 stores the configured account only after the placed native run succeeds. All
 private inputs and scan needles stay in the PHP fixture's memory.
+
+Set `VAULT_TEST_ACTION=teardown` to prove deletion against the disposable
+backend. The fixture seeds one published item, one unrecorded copy carrying an
+`orbit.source` marker, and one foreign item. A stale ledger entry points at the
+foreign item. Teardown deletes only the published item whose ID and decrypted
+source match the ledger in the configured organization and collection. It
+preserves both other items unchanged and clears the isolated Gateway's
+configuration and ledger. With `VAULT_TEST_KEEP_ITEMS=1`, all three remote items
+stay unchanged. With `VAULT_TEST_SHARED_ITEM=1`, the published item belongs to
+two collections; teardown refuses with `vault.item_shared` before any deletion
+and retains the configuration and ledger. None of these modes uses the
+production collection.
 
 The PHP fixture generates private values and retains its scan needles in memory.
 It scans the whole scratch tree, native history and public Operation before

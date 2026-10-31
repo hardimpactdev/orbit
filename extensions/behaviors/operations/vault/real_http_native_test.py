@@ -38,9 +38,11 @@ class VaultRealHttp(NativeTestCase):
     @unittest.skipUnless(os.environ.get('VAULT_TEST_GATEWAY_ROOT'), 'requires an isolated Gateway checkout')
     def test_real_operation_keeps_private_material_out_of_native_scratch(self):
         action = os.environ.get('VAULT_TEST_ACTION', 'sync')
-        self.assertIn(action, ('sync', 'setup'))
-        backend = {'sync': 'synced', 'setup': 'configured'}[action]
-        expected_items = 1 if action == 'sync' else 0
+        self.assertIn(action, ('sync', 'setup', 'teardown'))
+        shared_refusal = action == 'teardown' and os.environ.get('VAULT_TEST_SHARED_ITEM') == '1' and os.environ.get('VAULT_TEST_KEEP_ITEMS') != '1'
+        expected_status = 'failed' if shared_refusal else 'succeeded'
+        backend = {'sync': 'synced', 'setup': 'configured', 'teardown': 'absent'}[action]
+        expected_items = 2 if shared_refusal else 1 if action == 'sync' else 0
         gateway = Path(os.environ['VAULT_TEST_GATEWAY_ROOT'])
         scratch = self.repo
         (scratch / 'worker-tmp').mkdir()
@@ -232,11 +234,15 @@ class VaultRealHttp(NativeTestCase):
                 if time.monotonic() >= until:
                     self.fail('Existing dev Operation completion: ' + json.dumps(php('diagnose')))
                 time.sleep(.1)
-            self.assertEqual(outcome['status'], 'succeeded', outcome)
-            self.assertEqual(outcome['result']['data']['backend'], backend)
+            self.assertEqual(outcome['status'], expected_status, outcome)
+            if shared_refusal:
+                self.assertEqual(outcome['error_code'], 'vault.item_shared')
+            else:
+                self.assertEqual(outcome['result']['data']['backend'], backend)
             self.assertEqual(outcome['items'], expected_items)
-            self.assertTrue(outcome['configured'])
-            self.assertTrue(outcome['configuration_matches_fixture'])
+            self.assertEqual(outcome['configured'], shared_refusal or action != 'teardown')
+            self.assertEqual(outcome['configuration_matches_fixture'], shared_refusal or action != 'teardown')
+            remote = php('verify-backend') if action == 'teardown' else {}
             # Projection can finish before the native run; observe this same root.
             until = time.monotonic() + 5
             while True:
@@ -245,7 +251,7 @@ class VaultRealHttp(NativeTestCase):
                     break
                 self.assertLess(time.monotonic(), until, 'Existing native root completion')
                 time.sleep(.05)
-            self.assertEqual(native_status, 'succeeded')
+            self.assertEqual(native_status, expected_status)
             requests = [json.loads(line) for line in (scratch / 'http.jsonl').read_text().splitlines()]
             private_reads = [row for row in requests if row['path'].endswith('/private-material') and row['status'] == 200]
             self.assertTrue(private_reads)
@@ -265,8 +271,10 @@ class VaultRealHttp(NativeTestCase):
             scanned = True
             proof.update(kind='vault.' + action, node_id=9, user=pwd.getpwuid(os.getuid()).pw_name,
                          operation_id=admitted['id'], run_id=admitted['run_id'], admission_ms=admission_ms,
-                         total_ms=round((time.monotonic() - start) * 1000), backend=backend, items=expected_items,
+                         total_ms=round((time.monotonic() - start) * 1000), status=expected_status,
+                         backend=None if shared_refusal else backend, items=expected_items,
                          real_gateway_https=True, exact_worker_placement=True,
+                         remote=remote,
                          scope='isolated dev; not live fleet workflow/grant proof')
             print(json.dumps(proof))
         finally:

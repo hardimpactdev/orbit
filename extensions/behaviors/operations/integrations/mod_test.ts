@@ -254,55 +254,6 @@ Deno.test("cancellation after an uncertain effect reconciles the same receipt", 
   assertEquals(f.effects, 1);
 });
 
-Deno.test("Vault carries only a secret reference and persists only safe collection metadata", async () => {
-  for (
-    const [action, backend] of [["teardown", "absent"]]
-  ) {
-    const f = new Fixture();
-    f.operation.kind = `vault.${action}`;
-    f.operation.input = {
-      configuration: { $secret: "vault.credentials", id: 2 },
-    };
-    f.result = {
-      outcome: "succeeded",
-      data: {
-        backend,
-        sources: ["database-connection:1"],
-        cipher_ids: ["cipher-1"],
-        revisions: ["revision-1"],
-        fingerprints: ["hash-1"],
-        client_secret: "secret-sentinel",
-      },
-      log: "secret-sentinel",
-    };
-    assertEquals((await f.execute()).status, "succeeded");
-    assertEquals(
-      f.calls.find((call) => call.path.endsWith("/run"))!.body.input,
-      { action, ...f.operation.input },
-    );
-    assertEquals(
-      JSON.stringify([...f.resources]).includes("secret-sentinel"),
-      false,
-    );
-    assertEquals(JSON.stringify(f.calls).includes("secret-sentinel"), false);
-  }
-});
-Deno.test("Vault refuses wrong backend and retains machine-readable failure", async () => {
-  const f = new Fixture();
-  f.operation.kind = "vault.teardown";
-  f.operation.input = {
-    configuration: { $secret: "vault.credentials", id: 2 },
-  };
-  f.result = { outcome: "succeeded", data: { backend: "synced" } };
-  await assertRejects(() => f.execute());
-  f.receipt = null;
-  f.result = {
-    outcome: "failed",
-    data: { error_code: "vault.organization_missing" },
-  };
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.calls.at(-1)!.body.error_code, "vault.organization_missing");
-});
 Deno.test("Reverb waits for fresh process reports and resumes a completed pending probe with a new read key", async () => {
   const f = new Fixture();
   f.operation.kind = "websocket.app_rotate";
@@ -481,20 +432,6 @@ Deno.test("an unrecognized pre-start marker cannot become a terminal command ref
     ),
     false,
   );
-});
-
-Deno.test("Vault failed collection deletion cannot complete as a successful teardown", async () => {
-  for (const action of ["teardown"]) {
-    const f = new Fixture();
-    f.operation.kind = `vault.${action}`;
-    f.operation.input = {
-      configuration: { $secret: "vault.credentials", id: 2 },
-    };
-    f.result = { outcome: "failed", data: { error_code: "vault.unreachable" } };
-    assertEquals((await f.execute()).status, "failed");
-    assertEquals(f.calls.at(-1)?.body.error_code, "vault.unreachable");
-    assertEquals(f.effects, 1);
-  }
 });
 
 Deno.test("all registry mutations use only the admitted read probe and preserve it after a lost reply", async () => {

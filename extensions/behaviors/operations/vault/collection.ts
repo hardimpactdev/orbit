@@ -273,9 +273,16 @@ def reconcile(action, config, remote):
         refuse('vault.organization_missing')
     ciphers = [item for item in snapshot['ciphers'] if item['organization_id'] == config['organization_id'] and config['collection_id'] in item['collection_ids']]
     if action == 'teardown':
-        identities = {item['id'] for item in ciphers if item['source'] is not None}
-        # Do not delete an unrelated item even if the old ledger now names it.
-        identities.update(item['cipher_id'] for item in config.get('ledger', []) if any(cipher['id'] == item['cipher_id'] and cipher['source'] == item['source'] for cipher in ciphers))
+        by_id = {item['id']: item for item in ciphers}
+        identities = set()
+        for entry in config.get('ledger', []):
+            cipher = by_id.get(entry['cipher_id'])
+            if cipher is None or cipher['source'] is None or cipher['source'] != entry['source']:
+                continue
+            # DELETE removes the whole cipher, including its other collections.
+            if any(identity != config['collection_id'] for identity in cipher['collection_ids']):
+                refuse('vault.item_shared')
+            identities.add(cipher['id'])
         for identity in sorted(identities):
             remote.delete(identity)
         return {'backend': 'absent'}

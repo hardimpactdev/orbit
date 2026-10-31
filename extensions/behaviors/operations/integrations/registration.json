@@ -4,7 +4,6 @@
     "metrics.node_exporter_remove",
     "metrics.cadvisor_converge",
     "metrics.cadvisor_remove",
-    "vault.teardown",
     "websocket.app_rotate",
     "ai_router.setup",
     "ai_router.teardown",

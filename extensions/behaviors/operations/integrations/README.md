@@ -1,16 +1,14 @@
 # Integration Operations
 
-The Gateway records intent and validates every command and child. This family
-executes Reverb registry changes, Vault collection changes, AI router, Analytics
-role changes, Metrics, Conn pairing effects, and the integration children of
-Node role changes.
+The Gateway records intent and validates commands. This family executes Reverb
+registry changes, AI router, Analytics role changes, Metrics, and integration
+work for Node role changes. Conn and Vault use their separate direct workflows.
 
 `registration.json` lists the polled kinds. Analytics retains only
 `analytics.role_converge` and `analytics.role_remove`; version updates use
 `operation-analytics-update-direct`. Family discovery skips a kind while its
-required Gateway capability is unavailable. Vault and Metrics list contracts
-need C; pairing creation needs H. No family implements a substitute for these
-shared contracts.
+required Gateway capability is unavailable. Metrics list contracts need C. No
+family implements a substitute for these shared contracts.
 
 `mod.ts` receives a kind and worker identity, claims one Operation on that
 placed worker, and saves its assignment before effects. A retry stays bound to
@@ -46,27 +44,17 @@ cancellation, only declared restore children may run. Service Caddy restoration
 uses `metrics.service_caddy_restore {restore_key}` after the matching service
 restore settles. The cancelled parent performs no further effects.
 
-Secrets enter remote effects only after Gateway hydration. Conn's one-time
-output is declared as a secret output owned by its pairing record. Swamp accepts
-only its reference, never the credential. The Conn HTTP 201 path admits this
-same workflow and waits for a bounded Gateway read; it contains no separate
-pairing executor. A caller timeout leaves the existing Operation available for
-recovery.
-
-`conn.ts` runs each admitted session or link revocation with a separate stable
-key. The Gateway exposes exact effect descriptors after proving the owner-bound
-session snapshot. A final receipt requires every effect. The Conn maintenance
-workflow checks pending registration revisions each minute; an active cleanup
-keeps its lock. Admission is keyed by environment and `cleanup_version`, never
-by the maintenance run. A failed revision replays its existing Operation until a
-new registration or an explicit operator retry. Registration never waits for
-that cleanup.
+Secrets enter retained remote effects only after Gateway hydration. Conn and
+Vault use the shared direct private-material and secret-output routes. See
+[Conn direct](../../../../docs/conn-pairing-direct.md) and
+[Vault direct](../../../../docs/vault-direct.md). The Conn maintenance method
+only admits pending registration cleanup intent; it performs no revocation.
 
 Focused checks:
 
 ```sh
 deno test --allow-read --allow-write --allow-env extensions/behaviors/operations/integrations/mod_test.ts extensions/behaviors/operations/integrations/pipeline_test.ts extensions/behaviors/operations/integrations/metrics_test.ts
-python3 /path/to/orbit/apps/gateway/resources/remote/vault/tests/test_collection.py
+python3 extensions/behaviors/operations/vault/collection_test.py
 python3 extensions/behaviors/operations/integrations/native_test.py
 deno fmt --check extensions/behaviors/operations/integrations
 deno lint extensions/behaviors/operations/integrations
@@ -79,10 +67,8 @@ process. Live proof must wait for paired deployment and use an
 orchestrator-selected harmless dev target. Preserve Hauzer and Mealou's running
 realtime processes throughout rollout.
 
-The Vault collection program tests live beside the shipped program in Orbit.
-They cover collection reconciliation and the Orbit-CA-only, host and redirect
-boundaries. Deploy this workflow on a placed worker before merging the Vault and
-Conn cutovers.
+The Vault collection program and its tests now live in the Vault direct family.
+The Gateway remote-program catalog no longer includes `vault.collection`.
 
 Route parents request `metrics.reconcile {}` on the active Metrics Node. The
 Gateway captures the fleet and admits that exact child once. Its placed workflow

@@ -48,11 +48,32 @@ class CollectionTest(unittest.TestCase):
         self.assertEqual(remote.deleted,['duplicate','orphan'])
         self.assertEqual(result['cipher_ids'],['old'])
         self.assertNotIn('sentinel',str(result))
-    def test_teardown_preserves_foreign_items_even_when_the_old_ledger_names_them(self):
-        remote=Remote([self.cipher('owned','database:1'),self.cipher('foreign',None)])
-        config=self.config();config['ledger']=[{'source':'database:1','cipher_id':'foreign'}]
-        self.assertEqual(program['reconcile']('teardown',config,remote),{'backend':'absent'})
-        self.assertEqual(remote.deleted,['owned'])
+    def test_teardown_deletes_only_exact_ledger_matches_in_the_configured_scope(self):
+        other_org = self.cipher('other-org', 'database:1'); other_org['organization_id'] = 'other'
+        other_collection = self.cipher('other-collection', 'database:1'); other_collection['collection_ids'] = ['other']
+        clone = self.cipher('clone', 'database:1'); clone['collection_ids'] = ['collection', 'other']
+        foreign = self.cipher('foreign', None); foreign['collection_ids'] = ['collection', 'other']
+        remote = Remote([self.cipher('published', 'database:1'), clone,
+            self.cipher('unrecorded', 'database:gone'), foreign,
+            self.cipher('changed-source', 'database:2'), other_org, other_collection])
+        config = self.config()
+        config['ledger'] = [{'source': 'database:1', 'cipher_id': identity} for identity in
+            ('published', 'foreign', 'changed-source', 'other-org', 'other-collection', 'missing', 'published')]
+        self.assertEqual(program['reconcile']('teardown', config, remote), {'backend': 'absent'})
+        self.assertEqual(remote.deleted, ['published'])
+    def test_teardown_without_a_ledger_preserves_marked_items(self):
+        remote = Remote([self.cipher('clone', 'database:1')])
+        self.assertEqual(program['reconcile']('teardown', self.config(), remote), {'backend': 'absent'})
+        self.assertEqual(remote.deleted, [])
+    def test_shared_ledger_item_refuses_before_any_delete(self):
+        shared = self.cipher('z-shared', 'database:2'); shared['collection_ids'] = ['collection', 'other']
+        remote = Remote([self.cipher('a-published', 'database:1'), shared])
+        config = self.config()
+        config['ledger'] = [{'source': 'database:1', 'cipher_id': 'a-published'}, {'source': 'database:2', 'cipher_id': 'z-shared'}]
+        with self.assertRaises(program['Refusal']) as error:
+            program['reconcile']('teardown', config, remote)
+        self.assertEqual(error.exception.code, 'vault.item_shared')
+        self.assertEqual(remote.deleted, [])
     def test_unknown_input_and_secret_bearing_exceptions_have_only_bounded_refusals(self):
         self.assertEqual(program['main']({'action':'other','configuration':{'master_password':'sentinel'}}),('failed',{'error_code':'vault.action_invalid'}))
         self.assertEqual(program['main']({'action':'setup','configuration':{'master_password':'sentinel'}}),('failed',{'error_code':'vault.unreachable'}))

@@ -15,7 +15,7 @@ for (
   const [kind, backend] of [["vault.sync", "synced"], [
     "vault.setup",
     "configured",
-  ]] as const
+  ], ["vault.teardown", "absent"]] as const
 ) {
   Deno.test(`${kind} fetches private input and projects only safe metadata`, async () => {
     const projections: unknown[] = [];
