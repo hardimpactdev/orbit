@@ -23,6 +23,8 @@ restore = importlib.import_module("restore_unit")
 reload = importlib.import_module("reload_units")
 remove = importlib.import_module("remove_unit")
 remove_environment = importlib.import_module("remove_environment")
+cleanup = importlib.import_module("cleanup_checkpoint")
+health = importlib.import_module("check_health")
 release = importlib.import_module("check_release")
 
 
@@ -284,6 +286,52 @@ class UnitInstallation(unittest.TestCase):
             release.check({**self.control, "directory": str(self.host / "missing")})
         self.assertEqual(failure.exception.code, "process.release_unavailable")
         self.assertEqual(self.calls, [])
+
+    def test_checkpoint_cleanup_refuses_unknown_members_before_deleting_backup(self):
+        self.prepare()
+        root = self.root / "process-commands/91/17" / self.admitted["content_hash"]
+        foreign = root / "foreign"
+        foreign.write_text("keep")
+        with self.assertRaises(common.Refused):
+            self.invoke(cleanup.cleanup)
+        self.assertTrue((root / self.unit.name).exists())
+        self.assertTrue((root / "originally-absent").exists())
+        foreign.unlink()
+        self.invoke(cleanup.cleanup)
+        self.invoke(cleanup.cleanup)
+        self.assertFalse(root.exists())
+
+    def test_health_is_one_observation_without_activation_or_a_private_url(self):
+        self.prepare()
+        self.invoke(publish.publish)
+        self.state = "active"
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.status = 200
+        with (
+            patch.dict(
+                os.environ, {"ORBIT_PROCESS_HEALTH_URL": "http://127.0.0.1/ready"}
+            ),
+            patch.object(
+                health.urllib.request, "urlopen", return_value=response
+            ) as request,
+        ):
+            self.assertEqual(health.check(self.control), {"ready": True})
+            request.assert_called_once_with("http://127.0.0.1/ready", timeout=3)
+        with (
+            patch.dict(
+                os.environ,
+                {"ORBIT_PROCESS_HEALTH_URL": "http://user:password@example/ready"},
+            ),
+            patch.object(health.urllib.request, "urlopen") as request,
+            self.assertRaises(common.Refused),
+        ):
+            health.check(self.control)
+        request.assert_not_called()
+        self.assertTrue(
+            all(
+                "is-active" in call or str(files.ANALYZE) in call for call in self.calls
+            )
+        )
 
 
 if __name__ == "__main__":
