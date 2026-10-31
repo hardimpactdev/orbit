@@ -90,7 +90,13 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
 | Generated contracts | Boot the Gateway and load all Operation kinds, executors and completion contracts; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Required checks | Require all five build and static-check jobs to succeed; failures, cancellations and skips fail it |
+| Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
+
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit.
+
+Pull request scope detection fetches only the event commit and its comparison base. A PR without changes under `apps/agent` starts no agent build or delivery work; main still compares the published source tree to detect an unpublished agent change from an earlier merge.
+
+Installed Gateway runtime and CLI build dependencies use lock-based caches. Composer install and its current lifecycle scripts always rerun, including contract generation and autoload discovery. Download caches restore across lockfile changes. Source, generated contracts and release binaries are never restored as dependency caches.
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 

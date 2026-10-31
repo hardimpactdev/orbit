@@ -68,7 +68,7 @@ final class ListOperationsCommand extends GatewayCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['ID', 'KIND', 'TARGET', 'STATUS', 'STEP', 'BY', 'STARTED'],
+            ['ID', 'KIND', 'TARGET', 'STATUS', 'BY', 'STARTED'],
             array_map(OperationOutput::row(...), $operations->operations),
             'No operations found.',
         ));
