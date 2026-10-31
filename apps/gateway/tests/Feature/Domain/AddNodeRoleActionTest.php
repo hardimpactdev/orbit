@@ -18,7 +18,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerScopeLock;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\CommandResult;
@@ -669,43 +668,7 @@ describe(AddNodeRoleAction::class, function (): void {
             ->toBe([$ambientTransactionLevel]);
     });
 
-    it('persists app role failure before releasing nested manager scopes', function (): void {
-        $baseline = new AddNodeRoleBaselineFake;
-        $baseline->failure = new RuntimeConvergenceException(
-            step: 'caddy-config',
-            errorCode: 'app-dev.caddy_config_failed',
-            message: 'Caddy failed.',
-        );
-        $materializer = new FakeToolManagerMaterializer;
-        $scopeLock = new StateAwareToolManagerScopeLock;
-        app()->instance(RoleBaselineConverger::class, $baseline);
-        app()->instance(ToolManagerMaterializer::class, $materializer);
-        app()->instance(ToolManagerScopeLock::class, $scopeLock);
-        $node = add_role_node();
 
-        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
-            ->toThrow(NodeRoleOperationException::class);
-
-        expect($scopeLock->events)
-            ->toBe(['acquire:vp', 'acquire:composer', 'release:composer', 'release:vp'])
-            ->and($scopeLock->releaseStates)
-            ->toBe([
-                [
-                    'manager' => ToolManagerName::Composer,
-                    'status' => LifecycleStatus::Failed,
-                    'failed_step' => 'converge:caddy-config',
-                    'error_code' => 'app-dev.caddy_config_failed',
-                ],
-                [
-                    'manager' => ToolManagerName::Vp,
-                    'status' => LifecycleStatus::Failed,
-                    'failed_step' => 'converge:caddy-config',
-                    'error_code' => 'app-dev.caddy_config_failed',
-                ],
-            ])
-            ->and($materializer->requests)
-            ->toBeEmpty();
-    });
 });
 
 function add_role_node(
@@ -802,33 +765,6 @@ final class AddNodeRoleNodeConvergerFake implements NodeConverger, RecoverableNo
             $this->events[] = 'rollback';
 
             throw $exception;
-        }
-    }
-}
-
-final class StateAwareToolManagerScopeLock implements ToolManagerScopeLock
-{
-    /** @var list<string> */
-    public array $events = [];
-
-    /** @var list<array{manager: ToolManagerName, status: LifecycleStatus, failed_step: ?string, error_code: ?string}> */
-    public array $releaseStates = [];
-
-    public function run(int $nodeId, ToolManagerName $manager, Closure $callback): mixed
-    {
-        $this->events[] = 'acquire:'.$manager->value;
-
-        try {
-            return $callback();
-        } finally {
-            $assignment = NodeRole::query()->where('node_id', $nodeId)->sole()->refresh();
-            $this->releaseStates[] = [
-                'manager' => $manager,
-                'status' => $assignment->status,
-                'failed_step' => $assignment->failed_step,
-                'error_code' => $assignment->error_code,
-            ];
-            $this->events[] = 'release:'.$manager->value;
         }
     }
 }

@@ -21,7 +21,14 @@ class BuildPlanTest(unittest.TestCase):
         return {k for k, v in plan.select(paths, main)['jobs'].items() if v}
 
     def test_gateway_code_keeps_contracts_php_and_web_but_skips_cli(self):
-        self.assertEqual({'php', 'api-reference', 'web'}, self.selected(['apps/gateway/app/Thing.php']))
+        self.assertEqual({'php', 'gateway-static', 'api-reference', 'web'}, self.selected(['apps/gateway/app/Thing.php']))
+
+    def test_every_gateway_path_selects_full_static_analysis(self):
+        for path in ('apps/gateway/tests/Feature/ThingTest.php', 'apps/gateway/README.md',
+                     'apps/gateway/config/app.php', 'apps/gateway/composer.lock'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertIn('gateway-static', self.selected([path], main))
 
     def test_sdk_changes_build_both_consumers(self):
         self.assertEqual({'php', 'cli', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
@@ -42,7 +49,7 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual(set(plan.JOBS), self.selected(['bin/ci-build-plan']))
 
     def test_a_test_only_change_checks_syntax(self):
-        self.assertEqual({'php'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
+        self.assertEqual({'php', 'gateway-static'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
 
     def test_agent_selection_is_independent_of_the_build_jobs(self):
         self.assertTrue(plan.select(['apps/agent/src/main.rs'])['agent'])
@@ -58,7 +65,7 @@ class BuildPlanTest(unittest.TestCase):
 
     def test_mixed_change_keeps_gateway_artifacts_and_swamp_checks(self):
         paths = ['swamp/workflows/example.yaml', 'apps/gateway/app/Thing.php']
-        self.assertEqual({'swamp', 'php', 'api-reference', 'web'}, self.selected(paths, main=True))
+        self.assertEqual({'swamp', 'php', 'gateway-static', 'api-reference', 'web'}, self.selected(paths, main=True))
         self.assertTrue(plan.select(paths, True)['gateway_release'])
 
     def test_shared_workflow_change_selects_swamp_checks(self):

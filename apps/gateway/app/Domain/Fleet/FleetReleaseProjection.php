@@ -28,8 +28,13 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
     public function apply(Operation $operation, array $data): Operation
     {
         $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['nodes', 'error_code', 'rollout_status', 'halted_node_id']));
+        $nodes = $result['nodes'] ?? [];
+        if (! is_array($nodes)) {
+            throw new ResourceOperationException('operation.result_invalid', 'The fleet result requires a Node list.', 422);
+        }
+        $nodes = array_map(ValidatedData::object(...), $nodes);
 
-        if (OperationStatus::from($data['status'])->terminal() && ($data['status'] !== 'cancelled' || $result !== [])) {
+        if (OperationStatus::from(ValidatedData::string($data['status']))->terminal() && ($data['status'] !== 'cancelled' || $result !== [])) {
             $valid = Validator::make($result, [
                 'nodes' => ['required', 'array', 'max:1000'],
                 'nodes.*.node_id' => ['required', 'integer', 'distinct'],
@@ -42,25 +47,26 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
                 'rollout_status' => ['sometimes', 'in:running,halted,completed'],
                 'halted_node_id' => ['sometimes', 'nullable', 'integer'],
             ]);
-            if ($valid->fails() || array_column($result['nodes'] ?? [], 'node_id') !== array_column($operation->input['nodes'], 'node_id')
-                || ($data['status'] === 'succeeded' && array_any($result['nodes'], static fn (array $node): bool => ! $node['ok'] || in_array($node['outcome'], ['failed', 'cancelled', 'pending'], true)))) {
+            $admitted = $operation->input['nodes'] ?? [];
+            if (! is_array($admitted) || $valid->fails() || array_column($nodes, 'node_id') !== array_column($admitted, 'node_id')
+                || ($data['status'] === 'succeeded' && array_any($nodes, static fn (array $node): bool => ! $node['ok'] || in_array($node['outcome'], ['failed', 'cancelled', 'pending'], true)))) {
                 throw new ResourceOperationException('operation.result_invalid', 'The result must name each admitted Node once in rollout order.', 422);
             }
-            $result['nodes'] = array_map(static fn (array $node): array => array_intersect_key($node, array_flip(['node_id', 'outcome', 'error_code', 'cli_version', 'agent_version', 'step', 'ok'])), $result['nodes']);
+            $result['nodes'] = array_map(static fn (array $node): array => array_intersect_key($node, array_flip(['node_id', 'outcome', 'error_code', 'cli_version', 'agent_version', 'step', 'ok'])), $nodes);
             if ($operation->kind === 'fleet.rollout' && (! isset($result['rollout_status'])
                 || (($result['halted_node_id'] ?? null) !== null && ! in_array($result['halted_node_id'], array_column($result['nodes'], 'node_id'), true)))) {
                 throw new ResourceOperationException('operation.result_invalid', 'The rollout result needs its admitted status and halt Node.', 422);
             }
         }
 
-        return DB::transaction(function () use ($operation, $data, $result): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $nodes): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal || ! $projected->status->terminal()) {
                 return $projected;
             }
-            foreach ($result['nodes'] ?? [] as $entry) {
+            foreach ($nodes as $entry) {
                 $entry = ValidatedData::object($entry);
                 if ($entry['outcome'] === 'pending') {
                     continue;

@@ -33,13 +33,13 @@ final readonly class TaskParkProjection implements DirectOperationProjection
         return $this->execution->synchronized($operation->target_id, fn (): Operation => DB::transaction(function () use ($operation, $data, $result, $status, $code): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($operation->status->terminal()) {
-                return app(DirectOperation::class)->project($operation, $data, $result, 'park');
+                return app(DirectOperation::class)->project($operation, $data, $result);
             }
             $vm = $this->intent->owned($operation);
             if ($status === OperationStatus::Succeeded) {
                 TaskParkIntent::requireEligible(Task::topLevel()->findOrFail($operation->target_id));
             }
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'park');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($status === OperationStatus::Succeeded) {
                 $vm->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now(), 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
                 $group = Task::topLevel()->findOrFail($operation->target_id);

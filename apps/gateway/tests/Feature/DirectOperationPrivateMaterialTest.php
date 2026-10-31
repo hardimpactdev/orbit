@@ -208,7 +208,7 @@ it('preserves whitespace and empty strings in private output JSON', function ():
             $this->received = $value;
         }
     };
-    app()->instance(OperationSecretOutputs::class, new OperationSecretOutputs([$store], app(OperationKinds::class)));
+    app()->instance(OperationSecretOutputs::class, new OperationSecretOutputs([$store]));
     $reflection = new ReflectionClass(DirectOperation::class);
     $definitions = $reflection->getProperty('definitions')->getValue(app(DirectOperation::class));
     $definitions['conn.pairing_create']['secret_outputs'] = ['credential' => 'fixture.structured'];
