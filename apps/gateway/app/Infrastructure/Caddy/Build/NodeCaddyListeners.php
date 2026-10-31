@@ -6,6 +6,7 @@ namespace App\Infrastructure\Caddy\Build;
 
 use App\Domain\Extensions\ConfigValue;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Models\Node;
 
 /**
@@ -40,7 +41,7 @@ final readonly class NodeCaddyListeners
      */
     public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24', ?string $taskVmRange = null, ?string $swampHost = null): self
     {
-        $wireGuard = self::address($node->wireguard_ip);
+        $wireGuard = self::address(app(RouteRenderContext::class)->wireguardIp($node));
 
         return new self(
             ingress: $node->exists && CaddySiteRoles::nodeServes($node->id, RoleName::Ingress),

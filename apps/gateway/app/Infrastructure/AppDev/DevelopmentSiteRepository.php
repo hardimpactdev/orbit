@@ -15,6 +15,7 @@ use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePreparedWorkloads;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWebRoot;
@@ -239,7 +240,7 @@ final readonly class DevelopmentSiteRepository
             ->map(static fn (RouteTarget $targetRow): Instance => $targetRow->instance)
             ->filter(
                 static fn (Instance $target): bool => (
-                    is_string($target->node->wireguard_ip)
+                    is_string(app(RouteRenderContext::class)->wireguardIp($target->node))
                     && in_array(
                         $target->status,
                         [InstanceState::SourceResolved, InstanceState::Active],
@@ -277,12 +278,12 @@ final readonly class DevelopmentSiteRepository
             ? $targets->filter(static fn (Instance $target): bool => ! $router->is($target->node))
             : $targets;
         $hasComposedPool = $router instanceof Node
-            && is_string($router->wireguard_ip)
+            && is_string(app(RouteRenderContext::class)->wireguardIp($router))
             && $localTargets->isNotEmpty()
             && $remoteTargets->isNotEmpty()
             && ! $ingressSharesRouter;
         $hasRouterSite = $router instanceof Node
-        && is_string($router->wireguard_ip)
+        && is_string(app(RouteRenderContext::class)->wireguardIp($router))
         && $remoteTargets->isNotEmpty()
         && $localTargets->isEmpty()
         && ! $ingressSharesRouter;
@@ -439,7 +440,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $node->id,
-            nodeAddress: $node->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($node) ?? '',
             scope: $usesRouterProjection ? "route-{$route->id}-router" : "app-instance-{$instance->id}",
             checkoutPath: '',
             documentRoot: '',
@@ -504,7 +505,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($instance->node) ?? '',
             scope: "app-instance-{$instance->id}",
             checkoutPath: $checkoutPath,
             documentRoot: $webRoot ?? '',
@@ -538,7 +539,7 @@ final readonly class DevelopmentSiteRepository
             ->map(static fn (Instance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
                     ? $instance->node->lan_ip
-                    : $instance->node->wireguard_ip)
+                    : app(RouteRenderContext::class)->wireguardIp($instance->node))
             ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
             ->values()
             ->all();
@@ -546,7 +547,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $router->id,
-            nodeAddress: $router->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($router) ?? '',
             scope: "route-{$route->id}-router",
             checkoutPath: '',
             documentRoot: '',
@@ -573,7 +574,7 @@ final readonly class DevelopmentSiteRepository
             ->map(static fn (Instance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
                     ? $instance->node->lan_ip
-                    : $instance->node->wireguard_ip)
+                    : app(RouteRenderContext::class)->wireguardIp($instance->node))
             ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
             ->values()
             ->all();
@@ -582,7 +583,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $router->id,
-            nodeAddress: $router->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($router) ?? '',
             scope: "route-{$route->id}-router",
             checkoutPath: $localInstance->placedOnAppProd()
                 ? "{$localInstance->production_home}/current"
@@ -605,7 +606,7 @@ final readonly class DevelopmentSiteRepository
     {
         return new DevelopmentSite(
             nodeId: $router->id,
-            nodeAddress: $router->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($router) ?? '',
             scope: "route-{$route->id}-router",
             checkoutPath: '',
             documentRoot: '',
@@ -626,7 +627,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $ingress->id,
-            nodeAddress: $ingress->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($ingress) ?? '',
             scope: "route-{$route->id}-ingress",
             checkoutPath: $site->checkoutPath,
             documentRoot: $site->documentRoot,
@@ -650,7 +651,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $ingress->id,
-            nodeAddress: $ingress->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($ingress) ?? '',
             scope: "route-{$route->id}-ingress",
             checkoutPath: '',
             documentRoot: '',
@@ -678,7 +679,7 @@ final readonly class DevelopmentSiteRepository
             $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
 
             return new DevelopmentSite(
-                nodeId: $ingress->id, nodeAddress: $ingress->wireguard_ip ?? '',
+                nodeId: $ingress->id, nodeAddress: app(RouteRenderContext::class)->wireguardIp($ingress) ?? '',
                 scope: "route-{$route->id}-ingress", checkoutPath: '', documentRoot: '', phpVersion: null,
                 domain: $route->domain, certificateScope: "route-{$route->id}-ingress",
                 publicListener: true, localHttpUpstream: $upstream->authority(),
@@ -690,15 +691,15 @@ final readonly class DevelopmentSiteRepository
         if (
             ! $node instanceof Node
             || $proxy === null
-            || ! is_string($node->wireguard_ip)
-            || $node->wireguard_ip === ''
+            || ! is_string(app(RouteRenderContext::class)->wireguardIp($node))
+            || app(RouteRenderContext::class)->wireguardIp($node) === ''
         ) {
             return null;
         }
 
         return new DevelopmentSite(
             nodeId: $node->id,
-            nodeAddress: $node->wireguard_ip,
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($node),
             scope: "route-{$route->id}",
             checkoutPath: '',
             documentRoot: '',
@@ -729,8 +730,8 @@ final readonly class DevelopmentSiteRepository
             || $route->status === RouteStatus::Retiring
             || $upstream === null
             || ! $router instanceof Node
-            || ! is_string($router->wireguard_ip)
-            || $router->wireguard_ip === ''
+            || ! is_string(app(RouteRenderContext::class)->wireguardIp($router))
+            || app(RouteRenderContext::class)->wireguardIp($router) === ''
         ) {
             return [];
         }
@@ -742,7 +743,7 @@ final readonly class DevelopmentSiteRepository
         if ($ingress instanceof Node && $ingress->is($router)) {
             return [new DevelopmentSite(
                 nodeId: $ingress->id,
-                nodeAddress: $router->wireguard_ip,
+                nodeAddress: app(RouteRenderContext::class)->wireguardIp($router),
                 scope: "route-{$route->id}-ingress",
                 checkoutPath: '',
                 documentRoot: '',
@@ -756,13 +757,13 @@ final readonly class DevelopmentSiteRepository
 
         $trusted = $ingress instanceof Node
             ? array_values(array_filter(
-                [$ingress->lan_ip, $ingress->wireguard_ip],
+                [$ingress->lan_ip, app(RouteRenderContext::class)->wireguardIp($ingress)],
                 static fn (?string $address): bool => is_string($address) && $address !== '',
             ))
             : [];
         $sites = [new DevelopmentSite(
             nodeId: $router->id,
-            nodeAddress: $router->wireguard_ip,
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($router),
             scope: "route-{$route->id}-router",
             checkoutPath: '',
             documentRoot: '',
@@ -810,7 +811,7 @@ final readonly class DevelopmentSiteRepository
 
         return new DevelopmentSite(
             nodeId: $ingress->id,
-            nodeAddress: $ingress->wireguard_ip ?? '',
+            nodeAddress: app(RouteRenderContext::class)->wireguardIp($ingress) ?? '',
             scope: "route-{$route->id}-ingress",
             checkoutPath: '',
             documentRoot: '',

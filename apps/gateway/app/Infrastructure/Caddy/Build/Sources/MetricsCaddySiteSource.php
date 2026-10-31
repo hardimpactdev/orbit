@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build\Sources;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
@@ -45,8 +46,8 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
         $renderer = $this->renderer ?? MetricsPublicationRenderer::forGateway();
 
         foreach (CaddySiteRoles::serving(RoleName::Metrics) as $assignment) {
-            $gateway = $node->wireguard_ip;
-            $metrics = $assignment->node->wireguard_ip;
+            $gateway = app(RouteRenderContext::class)->wireguardIp($node);
+            $metrics = app(RouteRenderContext::class)->wireguardIp($assignment->node);
 
             if (! is_string($gateway) || $gateway === '') {
                 throw NodeCaddySiteUnavailable::wireGuardAddressMissing('metrics', $node->name);

@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\PublicRoutePrivateOverride;
+use App\Domain\Routes\RouteRenderContext;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
@@ -129,8 +130,8 @@ final readonly class IngressSiteRepository
             return $node->lan_ip;
         }
 
-        if (is_string($node->wireguard_ip) && $node->wireguard_ip !== '') {
-            return $node->wireguard_ip;
+        if (is_string(app(RouteRenderContext::class)->wireguardIp($node)) && app(RouteRenderContext::class)->wireguardIp($node) !== '') {
+            return app(RouteRenderContext::class)->wireguardIp($node);
         }
 
         throw new RuntimeConvergenceException(

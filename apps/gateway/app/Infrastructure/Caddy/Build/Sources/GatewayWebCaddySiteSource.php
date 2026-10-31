@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build\Sources;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
@@ -38,7 +39,7 @@ final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
             return [];
         }
 
-        $address = $node->wireguard_ip;
+        $address = app(RouteRenderContext::class)->wireguardIp($node);
 
         if (! is_string($address) || $address === '') {
             throw NodeCaddySiteUnavailable::wireGuardAddressMissing('gateway', $node->name);
