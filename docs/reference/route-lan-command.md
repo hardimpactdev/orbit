@@ -9,4 +9,4 @@ The single placed command reads `ufw status numbered`, selects the exact destina
 
 The official `@swamp/cfgmgmt` firewall model, version `2026.10.27.1`, has no destination-IP or comment selector. Its absence check does not recognize Orbit's destination-scoped Route rules. The native command covers this narrow gap; it does not replace firewall convergence or add a workflow lock. The capability fixture and retained native run are recorded in `/home/nckrtl/swamp-execution/evidence/lane8-official-firewall-capability.json`.
 
-A parent withdraws host catalogs before admitting this action. Certificate removal and fresh loaded-scope protection remain separate. This action changes no Analytics, Router LAN, DNS or certificate policy.
+A parent withdraws host catalogs before admitting this action. Certificate removal stays separate. Its owner checks fresh catalogs to protect certificates still in use. This action changes no Analytics, Router LAN, DNS or certificate policy.

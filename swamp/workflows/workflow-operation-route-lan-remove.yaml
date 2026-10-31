@@ -41,13 +41,13 @@ jobs:
               import os
               import re
               import subprocess
-              
-              
+
+
               def ufw(*args):
                   result = subprocess.run(["/usr/sbin/ufw", *args], capture_output=True, text=True, check=True)
                   return result.stdout
-              
-              
+
+
               def matching_rules(destination, comment):
                   status = ufw("status", "numbered")
                   if not re.search(r"(?m)^Status: active$", status):
@@ -63,8 +63,8 @@ jobs:
                       if match[2] == destination:
                           numbers.append(int(match[1]))
                   return sorted(set(numbers), reverse=True)
-              
-              
+
+
               try:
                   route_id = os.environ["ORBIT_ROUTE_ID"]
                   if re.fullmatch(r"[1-9][0-9]*", route_id) is None:
