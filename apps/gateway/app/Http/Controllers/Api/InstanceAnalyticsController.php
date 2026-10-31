@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Analytics\DisableInstanceAnalyticsAction;
 use App\Actions\Analytics\RecordAnalyticsIntentAction;
 use App\Actions\Analytics\ShowInstanceAnalyticsAction;
 use App\Actions\Analytics\ShowInstanceAnalyticsStatsAction;
@@ -38,9 +37,12 @@ final class InstanceAnalyticsController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
-    public function disable(Request $request, Instance $instance, DisableInstanceAnalyticsAction $action): JsonResponse
+    #[StartsOperation('analytics.disable')]
+    public function disable(Request $request, Instance $instance, RecordAnalyticsIntentAction $action): JsonResponse
     {
-        return $this->respond($request, $action->execute($instance));
+        $operation = $action->execute($instance, false);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
     public function stats(Request $request, Instance $instance, ShowInstanceAnalyticsStatsAction $action): JsonResponse

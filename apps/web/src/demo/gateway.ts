@@ -959,7 +959,7 @@ export function createDemoGateway() {
                             return startDemoOperation("analytics.enable", Number(id), {});
                         }
                         if (method === "DELETE") {
-                            trackedInstances.delete(id);
+                            return startDemoOperation("analytics.disable", Number(id), {});
                         }
 
                         const domain =
@@ -1284,8 +1284,10 @@ export function createDemoGateway() {
         const next = steps.find((step) => step.status === "pending");
 
         if (next === undefined) {
-            if (operation.kind === "analytics.enable") {
-                trackedInstances.add(String(operation.target_id));
+            if (["analytics.enable", "analytics.disable"].includes(operation.kind)) {
+                trackedInstances[operation.kind === "analytics.enable" ? "add" : "delete"](
+                    String(operation.target_id),
+                );
             }
             Object.assign(operation, {
                 status: "succeeded",

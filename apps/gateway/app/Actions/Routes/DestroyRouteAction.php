@@ -51,7 +51,7 @@ final readonly class DestroyRouteAction
      */
     public function execute(Route $route, bool $offline = false): Route
     {
-        return $this->remove($route, allowTracking: false, offline: $offline, offersOffline: false);
+        return $this->remove($route, offline: $offline, offersOffline: false);
     }
 
     /**
@@ -60,25 +60,12 @@ final readonly class DestroyRouteAction
      */
     public function executeForOperator(Route $route, bool $offline): Route
     {
-        return $this->remove($route, allowTracking: false, offline: $offline, offersOffline: true);
+        return $this->remove($route, offline: $offline, offersOffline: true);
     }
 
-    public function executeTrackingRoute(Route $route): Route
+    private function remove(Route $route, bool $offline, bool $offersOffline): Route
     {
-        if ($route->kind !== RouteKind::AnalyticsTracking) {
-            throw new ResourceOperationException(
-                errorCode: 'route.kind_invalid',
-                message: 'Only analytics tracking Routes can use the analytics removal path.',
-                status: 409,
-            );
-        }
-
-        return $this->remove($route, allowTracking: true, offline: false, offersOffline: false);
-    }
-
-    private function remove(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
-    {
-        $result = $this->removeRoute($route, $allowTracking, $offline, $offersOffline);
+        $result = $this->removeRoute($route, $offline, $offersOffline);
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteDeleted,
@@ -91,7 +78,7 @@ final readonly class DestroyRouteAction
         return $result;
     }
 
-    private function removeRoute(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
+    private function removeRoute(Route $route, bool $offline, bool $offersOffline): Route
     {
         $expectedTargetIds = $route
             ->targets()
@@ -105,7 +92,7 @@ final readonly class DestroyRouteAction
         return $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->owner->run(
-                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $allowTracking, $offline, $offersOffline),
+                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $offline, $offersOffline),
             ),
         );
     }
@@ -121,12 +108,11 @@ final readonly class DestroyRouteAction
     private function executeOwned(
         Route $route,
         array $expectedTargetIds,
-        bool $allowTracking,
         bool $offline,
         bool $offersOffline,
     ): Route {
         $locked = $this->lockAndGuard($route, $expectedTargetIds);
-        if ($locked->isUnactivatedReplacement() && ! $allowTracking) {
+        if ($locked->isUnactivatedReplacement()) {
             return $this->removeReplacement($locked, $offline, $offersOffline);
         }
         $targeted = $locked->targets->isNotEmpty();
@@ -148,7 +134,7 @@ final readonly class DestroyRouteAction
             }
         }
 
-        $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
+        $this->assertStandaloneRemovalAllowed($locked);
         $nodes = $this->projection->nodes($locked);
         // The probe runs before anything changes, so a skipped Node is never a swallowed failure.
         $skipped = $offline ? $this->unavailable($nodes) : [];
@@ -184,7 +170,7 @@ final readonly class DestroyRouteAction
             });
             $failureStep = RouteRemovalStep::Record;
 
-            return $this->deleteRecord($locked, $expectedTargetIds, $allowTracking, $skipped);
+            return $this->deleteRecord($locked, $expectedTargetIds, $skipped);
         } catch (Throwable $exception) {
             if ($offersOffline && ! $offline && $this->changesNodes($failureStep)) {
                 $exception = $this->unreachableFailure($exception, $nodes, $failureStep);
@@ -267,9 +253,9 @@ final readonly class DestroyRouteAction
         }
     }
 
-    private function assertStandaloneRemovalAllowed(Route $route, bool $allowTracking): void
+    private function assertStandaloneRemovalAllowed(Route $route): void
     {
-        if ($route->kind === RouteKind::AnalyticsTracking && ! $allowTracking) {
+        if ($route->kind === RouteKind::AnalyticsTracking) {
             throw new ResourceOperationException(
                 errorCode: 'route.tracking_managed',
                 message: 'Tracking Routes are managed by the analytics role and cannot be destroyed directly.',
@@ -405,9 +391,9 @@ final readonly class DestroyRouteAction
      * @param  list<int>  $expectedTargetIds
      * @param  list<RouteRemovalNode>  $skipped
      */
-    private function deleteRecord(Route $route, array $expectedTargetIds, bool $allowTracking, array $skipped): Route
+    private function deleteRecord(Route $route, array $expectedTargetIds, array $skipped): Route
     {
-        $removed = DB::transaction(function () use ($route, $expectedTargetIds, $allowTracking, $skipped): Route {
+        $removed = DB::transaction(function () use ($route, $expectedTargetIds, $skipped): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
 
@@ -415,7 +401,7 @@ final readonly class DestroyRouteAction
                 $this->associations->assertTargetsDetachable($locked);
             }
 
-            $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
+            $this->assertStandaloneRemovalAllowed($locked);
             $locked->delete();
 
             foreach ($skipped as $node) {

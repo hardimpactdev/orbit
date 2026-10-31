@@ -128,13 +128,20 @@ describe('instance:analytics:disable', function (): void {
     });
 
     it('removes the hosts once confirmed', function (): void {
-        $mockClient = MockClient::global([DisableInstanceAnalyticsRequest::class => ($this->disabled)()]);
+        $data = ($this->operation)()->body()->all();
+        $data['data']['kind'] = 'analytics.disable';
+        $mockClient = MockClient::global([
+            DisableInstanceAnalyticsRequest::class => MockResponse::make($data, 202),
+            ShowOperationRequest::class => MockResponse::make($data),
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
+            ShowInstanceAnalyticsRequest::class => ($this->disabled)(),
+        ]);
 
         $this->artisan('instance:analytics:disable', ['instance' => '12', '--yes' => true])
             ->expectsOutputToContain('Analytics tracking disabled.')
             ->assertExitCode(0);
 
-        expect($mockClient->getLastPendingRequest()?->getRequest())->toBeInstanceOf(DisableInstanceAnalyticsRequest::class);
+        $mockClient->assertSent(DisableInstanceAnalyticsRequest::class);
     });
 });
 

@@ -222,40 +222,64 @@ describe('instance:analytics:enable', function (): void {
 });
 
 describe('instance:analytics:disable', function (): void {
-    it('removes every tracking Route of the Project instance and is idempotent', function (): void {
+    it('admits one native parent and removes only its exact observed tracking set on completion', function (): void {
         $other = instance_analytics_extra_instance('other');
         instance_analytics_app_route($other, 'other.example.com', RoutePublication::Public);
-        instance_analytics_tracking($other);
-        instance_analytics_tracking($this->instance);
-        instance_analytics_tracking($this->instance, 'stats.shop.example.com');
-        $this->edge->calls = [];
-
-        $expected = [
-            'instance_id' => $this->instance->id,
-            'enabled' => false,
-            'domain' => 'shop.example.com',
-            'dashboard_url' => 'https://analytics.orbit',
-            'hosts' => [],
-            'snippet' => null,
-        ];
-
-        $this->deleteJson($this->url)->assertOk()->assertJsonPath('data', $expected);
-
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->pluck('domain')->all())
-            ->toBe(['analytics.other.example.com'])
-            ->and(RouteAnalyticsTracking::query()->pluck('instance_id')->all())->toBe([$other->id])
-            ->and($this->edge->calls)->toBe(['remove-public-edge', 'remove-public-edge'])
-            ->and($this->removal->events)->toBe([
-                'dns', 'caddy', 'certificates', 'firewall',
-                'dns', 'caddy', 'certificates', 'firewall',
-            ])
-            ->and(Route::query()->whereKey($this->appRoute->id)->exists())->toBeTrue();
-
-        $this->edge->calls = [];
-        $this->removal->events = [];
-        $this->deleteJson($this->url)->assertOk()->assertJsonPath('data', $expected);
-        expect($this->edge->calls)->toBe([])->and($this->removal->events)->toBe([]);
+        $retained = instance_analytics_tracking($other);
+        $first = instance_analytics_tracking($this->instance);
+        $second = instance_analytics_tracking($this->instance, 'stats.shop.example.com');
+        analytics_intent_socket();
+        $id = $this->deleteJson($this->url)->assertAccepted()->assertJsonPath('data.kind', 'analytics.disable')->json('data.id');
+        $operation = Operation::query()->findOrFail($id);
+        expect($operation->state['analytics_writer'])->toBe('direct')->and($operation->input)->not->toHaveKey('plausible_credentials')
+            ->and(RouteAnalyticsTracking::query()->count())->toBe(3)->and($this->removal->events)->toBe([]);
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running'));
+        expect($operation->fresh()->state['tracking']['cleanup'])->toHaveCount(4)
+            ->and($first->fresh()->status)->toBe(RouteStatus::Retiring)
+            ->and($second->fresh()->sites_published)->toBeFalse();
+        $result = ['ready' => true, 'enabled' => false, 'domain' => null, 'timezone' => null, 'detached' => true];
+        $projection->apply($operation, analytics_intent_result('succeeded', $result));
+        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking)->pluck('id')->all())->toBe([$retained->id])
+            ->and(Route::query()->whereKey($this->appRoute->id)->exists())->toBeTrue()
+            ->and(Operation::query()->count())->toBe(1);
+        $this->getJson($this->url)->assertOk()->assertJsonPath('data.enabled', false)->assertJsonPath('data.hosts', []);
     });
+
+    it('detaches its binding without Plausible credentials, active role or Instance domain', function (): void {
+        $settings = app(SettingRepository::class);
+        $scope = new SettingScope(SettingScopeType::Gateway);
+        $settings->put($scope, 'analytics.site.'.$this->instance->id, json_encode(['domain' => 'old.example.com', 'timezone' => 'UTC']));
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Failed]);
+        $this->appRoute->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+        analytics_intent_socket();
+        $id = $this->deleteJson($this->url)->assertAccepted()->json('data.id');
+        $operation = Operation::query()->findOrFail($id);
+        expect($operation->node_id)->toBe($this->workload->id);
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running'));
+        expect($operation->fresh()->state['tracking']['dns_node_ids'])->toBe([]);
+        $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
+        expect($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBeNull();
+        $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
+    });
+
+    it('does not remove a new binding or a changed tracking placement', function (bool $binding): void {
+        $route = instance_analytics_tracking($this->instance);
+        analytics_intent_socket();
+        $id = $this->deleteJson($this->url)->assertAccepted()->json('data.id');
+        $operation = Operation::query()->findOrFail($id);
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running'));
+        if ($binding) {
+            app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'analytics.site.'.$this->instance->id, 'newer-binding');
+        } else {
+            $route->update(['publication' => RoutePublication::Private]);
+        }
+        expect(fn () => $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => null, 'timezone' => null, 'detached' => true])))
+            ->toThrow(ResourceOperationException::class);
+        expect($route->fresh())->not->toBeNull();
+    })->with([true, false]);
 });
 
 describe('generic Route commands on a tracking Route', function (): void {

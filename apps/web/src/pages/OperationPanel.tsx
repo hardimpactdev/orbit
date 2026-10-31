@@ -25,6 +25,7 @@ const TITLES: Record<string, string> = {
     "instance.deploy": "Deploy",
     "instance.rollback": "Rollback",
     "analytics.enable": "Enable analytics",
+    "analytics.disable": "Disable analytics",
 };
 
 const headline = (operation: Operation): string =>
@@ -54,7 +55,11 @@ export function OperationPanel({ instance }: { instance: Instance }) {
     const { operation, lines: live } = useOperation(tracked);
 
     useEffect(() => {
-        if (operation !== null && isTerminal(operation) && operation.kind === "analytics.enable") {
+        if (
+            operation !== null &&
+            isTerminal(operation) &&
+            ["analytics.enable", "analytics.disable"].includes(operation.kind)
+        ) {
             void queryClient.invalidateQueries({ queryKey: ["instance-analytics", instance.id] });
             void queryClient.invalidateQueries({
                 queryKey: ["instance-analytics-stats", instance.id],

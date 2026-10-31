@@ -84,6 +84,8 @@ Certificate requests and signed certificates are public data. The existing Gatew
 
 An obsolete completion cannot remove a changed tracking set or a newer site binding. The owning kind selects the direct writer and removes its synchronous PHP executor in the same PR. Rollback reverts that PR. Live takeover requires exact credential approval and every admitted worker's placement proof, followed by the production canary.
 
+When you disable analytics, the Gateway records one `analytics.disable` intent and starts one placed native workflow. It detaches the site by removing the Gateway binding after Caddy, DNS, certificates and Route withdrawal succeed. Plausible retains its site, history and manual goals. Disable needs no Plausible credential or active analytics role. It refuses to delete a changed tracking set or a newer binding, and it supports an already empty Instance. It has no PHP executor or child Operations.
+
 ## ClickHouse configuration
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
@@ -151,9 +153,9 @@ The host answers two paths and nothing else:
 | `/api/event` | The Plausible event endpoint |
 | Every other path | 404, so the dashboard never becomes public |
 
-The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead. If the Route kind is not valid for the analytics removal path, the Gateway returns `route.kind_invalid`.
+The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead.
 
-`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. Enabling creates or converges the Plausible site. Add the script tag to the Project.
+`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` returns an Operation that removes the hosts. Enabling creates or converges the Plausible site. Add the script tag to the Project.
 
 An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
 

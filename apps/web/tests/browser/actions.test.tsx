@@ -193,9 +193,7 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
     expect(app.gateway.requests.some((request) => request.method === "DELETE")).toBe(false);
 
     await userEvent.keyboard("{Enter}");
-    await expect
-        .element(footer())
-        .toMatchTextContent("Analytics tracking disabled for [charlie-shop/dev].");
+    await expect.element(footer()).toMatchTextContent("Analytics disable started as operation");
     await expect.element(pane("Properties")).not.toMatchTextContent("Analytics");
     await expect.element(pane("Analytics")).not.toBeInTheDocument();
 });

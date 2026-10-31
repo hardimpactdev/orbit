@@ -84,6 +84,16 @@ describe('the instance analytics requests', function (): void {
             ->and($response->kind)->toBe('analytics.enable')->and($response->targetId)->toBe(12);
     });
 
+    it('returns the native disable parent from a bodyless DELETE', function (): void {
+        $request = new DisableInstanceAnalyticsRequest(12);
+        $mock = new MockClient([DisableInstanceAnalyticsRequest::class => MockResponse::make([
+            'data' => ['id' => 42, 'kind' => 'analytics.disable', 'target_type' => 'instance', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1],
+            'meta' => ['request_id' => node_role_request_id()],
+        ], 202)]);
+        $response = node_role_gateway_connector($mock)->send($request)->dto();
+        expect($response)->toBeInstanceOf(OperationResponse::class)->and($response->kind)->toBe('analytics.disable');
+    });
+
     it('accepts an instance without tracking: no domain, no dashboard, no hosts, no snippet', function (): void {
         $mockClient = new MockClient([
             ShowInstanceAnalyticsRequest::class => MockResponse::make([

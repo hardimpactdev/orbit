@@ -58,16 +58,14 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                 destructive: true,
                 description: `Remove every analytics tracking host of [${target}]? Plausible stops receiving its visits.`,
                 run: async () => {
-                    const result = await api<InstanceAnalytics>(
+                    const result = await api<Operation>(
                         "DELETE",
                         `/api/v1/instances/${instance.id}/analytics`,
                     );
-                    queryClient.setQueryData(key, result);
-                    queryClient.removeQueries({
-                        queryKey: ["instance-analytics-stats", instance.id],
+                    await queryClient.invalidateQueries({
+                        queryKey: instanceOperationsQuery(instance.id).queryKey,
                     });
-
-                    return `Analytics tracking disabled for [${target}].`;
+                    return `Analytics disable started as operation ${result.id}.`;
                 },
             },
         ];
