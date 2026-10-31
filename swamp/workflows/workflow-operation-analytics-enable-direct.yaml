@@ -269,7 +269,6 @@ jobs:
     forEach:
       item: item
       in: ${{ steps.assets.outputs.goal_batches }}
-    concurrency: 1
 - name: verify
   dependsOn:
   - job: goals

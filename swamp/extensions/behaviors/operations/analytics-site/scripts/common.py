@@ -71,8 +71,9 @@ class Client:
                 content = response.read(2 * 1024 * 1024 + 1)
             if len(content) > 2 * 1024 * 1024:
                 raise Refusal("analytics.management_unreadable")
-            self.jar.save(ignore_discard=True, ignore_expires=True)
-            os.chmod(self.path / "cookies", 0o600)
+            if authorization is None:
+                self.jar.save(ignore_discard=True, ignore_expires=True)
+                os.chmod(self.path / "cookies", 0o600)
             if status in (401, 403) or (
                 path != "/logout" and location.startswith("/login")
             ):
