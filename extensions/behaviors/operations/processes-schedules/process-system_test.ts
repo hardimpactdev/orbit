@@ -291,6 +291,34 @@ Deno.test("stage writes immutable root0600 environment and public verified candi
   assert(host.calls.some((call) => call.program === "/usr/bin/sync"));
 });
 
+Deno.test("stage needs no private generation when no managed environment is supplied", async () => {
+  const host = new Host();
+  const input = {
+    process_id: 7,
+    unit,
+    content:
+      "[Unit]\nX-Orbit-Process-ID=7\n[Service]\nExecStart=/usr/bin/sleep infinity\n",
+    environment: "# Orbit Process 7\n",
+  };
+  assertEquals(await host.invoke("process.stage-unit", input), {
+    staged: true,
+    previous: false,
+    state: null,
+  });
+  assert(!host.files.has(environments));
+  assertEquals(host.files.get(`${candidates}/${unit}`)!.content, input.content);
+});
+
+Deno.test("stage refuses omitted private reference for nonempty managed environment", async () => {
+  const host = new Host();
+  const input = await stageInput();
+  input.content = input.content.replace(/^EnvironmentFile=.*\n/m, "");
+  assertEquals(await host.invoke("process.stage-unit", input), {
+    error_code: "process.invalid",
+  });
+  assertEquals(host.mutations(), []);
+});
+
 Deno.test("identical stage preserves current unit and reports inactive state", async () => {
   const host = new Host();
   const input = await stageInput();

@@ -464,6 +464,10 @@ class ProcessSystem {
   }
 
   private async installEnvironment(id: number, unit: string, content: string) {
+    if (
+      content === `# Orbit Process ${id}\n` &&
+      !unit.includes(`EnvironmentFile=${Environments}/`)
+    ) return;
     const hash = await digest(content);
     if (
       !content.startsWith(`# Orbit Process ${id}\n`) ||

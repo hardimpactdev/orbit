@@ -9,7 +9,10 @@ combined polled Process/Schedule executor is retired.
 The Gateway admits the target and complete specification. It supplies references
 for unit content, Docker commands and environments, and Schedule commands. Swamp
 passes those references back unchanged. Kit v2 resolves them inside the Gateway.
-No command text or environment value belongs in a Swamp step or completion.
+No command text or environment value belongs in a Swamp step or completion. A
+systemd unit with no managed environment reference needs no private generation
+when the admitted environment contains only its exact Process ownership header.
+Nonempty managed values still require their verified root0600 generation.
 
 A systemd create stages the owned unit and activates a changed or pending unit.
 An unchanged unit in its desired state needs no activation. Docker convergence
