@@ -91,7 +91,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection
             if (! is_string($version) || ($tool === null && $operation->error_code === 'tool.package_already_installed')) {
                 return;
             }
-            if ($tool === null && $verb === 'install' && $record !== null) {
+            if ($tool === null && $verb === 'install') {
                 $tool = $this->createTool($operation, $record);
             }
             $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $result['installed_version'] ?? $tool->installed_version,

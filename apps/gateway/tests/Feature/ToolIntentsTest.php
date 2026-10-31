@@ -136,7 +136,6 @@ it('rejects malformed versions and refusals without projecting records', functio
     expect(Tool::query()->count())->toBe(0);
     expect(ToolManagerRecord::query()->count())->toBe(0);
 })->with([
-    'empty manager version' => [['manager_version' => '', 'installed_version' => '1.0.0']],
     'raw output as version' => [['manager_version' => "3.0.0\nraw", 'installed_version' => '1.0.0']],
     'oversized package version' => [['manager_version' => '3.0.0', 'installed_version' => str_repeat('a', 256)]],
     'non-string package version' => [['manager_version' => '3.0.0', 'installed_version' => []]],

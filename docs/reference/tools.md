@@ -22,23 +22,15 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 [Importing workspace CI caches](/reference/instance-setup#import-ci-main-caches) restores private test and analysis data, not Tools or packages. It does not call a Tool Manager, fill a package download cache, or install a missing dependency. The Project's setup steps must install dependencies before importing these caches.
 
-## Execution and receipts
+## Native execution
 
-Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates requests, records intent and the target Node, and keeps the API and managed Tool records. Swamp executes the existing typed agent commands and records their steps. CLI writes follow the Operation. List, show, scan, manager list, and Doctor keep their read paths.
+Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan, manager list, and Doctor keep their read paths.
 
-Each operation admits only the selected manager's named commands and exact recorded input. The Gateway takes the Node from the Operation, verifies successful run and step receipts before completion, and retains only declared, redacted scalar result leaves. Swamp saves completion intent before posting it and reuses effect keys after a lost reply. Package-manager output and credentials are never part of a receipt.
+Swamp owns manager convergence, candidate constraints, adoption, exact removal, retries and cancellation. It uses the existing named agent commands on the admitted Node's exact worker. Package-manager output and credentials never enter public results. The Gateway projects only bounded version, outcome and error fields into the selected Tool and manager records. It does not check execution receipts or repeat native completion policy.
 
-Gateway package manager adapters keep package validation, version normalization and read-only inspection. Candidate selection, adoption probes and removal planning execute only through the Swamp workflow's named commands. Their Gateway interfaces expose no execution methods for those steps. Command activity records admission before any package runs; a managed Tool is created only after verified completion.
+Node and Instance workflows compose manager prerequisites as native steps in their own root DAG. They do not create `tool.manager_converge` child Operations. Project runtime environments belong to the Instances family.
 
-Node enrollment, role operations, and Instance Vite+ environment preparation can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. Instance preparation requests `manager: "vp"` and `image_provides_manager: false`; it does not assume that an image supplies the manager. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
-
-The family spec compiles its fixed command allowlist, completion variants, result fields, and required kit capabilities through `OperationFamilySpec`. Swamp consumes the admitted descriptors for names and input. It keeps one execution policy implementation for candidate constraints, adoption, exact removal, and final package state. The Gateway keeps admission, exact target and input bindings, native schemas, redaction, receipt identity, and intent projection. It does not repeat that package policy in its execution hooks. This boundary trusts the configured Swamp executor as part of the control plane.
-
-The Gateway refuses a successful remove result with an installed version, or a successful install, update, or adoption result without one, before projecting Tool or manager state.
-
-The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
-
-When the shared executor lacks Kit B child admission (`children`) or Kit C result schemas (`list_of`), Tools write kinds remain unregistered. Package writes and manager convergence refuse admission with `operation.kind_unavailable` (HTTP 503), without recording an Operation or running a Node command. Tool reads remain available.
+Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 

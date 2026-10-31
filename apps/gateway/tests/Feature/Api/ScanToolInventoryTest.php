@@ -3,9 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -24,25 +22,6 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->withHeader('X-Orbit-Request-Id', fixture_request_id());
     app()->instance(SshExecutor::class, new ToolManagerFakeSshExecutor([]));
-    app()->instance(ToolManagerMaterializer::class, new class implements ToolManagerMaterializer
-    {
-        public function converge(Node $node, ToolManagerName ...$managerNames): void
-        {
-            throw new RuntimeException('The scan materialized a manager.');
-        }
-
-        public function convergeWithFailureHandler(Node $node, Closure $onFailure, ToolManagerName ...$managerNames): void
-        {
-            throw new RuntimeException('The scan materialized a manager.');
-        }
-    });
-    app()->instance(ToolManagerScopeLock::class, new class implements ToolManagerScopeLock
-    {
-        public function run(int $nodeId, ToolManagerName $manager, Closure $callback): mixed
-        {
-            throw new RuntimeException('The scan locked a manager scope.');
-        }
-    });
 
 });
 
