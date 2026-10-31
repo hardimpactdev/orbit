@@ -39,7 +39,7 @@ it('rejects the release when an execution dependency is missing or still PHP', f
     $definitions[$missing] = stdClass::class;
     expect(fn () => InstanceDeploymentAvailability::assertReleaseReady($definitions))->toThrow(LogicException::class, $missing);
 })->with(['process.restart_instance', 'process.install_instance_definitions', 'schedule.install_instance_definitions',
-    'node.prepare_php_packages', 'route.converge']);
+    'node.prepare_php_packages']);
 
 it('finishes failed or cancelled history from proven selection without a reachable Node', function (bool $activated, string $status): void {
     $operation = cutoverDeployment();

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
-use App\Domain\Instances\Deployment\InstanceProjectionExecution;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\InstanceExecutionChildAdmission;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
@@ -22,11 +21,7 @@ $deployment = static fn (bool $rollback): array => [
         ['transport' => 'instance-deploy-agent', 'name' => 'php.refresh-production-cache', 'resumable' => true],
         ...($rollback ? [] : [
             ['transport' => 'instance-deploy-agent', 'name' => 'instance.prepare-release', 'secrets' => ['git_read' => 'instance.deployment'], 'resumable' => false, 'uncertain_error_code' => 'deployment.interrupted'],
-            ['transport' => 'instance-deploy-agent', 'name' => 'instance.resolve-development-target', 'resumable' => true, 'secrets' => ['git_read' => 'instance.deployment']],
-            ['transport' => 'instance-deploy-agent', 'name' => 'instance.checkout-development-default', 'resumable' => true],
             ['transport' => 'instance-deploy-agent', 'name' => 'instance.run-deploy-step',
-                'secrets' => ['script' => 'instance.deployment', 'secrets' => 'instance.deployment'], 'resumable' => false, 'uncertain_error_code' => 'deployment.interrupted'],
-            ['transport' => 'instance-deploy-agent', 'name' => 'instance.run-development-step',
                 'secrets' => ['script' => 'instance.deployment', 'secrets' => 'instance.deployment'], 'resumable' => false, 'uncertain_error_code' => 'deployment.interrupted'],
             ['transport' => 'instance-deploy-agent', 'name' => 'instance.prune-releases', 'resumable' => true],
             ['transport' => 'instance-deploy-agent', 'name' => 'tool.prune-vp-store', 'resumable' => true],
@@ -37,7 +32,7 @@ $deployment = static fn (bool $rollback): array => [
         ['transport' => 'gateway', 'name' => 'instance.deployment-receipt', 'resumable' => true],
     ],
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'operation.node_id'],
-        ['route.converge', 'instance.sync_environment', 'instance.prepare_vp_environment', 'process.install_instance_definitions',
+        ['instance.sync_environment', 'instance.prepare_vp_environment', 'process.install_instance_definitions',
             'schedule.install_instance_definitions', 'node.prepare_php_packages', 'process.restart_instance']),
     'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.deployment-receipt', 'result' => []],
     'result_fields' => ['deployment_id', 'release', 'selected_release', 'commit', 'name', 'path',
@@ -56,17 +51,6 @@ $instanceExecutionKinds = [
         ],
         'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.web-roots-receipt', 'result' => ['confirmed' => true]],
         'result_fields' => ['instance_id', 'confirmed', 'no_op', 'prepared', 'changed', 'error_code'],
-    ],
-    'instance.repair_projection' => [
-        'executor' => 'swamp', 'execution' => InstanceProjectionExecution::class, 'completion' => InstanceProjectionExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'instance.child-receipt', 'resumable' => true],
-            ['transport' => 'gateway', 'name' => 'instance.projection-receipt', 'resumable' => true],
-        ],
-        'children' => [['kind' => 'route.converge', 'node_from' => 'operation.node_id']],
-        'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.projection-receipt',
-            'result' => ['confirmed' => true], 'children_succeeded' => ['route.converge']],
-        'result_fields' => ['instance_id', 'confirmed', 'child_id', 'child_kind', 'child_status', 'error_code'],
     ],
     'instance.deploy' => $deployment(false),
     'instance.rollback' => $deployment(true),
@@ -115,7 +99,7 @@ $instanceExecutionKinds = [
 ];
 
 if (! OperationKinds::supports('children')) {
-    foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.repair_projection', 'instance.prepare_served_web_roots'] as $kind) {
+    foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.prepare_served_web_roots'] as $kind) {
         unset($instanceExecutionKinds[$kind]);
     }
 }

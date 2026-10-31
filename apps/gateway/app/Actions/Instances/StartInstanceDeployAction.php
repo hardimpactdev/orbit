@@ -9,10 +9,12 @@ use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -38,8 +40,20 @@ final readonly class StartInstanceDeployAction
         }
         $deployment = $this->intent->snapshot($instance);
         InstanceDeploymentAvailability::assertAvailable($deployment);
+        $development = $deployment['variant'] === 'development';
+        if ($development && $deployment['projection_route_id'] !== null) {
+            throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);
+        }
 
-        $input = ['instance_id' => $instance->id, 'deployment' => $deployment, ...($commit === null ? [] : ['commit' => $commit])];
+        $input = ['instance_id' => $instance->id, 'development' => $development, 'deployment' => $deployment, ...($commit === null ? [] : ['commit' => $commit])];
+        if ($development) {
+            $input['git_read'] = ['$secret' => 'instance.deployment', 'id' => $instance->id];
+            $input['vp_materialize'] = ['$secret' => 'instance.deployment', 'id' => $instance->id];
+            if (app(DirectOperation::class)->writer(OperationKinds::InstanceDeploy, $input, $instance->node_id) !== 'direct') {
+                throw new ResourceOperationException('operation.writer_invalid', 'Development deployment requires its native Swamp writer.', 503);
+            }
+            $input['agent_sha256'] = app(AgentDelivery::class)->pin($instance->node);
+        }
         if ($callerNodeId !== null) {
             $input['caller_node_id'] = $callerNodeId;
         }

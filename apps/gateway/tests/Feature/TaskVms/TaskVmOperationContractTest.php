@@ -9,7 +9,6 @@ use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
 use App\Actions\TaskVms\StartTaskVmIncusEffectAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -20,10 +19,8 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
 use App\Infrastructure\TaskVms\UpCloudApi;
@@ -38,7 +35,6 @@ use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
