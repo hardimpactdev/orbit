@@ -1,15 +1,15 @@
 import { z } from "npm:zod@4.4.3";
 import {
+  type DirectIntent,
   DirectOperationCancelled,
   DirectResult,
-  type DirectIntent,
   type Result,
 } from "./direct-input.ts";
 export {
   DirectArgs,
+  type DirectIntent,
   DirectOperationCancelled,
   DirectResult,
-  type DirectIntent,
   type Result,
 } from "./direct-input.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
@@ -44,33 +44,12 @@ const Outcome = z.object({
   result: DirectResult.nullable(),
   cancel_requested: z.boolean(),
 });
-const Unbound = z.object({
-  error: z.object({ code: z.literal("operation.run_unbound") }),
-});
-class RunUnbound extends Error {}
-
-async function pauseBinding(signal?: AbortSignal): Promise<void> {
-  signal?.throwIfAborted();
-  await new Promise<void>((resolve, reject) => {
-    const abort = () => {
-      clearTimeout(timer);
-      reject(signal?.reason);
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }, 1000);
-    signal?.addEventListener("abort", abort, { once: true });
-  });
-}
-
-/** Fixed endpoints. Only the first native read waits for start-response binding. */
+/** Retained legacy client: each request is a single fail-closed attempt. */
 export class GatewayOperation {
   #githubTokenUsed = false;
   constructor(
     private http: Http,
     private args: DirectIntent,
-    private bindingWait = pauseBinding,
     private now = Date.now,
     private github: typeof fetch = fetch,
   ) {}
@@ -85,58 +64,15 @@ export class GatewayOperation {
       body,
     );
     if (response.status < 200 || response.status >= 300) {
-      if (response.status === 409 && Unbound.safeParse(response.body).success) {
-        throw new RunUnbound("The Gateway has not bound this native run yet");
-      }
       throw new Error("Direct Operation request did not succeed");
     }
     return z.object({ data: z.unknown() }).parse(response.body).data;
   }
   async read(signal?: AbortSignal): Promise<unknown> {
-    const deadline = this.now() + 90_000;
-    const timeout = new AbortController();
-    const timer = setTimeout(
-      () => timeout.abort(new Error("Native binding deadline expired")),
-      90_000,
-    );
-    const readSignal = signal && !signal.aborted
-      ? AbortSignal.any([signal, timeout.signal])
-      : timeout.signal;
-    try {
-      while (true) {
-        readSignal.throwIfAborted();
-        if (this.now() >= deadline) {
-          throw new Error("Native binding deadline expired");
-        }
-        try {
-          return await this.readUntilAborted(readSignal);
-        } catch (error) {
-          if (!(error instanceof RunUnbound) || this.now() >= deadline) {
-            throw error;
-          }
-          signal?.throwIfAborted();
-          await this.bindingWait(readSignal);
-        }
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  private async readUntilAborted(signal: AbortSignal): Promise<unknown> {
-    signal.throwIfAborted();
-    let abort = () => {};
-    try {
-      const response = await new Promise<unknown>((resolve, reject) => {
-        abort = () => reject(signal.reason);
-        signal.addEventListener("abort", abort, { once: true });
-        this.call("GET", `?run_id=${this.args.run_id}`).then(resolve, reject);
-      });
-      signal.throwIfAborted();
-      return response;
-    } finally {
-      signal.removeEventListener("abort", abort);
-    }
+    signal?.throwIfAborted();
+    const response = await this.call("GET", `?run_id=${this.args.run_id}`);
+    signal?.throwIfAborted();
+    return response;
   }
   project(body: Record<string, unknown>) {
     return this.call("POST", "/result", { ...body, run_id: this.args.run_id });
