@@ -68,12 +68,12 @@ export const Preparation = z.object({
   error_code: Code.optional(),
 }).strict();
 const Args = DirectArgs.extend({
-  kind: z.literal("process.start"),
+  kind: z.enum(["process.start", "process.restart"]),
   node_id: z.number().int().positive(),
 });
 const Parent = z.object({
   id: z.number().int().positive(),
-  kind: z.literal("process.start"),
+  kind: Args.shape.kind,
   node_id: z.number().int().positive(),
   status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
   cancel_requested: z.boolean(),
@@ -112,6 +112,7 @@ export function startActions(
     prepare: async (
       input: z.infer<typeof StartInput>,
       signal?: AbortSignal,
+      kind: z.infer<typeof Args>["kind"] = "process.start",
     ) => {
       const admitted = StartInput.parse(input);
       const run = call(admitted, signal);
@@ -126,18 +127,33 @@ export function startActions(
         }
       }
       if (admitted.vite_plan !== undefined) {
-        for (const phase of ["suspend", "environment"] as const) {
-          const error = refusal(
-            await run("vite.set-traffic", admitted.vite_plan[phase]),
+        const suspend = refusal(
+          await run("vite.set-traffic", admitted.vite_plan.suspend),
+        );
+        if (suspend) return suspend;
+        if (kind === "process.restart") {
+          const stop = refusal(
+            await run("process.control", {
+              process_id: admitted.process_id,
+              runtime: admitted.runtime,
+              name: admitted.name,
+              on_demand: admitted.on_demand,
+              operation: "stop",
+            }),
           );
-          if (error) return error;
+          if (stop) return stop;
         }
+        const environment = refusal(
+          await run("vite.set-traffic", admitted.vite_plan.environment),
+        );
+        if (environment) return environment;
       }
       return { ready: true as const };
     },
     activate: async (
       input: z.infer<typeof StartInput>,
       signal?: AbortSignal,
+      kind: z.infer<typeof Args>["kind"] = "process.start",
     ): Promise<Result> => {
       const admitted = StartInput.parse(input);
       const run = call(admitted, signal);
@@ -150,7 +166,10 @@ export function startActions(
         await run("process.control", {
           ...artifact,
           on_demand: admitted.on_demand,
-          operation: "start",
+          operation:
+            kind === "process.restart" && admitted.vite_plan === undefined
+              ? "restart"
+              : "start",
         }),
       );
       if (start) return start;
@@ -178,10 +197,12 @@ export function startActions(
             }),
           ) ?? { error_code: "vite.not_ready" };
         }
-        const awake = refusal(
-          await run("vite.set-traffic", admitted.vite_plan.awake),
-        );
-        if (awake) return awake;
+        if (kind === "process.start") {
+          const awake = refusal(
+            await run("vite.set-traffic", admitted.vite_plan.awake),
+          );
+          if (awake) return awake;
+        }
       }
       const status = await run("process.status", artifact);
       return refusal(status) ??
@@ -220,7 +241,11 @@ export function startMethods(
         ) {
           preparation = { vite, proceed: false };
         } else {
-          const result = await actions.prepare(current.input, ctx.signal);
+          const result = await actions.prepare(
+            current.input,
+            ctx.signal,
+            args.kind,
+          );
           preparation = "error_code" in result
             ? { vite, proceed: false, error_code: result.error_code }
             : { vite, proceed: true };
@@ -260,7 +285,7 @@ export function startMethods(
             input.vite_plan !== undefined &&
             args.publication_status !== "succeeded"
           ) return Promise.resolve({ error_code: "process.caddy_failed" });
-          return actions.activate(input, ctx.signal);
+          return actions.activate(input, ctx.signal, args.kind);
         }, (result) =>
           z.union([
             z.object({

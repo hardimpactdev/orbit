@@ -101,14 +101,14 @@ Node placement and native behavior locking own dispatch and concurrency.
 The paired `process.stop` cutover switches its Gateway writer and removes the
 PHP stop action, polled descriptors and receipt tests after an actual safe
 action canary. Stopping a Vite Process needs no traffic preparation or private
-input. Restart and removal keep their current writers until their owning
-cutovers. Rollback is a revert PR.
+input. Removal keeps its current writer until its owning cutover. Rollback is a
+revert PR.
 
 Native destroy also accepts the admitted Vite environment identity. It requires
 the exact `/etc/orbit/vite/app-instance-<Instance ID>.env` path and forwards it
 to the existing local removal primitive, which checks ownership and symlinks.
 Vite start uses the same-root preparation and publication DAG below. Vite
-restart remains on its current writer until its owning conversion.
+restart uses the same-root restart DAG below.
 
 Every Process kind targets `orbit-node-<admitted node_id>` with its matching
 Node label, including Node209. Its exact worker is enrolled and independently
@@ -139,3 +139,14 @@ publication step. No child Operation, child run, Gateway primitive or family
 relay is added. Native dispatch and behavior locking use defaults. The public
 branch record keeps one version for one day; it contains no command or effect
 receipt.
+
+## Same-root Process restart
+
+Process restart uses the same native DAG as start. Vite preparation checks the
+selected release, suspends traffic, stops the admitted Process and writes its
+environment before canonical Caddy publication. Activation starts that runtime,
+checks its owned listener and returns bounded status without setting an awake
+marker. Non-Vite restart invokes its local restart primitive. The kind leaves
+polled discovery, registration and receipt policy in its owning cutover. Exact
+Node placement and the native root identity are unchanged; the Gateway retains
+only its existing executor recovery exception.

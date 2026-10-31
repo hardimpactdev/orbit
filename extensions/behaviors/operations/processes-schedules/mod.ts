@@ -49,15 +49,6 @@ export function processesSchedules(
         lifetime: "7d",
         garbageCollection: 1,
       },
-      effectIntent: {
-        description: "An attempted effect awaiting its original target receipt",
-        schema: z.object({
-          effect_key: z.string(),
-          not_started: z.boolean().optional(),
-        }),
-        lifetime: "infinite",
-        garbageCollection: 10,
-      },
       receipt: {
         description:
           "Permanent completion intent for one Process or Schedule Operation",
@@ -184,17 +175,7 @@ export function processesSchedules(
                     result.error_code === undefined
                   ) throw new Error("Unclassified failed effect receipt");
                 } else {
-                  const intent = `effect-${path}-${call.step}`;
-                  const attempted = await ctx.readResource(intent);
-                  const repeatable = !(call.name === "process.control" &&
-                    call.input.operation === "restart");
-                  if (
-                    receipt.state === "running" ||
-                    (attempted && attempted.not_started !== true && !repeatable)
-                  ) throw new PendingReceipt();
-                  await ctx.writeResource("effectIntent", intent, {
-                    effect_key: effectKey,
-                  });
+                  if (receipt.state === "running") throw new PendingReceipt();
                 }
               }
               result ??= Result.parse(
@@ -206,17 +187,7 @@ export function processesSchedules(
                   input: call.input,
                 }),
               );
-              if (result.not_started === true) {
-                await ctx.writeResource(
-                  "effectIntent",
-                  `effect-${path}-${call.step}`,
-                  {
-                    effect_key: `op-${operation.id}.${call.step}`,
-                    not_started: true,
-                  },
-                );
-                throw new PendingReceipt();
-              }
+              if (result.not_started === true) throw new PendingReceipt();
               if (result.error_code === "operation.execution_uncertain") {
                 throw new PendingReceipt();
               }
@@ -316,8 +287,7 @@ export function processesSchedules(
                 if (family === "process") {
                   if (
                     input.vite_plan &&
-                    (input.desired === "running" ||
-                      operation.kind === "process.restart")
+                    input.desired === "running"
                   ) {
                     const plan = z.record(z.string(), Result).parse(
                       input.vite_plan,
@@ -406,9 +376,8 @@ async function executeProcess(
 ) {
   const verb = kind.slice("process.".length);
   if (
-    !["create", "update", "restart"].includes(verb)
+    !["create", "update"].includes(verb)
   ) throw new Error("Wrong Process kind");
-  const artifact = pick(input, ["process_id", "runtime", "name"]);
   if (input.directory) {
     const release = await invoke({
       step: "process-check-release",
@@ -426,26 +395,12 @@ async function executeProcess(
       name: "vite.set-traffic",
       input: plan.suspend,
     });
-    if (verb === "restart") {
-      await invoke({
-        step: "vite-stop",
-        name: "process.control",
-        input: { ...artifact, on_demand: input.on_demand, operation: "stop" },
-      });
-    }
     await invoke({
       step: "vite-environment",
       name: "vite.set-traffic",
       input: plan.environment,
     });
     await project();
-  }
-  if (verb === "restart") {
-    return await invoke({
-      step: `process-${verb}`,
-      name: "process.control",
-      input: { ...artifact, operation: verb, on_demand: input.on_demand },
-    });
   }
   if (input.retired_runtime) {
     await invoke({

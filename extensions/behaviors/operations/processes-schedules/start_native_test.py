@@ -35,7 +35,7 @@ class ProcessStartNative(NativeTestCase):
         return json.loads((self.repo/'start-native.json').read_text())
 
     def run_start(self, success=True):
-        result=self.cli('workflow','run','operation-process-control','--input','operation_id=17','--input','node_id=9','--input','kind=process.start',success=success)
+        result=self.cli('workflow','run','operation-process-control','--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
         self.run=json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
         return self.read()
 
@@ -79,3 +79,16 @@ class ProcessStartNative(NativeTestCase):
         self.assertEqual(state['operation']['status'],'cancelled')
         self.assertEqual(state['commands'],[])
         self.assertEqual(state['caddy'],[])
+
+
+    def test_vite_restart_stops_prepares_publishes_and_starts_in_one_root_without_awake(self):
+        self.state['operation']['kind']='process.restart'
+        self.save()
+        state=self.run_start()
+        self.assertEqual(state['operation']['status'],'succeeded')
+        events=state['events']
+        self.assertLess(events.index('process.control:stop'),events.index('vite.set-traffic:environment'))
+        self.assertLess(events.index('vite.set-traffic:environment'),events.index('caddy.publish'))
+        self.assertLess(events.index('caddy.publish'),events.index('process.control:start'))
+        self.assertNotIn('vite.set-traffic:awake',events)
+        self.assertEqual({call['url'].split('run_id=')[1] for call in state['calls'] if call['method']=='GET'},{self.run['id']})

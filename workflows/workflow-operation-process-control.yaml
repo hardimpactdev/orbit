@@ -18,7 +18,7 @@ jobs:
     writes: true
     steps:
       - name: control
-        guard: '${{ inputs.kind == "process.start" }}'
+        guard: '${{ inputs.kind in ["process.start", "process.restart"] }}'
         task:
           type: behavior
           behaviorType: "@nckrtl/process-control"
@@ -30,7 +30,7 @@ jobs:
             kind: "${{ inputs.kind }}"
             run_id: "${{ run.id }}"
       - name: prepare-start
-        guard: '${{ inputs.kind != "process.start" }}'
+        guard: '${{ !(inputs.kind in ["process.start", "process.restart"]) }}'
         dependsOn: [
           {
             step: control,
@@ -64,7 +64,7 @@ jobs:
             kind: "${{ inputs.kind }}"
             run_id: "${{ run.id }}"
       - name: activate-start
-        guard: '${{ inputs.kind != "process.start" }}'
+        guard: '${{ !(inputs.kind in ["process.start", "process.restart"]) }}'
         dependsOn:
           - step: prepare-start
             condition: { type: succeeded }

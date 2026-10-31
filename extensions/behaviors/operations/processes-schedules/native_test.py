@@ -66,17 +66,3 @@ class NativeProcessesSchedulesTest(NativeTestCase):
         self.assertEqual(len(self.read()['calls']), 3)
         self.assertEqual(self.read()['runPosts'], 2)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
-
-    def assert_control_reply_recovery(self, kind, runtime_input):
-        self.state['operation']['kind'] = kind
-        self.state['operation']['input'] = {'node_id': 2, **runtime_input}
-        self.state['loseRunReply'] = True
-        self.save()
-        self.swamp('workflow', 'run', 'operation-processes-schedules', success=False)
-        self.assertEqual(self.read()['runPosts'], 1)
-        self.swamp('workflow', 'resume', 'operation-processes-schedules')
-        self.assertEqual(self.read()['operation']['status'], 'succeeded')
-        self.assertEqual(self.read()['runPosts'], 1)
-
-    def test_restart_new_process_reads_original_receipt(self):
-        self.assert_control_reply_recovery('process.restart', {'process_id': 12, 'runtime': 'systemd', 'name': 'orbit-process-12-proof.service', 'on_demand': False})

@@ -366,7 +366,7 @@ Deno.test("systemd replacement, backup refusal and release refusal retain eviden
     f.resources.get("operation-7")!.error_code,
     "process.systemd_converge_failed",
   );
-  const g = processFixture("restart");
+  const g = processFixture("update");
   g.operation.input.directory = "/home/production/current";
   g.answers["process.check-release"] = { available: false };
   await g.execute();
@@ -408,18 +408,6 @@ Deno.test("runtime switch removes retired footprint before creating replacement"
     ],
   );
 });
-Deno.test("unconverted Process restart targets only its artifact", async () => {
-  for (const runtime of ["systemd", "docker"]) {
-    for (const verb of ["restart"]) {
-      const f = processFixture(verb, runtime);
-      await f.execute();
-      assertEquals(f.runs, 1);
-      const call = f.calls.find((call) => call.path.endsWith("/run"))!.body;
-      assertEquals(call.name, "process.control");
-      assertEquals((call.input as Record<string, unknown>).process_id, 12);
-    }
-  }
-});
 Deno.test("lost systemd activation reply resumes the same keyed activation", async () => {
   const f = processFixture();
   f.operation.step_results["process-stage-unit"] = {
@@ -442,8 +430,8 @@ Deno.test("wrong family or target refuses before any Node command", async () => 
   }
 });
 
-Deno.test("unconverted Vite restart prepares its environment, starts a Caddy child and verifies ownership", async () => {
-  const f = processFixture("restart");
+Deno.test("unconverted Vite update prepares its environment, starts a Caddy child and verifies ownership", async () => {
+  const f = processFixture("update");
   f.operation.input.vite_plan = {
     suspend: { operation: "suspend", marker: "/run/orbit/awake/test" },
     environment: {
@@ -474,43 +462,6 @@ Deno.test("unconverted Vite restart prepares its environment, starts a Caddy chi
     }],
   );
   assertEquals(f.resources.get("operation-7")!.status, "succeeded");
-});
-
-Deno.test("unavailable receipt cannot authorize the first restart attempt", async () => {
-  const f = new Fixture();
-  f.operation.kind = "process.restart";
-  f.operation.input = {
-    node_id: 2,
-    process_id: 4,
-    runtime: "systemd",
-    name: "orbit-process-4-proof.service",
-    on_demand: false,
-  };
-  f.receiptUnavailable = true;
-  assertEquals((await f.execute()).status, "pending");
-  assertEquals(f.runs, 0);
-});
-
-Deno.test("Process restart adopts the receipt without another run request", async () => {
-  const f = new Fixture();
-  f.operation.kind = "process.restart";
-  f.operation.input = {
-    node_id: 2,
-    process_id: 4,
-    runtime: "systemd",
-    name: "orbit-process-4-proof.service",
-    on_demand: false,
-  };
-  f.failAfterRun = true;
-  await assertRejects(() => f.execute());
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(
-    f.calls.filter((call) =>
-      call.path.endsWith("/run") && call.body.transport === "agent" &&
-      call.body.name !== "process.status"
-    ).length,
-    1,
-  );
 });
 
 Deno.test("Instance runtime composition waits for recorded children before proving readiness", async () => {
@@ -591,6 +542,7 @@ Deno.test("direct kinds refuse polled dispatch before claim or effect", async ()
     const kind of [
       "process.stop",
       "process.destroy",
+      "process.restart",
       "schedule.enable",
       "schedule.run",
       "schedule.destroy",

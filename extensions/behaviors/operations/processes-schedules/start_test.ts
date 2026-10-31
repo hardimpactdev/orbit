@@ -242,3 +242,41 @@ Deno.test("a failed Caddy native step projects a bounded parent failure without 
   assertEquals(posts.map((p) => p.status), ["running", "failed"]);
   assertEquals(posts.at(-1)?.result, { error_code: "process.caddy_failed" });
 });
+
+Deno.test("Vite restart stops before environment preparation and starts after publication without an awake marker", async () => {
+  const f = fixture();
+  assertEquals(await f.actions.prepare(vite, undefined, "process.restart"), {
+    ready: true,
+  });
+  assertEquals(f.calls.map((c) => [c.name, c.input.operation]), [
+    ["vite.set-traffic", "suspend"],
+    ["process.control", "stop"],
+    ["vite.set-traffic", "environment"],
+  ]);
+  assertEquals(await f.actions.activate(vite, undefined, "process.restart"), {
+    ready: true,
+    state: "active",
+  });
+  assertEquals(f.calls.slice(3).map((c) => [c.name, c.input.operation]), [
+    ["process.control", "start"],
+    ["vite.check-listener", undefined],
+    ["process.status", undefined],
+  ]);
+});
+Deno.test("non-Vite restart uses its own restart primitive and projects only safe status", async () => {
+  const f = fixture();
+  assertEquals(await f.actions.activate(input, undefined, "process.restart"), {
+    ready: true,
+    state: "active",
+  });
+  assertEquals(f.calls[0].input.operation, "restart");
+});
+Deno.test("Vite restart preparation refusal prevents environment replacement", async () => {
+  const f = fixture({
+    "process.control": { error_code: "process.runtime_not_found" },
+  });
+  assertEquals(await f.actions.prepare(vite, undefined, "process.restart"), {
+    error_code: "process.runtime_not_found",
+  });
+  assertEquals(f.calls.map((c) => c.input.operation), ["suspend", "stop"]);
+});
