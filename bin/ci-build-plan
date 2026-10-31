@@ -71,12 +71,12 @@ def main():
     result = select(paths, a.main)
     if a.swamp_base and result['jobs']['swamp']:
         result['swamp_base_ref'] = swamp_comparison_base(a.base, a.head)
-        result['swamp_initial_import'] = result['swamp_base_ref'] != a.base
     print(json.dumps(result))
     if a.github_output:
         with a.github_output.open('a') as output:
             for name, value in result.items():
-                output.write(f'{name}={json.dumps(value, separators=(",", ":"))}\n')
+                encoded = value if isinstance(value, str) else json.dumps(value, separators=(',', ':'))
+                output.write(f'{name}={encoded}\n')
 
 
 if __name__ == '__main__':

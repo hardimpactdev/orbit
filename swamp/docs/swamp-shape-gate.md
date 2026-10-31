@@ -3,8 +3,12 @@
 Every pull request and main push runs `Swamp shape`. Existing violations are
 listed by file and rule in `config/swamp-shape-baseline.json`. Entries and their
 counts may only decrease. Moving code does not transfer an exception. CI also
-runs the base revision's checker, so changing a rule or exclusion does not relax
-that PR's check.
+runs the base revision's checker and dependencies against committed HEAD in
+isolated sparse worktrees. That check derives its own shrink-only baseline from
+immutable base limits; it does not reinterpret the PR's revised baseline under
+old rules. Changing current rules, limits or exclusions cannot admit new debt
+under the frozen rules. Actual debt removal and approved classification fixes do
+not require stale allowances.
 
 The gate implements Nick's migration policy using these manual references:
 
@@ -38,6 +42,25 @@ such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools a
 configuration metadata are not agent invocations. Actual executable calls still
 use the observer/action inventory; unresolved commands remain unknown.
 
+Guide rule 6 permits host-tool transaction locks. The Python AST checker accepts
+only proven file descriptors for the canonical UFW, observer self-update and
+documents cleanup lock paths. It follows literal paths, Path joins, open/fdopen
+and with bindings, and accepts exclusive acquisition (optionally nonblocking)
+or release. Dynamic paths, other files, unrelated descriptors, sleeps and retry
+loops remain findings. Naming a tool in a comment grants no exception. Python
+heredocs use this AST rule once rather than a second shell-token lock count.
+
+Rule F can prove a fixed external HTTP origin before a dynamic path suffix.
+The literal prefix must contain a complete authority and its trailing slash;
+unknown origins, partial authorities, reassigned bindings and URL joins that
+could replace the authority remain unresolved. Gateway metadata in a public
+provider input does not make a fixed external API request a Gateway callback.
+
+Static native child workflows resolve by an unambiguous local workflow name or id.
+The coverage graph follows each child and its behavior and script dependencies.
+Missing, dynamic or ambiguous children stay unknown; a child with accepted debt
+does not make its parent clean.
+
 Workflow metrics separate clean, baseline-accepted and unknown workflows. A clean
 workflow has known steps and no findings in its own source or reachable local
 behavior dependencies. Static coverage is not a runtime canary. Each run emits
@@ -61,6 +84,11 @@ its own file/rule finding, so new steps cannot inherit a historical exception.
 Intent arrives as non-secret workflow inputs, vault
 names and key names identify secrets, and step outputs carry results.
 
+Shared public Operation schemas and cancellation evidence live in
+`extensions/behaviors/operations/_lib/direct-input.ts`. Metadata and data-only
+helpers import that module directly. Importing `direct.ts` also reaches the
+retained Gateway client and therefore keeps that dependency in the shape audit.
+
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow accepts `working-directory` and
 `base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
@@ -68,20 +96,18 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
-Swamp CI must never receive account credentials. The helper downloads the public,
-checksum-verified official artifact and launches it with an isolated configuration
-and a clean environment. Official e459 blocks `workflow validate` at its account
-startup gate before reading local extensions. Account verification uses
-`GET /api/whoami`; vendoring extensions does not remove that gate. The pinned
-command advertises no offline validation option.
+Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
+with `extensions:read` scope. Only the native workflow-validation step receives
+`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests and main pushes. Shape
+and Deno jobs receive neither. The caller maps both secrets explicitly, never
+through inherited secrets. Pull-request-target events cannot receive them.
 
-The callable reports this exact blocker as `SWAMP AUTH UNAVAILABLE` and
-`validation_ran=false`, with zero workflows validated. It fails normally. Only
-the caller-proven initial Orbit import PR or its first main push may set
-`allow-auth-unavailable: true`; the callable also checks the repository and event.
-Shape, placement and Deno checks remain required. Schema, download, checksum and
-other runtime failures never receive this exception. This is an explicit import
-limitation, not a claim that native validation passed.
+The helper downloads the public checksum-verified official artifact and starts
+it with fresh HOME, XDG and Swamp configuration directories. Its environment
+allowlist admits only these two approved credentials. Official e459's startup
+account gate precedes local schema loading and verifies through
+`GET /api/whoami`. Native validation is required: unavailable authentication and
+schema, checksum or download failures fail the job. There is no import exception.
 
 The gate prints current debt separately from base comparison. Retained historical
 agent actions are grandfathered; only growing counts or new action evidence fail.

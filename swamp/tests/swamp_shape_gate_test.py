@@ -40,6 +40,52 @@ class ShapeGate(unittest.TestCase):
             self.assertNotEqual(variant, script, "Mutation must change the actual formatted source")
             self.assertTrue(any(row["rule"] == "gateway-http" for row in scan(variant)))
 
+    def test_fixed_external_origin_with_dynamic_path_is_not_gateway_http(self):
+        def scan(source):
+            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        source = "import urllib.request\nORIGIN='https://api.upcloud.com/1.3/'\ndef request(method,path):\n    gateway_node_id=1\n    urllib.request.Request(ORIGIN+path,method=method)\n"
+        self.assertEqual(scan(source), [])
+        for variant in [
+            source.replace('api.upcloud.com/1.3/', 'gateway.orbit/api/v1/'),
+            source.replace('https://api.upcloud.com/1.3/', 'https://api.upcloud.com'),
+            source.replace('def request(method,path):', 'def request(method,path,ORIGIN):'),
+            source.replace('    gateway_node_id=1', "    ORIGIN=path\n    gateway_node_id=1"),
+            source.replace('ORIGIN+path', 'path+ORIGIN'),
+            source.replace('ORIGIN+path', 'urllib.parse.urljoin(ORIGIN,path)'),
+            source + "ORIGIN='https://gateway.orbit/api/v1/'\nrequest('GET','private-material')\n",
+            source + "def change():\n    global ORIGIN\n    ORIGIN='https://gateway.orbit/api/v1/'\nchange()\nrequest('GET','private-material')\n",
+        ]:
+            self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(variant)), variant)
+
+    def test_only_proven_named_host_tool_flocks_are_not_workflow_mutexes(self):
+        def scan(source):
+            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        source = "import os,fcntl\nfd=os.open('/run/lock/orbit-firewall.lock',os.O_RDWR)\nfcntl.flock(fd,fcntl.LOCK_EX)\n"
+        self.assertEqual(scan(source), [])
+        self.assertEqual(scan(source.replace('fcntl.LOCK_EX)', 'fcntl.LOCK_EX|fcntl.LOCK_NB)')), [])
+        self.assertEqual(scan(source.replace('orbit-firewall', 'orbit-self-update')), [])
+        self.assertEqual(scan("from pathlib import Path\nimport fcntl\nROOT=Path('/run/orbit')\nlock=ROOT/'project-documents'/'execution.lock'\nwith lock.open('r+b') as held:\n    fcntl.flock(held,fcntl.LOCK_EX|fcntl.LOCK_NB)\n"), [])
+        self.assertEqual(scan("import os,fcntl\nlock='/run/lock/orbit-self-update.lock'\nfd=os.open(lock,os.O_RDWR)\nwith os.fdopen(fd,'r+b') as held:\n    fcntl.flock(held,fcntl.LOCK_EX)\n"), [])
+        for variant in [
+            source.replace('orbit-firewall', 'workflow'),
+            source.replace("'/run/lock/orbit-firewall.lock'", "os.environ['LOCK']"),
+            source.replace('fcntl.LOCK_EX)', 'fcntl.LOCK_SH)'),
+            source.replace('fcntl.flock(fd', 'fcntl.flock(other_fd'),
+            source.replace('fcntl.flock(fd', "fd=os.open('/tmp/other',os.O_RDWR)\nfcntl.flock(fd"),
+            source.replace('fcntl.flock(fd', "if condition:\n    fd=os.open('/tmp/other',os.O_RDWR)\nfcntl.flock(fd"),
+            source.replace('fcntl.flock(fd', "while True:\n    fcntl.flock(fd"),
+            source + "import time\ntime.sleep(1)\n",
+            source + "for attempt in range(3):\n    pass\n",
+        ]:
+            self.assertTrue(any(row['rule'] == 'custom-control' for row in scan(variant)), variant)
+
+    def test_late_outer_fd_rebinding_is_not_a_proven_tool_lock(self):
+        source = "import os,fcntl\nfd=os.open('/run/lock/orbit-firewall.lock',os.O_RDWR)\ndef acquire():\n    fcntl.flock(fd,fcntl.LOCK_EX)\nfd=os.open('/tmp/workflow.lock',os.O_RDWR)\nacquire()\n"
+        result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+        self.assertTrue(any(row['rule'] == 'custom-control' for row in json.loads(result.stdout)))
+
     def test_agent_executable_context_in_python_subprocesses_and_remote_commands(self):
         inventory = json.dumps({"agent.status": "observer", "cli.install": "action"})
         def scan(source):
@@ -93,6 +139,17 @@ class ShapeGate(unittest.TestCase):
             source.write_text("export const behavior={type:'@example/old'};\n")
             self.assertNotEqual(gate().returncode, 0, "Resolved debt must remove its allowance")
             self.assertEqual(gate("--write-baseline").returncode, 0)
+            # Native Python controls are owned by the AST helper, not counted
+            # again from shell heredoc tokens. A host lock is clean; a mutex is not.
+            native = "python3 - <<'PY'\nimport fcntl\nimport os\n\nfd = os.open('/run/lock/orbit-firewall.lock', os.O_RDWR)\nfcntl.flock(fd, fcntl.LOCK_EX)\nPY\n"
+            workflow_path = swamp / "workflows/clean.yaml"
+            workflow_path.write_text("name: clean\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: command/shell, inputs: {run: " + json.dumps(native) + "}}\n")
+            git("add", ".")
+            self.assertEqual(gate().returncode, 0)
+            workflow_path.write_text(workflow_path.read_text().replace("orbit-firewall", "workflow"))
+            self.assertNotEqual(gate().returncode, 0)
+            workflow_path.write_text(workflow_path.read_text().replace("workflow.lock", "orbit-firewall.lock"))
+            git("add", ".")
             # Renaming cannot move the old file's allowance to a new path.
             source.rename(source.with_name("renamed.ts"))
             source.with_name("renamed.ts").write_text("await delay(10);\n")
