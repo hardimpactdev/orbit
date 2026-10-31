@@ -69,6 +69,7 @@ export async function converge(
   const snapshot = FootprintSnapshot.parse(operation.input._footprint);
   for (const artifact of snapshot.artifacts) {
     if (!artifact.required) continue;
+    if (artifact.error_code) return await finish();
     const step = `footprint-${artifact.name}`;
     if (Object.hasOwn(operation.step_results, step)) {
       const previous = ResultObject.parse(

@@ -81,3 +81,18 @@ identity and Settings scopes, and Cluster-owned Router candidates remain
 Provisioning until the Cluster commits them. Existing synchronous
 enrollment/removal/role callers and executor-Node recovery are unchanged by
 these child admissions.
+
+An unavailable required collector is an ordered failure boundary in the prepared
+footprint. Earlier artifacts, including protected agent configuration and its
+selected worker installation, still require normal proof. At the unavailable
+artifact the workflow requests the final Gateway evidence and fails with
+`operation.kind_unavailable`; it admits no missing-kind child, records no
+collector digest and does not report that artifact skipped or applied. Later
+effects do not run. This keeps worker installation independent of an unrelated
+collector capability without claiming full footprint success.
+
+This reader ships as `@nckrtl/operation-node` version `2026.10.31.1`. Before a
+fresh enrollment uses a snapshot with an unavailable artifact, confirm that the
+normal runtime load exposes and executes this exact behavior version and source.
+Disk source acceptance alone does not prove the worker's in-memory method was
+refreshed. No registry patch or manual restart is part of this change.
