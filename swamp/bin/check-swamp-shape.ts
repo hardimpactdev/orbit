@@ -46,6 +46,8 @@ type Analysis = {
   types: string[];
   workflowNames: string[];
   workflowRefs: string[];
+  modelNames: string[];
+  modelRefs: string[];
   inlineLines: number;
   loops: number;
   agentActions: number;
@@ -57,6 +59,8 @@ const empty = (): Analysis => ({
   types: [],
   workflowNames: [],
   workflowRefs: [],
+  modelNames: [],
+  modelRefs: [],
   inlineLines: 0,
   loops: 0,
   agentActions: 0,
@@ -1450,6 +1454,33 @@ export function analyzeYaml(
     result.unknown = true;
     return result;
   }
+  // The binding guide approves one visible Route private-DNS TTL grace.
+  // This is an exact source contract, never a file/rule grandfather cap.
+  const routeDnsGrace = (path: string[]) => {
+    if (
+      file !== "workflows/workflow-route-dns-grace.yaml" ||
+      path.join(".") !== "jobs.0.steps.0.task.inputs.run" ||
+      !Array.isArray(data.jobs) || data.jobs.length !== 1
+    ) return false;
+    const job = object(data.jobs[0]);
+    if (
+      job.name !== "grace" || !Array.isArray(job.steps) ||
+      job.steps.length !== 1
+    ) return false;
+    const step = object(job.steps[0]);
+    const labels = object(step.labels), task = object(step.task);
+    const inputs = object(task.inputs);
+    return step.name === "wait-private-dns-ttl" &&
+      step.target === "orbit-node-209" &&
+      Object.keys(labels).join() === "node" && labels.node === "209" &&
+      Object.keys(task).sort().join() ===
+        "behaviorName,behaviorType,inputs,methodName,type" &&
+      task.type === "behavior" && task.behaviorType === "command/shell" &&
+      task.behaviorName === "route-dns-grace" &&
+      task.methodName === "execute" &&
+      Object.keys(inputs).join() === "run" &&
+      inputs.run === "/usr/bin/sleep 31";
+  };
   // Official @swamp/ssh 2026.10.23.1 marks precisely this transport field
   // sensitive and consumes it natively. Do not extend this to method inputs.
   const sshIdentity = (path: string[]) => {
@@ -1558,7 +1589,7 @@ export function analyzeYaml(
             block[2].replace(/[^\n]/g, " ") +
             shellControls.slice(start + block[2].length);
         }
-        const controlsFound = shellControls.match(
+        const controlsFound = routeDnsGrace(path) ? [] : shellControls.match(
           /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
         ) ?? [];
         for (const _ of controlsFound) {
@@ -1602,6 +1633,20 @@ export function analyzeYaml(
     }
   };
   walk(data, []);
+  if (file.startsWith("models/")) {
+    result.modelNames = [data.id, data.name].filter((
+      value,
+    ): value is string => typeof value === "string" && value.length > 0);
+    if (
+      typeof data.type === "string" && data.type.startsWith("@") &&
+      !/\$\{\{|\}\}/.test(data.type)
+    ) {
+      result.types.push(data.type);
+    } else if (data.type !== "command/shell") {
+      add("unknown-behavior");
+      result.unknown = true;
+    }
+  }
   if (file.startsWith("workflows/")) {
     result.workflowNames = [data.id, data.name].filter((
       value,
@@ -1636,7 +1681,14 @@ export function analyzeYaml(
         const type = task.behaviorType ?? task.modelType ??
           (["behavior", "model_method"].includes(String(task.type)) &&
             (task.behavior ?? task.modelIdOrName));
-        if (typeof type === "string" && type.startsWith("@")) {
+        if (
+          task.type === "model_method" && !task.modelType &&
+          typeof task.modelIdOrName === "string" &&
+          task.modelIdOrName.length > 0 &&
+          !/\$\{\{|\}\}/.test(task.modelIdOrName)
+        ) {
+          result.modelRefs.push(task.modelIdOrName);
+        } else if (typeof type === "string" && type.startsWith("@")) {
           result.types.push(type);
         } else if (
           ["behavior", "model_method"].includes(String(task.type)) &&
@@ -2028,12 +2080,30 @@ export function analyze(
     }
   }
   const workflows = new Map<string, string[]>();
+  const models = new Map<string, string[]>();
   for (const [file, a] of analyses) {
     for (const name of a.workflowNames) {
       workflows.set(name, [...new Set([...(workflows.get(name) ?? []), file])]);
     }
+    for (const name of a.modelNames) {
+      models.set(name, [...new Set([...(models.get(name) ?? []), file])]);
+    }
   }
   for (const [file, a] of analyses) {
+    for (const reference of a.modelRefs) {
+      const matches = models.get(reference) ?? [];
+      if (matches.length === 1) a.imports.push(matches[0]);
+      else {
+        a.unknown = true;
+        a.findings.push({
+          file,
+          rule: "unknown-behavior",
+          count: 1,
+          line: 1,
+          evidence: [reference],
+        });
+      }
+    }
     for (const reference of a.workflowRefs) {
       const matches = workflows.get(reference) ?? [];
       if (matches.length === 1) a.imports.push(matches[0]);
@@ -2314,6 +2384,7 @@ if (import.meta.main) {
       units: {
         inline_script_lines: "decoded_script_lines_by_source_literal",
         custom_loops: "syntactic_control_sites",
+        gateway_client_files: "files_with_gateway_http_findings",
         agent_action_calls: "syntactic_call_sites",
         agent_unknown_calls: "syntactic_call_sites",
         workflows: "workflow_files",
@@ -2327,6 +2398,9 @@ if (import.meta.main) {
           (n, e) => n + e.count,
           0,
         ),
+      gateway_client_files: new Set(
+        entries.filter((e) => e.rule === "gateway-http").map((e) => e.file),
+      ).size,
       agent_action_calls: entries.filter((e) => e.rule === "agent-action")
         .reduce((n, e) => n + e.count, 0),
       agent_unknown_calls: entries.filter((e) => e.rule === "agent-dynamic")
@@ -2340,7 +2414,7 @@ if (import.meta.main) {
     };
     console.log(JSON.stringify(metrics));
     console.log(
-      `SHAPE-GATE workflows_passing=${coverage.clean}/${coverage.total} grandfathered=${entries.length} baseline_accepted=${coverage.baseline_accepted} unknown=${coverage.unknown} source_moves=${moves.length}`,
+      `SHAPE-GATE workflows_passing=${coverage.clean}/${coverage.total} grandfathered=${entries.length} embedded_lines=${metrics.inline_script_lines} custom_loops=${metrics.custom_loops} gateway_client_files=${metrics.gateway_client_files}`,
     );
     if (option("--report")) {
       await Deno.writeTextFile(

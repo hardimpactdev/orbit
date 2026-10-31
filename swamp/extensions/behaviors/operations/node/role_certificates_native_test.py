@@ -24,7 +24,7 @@ class RoleCertificatesNative(NativeTestCase):
         module = self.repo / "extensions/behaviors/operations/certificates/mod.ts"
         module.write_text('import {fixtureSignBatch,fixtureRoleActions} from "../node/role_certificates_native_fixture.ts";\n' +
                           module.read_text().replace('export const behavior = { ...certificates(), type: "@nckrtl/certificates" };',
-                              'export const behavior = certificates(undefined,undefined,fixtureSignBatch,fixtureRoleActions());'))
+                              'export const behavior = certificates(undefined,fixtureSignBatch,fixtureRoleActions());'))
         script = '''import {roleCertificateJobs} from "./extensions/behaviors/operations/node/role_certificates_workflow.ts";
 const generated=roleCertificateJobs("prepared");
 console.log(JSON.stringify({id:"c466ef02-dae7-4309-bf18-a38c11a6777c",name:"role-certificate-fixture",inputs:{type:"object",properties:{operation_id:{type:"integer"},node_id:{type:"integer"},kind:{type:"string"}},required:["operation_id","node_id","kind"]},jobs:[{name:"prepared",steps:[{name:"prepared",task:{type:"assert",expr:"true",severity:"high",message:"prepared"}}]},...generated.jobs]}));'''
@@ -73,10 +73,12 @@ console.log(JSON.stringify({id:"c466ef02-dae7-4309-bf18-a38c11a6777c",name:"role
         self.assertEqual(record["target"], '${{ "orbit-node-" + string(inputs.node_id) }}')
         self.assertEqual(record["labels"], {"node": '${{ string(inputs.node_id) }}'})
 
-    def test_current_certificates_skip_vault_signing_but_still_publish_and_record(self):
+    def test_current_certificates_decode_an_empty_public_batch_and_publish_skipped(self):
         self.state["current"] = True
         calls = self.run_root()
-        self.assertNotIn("signBatch", [call["method"] for call in calls])
+        batches = [call for call in calls if call["method"] == "signBatch"]
+        self.assertEqual(1, len(batches))
+        self.assertTrue(all(request["state"] == "current" for request in batches[0]["requests"]))
         self.assertEqual([call["signed"] for call in calls if call["method"] == "rolePublish"],
                          [{"skipped": True}, {"skipped": True}])
 

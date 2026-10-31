@@ -130,21 +130,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/inventory.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/inventory.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "curl",
-        "git"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/maintenance_worker.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -283,12 +268,6 @@
       "evidence": [
         "lock"
       ]
-    },
-    {
-      "file": "extensions/behaviors/native_host_method.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/native_host_method.ts",
@@ -627,14 +606,6 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/certificates/mod.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/certificates/role-actions.ts",
@@ -1857,18 +1828,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/node/agent_configure_system.ts",
@@ -3577,21 +3536,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/orbit_deps.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/orbit_driver.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/orbit_gateway.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3601,18 +3545,6 @@
     },
     {
       "file": "extensions/behaviors/orbit_group_run.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/orbit_group_runs.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/orbit_stage.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
@@ -3689,18 +3621,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-dependency-results-prune.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -3719,18 +3639,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-horizon-new-dawn-detect.yaml",
-      "rule": "unknown-behavior",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-maintenance-workers.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-production-smoke.yaml",
       "rule": "unknown-behavior",
       "count": 4,
@@ -3743,50 +3651,8 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-stage-consult.yaml",
-      "rule": "unknown-behavior",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-handoff.yaml",
-      "rule": "unknown-behavior",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-implement.yaml",
-      "rule": "unknown-behavior",
-      "count": 5,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-stage-implement.yaml",
       "rule": "vault-placement",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-mechanical.yaml",
-      "rule": "unknown-behavior",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-review.yaml",
-      "rule": "unknown-behavior",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-subtask-driver.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-subtasks-driver.yaml",
-      "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
     }

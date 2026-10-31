@@ -5,6 +5,7 @@ use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\NativeCaddyPublicationProjection;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
+use App\Domain\Routes\NativeRouteLanRemovalProjection;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetProjection;
@@ -35,8 +36,8 @@ return [
         'writer_state' => 'route_target_unset_writer', 'projection' => RouteOperationProjection::class,
     ],
     'route.lan_remove' => [
-        'workflow' => 'operation-route-lan-remove', 'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'route_lan_writer', 'projection' => RouteOperationProjection::class,
+        'workflow' => 'operation-route-lan-remove', 'projection' => NativeRouteLanRemovalProjection::class,
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'withdrawal', 'step' => 'remove-lan'],
     ],
     'route.caddy_converge' => [
         'workflow' => 'operation-route-caddy', 'projection' => NativeCaddyPublicationProjection::class,

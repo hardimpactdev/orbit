@@ -66,7 +66,7 @@ function nativeSubscriberAttached(array $request): array
 }
 
 beforeEach(function (): void {
-    config(['swamp.run_token' => 'private-native-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+    config(['swamp.run_token' => 'private-native-token', 'swamp.read_token' => 'private-native-read-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
 });
 
 it('delivers a large native terminal frame over verified TLS then projects one large history response', function (string $status): void {

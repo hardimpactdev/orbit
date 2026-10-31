@@ -12,9 +12,9 @@ use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\ManagedTlsProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteCertificateStaging;
-use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePreparedWorkloads;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -47,7 +47,7 @@ final readonly class DevelopmentSiteRepository
      */
     public function forNode(Node $node): Collection
     {
-        return $this->sites($node);
+        return app(RoutePublicationSites::class)->current()?->where('nodeId', $node->id)->values() ?? $this->sites($node);
     }
 
     /** Resource paths for preparing an admitted workload, before its site is published. */
@@ -59,7 +59,74 @@ final readonly class DevelopmentSiteRepository
     /** @return Collection<int, DevelopmentSite> */
     public function all(): Collection
     {
-        return $this->sites(null);
+        return app(RoutePublicationSites::class)->current() ?? $this->sites(null);
+    }
+
+    /** Render an admitted prospective Project Route through the same site policy as stored Routes.
+     * @return list<DevelopmentSite>
+     */
+    public function projectSites(Route $route): array
+    {
+        return array_values($this->withWebSockets($this->withoutDuplicateSecondarySites(
+            collect($this->projectSitesWithRouters($route, $this->routerTransitions->secondRouters())),
+        ))->all());
+    }
+
+    /** Render one admitted Route through its owning site policy.
+     * @return list<DevelopmentSite>
+     */
+    public function routeSites(Route $route): array
+    {
+        return array_values($this->withWebSockets($this->withoutDuplicateSecondarySites(
+            collect($this->routeSitesWithRouters($route, $this->routerTransitions->secondRouters())),
+        ))->all());
+    }
+
+    /** @param array<int,list<Node>> $secondRouters
+     * @return list<DevelopmentSite>
+     */
+    private function routeSitesWithRouters(Route $route, array $secondRouters): array
+    {
+        if ($route->isCustomProxy()) {
+            $site = $this->customProxySite($route);
+
+            return $site instanceof DevelopmentSite ? [$site] : [];
+        }
+        if (! $route->isAnalyticsTracking()) {
+            return $this->projectSitesWithRouters($route, $secondRouters);
+        }
+        $router = $route->cluster?->routerAssignment?->node;
+        $sites = [...$this->analyticsTrackingSites($route, $route->cluster_id === null ? $route->node : $router),
+            ...$this->analyticsTrackingTransitionSites($route)];
+        foreach (($route->cluster_id === null ? [] : ($secondRouters[$route->cluster_id] ?? [])) as $secondRouter) {
+            array_push($sites, ...$this->routerScopeSites($route, $secondRouter,
+                $this->analyticsTrackingSites($route, $secondRouter, includeIngress: false)));
+        }
+
+        return $sites;
+    }
+
+    /** @param array<int,list<Node>> $secondRouters
+     * @return list<DevelopmentSite>
+     */
+    private function projectSitesWithRouters(Route $route, array $secondRouters): array
+    {
+        $router = $route->cluster?->routerAssignment?->node;
+        $sites = $this->projectRouteSites($route, $router,
+            stagesWorkload: RouteCertificateStaging::workload($route), stagesRouter: RouteCertificateStaging::router($route));
+        foreach (($route->cluster_id === null ? [] : ($secondRouters[$route->cluster_id] ?? [])) as $secondRouter) {
+            array_push($sites, ...$this->routerScopeSites($route, $secondRouter, $this->projectRouteSites(
+                $route, $secondRouter, stagesWorkload: RouteCertificateStaging::workload($route),
+                stagesRouter: RouteCertificateStaging::router($route),
+            )));
+        }
+        array_push($sites, ...$this->secondPlacementSites($route));
+        $unavailable = $this->unavailableSite($route, $router);
+        if ($unavailable instanceof DevelopmentSite) {
+            $sites[] = $unavailable;
+        }
+
+        return $sites;
     }
 
     /** @return Collection<int, DevelopmentSite> */
@@ -152,57 +219,7 @@ final readonly class DevelopmentSiteRepository
 
         $routes = $routeQuery->orderBy('id')->get();
         foreach ($routes as $route) {
-            if ($route->kind === RouteKind::CustomProxy) {
-                $site = $this->customProxySite($route);
-
-                if ($site instanceof DevelopmentSite) {
-                    $sites->push($site);
-                }
-
-                continue;
-            }
-
-            $router = $route->cluster?->routerAssignment?->node;
-            $clusterSecondRouters = is_int($route->cluster_id) ? ($secondRouters[$route->cluster_id] ?? []) : [];
-
-            if ($route->kind === RouteKind::AnalyticsTracking) {
-                $sites->push(...$this->analyticsTrackingSites($route, $route->cluster_id === null ? $route->node : $router));
-                $sites->push(...$this->analyticsTrackingTransitionSites($route));
-
-                foreach ($clusterSecondRouters as $secondRouter) {
-                    $sites->push(...$this->routerScopeSites(
-                        $route,
-                        $secondRouter,
-                        $this->analyticsTrackingSites($route, $secondRouter, includeIngress: false),
-                    ));
-                }
-
-                continue;
-            }
-
-            $sites->push(...$this->projectRouteSites(
-                $route,
-                $router,
-                stagesWorkload: RouteCertificateStaging::workload($route),
-                stagesRouter: RouteCertificateStaging::router($route),
-            ));
-
-            foreach ($clusterSecondRouters as $secondRouter) {
-                $sites->push(...$this->routerScopeSites($route, $secondRouter, $this->projectRouteSites(
-                    $route,
-                    $secondRouter,
-                    stagesWorkload: RouteCertificateStaging::workload($route),
-                    stagesRouter: RouteCertificateStaging::router($route),
-                )));
-            }
-
-            $sites->push(...$this->secondPlacementSites($route));
-
-            $unavailable = $this->unavailableSite($route, $router);
-
-            if ($unavailable instanceof DevelopmentSite) {
-                $sites->push($unavailable);
-            }
+            $sites->push(...$this->routeSitesWithRouters($route, $secondRouters));
         }
 
         foreach (new RoutePreparedWorkloads()->sites($node?->id) as $prepared) {
@@ -211,12 +228,7 @@ final readonly class DevelopmentSiteRepository
             $sites->push($site);
         }
 
-        $bindings = WebSocketAppTarget::query()->with(['route', 'webSocketApp'])->whereNotNull('route_id')->get();
-        $sites = $sites->map(static function (DevelopmentSite $site) use ($bindings): DevelopmentSite {
-            $binding = $bindings->first(static fn ($target): bool => $target->route?->domain === $site->domain);
-
-            return $binding === null ? $site : $site->withWebSocket($binding->webSocketApp->key, $binding->webSocketApp->pusherId());
-        });
+        $sites = $this->withWebSockets($sites);
         $sites = $this->withoutDuplicateSecondarySites($sites);
 
         if ($node instanceof Node) {
@@ -224,6 +236,20 @@ final readonly class DevelopmentSiteRepository
         }
 
         return $sites->values();
+    }
+
+    /** @param Collection<int,DevelopmentSite> $sites
+     * @return Collection<int,DevelopmentSite>
+     */
+    private function withWebSockets(Collection $sites): Collection
+    {
+        $bindings = WebSocketAppTarget::query()->with(['route', 'webSocketApp'])->whereNotNull('route_id')->get();
+
+        return $sites->map(static function (DevelopmentSite $site) use ($bindings): DevelopmentSite {
+            $binding = $bindings->first(static fn ($target): bool => $target->route?->domain === $site->domain);
+
+            return $binding === null ? $site : $site->withWebSocket($binding->webSocketApp->key, $binding->webSocketApp->pusherId());
+        });
     }
 
     /**

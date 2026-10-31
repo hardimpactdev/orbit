@@ -1,95 +1,349 @@
-"""Real native certificate DAG checkpoints; local fake boundary, no live secrets."""
-import json
-import yaml
-import shutil
-from pathlib import Path
-import sys
-import unittest
-ROOT=Path(__file__).resolve().parents[4]
-sys.path.insert(0,str(ROOT/'tests'))
-from native_harness import NativeTestCase
+"""Native certificate roots using unmodified official SSH and real OpenSSL."""
 
-class CertificateNative(NativeTestCase):
+import base64
+import http.server
+import importlib.util
+import json
+import os
+import shutil
+import ssl
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[4]
+spec = importlib.util.spec_from_file_location(
+    "native_harness", ROOT / "tests/native_harness.py"
+)
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+
+
+class Certificates(harness.NativeTestCase):
+    native_timeout = 120
+
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy','operations/_lib','operations/certificates')
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./certificates/native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
-        local=self.repo/'extensions/behaviors/operations/routes';local.mkdir(parents=True)
-        for filename in ('local-program.ts','caddy-program.ts'): shutil.copy(ROOT/'extensions/behaviors/operations/routes'/filename,local)
-        module=self.repo/'extensions/behaviors/operations/certificates/mod.ts'
-        module.write_text('import {fixtureHttp,fixtureAgent,fixtureSign,fixtureRole} from "./native_fixture.ts";\n'+module.read_text().replace('z.string().min(1).optional()', 'z.string().min(1).default("disposable-fixture")').replace('...certificates()', '...certificates(() => fixtureHttp, certificateActions(fixtureAgent), fixtureSign, roleCertificateActions(fixtureRole))'))
-        for kind in ('converge','remove'):
-            source=ROOT/f'workflows/workflow-operation-certificate-{kind}.yaml'
-            workflow=yaml.safe_load(source.read_text())
-            for job in workflow['jobs']:
-                for step in job['steps']:step.pop('target',None);step.pop('labels',None)
-            (self.repo/'workflows'/source.name).write_text(yaml.safe_dump(workflow,sort_keys=False))
-        self.state={'operation':{'id':19,'kind':'certificate.converge','node_id':2,'status':'queued','cancel_requested':False,'input':{'node_id':2,'scope':'route-8-router','home':'/home/orbit','agent_sha256':'a'*64,'domain':'private.test','version':'0123456789abcdef','root_hash':'b'*64,'user':'orbit'}},'present':False,'commands':[],'calls':[],'signs':0}
-        self.save()
-    def save(self): (self.repo/'native-certificates.json').write_text(json.dumps(self.state))
-    def read(self): return json.loads((self.repo/'native-certificates.json').read_text())
-    def run_workflow(self,kind='converge',success=True):
-        name='operation-certificate-'+kind
-        self.cli('workflow','validate',name)
-        result=self.cli('workflow','run',name,'--input','operation_id=19','--input','node_id=2','--input','kind=certificate.'+kind,success=success)
-        return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-    def test_convergence_has_separate_native_steps_and_only_public_signing(self):
-        self.run_workflow()
-        state=self.read()
-        self.assertEqual(state['commands'],['certificate.request-leaf','certificate.publish-leaf','certificate.inspect-leaf'])
-        self.assertEqual(state['operation']['result'],{'present':True})
-        self.assertEqual(state['signs'],1)
-        self.assertTrue(all('/direct-operations/'in path for path in state['calls']))
-    def test_current_leaf_skips_signing_and_publication(self):
-        self.state.update(current=True,present=True);self.save();self.run_workflow()
-        self.assertEqual(self.read()['commands'],['certificate.request-leaf','certificate.inspect-leaf'])
-        self.assertEqual(self.read()['signs'],0)
-    def test_lost_projection_resumes_without_new_node_effect(self):
-        self.state['loseProjection']=True;self.save()
-        run=self.run_workflow(success=False)
-        before=self.read()['commands']
-        self.cli('workflow','resume','operation-certificate-converge','--run',run,'--from','project')
-        self.assertEqual(self.read()['commands'],before)
-    def test_remove_has_local_effect_and_absence_inspection(self):
-        self.state['operation'].update(kind='certificate.remove',input={k:v for k,v in self.state['operation']['input'].items()if k in ('node_id','scope','home','user','agent_sha256')})
-        self.state['operation']['input']['in_use']=False
-        self.state['present']=True;self.save();self.run_workflow('remove')
-        self.assertEqual(self.read()['commands'],['certificate.remove-leaf','certificate.inspect-leaf'])
-        self.assertEqual(self.read()['operation']['result'],{'present':False})
-    def test_cancelled_before_effect_has_no_agent_command(self):
-        self.state['operation']['cancel_requested']=True;self.save();self.run_workflow()
-        self.assertEqual(self.read()['commands'],[])
-        self.assertEqual(self.read()['operation']['status'],'cancelled')
-    def test_home_less_admission_keeps_user_through_convergence_and_removal(self):
-        self.state['operation']['input'].pop('home');self.save();self.run_workflow()
-        self.assertEqual('succeeded',self.read()['operation']['status'])
-        self.state=self.read();self.state['operation'].update(kind='certificate.remove',status='queued',input={key:value for key,value in self.state['operation']['input'].items() if key in ('node_id','scope','user','agent_sha256')})
-        self.state['operation']['input']['in_use']=False;self.save();self.run_workflow('remove')
-        self.assertEqual('succeeded',self.read()['operation']['status']);self.assertFalse(self.read()['present'])
-    def test_role_csr_sign_and_publication_are_steps_in_the_same_native_root(self):
-        leaf=dict(node_id=9,scope='role-analytics',domain='analytics.orbit',version='0123456789abcdef',root_hash='a'*64)
-        steps=[]
-        for name,method in [('request','roleRequest'),('sign','sign'),('publish','rolePublish')]:
-            inputs=dict(operation_id=19,node_id=2,target_node_id=9,kind='node.role_add',run_id='${{ run.id }}',leaf=leaf)
-            if name=='sign': inputs['native_stdout']='{"certificates":[]}'
-            if name in ('sign','publish'): inputs['request']='${{ steps.request.outputs.request }}'
-            if name=='publish': inputs['signed']='${{ steps.sign.outputs.signed }}'
-            step=dict(name=name,task=dict(type='behavior',behaviorType='@nckrtl/certificates',behaviorName='orbit-certificate-signing' if name=='sign' else 'role-node-9',methodName=method,inputs=inputs))
-            if steps: step['dependsOn']=[dict(step=steps[-1]['name'],condition=dict(type='succeeded'))]
-            steps.append(step)
-        workflow=dict(id='7752c33d-f803-4e90-8baf-a2d08923c460',name='role-certificate-fixture',jobs=[dict(name='role',steps=steps)])
-        (self.repo/'workflows/workflow-role-certificate-fixture.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))
-        self.cli('workflow','validate','role-certificate-fixture')
-        self.cli('workflow','run','role-certificate-fixture')
-        self.assertEqual(['role.request','role.publish'],self.read()['commands'])
-        self.assertEqual(1,self.read()['signs']);self.assertEqual([],self.read()['calls'])
-    def test_shipped_placement_uses_exact_target_for_every_step(self):
-        source=ROOT/'workflows/workflow-operation-certificate-converge.yaml'
-        (self.repo/'workflows'/source.name).write_text(source.read_text())
-        for node in (2,209):
-            result=self.cli('workflow','evaluate','operation-certificate-converge','--input',json.dumps({'operation_id':19,'node_id':node,'kind':'certificate.converge'}))
-            workflow=json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
-            self.assertTrue(all(step['target']==('orbit-node-209' if step['name'] in ('sign','sign-http','sign-http-input') else 'orbit-node-'+str(node)) for step in workflow['jobs'][0]['steps']))
+        self.real_certificate_signing = True
+        self.copy_behaviors("operations/certificates")
+        official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
+        official.parent.mkdir(parents=True)
+        shutil.copytree(ROOT / ".swamp/pulled-extensions/@swamp/ssh", official)
+        inventory = json.loads(
+            (ROOT / "extensions/models/upstream_extensions.json").read_text()
+        )
+        path = self.repo / "extensions/models/upstream_extensions.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"@swamp/ssh": inventory["@swamp/ssh"]}))
+        # The metadata behavior imports only public contracts and its pure decoder.
+        for path in (self.repo / "extensions/behaviors/operations/certificates").glob(
+            "*.ts"
+        ):
+            if path.name not in (
+                "script_assets.ts",
+                "input.ts",
+                "signing.ts",
+                "role-input.ts",
+            ):
+                path.unlink()
+        self.fixture = self.repo / "fixture"
+        self.fixture.mkdir()
+        self.home = self.fixture / "home"
+        self.home.mkdir()
+        scripts = self.repo / "extensions/behaviors/operations/certificates/scripts"
+        common = scripts / "local.py"
+        body = (
+            common.read_text()
+            .replace(
+                'pathlib.Path("/etc/caddy/orbit-certificates")',
+                f"pathlib.Path({str(self.fixture / 'caddy')!r})",
+            )
+            .replace(
+                'pathlib.Path("/usr/local/share/ca-certificates/orbit-managed-root-ca.crt")',
+                f"pathlib.Path({str(self.fixture / 'anchor.pem')!r})",
+            )
+        )
+        body = body.replace(
+            '    user = pwd.getpwnam(raw["user"])',
+            '    user = __import__("types").SimpleNamespace('
+            f"pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir={str(self.home)!r})",
+        )
+        body += "\nos.chown = lambda *args, **kwargs: None\n"
+        common.write_text(body)
+        publication = scripts / "publish.py"
+        publication.write_text(
+            publication.read_text().replace(
+                'grp.getgrnam("caddy").gr_gid', "os.getgid()"
+            )
+        )
+        self.tools = self.fixture / "tools"
+        self.tools.mkdir()
+        self.native_env["PATH"] = str(self.tools) + ":" + os.environ["PATH"]
+        for name, code in {
+            "systemctl": "#!/bin/sh\nexit 0\n",
+            "update-ca-certificates": "#!/bin/sh\nexit 0\n",
+            "caddy": "#!/bin/sh\nprintf '%s\\n' '{\"apps\":{}}'\n",
+        }.items():
+            path = self.tools / name
+            path.write_text(code)
+            path.chmod(0o755)
+        fake = self.tools / "ssh"
+        fake.write_text(
+            "#!"
+            + sys.executable
+            + "\n"
+            + """import os,shlex,subprocess,sys
+from pathlib import Path
+args=sys.argv[1:]
+if '-M' in args or '-O' in args: raise SystemExit(0)
+argv=shlex.split(args[-1])
+if argv[:3]==['sudo','-n','--']: argv=argv[3:]
+if any(str(a).endswith('/inspect.py') for a in argv) and Path(FAIL).exists():
+    raise SystemExit(1)
+result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
+sys.stdout.buffer.write(result.stdout);sys.stderr.buffer.write(result.stderr)
+raise SystemExit(result.returncode)
+""".replace("FAIL", repr(str(self.fixture / "fail-inspect")))
+        )
+        fake.chmod(0o755)
+        scp = self.tools / "scp"
+        scp.write_text(
+            "#!"
+            + sys.executable
+            + "\n"
+            + """import shutil,sys
+from pathlib import Path
+src=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(':',1)[1])
+shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
+"""
+        )
+        scp.chmod(0o755)
+        custody = tempfile.TemporaryDirectory(prefix="certificate-fixture-gateway-")
+        self.addCleanup(custody.cleanup)
+        self.key = Path(custody.name) / "ca.key"
+        self.ca = self.fixture / "ca.pem"
+        self.openssl(
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            self.key,
+            "-out",
+            self.ca,
+            "-days",
+            "400",
+            "-subj",
+            "/CN=fixture CA",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+        )
+        self.signs = []
+        self.refuse = False
+        owner = self
 
-if __name__=='__main__':unittest.main()
+        class Signer(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                raw = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                owner.signs.append((self.path, raw))
+                if owner.refuse:
+                    self.send_response(403)
+                    self.end_headers()
+                    return
+                signed = []
+                for request in raw["requests"]:
+                    csr = owner.fixture / "request.pem"
+                    csr.write_bytes(base64.b64decode(request["request_base64"]))
+                    extensions = owner.fixture / "extensions"
+                    extensions.write_text(
+                        "subjectAltName=DNS:shop.test\nbasicConstraints=critical,CA:FALSE\n"
+                    )
+                    certificate = owner.openssl(
+                        "x509",
+                        "-req",
+                        "-in",
+                        csr,
+                        "-CA",
+                        owner.ca,
+                        "-CAkey",
+                        owner.key,
+                        "-CAcreateserial",
+                        "-days",
+                        "398",
+                        "-extfile",
+                        extensions,
+                    )
+                    signed.append(
+                        dict(
+                            node_id=request["node_id"],
+                            scope=request["scope"],
+                            certificate_base64=base64.b64encode(certificate).decode(),
+                            root_certificate_base64=base64.b64encode(
+                                owner.ca.read_bytes()
+                            ).decode(),
+                        )
+                    )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps({"data": {"certificates": signed}}).encode()
+                )
+
+            def log_message(self, *_):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Signer)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.ca, self.key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.secrets = (self.key.read_text(),)
+        for kind in ("converge", "remove"):
+            production = yaml.safe_load(
+                (
+                    ROOT / f"workflows/workflow-operation-certificate-{kind}.yaml"
+                ).read_text()
+            )
+            for step in production["jobs"][0]["steps"]:
+                step.pop("target", None)
+                step.pop("labels", None)
+                task = step["task"]
+                if task["behaviorType"] == "@swamp/ssh":
+                    task["globalArgs"].update(sshBinary=str(fake), scpBinary=str(scp))
+                if task["behaviorType"] == "command/shell":
+                    task["inputs"]["run"] = (
+                        task["inputs"]["run"]
+                        .replace(
+                            "https://gateway.orbit",
+                            f"https://127.0.0.1:{server.server_port}",
+                        )
+                        .replace(
+                            "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+                            str(self.ca),
+                        )
+                    )
+            # Only disposable paths, placement and documented executable seams differ.
+            raw = yaml.safe_dump(production, sort_keys=False).replace(
+                "/tmp/orbit-certificate-", str(self.fixture / "staging-")
+            )
+            (
+                self.repo / f"workflows/workflow-operation-certificate-{kind}.yaml"
+            ).write_text(raw)
+        self.leaf = dict(
+            node_id=9,
+            user="orbit",
+            scope="route-7-router",
+            domain="shop.test",
+            version="0123456789abcdef",
+            root_hash=__import__("hashlib").sha256(self.ca.read_bytes()).hexdigest(),
+            agent_sha256="a" * 64,
+        )
+
+    def openssl(self, *args):
+        return subprocess.run(
+            ["openssl", *map(str, args)], check=True, capture_output=True
+        ).stdout
+
+    def run_workflow(self, kind="converge", success=True):
+        leaf = (
+            self.leaf
+            if kind == "converge"
+            else {
+                **{
+                    k: self.leaf[k]
+                    for k in ("node_id", "scope", "user", "agent_sha256")
+                },
+                "in_use": False,
+            }
+        )
+        intent = dict(
+            leaf=leaf,
+            control_node_id=2,
+            connection=dict(
+                nodeHost="fixture",
+                nodeUser="orbit",
+                nodeIdentityFile=str(self.fixture / "existing-identity"),
+            ),
+        )
+        (self.fixture / "existing-identity").write_text("synthetic identity never used")
+        name = "operation-certificate-" + kind
+        self.cli("workflow", "validate", name)
+        return json.loads(
+            self.cli(
+                "workflow",
+                "run",
+                name,
+                "--input",
+                "operation_id=19",
+                "--input",
+                "node_id=9",
+                "--input",
+                "kind=certificate." + kind,
+                "--input",
+                "intent=" + json.dumps(intent),
+                "--input",
+                "execution_secrets={}",
+                success=success,
+            ).stdout
+        )
+
+    def test_fresh_current_and_removal_use_official_ssh_and_one_parent_signer(self):
+        first = self.run_workflow()
+        self.assertEqual("succeeded", first["status"])
+        self.assertEqual(1, len(self.signs))
+        self.assertEqual(first["id"], self.signs[0][1]["run_id"])
+        second = self.run_workflow()
+        states = {s["name"]: s["status"] for s in second["jobs"][0]["steps"]}
+        self.assertEqual("skipped", states["sign-http"])
+        self.assertEqual("skipped", states["publish"])
+        self.assertEqual(1, len(self.signs))
+        self.assertEqual("succeeded", self.run_workflow("remove")["status"])
+        self.assertFalse((self.home / ".orbit/certificates/route-7-router").exists())
+        self.assertEqual([], list(self.fixture.glob("staging-*")))
+
+    def test_signer_refusal_makes_no_publication_or_hidden_callback(self):
+        self.refuse = True
+        failed = self.run_workflow(success=False)
+        self.assertEqual("failed", failed["status"])
+        self.assertEqual(1, len(self.signs))
+        self.assertFalse(
+            (self.home / ".orbit/certificates/route-7-router/current").exists()
+        )
+        self.assertEqual(
+            "/api/v1/direct-operations/19/certificates/sign", self.signs[0][0]
+        )
+
+    def test_native_inspection_resume_preserves_the_key_without_signing_again(self):
+        (self.fixture / "fail-inspect").touch()
+        failed = self.run_workflow(success=False)
+        key = self.home / ".orbit/certificates/route-7-router/current/key.pem"
+        before = key.read_bytes()
+        (self.fixture / "fail-inspect").unlink()
+        resumed = json.loads(
+            self.cli(
+                "workflow",
+                "resume",
+                "operation-certificate-converge",
+                "--run",
+                failed["id"],
+                "--from",
+                "inspect",
+            ).stdout
+        )
+        self.assertEqual("succeeded", resumed["status"])
+        self.assertEqual(before, key.read_bytes())
+        self.assertEqual(1, len(self.signs))
+
+
+if __name__ == "__main__":
+    unittest.main()

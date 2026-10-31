@@ -74,3 +74,17 @@ existing owned version link is accepted only within that role's fixed versions
 directory. The shared Caddy lock covers key preparation and each complete
 publication transaction, including reload and rollback. The Gateway projects
 role state only after the native stages succeed.
+
+## Native leaf actions and the official certificate extension
+
+Standalone leaf workflows receive the complete public intent and return one public presence result through the shared terminal subscriber. They use Swamp command steps for Node-local actions and the official `@swamp/ssh` extension for remote actions. There is no family subscriber, intent callback, status callback or private-key resource.
+
+Official `@swamp/cfgmgmt/certificate` was checked at upstream `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. Its check/apply methods require both `certContent` and sensitive `keyContent`. They cannot generate a CSR or publish against an existing Node-local key path. Using that deployment interface would move the leaf private key out of its existing Node-local custody. The remaining scripts use OpenSSL for this specific gap: request a CSR with the local key, publish the returned public certificate beside that key, inspect the pair, or remove the admitted scope. They do not implement SSH, retry, scheduling or signing policy. The Gateway owns certificate policy.
+
+`@nckrtl/certificate-script-assets.read({node_id,intent})` returns `input_json` and `request_script`, `publish_script`, `remove_script`, `inspect_script` and `trust_script`. The manifest ships the Python files. Metadata and command steps use the same worker. Set public `ORBIT_CERTIFICATE_INPUT` to `input_json`; request stdout is `{state:"current"}` or `{state:"request",request_base64}`. `decodeRequest({leaf,stdout})` returns the public CSR record. Publication also takes public `ORBIT_CERTIFICATE_SIGNED`. Inspection takes public `ORBIT_CERTIFICATE_EXPECT_PRESENT` and prints `{present}`. Trust installation and Caddy reload are separate native actions after publication. Current leaves skip signing and publication; native resume keeps the existing candidate key.
+
+Before removal, the parent must finish its Caddy withdrawal and successful reload on that Node. The removal action then runs `caddy adapt` against the current local Caddyfile and refuses scopes referenced by `load_files` or `load_folders`. A failed configuration read refuses deletion. Admission-time `in_use:false` is necessary but not sufficient. No Gateway read supplies this check.
+
+Standalone workflows use the existing Gateway control worker and managed SSH identity path through official `@swamp/ssh` defaults. They create and copy a run-specific public script directory, run each action as an official SSH exec step, and remove that directory on success. Failed roots retain their scripts for native resume. No worker key, CA copy, SSH wrapper or connection supervisor is introduced. Node1/18 use this same official transport. The full public envelope is `{intent:{leaf,control_node_id,connection},execution_secrets:{}}`; the stored leaf input and signing authorization remain unchanged.
+
+Standalone removal reloads the disk configuration before its fresh scope check. Reload failure prevents deletion. Parent workflows using the lower must supply the same successful-reload dependency. Script metadata uses the required resource declaration fields with the standard infinite lifetime and ten-version retention.

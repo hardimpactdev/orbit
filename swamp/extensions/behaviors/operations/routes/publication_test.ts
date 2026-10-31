@@ -340,7 +340,6 @@ Deno.test("participant firewall uses a fresh exact Node artifact under the publi
     undefined,
     undefined,
     undefined,
-    undefined,
     (_program, input) => {
       effects++;
       assertEquals(input, {
@@ -434,7 +433,6 @@ Deno.test("Instance private PHP publication stays under the canonical publicatio
         },
       });
     },
-    undefined,
     undefined,
     undefined,
     undefined,

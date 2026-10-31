@@ -47,6 +47,7 @@ jobs:
           deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
+          python3 tests/swamp_deno_shards_test.py
           python3 tests/swamp_base_policy_test.py
       - name: Reject new violations with current and base rules
         env:
@@ -95,7 +96,60 @@ jobs:
 
   tests:
     name: Swamp Deno tests
+    needs: [test-shards]
+    if: always()
     runs-on: ubuntu-26.04
+    steps:
+      - name: Require every Operations shard
+        env:
+          SHARDS_RESULT: ${{ needs.test-shards.result }}
+        run: |
+          if [[ "$SHARDS_RESULT" != success ]]; then
+            echo "::error::Operations shards did not all succeed ($SHARDS_RESULT)"
+            exit 1
+          fi
+
+  test-shards:
+    name: Swamp Deno shard ${{ matrix.name }}
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: general 1/4
+            path: extensions/behaviors/operations
+            shard: 1/4
+            ignore: &separate-tests extensions/behaviors/operations/database/local-sql-effects,extensions/behaviors/operations/database/read-effects,extensions/behaviors/operations/database/server-create-effects,extensions/behaviors/operations/database/create-effects,extensions/behaviors/operations/database/write-effects,extensions/behaviors/operations/process-commands
+          - name: general 2/4
+            path: extensions/behaviors/operations
+            shard: 2/4
+            ignore: *separate-tests
+          - name: general 3/4
+            path: extensions/behaviors/operations
+            shard: 3/4
+            ignore: *separate-tests
+          - name: general 4/4
+            path: extensions/behaviors/operations
+            shard: 4/4
+            ignore: *separate-tests
+          - name: database local SQL
+            path: extensions/behaviors/operations/database/local-sql-effects
+            shard: 1/1
+          - name: database read
+            path: extensions/behaviors/operations/database/read-effects
+            shard: 1/1
+          - name: database server create
+            path: extensions/behaviors/operations/database/server-create-effects
+            shard: 1/1
+          - name: database create
+            path: extensions/behaviors/operations/database/create-effects
+            shard: 1/1
+          - name: database write
+            path: extensions/behaviors/operations/database/write-effects
+            shard: 1/1
+          - name: process commands
+            path: extensions/behaviors/operations/process-commands
+            shard: 1/1
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
@@ -106,6 +160,7 @@ jobs:
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
         with:
           deno-version: v2.9.8
+          cache: true
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: "8.5"
@@ -117,7 +172,13 @@ jobs:
           sudo -n true
           # shellcheck disable=SC2016
           php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
-      - name: Run every Operations test
+      - name: Run Operations test shard
         env:
           DENO_JOBS: "4"
-        run: deno test --parallel -A extensions/behaviors/operations
+          DENO_SHARD: ${{ matrix.shard }}
+          DENO_TEST_PATH: ${{ matrix.path }}
+          DENO_IGNORE: ${{ matrix.ignore }}
+        run: |
+          args=(--parallel -A --shard="$DENO_SHARD")
+          if [[ -n "$DENO_IGNORE" ]]; then args+=(--ignore="$DENO_IGNORE"); fi
+          deno test "${args[@]}" "$DENO_TEST_PATH"

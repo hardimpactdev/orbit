@@ -20,6 +20,22 @@ First contact runs on the exact admitted Gateway worker because the candidate No
 
 The probe has no Gateway callback: native inputs record intent, script steps return outputs, and the Gateway projects its terminal event. The other bootstrap workflows have a separate failure callback on their root Node. It settles the original Operation when native execution fails before the family callback and preserves an already recorded terminal result. The Gateway records native results without step receipts, claims, child admission or execution transports. Frozen Rust action code is left for the final observer pass.
 
+## Enrollment composition
+
+`node.add` captures its complete public enrollment intent before starting one native workflow. The snapshot includes the actual Node, admitted candidate identity, prior identity, requested roles and settings, and the forward and restoration inputs for each participant. The Gateway retains the stored identity until terminal projection. Native bootstrap, network, roles, runtime and publication steps consume those snapshots directly; they create no child Operations and fetch no further intent from the Gateway.
+
+The first-contact steps use official `@swamp/ssh` on the admitted Gateway worker. A new endpoint's public host key is collected through the official method and compared with the admitted fingerprint before any mutation. Subsequent actions use that full public key with the extension's pinned policy. Existing stored host keys remain pinned from the first connection. Packages, the managed account, authorized access, sudo and observer installation are separate actions. Their shipped scripts contain no SSH launcher or private input.
+
+On failure, the same native workflow restores the captured network configuration and publishes the prior Route and hub snapshots. It retains installed prerequisites and managed access. The terminal result states which restoration actions completed. The shared terminal projector records the resulting Node identity once. A missing restoration result cannot claim that the prior placement was restored. The complete enrollment parent and the canonical hub writer retirement ship at the same cut.
+
+The network snapshot remains available until the whole parent settles. A later role or runtime failure restores the peer and the prior hub publication even after network verification succeeded. Cleanup follows complete forward work or successful peer and hub restoration. Failed restoration retains the snapshot for native recovery. These steps reuse the canonical peer and hub action exports; enrollment adds no WireGuard implementation.
+
+Core workflow dependencies, failure conditions and history provide sequencing and recovery. Official SSH supplies the transport and vault-backed `identityContent`. Official `cfgmgmt` package, user, authorized-key, file and node models were checked at package `2026.10.27.1`: their SSH schemas accept identity-file paths, but not vault-backed identity content or the admitted full host-key list. Enrollment therefore uses official SSH methods for that connection contract. Each step performs one action from the repository.
+
+### Worker prerequisites
+
+Public worker prerequisites read `@nckrtl/node-worker-assets.read` with only the admitted Node ID and account. Official SSH runs its preflight, creates the checker directory and publishes the checker through `exec` stdin before any unit activation. The issuer-to-execution-copy route is still required to complete enrollment. Public asset delivery supplies neither token issuance nor credential delivery.
+
 ## Swamp execution copies
 
 The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCommandStep::executionCopy` pushes a changed value inside a native `vault.put` frame over the authenticated serve WebSocket using the existing Gateway run credential. It launches no CLI and puts no value in process arguments.
@@ -37,3 +53,9 @@ The Gateway stores only `execution_secrets.bootstrap_identity = {vault, key}` be
 The probe declares `workflow_inputs => true`; its public projection returns the outer `{intent, execution_secrets}` envelope. The shared input builder writes authoritative Operation, kind and Gateway Node IDs last. Its direct declaration fixes `terminal_result` to job `bootstrap`, step `probe-host`. On a native terminal event, the Gateway reads that run's history once and projects the public JSON in that step's stdout. A completed event can describe a failed run.
 
 The official `@swamp/cfgmgmt/node.gather` was checked. Its current schema accepts an SSH identity file but does not accept vault-backed identity content; it also gathers package and OS details beyond this read-only probe. The pilot therefore uses the official SSH methods directly. Native core `vault.get`, method outputs and terminal history already provide the remaining mechanisms. No new transport or secret channel is introduced.
+
+### Live template evidence
+
+The official SSH workflow landed in [Orbit2003](https://github.com/hardimpactdev/orbit/pull/2003). Operation `6174` ran from Gateway14 to Node209 as native run `84a86453-d659-4b9c-a753-381d3ef7e315`. Its `inspect-platform`, `inspect-host-key` and `probe-host` steps succeeded on 2026-10-31 between 17:24:48.204Z and 17:25:02.105Z. The execution-copy identity resolved from the native vault; the existing Node account remained `orbit`.
+
+The existing observer recovered the terminal result during normal Gateway release 830 after the shared history-reader credential fix in [Orbit2071](https://github.com/hardimpactdev/orbit/pull/2071). The parent Operation succeeded at sequence 4 with `probed: true`, `architecture: x86_64` and the expected public SSH host identity. Recovery used the same native run and the shared projector. No replay or manual projection was required.

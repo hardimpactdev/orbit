@@ -20,7 +20,7 @@ use App\Models\Node;
 final readonly class NodeEnrollmentPolicy
 {
     public function __construct(private WireGuardAddressAllocator $addresses, private ActiveTldScopeGuard $tlds,
-        private ConfiguredStoragePathValidator $storage, private ManagedUserAccountResolver $accounts,
+        private ConfiguredStoragePathValidator $storage,
         private AssignRoleAction $assign, private RoleRegistry $roles) {}
 
     /** @return array{mode:string,candidate:array<string,mixed>,bootstrap_user:string,managed_user:string,fingerprint:string,requested_architecture:?string,roleless_operator:bool} */
@@ -47,9 +47,7 @@ final readonly class NodeEnrollmentPolicy
         }
         if ($data->settingsProvided) {
             $this->storage->validateGrammar($data->settings);
-            if ($node->exists) {
-                $this->storage->validateEffective($data->settings, $node, $this->accounts->resolve($node));
-            }
+            $this->storage->directIntent($data->settings, $node, false);
         }
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
         if ($node->exists && $node->cluster_id !== null && $data->clusterId !== null && $node->cluster_id !== $data->clusterId) {
@@ -119,13 +117,11 @@ final readonly class NodeEnrollmentPolicy
             && ! hash_equals($node->ssh_host_fingerprint, $data->expectedSshHostFingerprint)) {
             throw $this->refuse('node.ssh_host_key_mismatch', 'The requested fingerprint differs from the recorded Node identity.', 409);
         }
-        $prospective = clone $node;
-        $prospective->fill(['platform' => $platform, 'cluster_id' => $clusterId]);
         foreach ($data->roles as $role) {
             if (! $this->roles->definition($role)->assignableDuringProvisioning) {
                 throw new RoleAssignmentException('The requested role cannot be assigned during enrollment.');
             }
-            $this->assign->preflight($prospective, $role, $data->roles);
+            $this->assign->preflight($node, $role, $data->roles);
         }
 
         $unobservedMac = $mac && $node->ssh_host_fingerprint === null;

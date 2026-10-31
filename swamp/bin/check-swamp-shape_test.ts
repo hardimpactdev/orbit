@@ -24,6 +24,76 @@ const inventory = {
   "cli.install": "action",
   "caddy.publish": "action",
 };
+Deno.test("Route private DNS grace allows only the approved file, step and literal command", () => {
+  const file = "workflows/workflow-route-dns-grace.yaml";
+  const workflow = {
+    name: "route-dns-grace",
+    jobs: [{
+      name: "grace",
+      steps: [{
+        name: "wait-private-dns-ttl",
+        target: "orbit-node-209",
+        labels: { node: "209" },
+        task: {
+          type: "behavior",
+          behaviorType: "command/shell",
+          behaviorName: "route-dns-grace",
+          methodName: "execute",
+          inputs: { run: "/usr/bin/sleep 31" },
+        },
+      }],
+    }],
+  };
+  const source = JSON.stringify(workflow);
+  assertEquals(analyzeYaml(file, source).findings, []);
+  const rejected = (path: string, source: string) =>
+    assert(
+      analyzeYaml(path, source).findings.some((f) =>
+        f.rule === "custom-control"
+      ),
+      `${path}: ${source}`,
+    );
+  for (const path of [
+    "workflows/other.yaml",
+    "models/workflow-route-dns-grace.yaml",
+    "workflows/nested/workflow-route-dns-grace.yaml",
+  ]) rejected(path, source);
+  for (const [from, to] of [
+    ['"name":"grace"', '"name":"other"'],
+    ['"name":"wait-private-dns-ttl"', '"name":"other"'],
+    ['"target":"orbit-node-209"', '"target":"orbit-node-210"'],
+    ['"node":"209"', '"node":"210"'],
+    ['"node":"209"', '"node":209'],
+    ['"node":"209"', '"node":"209","other":"value"'],
+    ['"type":"behavior"', '"type":"model_method"'],
+    ['"behaviorType":"command/shell"', '"behaviorType":"@example/shell"'],
+    ['"behaviorName":"route-dns-grace"', '"behaviorName":"other"'],
+    ['"methodName":"execute"', '"methodName":"other"'],
+    ['"inputs":{', '"globalArgs":{},"inputs":{'],
+    ['"run":', '"env":{},"run":'],
+  ]) rejected(file, source.replace(from, to));
+  for (const run of [
+    "/usr/bin/sleep 30",
+    "sleep 31",
+    "/usr/bin/sleep -- 31",
+    "sudo /usr/bin/sleep 31",
+    "/usr/bin/sleep 31; echo done",
+    "/usr/bin/sleep 31\necho done",
+    "/usr/bin/sleep 31 # comment",
+    "/usr/bin/sleep ${{ inputs.seconds }}",
+    "sh -c '/usr/bin/sleep 31'",
+  ]) {
+    const changed = structuredClone(workflow);
+    changed.jobs[0].steps[0].task.inputs.run = run;
+    rejected(file, JSON.stringify(changed));
+  }
+  const duplicateStep = structuredClone(workflow);
+  duplicateStep.jobs[0].steps.push(duplicateStep.jobs[0].steps[0]);
+  rejected(file, JSON.stringify(duplicateStep));
+  const duplicateJob = structuredClone(workflow);
+  duplicateJob.jobs.push(duplicateJob.jobs[0]);
+  rejected(file, JSON.stringify(duplicateJob));
+});
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
 );
@@ -957,6 +1027,70 @@ Deno.test("static native child workflows are scanned through their local source 
     inventory,
   );
   assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
+});
+
+Deno.test("named native models resolve by name or id and retain their source findings", () => {
+  const id = "2175a31b-0f01-4715-bada-683a46696388";
+  const model = (run = "true") =>
+    `id: ${id}\nname: cleanup\ntype: 'command/shell'\nversion: 1\nglobalArguments:\n  run: ${
+      JSON.stringify(run)
+    }\n`;
+  const parent = (reference: string) =>
+    `name: parent\njobs:\n- steps:\n  - task:\n      type: model_method\n      modelIdOrName: ${
+      JSON.stringify(reference)
+    }\n      methodName: execute\n`;
+  for (const reference of ["cleanup", id]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["models/command/shell/cleanup.yaml", model()],
+    ]);
+    const clean = analyze(sources, inventory);
+    assertEquals(clean.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(workflowCoverage(clean).clean, 1);
+    sources.set(
+      "models/command/shell/cleanup.yaml",
+      model("orbit-agent command cli.install"),
+    );
+    assertEquals(
+      workflowCoverage(analyze(sources, inventory)).baseline_accepted,
+      1,
+    );
+    sources.set(
+      "models/command/shell/cleanup.yaml",
+      model().replace("command/shell", "@swamp/cfgmgmt/file"),
+    );
+    const official = analyze(sources, inventory);
+    assertEquals(official.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(official.get("models/command/shell/cleanup.yaml")!.types, [
+      "@swamp/cfgmgmt/file",
+    ]);
+  }
+  for (const reference of ["missing", "${{ inputs.model }}", "cleanup"]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["models/command/shell/cleanup.yaml", model()],
+      ["models/command/shell/duplicate.yaml", model()],
+    ]);
+    const result = analyze(sources, inventory).get(
+      "workflows/parent.yaml",
+    )!;
+    assert(result.unknown);
+    assert(
+      result.findings.some((finding) => finding.rule === "unknown-behavior"),
+    );
+  }
+  for (const type of [undefined, "unsupported/custom", "${{ inputs.kind }}"]) {
+    const definition = type === undefined
+      ? model().replace("type: 'command/shell'\n", "")
+      : model().replace("'command/shell'", JSON.stringify(type));
+    const result = analyze(new Map([
+      ["workflows/parent.yaml", parent("cleanup")],
+      ["models/command/shell/cleanup.yaml", definition],
+    ]), inventory);
+    assert(result.get("models/command/shell/cleanup.yaml")!.unknown);
+    assertEquals(workflowCoverage(result).unknown, 1);
+    assertEquals(workflowCoverage(result).clean, 0);
+  }
 });
 
 Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock commands", () => {

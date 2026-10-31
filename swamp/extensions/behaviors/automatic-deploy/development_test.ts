@@ -204,26 +204,28 @@ Deno.test("terminal work without history cannot authorize a new effect", async (
     100,
   );
 });
-Deno.test("a definite refused start releases pending intent for the next scheduled admission", async () => {
-  for (const lost of [false, true]) {
-    const f = fixture();
-    if (lost) f.lost();
-    if (lost) await assertRejects(f.run);
-    else await f.run();
-    Object.assign(f.operation, {
-      status: "failed",
-      error_code: "swamp.start_refused",
-      attempts: 0,
-      result: null,
-    });
-    await f.run();
-    assertEquals(f.memory.get("development-7")?.pending, null);
-    assertEquals(f.starts.length, 1);
-    // End the lost-response fixture without another synthetic transport failure.
-    if (!lost) {
+Deno.test("a definite start failure releases pending intent for the next scheduled admission", async () => {
+  for (const code of ["swamp.start_refused", "swamp.start_unavailable"]) {
+    for (const lost of [false, true]) {
+      const f = fixture();
+      if (lost) f.lost();
+      if (lost) await assertRejects(f.run);
+      else await f.run();
+      Object.assign(f.operation, {
+        status: "failed",
+        error_code: code,
+        attempts: 0,
+        result: null,
+      });
       await f.run();
-      assertEquals(f.starts.length, 2);
-      assertEquals(f.starts[0] === f.starts[1], false);
+      assertEquals(f.memory.get("development-7")?.pending, null);
+      assertEquals(f.starts.length, 1);
+      // End the lost-response fixture without another synthetic transport failure.
+      if (!lost) {
+        await f.run();
+        assertEquals(f.starts.length, 2);
+        assertEquals(f.starts[0] === f.starts[1], false);
+      }
     }
   }
 });
@@ -242,6 +244,18 @@ Deno.test("an uncertain or executed failure without history retains pending inte
         error_code: "swamp.start_refused",
         attempts: 1,
         result: null,
+      },
+      {
+        status: "failed",
+        error_code: "swamp.start_unavailable",
+        attempts: 1,
+        result: null,
+      },
+      {
+        status: "failed",
+        error_code: "swamp.start_unavailable",
+        attempts: 0,
+        result: { deployment_id: 999 },
       },
       {
         status: "cancelled",

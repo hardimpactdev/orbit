@@ -1,0 +1,125 @@
+id: d9f30b4d-d5e4-4c78-a699-a6bf7a28d42b
+name: analytics-host-prepare
+description: Prepare one admitted public Router CSR with a shipped Node-local script.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    leaf:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+        route_id:
+          type: integer
+          minimum: 1
+        user:
+          type: string
+        home:
+          type: string
+        agent_sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        domain:
+          type: string
+        scope:
+          type: string
+        version:
+          type: string
+          pattern: ^[a-f0-9]{16}$
+        root_hash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        in_use:
+          type: boolean
+          enum:
+          - false
+      required:
+      - node_id
+      - route_id
+      - user
+      - agent_sha256
+      - domain
+      - scope
+      - version
+      - root_hash
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - leaf
+  additionalProperties: false
+jobs:
+- name: prepare
+  steps:
+  - name: intent
+    target: ${{ "orbit-node-" + string(inputs.leaf.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.leaf.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/analytics-host-plan'
+      behaviorName: ${{ "analytics-host-" + string(inputs.operation_id) + "-" + inputs.leaf.scope + "-intent" }}
+      methodName: preparing
+      inputs:
+        leaf: ${{ inputs.leaf }}
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.leaf.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: ${{ "analytics-host-" + string(inputs.operation_id) + "-" + inputs.leaf.scope + "-assets" }}
+      methodName: read
+      inputs:
+        node_id: ${{ inputs.leaf.node_id }}
+        intent: ${{ steps.intent.outputs.intent }}
+    dependsOn:
+    - step: intent
+      condition:
+        type: succeeded
+  - name: request
+    target: ${{ "orbit-node-" + string(inputs.leaf.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-host-" + string(inputs.operation_id) + "-" + inputs.leaf.scope + "-request" }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          sudo -n --preserve-env=ORBIT_CERTIFICATE_INPUT /usr/bin/python3 -B "${{ steps.assets.outputs.request_script }}"
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: prepared
+    target: ${{ "orbit-node-" + string(inputs.leaf.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/analytics-host-plan'
+      behaviorName: ${{ "analytics-host-" + string(inputs.operation_id) + "-" + inputs.leaf.scope + "-prepared"
+        }}
+      methodName: prepared
+      inputs:
+        leaf: ${{ inputs.leaf }}
+        stdout: ${{ steps.request.outputs.stdout }}
+    dependsOn:
+    - step: request
+      condition:
+        type: succeeded
