@@ -125,6 +125,8 @@ def scan(source, gateway_primitives=()):
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             call = name(node.func)
+            if isinstance(node.func, ast.Name) and len(bindings.get(node.func.id, [])) == 1:
+                call = name(bindings[node.func.id][0]) or call
             gateway_request(node, call)
             if call in ("time.sleep", "asyncio.sleep", "fcntl.flock", "fcntl.lockf"):
                 add(node, "custom-control")

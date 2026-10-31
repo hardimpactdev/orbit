@@ -1,4 +1,15 @@
 /** Shared same-root CSR -> control signer -> fixed-pair publication jobs. */
+import { parse } from "jsr:@std/yaml@1.0.12";
+
+const signingModel = parse(
+  await Deno.readTextFile(
+    new URL(
+      "../../../../models/@nckrtl/certificates/orbit-certificate-signing-http.yaml",
+      import.meta.url,
+    ),
+  ),
+) as { globalArguments: { run: string } };
+
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const args = Object.fromEntries([
@@ -12,7 +23,7 @@ const dependency = (job: string) => ({
   condition: { type: "succeeded" },
 });
 
-/** Canonical certificate model configuration owns signer vault Globals and CA custody. */
+/** The canonical visible HTTP script requests public signatures; CA custody stays in Gateway. */
 export function roleCertificateJobs(
   afterJob: string,
   options: { prefix?: string; blocked?: string } = {},
@@ -25,6 +36,8 @@ export function roleCertificateJobs(
   const inventory = `${prefix}_inventory`;
   const request = `${prefix}_request_`;
   const sign = `${prefix}_sign`;
+  const signInput = `${sign}-http-input`;
+  const signHttp = `${sign}-http`;
   const publish = `${prefix}_publish_`;
   const record = `${prefix}_record_`;
   const complete = `${prefix}_complete`;
@@ -71,6 +84,11 @@ export function roleCertificateJobs(
     '{"node_id": leaf.node_id, "scope": leaf.scope, "state": "current"} : ' +
     '{"node_id": leaf.node_id, "scope": leaf.scope, "state": "request", ' +
     `"request_base64": ${requestFor("leaf")}.request_base64}])`;
+  const signingGuard = expr(
+    `(${
+      options.blocked ? options.blocked + " || " : ""
+    }(${leaves}).size() == 0)`,
+  );
   const jobs: Fields[] = [{
     name: `${inventory}_job`,
     dependsOn: [dependency(afterJob)],
@@ -94,21 +112,60 @@ export function roleCertificateJobs(
     name: `${sign}_job`,
     dependsOn: [dependency(`${prefix}_requests_job`)],
     steps: [{
+      name: signInput,
+      writes: true,
+      target: "orbit-node-209",
+      labels: { node: "209" },
+      guard: signingGuard,
+      task: {
+        type: "behavior",
+        behaviorType: "@nckrtl/certificates",
+        behaviorName: "orbit-certificate-signing",
+        methodName: "prepareSignBatch",
+        inputs: { ...args, leaves: expr(leaves), requests: expr(requests) },
+      },
+    }, {
+      name: signHttp,
+      writes: true,
+      target: "orbit-node-209",
+      labels: { node: "209" },
+      guard: signingGuard,
+      dependsOn: [{ step: signInput, condition: { type: "succeeded" } }],
+      task: {
+        type: "behavior",
+        behaviorType: "command/shell",
+        behaviorName: "orbit-certificate-signing-http",
+        methodName: "execute",
+        inputs: {
+          run: signingModel.globalArguments.run,
+          env: {
+            ORBIT_CERTIFICATE_OPERATION_ID: expr("string(inputs.operation_id)"),
+            ORBIT_CERTIFICATE_RUN_ID: expr("run.id"),
+            ORBIT_CERTIFICATE_MODE: "batch",
+            ORBIT_CERTIFICATE_REQUESTS: expr(
+              `steps["${signInput}"].outputs.requests_json`,
+            ),
+          },
+        },
+      },
+    }, {
       name: sign,
       writes: true,
       target: "orbit-node-209",
       labels: { node: "209" },
-      guard: expr(
-        `(${
-          options.blocked ? options.blocked + " || " : ""
-        }(${leaves}).size() == 0)`,
-      ),
+      guard: signingGuard,
+      dependsOn: [{ step: signHttp, condition: { type: "succeeded" } }],
       task: {
         type: "behavior",
         behaviorType: "@nckrtl/certificates",
         behaviorName: "orbit-certificate-signing",
         methodName: "signBatch",
-        inputs: { ...args, leaves: expr(leaves), requests: expr(requests) },
+        inputs: {
+          ...args,
+          leaves: expr(leaves),
+          requests: expr(requests),
+          native_stdout: expr(`steps["${signHttp}"].outputs.stdout`),
+        },
       },
     }],
   }, {
