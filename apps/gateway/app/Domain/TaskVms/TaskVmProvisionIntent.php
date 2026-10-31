@@ -36,8 +36,9 @@ final readonly class TaskVmProvisionIntent
         $enrollment = $this->enrollment->capture($vm);
         $guest = $vm->node ?? throw new ResourceOperationException('task_vm.provision_refused', 'Provision requires its reserved guest Node.', 409);
         $private = $this->enrollment->privateInput($vm, $host->id, providerCreate: true);
-        $private['private_bindings']['upcloud_token'] = ['owner_node_id' => $host->id, 'read_node_ids' => $vm->provider === TaskVmProviderKind::UpCloud ? [$host->id] : [], 'write_node_ids' => []];
-        $enrollment = [...$enrollment, 'network' => $private['network'],
+        $private['private_bindings'] = [...ValidatedData::object($private['private_bindings']),
+            'upcloud_token' => ['owner_node_id' => $host->id, 'read_node_ids' => $vm->provider === TaskVmProviderKind::UpCloud ? [$host->id] : [], 'write_node_ids' => []]];
+        $enrollment = [...$enrollment, 'network' => $private['network'], '_wireguard' => $private['_wireguard'],
             'gateway_node_id' => $private['gateway_node_id'], 'issuer_node_id' => $private['issuer_node_id'],
             'model_router_node_id' => $private['model_router_node_id'], 'model_origin' => $private['model_origin'],
             'wireguard_public_key' => $guest->wireguard_public_key];

@@ -48,7 +48,7 @@ beforeEach(function (): void {
     app()->instance(LeafCertificateSigner::class, $certificates);
     $this->issuer = Node::query()->create(['name' => 'provision-issuer', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.209']);
     config(['dependency_detection.services_node_id' => $this->issuer->id]);
-    $vpn = Node::query()->create(['name' => 'provision-vpn', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']);
+    $vpn = Node::query()->create(['name' => 'provision-vpn', 'user' => 'orbit', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']);
     $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     $home = storage_path('provision-vpn');
     File::ensureDirectoryExists($home.'/wireguard');

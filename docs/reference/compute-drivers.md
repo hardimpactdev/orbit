@@ -412,13 +412,13 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### From claim to workspace
 
-A claim records placement and one native provision intent. The native root owns provider creation, enrollment and runtime preparation.
+A claim records placement and one native provision intent. The [native root](/reference/task-vm-native-provision) owns provider creation, enrollment and runtime preparation.
 
-1. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology) and records its immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses the state-only `capture` lower and composes the same native steps in its own root.
+1. Placement records the VM's [size](#size-by-declared-topology) and immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses `capture` and composes the native steps.
 2. Swamp creates the provider VM from that image on the admitted host. Incus cloud-init and provider commands run directly from native system steps.
 3. The host prepares the guest and records its public SSH identity and WireGuard key through the root's running projection.
-4. Native placed steps publish the network, issue and install the exact `orbit-node-N` worker, then verify that worker. Task-group worker identity does not replace this Node identity.
-5. The shared router behavior issues the group's model key under the router's native lock. The exact guest installs and configures Pi through the native Process lower. Only confirmed native success makes the VM ready. See [Native Task VM provision](/reference/task-vm-native-provision).
+4. Native steps publish the network and install the exact `orbit-node-N` worker. They verify that Node identity before runtime preparation.
+5. The shared router behavior issues the model key under its native lock. The guest prepares Pi through the Process lower. Confirmed native success marks the VM ready.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 

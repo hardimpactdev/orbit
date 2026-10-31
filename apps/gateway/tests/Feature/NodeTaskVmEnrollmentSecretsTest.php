@@ -67,6 +67,14 @@ beforeEach(function (): void {
 
 it('keeps nullable initial material and protected outputs on the actual guest', function (string $kind): void {
     $this->operation->kind = $kind;
+    if ($kind === 'task_vm.provision') {
+        $vm = $this->vm;
+        $this->operation->input = [...$this->operation->input,
+            'node_id' => $this->host->id, 'host_node_id' => $this->host->id,
+            'name' => $vm->name, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            'wireguard_ip' => $vm->wireguard_ip, 'image_fingerprint' => $vm->image_fingerprint,
+            'recipe_identity' => $vm->recipe_identity, 'enrollment' => []];
+    }
     if ($kind === 'task_vm.prepare_runtime') {
         $this->operation->node_id = $this->guest->id;
     }
