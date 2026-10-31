@@ -4,75 +4,49 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Drops every database an Instance owns and deletes its connection record: a database on a
- * Database server with its test databases and unshared users, or a SQLite file. A database that
- * is already gone counts as dropped. A database the Instance only has attached stays.
- */
+/** Admission for one native DAG, including databases on other Nodes and SQLite files. */
 final readonly class DropOwnedDatabasesAction
 {
-    public function __construct(
-        private DropServerDatabaseAction $serverDatabases,
-        private InstanceSqliteCloner $sqlite,
-        private RecordEventBroadcaster $broadcaster,
-    ) {}
+    public function __construct(private DropServerDatabaseAction $servers, private RecordDatabaseOperationAction $operations) {}
 
-    public function execute(int $instanceId): void
+    public function execute(int $instanceId): Operation
     {
-        $connections = DatabaseConnection::query()
-            ->with(['server', 'ownerInstance.node'])
-            ->where('owner_instance_id', $instanceId)
-            ->orderBy('id')
-            ->get();
-
-        $this->serverDatabases->dropSynchronously(array_values($connections->all()), function (DatabaseConnection $connection): void {
-            if ($connection->database_server_id === null) {
-                $this->drop($connection);
-            } else {
-                $this->deleteRecords($connection);
-            }
-        });
+        return DB::transaction(fn (): Operation => $this->operations->start($this->prepare(Instance::query()->findOrFail($instanceId))));
     }
 
-    public function drop(DatabaseConnection $connection): void
+    public function prepare(Instance $owner): PreparedDatabaseOperation
     {
-        $deleteRecords = fn () => $this->deleteRecords($connection);
-
-        if ($connection->database_server_id !== null) {
-            $this->serverDatabases->dropSynchronously([$connection], static fn () => $deleteRecords());
-        } elseif ($connection->driver === DatabaseDriver::Sqlite && is_string($connection->path)) {
-            $owner = $connection->ownerInstance;
-
-            if ($owner instanceof Instance) {
-                $this->sqlite->remove($owner, $connection->path);
+        $connections = DatabaseConnection::query()->with(['server.node', 'users'])->where('owner_instance_id', $owner->id)->orderBy('id')->get();
+        $managed = $connections->filter(static fn (DatabaseConnection $connection): bool => $connection->database_server_id !== null)->values()->all();
+        $servers = [];
+        $passwords = [];
+        foreach ($this->servers->snapshots($managed, $owner->id) as $snapshot) {
+            $servers[] = ['server_id' => $snapshot['server_id'], 'node_id' => $snapshot['node_id'], 'intent' => $snapshot['input']];
+            $passwords[$snapshot['node_id']][$snapshot['server_id']] = $snapshot['password'];
+        }
+        $sqlite = [];
+        foreach ($connections as $connection) {
+            if ($connection->database_server_id === null && $connection->driver === DatabaseDriver::Sqlite && $connection->path !== null) {
+                $sqlite[] = ['connection_id' => $connection->id, 'node_id' => $owner->node_id,
+                    'checkout' => $owner->checkout_path, 'path' => $connection->path];
             }
         }
 
-        if ($connection->database_server_id === null) {
-            $deleteRecords();
-        }
-    }
+        $readerNodes = array_values(array_unique(array_column($servers, 'node_id')));
 
-    private function deleteRecords(DatabaseConnection $connection): void
-    {
-        DB::transaction(static function () use ($connection): void {
-            DatabaseConnectionTarget::query()->where('database_connection_id', $connection->id)->delete();
-            $connection->delete();
-        });
-
-        $this->broadcaster->broadcast(
-            RecordEventType::DatabaseDeleted,
-            $connection->id,
-            ['id' => $connection->id, 'slug' => $connection->slug],
-        );
+        return $this->operations->prepare('database.destroy_owned', 'instance', $owner->id, $owner->node_id,
+            ['connection_ids' => $connections->modelKeys(), 'servers' => $servers, 'sqlite' => $sqlite,
+                'private_bindings' => ['payload' => ['owner_node_id' => $owner->node_id, 'read_node_ids' => $readerNodes, 'write_node_ids' => []]],
+                'participant_node_ids' => array_values(array_unique([$owner->node_id, ...array_column($servers, 'node_id')]))],
+            ['database-apply' => ['name' => 'database.destroy_owned', 'input' => ['participant_passwords' => $passwords], 'protected' => ['payload']]],
+            ['delete_connections' => $connections->modelKeys()]);
     }
 }

@@ -24,8 +24,8 @@ impl Fixture {
             },
         }
     }
-    fn run(&self, write: bool) -> Result<Output, Error> {
-        query(&self.input, write, Instant::now() + Duration::from_secs(5))
+    fn run(&self) -> Result<Output, Error> {
+        query(&self.input, Instant::now() + Duration::from_secs(5))
     }
 }
 #[test]
@@ -33,7 +33,7 @@ fn reads_private_database_repeatedly_without_changing_permissions_or_bytes() {
     let f = Fixture::new();
     let prior = fs::read(&f.input.path).unwrap();
     for _ in 0..2 {
-        let result = f.run(false).unwrap();
+        let result = f.run().unwrap();
         assert_eq!(
             serde_json::to_value(result).unwrap(),
             json!({"columns":["email"],"rows":[{"email":"owner@example.test"}],"row_count":1,"truncated":false})
@@ -50,35 +50,27 @@ fn reads_private_database_repeatedly_without_changing_permissions_or_bytes() {
     }
 }
 #[test]
-fn only_authorized_writes_change_the_existing_database_and_report_affected_rows() {
+fn observations_refuse_database_writes() {
     let mut f = Fixture::new();
-    f.input.sql = "UPDATE users SET email='new@example.test' WHERE id=1".into();
-    let prior = fs::read(&f.input.path).unwrap();
-    assert_eq!(f.run(false), Err(Error::Failed {}));
-    assert_eq!(fs::read(&f.input.path).unwrap(), prior);
-    for _ in 0..2 {
-        assert_eq!(f.run(true).unwrap().row_count, 1);
-    }
-    f.input.sql = "SELECT email FROM users".into();
-    assert_eq!(
-        serde_json::to_value(f.run(false).unwrap()).unwrap()["rows"],
-        json!([{"email":"new@example.test"}])
-    );
+    f.input.sql = "UPDATE users SET email='private-update'".into();
+    let original = fs::read(&f.input.path).unwrap();
+    assert_eq!(f.run(), Err(Error::Failed {}));
+    assert_eq!(fs::read(&f.input.path).unwrap(), original);
 }
 #[test]
 fn missing_and_inaccessible_files_refuse_without_creation_or_permission_changes() {
     let mut f = Fixture::new();
-    for (mode, write) in [(0o000, false), (0o400, true)] {
+    for mode in [0o000] {
         fs::set_permissions(&f.input.path, fs::Permissions::from_mode(mode)).unwrap();
-        assert_eq!(f.run(write), Err(Error::Unreadable {}));
+        assert_eq!(f.run(), Err(Error::Unreadable {}));
         assert_eq!(
             fs::metadata(&f.input.path).unwrap().permissions().mode() & 0o777,
             mode
         );
     }
     f.input.path = f._work.0.join("missing").display().to_string();
-    for write in [false, true] {
-        assert_eq!(f.run(write), Err(Error::Unreadable {}));
+    for _ in 0..2 {
+        assert_eq!(f.run(), Err(Error::Unreadable {}));
         assert!(!Path::new(&f.input.path).exists());
     }
 }
@@ -87,16 +79,16 @@ fn caps_rows_and_preserves_empty_columns_duplicate_names_and_scalar_values() {
     let mut f = Fixture::new();
     for (count, truncated) in [(500, false), (501, true)] {
         f.input.sql = format!("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<{count}) SELECT x FROM n");
-        let result = f.run(false).unwrap();
+        let result = f.run().unwrap();
         assert_eq!(
             (result.row_count, result.rows.len(), result.truncated),
             (500, 500, truncated)
         );
     }
     f.input.sql = "SELECT email FROM users WHERE 0".into();
-    assert_eq!(f.run(false).unwrap().columns, ["email"]);
+    assert_eq!(f.run().unwrap().columns, ["email"]);
     f.input.sql = "SELECT 1 AS dup, 2 AS dup, NULL AS empty, 1.5 AS real, X'6869' AS blob".into();
-    let result = f.run(false).unwrap();
+    let result = f.run().unwrap();
     assert_eq!(result.columns, ["dup", "dup", "empty", "real", "blob"]);
     assert_eq!(
         serde_json::to_value(result.rows).unwrap(),
@@ -116,7 +108,7 @@ fn rejects_invalid_input_owner_and_sql_without_returning_private_details() {
         "SELECT X'ff'".into(),
     ] {
         f.input.sql = sql;
-        let error = f.run(true).unwrap_err();
+        let error = f.run().unwrap_err();
         assert_eq!(error, Error::Failed {});
         assert!(!error.message().contains("private_secret"));
         assert_eq!(error.details(), json!({}));
@@ -130,7 +122,7 @@ fn rejects_invalid_input_owner_and_sql_without_returning_private_details() {
         format!("/{}", "x".repeat(1024)),
     ] {
         f.input.path = path;
-        assert_eq!(f.run(true), Err(Error::Failed {}));
+        assert_eq!(f.run(), Err(Error::Failed {}));
     }
     for owner in ["root", "orbit-nonexistent-sqlite-owner", "invalid\0owner"] {
         let input = Input {
@@ -141,7 +133,6 @@ fn rejects_invalid_input_owner_and_sql_without_returning_private_details() {
         assert_eq!(
             execute(
                 input,
-                true,
                 &Context::new(Platform::Linux, Instant::now() + Duration::from_secs(5))
             ),
             Err(Error::Unreadable {})
@@ -153,10 +144,7 @@ fn bounds_long_queries_by_the_command_deadline() {
     let mut f = Fixture::new();
     f.input.sql =
         "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n) SELECT sum(x) FROM n".into();
-    assert_eq!(
-        query(&f.input, false, Instant::now()),
-        Err(Error::Failed {})
-    );
+    assert_eq!(query(&f.input, Instant::now()), Err(Error::Failed {}));
 }
 #[test]
 fn production_owner_is_used_and_root_cannot_read_on_its_behalf() {
@@ -202,7 +190,6 @@ fn owner_helper() {
         };
         let result = execute(
             input,
-            false,
             &Context::new(Platform::Linux, Instant::now() + Duration::from_secs(5)),
         );
         if succeeds {

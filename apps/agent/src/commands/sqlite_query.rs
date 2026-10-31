@@ -45,33 +45,27 @@ fn validate(input: &Input) -> Result<(), Error> {
     }
     Ok(())
 }
-fn database_error(error: rusqlite::Error, write: bool) -> Error {
+fn database_error(error: rusqlite::Error) -> Error {
     match error.sqlite_error_code() {
         Some(rusqlite::ErrorCode::PermissionDenied | rusqlite::ErrorCode::CannotOpen) => {
             Error::Unreadable {}
         }
-        Some(rusqlite::ErrorCode::ReadOnly) if write => Error::Unreadable {},
         _ => Error::Failed {},
     }
 }
-fn query(input: &Input, write: bool, deadline: Instant) -> Result<Output, Error> {
+fn query(input: &Input, deadline: Instant) -> Result<Output, Error> {
     validate(input)?;
     if !fs::metadata(&input.path).is_ok_and(|meta| meta.is_file()) {
         return Err(Error::Unreadable {});
     }
-    // Opening with the requested OS access preserves the former preflight for SELECT in write mode.
+    // Observation opens the existing file read-only and cannot create it.
     fs::OpenOptions::new()
         .read(true)
-        .write(write)
         .open(&input.path)
         .map_err(|_| Error::Unreadable {})?;
-    let flags = if write {
-        OpenFlags::SQLITE_OPEN_READ_WRITE
-    } else {
-        OpenFlags::SQLITE_OPEN_READ_ONLY
-    };
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY;
     let db = Connection::open_with_flags(Path::new(&input.path), flags)
-        .map_err(|error| database_error(error, write))?;
+        .map_err(|error| database_error(error))?;
     db.busy_timeout(
         Duration::from_secs(10).min(deadline.saturating_duration_since(Instant::now())),
     )
@@ -80,21 +74,16 @@ fn query(input: &Input, write: bool, deadline: Instant) -> Result<Output, Error>
         .map_err(|_| Error::Failed {})?;
     let mut statement = db
         .prepare(input.sql.trim())
-        .map_err(|error| database_error(error, write))?;
+        .map_err(|error| database_error(error))?;
     let columns = statement
         .column_names()
         .into_iter()
         .map(String::from)
         .collect::<Vec<_>>();
-    let mut cursor = statement
-        .query([])
-        .map_err(|error| database_error(error, write))?;
+    let mut cursor = statement.query([]).map_err(|error| database_error(error))?;
     let mut rows = vec![];
     let mut truncated = false;
-    while let Some(row) = cursor
-        .next()
-        .map_err(|error| database_error(error, write))?
-    {
+    while let Some(row) = cursor.next().map_err(|error| database_error(error))? {
         if rows.len() == ROW_LIMIT {
             truncated = true;
             break;
@@ -117,17 +106,13 @@ fn query(input: &Input, write: bool, deadline: Instant) -> Result<Output, Error>
     }
     Ok(Output {
         columns,
-        row_count: if write {
-            db.changes() as usize
-        } else {
-            rows.len()
-        },
+        row_count: rows.len(),
         rows,
         truncated,
     })
 }
 
-fn execute(input: Input, write: bool, context: &Context) -> Result<Output, Error> {
+fn execute(input: Input, context: &Context) -> Result<Output, Error> {
     validate(&input)?;
     let (uid, _, _) = identity::account(&input.owner).map_err(|_| Error::Unreadable {})?;
     if uid == 0 {
@@ -135,58 +120,34 @@ fn execute(input: Input, write: bool, context: &Context) -> Result<Output, Error
     }
     let deadline = context.deadline();
     if identity::effective_uid() == uid {
-        return query(&input, write, deadline);
+        return query(&input, deadline);
     }
     let owner = input.owner.clone();
-    identity::on_account_thread(&owner, move || query(&input, write, deadline)).map_err(
-        |error| match error {
+    identity::on_account_thread(&owner, move || query(&input, deadline)).map_err(|error| {
+        match error {
             identity::AccountThreadError::Identity => Error::Unreadable {},
             identity::AccountThreadError::Ended => Error::Failed {},
-        },
-    )?
+        }
+    })?
 }
 
 pub struct Query;
-pub struct Write;
-macro_rules! command {
-    ($type:ty, $name:literal, $write:literal, $summary:literal) => {
-        impl Command for $type {
-            const NAME: &'static str = $name;
-            const SUMMARY: &'static str = $summary;
-            const MUTATES: bool = $write;
-            const TIMEOUT: Duration = Duration::from_secs(30);
-            type Input = Input;
-            type Output = Output;
-            type Error = Error;
-            fn privilege(_: Platform) -> Option<Privilege> {
-                Some(Privilege::Owner)
-            }
-            fn target(input: &Input) -> Option<String> {
-                Some(format!(
-                    "sqlite:{}",
-                    fs::canonicalize(&input.path)
-                        .unwrap_or_else(|_| Path::new(&input.path).to_path_buf())
-                        .display()
-                ))
-            }
-            fn run(input: Input, context: &Context) -> Result<Output, Error> {
-                execute(input, $write, context)
-            }
-        }
-    };
+impl Command for Query {
+    const NAME: &'static str = "database.query-sqlite";
+    const SUMMARY: &'static str =
+        "Query an existing SQLite database read-only as its selected owner.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    type Input = Input;
+    type Output = Output;
+    type Error = Error;
+    fn privilege(_: Platform) -> Option<Privilege> {
+        Some(Privilege::Owner)
+    }
+    fn run(input: Input, context: &Context) -> Result<Output, Error> {
+        execute(input, context)
+    }
 }
-command!(
-    Query,
-    "database.query-sqlite",
-    false,
-    "Query an existing SQLite database read-only as its selected owner."
-);
-command!(
-    Write,
-    "database.write-sqlite",
-    true,
-    "Run an authorized write against an existing SQLite database as its selected owner."
-);
 
 #[cfg(test)]
 #[path = "sqlite_query_tests.rs"]

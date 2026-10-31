@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\DatabaseServers;
+
+use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
+use App\Data\DatabaseConnections\DatabaseConnectionData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationProjection;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseExecutionIntent;
+use App\Models\Instance;
+use App\Models\Operation;
+use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
+
+/** Exposes admitted records and records Swamp's result. It performs no Node work. */
+final readonly class DatabaseCloneProjection implements DirectOperationProjection
+{
+    public function input(Operation $operation): array
+    {
+        $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
+        $input = Arr::except($intent->payload['commands']['database-apply']['input'], ['password', 'payload']);
+
+        return $input;
+    }
+
+    public function apply(Operation $operation, array $data): Operation
+    {
+        return DB::transaction(function () use ($operation, $data): Operation {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            $terminal = $operation->status->terminal();
+            $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            if ($data['status'] === 'succeeded' && ! $terminal) {
+                $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
+                $projection = $intent->payload['projection'];
+                $connection = DatabaseConnection::query()->findOrFail($projection['created_connection']);
+                $connection->update(['clone_step' => 'complete']);
+                app(AttachDatabaseConnectionAction::class)->project(Instance::query()->findOrFail($projection['attach_instance']), $connection, 'DB', replace: true);
+                app(RecordEventBroadcaster::class)->broadcast(RecordEventType::DatabaseCreated, $connection->id, DatabaseConnectionData::fromModel($connection)->toArray());
+            }
+
+            return $projected;
+        });
+    }
+}

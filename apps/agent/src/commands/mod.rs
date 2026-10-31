@@ -16,7 +16,6 @@ mod cli_update;
 pub mod clone_candidate;
 mod composer_global;
 mod composer_scope;
-pub mod database_server;
 pub mod deploy_runner;
 pub mod deploy_step;
 pub mod dev_certificates;
@@ -94,10 +93,7 @@ pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
 pub mod source;
-pub mod sqlite_copy;
 mod sqlite_query;
-pub mod sqlite_seed;
-pub mod sqlite_transfer;
 mod ssh_host_key;
 pub mod storage_root;
 mod swamp_worker;
@@ -112,7 +108,6 @@ mod tool_output;
 mod tools_apt;
 pub mod topology_evidence;
 pub mod transfer_source;
-pub mod valkey_acl;
 pub mod vite;
 mod vp_global;
 mod vp_materialize;
@@ -297,7 +292,6 @@ pub fn all() -> Vec<Entry> {
         entry::<websocket_runtime::RuntimeActive>(),
         entry::<ci_runner::CiRunnerHost>(),
         entry::<horizon_queue::ReadQueue>(),
-        entry::<valkey_acl::WriteValkeyAcl>(),
         entry::<cli::InspectCli>(),
         entry::<cli::InstallCli>(),
         entry::<cli_update::SelfUpdate>(),
@@ -342,13 +336,7 @@ pub fn all() -> Vec<Entry> {
         entry::<laravel::WriteUrl>(),
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
-        entry::<sqlite_copy::CopySqlite>(),
-        entry::<sqlite_transfer::ReadSnapshot>(),
-        entry::<sqlite_transfer::ReceiveSnapshot>(),
         entry::<sqlite_query::Query>(),
-        entry::<sqlite_query::Write>(),
-        entry::<sqlite_seed::PrepareSqliteSeed>(),
-        entry::<sqlite_seed::InstallSqliteSeed>(),
         entry::<transfer_source::TransferSource>(),
         entry::<transfer_source::ReadArchive>(),
         entry::<transfer_source::Materialize>(),
@@ -393,7 +381,6 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_runtime::MetricsCredentials>(),
         entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
-        entry::<database_server::DatabaseServerAdmin>(),
         entry::<hibernation::PrepareDirectories>(),
         entry::<hibernation::MarkHibernation>(),
         entry::<hibernation::ReadHibernationTimes>(),

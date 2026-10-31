@@ -28,7 +28,7 @@ The Gateway resolves stored database credentials only when it invokes an authori
 
 ## Create a server
 
-`database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes. Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. The old kind is absent from polled registration and scheduled discovery. Rollback reverts the kind PR.
+`database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes. Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. Container convergence, rollback, removal, and SQL readiness run directly in Swamp. Private command and initialization values reach Docker through protected stdin. The agent observes the Node. Rollback reverts the kind PR.
 
 `database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent. A Valkey repair also refuses a changed default-user policy. An old open repair never reopens a closed default user.
 
@@ -46,7 +46,7 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 
 ### A MySQL server
 
-The Gateway records the server and protected command intent. Swamp creates a MySQL server in this order:
+The Gateway records the server and protected command intent. Swamp runs local system commands through the admitted Node worker and creates a MySQL server in this order:
 
 1. It generates a random root password and stores it encrypted on the server record.
 2. It creates a Docker Node Process named `<slug>` with image `mysql:<tag>`, the port published on the Node's WireGuard address to container port `3306`, and the volume `orbit-<slug>-data` for `/var/lib/mysql`.
@@ -88,7 +88,7 @@ Doctor reports `database_server.publication_mismatch`, `database_server.login_fa
 Swamp creates a Valkey server from Gateway intent in this order:
 
 1. It generates a random admin password and stores it encrypted on the server record.
-2. The agent's `database.write-valkey-acl` writes the ACL file `/data/users.acl` into the volume `orbit-<slug>-data` with a short-lived container, reading the file from standard input. The file has one line, `user default on #<sha256 of the admin password> ~* &* +@all`.
+2. Swamp writes the ACL file `/data/users.acl` into the volume `orbit-<slug>-data` with a short-lived container, reading the file from standard input. The file has one line, `user default on #<sha256 of the admin password> ~* &* +@all`.
 3. It creates and starts a Docker Node Process named `<slug>` with image `valkey/valkey:<tag>`, the volume at `/data`, and no environment.
 4. It waits until the user `default` can log in with the admin password.
 
@@ -254,7 +254,7 @@ Application migrations create and alter logical publications and select their ta
 
 ## How Orbit runs admin commands
 
-On a MySQL server, every admin command runs `mysql` or `mysqldump` inside the server's container with `docker exec`, through the [Node agent](/reference/node-agent#commands)'s `database.server-admin`. The root password travels in the agent's protected input, and the agent hands it to `docker exec` as `MYSQL_PWD` through the environment. The SQL follows it on standard input. Neither appears as an argument, in a file, or in a log.
+Swamp runs fixed `mysql`, `psql`, and `mysqldump` clients inside the admitted Database server container with local `sudo docker container exec`. The shared Deno SQL action frames the admin password and SQL on standard input. A fixed container program reads the password frame and sets only the client’s `MYSQL_PWD` or `PGPASSWORD`. Neither secret appears in host environment variables, command arguments, Docker exec metadata, files or native output. MySQL copies stream directly from dump to load inside the container. Readiness, client deadlines and output bounds belong to Swamp. The observer agent executes no database actions.
 
 For Valkey writes, Swamp invokes the fixed `database.valkey` program on the server Node. The Gateway resolves its credentials after authorization. The program connects to the recorded private address, checks every reply, and returns only fixed result fields and refusal codes. A user's password goes to Valkey only as a SHA-256 hash. A separate named command writes the ACL file during creation or [repair](#repair-a-valkey-server). It receives the file on standard input and writes it through a short-lived container that mounts the volume. The file holds only password hashes.
 
@@ -262,7 +262,7 @@ For Valkey writes, Swamp invokes the fixed `database.valkey` program on the serv
 
 `database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
-Gateway admission preflights the full removal set before it records any remote drop. Each server batch runs as its own Operation with immutable intent. A public Operation holds its server target until it ends. PostgreSQL also serializes journal and drop work with the existing server advisory lock. Swamp runs the admission restoration descriptor after a failed drop.
+The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and holds no execution lock. Swamp inventories MySQL test-prefix members, verifies full grants for the recorded user, and checks PostgreSQL owners before removal. System database names and prefixes are refused before SQL. PostgreSQL serializes its final check and drop work with a server advisory lock. Swamp restores database admission after a failed drop.
 
 Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
 
@@ -272,7 +272,7 @@ The admin database `postgres` keeps the original admission values and database O
 
 PostgreSQL advisory locks serialize journal changes and protect the final check and drops in one admin session. A lost session releases its lock, so a crash does not leave a timed lock blocking retry. A failed restore keeps the journal and connection records and returns a server error; retry the removal to recover.
 
-A blocker returns `database.in_use` (409), names the affected databases or users, and leaves databases, users, attachments, and records unchanged. Stop clients and remove or move the blocking dependencies, then retry. Orbit never force-disconnects clients. A server or transport failure after dropping starts can still interrupt removal; retain the record and repeat the same command to finish.
+A blocker records `database.in_use` on the Operation and leaves databases, users, attachments, and records unchanged. Stop clients and remove or move the blocking dependencies, then retry. Orbit never force-disconnects clients. A server or transport failure after dropping starts can still interrupt removal; retain the record and repeat the same command to finish.
 
 On a Valkey server, `database:destroy` deletes the connection's ACL user with `ACL DELUSER` and runs `ACL SAVE`. The user's keys stay. A connection without a username, such as one linked by adoption, logs in as `default`, so destroying it deletes only the record.
 
