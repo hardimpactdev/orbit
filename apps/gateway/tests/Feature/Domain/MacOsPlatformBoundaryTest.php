@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
-use App\Actions\Fleet\ConvergeNodeFootprintAction;
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
@@ -98,7 +97,7 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
             ->and($exception->status)->toBe(422);
     });
 
-    expect(fn () => app(ConvergeNodeFootprintAction::class)->execute($node))
+    expect(fn () => app(StartNodeConvergeAction::class)->execute($node))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('node.converge_unsupported')
                 ->and($exception->status)->toBe(422);
