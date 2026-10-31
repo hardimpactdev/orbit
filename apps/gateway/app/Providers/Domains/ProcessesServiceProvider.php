@@ -35,7 +35,7 @@ final class ProcessesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        foreach (['process.unit_content', 'process.environment', 'process.command'] as $source) {
+        foreach (['process.unit_content', 'process.environment', 'process.command', 'process.installation'] as $source) {
             $name = 'operation.secret.'.$source;
             $this->app->bind($name, static fn ($app): ProcessOperationSecrets => $app->makeWith(ProcessOperationSecrets::class, ['source' => $source]));
             $this->app->tag([$name], OperationSecretSource::class);

@@ -34,6 +34,9 @@ final readonly class ProcessOperationAdmission
 
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
+            if ($verb === 'create') {
+                $input['installation'] = ['$secret' => 'process.installation', 'id' => $process->id];
+            }
             $nodeId = ValidatedData::integer($input['node_id']);
             $writer = app(DirectOperation::class)->writer('process.'.$verb, $input, $nodeId);
             if ($writer === 'direct') {
@@ -54,7 +57,7 @@ final readonly class ProcessOperationAdmission
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        if (! in_array($verb, ['stop', 'destroy'], true)) {
+        if (! in_array($verb, ['create', 'stop', 'destroy'], true)) {
             app(ProcessSwampSafety::class)->assertAllowed($target->node);
         }
         if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
