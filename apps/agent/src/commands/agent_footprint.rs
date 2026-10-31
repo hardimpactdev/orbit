@@ -28,6 +28,7 @@ command_errors! {
     pub enum FootprintError {
         UpdateBusy {} => "agent.update_busy", "A self-update held the update lock for too long.";
         WorkerNotReady {} => "swamp.node_worker_not_ready", "The Node worker credentials are missing or unsafe.";
+        WorkerMemoryLow {} => "swamp.node_worker_memory_low", "Available RAM must cover the pinned Swamp binary plus 256 MiB headroom.";
         Failed { step: String } => "agent.configure_failed", "An agent file or unit step failed.";
     }
 }
@@ -150,6 +151,9 @@ fn configure(
     deadline: Instant,
 ) -> Result<Configured, FootprintError> {
     let _lock = hold_update_lock(files, deadline)?;
+    if worker_configuration(&input.configuration)?.is_some() {
+        super::node_worker::check_memory(files).map_err(|_| FootprintError::WorkerMemoryLow {})?;
+    }
     let directory = &files.path(LOCK_PATH);
     if !directory.is_dir() {
         fs::DirBuilder::new()
@@ -258,6 +262,7 @@ impl Command for ConfigureAgent {
         )
         .map_err(|error| match error {
             super::node_worker::Error::NotReady {} => FootprintError::WorkerNotReady {},
+            super::node_worker::Error::MemoryLow {} => FootprintError::WorkerMemoryLow {},
             _ => failed("node-worker"),
         })?;
         Ok(configured)

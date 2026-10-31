@@ -98,6 +98,38 @@ fn worker_configuration_carries_the_admitted_identity_and_user() {
     }
 }
 
+#[test]
+fn low_worker_memory_preserves_existing_agent_secret_and_files() {
+    let mut sandbox = Sandbox::new();
+    sandbox.configure(&input(None)).unwrap();
+    let before: Vec<_> = [SECRET_PATH, CONFIG_PATH, CA_PATH, UNIT_PATH]
+        .map(|path| {
+            (
+                path,
+                fs::read(sandbox.path(path)).unwrap(),
+                sandbox.inode(path),
+            )
+        })
+        .into_iter()
+        .collect();
+    sandbox.host.calls.clear();
+    fs::create_dir_all(sandbox.path("/proc")).unwrap();
+    fs::write(sandbox.path("/proc/meminfo"), "MemAvailable: 100000 kB\n").unwrap();
+    let mut selected = input(None);
+    selected
+        .configuration
+        .push_str("[swamp_worker]\nnode_id = 1\nuser = 'orbit'\n");
+    assert!(matches!(
+        sandbox.configure(&selected),
+        Err(FootprintError::WorkerMemoryLow {})
+    ));
+    assert!(sandbox.host.calls.is_empty());
+    for (path, bytes, inode) in before {
+        assert_eq!(fs::read(sandbox.path(path)).unwrap(), bytes);
+        assert_eq!(sandbox.inode(path), inode);
+    }
+}
+
 fn hash(secret: &str) -> String {
     format!("{:x}", Sha256::digest(secret.as_bytes()))
 }

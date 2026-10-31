@@ -2812,6 +2812,7 @@
       "errors": [
         "agent.update_busy",
         "swamp.node_worker_not_ready",
+        "swamp.node_worker_memory_low",
         "agent.configure_failed"
       ]
     },
@@ -2827,6 +2828,7 @@
       "errors": [
         "agent.update_busy",
         "swamp.node_worker_not_ready",
+        "swamp.node_worker_memory_low",
         "agent.configure_failed"
       ]
     },
