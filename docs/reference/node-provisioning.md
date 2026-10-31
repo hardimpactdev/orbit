@@ -436,7 +436,7 @@ The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, befo
 
 ## Converge the Orbit footprint
 
-The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. The fleet rollout consumes the same footprint action on each Node. It never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances.
+The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. The fleet rollout consumes the same footprint action on each Node. It never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
 
 | Artifact | On which Node | Re-apply |
 | --- | --- | --- |

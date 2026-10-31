@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Models\Node;
@@ -18,6 +19,7 @@ use App\Models\Operation;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\Fleet\FakeFootprintArtifact;
 
 beforeEach(function (): void {
     $this->gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
@@ -184,4 +186,16 @@ it('captures the active VPN listener even when the Gateway and VPN share one Nod
     expect(array_column($snapshot['artifacts'], 'name'))->toContain('private-dns');
     expect($snapshot['payloads']['private-dns']['listener']['service'])->toContain($this->gateway->wireguard_ip);
     expect(array_keys($snapshot['payloads']['private-dns']['publication']))->toBe(['records', 'catalog']);
+});
+
+it('refuses an unsupported contribution before effects even when its digest matches', function (): void {
+    $artifact = new FakeFootprintArtifact('unsupported-extension', 'v1');
+    $delivery = app(AgentDelivery::class);
+    $footprint = new App\Domain\Fleet\NodeFootprint($delivery, [$artifact]);
+    NodeFootprint::query()->create(['node_id' => $this->node->id, 'artifacts' => $footprint->expected($this->node)->artifacts]);
+
+    $snapshot = (new NodeConvergeInput($footprint, $delivery, [$artifact]))->capture($this->node, false, false);
+
+    expect($snapshot['refusal'])->toBe('operation.kind_unavailable');
+    expect($artifact->applied)->toBe([]);
 });
