@@ -102,7 +102,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
     {
         $children = match ($operation->kind) {
             'task_vm.prepare_runtime' => $this->runtime($operation),
-            'task_vm.prepare_package_cache' => $this->cacheMount($operation),
             'task_vm.fill_package_cache' => $this->cacheFill($operation),
             'task_vm.image_build' => $this->image($operation),
             'task_vm.upcloud_image_build' => $this->upcloudImage($operation),
@@ -198,17 +197,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
     private function guest(string $key, string $command, int $node, array $location, array $parameters, array $extra): array
     {
         return $this->child($key, TaskVmCommandContracts::guestKind($command), $node, [...$extra, 'guest' => $location, 'parameters_json' => json_encode((object) $parameters, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
-    }
-
-    /** @return list<ChildIntent> */
-    private function cacheMount(Operation $operation): array
-    {
-        $node = ValidatedData::integer($operation->input['host_node_id']);
-        $guest = ValidatedData::object($operation->input['guest']);
-
-        return [$this->child('cache-initialize', 'task_vm.cache_initialize', $node, []),
-            $this->child('cache-mount', 'task_vm.cache_mount', $node, $guest),
-            $this->child('cache-seed', 'task_vm.cache_seed', $node, ['guest' => $guest, 'parameters_json' => $operation->input['artifacts_json']])];
     }
 
     /** @return list<ChildIntent> */

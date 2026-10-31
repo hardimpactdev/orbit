@@ -24,9 +24,6 @@ fn failed() -> Error {
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
-    #[serde(default)]
-    pub(super) node: bool,
-    pub(super) expires_at: Option<String>,
     pub(super) enrollment_id: String,
     pub(super) workspace: String,
     pub(super) orchestrator_url: String,
@@ -39,8 +36,6 @@ pub struct Input {
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub(super) started: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) drained: Option<bool>,
 }
 fn label(s: &str, max: usize) -> bool {
     !s.is_empty()
@@ -116,20 +111,9 @@ fn unit(input: &Input, account: &Account) -> String {
     } else {
         ""
     };
-    let node = account.name == super::node_worker::USER;
-    let policy = if node {
-        "StartLimitIntervalSec=300\nStartLimitBurst=3\n"
-    } else {
-        ""
-    };
-    let runtime = if node {
-        "Environment=SWAMP_HOME=/var/lib/orbit-node-worker/home SWAMP_CONFIG_DIR=/var/lib/orbit-node-worker/home/config\nExitType=cgroup\nRestart=on-failure\nRestartSec=10\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nReadWritePaths=/var/lib/orbit-node-worker\nStandardOutput=null\nStandardError=null\n"
-    } else {
-        "Restart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\n"
-    };
-    let extra = if node { " --concurrency=1" } else { "" };
+    let runtime = "Restart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\n";
     let user = &account.name;
-    format!("[Unit]\n{policy}Description=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser={user}\nGroup={user}\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\n{server_credential}ExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment{server_argument} {cache} --ca-cert={CA}{labels}{extra}\n{runtime}UMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
+    format!("[Unit]\nDescription=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser={user}\nGroup={user}\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\n{server_credential}ExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment{server_argument} {cache} --ca-cert={CA}{labels}\n{runtime}UMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
 }
 fn call(host: &mut impl Host, args: &[&str]) -> Result<(), Error> {
     // Discard diagnostics: systemd and worker output are not a secret-safe boundary.
@@ -167,7 +151,6 @@ pub(super) fn stop(files: &Files, host: &mut impl Host) -> Result<(), Error> {
     }
     let removed = remove(&files.path(TOKEN));
     remove(&files.path(SERVER_TOKEN))?;
-    remove(&files.path(super::node_worker::EXPIRY))?;
     removed
 }
 pub(super) fn start(
@@ -188,26 +171,15 @@ pub(super) fn start(
     let path = files.path(UNIT_PATH);
     let running = active(host)?;
     if running && fs::read_to_string(&path).ok().as_deref() == Some(&text) {
-        if account.name != super::node_worker::USER {
-            remove(&files.path(TOKEN))?;
-            remove(&files.path(SERVER_TOKEN))?;
-        }
-        return Ok(Output {
-            started: true,
-            drained: None,
-        });
+        remove(&files.path(TOKEN))?;
+        remove(&files.path(SERVER_TOKEN))?;
+        return Ok(Output { started: true });
     }
     let Some(token) = &input.enrollment_token else {
-        return Ok(Output {
-            started: false,
-            drained: None,
-        });
+        return Ok(Output { started: false });
     };
     if input.server_token_required && input.server_token.is_none() {
-        return Ok(Output {
-            started: false,
-            drained: None,
-        });
+        return Ok(Output { started: false });
     }
     if !files.path(CA).is_file() || !files.path("/usr/local/bin/swamp").is_file() {
         return Err(failed());
@@ -252,19 +224,10 @@ pub(super) fn start(
             .publish_root(&path, text.as_bytes())
             .map_err(|_| failed())?;
         call(host, &["systemctl", "daemon-reload"])?;
-        if account.name == super::node_worker::USER {
-            call(host, &["systemctl", "reset-failed", UNIT])?;
-        }
         call(host, &["systemctl", "start", UNIT])?;
         call(host, &["systemctl", "is-active", "--quiet", UNIT])?;
-        Ok(Output {
-            started: true,
-            drained: None,
-        })
+        Ok(Output { started: true })
     })();
-    if account.name == super::node_worker::USER && result.is_ok() {
-        return result;
-    }
     let removed = remove(&source);
     let server_removed = remove(&server_source);
     if result.is_err() || removed.is_err() || server_removed.is_err() {
@@ -277,8 +240,7 @@ pub(super) fn start(
 pub struct Start;
 impl Command for Start {
     const NAME: &'static str = "swamp.start-worker";
-    const SUMMARY: &'static str =
-        "Start or check a Swamp task worker or operator-selected Node worker.";
+    const SUMMARY: &'static str = "Start a Swamp task worker.";
     const MUTATES: bool = true;
     const RESOURCES: &'static [&'static str] = &["swamp-worker"];
     const TIMEOUT: Duration = Duration::from_secs(60);
@@ -289,20 +251,6 @@ impl Command for Start {
         super::linux_only(p, Privilege::Root)
     }
     fn run(input: Input, context: &Context) -> Result<Output, Error> {
-        if input.node {
-            if !crate::Config::load().map_err(|_| failed())?.swamp_worker
-                || !super::node_worker::pinned(&Files::system())
-            {
-                return Err(Error::Invalid {});
-            }
-            return super::node_worker::lifecycle::converge(
-                &Files::system(),
-                &mut recipe::Native(context),
-                &input,
-                time::OffsetDateTime::now_utc().unix_timestamp(),
-            )
-            .map_err(|_| failed());
-        }
         let account = Account::named("orbit").map_err(|_| failed())?;
         start(
             &Files::system(),

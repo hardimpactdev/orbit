@@ -8,11 +8,13 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketRegistry;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketRuntime;
 use Illuminate\Support\Str;
+use Tests\Support\FakeRoutePublicationSocket;
 
 /**
  * Activates the `websocket` role on a Node and returns the Gateway's Reverb
@@ -58,4 +60,15 @@ function confirm_websocket_runtime(Node $node): WebSocketRuntime
     ]);
 
     return $runtime->refresh();
+}
+
+/** Keep API contract tests at the shared native-start transport boundary. */
+function fake_websocket_registry_start(): void
+{
+    config(['swamp.run_token' => 'fixture.shared']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-websocket-registry', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
 }

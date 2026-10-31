@@ -57,8 +57,6 @@ $app = Application::configure(basePath: dirname(__DIR__))
         app(TaskSchedule::class)->register($schedule);
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
         GatewaySchedule::command($schedule, 'orbit:auto-deploy', uniqueFor: 600, overlapMinutes: 10)->everyMinute();
-        GatewaySchedule::command($schedule, 'orbit:node-workers', uniqueFor: 360, overlapMinutes: 6)->everyTwoMinutes()
-            ->when(static fn (): bool => config('swamp_workers.nodes', []) !== []);
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);

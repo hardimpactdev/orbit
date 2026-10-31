@@ -31,7 +31,7 @@ final readonly class RecordDatabaseOperationAction
 
     public function start(PreparedDatabaseOperation $prepared): Operation
     {
-        if ($prepared->kind !== 'database_user.create' && (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')
+        if (! app(OperationKinds::class)->directOnly($prepared->kind) && (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')
             || ($prepared->kind === 'database.sqlite_seed_abandon' && ! OperationKinds::supports('compensations')))) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This database kind requires its kit execution capabilities.', 503);
         }

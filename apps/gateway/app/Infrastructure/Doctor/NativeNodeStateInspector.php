@@ -81,6 +81,7 @@ final readonly class NativeNodeStateInspector implements NodeStateInspector
             $result['agent_binary'], $result['agent_unit'], $result['agent_active'],
             $pin === null ? null : hash_equals($pin, $result['agent_checksum'] ?? ''),
             $result['secret_checksum'], $disks,
+            is_string($result['worker_state'] ?? null) ? $result['worker_state'] : null,
         );
     }
 }

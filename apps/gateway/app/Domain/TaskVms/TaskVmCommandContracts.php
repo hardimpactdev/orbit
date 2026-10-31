@@ -138,10 +138,10 @@ final class TaskVmCommandContracts
     /** @return array<string, array<string, mixed>> */
     public static function lifecycleKinds(): array
     {
-        $kinds = [];
+        $kinds = ['task_vm.lifecycle_intent' => ['executor' => 'swamp', 'result_fields' => ['ready']]];
         $schema = static fn (string $action): array => ['type' => 'object', 'additionalProperties' => false,
             'required' => ['action', 'task_vm_id'], 'properties' => ['action' => ['const' => $action], 'task_vm_id' => ['type' => 'integer', 'minimum' => 1]]];
-        foreach (['lifecycle_intent' => 'intent', 'prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
+        foreach (['prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
             $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
                 'runs' => [['transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'input_fields' => ['task_vm_id'],
                     'input_values' => ['action' => $action], 'input_schema' => $schema($action)]],
@@ -238,27 +238,6 @@ final class TaskVmCommandContracts
             'result_fields' => ['ready', 'error_code', ['name' => 'skipped', 'max' => TaskVmCacheFillBatches::MaxBatches,
                 'list_of' => ['child_id' => 'int', 'reason' => 'string', 'key' => 'string', 'kind' => 'string']]],
         ]];
-    }
-
-    /** @return array<string,array<string,mixed>> */
-    public static function cacheMountKinds(): array
-    {
-        $kinds = [];
-        foreach (['cache_initialize' => ['package-cache.host', [], ['operation' => 'initialize'], []],
-            'cache_mount' => ['incus.package-cache', ['project', 'name'], [], ['ready' => true]]] as $verb => [$name, $fields, $values, $proof]) {
-            $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class, 'execution' => TaskVmAgentExecution::class,
-                'runs' => [['transport' => 'agent', 'name' => $name, 'input_fields' => $fields, 'input_values' => $values, 'resumable' => true]],
-                'completion_contract' => ['step' => str_replace('_', '-', $verb), 'transport' => 'agent', 'name' => $name, 'result' => $proof], 'result_fields' => ['ready', 'error_code']];
-        }
-        $kinds['task_vm.cache_seed'] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
-            'runs' => [['transport' => 'task_vm_guest', 'name' => 'task_vm.guest', 'input_fields' => ['guest', 'parameters_json'],
-                'input_values' => ['command' => 'package-cache.seed'], 'input_schema' => self::guestInput('package-cache.seed'), 'resumable' => true]],
-            'completion_contract' => ['step' => 'cache-seed', 'transport' => 'task_vm_guest', 'name' => 'task_vm.guest', 'result' => ['ready' => true]], 'result_fields' => ['ready', 'error_code']];
-        $kinds['task_vm.prepare_package_cache'] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class, 'runs' => [],
-            'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'input.host_node_id'], array_keys($kinds)),
-            'completion_contract' => ['children_succeeded' => array_keys($kinds)], 'result_fields' => ['ready', 'error_code']];
-
-        return $kinds;
     }
 
     /** @return array<string, array<string, mixed>> */

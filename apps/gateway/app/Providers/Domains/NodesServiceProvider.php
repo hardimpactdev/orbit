@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Console\Commands\ConvergeNodeWorkersCommand;
 use App\Console\Commands\RekeyNodeAgentCommand;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -39,6 +38,7 @@ use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
 use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
+use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
@@ -68,14 +68,14 @@ final class NodesServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([RekeyNodeAgentCommand::class, ConvergeNodeWorkersCommand::class]);
+            $this->commands([RekeyNodeAgentCommand::class]);
         }
     }
 
     public function register(): void
     {
         $this->app->bind(NodeOperationAgentInstaller::class, NativeAgentCommandRunner::class);
-        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class], OperationSecretSource::class);
+        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
         $this->app->singleton(NodeWireGuardProjectionLock::class, static fn (): NodeWireGuardProjectionLock => new NodeWireGuardProjectionLock(Config::string('orbit.home')));
         $this->app->bind(NodeWireGuardOperationTransport::class, static fn (): NodeWireGuardOperationTransport => new NodeWireGuardOperationTransport(
             app(OperationAgentTransport::class), app(NodeWireGuardProjectionLock::class), app(WireGuardServerConfigRenderer::class),

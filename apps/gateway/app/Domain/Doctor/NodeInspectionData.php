@@ -8,7 +8,7 @@ use Illuminate\Support\Arr;
 use UnexpectedValueException;
 
 /**
- * @phpstan-type StoredInspection array{reachable: bool, platform: string|null, architecture: string|null, wireGuardAddressMatches: bool|null, agentBinaryExists: bool|null, agentUnitExists: bool|null, agentActive: bool|null, agentChecksumMatches: bool|null, agentSecretChecksum: string|null, diskFilesystems: list<array{location: string, availableKiB: int, sizeKiB: int, freeInodes: int|null, totalInodes: int|null}>}
+ * @phpstan-type StoredInspection array{reachable: bool, platform: string|null, architecture: string|null, wireGuardAddressMatches: bool|null, agentBinaryExists: bool|null, agentUnitExists: bool|null, agentActive: bool|null, agentChecksumMatches: bool|null, agentSecretChecksum: string|null, workerState: string|null, diskFilesystems: list<array{location: string, availableKiB: int, sizeKiB: int, freeInodes: int|null, totalInodes: int|null}>}
  */
 final readonly class NodeInspectionData
 {
@@ -25,6 +25,7 @@ final readonly class NodeInspectionData
         public ?string $agentSecretChecksum = null,
         /** @var list<NodeDiskFilesystemData> */
         public array $diskFilesystems = [],
+        public ?string $workerState = null,
     ) {}
 
     /** @return StoredInspection */
@@ -38,6 +39,7 @@ final readonly class NodeInspectionData
             'agentBinaryExists' => $this->agentBinaryExists,
             'agentUnitExists' => $this->agentUnitExists,
             'agentActive' => $this->agentActive,
+            'workerState' => $this->workerState,
             'agentChecksumMatches' => $this->agentChecksumMatches,
             'agentSecretChecksum' => $this->agentSecretChecksum,
             'diskFilesystems' => array_map(static fn (NodeDiskFilesystemData $disk): array => [
@@ -73,6 +75,7 @@ final readonly class NodeInspectionData
             self::nullableBoolean($stored, 'agentChecksumMatches'),
             $stored['agentSecretChecksum'] === null ? null : Arr::string($stored, 'agentSecretChecksum'),
             $disks,
+            ($stored['workerState'] ?? null) === null ? null : Arr::string($stored, 'workerState'),
         );
     }
 

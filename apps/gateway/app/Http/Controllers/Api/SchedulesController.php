@@ -119,9 +119,6 @@ final class SchedulesController extends Controller
     ): JsonResponse {
         $record = Schedule::query()->findOrFail($schedule);
         $request->route()?->setParameter('schedule', $record);
-        if ($this->synchronous($record)) {
-            return $this->scheduleResponse($request, $action->execute($record));
-        }
 
         return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }
