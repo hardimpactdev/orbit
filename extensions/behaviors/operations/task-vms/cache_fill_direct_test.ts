@@ -5,12 +5,13 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import {
   cacheBatches,
+  cacheFillDirect,
   CacheIntent,
   fillNativeCache,
 } from "./cache_fill_direct.ts";
 import { DirectOperationCancelled } from "../_lib/direct.ts";
 import type { GatewayOperation, Result } from "../_lib/direct.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import type { CacheFill } from "./cache_host.ts";
 
 const artifact = (key: string) => ({
   manager: "npm",
@@ -22,7 +23,6 @@ const artifact = (key: string) => ({
 });
 const input = (keys = ["verified", "refused"]) =>
   CacheIntent.parse({
-    agent_sha256: "a".repeat(64),
     artifacts: keys.map(artifact),
     conflicts: {},
     max_bytes: 100000,
@@ -30,24 +30,35 @@ const input = (keys = ["verified", "refused"]) =>
 const digest = `sha256-${"b".repeat(64)}`;
 class Cache {
   projections: Result[] = [];
-  actions: NodeCall[] = [];
+  actions: CacheFill[] = [];
   cancelled = false;
   secret = "private-fixture-sentinel";
   refuse = false;
   lose = false;
-  action = (call: NodeCall) => {
+  action = (call: CacheFill) => {
     this.actions.push(call);
     if (this.lose) return Promise.reject(new Error("Lost reply"));
     return Promise.resolve(
-      this.refuse ? { error_code: "task_vm.package_cache_failed" } : {
-        hashes: { verified: digest },
-        failures: { refused: `HTTP 429 ${this.secret}` },
-      },
+      this.refuse
+        ? {
+          hashes: {},
+          failures: Object.fromEntries(
+            call.artifacts.map((a) => [a.key, "FillRefused"]),
+          ),
+        }
+        : {
+          hashes: { verified: digest },
+          failures: { refused: `HTTP 429 ${this.secret}` },
+        },
     );
   };
   gateway: Pick<GatewayOperation, "read" | "project" | "withPrivateMaterial"> =
     {
-      read: () => Promise.resolve({ cancel_requested: this.cancelled }),
+      read: () =>
+        Promise.resolve({
+          status: "running",
+          cancel_requested: this.cancelled,
+        }),
       project: (result) => {
         this.projections.push(result);
         return Promise.resolve({});
@@ -89,20 +100,14 @@ Deno.test("native cache partition preserves every artifact and bounds worst-case
     })
   );
 });
-Deno.test("native fill uses pinned sudo stdin and projects partial verified hashes with private bytes removed", async () => {
+Deno.test("native fill keeps credentials callback-local and projects partial verified hashes with private bytes removed", async () => {
   const f = new Cache();
   assertEquals(await fillNativeCache(input(), f.gateway, f.action), {
     error_code: "task_vm.package_cache_failed",
   });
   const call = f.actions[0];
-  assertEquals([call.name, call.pin, call.sudo, call.mutates], [
-    "package-cache.host",
-    "a".repeat(64),
-    true,
-    true,
-  ]);
-  assertEquals(call.input.github_token, f.secret);
-  assertEquals(call.input.operation, "fill");
+  assertEquals(call.github_token, f.secret);
+  assertEquals(call.artifacts, input().artifacts);
   assertEquals(f.projections[0].result, {
     replace_inventory: true,
     archive_ids: ["verified"],
@@ -112,7 +117,7 @@ Deno.test("native fill uses pinned sudo stdin and projects partial verified hash
   });
   assertEquals(JSON.stringify(f.projections).includes(f.secret), false);
 });
-Deno.test("an uncertain fill reply projects no archive evidence and is left for native recovery", async () => {
+Deno.test("an uncertain fill reply never invents archive evidence", async () => {
   const f = new Cache();
   f.lose = true;
   await assertRejects(() => fillNativeCache(input(), f.gateway, f.action));
@@ -176,8 +181,8 @@ Deno.test("conflicts remain failed without downloading them and PHP empty maps a
     ...input([]),
     conflicts: { conflict: "IntegrityConflict" },
   });
-  const action = (call: NodeCall) => {
-    assertEquals(call.input.artifacts, []);
+  const action = (call: CacheFill) => {
+    assertEquals(call.artifacts, []);
     return Promise.resolve({ hashes: [], failures: [] });
   };
   assertEquals(await fillNativeCache(admitted, f.gateway, action), {
@@ -213,4 +218,126 @@ Deno.test("cache result budget includes Gateway Unicode and slash escaping", () 
       ).join("");
     assertEquals(phpWire.length < 256 * 1024, true);
   }
+});
+
+Deno.test("cache batches share one overall fill deadline", async () => {
+  const f = new Cache();
+  const admitted = input(
+    Array.from({ length: 1800 }, (_, i) => String(i).padStart(64, "a")),
+  );
+  let now = 0;
+  await assertRejects(
+    () =>
+      fillNativeCache(
+        admitted,
+        f.gateway,
+        (call) => {
+          f.actions.push(call);
+          now += 900_000;
+          return Promise.resolve({
+            hashes: {},
+            failures: Object.fromEntries(
+              (call.artifacts as { key: string }[]).map(
+                (a) => [a.key, "FillRefused"],
+              ),
+            ),
+          });
+        },
+        undefined,
+        () => now,
+      ),
+    Error,
+    "Package cache fill deadline expired",
+  );
+  assertEquals(f.actions.map((call) => call.deadline_ms), [1_700_000, 800_000]);
+  assertEquals(f.projections.length, 1);
+});
+
+Deno.test("a thrown native fill error cannot put its GitHub token into native run data and settles failed", async () => {
+  const token = "github-secret-do-not-persist";
+  const projections: Record<string, unknown>[] = [];
+  const args = {
+    operation_id: 7,
+    node_id: 13,
+    kind: "task_vm.fill_package_cache" as const,
+    run_id: "3fc3ad54-423a-4b4b-8187-99514098426b",
+  };
+  const model = cacheFillDirect((_ctx) => (method, path, body) => {
+    if (method === "POST") {
+      projections.push(body as Record<string, unknown>);
+      return Promise.resolve({ status: 200, body: { data: {} } });
+    }
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: path.includes("private-material") ? { github_token: token } : {
+          ...args,
+          id: 7,
+          status: "queued",
+          cancel_requested: false,
+          input: input(),
+          result: null,
+        },
+      },
+    });
+  }, () => Promise.reject(new Error(token)));
+  const error = await assertRejects(
+    () =>
+      model.methods.execute.execute(args, {
+        globalArgs: {
+          gatewayUrl: "https://gateway.test",
+          caFile: "/tmp/root.crt",
+        },
+      }),
+    Error,
+    "task_vm.package_cache_failed",
+  );
+  assertEquals(projections.map((p) => p.status), ["running", "failed"]);
+  assertEquals(
+    JSON.stringify({ projections, error: String(error) }).includes(token),
+    false,
+  );
+  assertEquals(projections.at(-1)?.result, {
+    error_code: "task_vm.package_cache_failed",
+  });
+});
+
+Deno.test("fill forwards lock integrity to the native archive verifier and never records a mismatch as an archive", async () => {
+  const f = new Cache();
+  const integrity = "sha512-" + btoa("a".repeat(64));
+  const admitted = input(["verified"]);
+  admitted.artifacts[0].integrity = integrity;
+  assertEquals(
+    await fillNativeCache(admitted, f.gateway, (call) => {
+      assertEquals(
+        (call.artifacts as { integrity: string }[])[0].integrity,
+        integrity,
+      );
+      return Promise.resolve({
+        hashes: {},
+        failures: { verified: "Archive checksum mismatch" },
+      });
+    }),
+    { error_code: "task_vm.package_cache_failed" },
+  );
+  assertEquals(f.projections[0].result, {
+    replace_inventory: true,
+    archive_ids: [],
+    archive_digests: [],
+    failed_ids: ["verified"],
+    failure_reasons: ["Archive checksum mismatch"],
+  });
+});
+
+Deno.test("an ended Operation starts no further cache batch", async () => {
+  const f = new Cache();
+  f.gateway.read = () =>
+    Promise.resolve({ status: "failed", cancel_requested: false });
+  await assertRejects(
+    () => fillNativeCache(input(), f.gateway, f.action),
+    Error,
+    "already ended",
+  );
+  assertEquals(f.actions, []);
+  assertEquals(f.projections, []);
 });

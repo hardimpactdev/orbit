@@ -249,4 +249,8 @@ The shared scheduled Gateway discovery workflows and their fixed worker-slot
 models are removed. Old runs and runtime history are not deleted. Family owners
 finish removing their retired runner imports and per-family claim
 implementations as they port their parent kinds; no removed Gateway executor
-endpoint is restored for them.
+endpoint is restored for them. Caddy publication runs its filesystem transaction
+and fixed system commands directly in Swamp. It keeps the host publication lock,
+validates before activation, preserves manual files, and restores the previous
+live configuration if reload fails. The Node agent observes; publication does
+not invoke an agent action.

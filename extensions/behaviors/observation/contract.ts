@@ -23,7 +23,4 @@ export const Receipt = z.strictObject({
   requeued: z.number().int().nonnegative().optional(),
   pruned: z.number().int().nonnegative().optional(),
 });
-export const ReadReceipt = z.strictObject({
-  status: z.enum(["observed", "recorded", "removed", "disabled"]),
-});
 export const Args = z.object({ runId: z.string().uuid() });

@@ -7,7 +7,7 @@ import {
   DirectOperationCancelled,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { type CacheFill, fillCacheHost } from "./cache_host.ts";
 
 const key = z.string().min(1).refine((value) =>
   new TextEncoder().encode(value).length <= 1024
@@ -26,7 +26,6 @@ const emptyMap = <T extends z.ZodType>(value: T) =>
     z.record(z.string(), value),
   );
 export const CacheIntent = z.object({
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   artifacts: z.array(Artifact).max(4096 * 128),
   conflicts: emptyMap(z.literal("IntegrityConflict")),
   max_bytes: z.number().int().positive(),
@@ -97,7 +96,7 @@ type CacheGateway = Pick<
   "read" | "project" | "withPrivateMaterial"
 >;
 type Action = (
-  call: NodeCall,
+  input: CacheFill,
   signal?: AbortSignal,
 ) => Promise<Record<string, unknown>>;
 
@@ -107,46 +106,47 @@ export async function fillNativeCache(
   gateway: CacheGateway,
   action: Action,
   signal?: AbortSignal,
+  now: () => number = Date.now,
 ) {
+  const deadline = now() + 1_700_000;
+  const remaining = () => {
+    if (now() >= deadline) {
+      throw new Error("Package cache fill deadline expired");
+    }
+    return deadline - now();
+  };
   const batches = cacheBatches(input);
   let failed = false;
   for (const [index, batch] of batches.entries()) {
     if (signal?.aborted) {
       throw new DirectOperationCancelled({ effectRunning: false });
     }
-    const current = z.object({ cancel_requested: z.boolean() }).parse(
+    remaining();
+    const current = z.object({
+      status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+      cancel_requested: z.boolean(),
+    }).parse(
       await gateway.read(signal),
     );
     if (current.cancel_requested || signal?.aborted) {
       throw new DirectOperationCancelled({ effectRunning: false });
     }
+    if (!["queued", "running"].includes(current.status)) {
+      throw new Error("Package cache Operation already ended");
+    }
     let outcome: Record<string, unknown> | undefined;
     await gateway.withPrivateMaterial(async (material) => {
       const token = z.string().nullable().parse(material.github_token);
       const raw = await action({
-        name: "package-cache.host",
-        pin: input.agent_sha256,
-        sudo: true,
-        mutates: true,
-        deadlineMs: 1_700_000,
-        maxOutputBytes: 256 * 1024,
-        input: {
-          operation: "fill",
-          artifacts: batch.artifacts,
-          max_bytes: input.max_bytes,
-          github_token: token,
-        },
+        artifacts: batch.artifacts,
+        max_bytes: input.max_bytes,
+        github_token: token,
+        deadline_ms: remaining(),
       }, signal);
-      // The agent's diagnostic text and callback errors never become native outputs.
+      remaining();
+      // Only public hashes and bounded archive refusals become native outputs.
       const keys = batch.artifacts.map((item) => item.key);
-      const reply = "error_code" in raw
-        ? {
-          hashes: {},
-          failures: Object.fromEntries(
-            keys.map((name) => [name, "FillRefused"]),
-          ),
-        }
-        : Reply.parse(raw);
+      const reply = Reply.parse(raw);
       if (
         keys.some((name) =>
           Object.hasOwn(reply.hashes, name) ===
@@ -185,11 +185,11 @@ type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 export function cacheFillDirect(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  action: Action = runNodeAgent,
+  action: Action = fillCacheHost,
 ) {
   return {
     type: "@nckrtl/task-vm-cache-fill",
-    version: "2026.10.31.1",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     methods: {
       execute: {
@@ -201,13 +201,19 @@ export function cacheFillDirect(
           return await directOperation(
             args,
             gateway,
-            (raw) =>
-              fillNativeCache(
-                CacheIntent.parse(raw),
-                gateway,
-                action,
-                ctx.signal,
-              ),
+            async (raw) => {
+              try {
+                return await fillNativeCache(
+                  CacheIntent.parse(raw),
+                  gateway,
+                  action,
+                  ctx.signal,
+                );
+              } catch (error) {
+                if (error instanceof DirectOperationCancelled) throw error;
+                return { error_code: "task_vm.package_cache_failed" };
+              }
+            },
             (result) => Final.parse(result),
             ctx.signal,
           );
@@ -216,7 +222,4 @@ export function cacheFillDirect(
     },
   };
 }
-export const behavior = {
-  ...cacheFillDirect(),
-  type: "@nckrtl/task-vm-cache-fill",
-};
+export const behavior = cacheFillDirect();

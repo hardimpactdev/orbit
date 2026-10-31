@@ -46,6 +46,10 @@ on:
       - 'tests/_support/project_scheduler.ts'
       - 'tests/fixtures/project-extensions/**'
       - '.github/workflows/project-extensions.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

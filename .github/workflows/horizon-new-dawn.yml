@@ -13,6 +13,10 @@ on:
       - 'extensions/behaviors/_lib/maintenance/environment.ts'
       - 'workflows/workflow-horizon-new-dawn-detect.yaml'
       - '.github/workflows/horizon-new-dawn.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

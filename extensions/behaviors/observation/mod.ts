@@ -1,14 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
-import { collect, CollectionDisabled, Plan, Progress } from "./collection.ts";
 
-import {
-  Args,
-  type Context,
-  Globals,
-  ReadReceipt,
-  Receipt,
-} from "./contract.ts";
+import { Args, type Context, Globals, Receipt } from "./contract.ts";
 
 export class ObservationError extends Error {
   constructor(readonly code: string) {
@@ -33,10 +26,6 @@ export class ObservationApi {
       );
     }
     return result.data.data;
-  }
-  async read(path: string): Promise<void> {
-    const receipt = ReadReceipt.parse(await this.post(path));
-    if (receipt.status === "disabled") throw new CollectionDisabled();
   }
 }
 
@@ -76,15 +65,9 @@ export function observation(
   });
   return {
     type: "@nckrtl/observation",
-    version: "2026.10.28.1",
+    version: "2026.10.31.1",
     globalArguments: Globals,
     resources: {
-      progress: {
-        description: "Progress of the current bounded Doctor collection",
-        schema: Progress,
-        lifetime: "7d",
-        garbageCollection: 10,
-      },
       routine: {
         description:
           "Counts and status from one Gateway state maintenance receipt",
@@ -95,41 +78,18 @@ export function observation(
     },
     methods: {
       collect: {
-        description:
-          "Observe Nodes, inspect typed resource groups, then collect signals",
+        description: "Admit one native Doctor and problem collection run",
         arguments: Args,
         execute: async (args: z.infer<typeof Args>, ctx: Context) => {
           const api = new ObservationApi(makeHttp(ctx));
-          const handles: { name: string }[] = [];
-          const result = await collect(args.runId, {
-            plan: async (id) =>
-              Plan.parse(await api.post(`collections/${id}/plan`)),
-            observe: (id, node) => api.read(`collections/${id}/nodes/${node}`),
-            inspect: (id, probe) =>
-              api.read(`collections/${id}/probes/${probe}`),
-            signals: (id) => api.read(`collections/${id}/signals`),
-          }, {
-            read: async () => {
-              const saved = await ctx.readResource("collection");
-              return saved ? Progress.parse(saved) : null;
-            },
-            write: async (value) => {
-              handles.splice(
-                0,
-                handles.length,
-                await ctx.writeResource("progress", "collection", value),
-              );
-            },
-          });
-          return {
-            dataHandles: handles,
-            complete: result.complete,
-            collection: result.plan.collection,
-          };
+          const result = z.object({ id: z.number().int().positive() }).or(
+            z.object({ status: z.literal("disabled") }),
+          ).parse(await api.post(`collections/${args.runId}/plan`));
+          return "id" in result ? { operation_id: result.id } : result;
         },
       },
       health: routine(["health"]),
-      maintain: routine(["activities", "operations", "metrics"]),
+      maintain: routine(["activities", "metrics"]),
       retain: routine(["batches", "failed"]),
     },
   };
