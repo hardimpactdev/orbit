@@ -43,8 +43,10 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The database intent belongs to another target.', 422);
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        if ($key === '' && $operation->kind === 'database_user.create' && DirectOperation::owns($operation)
-            && in_array($parameter, ['password', 'sql'], true)) {
+        if ($key === '' && DirectOperation::owns($operation)
+            && in_array($parameter, match ($operation->kind) {
+                'database_user.create' => ['password', 'sql'], 'database_server.close' => ['password'], default => []
+            }, true)) {
             $key = 'database-apply';
         }
         $command = $intent->payload['commands'][$key] ?? null;

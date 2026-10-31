@@ -4,7 +4,6 @@
 # Timeout: 150
 # Input: recorded host, port, password, fixed action and protected ACL payload.
 # Result: backend and value-free refusal codes; never replies, passwords or hashes.
-import hashlib
 import socket
 import time
 
@@ -132,18 +131,6 @@ def apply(client, action, payload, password):
         if stale:
             client.command('ACL', 'DELUSER', *sorted(stale))
         client.command('ACL', 'SAVE')
-    elif action == 'close':
-        own = str(client.command('CLIENT', 'ID'))
-        clients = client.command('CLIENT', 'LIST', 'USER', 'default')
-        if any(dict(field.split('=', 1) for field in line.split() if '=' in field).get('id') != own for line in clients.splitlines()):
-            raise Outcome('refused', {'error_code': 'database.server_in_use'})
-        client.command('ACL', 'SETUSER', 'default', 'resetpass', '#' + hashlib.sha256(password.encode()).hexdigest())
-        try:
-            client.command('ACL', 'SAVE')
-        except Exception:
-            client.command('ACL', 'SETUSER', 'default', 'resetpass', 'nopass')
-            raise
-        client.command('CLIENT', 'KILL', 'USER', 'default', 'SKIPME', 'yes')
     else:
         raise Outcome('refused', {'error_code': 'database.driver_unsupported'})
     return 'active'

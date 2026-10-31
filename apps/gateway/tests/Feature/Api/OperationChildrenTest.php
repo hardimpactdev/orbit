@@ -213,6 +213,28 @@ it('presents and replays a direct-only child without a deleted execution context
     expect($child->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
+it('returns a cancelled retired child with a null result and no execution contract', function (): void {
+    $child = childKitAdmit($this);
+    app(CancelOperationAction::class)->execute($child);
+    $this->childSpec = ['executor' => 'swamp', 'admission' => ChildKitAdmission::class, 'result_fields' => ['backend', 'error_code']];
+    ($this->register)();
+    $before = $child->fresh()->getRawOriginal();
+    expect(DirectOperation::owns($child->fresh()))->toBeFalse();
+
+    $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertOk()
+        ->assertJsonPath('data.id', $child->id)->assertJsonPath('data.parent_operation_id', $this->parent->id)
+        ->assertJsonPath('data.child_key', 'apply')->assertJsonPath('data.status', 'cancelled')
+        ->assertJsonPath('data.error_code', 'operation.cancelled')->assertJsonPath('data.result', null)
+        ->assertJsonMissingPath('data.worker')->assertJsonMissingPath('data.lease_seconds')
+        ->assertJsonMissingPath('data.waiting_for')->assertJsonMissingPath('data.step_results')
+        ->assertJsonMissingPath('data.execution_context');
+
+    expect($child->fresh()->getRawOriginal())->toBe($before);
+    expect($this->adapter->calls)->toBe(1);
+    expect($this->command->calls)->toBe(0);
+    expect($this->parent->children()->count())->toBe(1);
+});
+
 it('refuses free child intent, ineligible keys, wrong relations and missing bindings', function (string $case): void {
     $body = ['worker' => 'parent', 'key' => 'apply'];
     if (in_array($case, ['input', 'kind', 'node'], true)) {

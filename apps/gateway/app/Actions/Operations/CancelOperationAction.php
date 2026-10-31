@@ -33,6 +33,9 @@ final readonly class CancelOperationAction
             if ($operation->status->terminal()) {
                 return;
             }
+            if ($this->cancelUnstartedRetired($operation)) {
+                return;
+            }
             if ($this->native($operation)) {
                 if ($operation->cancel_requested_at === null) {
                     $this->store->change($operation, ['cancel_requested_at' => Carbon::now()]);
@@ -134,6 +137,9 @@ final readonly class CancelOperationAction
 
     private function settleUnstarted(Operation $operation): void
     {
+        if ($this->cancelUnstartedRetired($operation)) {
+            return;
+        }
         if ($this->native($operation)) {
             return;
         }
@@ -141,6 +147,30 @@ final readonly class CancelOperationAction
             $this->store->change($operation, ['error_code' => 'operation.cancelled']);
             app(OperationExecutors::class)->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
         }
+    }
+
+    /** Cancel only untouched polled admissions after their execution contract was deleted. */
+    private function cancelUnstartedRetired(Operation $operation): bool
+    {
+        $state = $operation->state ?? [];
+        $target = $state['executor_target'] ?? null;
+        if (! app(OperationKinds::class)->directOnly($operation->kind) || DirectOperation::owns($operation)
+            || $operation->status !== OperationStatus::Queued || $operation->attempts !== 0
+            || $operation->started_at !== null || $operation->worker !== null
+            || array_keys($state) !== ['executor_target'] || ! is_array($target) || count($target) !== 3
+            || array_diff(array_keys($target), ['node_id', 'target_type', 'target_id']) !== []
+            || ($target['node_id'] ?? null) !== $operation->node_id || ($target['target_type'] ?? null) !== $operation->target_type
+            || ($target['target_id'] ?? null) !== $operation->target_id
+            || $operation->steps()->exists() || $operation->children()->exists()) {
+            return false;
+        }
+        $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? Carbon::now()]);
+        if (! $this->store->cancelQueued($operation)) {
+            return false;
+        }
+        $this->store->change($operation, ['error_code' => 'operation.cancelled']);
+
+        return true;
     }
 
     private function native(Operation $operation): bool

@@ -39,12 +39,6 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         $this->call($target, 'schedule.install', $this->specification->input($schedule, $target), 'install', ScheduleErrorCode::InstallFailed, 'Schedule installation failed.');
     }
 
-    public function activate(#[SensitiveParameter] Schedule $schedule): void
-    {
-        $target = $this->targets->forSchedule($schedule);
-        $this->call($target, 'schedule.activate', $this->runnable($schedule, $target), 'activate', ScheduleErrorCode::ActivationFailed, 'Schedule activation failed.');
-    }
-
     public function logs(#[SensitiveParameter] Schedule $schedule, int $lines): ScheduleLogsData
     {
         if ($lines < 1 || $lines > 1000) {
@@ -72,12 +66,6 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         }
 
         return true;
-    }
-
-    /** @return array{id: string, user: string, working_directory: string} */
-    private function runnable(Schedule $schedule, ScheduleTarget $target): array
-    {
-        return ['id' => $schedule->id, 'user' => $target->user, 'working_directory' => $target->workingDirectory];
     }
 
     /**

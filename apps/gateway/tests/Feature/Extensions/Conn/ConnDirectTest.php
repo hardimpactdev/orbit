@@ -42,8 +42,8 @@ it('starts only pairing creation directly by default and freezes the selected wr
     config(['swamp.direct_writers' => []]);
     expect($direct->definition('conn.pairing_create')['workflow'])->toBe('operation-conn-direct');
     expect($direct->writer('conn.pairing_create'))->toBe('direct');
-    expect($direct->definition('conn.pairing_revoke'))->toBeNull();
-    expect($direct->definition('conn.gateway_sessions_revoke'))->toBeNull();
+    expect($direct->writer('conn.pairing_revoke'))->toBe('direct');
+    expect($direct->writer('conn.gateway_sessions_revoke'))->toBe('direct');
     expect(app(OperationKinds::class)->directOnly('conn.pairing_create'))->toBeTrue();
     config(['swamp.direct_writers' => []]);
     expect(DirectOperation::owns($this->operation->fresh()))->toBeTrue();

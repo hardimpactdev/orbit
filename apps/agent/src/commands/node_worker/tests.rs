@@ -42,9 +42,10 @@ impl Host for Fake {
 fn fixture() -> (WorkDir, Files, NodeWorkerConfig, Account, Fake) {
     let work = WorkDir::new().unwrap();
     let root = fs::canonicalize(&work.0).unwrap();
-    for dir in ["etc/systemd/system", "etc/orbit", "var/lib"] {
+    for dir in ["etc/systemd/system", "etc/orbit", "var/lib", "proc"] {
         fs::create_dir_all(root.join(dir)).unwrap();
     }
+    fs::write(root.join("proc/meminfo"), "MemAvailable: 1048576 kB\n").unwrap();
     let uid = rustix::process::getuid().as_raw();
     let gid = rustix::process::getgid().as_raw();
     fs::create_dir_all(root.join("etc/orbit/swamp-worker")).unwrap();
@@ -77,6 +78,55 @@ fn fixture() -> (WorkDir, Files, NodeWorkerConfig, Account, Fake) {
         },
         Fake::default(),
     )
+}
+#[test]
+fn refuses_low_or_unknown_memory_before_worker_files_or_commands() {
+    for memory in [
+        "MemAvailable: 100000 kB\n",
+        "MemFree: 1048576 kB\n",
+        "MemAvailable: 1048576 MB\n",
+        "MemAvailable: 18446744073709551615 kB\n",
+        "MemAvailable: 1048576 kB\nMemAvailable: 1048576 kB\n",
+    ] {
+        let (_work, files, input, account, mut host) = fixture();
+        fs::write(files.path("/proc/meminfo"), memory).unwrap();
+        assert!(matches!(
+            publish(&files, &mut host, &input, &account, false, None),
+            Err(Error::MemoryLow {})
+        ));
+        assert!(host.calls.is_empty());
+        assert!(!files.path(UNIT_PATH).exists());
+        assert!(!files.path(ROOT).exists());
+        assert_eq!(
+            fs::read_to_string(files.path(&format!("{CREDENTIALS}/enrollment.token"))).unwrap(),
+            "private-secret"
+        );
+    }
+}
+#[test]
+fn requires_binary_size_and_headroom_even_without_binary_change() {
+    let (_work, files, input, account, mut host) = fixture();
+    let minimum_kib = (BINARY_BYTES + MEMORY_HEADROOM).div_ceil(1024);
+    fs::write(
+        files.path("/proc/meminfo"),
+        format!("MemAvailable: {} kB\n", minimum_kib - 1),
+    )
+    .unwrap();
+    assert!(matches!(
+        publish(&files, &mut host, &input, &account, false, None),
+        Err(Error::MemoryLow {})
+    ));
+    assert!(host.calls.is_empty());
+    fs::write(
+        files.path("/proc/meminfo"),
+        format!("MemAvailable: {minimum_kib} kB\n"),
+    )
+    .unwrap();
+    publish(&files, &mut host, &input, &account, false, None).unwrap();
+    assert!(host
+        .calls
+        .iter()
+        .any(|args| args == &["systemctl", "restart", "--no-block", UNIT]));
 }
 #[test]
 fn converges_a_persistent_node_user_unit_with_sudo_and_stable_identity() {

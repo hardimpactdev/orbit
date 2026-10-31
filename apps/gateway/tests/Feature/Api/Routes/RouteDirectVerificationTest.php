@@ -102,6 +102,17 @@ it('projects only bounded results and refuses another Node or run', function ():
     expect($operation->fresh()->result)->toBe(['ready' => true])->and($this->agents->calls)->toBe([]);
 });
 
+it('refuses a skipped probe instead of reporting an unverified Route ready', function (): void {
+    $operation = app(StartRouteVerificationAction::class)->execute('route.workload_verify', $this->router, $this->input);
+    $operation->update(['input' => [...$operation->input, 'verification' => [
+        'protocol' => 'skip', 'probe' => null, 'agent_sha256' => str_repeat('a', 64),
+    ]]]);
+
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
+        ->assertUnprocessable()->assertJsonPath('error.code', 'route.verification_invalid');
+    expect($operation->fresh()->result)->toBeNull()->and($this->agents->calls)->toBe([]);
+});
+
 it('refuses foreign placement and worker-selected probe fields before recording intent', function (): void {
     foreach ([[$this->instance->node, $this->input], [$this->router, [...$this->input, 'address' => '192.0.2.99']]] as [$node, $input]) {
         expect(fn () => app(StartRouteVerificationAction::class)->execute('route.workload_verify', $node, $input))->toThrow(ResourceOperationException::class);

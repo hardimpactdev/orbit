@@ -109,7 +109,19 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 ## Update and remove the role
 
-`orbit analytics:update VERSION` changes the pinned Plausible version and replaces the `plausible` Process. A new role starts at the version in the Gateway's `ORBIT_ANALYTICS_PLAUSIBLE_VERSION`, which defaults to `3.2.1`.
+### Update Plausible
+
+`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp asks the Node agent to change the existing Plausible container image and check health under its existing Process lock, preserving its Process identity, environment, ports and mounts. The agent keeps the rollback container until readiness passes and restores it before releasing the lock when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
+
+A repeated version checks health without replacing the container. Start a stopped Plausible Process before updating it. The agent refuses a stale replacement under its Process lock; the Gateway also refuses a stale success projection.
+
+The shared map of writers selects this direct-only kind. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach only the local agent's protected stdin; they never enter workflow arguments, resources, results or logs.
+
+This update declares no secret-output store and generates no credentials. No runtime vault copy is required.
+
+A new role starts at the version in the Gateway's `ORBIT_ANALYTICS_PLAUSIBLE_VERSION`, which defaults to `3.2.1`.
+
+### Remove the role
 
 Dashboard publication first runs the shared [Caddy package step](/reference/node-provisioning#package-sources). It leaves an installed Caddy at or above the floor in place.
 

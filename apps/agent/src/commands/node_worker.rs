@@ -8,6 +8,9 @@ use std::{
 
 pub const VERSION: &str = "20261028.205235.0-sha.1602a617";
 const DIGEST: &str = "38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3";
+// Size of the artifact pinned by DIGEST; update together when changing the pin.
+const BINARY_BYTES: u64 = 403_378_168;
+const MEMORY_HEADROOM: u64 = 256 * 1024 * 1024;
 const URL: &str = "https://github.com/swamp-club/swamp/releases/download/v20261028.205235.0-sha.1602a617/swamp-linux-x86_64";
 const BINARY: &str = recipe::swamp::BINARY;
 const ROOT: &str = "/var/lib/orbit-node-worker";
@@ -20,7 +23,28 @@ command_errors! { pub enum Error {
     Failed {} => "swamp.node_worker_failed", "The Node worker installation failed.";
     NotReady {} => "swamp.node_worker_not_ready", "The Node worker credentials are missing or unsafe.";
     Invalid {} => "swamp.node_worker_invalid", "The Node worker identity or custody is invalid.";
+    MemoryLow {} => "swamp.node_worker_memory_low", "Available RAM must cover the pinned Swamp binary plus 256 MiB headroom.";
 }}
+pub(super) fn check_memory(files: &Files) -> Result<(), Error> {
+    let available = fs::read_to_string(files.path("/proc/meminfo"))
+        .ok()
+        .and_then(|text| {
+            let mut rows = text
+                .lines()
+                .filter_map(|line| line.strip_prefix("MemAvailable:"));
+            let mut fields = rows.next()?.split_whitespace();
+            let kib: u64 = fields.next()?.parse().ok()?;
+            if fields.next()? != "kB" || fields.next().is_some() || rows.next().is_some() {
+                return None;
+            }
+            kib.checked_mul(1024)
+        });
+    if available.is_some_and(|bytes| bytes >= BINARY_BYTES + MEMORY_HEADROOM) {
+        Ok(())
+    } else {
+        Err(Error::MemoryLow {})
+    }
+}
 fn failed() -> Error {
     Error::Failed {}
 }
@@ -81,6 +105,7 @@ fn publish(
     if !valid(input) || account.name != input.user || account.uid == 0 || account.gid == 0 {
         return Err(invalid());
     }
+    check_memory(files)?;
     // Verify existing authority; never add a sudo rule or silently use another account.
     call(
         host,
@@ -160,6 +185,7 @@ pub fn configure_native(
     if !valid(input) {
         return Err(invalid());
     }
+    check_memory(&files)?;
     let account = Account::named(&input.user).map_err(|_| invalid())?;
     let architecture =
         recipe::run(&mut host, &Invocation::new(&["uname", "-m"]), true).map_err(|_| failed())?;
@@ -259,8 +285,9 @@ impl orbit_agent_contract::Service for Check {
         if !arguments.is_empty()
             || rustix::process::geteuid().as_raw() != 0
             || check_credentials(&Files::system()).is_err()
+            || check_memory(&Files::system()).is_err()
         {
-            eprintln!("Node worker is not ready: credential custody check failed");
+            eprintln!("Node worker is not ready: credential custody or available RAM check failed");
             return 1;
         }
         0
