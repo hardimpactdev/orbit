@@ -67,7 +67,12 @@ async function reviewed(path: string) {
   }
   if (
     /\bcommandOutput\b/.test(text) &&
-    !["node-command-process.ts", "node-commands.ts", "node-proxy.ts"].some((
+    ![
+      "node-command-process.ts",
+      "node-commands.ts",
+      "node-proxy.ts",
+      "node-proxy-http.ts",
+    ].some((
       name,
     ) => path === `${root}/extensions/behaviors/operations/_lib/${name}`)
   ) {
@@ -93,9 +98,9 @@ async function reviewed(path: string) {
     }
     if (
       /node-command-process\.ts$/.test(dependency) &&
-      !["node-commands.ts", "node-proxy.ts"].some((name) =>
-        path === `${root}/extensions/behaviors/operations/_lib/${name}`
-      )
+      !["node-commands.ts", "node-proxy.ts", "node-proxy-http.ts"].some((
+        name,
+      ) => path === `${root}/extensions/behaviors/operations/_lib/${name}`)
     ) {
       errors.push(
         `Raw Node command transport is restricted to reviewed adapters: ${path}`,
@@ -182,8 +187,14 @@ for (const path of await files(`${root}/workflows`)) {
             `Native shell steps must use command/shell.execute: ${path}`,
           );
         }
-      } else if (type === "@swamp/ssh") {
-        // Official SSH methods provide remote execution directly.
+      } else if (
+        [
+          "@swamp/ssh",
+          "@swamp/cfgmgmt/directory",
+          "@swamp/cfgmgmt/file",
+        ].includes(String(type))
+      ) {
+        // Official extensions provide these actions directly.
       } else if (typeof type !== "string" || !sources.has(type)) {
         errors.push(
           `Node workers may run only reviewed local behaviors, not third-party extensions: ${path} (${

@@ -46,3 +46,8 @@ key, pinned `hostKeys` and `sudo: true` when the action needs root. The `script`
 method sends its body over stdin. No custom transport or logical Node1/18 proxy
 worker is needed. Forward environment values only through the extension's
 documented SSH `AcceptEnv` and sudo `env_keep` support.
+
+The Node lint also recognizes the official `@swamp/cfgmgmt/directory` and
+`@swamp/cfgmgmt/file` types for file publication (`apply`). Their methods retain
+the official package behavior and defaults; no extension namespace wildcard is
+needed.
