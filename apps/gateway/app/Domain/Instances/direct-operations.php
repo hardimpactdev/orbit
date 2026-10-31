@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Deployment\AutomaticDeployActivityProjection;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
@@ -13,6 +14,12 @@ use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.policy_event' => [
+        'workflow' => 'operation-instance-policy-activity',
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'record', 'step' => 'record'],
+        'projection' => AutomaticDeployActivityProjection::class,
+    ],
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'projection' => NativeInstanceTransferProjection::class,
         'private_material' => ['source_installations' => 'instance.transfer_processes', 'destination_installations' => 'instance.transfer_processes',
             'source_route_environment' => 'instance.transfer_route_environment', 'destination_route_environment' => 'instance.transfer_route_environment']],
