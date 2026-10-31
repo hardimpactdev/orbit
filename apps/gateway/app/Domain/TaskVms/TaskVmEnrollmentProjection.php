@@ -30,7 +30,7 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
             throw new ResourceOperationException('operation.execution_forbidden', 'Enrollment requires its admitted VM intent.', 422);
         }
 
-        return [...Arr::only($operation->input, ['task_vm_id', 'guest_node_id', 'execution_node_id', 'provider', 'name', 'user', 'agent_sha256', 'agent', 'bootstrap', 'node', 'runtime', 'pi_url', 'network', 'gateway_node_id', 'issuer_node_id']), 'wireguard_public_key' => Node::query()->whereKey($operation->input['guest_node_id'])->value('wireguard_public_key')];
+        return [...Arr::only($operation->input, ['task_vm_id', 'guest_node_id', 'execution_node_id', 'provider', 'name', 'user', 'agent_sha256', 'agent_artifact_url', 'agent', 'bootstrap', 'vm', 'node', 'runtime', 'pi_url', 'network', 'gateway_node_id', 'issuer_node_id']), 'wireguard_public_key' => Node::query()->whereKey($operation->input['guest_node_id'])->value('wireguard_public_key')];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -76,6 +76,9 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
     {
         $node = ValidatedData::object($result['node'] ?? []);
         $attributes = Arr::only($node, ['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint', 'wireguard_public_key', 'architecture']);
+        if (($node['network_enrolled'] ?? false) === true) {
+            $attributes['status'] = LifecycleStatus::Active;
+        }
         if ($attributes !== []) {
             Node::query()->whereKey(ValidatedData::integer($intent['guest_node_id']))->where('name', $vm->name)->update($attributes);
         }

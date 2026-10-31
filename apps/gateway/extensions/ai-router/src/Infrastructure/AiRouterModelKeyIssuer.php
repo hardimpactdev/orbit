@@ -14,18 +14,15 @@ use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\TaskVmModelKeys;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
-use SensitiveParameter;
 
-/** Issues task VM model keys at the CLIProxyAPI of the ai-router extension, with its management key and one anchor key. */
+/** Supplies existing task VM model-router material from the CLIProxyAPI of the ai-router extension, with its management key and one anchor key. */
 final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
 {
     public function __construct(
         private TaskVmSettings $settings,
         private AiRouterState $proxy,
         private SettingRepository $gatewaySettings,
-        private TaskVmModelKeys $keys,
     ) {}
 
     public function assertReady(): void
@@ -62,16 +59,6 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
         }
 
         return ['management_key' => $this->managementKey(), 'anchor_key' => $this->anchor($origin)];
-    }
-
-    public function issue(string $origin, #[SensitiveParameter] string $key): void
-    {
-        $this->keys->ensure($origin, $this->managementKey(), $this->anchor($origin), $key);
-    }
-
-    public function revoke(string $origin, #[SensitiveParameter] string $key): void
-    {
-        $this->keys->revoke($origin, $this->managementKey(), $this->anchor($origin), $key);
     }
 
     private function managementKey(): string

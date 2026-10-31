@@ -64,6 +64,9 @@ final readonly class TaskVmEnrollmentIntent
                 'execution_node_id' => $this->executionNode($vm)->id,
                 'provider' => $vm->provider->value, 'name' => $vm->name, 'user' => $node->user, 'pi_url' => $this->pi->baseUrl($node),
                 'agent_sha256' => $pin, 'agent' => $this->agents->configurationForRoot($node, null),
+                'agent_artifact_url' => $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null,
+                'vm' => $vm->provider === TaskVmProviderKind::Incus
+                    ? ['project' => $this->settings->host((int) $vm->host_node_id)->project, 'name' => $vm->name] : null,
                 'bootstrap' => $this->bootstrap->input($node, 'orbit'),
                 'node' => ['node_id' => $node->id, 'name' => $node->name, 'user' => $node->user,
                     'platform' => $node->platform, 'architecture' => $node->architecture, 'wireguard_ip' => $node->wireguard_ip,
@@ -98,7 +101,7 @@ final readonly class TaskVmEnrollmentIntent
             'pi_token' => [$node->id, [$node->id], []],
             'model_router' => [$routerNodeId, [$gateway->id], []],
             'secret_hash' => [$node->id, [$host->id], [$host->id]],
-            'worker_credentials' => [$node->id, [$host->id], [$issuer->id]],
+            'worker_credentials' => [$node->id, [$host->id, $issuer->id], [$issuer->id]],
             'pi_artifact_file' => [$node->id, [$node->id], []],
             'enrollment_network' => [$network->server->id, [$gateway->id], []],
             'first_visit' => [$node->id, [$host->id], []],

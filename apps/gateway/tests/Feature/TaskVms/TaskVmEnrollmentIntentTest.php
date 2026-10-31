@@ -11,14 +11,17 @@ use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -26,7 +29,6 @@ use Tests\Support\TaskVmSettingsBuilder;
 function nativeEnrollmentVm(): TaskVm
 {
     Http::preventStrayRequests();
-    TaskVmSettingsBuilder::bind(['devClusterId' => null, 'piArtifactPath' => '/private/pi', 'piArtifactSha256' => str_repeat('a', 64), 'piModels' => ['test-model']]);
     $keys = Mockery::mock(ModelKeyIssuer::class);
     $keys->shouldReceive('origin')->andReturn(TaskVmSettingsBuilder::Origin);
     $keys->shouldReceive('assertReady');
@@ -45,6 +47,7 @@ function nativeEnrollmentVm(): TaskVm
     $host = Node::query()->create(['name' => 'build-host', 'status' => LifecycleStatus::Active, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9',
         'wireguard_ip' => '10.44.0.9', 'platform' => 'linux', 'architecture' => 'x86_64']);
     $host->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    TaskVmSettingsBuilder::bind(['devClusterId' => null, 'piArtifactPath' => '/private/pi', 'piArtifactSha256' => str_repeat('a', 64), 'piModels' => ['test-model'], 'hosts' => [TaskVmSettingsBuilder::host($host->id)]]);
     $vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => 'provisioning', 'group_id' => $group->id,
         'host_node_id' => $host->id, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('b', 64)]);
     $vm->update(['name' => 'tvm-'.$vm->id]);
@@ -198,12 +201,12 @@ it('admits immutable field custody without exporting private material or invokin
     mkdir($home.'/wireguard', 0o700, true);
     file_put_contents($home.'/wireguard/private.key', 'PRIVATE-HUB');
     file_put_contents($home.'/wireguard/public.key', 'PUBLIC-HUB');
-    app()->instance(App\Infrastructure\WireGuard\VpnConfigurationRepository::class,
-        new App\Infrastructure\WireGuard\VpnConfigurationRepository(app(App\Domain\WireGuard\VpnSettings::class), $home));
+    app()->instance(VpnConfigurationRepository::class,
+        new VpnConfigurationRepository(app(VpnSettings::class), $home));
     try {
         $private = app(TaskVmEnrollmentIntent::class)->privateInput($vm, $vm->host_node_id);
         expect($private['participant_node_ids'])->toContain($vm->host_node_id, $issuer->id, $router->id, $vm->node_id, $hub->id);
-        expect($private['private_bindings']['worker_credentials'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->host_node_id], 'write_node_ids' => [$issuer->id]]);
+        expect($private['private_bindings']['worker_credentials'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->host_node_id, $issuer->id], 'write_node_ids' => [$issuer->id]]);
         expect($private['private_bindings']['installation'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->node_id], 'write_node_ids' => []]);
         expect($private['private_bindings']['model_router']['owner_node_id'])->toBe($router->id);
         $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id, 'input' => [...$intent, ...$private]]);
@@ -212,6 +215,17 @@ it('admits immutable field custody without exporting private material or invokin
         expect(app(TaskVmEnrollmentIntent::class)->installation($vm)['environment'])->toContain('#');
         $this->assertDatabaseCount('operations', 0);
     } finally {
-        new Illuminate\Filesystem\Filesystem()->deleteDirectory($home);
+        new Filesystem()->deleteDirectory($home);
     }
+});
+
+it('projects network enrollment while runtime readiness stays native', function (): void {
+    $vm = nativeEnrollmentVm();
+    $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
+    app(TaskVmEnrollmentProjection::class)->recordPublic($vm, [...$intent, 'gateway_node_id' => $vm->host_node_id], ['node' => ['network_enrolled' => true]]);
+    expect($vm->fresh()->node->status)->toBe(LifecycleStatus::Active);
+    expect($vm->fresh()->node->accessibleNodes()->exists())->toBeFalse();
+    expect($vm->fresh()->node->roles()->sole()->status)->toBe(LifecycleStatus::Provisioning);
+    expect($vm->fresh()->state)->toBe(TaskVmState::Provisioning);
+    expect(Process::query()->sole()->status)->toBe(LifecycleStatus::Provisioning);
 });
