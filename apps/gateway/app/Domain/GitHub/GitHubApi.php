@@ -204,6 +204,12 @@ interface GitHubApi
      */
     public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array;
 
+    /** @throws GitHubApiException */
+    public function branchHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): string;
+
+    /** The file's blob SHA at one immutable commit. @throws GitHubApiException */
+    public function fileBlobSha(#[SensitiveParameter] string $token, GitHubRepository $repository, string $path, string $commitSha): string;
+
     /**
      * How the head commit relates to the base commit. Needs a token with `contents: read`.
      *

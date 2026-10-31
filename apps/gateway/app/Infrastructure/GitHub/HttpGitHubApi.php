@@ -637,6 +637,34 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $commits;
     }
 
+    public function branchHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): string
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->withoutRedirecting()
+            ->get($this->repositoryPath($repository).'/git/ref/heads/'.rawurlencode($branch)));
+        $sha = $this->sha($response->json('object.sha'));
+        if (! $response->successful() || $sha === null) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $sha;
+    }
+
+    public function fileBlobSha(#[SensitiveParameter] string $token, GitHubRepository $repository, string $path, string $commitSha): string
+    {
+        $segments = explode('/', $path);
+        if ($this->sha($commitSha) === null || array_intersect($segments, ['', '.', '..']) !== []) {
+            throw GitHubApiException::refused();
+        }
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->withoutRedirecting()
+            ->get($this->repositoryPath($repository).'/contents/'.implode('/', array_map(rawurlencode(...), $segments)), ['ref' => $commitSha]));
+        $sha = $this->sha($response->json('sha'));
+        if (! $response->successful() || $response->json('type') !== 'file' || $sha === null) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $sha;
+    }
+
     /** One commit per page keeps the response small; the relation fields do not depend on paging. */
     public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison
     {

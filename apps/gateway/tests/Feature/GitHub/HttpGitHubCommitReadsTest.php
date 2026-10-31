@@ -16,6 +16,47 @@ beforeEach(function (): void {
     $this->repository = GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git');
 });
 
+describe('HttpGitHubApi file revisions', function (): void {
+    it('reads the selected repository branch and pins its file read to that exact commit', function (): void {
+        $repository = GitHubRepository::fromOrigin('https://github.com/acme/shop');
+        $head = str_repeat('a', 40);
+        $blob = str_repeat('b', 40);
+        Http::fake([
+            'https://api.github.com/repos/acme/shop/git/ref/heads/release%2Fnext' => Http::response(['object' => ['sha' => $head]]),
+            'https://api.github.com/repos/acme/shop/contents/config/release%20pins.json*' => Http::response(['type' => 'file', 'sha' => $blob]),
+        ]);
+
+        $github = app(GitHubApi::class);
+        expect($github->branchHead('read-token', $repository, 'release/next'))->toBe($head)
+            ->and($github->fileBlobSha('read-token', $repository, 'config/release pins.json', $head))->toBe($blob);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/shop/contents/config/release%20pins.json?ref='.$head
+            && $request->hasHeader('Authorization', 'Bearer read-token'));
+    });
+
+    it('refuses failed or malformed branch and file revision replies', function (int $status, array $branch, array $file): void {
+        Http::fake([
+            '*/git/ref/heads/main' => Http::response($branch, $status),
+            '*/contents/config/pins.json*' => Http::response($file, $status),
+        ]);
+        $github = app(GitHubApi::class);
+        expect(fn () => $github->branchHead('read-token', $this->repository, 'main'))->toThrow(GitHubApiException::class)
+            ->and(fn () => $github->fileBlobSha('read-token', $this->repository, 'config/pins.json', str_repeat('a', 40)))->toThrow(GitHubApiException::class);
+    })->with([
+        'refused' => [403, ['object' => ['sha' => str_repeat('a', 40)]], ['type' => 'file', 'sha' => str_repeat('b', 40)]],
+        'abbreviated' => [200, ['object' => ['sha' => 'abc123']], ['type' => 'file', 'sha' => 'abc123']],
+        'redirect' => [302, [], []],
+    ]);
+
+    it('refuses directory results and unpinned file reads', function (): void {
+        Http::fake(['*/contents/config/pins.json*' => Http::response(['type' => 'dir', 'sha' => str_repeat('b', 40)])]);
+        $github = app(GitHubApi::class);
+        expect(fn () => $github->fileBlobSha('read-token', $this->repository, 'config/pins.json', str_repeat('a', 40)))->toThrow(GitHubApiException::class)
+            ->and(fn () => $github->fileBlobSha('read-token', $this->repository, 'config/pins.json', 'main'))->toThrow(GitHubApiException::class);
+        Http::assertSentCount(1);
+    });
+});
+
 describe('HttpGitHubApi check runs', function (): void {
     it('reads every page and maps status, head_sha, and the App', function (): void {
         $pages = GreenCommitFixtures::checkRunPages();

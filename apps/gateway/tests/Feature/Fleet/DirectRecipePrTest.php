@@ -6,6 +6,7 @@ use App\Actions\Fleet\AdmitRecipePrAction;
 use App\Domain\Fleet\RecipePrProjection;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\Nodes\RoleName;
@@ -85,10 +86,10 @@ it('reports the admitted writer and serving recipe revision without execution st
     $github->shouldReceive('repositoryInstallation')->once()->andReturn(9);
     $github->shouldReceive('repositoryReadToken')->once()->andReturn('private-read-token');
     $github->shouldReceive('openPullRequests')->once()->andReturn([]);
+    $github->shouldReceive('branchHead')->once()->andReturn(str_repeat('b', 40));
+    $github->shouldReceive('fileBlobSha')->once()->andReturn(str_repeat('c', 40));
     app()->instance(GitHubApi::class, $github);
     Http::preventStrayRequests();
-    Http::fake(['*/git/ref/heads/main' => Http::response(['object' => ['sha' => str_repeat('b', 40)]]),
-        '*/contents/apps/gateway/resources/machine-software/recipe.json*' => Http::response(['sha' => str_repeat('c', 40)])]);
     $response = $this->getJson('/api/v1/fleet/recipe-pr/plan')->assertOk();
     expect($response->json('data.writer'))->toBe('direct')
         ->and($response->json('data.serving_recipe_revision'))->toBe(hash_file('sha256', resource_path('machine-software/recipe.json')))
@@ -119,13 +120,13 @@ it('keeps recipe and check observations stable across unrelated main commits', f
     });
     app()->instance(GitHubApi::class, $github);
     Http::preventStrayRequests();
-    Http::fake(function (Request $request) use (&$main, &$blob) {
-        if (str_ends_with($request->url(), '/git/ref/heads/main')) {
-            return Http::response(['object' => ['sha' => $main]]);
-        }
-        expect($request['ref'])->toBe($main);
+    $github->shouldReceive('branchHead')->andReturnUsing(function () use (&$main): string {
+        return $main;
+    });
+    $github->shouldReceive('fileBlobSha')->andReturnUsing(function (string $token, $repository, string $path, string $commit) use (&$main, &$blob): string {
+        expect($commit)->toBe($main);
 
-        return Http::response(['sha' => $blob]);
+        return $blob;
     });
     $read = fn (): array => $this->getJson('/api/v1/fleet/recipe-pr/plan')->assertOk()->json('data');
     $first = $read();
@@ -155,6 +156,37 @@ it('keeps recipe and check observations stable across unrelated main commits', f
         ->and($recipe['serving_recipe_revision'])->toBe($first['serving_recipe_revision'])
         ->and(json_encode($recipe))->not->toContain('private-read-token', 'private-checks-token');
 });
+
+it('requests checks authority once for all eligible recipe candidates', function (bool $readable): void {
+    TaskVmSettingsBuilder::bind();
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->twice()->andReturn(9);
+    $github->shouldReceive('repositoryReadToken')->once()->andReturn('private-read-token');
+    $github->shouldReceive('branchHead')->once()->andReturn(str_repeat('b', 40));
+    $github->shouldReceive('fileBlobSha')->once()->andReturn(str_repeat('c', 40));
+    $checks = $github->shouldReceive('repositoryChecksToken')->once();
+    if ($readable) {
+        $checks->andReturn('private-checks-token');
+        $github->shouldReceive('checkRuns')->twice()->andReturn([]);
+    } else {
+        $checks->andThrow(GitHubApiException::unavailable());
+    }
+    $github->shouldReceive('openPullRequests')->once()->andReturn([
+        new GitHubListedPullRequest(99, 'https://github.com/hardimpactdev/orbit/pull/99', 'recipe', null, 1,
+            'orbit-acme[bot]', 'nightly/recipe-20261031', str_repeat('a', 40), 'hardimpactdev/orbit', 'main', false),
+        new GitHubListedPullRequest(100, 'https://github.com/hardimpactdev/orbit/pull/100', 'artifacts', null, 1,
+            'orbit-acme[bot]', 'nightly/artifacts-123456abcdef', str_repeat('d', 40), 'hardimpactdev/orbit', 'main', false),
+    ]);
+    app()->instance(GitHubApi::class, $github);
+    Http::preventStrayRequests();
+
+    $response = $this->getJson('/api/v1/fleet/recipe-pr/plan')->assertOk();
+    expect($response->json('data.pulls'))->toHaveCount(2);
+    if (! $readable) {
+        expect(array_column($response->json('data.pulls'), 'checks'))->toBe(['unreadable', 'unreadable']);
+    }
+    expect($response->getContent())->not->toContain('private-read-token', 'private-checks-token');
+})->with([true, false]);
 
 it('rejects worker-selected identities credentials and stale actions at admission', function (): void {
     $body = array_intersect_key($this->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha']));

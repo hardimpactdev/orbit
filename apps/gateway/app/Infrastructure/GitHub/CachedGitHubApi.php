@@ -174,6 +174,16 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->compareCommits($token, $repository, $baseSha, $headSha);
     }
 
+    public function branchHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): string
+    {
+        return $this->github->branchHead($token, $repository, $branch);
+    }
+
+    public function fileBlobSha(#[SensitiveParameter] string $token, GitHubRepository $repository, string $path, string $commitSha): string
+    {
+        return $this->github->fileBlobSha($token, $repository, $path, $commitSha);
+    }
+
     public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array
     {
         return $this->github->openPullRequests($token, $repository);

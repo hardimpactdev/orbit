@@ -1164,6 +1164,8 @@ Swamp requests retire, refresh and merge Operations for each candidate on rotati
 
 Unchanged evidence reuses the same Gateway intent and starts no new native run. Retirement wakes when the recipe or candidate set changes; refresh wakes when main or the required-check observation changes; merge wakes when its required-check observation changes, plus the recipe revision for artifact candidates. These actions also wake when a candidate leaves draft, changes its base, or changes its source repository. Ordinary main commits do not wake retirement. Daily opens use the serving recipe revision separately.
 
+Each plan reads the main commit and its recipe blob through the shared GitHub client. It requests one checks token for all eligible candidates; refused checks access leaves each candidate unreadable. Refresh does not request permission to change workflow files and fails closed when GitHub requires it.
+
 The Gateway exposes these read-only revisions without a retry cache, timer or execution receipt. The native action rechecks all write policy before an effect.
 
 Swamp checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author stops the native run; the merge uses the expected head SHA.
