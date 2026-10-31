@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Queue;
 use Psr\Log\NullLogger;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeSwampEventSocket;
+use Tests\Support\ScriptedWebSocketServer;
 
 final readonly class NativeSubscriberProjection implements DirectOperationProjection
 {
@@ -66,6 +68,82 @@ function nativeSubscriberAttached(array $request): array
 beforeEach(function (): void {
     config(['swamp.run_token' => 'private-native-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
 });
+
+it('delivers a large native terminal frame over verified TLS then projects one large history response', function (string $status): void {
+    Queue::fake([ProjectSwampTerminal::class]);
+    $operation = nativeSubscriberOperation();
+    $directory = sys_get_temp_dir().'/orbit-native-terminal-'.bin2hex(random_bytes(8));
+    mkdir($directory);
+    $fixture = $directory.'/public-run.json';
+    $run = [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-native-events', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
+            'intent' => ['public_snapshot' => str_repeat('x', 1_100_000)]],
+        'startedAt' => '2026-10-31T14:00:00Z', 'completedAt' => '2026-10-31T14:00:01Z',
+        'jobs' => [['name' => 'completion', 'steps' => [['name' => 'result', 'outputs' => [
+            'stdout' => json_encode(['ready' => true]), 'stderr' => str_repeat('y', 1_100_000),
+        ]]]]],
+    ];
+    file_put_contents($fixture, json_encode($run, JSON_THROW_ON_ERROR));
+    $server = ScriptedWebSocketServer::start('native-terminal', [$fixture]);
+    // Redirect only the test endpoint. Production client bounds, TLS verification and protocol stay real.
+    $socket = new class(app(WebSocketClient::class), $server->endpoint()) implements WebSocketClient
+    {
+        public array $sent = [];
+
+        public function __construct(private readonly WebSocketClient $inner, private readonly WebSocketEndpoint $endpoint) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->inner->connect($this->endpoint, $timeoutSeconds);
+        }
+
+        public function send(array $message): void
+        {
+            $this->sent[] = $message;
+            $this->inner->send($message);
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            return $this->inner->receive($timeoutSeconds);
+        }
+
+        public function close(): void
+        {
+            $this->inner->close();
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->inner->isConnected();
+        }
+    };
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+
+    try {
+        $deadline = microtime(true) + 1.5;
+        do {
+            $subscriber->pass();
+            usleep(1_000);
+        } while (Queue::pushed(ProjectSwampTerminal::class)->isEmpty() && microtime(true) < $deadline);
+        $subscriber->close();
+        Queue::assertPushed(ProjectSwampTerminal::class, 1);
+        app()->instance(WebSocketClient::class, $socket);
+        Queue::pushed(ProjectSwampTerminal::class)->first()->handle(app(SwampCommandStep::class));
+
+        expect($operation->fresh()->status->value)->toBe($status === 'interrupted' ? 'failed' : $status);
+        expect($operation->fresh()->result)->toBe(['ready' => true]);
+        expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'workflow.history.get']);
+        expect($server->waitFor('native-request='))->toBe('native-request=run.attach');
+        expect($server->waitFor('native-request='))->toBe('native-request=workflow.history.get');
+    } finally {
+        $subscriber->close();
+        $server->stop();
+        unlink($fixture);
+        rmdir($directory);
+    }
+})->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
 
 it('keeps multiple bound streams attached and queues each terminal frame without a history read in the observer', function (string $status): void {
     Queue::fake([ProjectSwampTerminal::class]);

@@ -12,7 +12,7 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 ## Secret inputs
 
-Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper delegates to the native vault push primitive, which sends the value on stdin and retains only a synchronization digest. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
+Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper sends one native `vault.put` request over the authenticated TLS WebSocket and retains only a synchronization digest. The value is in `payload.value`, never process arguments. It accepts only a matching vault/key acknowledgement from a `local_encryption` vault before recording synchronization. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 
@@ -25,7 +25,9 @@ inputs:
 
 Swamp resolves the value. The script uses stdin or a protected config file when handing it to a tool. It must not expand a secret into `run:`, argv or shell tracing. Environment delivery does not isolate the value from the worker user: `/proc` can expose the environment.
 
-The primitive requires native remote stdin support and the exact approved vault permission. Official e459 does not accept remote vault-put stdin. That upstream gap remains blocked; the helper adds no access or runtime workaround. Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
+Official e459 accepts this server protocol even though its remote CLI refuses stdin. The request is `{type: "vault.put", id, payload: {vaultName, key, value, force: true}}`; no refresh hook is supplied. The primitive still requires approved vault authority; it adds no permission. Official e459 authorizes `write` on `vault:<name>` with the key in request context. That action also admits delete and annotate; a `methods: [put]` restriction does not narrow it because the handler supplies no method name. A put-only request does not authorize a broader write grant.
+
+Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ## Terminal outputs
 
@@ -38,6 +40,8 @@ A `completed` event can carry a failed run status. Native `interrupted` maps to 
 ### Event connection
 
 The existing `orbit:agent-view` Gateway observer also keeps the shared native run connection. It joins the private `orbit` record channel; a committed native binding publishes an Operation notice there. After subscription acknowledgement and on observer startup, it reads the active bound Operations once to cover notices missed while disconnected. Only kinds with `terminal_result` are followed. It multiplexes `run.attach` requests on one native socket; receiving events never waits for a workflow to finish or reads history in the socket loop.
+
+The native event connection and shared history reader accept messages and frames up to 8 MiB. Full run metadata and intent can exceed the Reverb client's 64 KiB message limit; Reverb keeps its existing limit. A run beyond the native bound cannot be projected through this connection and must not be treated as successful delivery.
 
 A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status and queued on the existing `gateway:operations` queue. `ProjectSwampTerminal` reloads the Operation and its declaration and calls the same `SwampCommandStep` helper. There is one history request per job, no automatic job retry, and no native execution command. An explicit attach `not_found` queues the same job without a claimed status for bounded late-result recovery. Authorization failures and `run.elsewhere` do not invent a terminal result. Duplicate frames are suppressed on the connection; the helper's row lock and terminal guard protect duplicate delivery after a process restart.
 
