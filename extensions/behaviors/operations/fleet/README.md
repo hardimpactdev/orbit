@@ -136,8 +136,3 @@ also includes worker queue time. After loading, measure actual run spacing and
 surviving inode growth rather than infer an achieved reduction from source.
 Evidence: `~/swamp-execution/evidence/run-producers-20261030/attribution.json`
 on Beast. No new Gateway scheduler or execution machinery is introduced.
-
-`fleet.recipe_pr` uses its own direct workflow and has no polled discovery or
-executor branch. It runs on the admitted Gateway Node's exact worker for the
-shared private GitHub reader. See `docs/fleet-recipe-pr-direct.md` for policy,
-retry preparation and the production cutover.

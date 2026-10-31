@@ -2,6 +2,7 @@ import { EffectIntent, effectPost, targetReceipt } from "./effects.ts";
 import { maintenance, MaintenanceReceipt } from "./maintenance.ts";
 import { executeRollout } from "./rollout.ts";
 import { executeCliConverge } from "./cli_converge.ts";
+import { executeRecipePr } from "./recipe_pr.ts";
 import { executeRecipe } from "./recipe.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
@@ -25,7 +26,7 @@ export function fleet(
 ) {
   return {
     type: "@nckrtl/operation-fleet",
-    version: "2026.10.30.2",
+    version: "2026.10.30.1",
     globalArguments: Globals,
     resources: {
       assignment: {
@@ -86,6 +87,7 @@ export function fleet(
           kind: z.enum([
             "fleet.recipe",
             "fleet.rollout",
+            "fleet.recipe_pr",
             "fleet.cli_converge",
           ]),
           worker: z.string(),
@@ -300,6 +302,7 @@ export function fleet(
               [
                 "fleet.recipe",
                 "fleet.rollout",
+                "fleet.recipe_pr",
                 "fleet.cli_converge",
               ].includes(
                 operation.kind,
@@ -358,6 +361,8 @@ export function fleet(
                 }
                 : operation.cancel_requested && operation.steps.length === 0
                 ? { status: "cancelled", result: {}, error_code: null }
+                : operation.kind === "fleet.recipe_pr"
+                ? await executeRecipePr(operation, post)
                 : operation.kind === "fleet.cli_converge"
                 ? await executeCliConverge(operation, post)
                 : await (operation.kind === "fleet.recipe"
