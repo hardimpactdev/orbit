@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/route-publication-command'
+version: 2026.10.31.2
+visibility: private
+license: MIT
+description: Pure public Route publication composition for official file actions.
+behaviors:
+  - operations/routes/publication-command/assets.ts
