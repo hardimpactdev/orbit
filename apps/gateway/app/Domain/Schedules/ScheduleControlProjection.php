@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -21,31 +22,27 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
 
     public function input(Operation $operation): array
     {
-        return Arr::only($operation->input, $operation->kind === 'schedule.destroy'
-            ? ['id', 'agent_sha256', 'group', 'cascade']
-            : ['id', 'agent_sha256', 'user', 'working_directory']);
+        if (! $operation->status->terminal() && ! Schedule::query()->whereKey($operation->input['id'])->exists()) {
+            throw new ResourceOperationException('schedule.target_unavailable', 'The admitted Schedule no longer exists.', 404);
+        }
+
+        return Arr::only($operation->input, ['id', 'command_hash', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'calendar', 'timeout_seconds', 'desired', 'cascade']);
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        $reported = ValidatedData::object($data['result'] ?? []);
         $result = match ($status) {
             OperationStatus::Succeeded => ['ready' => true],
             OperationStatus::Failed => ['error_code' => $code],
             default => [],
         };
-        if (($status === OperationStatus::Succeeded && ($reported['ready'] ?? null) !== true)
-            || ($status === OperationStatus::Failed && ($code === null || ($reported['error_code'] ?? null) !== $code))
-            || ($status !== OperationStatus::Failed && $code !== null)) {
-            throw new ResourceOperationException('operation.result_invalid', 'The Schedule needs a bounded native outcome.', 422);
-        }
 
         return DB::transaction(function () use ($operation, $data, $status, $code, $result): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
-            $projected = $this->direct->project($operation, $data, $result, 'schedule-control');
+            $projected = $this->direct->project($operation, $data, $result);
             if (! $terminal && $status->terminal()) {
                 $outcome = match ($status) {
                     OperationStatus::Succeeded => OperationOutcome::succeeded($result),

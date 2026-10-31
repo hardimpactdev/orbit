@@ -60,10 +60,6 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.update')]
     public function update(UpdateProcessRequest $request, Process $process, UpdateProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
-            return $this->processResponse($request, $action->execute($process, $request->updates()));
-        }
-
         return $this->operationResponse($request, $action->admit($process, $request->updates(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 

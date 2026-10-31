@@ -57,24 +57,18 @@ describe('orbit:node-programs', function (): void {
         $programs = render_node_programs(['app-dev']);
 
         expect($programs)->toBe($expected)
-            ->and(array_slice(node_program_names($programs), 0, 6))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'javascript-runtime', 'vp-manager', 'composer-manager'])
-            ->and(node_program_names($programs)[6])->toBe('app-dev-php-install')
+            ->and(array_slice(node_program_names($programs), 0, 4))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'javascript-runtime'])
+            ->and(node_program_names($programs)[4])->toBe('app-dev-php-install')
             ->and(array_keys($programs[0]))->toBe(['name', 'arguments', 'input', 'fingerprint'])
             ->and(array_column($programs, 'fingerprint'))->each->toMatch('/\A[a-f0-9]{64}\z/');
         expect($programs[3]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'recipe.install-javascript']);
         expect(array_keys(json_decode($programs[3]['input'], true, flags: JSON_THROW_ON_ERROR)['input']['tools']))->toEqualCanonicalizing(['bun', 'node', 'pnpm', 'vp', 'vp-cli']);
-        expect($programs[5]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tool.materialize-composer']);
-        expect(json_decode($programs[5]['input'], true, flags: JSON_THROW_ON_ERROR)['input'])->toBe(['user' => 'orbit']);
-        expect($programs[4]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tool.materialize-vp']);
-        $input = json_decode($programs[4]['input'], true, flags: JSON_THROW_ON_ERROR)['input'];
-        expect($input)->toMatchArray(['user' => 'orbit', 'architecture' => 'amd64']);
-        expect(hash('sha256', $input['vp_lock']))->toBe($input['tools']['vp']['lock_sha256']);
     });
 
     it('renders the app-prod programs', function (): void {
         $programs = render_node_programs(['app-prod']);
 
-        expect(node_program_names($programs))->toBe(['bootstrap', 'caddy-package', 'app-prod-prerequisites', 'javascript-runtime', 'vp-manager', 'composer-manager'])
+        expect(node_program_names($programs))->toBe(['bootstrap', 'caddy-package', 'app-prod-prerequisites', 'javascript-runtime'])
             ->and(json_decode((string) $programs[2]['input'], true)['input'])->toMatchArray(['user' => 'orbit', 'home' => '/home/orbit', 'composer_home' => true, 'apps_directory' => false])
             ->and(json_decode((string) $programs[2]['input'], true)['input']['packages'])->toContain('docker.io', 'caddy');
     });
@@ -97,8 +91,8 @@ describe('orbit:node-programs', function (): void {
     it('renders shared programs once, at the first role that runs them', function (): void {
         $names = node_program_names(render_node_programs(['router', 'app-prod', 'app-dev']));
 
-        expect(array_slice($names, 0, 8))->toBe([
-            'bootstrap', 'caddy-package', 'router-prerequisites', 'app-prod-prerequisites', 'javascript-runtime', 'vp-manager', 'composer-manager', 'app-dev-prerequisites',
+        expect(array_slice($names, 0, 6))->toBe([
+            'bootstrap', 'caddy-package', 'router-prerequisites', 'app-prod-prerequisites', 'javascript-runtime', 'app-dev-prerequisites',
         ])->and(array_count_values($names))->each->toBe(1);
     });
 

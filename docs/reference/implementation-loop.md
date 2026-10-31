@@ -85,7 +85,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 | Check | Work |
 | --- | --- |
-| PHP syntax and Composer | Validate every tracked Composer manifest and run `php -l` on added or changed PHP files, with at most four workers |
+| PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
 | Generated contracts | Boot the Gateway and load all Operation kinds, executors and completion contracts; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
@@ -94,7 +94,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
 
-Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. A PR with changes under `apps/agent` builds the agent directly, without querying published releases. A PR without those changes starts no agent build or delivery work. Main still compares the published source tree to detect an unpublished agent change from an earlier merge.
+Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
@@ -104,19 +104,19 @@ Run `bin/check-operation-kinds` to repeat the registry check locally. It uses th
 
 The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
-Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Main keeps its running run; a newer push replaces only the waiting run.
+Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
 On `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 
-Actions use pinned commits. Build and check jobs have read-only tokens. The CLI release publisher alone has the content write and attestation permissions needed to publish signed releases. It downloads CI's verified `agent-delivery` artifact without compiling or executing the agent.
+Actions use pinned commits. Build and check jobs have read-only tokens. The CLI release publisher alone has the content write and attestation permissions needed to publish signed releases. It publishes only CLI binaries, checksums and provenance. It downloads no agent delivery.
 
 ### One PHP build in CI
 
 Generated API contracts, web types, documentation navigation, and context are built in CI and stay out of Git. The Gateway Composer install builds its runtime MCP catalogue before generated-contract and web checks.
 
-Managed Linux Nodes, recipe artifacts, and PHP builds support amd64 only. The Linux agent delivery builds once for x86_64 when its source changes; unchanged source reuses the authenticated published delivery.
+Managed Linux Nodes, recipe artifacts, and PHP builds support amd64 only. CI builds no agent delivery. It reuses the frozen authenticated published delivery.
 
 The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
 
@@ -138,29 +138,15 @@ The operator registers runners. The Orbit GitHub App keeps `administration: read
 
 The fast CI gate uses hosted runners. It needs no Gateway test system packages, privileged test setup or local Swamp credentials.
 
-### macOS agent runner on mini
-
-When the repository variable `ORBIT_MINI_RUNNER` is `true`, the `Build macOS agent` job runs on mini, a Mac Node. The job builds both macOS agent binaries. During the migration it runs no tests. On mini it skips the hosted macOS queue. The workflow selects hosted `macos-15` for fork pull requests, but a fork can change that workflow. Set the variable to anything else to move the job back to GitHub-hosted runners.
-
-The repository approval policy, `all_external_contributors`, requires approval before a fork workflow runs. Before approving a fork run, check `.github/**` changes, including runner selection. The workflow guard alone does not protect mini.
-
-On mini, checkout keeps `apps/agent/target` across runs and refs, so builds stay warm, and it still resets every tracked file. The job does not install or update Rust and restores no Rust cache, because both would change the account's own `~/.cargo` and toolchain. It only checks that the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets are installed. Update the toolchain by hand while the runner is idle.
-
-The runner is registered to this repository only, with the label `mini`, and runs as a launchd service of the `nckrtl` account. Mini also hosts the migration orchestrator state and the beast relay under that same account. It has no isolation. A job runs with that account's files and SSH keys, and with mini's WireGuard address, which the Gateway trusts as the mini Node. That covers every push and pull request from a branch in this repository, including task handoff pushes that task agents write.
-
-The macOS agent binaries in each release come from this job, so they are built on mini too. Nick accepts the shared-account risk for this one job. Do not send other jobs to mini.
-
 ### Self-hosted shard runners
 
 Existing runner provisioning remains available to other workflows. This CI workflow schedules no test shards or publishes quality-cache refs.
 
-### Agent delivery
+### Frozen agent delivery
 
-`Select agent delivery` finds the newest published CLI release whose agent source is an ancestor of this checkout. It compares that delivery's source with `apps/agent` in the current checkout. This comparison also detects an agent change whose earlier main CI run was cancelled. A changed tree builds Linux and macOS deliveries with at most four Cargo workers. An unchanged tree skips both builds.
+CI has no agent build, selection, combine or upload jobs. The command guard downloads the frozen binary only to verify its read-only command inventory; it publishes nothing. Gateway preparation verifies the fixed published manifest and writes that same pin into each prepared release. Desired fleet state reads that pin. No Gateway commit waits for its own agent or CLI release.
 
-`Combine agent delivery` runs after that selection even when both build jobs skip. For an unchanged agent, it downloads the published binaries, manifest, checksums and provenance. It verifies the manifest and checksums against the release workflow's attestation on `main`, then verifies every binary digest and uploads the same `agent-delivery` layout as a new build. No published delivery means the first build must create it.
-
-The CLI release workflow still publishes every green main commit with its own CLI version, agent binaries, manifest, checksums and provenance. It rewrites the reused agent manifest's URLs to that commit's release and preserves the agent source commit and digests. [Gateway preparation](/reference/gateway-recovery#prepare-a-release) and [desired fleet state](/reference/self-update#desired-fleet-state) therefore use the same release and pin contract on a docs-only commit.
+The CLI release workflow continues to publish each green main commit with its own CLI version, checksums and provenance. It includes no agent binaries or manifest.
 
 ## Local checks
 

@@ -3,12 +3,20 @@ title: "Docker CE migration"
 description: "Planned-window migration of Beast and Shark to Ubuntu docker.io."
 covers:
   - apps/gateway/app/Console/Commands/MigrateDockerCommand.php
-  - apps/gateway/app/Actions/Fleet/MigrateDockerAction.php
+  - apps/gateway/app/Actions/Fleet/AdmitDockerMigrationAction.php
+  - apps/gateway/app/Domain/Fleet/DockerMigration*.php
+  - apps/gateway/app/Http/{Controllers/Api/FleetDockerMigrationController.php,Requests/Fleet/DockerMigrationRequest.php}
+  - apps/cli/app/Commands/Nodes/MigrateDockerCommand.php
+  - packages/php-sdk/src/Requests/Fleet/MigrateDockerRequest.php
   - apps/agent/src/commands/{docker_migration.rs,docker_migration/**}
   - apps/agent/src/commands/recipe/{apt.rs,sources.rs}
 ---
 
 # Docker CE migration
+
+Migration is one native Swamp Operation (`fleet.docker_migrate`). Use `orbit node:migrate-docker <Node>` through the Gateway. Add `--dry-run` to read a plan, `--yes` for migration, or `--yes --restore-policies` after manual CE recovery. The SDK and API return an Operation; its result contains the plan or bounded final report. The CLI follows the Operation. Swamp runs the package transaction, Process reconciliation and final health checks on the owning Node. Private Process commands and environment use the shared private-material endpoint.
+
+The internal Gateway Artisan command records the same asynchronous intent. It returns the admitted Operation instead of a host report. The frozen agent remains unchanged and is not called for effects.
 
 Every Linux Node uses the recipe's Ubuntu `docker.io`. Recipe convergence refuses Docker CE with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Nightly and fleet convergence never migrate the provider. Fleet convergence records the Node as skipped with reason `docker-provider:docker-ce` and continues to other Nodes. The operator runs this internal Gateway command for one Node during a maintenance window. Its output is JSON; it has no interactive prompts.
 
@@ -17,12 +25,14 @@ Every Linux Node uses the recipe's Ubuntu `docker.io`. Recipe convergence refuse
 Nick runs this procedure. Beast has non-Orbit containers, including ofide, mailpit, ohdear and dngdmt. No GPU container runs on Beast. Shark has prometheus, grafana, pantry-sync-redis and agent-evals. Confirm the inventory on the day: these names are not a manifest.
 
 1. Schedule downtime for every container. Verify independent backups of databases, named volumes and bind mounts. Keep a protected byte-for-byte copy of `/etc/docker/daemon.json`. Pause deployments and scheduled fleet maintenance.
-2. On the Gateway checkout for the migration, run `php artisan node:migrate-docker Beast --dry-run`. Repeat for Shark. Review container names, package changes, source backups, fallback paths and `space`.
+2. Run `php artisan node:migrate-docker Beast --dry-run` and follow the Operation.
 3. Resolve any refusal before the window. Dry-run reads the Node and checks registry access but writes no files, stops nothing and does not run apt update.
 4. Run `php artisan node:migrate-docker Beast --yes`. Migrate only one Node at a time. Run the Shark command after Beast passes its checks.
-5. Check every container's final state in the JSON report. Verify application traffic, database contents, monitoring and DNS.
+5. Follow the Operation and check every container's final state in its JSON result. Verify application traffic, database contents, monitoring and DNS.
 6. On Beast, confirm `nvidia` appears in `docker info` and compare `/etc/docker/daemon.json` byte for byte with its saved copy.
 7. On Shark, verify Grafana dashboards and Prometheus ingestion.
+
+Read the plan for Shark too. Review container names, recipe pins, source backups, fallback paths and `space.sufficient` in each result.
 8. Run `php artisan node:converge-recipe Beast --dry-run`, then convergence and Doctor. Repeat for Shark. Restore scheduled maintenance after both Nodes pass.
 
 ## Safety and recovery
@@ -72,6 +82,8 @@ A custom Docker `data-root` in daemon.json is supported in place: Ubuntu docker.
 The NVIDIA runtime registration, container `Runtime` and `DeviceRequests`, and toolkit configuration stay unchanged. NVIDIA's runtime wraps an OCI runtime, so the provider swap does not require a new NVIDIA configuration. The package guard refuses removal of the toolkit or other unrelated packages. The fallback config preserves the NVIDIA registration as well as logging and storage settings. Check the runtime listing and unchanged daemon configuration as described in the window procedure.
 
 ## Native verification
+
+The native Fleet tests cover admission identity, reconciliation and refusal handling. Canonical Docker lower tests cover package and journal behavior. The following Rust checks document the frozen artifact; they do not prove the native port.
 
 Rust tests cover inventory refusals, package guards, interrupted transactions, repeat execution, and secret-free reports. Run `cargo test --locked docker_migration` from `apps/agent`.
 
