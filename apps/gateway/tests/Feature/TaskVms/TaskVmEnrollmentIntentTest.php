@@ -5,9 +5,6 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
-use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -258,32 +255,12 @@ it('bulk reads initial standalone enrollment material without requiring provider
     config()->set('dependency_detection.services_node_id', $issuer->id);
     app(ModelKeyIssuer::class)->shouldReceive('ownerNodeId')->andReturn($router->id);
     app(ModelKeyIssuer::class)->shouldReceive('privateMaterial')->with($intent['runtime']['origin'], $router->id)->once()
-        ->andReturn(['credential' => 'PRIVATE-ROUTER']);
+        ->andReturn(['management_key' => 'PRIVATE-ROUTER', 'anchor_key' => str_repeat('e', 64)]);
     $home = sys_get_temp_dir().'/native-enrollment-read-'.bin2hex(random_bytes(8));
     mkdir($home.'/wireguard', 0o700, true);
     file_put_contents($home.'/wireguard/private.key', 'PRIVATE-HUB');
     file_put_contents($home.'/wireguard/public.key', 'PUBLIC-HUB');
     app()->instance(VpnConfigurationRepository::class, new VpnConfigurationRepository(app(VpnSettings::class), $home));
-
-    $direct = app(DirectOperation::class);
-    if ($direct->definition('task_vm.enroll') === null) {
-        $direct = new DirectOperation([new class implements DirectOperationContribution
-        {
-            public function definitions(): array
-            {
-                return ['task_vm.enroll' => ['workflow' => 'operation-test-enrollment', 'projection' => TaskVmEnrollmentProjection::class,
-                    'private_material' => ['installation' => 'task_vm.installation', 'model_key' => 'task_vm.model_key',
-                        'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router',
-                        'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials',
-                        'pi_artifact_file' => 'task_vm.image_artifact', 'enrollment_network' => 'task_vm.enrollment_network',
-                        'first_visit' => 'task_vm.first_visit', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
-                    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials',
-                        'provider_bootstrap' => 'task_vm.provider_bootstrap']]];
-            }
-        }]);
-        app()->instance(DirectOperation::class, $direct);
-    }
-    app()->instance(DirectOperationPrivateBindings::class, new DirectOperationPrivateBindings($direct));
 
     try {
         $private = app(TaskVmEnrollmentIntent::class)->privateInput($vm, $intent['execution_node_id']);
@@ -294,7 +271,7 @@ it('bulk reads initial standalone enrollment material without requiring provider
 
         $material = app(DirectOperationPrivateMaterial::class)->read($operation, $intent['execution_node_id']);
 
-        expect($material)->toBe(['model_key' => $vm->fresh()->model_key, 'model_router' => ['credential' => 'PRIVATE-ROUTER'],
+        expect($material)->toEqual(['model_key' => $vm->fresh()->model_key, 'model_router' => ['management_key' => 'PRIVATE-ROUTER', 'anchor_key' => str_repeat('e', 64)],
             'secret_hash' => null, 'worker_credentials' => null, 'enrollment_network' => null, 'first_visit' => null]);
         expect($material)->not->toHaveKey('provider_bootstrap');
         expect($vm->fresh()->node->agent_secret_hash)->toBeNull();
