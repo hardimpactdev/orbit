@@ -1,0 +1,14 @@
+type: '@nckrtl/certificates'
+typeVersion: 2026.10.31.2
+id: 80cf8916-70ab-4e87-8a34-021fe1992b1a
+name: orbit-certificate-signing
+version: 1
+tags: {}
+globalArguments:
+  gatewayUrl: https://gateway.orbit
+  caFile: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+  vaultName: orbit-control-inputs
+  secretKey: orbit-certificate-authority
+methods: {}
+reports:
+  skip: ["@swamp/method-summary"]
