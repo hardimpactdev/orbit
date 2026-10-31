@@ -8,6 +8,13 @@ Decided by Nick, 2026-10-31.
 
 Swamp does all operational work, the way Swamp is designed to be used, with Swamp defaults. The Gateway keeps state, the API/CLI/MCP, validation and intent records, and it projects results. orbit-agent only observes. If your code makes Swamp a thin wrapper around a hidden program, it is wrong, even if it is green.
 
+## Use what Swamp provides first (Nick, 2026-10-31)
+
+Before you build any mechanism, check Swamp core (https://swamp-club.com/manual) and the official extensions (https://github.com/swamp-club/swamp-extensions: ssh, vault, datastore, git, container-image, cfgmgmt, workflows, and others). If Swamp or an official extension does it, use that, with its defaults. Don't build custom wrappers, transports, supervisors, protocols or channels.
+- Don't over-engineer for edge cases. All Orbit Nodes are trusted, so extra custody, placement or identity hardening beyond Swamp's defaults is not needed.
+- Example: steps on vpn1 and usexit18 use the official `@swamp/ssh` extension (exec/script methods, pinned hostKeys, the approved 209 key, sudo where root is needed) from a normal 209 control worker. They don't use a custom SSH runner.
+- A PR that adds a mechanism must say which core feature or official extension it checked, and why that doesn't fit.
+
 ## The shape
 
 1. **The Gateway starts a run with the full intent as inputs.**
@@ -58,6 +65,8 @@ Swamp does all operational work, the way Swamp is designed to be used, with Swam
   - secrets not from `vault.get`;
   - step callbacks to the Gateway for intent;
   - agent action calls.
+
+- Review checklist: does Swamp core or an official extension (swamp-club/swamp-extensions) already provide this mechanism? If yes, the PR uses it with its defaults; a custom wrapper, transport, supervisor, protocol or channel is a defect.
 
 Existing violations are on a grandfather list that may only shrink.
 
@@ -117,28 +126,40 @@ The second example is a sketch; the pilot fixes the exact syntax. Each action is
 
 ## Open points settled by the spike
 
-These answers were proved with synthetic data on a dev worker on Beast, using official Swamp `20261031.063736.0-sha.e459d219`. Serve and worker were separate processes joined through the native remote-only WebSocket dispatch. The SSH executable in the fixture was harmless; this proves native delivery and transport, not a live bootstrap or logical Node 1/18 proxy effect. No secret value was printed.
+The current template uses official `@swamp/ssh` package `2026.10.23.1` (model `2026.10.20.1`), checked at upstream commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. The hand-built SSH launcher, key scanner and common Python module have been deleted. Official `exec` observes platform/architecture; `collect-host-public-key` observes the public key; one pure TypeScript step shapes their outputs. Stored public host keys use the official pinned policy, otherwise official trust on first use. The extension owns its default key agent and connection handling.
+
+The original capability answers below were proved with synthetic data on a dev worker on Beast, using official Swamp `20261031.063736.0-sha.e459d219`. Serve and worker were separate processes joined through the native remote-only WebSocket dispatch. The SSH executable in the fixture was harmless; this proves native delivery and transport, not a live bootstrap or logical Node 1/18 proxy effect. No secret value was printed.
 
 ### 1. A remote command step can run a repository script file
 
-A behavior manifest lists each script and its imports under `additionalFiles`. Native dispatch fingerprints and ships them to the worker cache. A public metadata method resolves `ctx.extensionFile("scripts/probe_host.py")` and records the path with `ctx.writeResource`. The next placed `command/shell` step executes that path. Keep metadata and execution on the same worker. Inline `run:` is not the only supported form.
+This is the historical script-delivery capability proof, not permission to rebuild an SSH transport. A behavior manifest lists each script and its imports under `additionalFiles`. Native dispatch fingerprints and ships them to the worker cache. A public metadata method resolves `ctx.extensionFile("scripts/probe_host.py")` and records the path with `ctx.writeResource`. The next placed `command/shell` step executes that path. Keep metadata and execution on the same worker. Inline `run:` is not the only supported form.
 
 Proof: native run `4ee4cd98-89c2-43de-8103-0d3746a19306`. The script path was inside the actual worker cache; the built-in shell ran it and retained public outputs. Asset helper modules arrived in the same bundle. Evidence: `evidence/lane11-vault-script-pilot-20261031/remote-script-history.json`.
 
-Logical Nodes 1/18 are excluded from this proof. Official e459 runs built-in shell commands locally on their physical worker on 209 and has no supported SSH executor hook. Do not admit built-in shell jobs on those proxy identities until the supported shared transport is approved and proved. Existing TypeScript proxy tests do not cover it; no family SSH fallback is allowed. See `evidence/lane21-workers/official-e459-builtin-proxy-blocker.md`.
+The original proof did not cover logical Nodes 1/18. Their replacement uses official `@swamp/ssh` from a normal 209 control worker, as the canonical rule above states. The custom proxy runner and its earlier receipt are superseded; they are not a dependency or template.
 
 ### 2. A whole vault expression maps to a named environment variable
 
-Use `env` inside `task.inputs`, not workflow inputs or top-level `env`:
+For `command/shell`, a whole `vault.get` expression belongs in `task.inputs.env`. For official `@swamp/ssh`, its supported native input is `task.globalArgs.transport.identityContent`:
 
 ```yaml
-inputs:
-  run: '/usr/bin/python3 "${{ steps.assets.outputs.probe_script }}"'
-  env:
-    ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
+task:
+  type: behavior
+  behaviorType: '@swamp/ssh'
+  behaviorName: bootstrap-ssh
+  methodName: exec
+  globalArgs:
+    name: bootstrap-ssh
+    transport:
+      kind: ssh
+      user: orbit
+      identityContent: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
+    hosts:
+      - {name: target, address: '${{ inputs.intent.bootstrap.target.host }}'}
+  inputs: {hosts: 'name:target', argv: [uname, -sm]}
 ```
 
-The input descriptor contains only `{vault, key}`. The same remote run proved that the script received the synthetic value and the value stayed out of native history and scratch files. The script gives SSH a mode-0600 temporary identity file, removes the value from the child's environment, and removes the file after use.
+`globalArgs` belongs inside `task` and supplies the complete globals map. The descriptor contains only `{vault, key}`. With its defaults the official extension loads identity content through stdin into a temporary SSH agent, handles cleanup and records public outputs. Orbit adds no key-file wrapper, environment channel or agent supervisor. Its documented default file fallback remains an upstream implementation detail.
 
 Use the shared Gateway helper `App\Infrastructure\Swamp\SwampCommandStep::executionCopy(vault, key, value)` to obtain the descriptor. It sends the native `vault.put` frame over the authenticated serve WebSocket and retains only a synchronization digest. The request is `{type: "vault.put", id, payload: {vaultName, key, value, force: true}}`. Official e459 defines it in `src/serve/protocol.ts:170` and accepts it in `handleVaultPut` (`src/serve/handlers/vault_handlers.ts:331`). The value is in the frame, never argv; no CLI or upstream patch is needed.
 
@@ -176,31 +197,33 @@ Attachment is active-run only. The native registry removes completed runs; it is
 
 ## Template
 
-Use `node.bootstrap_probe` as the reference source. The full live pilot is still pending; the spike does not assert live readiness or grant permission.
+Use `node.bootstrap_probe` as the reference source. The full live pilot is pending; native scratch success does not assert a live Operation result.
 
-- [Workflow](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-node-bootstrap-probe.yaml): full public intent, vault/key references, exact placement and native dependencies.
-- [Manifest and metadata](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap): `additionalFiles`, `ctx.extensionFile` and `ctx.writeResource`.
-- [Scripts](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap/scripts): one host-key scan and one pinned SSH probe; no embedded TypeScript scripts or Gateway client.
-- [Shared helper](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php): execution-copy references and one terminal history reader/stdout decoder.
-- [Gateway declaration](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/bootstrap-direct-operations.php) and [projector](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeBootstrapProjection.php): fixed result selector and database projection.
-- [Native regression](https://github.com/hardimpactdev/orbit/blob/main/swamp/tests/bootstrap_script_native_test.py): real script delivery, vault environment, history outputs and failed-scan ordering.
+- [Workflow](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-node-bootstrap-probe.yaml): full intent, vault references, native dependencies, official SSH methods and the fixed terminal result.
+- [Official SSH](https://github.com/swamp-club/swamp-extensions/tree/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh): package `2026.10.23.1`, normal registry pull and defaults. No vendored or patched transport.
+- [Pure result decoder](https://github.com/hardimpactdev/orbit/blob/main/swamp/extensions/behaviors/operations/node-bootstrap/probe_result.ts): platform/architecture decisions and public JSON only; no process or Gateway client.
+- [Shared helper](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php): native vault copy and one terminal history read.
+- [Gateway declaration](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/bootstrap-direct-operations.php) and [projector](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeBootstrapProjection.php): immutable intent and database projection.
+- [Native regression](https://github.com/hardimpactdev/orbit/blob/main/swamp/tests/bootstrap_script_native_test.py): unmodified registry extension on a separate native worker, vault-backed key, native success/failure ordering and public terminal output. OpenSSH's documented binary test seam is harmless; this is not a live host canary.
 
-Shared native vault copies are merged in [Orbit2038](https://github.com/hardimpactdev/orbit/pull/2038), commit `c7b12e7ce0dc001bc1d183a71b800944fa75d200`. The subscriber source is [SwampRunSubscriber](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Swamp/SwampRunSubscriber.php), with durable [ProjectSwampTerminal](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php) using the shared reader above. Neither merge grants vault authority.
+Core native inputs, vault resolution, method output records, `run.attach` and `workflow.history.get` already fit. The official vault extensions provide external backends; this pilot uses core `local_encryption`. Official `@swamp/cfgmgmt/node.gather` was checked: its schema accepts only `sshIdentityFile`, not `identityContent`, and gathers additional OS/package details. Official SSH methods fit this vault-backed read-only probe without another transport. Every future mechanism PR records the same core/extension check.
 
-Source during relocation: [Orbit pilot 2003](https://github.com/hardimpactdev/orbit/pull/2003), preserved from [Swamp478](https://github.com/hardimpactdev/orbit-swamp/pull/478), [Gateway shared helper2001](https://github.com/hardimpactdev/orbit/pull/2001), and [shared input and terminal-recovery contract2010](https://github.com/hardimpactdev/orbit/pull/2010). Add merged template and live Operation/run IDs after the full pilot passes. Preserve rule 5: the GitHub App key and Orbit CA private key stay only in the Gateway; the only step-to-Gateway primitives are scoped token minting and CSR-plus-Operation certificate signing.
+Shared vault copies are merged in [Orbit2038](https://github.com/hardimpactdev/orbit/pull/2038); [Orbit2041](https://github.com/hardimpactdev/orbit/pull/2041) provides the shared subscriber and durable projection job. The exact-key Gateway write/read and worker read grants were applied and installed-metadata policy checked at 15:02:36Z. Actual live vault resolution and terminal projection remain canary evidence, not a policy-test claim.
+
+Source is [Orbit pilot 2003](https://github.com/hardimpactdev/orbit/pull/2003). The former custom SSH prototype is superseded. Preserve rule 5: GitHub App and Orbit CA private keys stay only in the Gateway. The only step-to-Gateway primitives are scoped token minting and CSR-plus-Operation certificate signing.
 
 ## Pilot comparison
 
-The comparison uses imported baseline `a116589c527f55343626040f6effc8c7f5d8b746`. Count complete production files touched by the probe conversion, excluding tests, documentation and shared contract 2010. Shared bootstrap lowers remain because the other bootstrap kinds still use them. This pilot adds source lines while exposing the actions separately.
+The comparison uses imported baseline `a116589c527f55343626040f6effc8c7f5d8b746`, counting complete pilot-touched production files including public host-key capture. It excludes tests, documentation, shared generic contracts and the unmodified official registry package. Shared bootstrap lowers remain for other kinds. The earlier custom prototype is not the template.
 
-| Measure | Before | After |
+| Measure | Before | Official template |
 | --- | --- | --- |
-| Touched production lines | 333 | 565 |
-| Probe workflow lines | 44 | 76 |
-| Gateway application change | Baseline | +23 net lines |
-| Native step visibility | `bootstrap/apply`; `failure/settle-failure` skipped on success | `bootstrap/assets`, `scan-host-key`, `probe-host` |
-| Recorded step outputs | No public outputs on `apply` | Metadata paths; each shell step's stdout, stderr, exit code and timing |
-| Gateway calls from probe steps | Read intent/private material and post projection | None |
-| Gateway result projection | Family callback | Shared terminal event plus one history read |
+| Touched production lines | 427 | 602 |
+| Probe workflow lines | 44 | 117 |
+| Custom Python SSH/scanner production lines | Not applicable | 0 |
+| Native steps | Opaque `bootstrap/apply` | `inspect-platform`, `inspect-host-key`, `probe-host` |
+| Step outputs | No public outputs on apply | Official SSH stdout/exit/timing and host key; public result JSON |
+| Gateway calls from probe steps | Intent/private reads and result callback | None |
+| Gateway projection | Family callback | Shared terminal event plus one history read |
 
-The dev-worker histories are `27d27930-753c-48c6-b00e-f715bc1220e3` before and `4ee4cd98-89c2-43de-8103-0d3746a19306` after. Evidence files are `before-history.json`, `remote-script-history.json` and `source-comparison.json` under `evidence/lane11-vault-script-pilot-20261031/`. The comparison describes source and synthetic dev-worker execution; the live Operation and run remain pending.
+For the same file scope, the superseded custom prototype had 659 production lines; the official version has 602. The pre-conversion history is `27d27930-753c-48c6-b00e-f715bc1220e3`. The historical script-delivery run `4ee4cd98-89c2-43de-8103-0d3746a19306` proves that capability only. Current official-extension run evidence is `official-ssh-native-history.json`; source counts are `source-comparison-official-ssh.json`, under `evidence/lane11-vault-script-pilot-20261031/`. Add the actual live Operation/run IDs only after the authorized canary passes.
