@@ -130,7 +130,7 @@ class SeedCleanup(unittest.TestCase):
 
     def run_cleanup(self):
         script = ROOT / 'extensions/behaviors/operations/database/sqlite-cleanup/scripts/source_cleanup.py'
-        result = subprocess.run([sys.executable, '-E', '-s', str(script)], check=False, env={'PATH': '/usr/bin:/bin', **self.env},
+        result = subprocess.run([sys.executable, '-B', '-E', '-s', str(script)], check=False, env={'PATH': '/usr/bin:/bin', **self.env},
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.stderr, '')
         return result.returncode, json.loads(result.stdout)

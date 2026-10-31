@@ -162,7 +162,7 @@ jobs:
         run: |
           #!/bin/sh
           set -eu
-          exec /usr/bin/sudo -n --preserve-env=ORBIT_CLEANUP_OPERATION,ORBIT_CLEANUP_TARGET,ORBIT_CLEANUP_BASE,ORBIT_CLEANUP_SOURCE,ORBIT_CLEANUP_SNAPSHOT,ORBIT_CLEANUP_STATE,ORBIT_CLEANUP_OWNER,ORBIT_CLEANUP_TRANSPORT -- /usr/bin/python3 -E -s "${{ steps.source_assets.outputs.script }}"
+          exec /usr/bin/sudo -n --preserve-env=ORBIT_CLEANUP_OPERATION,ORBIT_CLEANUP_TARGET,ORBIT_CLEANUP_BASE,ORBIT_CLEANUP_SOURCE,ORBIT_CLEANUP_SNAPSHOT,ORBIT_CLEANUP_STATE,ORBIT_CLEANUP_OWNER,ORBIT_CLEANUP_TRANSPORT -- /usr/bin/python3 -B -E -s "${{ steps.source_assets.outputs.script }}"
         env:
           ORBIT_CLEANUP_OPERATION: '${{ has(inputs.intent.operation) ? inputs.intent.operation : "" }}'
           ORBIT_CLEANUP_TARGET: '${{ has(inputs.intent.target_instance_id) ? string(inputs.intent.target_instance_id)

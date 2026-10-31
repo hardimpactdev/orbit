@@ -50,7 +50,7 @@ class TargetAbandon(unittest.TestCase):
         selected.chmod(0o600)
 
     def run_cleanup(self):
-        result = subprocess.run([sys.executable, '-E', '-s', str(SCRIPT)], check=False,
+        result = subprocess.run([sys.executable, '-B', '-E', '-s', str(SCRIPT)], check=False,
                                 env=self.env, text=True, capture_output=True, timeout=10)
         self.assertEqual(result.stderr, '')
         return result.returncode, json.loads(result.stdout)
