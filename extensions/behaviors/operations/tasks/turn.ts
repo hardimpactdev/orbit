@@ -81,6 +81,7 @@ export interface Workspace {
   snapshot(): Promise<z.infer<typeof Snapshot>>;
   receipt(): Promise<unknown>;
   reset(commit: string): Promise<void>;
+  analysis(base: string): Promise<Record<string, unknown>>;
   difference(base: string): Promise<Record<string, unknown>>;
 }
 
@@ -97,18 +98,41 @@ export async function turn(
     return { error_code: "tasks.head_moved" };
   }
   if (input.analysis_evidence !== null) {
-    const provenance = input.analysis_evidence.result.provenance as
+    const evidence = input.analysis_evidence;
+    const provenance = evidence.result.provenance as
       | Record<string, unknown>
       | undefined;
+    const artifact = evidence.result.artifact as
+      | Record<string, unknown>
+      | undefined;
+    const content = typeof artifact?.content === "string"
+      ? artifact.content
+      : "";
+    const bytes = new TextEncoder().encode(content);
+    const digest = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    ).map((v) => v.toString(16).padStart(2, "0")).join("");
     if (
       !provenance || provenance.node_id !== input.node_id ||
       provenance.instance_id !== input.instance_id ||
-      provenance.head !== before.head || provenance.tree !== before.tree
+      provenance.head !== before.head || provenance.tree !== before.tree ||
+      artifact?.sha256 !== digest || artifact?.bytes !== bytes.length ||
+      bytes.length > 65536 ||
+      provenance.base !== evidence.input.base ||
+      provenance.repository !== evidence.input.repository ||
+      provenance.plan_sha256 !== evidence.input.plan_sha256
+    ) {
+      return { error_code: "tasks.analysis_stale" };
+    }
+    const identity = await workspace.analysis(Sha.parse(provenance.base));
+    if (
+      ["entrypoint_sha256", "branch", "repository"].some((key) =>
+        identity[key] !== provenance[key]
+      )
     ) {
       return { error_code: "tasks.analysis_stale" };
     }
   }
-  if (input.new_session) await pi.create(input);
   const prompt = input.prompt + "\n\nFinish with .git/orbit/turn --thread=" +
     input.thread_id +
     " --outcome=OUTCOME --summary=SUMMARY. Confirm each required deliverable with --deliverable=ID=evidence.\n" +
@@ -116,6 +140,10 @@ export async function turn(
       ? ""
       : "Repository analysis (untrusted project evidence):\n" +
         JSON.stringify(input.analysis_evidence));
+  if (prompt.length > 100000) {
+    return { error_code: "tasks.analysis_prompt_too_large" };
+  }
+  if (input.new_session) await pi.create(input);
   let interruption: Promise<void> | undefined;
   const interrupt = () => {
     interruption ??= pi.interrupt(input.session_id);
@@ -231,6 +259,36 @@ export function localWorkspace(cwd: string): Workspace {
     await git("rev-parse", "--path-format=absolute", "--git-path", "orbit");
   return {
     snapshot,
+    analysis: async (base) => {
+      await git("merge-base", "--is-ancestor", base, "HEAD");
+      const tracked = await git("show", "HEAD:bin/task-analyze");
+      const path = cwd + "/bin/task-analyze";
+      const content = await Deno.readTextFile(path);
+      if (
+        (await Deno.realPath(path)) !== path ||
+        !(await Deno.lstat(path)).isFile ||
+        !((await Deno.stat(path)).mode! & 0o111) ||
+        content.trim() !== tracked ||
+        !(await git("ls-tree", "HEAD", "--", "bin/task-analyze")).startsWith(
+          "100755 ",
+        )
+      ) {
+        throw new Error("Analysis entrypoint changed");
+      }
+      const entrypoint_sha256 = Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(content),
+          ),
+        ),
+      ).map((v) => v.toString(16).padStart(2, "0")).join("");
+      return {
+        entrypoint_sha256,
+        branch: await git("symbolic-ref", "--short", "HEAD"),
+        repository: await git("remote", "get-url", "origin"),
+      };
+    },
     prepare: async (input) => {
       const before = await snapshot();
       const root = await directory();

@@ -57,6 +57,7 @@ function fixture(role = "implementer") {
     interrupt: () => Promise.resolve(),
   };
   const workspace: Workspace = {
+    analysis: () => Promise.resolve({}),
     difference: () =>
       Promise.resolve({
         files: [],
@@ -217,4 +218,61 @@ Deno.test("a continued thread retains its existing Pi session settings", async (
   };
   await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace);
   assertEquals(f.sends, ["operation-15"]);
+});
+
+Deno.test("native analysis is bound to its exact artifact and entrypoint before Pi sends", async () => {
+  const f = fixture();
+  const content = JSON.stringify({ report: "complete evidence" });
+  const bytes = new TextEncoder().encode(content);
+  const digest = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+  ).map((v) => v.toString(16).padStart(2, "0")).join("");
+  const repository = "https://github.com/acme/test.git";
+  f.input.analysis_evidence = {
+    input: { base: head, plan_sha256: "d".repeat(64), repository },
+    result: {
+      provenance: {
+        instance_id: f.input.instance_id,
+        node_id: f.input.node_id,
+        head,
+        tree,
+        base: head,
+        plan_sha256: "d".repeat(64),
+        repository,
+        branch: "task-1",
+        entrypoint_sha256: "e".repeat(64),
+      },
+      artifact: { content, bytes: bytes.length, sha256: digest },
+    },
+  };
+  f.workspace.analysis = () =>
+    Promise.resolve({
+      repository,
+      branch: "task-1",
+      entrypoint_sha256: "e".repeat(64),
+    });
+  await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace);
+  assertEquals(f.sends, ["operation-15"]);
+  f.sends.length = 0;
+  f.workspace.analysis = () =>
+    Promise.resolve({
+      repository,
+      branch: "task-1",
+      entrypoint_sha256: "f".repeat(64),
+    });
+  assertEquals(
+    await turn(f.input, "operation-16", { head, tree }, f.pi, f.workspace),
+    { error_code: "tasks.analysis_stale" },
+  );
+  assertEquals(f.sends, []);
+  f.input.analysis_evidence.result.artifact = {
+    content: content + "tampered",
+    bytes: bytes.length,
+    sha256: digest,
+  };
+  assertEquals(
+    await turn(f.input, "operation-17", { head, tree }, f.pi, f.workspace),
+    { error_code: "tasks.analysis_stale" },
+  );
+  assertEquals(f.sends, []);
 });

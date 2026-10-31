@@ -1,4 +1,5 @@
 import { turnBehavior } from "./turn.ts";
+import { analysisMethod } from "./analysis.ts";
 import { checkMethod } from "./check.ts";
 import { scriptBehavior } from "./script.ts";
 
@@ -6,10 +7,11 @@ import { scriptBehavior } from "./script.ts";
 export const behavior = {
   ...turnBehavior,
   type: "@nckrtl/task-workspace",
-  version: "2026.10.31.3",
+  version: "2026.10.31.4",
   methods: {
     ...turnBehavior.methods,
     script: scriptBehavior.methods.execute,
     check: checkMethod,
+    analyze: analysisMethod,
   },
 };
