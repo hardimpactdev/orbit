@@ -477,3 +477,26 @@ function known_hosts_wait_until(Closure $condition, float $timeoutSeconds = 5.0)
         usleep(1_000);
     }
 }
+
+it('removes only the selected host and port and permits repeated removal', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-known-hosts-remove-'.Str::uuid();
+    $path = $directory.'/ssh/known_hosts';
+    $repository = new KnownHostsRepository($path);
+    try {
+        $key = new HostKey('ssh-ed25519', 'PUBLIC', 'SHA256:public');
+        $repository->put('10.44.0.3', 22, $key);
+        $repository->put('10.44.0.3', 2222, $key);
+        $repository->put('10.44.0.30', 22, $key);
+        $repository->remove('10.44.0.3', 22);
+        $repository->remove('10.44.0.3', 22);
+
+        expect(file_get_contents($path))->toBe("[10.44.0.3]:2222 ssh-ed25519 PUBLIC\n10.44.0.30 ssh-ed25519 PUBLIC\n")
+            ->and(fileperms($path) & 0o777)->toBe(0o600)
+            ->and(known_hosts_candidates($path))->toBe([]);
+        $repository->remove('10.44.0.3', 2222);
+        $repository->remove('10.44.0.30', 22);
+        expect(file_get_contents($path))->toBe('');
+    } finally {
+        new Filesystem()->deleteDirectory($directory);
+    }
+});

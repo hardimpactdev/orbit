@@ -17,13 +17,16 @@ final class RecordingReleaseAgent implements GatewayReleaseAgent
     /** @var list<string> */
     public array $calls = [];
 
+    /** Whether the fixture's known commits have finished publication. */
+    public bool $available = true;
+
     /** @param Closure(string): ?string $published the full commit of the published release a revision names, or null */
     public function __construct(private readonly Closure $published) {}
 
     public function fetch(string $revision, Node $gateway): array
     {
         $revision = GatewayReleaseCommit::parse($revision);
-        $sha = ($this->published)($revision)
+        $sha = ($this->available ? ($this->published)($revision) : null)
             ?? throw new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', "No published release holds commit [{$revision}] yet.", 503);
         $this->calls[] = 'fetch:'.$sha;
 

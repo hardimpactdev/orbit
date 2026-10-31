@@ -89,7 +89,6 @@ describe(AptToolManager::class, function (): void {
         $agent->answerMalformed($command, $data);
         expect(fn () => $manager->{$method}(apt_tool_node()))->toThrow(ToolManagerException::class);
     })->with([
-        ['managerVersion', 'tool.apt-version', ['version' => null]],
         ['installedInventory', 'tool.apt-inventory', ['packages' => null]],
         ['installedInventory', 'tool.apt-inventory', ['packages' => [['name' => 'jq']]]],
     ]);

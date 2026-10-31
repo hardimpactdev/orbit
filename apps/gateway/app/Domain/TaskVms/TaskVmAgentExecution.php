@@ -21,7 +21,7 @@ final readonly class TaskVmAgentExecution implements OperationFamilyExecution
     public function context(Operation $operation): array
     {
         $kind = app(OperationKinds::class)->definition($operation->kind);
-        if (! is_array($kind)) {
+        if (! is_array($kind) || ! isset($kind['runs'], $kind['completion_contract'])) {
             throw new \LogicException('The VM kind has no Swamp contract.');
         }
         $contract = ValidatedData::object($kind['completion_contract']);
@@ -42,16 +42,16 @@ final readonly class TaskVmAgentExecution implements OperationFamilyExecution
 
     public function beforeRun(Operation $operation, array $run): void
     {
+        $this->assertIntent($operation);
+    }
+
+    public function assertIntent(Operation $operation): void
+    {
         if ($operation->target_type !== 'task_vm') {
             $this->refuse();
         }
         $vm = TaskVm::query()->findOrFail($operation->target_id);
-        if (in_array($operation->kind, ['task_vm.cache_initialize', 'task_vm.cache_mount'], true)) {
-            $host = app(TaskVmSettings::class)->host((int) $vm->host_node_id);
-            if ($vm->host_node_id !== $operation->node_id || $vm->state !== TaskVmState::Ready || ($operation->kind === 'task_vm.cache_mount' && (($operation->input['project'] ?? null) !== $host->project || ($operation->input['name'] ?? null) !== $vm->name))) {
-                $this->refuse();
-            }
-        } elseif (str_starts_with($operation->kind, 'task_vm.incus_')) {
+        if (str_starts_with($operation->kind, 'task_vm.incus_')) {
             if ($vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id !== $operation->node_id) {
                 $this->refuse();
             }

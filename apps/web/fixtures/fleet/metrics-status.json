@@ -1,0 +1,55 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/metrics/status",
+    "status": 200,
+    "body": {
+        "data": {
+            "enabled": true,
+            "url": "https://metrics.orbit",
+            "assignment": {
+                "id": 1,
+                "node_id": 2,
+                "node_name": "beast",
+                "status": "active",
+                "failed_step": null,
+                "error_code": null
+            },
+            "prometheus": "healthy",
+            "grafana": "healthy",
+            "exporters": [
+                {
+                    "id": 1,
+                    "name": "gateway",
+                    "desired": true,
+                    "actual": "active",
+                    "reason": "role_default",
+                    "degraded_reason": null,
+                    "degraded_error_code": null
+                },
+                {
+                    "id": 2,
+                    "name": "beast",
+                    "desired": true,
+                    "actual": "active",
+                    "reason": "metrics_node",
+                    "degraded_reason": null,
+                    "degraded_error_code": null
+                },
+                {
+                    "id": 3,
+                    "name": "app-prod",
+                    "desired": true,
+                    "actual": "active",
+                    "reason": "role_default",
+                    "degraded_reason": null,
+                    "degraded_error_code": null
+                }
+            ],
+            "reconcile_status": "healthy",
+            "reconcile_error_code": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

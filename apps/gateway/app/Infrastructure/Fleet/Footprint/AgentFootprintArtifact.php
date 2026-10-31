@@ -7,9 +7,9 @@ namespace App\Infrastructure\Fleet\Footprint;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 
 /**
@@ -21,7 +21,7 @@ use App\Models\Node;
 final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
 {
     public function __construct(
-        private NodeAgentRuntime $agent,
+
         private ManagedNodeEligibility $eligibility,
         private LeafCertificateSigner $certificates,
     ) {}
@@ -46,13 +46,7 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
             'certificate' => hash('sha256', $this->certificates->rootCertificate()),
             'user' => $node->user,
             'settings' => $node->settings,
+            'worker' => app(NodeWorkerRollout::class)->allows($node),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    }
-
-    public function apply(Node $node): ?bool
-    {
-        $this->agent->converge($node);
-
-        return null;
     }
 }

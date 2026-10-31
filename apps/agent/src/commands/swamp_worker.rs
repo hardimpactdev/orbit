@@ -7,15 +7,15 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 
-const UNIT: &str = "orbit-swamp-worker.service";
-const UNIT_PATH: &str = "/run/systemd/system/orbit-swamp-worker.service";
+pub(super) const UNIT: &str = "orbit-swamp-worker.service";
+pub(super) const UNIT_PATH: &str = "/run/systemd/system/orbit-swamp-worker.service";
 const TOKEN: &str = "/run/orbit-swamp-worker-enrollment";
 const SERVER_TOKEN: &str = "/run/orbit-swamp-worker-server";
 pub const CA: &str = "/usr/local/share/ca-certificates/orbit-root.crt";
 command_errors! {
     pub enum Error {
         Invalid {} => "swamp.worker_invalid", "The worker enrollment input is invalid.";
-        Failed {} => "swamp.worker_start_failed", "The task VM worker could not be started.";
+        Failed {} => "swamp.worker_start_failed", "The Swamp worker lifecycle could not complete.";
     }
 }
 fn failed() -> Error {
@@ -24,18 +24,18 @@ fn failed() -> Error {
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
-    enrollment_id: String,
-    workspace: String,
-    orchestrator_url: String,
-    labels: BTreeMap<String, String>,
-    enrollment_token: Option<String>,
-    server_token: Option<String>,
+    pub(super) enrollment_id: String,
+    pub(super) workspace: String,
+    pub(super) orchestrator_url: String,
+    pub(super) labels: BTreeMap<String, String>,
+    pub(super) enrollment_token: Option<String>,
+    pub(super) server_token: Option<String>,
     #[serde(default)]
-    server_token_required: bool,
+    pub(super) server_token_required: bool,
 }
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
-    started: bool,
+    pub(super) started: bool,
 }
 fn label(s: &str, max: usize) -> bool {
     !s.is_empty()
@@ -43,7 +43,7 @@ fn label(s: &str, max: usize) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
 }
-fn validate(input: &Input) -> Result<(), Error> {
+pub(super) fn validate(input: &Input) -> Result<(), Error> {
     let invalid = || Error::Invalid {};
     let url = reqwest::Url::parse(&input.orchestrator_url).map_err(|_| invalid())?;
     if !label(&input.enrollment_id, 128)
@@ -111,7 +111,9 @@ fn unit(input: &Input, account: &Account) -> String {
     } else {
         ""
     };
-    format!("[Unit]\nDescription=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser=orbit\nGroup=orbit\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\n{server_credential}ExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment{server_argument} {cache} --ca-cert={CA}{labels}\nRestart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\nUMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
+    let runtime = "Restart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\n";
+    let user = &account.name;
+    format!("[Unit]\nDescription=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser={user}\nGroup={user}\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\n{server_credential}ExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment{server_argument} {cache} --ca-cert={CA}{labels}\n{runtime}UMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
 }
 fn call(host: &mut impl Host, args: &[&str]) -> Result<(), Error> {
     // Discard diagnostics: systemd and worker output are not a secret-safe boundary.
@@ -139,7 +141,7 @@ fn remove(path: &Path) -> Result<(), Error> {
         Err(_) => Err(failed()),
     }
 }
-fn stop(files: &Files, host: &mut impl Host) -> Result<(), Error> {
+pub(super) fn stop(files: &Files, host: &mut impl Host) -> Result<(), Error> {
     let path = files.path(UNIT_PATH);
     if path.exists() || active(host)? {
         // Confirm the process and its descendants have stopped before removing the unit.
@@ -151,7 +153,7 @@ fn stop(files: &Files, host: &mut impl Host) -> Result<(), Error> {
     remove(&files.path(SERVER_TOKEN))?;
     removed
 }
-fn start(
+pub(super) fn start(
     files: &Files,
     host: &mut impl Host,
     account: &Account,
@@ -238,8 +240,7 @@ fn start(
 pub struct Start;
 impl Command for Start {
     const NAME: &'static str = "swamp.start-worker";
-    const SUMMARY: &'static str =
-        "Start a Swamp worker in the ready task VM workspace using a runtime credential.";
+    const SUMMARY: &'static str = "Start a Swamp task worker.";
     const MUTATES: bool = true;
     const RESOURCES: &'static [&'static str] = &["swamp-worker"];
     const TIMEOUT: Duration = Duration::from_secs(60);
@@ -276,7 +277,7 @@ pub struct Stop;
 impl Command for Stop {
     const NAME: &'static str = "swamp.stop-worker";
     const SUMMARY: &'static str =
-        "Stop a task worker and remove its runtime unit and startup credential.";
+        "Stop a Swamp worker and remove its runtime unit and credentials.";
     const MUTATES: bool = true;
     const RESOURCES: &'static [&'static str] = &["swamp-worker"];
     const TIMEOUT: Duration = Duration::from_secs(60);

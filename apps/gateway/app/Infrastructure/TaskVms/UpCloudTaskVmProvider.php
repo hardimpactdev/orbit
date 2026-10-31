@@ -133,7 +133,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
 
     public function destroy(TaskVm $vm): void
     {
-        $this->servers->delete($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $vm->provider_id);
+        $this->servers->deleteSynchronously($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $vm->provider_id);
     }
 
     private function server(TaskVm $vm): ?UpCloudServer

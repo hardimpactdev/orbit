@@ -7,6 +7,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
 use App\Models\Node;
@@ -24,6 +25,7 @@ use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -31,6 +33,10 @@ beforeEach(function (): void {
     $this->caller = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active',
         'platform' => 'linux', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-vault-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture.shared.token']);
     $this->payload = ['url' => 'https://vault.orbit', 'client_id' => 'fixture-client', 'client_secret' => 'fixture-client-secret',
         'master_password' => 'fixture-master-password', 'organization' => 'Orbit', 'collection' => 'Database'];
 });
@@ -131,34 +137,6 @@ it('refuses Vault results outside the shared C limits before projecting the ledg
     expect(VaultItem::query()->count())->toBe(0);
 })->with(['items', 'string', 'encoded-size']);
 
-it('binds each Vault program to its admitted action and requires the matching successful receipt', function (string $action): void {
-    $reference = ['$secret' => 'vault.credentials', 'id' => $this->caller->id];
-    $operation = Operation::query()->create(['kind' => 'vault.'.$action, 'target_type' => 'vault', 'target_id' => $this->caller->id,
-        'node_id' => $this->caller->id, 'status' => 'running', 'input' => ['configuration' => $reference], 'state' => []]);
-    $contract = app(OperationExecutionContract::class);
-    $key = 'vault-'.$action;
-    $run = ['worker' => 'fixture', 'key' => $key, 'transport' => 'remote_program', 'name' => 'vault.collection',
-        'input' => ['action' => $action, 'configuration' => $reference]];
-    expect($contract->authorizeRun($operation, $run)['name'])->toBe('vault.collection');
-    foreach ([['transport' => 'agent', 'name' => 'node.remove'], ['name' => 'vault.unlisted'],
-        ['input' => ['action' => $action === 'sync' ? 'teardown' : 'sync', 'configuration' => $reference]]] as $change) {
-        expect(fn () => $contract->authorizeRun($operation, [...$run, ...$change]))->toThrow(ResourceOperationException::class);
-    }
-    $result = ['outcome' => 'succeeded', 'data' => ['backend' => match ($action) {
-        'setup' => 'configured', 'sync' => 'synced', 'teardown' => 'absent',
-    }]];
-    expect(fn () => $contract->assertStep($operation, $key, $result))->toThrow(ResourceOperationException::class);
-    $receipt = ['transport' => 'remote_program', 'name' => 'vault.collection', 'result' => $result];
-    $operation->update(['state' => ['executor_runs' => [$key => $receipt], 'steps' => [$key => $result]]]);
-    expect(fn () => $contract->assertCompletion($operation, $result))->toThrow(ResourceOperationException::class);
-    $operation->steps()->create(['name' => $key, 'position' => 1, 'status' => 'succeeded', 'resumable' => true, 'sequence' => 1]);
-
-    $contract->assertCompletion($operation, $result);
-
-    expect(fn () => $contract->assertCompletion($operation, ['outcome' => 'succeeded', 'data' => ['backend' => 'forged']]))
-        ->toThrow(ResourceOperationException::class);
-})->with(['setup', 'sync', 'teardown']);
-
 it('projects proven setup and sync metadata and retains it until successful teardown', function (): void {
     $this->freezeTime();
     $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();
@@ -258,24 +236,6 @@ it('skips every unfinished Vault Operation without admitting another or contacti
     expect(Operation::query()->count())->toBe(1)->and($operation->fresh()->status->value)->toBe($status);
     Http::assertNothingSent();
 })->with(['queued', 'running', 'waiting']);
-
-it('reports an unclaimed setup after five minutes without freeing its target hold', function (): void {
-    $this->freezeTime();
-    $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();
-    $operation = Operation::query()->sole();
-    $this->artisan('orbit:vault-sync')->assertSuccessful();
-    $this->getJson('/api/v1/vault')->assertJsonPath('data.last_error', null);
-    $this->travel(5)->minutes();
-
-    $this->artisan('orbit:vault-sync')->assertFailed();
-
-    $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.configured', false)
-        ->assertJsonPath('data.last_error.code', 'vault.executor_unclaimed');
-    expect(app(VaultSettings::class)->lastError()['message'])->toContain((string) $operation->id);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)->and(Operation::query()->count())->toBe(1);
-    $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
-    Http::assertNothingSent();
-});
 
 it('keeps a failure exit code until a later collection completion proves success', function (): void {
     $settings = app(VaultSettings::class);

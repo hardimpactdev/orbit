@@ -10,20 +10,6 @@ use SensitiveParameter;
 interface GitHubApi
 {
     /**
-     * Exchange the one-time code of a Project manifest registration for the App's credentials.
-     *
-     * @throws GitHubApiException
-     */
-    public function convertManifest(#[SensitiveParameter] string $code): GitHubAppCredentials;
-
-    /**
-     * @return list<GitHubInstallation>
-     *
-     * @throws GitHubApiException
-     */
-    public function installations(GitHubAppCredentials $credentials): array;
-
-    /**
      * The installation that covers the repository, or null when no installation covers it.
      *
      * @throws GitHubApiException
@@ -232,7 +218,5 @@ interface GitHubApi
      *
      * @throws GitHubApiException when GitHub cannot be reached
      */
-    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
-
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
 }

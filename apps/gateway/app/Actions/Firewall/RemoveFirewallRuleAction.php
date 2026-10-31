@@ -6,6 +6,7 @@ namespace App\Actions\Firewall;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -24,6 +25,7 @@ final readonly class RemoveFirewallRuleAction
         }
 
         return DB::transaction(function () use ($rule, $caller, $requestId): Operation {
+            app(DirectOperation::class)->writer('firewall.remove', [], $rule->node_id);
             $operation = $this->operations->execute('firewall.remove', 'node_firewall', $rule->node_id, $rule->node_id, [
                 'rule_id' => $rule->id, 'node_id' => $rule->node_id, 'name' => $rule->name,
                 'action' => $rule->action->value, 'source' => $rule->source, 'protocol' => $rule->protocol,

@@ -2,164 +2,105 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\AdmitDockerMigrationAction;
+use App\Domain\Fleet\DockerMigrationProcesses;
+use App\Domain\Fleet\DockerMigrationProjection;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Models\Node;
-use App\Models\Process as OrbitProcess;
+use App\Models\Operation;
+use App\Models\Process;
 use Illuminate\Support\Facades\Artisan;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-it('requires explicit Docker maintenance consent before any agent command', function (bool $restorePolicies): void {
-    $agents = new FakeAgentCommandRunner;
-    app()->instance(AgentCommandRunner::class, $agents);
+beforeEach(function (): void {
+    $this->agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $this->agents);
+    $this->node = FleetFixtures::node('docker-owner');
+    $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $m): array => [['type' => 'event', 'id' => $m['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-fleet-docker-migrate', 'runId' => $this->run]]];
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['swamp.run_token' => 'fake.token']);
+});
 
-    expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--restore-policies' => $restorePolicies]))->toBe(1)
-        ->and(Artisan::output())->toContain('--yes is required')
-        ->and($agents->calls)->toBe([]);
+it('requires explicit Docker maintenance consent before admission', function (bool $restore): void {
+    expect(Artisan::call('node:migrate-docker', ['node' => $this->node->name, '--restore-policies' => $restore]))->toBe(1)
+        ->and(Artisan::output())->toContain('--yes is required')->and(Operation::count())->toBe(0)->and($this->agents->calls)->toBe([]);
 })->with([false, true]);
 
-it('refuses policy recovery combined with migration options before any agent command', function (string $option): void {
-    $agents = new FakeAgentCommandRunner;
-    app()->instance(AgentCommandRunner::class, $agents);
+it('refuses conflicting recovery flags and changed recipes before admission', function (array $options): void {
+    expect(Artisan::call('node:migrate-docker', ['node' => $this->node->name, '--yes' => true, ...$options]))->toBe(1)
+        ->and(Operation::count())->toBe(0)->and($this->agents->calls)->toBe([]);
+})->with([[['--restore-policies' => true, '--fallback' => true]], [['--restore-policies' => true, '--dry-run' => true]], [['--recipe' => 'sha256:other']]]);
 
-    expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--restore-policies' => true, $option => true]))->toBe(1)
-        ->and(Artisan::output())->toContain('--restore-policies cannot be combined')
-        ->and($agents->calls)->toBe([]);
-})->with(['--dry-run', '--fallback']);
-
-it('refuses a Docker migration recipe mismatch before any agent command', function (): void {
-    $agents = new FakeAgentCommandRunner;
-    app()->instance(AgentCommandRunner::class, $agents);
-
-    expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--recipe' => 'sha256:other']))->toBe(1)
-        ->and(Artisan::output())->toContain('differs from this checkout')
-        ->and($agents->calls)->toBe([]);
+it('admits one native root and exposes only safe Process identity', function (): void {
+    $process = Process::query()->create(['owner_type' => $this->node->getMorphClass(), 'owner_id' => $this->node->id, 'name' => 'web', 'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:1', 'command' => ['/bin/server'], 'environment' => ['SECRET' => 'private-value']], 'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+    $op = app(AdmitDockerMigrationAction::class)->execute($this->node, (new RecipeLoader)->load(), 'migrate');
+    expect($op->kind)->toBe('fleet.docker_migrate')->and($op->state['swamp_run_id'])->toBe($this->run)
+        ->and($this->socket->sent)->toHaveCount(1)->and($this->agents->calls)->toBe([])
+        ->and(json_encode($op->input))->not->toContain('private-value', '/bin/server')
+        ->and($op->input['migration']['process_ids'])->toBe([(string) $process->id]);
+    $source = app(DockerMigrationProcesses::class);
+    $definitions = $source->resolve($op, $this->node->id, '', 'processes')->value;
+    expect($definitions[0]['environment'])->toBe(['SECRET' => 'private-value'])->and($definitions[0]['process_id'])->toBe($process->id)
+        ->and(app(DockerMigrationProjection::class)->input($op))->not->toHaveKey('processes');
+    $process->update(['desired_state' => 'stopped']);
+    expect(fn () => $source->resolve($op, $this->node->id, '', 'processes'))->toThrow(ResourceOperationException::class);
 });
 
-it('translates the Docker CE recipe refusal to a typed reason with the explicit migration command', function (): void {
-    $node = FleetFixtures::node('ce-provider', [RoleName::AppProd]);
-    $agents = new FakeAgentCommandRunner;
-    $agents->refuse('recipe.inspect', 'recipe.failed', ['stage' => 'recipe-stage:docker-provider:docker-ce']);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $recipe = new RecipeLoader()->load();
-    $program = app(NodeRecipeProgram::class);
-
-    try {
-        $program->inspect($node, $recipe, $program->tools($node, $recipe));
-        $this->fail('Docker CE must refuse recipe convergence.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)->toBe('node.recipe_docker_provider')
-            ->and($exception->getMessage())->toContain('docker-provider:docker-ce', 'node:migrate-docker '.$node->id.' --dry-run');
-    }
-    expect($agents->calls)->toHaveCount(1)
-        ->and($node->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
+it('keeps foreign Node Processes out of admitted migration and denies foreign private ownership', function (): void {
+    $other = FleetFixtures::node('docker-foreign');
+    Process::query()->create(['owner_type' => $other->getMorphClass(), 'owner_id' => $other->id, 'name' => 'foreign', 'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:1', 'command' => ['/bin/server']], 'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+    $op = app(AdmitDockerMigrationAction::class)->execute($this->node, (new RecipeLoader)->load(), 'plan');
+    expect($op->input['migration']['process_ids'])->toBe([])
+        ->and(fn () => app(DockerMigrationProcesses::class)->resolve($op, $other->id, '', 'processes'))->toThrow(ResourceOperationException::class);
 });
 
-it('sends the native Docker plan its recipe pins and stored intent', function (): void {
-    $node = FleetFixtures::node('docker-plan', [RoleName::AppProd]);
-    $agents = new FakeAgentCommandRunner;
-    $agents->answer('docker.plan-migration', function (array $input, Node $target) use ($node): array {
-        $recipe = new RecipeLoader()->load();
-        expect($target->id)->toBe($node->id)
-            ->and($input['docker_version'])->toBe($recipe->tools['docker.io']->version)
-            ->and($input['containerd_version'])->toBe($recipe->tools['containerd']->version)
-            ->and($input)->not->toHaveKey('mode')
-            ->and($input['fallback'])->toBeTrue()
-            ->and($input['process_ids'])->toBe([]);
-
-        return ['containers' => ['mailpit']];
-    });
-    app()->instance(AgentCommandRunner::class, $agents);
-
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--dry-run' => true, '--fallback' => true]))->toBe(0)
-        ->and(Artisan::output())->toContain('mailpit')
-        ->and($agents->calls)->toHaveCount(1);
+it('uses the normal Node access and confirmation boundary for async HTTP admission', function (): void {
+    $gateway = FleetFixtures::node('docker-gateway', [RoleName::Gateway]);
+    app(GatewayServingHost::class)->remember($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $path = '/api/v1/fleet/nodes/'.$this->node->id.'/docker-migration';
+    $this->postJson($path, ['mode' => 'migrate'])->assertUnprocessable();
+    $this->postJson($path, ['mode' => 'restore-policies', 'confirm' => true, 'fallback' => true])->assertUnprocessable();
+    $this->postJson($path, ['mode' => 'plan'])->assertAccepted()->assertJsonPath('data.kind', 'fleet.docker_migrate');
+    expect($this->socket->sent)->toHaveCount(1)->and($this->agents->calls)->toBe([]);
 });
 
-it('reports final states after reconciling stored specs for migration and policy recovery', function (bool $failConverge, bool $restorePolicies): void {
-    $node = FleetFixtures::node('docker-specs', [RoleName::AppProd]);
-    $other = FleetFixtures::node('docker-other', [RoleName::AppProd]);
-    $attributes = ['owner_type' => $node->getMorphClass(), 'owner_id' => $node->id, 'name' => 'mysql',
-        'runtime' => 'docker', 'runtime_config' => ['image' => 'mysql:9', 'environment' => ['PASSWORD' => 'private']],
-        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active'];
-    $process = OrbitProcess::query()->create($attributes);
-    OrbitProcess::query()->create([...$attributes, 'owner_id' => $other->id]);
-    $runtime = new ProcessesApiFakeRuntimeManager;
-    $runtime->failConverge = $failConverge;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-    $agents = new FakeAgentCommandRunner;
-    $agents->answer($restorePolicies ? 'docker.restore-migration-policies' : 'docker.prepare-migration', function (array $input) use ($process): array {
-        expect($input['process_ids'])->toBe([(string) $process->id])
-            ->and($input['process_states']->{(string) $process->id})->toBe('running')
-            ->and(json_encode($input))->not->toContain('private');
-
-        return ['fallback' => true, 'process_ids' => [(string) $process->id]];
-    });
-    $agents->answer('docker.report-migration', function () use ($runtime, $process): array {
-        expect($runtime->convergedProcessIds)->toBe([$process->id]);
-
-        return ['healthy' => true, 'containers' => [['name' => 'mysql', 'state' => 'running']]];
-    });
-    app()->instance(AgentCommandRunner::class, $agents);
-
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe($failConverge ? 1 : 0);
-    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-
-    expect($report['healthy'])->toBe(! $failConverge)->and($runtime->convergedProcessIds)->toBe([$process->id]);
-    if ($failConverge) {
-        expect($report['failed_process_ids'])->toBe([$process->id]);
-    }
-})->with(['migration' => [false, false], 'migration Process failure' => [true, false], 'policy recovery' => [false, true], 'policy recovery Process failure' => [true, true]]);
-
-it('reports remote failures with recovery advice for the failed action', function (bool $restorePolicies, string $failure, bool $offerFallback): void {
-    $node = FleetFixtures::node('docker-failure', [RoleName::AppProd]);
-    $agents = new FakeAgentCommandRunner;
-    $agents->refuse($restorePolicies ? 'docker.restore-migration-policies' : 'docker.prepare-migration', 'docker.migration_failed', [
-        'failure' => $failure, 'containers' => [['name' => 'mailpit', 'state' => 'unreadable']],
-    ]);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $runtime = new ProcessesApiFakeRuntimeManager;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe(1);
-    $output = Artisan::output();
-    expect($output)->toContain($failure, 'Resume', 'mailpit', 'unreadable')
-        ->not->toContain('PASSWORD=private')
-        ->and($runtime->convergedProcessIds)->toBe([]);
-    $message = json_decode($output, true, flags: JSON_THROW_ON_ERROR)['message'];
-    if ($offerFallback) {
-        expect($message)->toContain('--fallback');
-    } else {
-        expect($message)->not->toContain('--fallback');
-    }
-})->with([
-    'package failure' => [false, 'docker-migration:swapping', false],
-    'explicit fallback required' => [false, 'docker-migration:fallback-required', true],
-    'policy recovery failure' => [true, 'docker-migration:restore-engine', false],
-]);
-
-it('does not reconcile Processes after a native migration refusal', function (): void {
-    $node = FleetFixtures::node('docker-refusal', [RoleName::AppProd]);
-    $runtime = new ProcessesApiFakeRuntimeManager;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-    $agents = new FakeAgentCommandRunner;
-    $agents->refuse('docker.prepare-migration', 'docker.migration_failed', ['failure' => 'docker-migration:insufficient-space']);
-    app()->instance(AgentCommandRunner::class, $agents);
-
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true]))->toBe(1)
-        ->and($runtime->convergedProcessIds)->toBe([])
-        ->and($agents->calls)->toHaveCount(1);
+it('records a bounded native result without executing or re-validating host work', function (): void {
+    $op = app(AdmitDockerMigrationAction::class)->execute($this->node, (new RecipeLoader)->load(), 'plan');
+    $result = app(DockerMigrationProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['healthy' => true, 'planned' => true, 'private' => 'must-not-persist']]);
+    expect($result->status)->toBe(OperationStatus::Succeeded)->and($result->result)->toBe(['healthy' => true, 'planned' => true])->and($this->agents->calls)->toBe([]);
 });
 
-it('keeps Docker migration execution behind the native command runner', function (): void {
-    $source = file_get_contents(app_path('Actions/Fleet/MigrateDockerAction.php'));
+it('denies a foreign peer before Docker admission', function (): void {
+    $caller = FleetFixtures::node('docker-caller');
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $this->postJson('/api/v1/fleet/nodes/'.$this->node->id.'/docker-migration', ['mode' => 'migrate', 'confirm' => true])->assertForbidden();
+    expect(Operation::count())->toBe(0)->and($this->socket->sent)->toBe([])->and($this->agents->calls)->toBe([]);
+});
 
-    expect($source)->toBeString()->not->toContain('RemoteProgram', 'SshExecutor', 'NodeShell', 'Process::run', 'shell_exec', 'Symfony\\Component\\Process')
-        ->and(file_exists(resource_path('remote/docker/migrate.py')))->toBeFalse();
+it('preserves empty public maps for the native input schema', function (): void {
+    $op = app(AdmitDockerMigrationAction::class)->execute($this->node, (new RecipeLoader)->load(), 'plan');
+    $wire = json_encode(app(DockerMigrationProjection::class)->input($op->refresh()), JSON_THROW_ON_ERROR);
+    expect($wire)->toContain('"process_states":{}', '"process_specs":{}')->not->toContain('processes');
+});
+
+it('serves existing Process material only to the bound owning Node without publishing private intent', function (): void {
+    Process::query()->create(['owner_type' => $this->node->getMorphClass(), 'owner_id' => $this->node->id, 'name' => 'web', 'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:1', 'command' => ['/bin/server'], 'environment' => ['SECRET' => 'private-value']], 'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+    $op = app(AdmitDockerMigrationAction::class)->execute($this->node, (new RecipeLoader)->load(), 'migrate');
+    $path = '/api/v1/direct-operations/'.$op->id;
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertDontSee('private-value');
+    $this->getJson($path.'/private-material?run_id='.$this->run)->assertOk()->assertJsonPath('data.processes.0.environment.SECRET', 'private-value');
+    $foreign = FleetFixtures::node('docker-other-peer');
+    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip]);
+    $this->getJson($path.'/private-material?run_id='.$this->run)->assertForbidden();
 });

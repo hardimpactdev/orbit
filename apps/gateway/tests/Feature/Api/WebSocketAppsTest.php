@@ -32,6 +32,7 @@ use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
+    fake_websocket_registry_start();
     Http::preventStrayRequests();
     Http::fake();
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);

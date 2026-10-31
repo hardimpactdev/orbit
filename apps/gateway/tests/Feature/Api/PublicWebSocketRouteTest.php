@@ -2,18 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Actions\Doctor\RouteDoctorProbe;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Data\Doctor\DoctorNodeReportData;
-use App\Data\Doctor\DoctorReportData;
 use App\Data\Routes\SetRouteTargetsData;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Problems\ProblemRecovery;
-use App\Domain\Problems\ProblemSource;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRouteInspector;
@@ -23,7 +16,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\WebSocketApp;
@@ -32,6 +24,7 @@ use Illuminate\Support\Facades\Http;
 use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
+    fake_websocket_registry_start();
     Http::fake();
     $this->inspector = Mockery::mock(WebSocketRouteInspector::class);
     $this->inspector->shouldReceive('hasCollisions')->andReturn(false)->byDefault();
@@ -140,18 +133,6 @@ it('rejects an unverifiable release before publishing', function (): void {
     expect(app(NodeCaddyBuilds::class)->built)->toBe([]);
 });
 
-it('reports a collision introduced after attachment through Doctor', function (bool $failed): void {
-    [$node, $instance] = public_reverb_fixture();
-    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
-    if ($failed) {
-        $this->inspector->shouldReceive('hasCollisions')->andThrow(new ResourceOperationException('websocket.route_inspection_failed', 'Unavailable', 409));
-    } else {
-        $this->inspector->shouldReceive('hasCollisions')->andReturn(true);
-    }
-    $report = app(RouteDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, null, null, null)));
-    expect(collect($report->issues)->pluck('code')->all())->toBe([$failed ? 'route.websocket_inspection_failed' : 'route.websocket_collision']);
-})->with([false, true]);
-
 it('keeps stored public intent after a build failure and repairs it on repeat attachment', function (): void {
     [$node, $instance, $route] = public_reverb_fixture();
     app(NodeCaddyBuilds::class)->failNext('app-prod');
@@ -194,14 +175,6 @@ it('rejects another Reverb app on the same public Route', function (): void {
     expect($other->environmentValues()->count())->toBe(0);
 });
 
-it('reports an unverifiable collision check without SSH when the serving Node is unreachable', function (): void {
-    [$node, $instance] = public_reverb_fixture();
-    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
-    $this->inspector->shouldNotReceive('hasCollisions');
-    $report = app(RouteDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)));
-    expect(collect($report->issues)->pluck('code')->all())->toBe(['route.websocket_inspection_failed']);
-});
-
 it('refuses target removal and Instance removal before changing a public attachment', function (): void {
     [, $instance, $route] = public_reverb_fixture();
     $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
@@ -210,25 +183,6 @@ it('refuses target removal and Instance removal before changing a public attachm
         expect($exception->errorCode)->toBe('websocket.route_in_use');
     });
     expect(WebSocketAppTarget::query()->count())->toBe(1)->and($route->targets()->count())->toBe(1);
-});
-
-it('resolves a previous Doctor collision after removing public Reverb without inspecting the app', function (): void {
-    [$node, $instance, $route] = public_reverb_fixture();
-    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
-    $problem = ProblemFingerprint::query()->create([
-        'fingerprint' => 'doctor|route.websocket_collision|route|'.$route->id,
-        'source' => ProblemSource::Doctor, 'occurrences' => 0,
-        'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'route', 'doctor_code' => 'route.websocket_collision',
-            'doctor_resource' => (string) $route->id, 'doctor_observed_at' => now()->toISOString()],
-    ]);
-    $this->deleteJson(public_reverb_url($instance))->assertOk();
-    $this->travel(1)->minutes();
-    $this->inspector->shouldNotReceive('hasCollisions');
-    $family = app(RouteDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, null, null, null)));
-    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
-        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
-    ]), now());
-    expect($problem->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
 });
 
 it('replaces its own public Reverb app without requiring detach', function (): void {

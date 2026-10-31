@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\VpEnvironment;
+use App\Domain\Tools\VpManagerVersion;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -29,7 +30,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         [$instance] = $this->material->target($operation);
         $descriptors = [$this->descriptor('vp.plan', 'vp_plan', 'gateway', 'instance.vp-plan', ['instance_id' => $instance->id])];
         $plan = $operation->state['vp_plan'] ?? null;
-        if (is_array($plan) && $plan['environment'] !== null) {
+        if (is_array($plan) && $plan['requirements'] !== null) {
             $descriptors[] = $this->descriptor('child.vp_manager', 'vp_manager', 'gateway', 'instance.child-receipt', ['child_key' => 'vp_manager']);
             $descriptors[] = $this->descriptor('vp.scope', 'vp_scope', 'instance-deploy-agent', 'tool.inspect-vp-scope', []);
             $descriptors[] = $this->descriptor('vp.version', 'vp_version', 'instance-deploy-agent', 'tool.vp-version', []);
@@ -58,9 +59,9 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         $plan = ValidatedData::object($parent->state['vp_plan'] ?? []);
         $children = [];
         $prepared = InstanceExecutionEvidence::result($parent, 'vp.plan');
-        if ($prepared !== null && ($plan['environment'] ?? null) !== null) {
+        if ($prepared !== null && ($plan['requirements'] ?? null) !== null) {
             $children[] = ['key' => 'vp_manager', 'kind' => 'tool.manager_converge', 'node_id' => $parent->node_id,
-                'input' => ['manager' => 'vp']];
+                'input' => ['manager' => 'vp', 'image_provides_manager' => false]];
         }
 
         return ['intent' => [], 'children' => $children];
@@ -101,16 +102,14 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
             if (! is_string($binary) || ! str_starts_with($binary, '/') || ! str_ends_with($binary, '/bin/vp')) {
                 throw $this->unproven();
             }
-            $environment = VpEnvironment::fromArray([...ValidatedData::object(ValidatedData::object($operation->state['vp_plan'] ?? [])['environment']), 'store' => dirname($binary, 2)]);
+            $environment = VpEnvironment::fromArray([...ValidatedData::object(ValidatedData::object($operation->state['vp_plan'] ?? [])['requirements']), 'store' => dirname($binary, 2)]);
             $this->operations->change($operation, ['state' => [...($operation->state ?? []), 'vp_environment' => $environment->record('checking')]]);
             $this->material->reference($operation, $environment, 'checking');
         }
         if ($run['key'] === 'vp.version') {
             $version = $receipt['version'] ?? null;
             $required = $this->environment($operation)?->vpVersion;
-            $normalized = is_string($version) ? preg_replace('/\Avp\s+/', '', trim($version)) : null;
-            if (! is_string($normalized) || preg_match('/\A\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\z/D', $normalized) !== 1
-                || $required === null || ! version_compare($normalized, $required, '>=')) {
+            if (! is_string($version) || $required === null || ! VpManagerVersion::satisfies($version, $required)) {
                 return ['error_code' => 'deployment.vp_store_failed'];
             }
         }
@@ -145,7 +144,7 @@ final readonly class InstanceVpEnvironmentExecution implements OperationCompleti
         }
         $plan = ValidatedData::object($operation->state['vp_plan'] ?? []);
 
-        return ['confirmed' => true, 'instance_id' => $operation->target_id, 'no_op' => $plan['environment'] === null,
+        return ['confirmed' => true, 'instance_id' => $operation->target_id, 'no_op' => $plan['requirements'] === null,
             'vp_environment' => $this->environment($operation)?->input()];
     }
 

@@ -22,19 +22,17 @@ final readonly class TaskVmLifecycleCompletion implements OperationCompletion
         if ($outcome->status === OperationStatus::Succeeded) {
             $from = match ($operation->kind) {
                 'task_vm.resume' => [TaskVmState::Parked],
-                'task_vm.park' => [TaskVmState::Ready, TaskVmState::Parked],
                 'task_vm.destroy' => [TaskVmState::Destroying],
                 default => [TaskVmState::Provisioning],
             };
             $values = match ($operation->kind) {
-                'task_vm.park' => ['state' => TaskVmState::Parked, 'stop_confirmed_at' => now(), ...TaskVm::ForgetTopology],
                 'task_vm.destroy' => ['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null, 'model_key' => null, 'worker_stop_required' => false],
                 default => ['state' => TaskVmState::Ready, 'ready_at' => now(), ...TaskVm::ForgetTopology],
             };
             TaskVm::query()->whereKey($vm->id)->whereIn('state', $from)->update([...$values, 'error_code' => null, 'error_message' => null]);
         } elseif ($outcome->status === OperationStatus::Failed) {
             $code = $outcome->errorCode ?? 'task_vm.job_failed';
-            if (in_array($operation->kind, ['task_vm.park', 'task_vm.destroy'], true)) {
+            if ($operation->kind === 'task_vm.destroy') {
                 $vm->update(['error_code' => $code, 'error_message' => 'The task VM effect failed.', 'stop_confirmed_at' => null]);
             } else {
                 $this->fail->execute($vm, [$operation->kind === 'task_vm.resume' ? TaskVmState::Parked : TaskVmState::Provisioning], $code, 'The task VM effect failed.', 'The task VM effect failed.');

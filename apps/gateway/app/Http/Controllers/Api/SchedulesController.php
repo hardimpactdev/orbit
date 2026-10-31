@@ -83,10 +83,6 @@ final class SchedulesController extends Controller
         Schedule $schedule,
         RunScheduleAction $action,
     ): JsonResponse {
-        if ($this->synchronous($schedule)) {
-            return $this->scheduleResponse($request, $action->execute($schedule));
-        }
-
         return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
@@ -123,9 +119,6 @@ final class SchedulesController extends Controller
     ): JsonResponse {
         $record = Schedule::query()->findOrFail($schedule);
         $request->route()?->setParameter('schedule', $record);
-        if ($this->synchronous($record)) {
-            return $this->scheduleResponse($request, $action->execute($record));
-        }
 
         return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }
@@ -138,16 +131,7 @@ final class SchedulesController extends Controller
         Schedule $schedule,
         ActivateScheduleAction $action,
     ): JsonResponse {
-        if ($this->synchronous($schedule)) {
-            return $this->scheduleResponse($request, $action->execute($schedule));
-        }
-
         return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
-    }
-
-    private function synchronous(Schedule $schedule): bool
-    {
-        return $this->safety->requiresSynchronous($this->targets->forInspection($schedule)->node);
     }
 
     private function scheduleResponse(Request $request, #[SensitiveParameter] Schedule $schedule): JsonResponse

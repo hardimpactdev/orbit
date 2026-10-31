@@ -65,8 +65,6 @@ final readonly class CreateServerDatabaseAction
         private RetryDatabaseCreateAction $retries,
         private DatabaseRemovalLock $lock,
         private DatabaseOwnership $ownership,
-        private RunSynchronousDatabasePlanAction $synchronous,
-        private AttachDatabaseConnectionAction $attach,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): Operation
@@ -107,31 +105,6 @@ final readonly class CreateServerDatabaseAction
             locale: $data->locale,
             testProcesses: $data->testProcesses,
         ), $data);
-    }
-
-    /** Retained Instance create finishes its SQL and attachment before setup. */
-    public function createOnServer(DatabaseServer $server, string $slug, string $database, ?Instance $instance, ?string $createdBy, ?string $locale = null, ?int $testProcesses = null): DatabaseConnection
-    {
-        return $this->lock->run([$server->id], function () use ($server, $slug, $database, $instance, $createdBy, $locale, $testProcesses): DatabaseConnection {
-            $prepared = $this->prepareOnServerLocked($server, $slug, $database, $instance, $createdBy, $locale, $testProcesses);
-            $this->synchronous->execute($prepared);
-            $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($prepared->input['connection_id']));
-            if ($instance !== null) {
-                $this->attach->execute($instance, $connection, self::ATTACH_PREFIX, replace: true);
-            }
-            $this->broadcaster->broadcast(RecordEventType::DatabaseCreated, $connection->id, DatabaseConnectionData::fromModel($connection)->toArray());
-
-            return $connection;
-        });
-    }
-
-    /** Retained MySQL clone resets only receipt-proven names before its synchronous copy. */
-    public function provisionEmpty(DatabaseConnection $connection): void
-    {
-        $server = $connection->server ?? throw new ResourceOperationException('database.server_required', 'Clone reset requires a managed server.', 422);
-        $this->lock->run([$server->id], function () use ($connection): void {
-            $this->synchronous->execute($this->prepareEmpty($connection->refresh()));
-        });
     }
 
     public function prepareOnServer(DatabaseServer $server, string $slug, string $database, ?Instance $instance, ?string $createdBy, ?string $locale = null, ?int $testProcesses = null): PreparedDatabaseOperation
@@ -280,6 +253,7 @@ final readonly class CreateServerDatabaseAction
         ?string $createdBy,
         array $attributes = [],
     ): DatabaseConnection {
+        $server = DatabaseServer::query()->with(['node', 'process'])->whereKey($server->id)->lockForUpdate()->firstOrFail();
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
         if ($server->driver === DatabaseDriver::Pgsql) {
@@ -461,7 +435,7 @@ final readonly class CreateServerDatabaseAction
 
     private function server(string $slug): DatabaseServer
     {
-        $server = DatabaseServer::query()->with(['node', 'process'])->where('slug', $slug)->first();
+        $server = DatabaseServer::query()->with(['node', 'process'])->where('slug', $slug)->lockForUpdate()->first();
 
         if (! $server instanceof DatabaseServer) {
             throw new ResourceOperationException(

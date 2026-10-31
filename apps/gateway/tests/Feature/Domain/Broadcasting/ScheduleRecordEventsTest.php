@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Schedules\ActivateScheduleAction;
 use App\Actions\Schedules\CompleteScheduleAction;
 use App\Actions\Schedules\CreateScheduleAction;
-use App\Actions\Schedules\DestroyScheduleAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
@@ -18,7 +16,6 @@ use App\Domain\Schedules\ScheduleSpecificationValidator;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Event;
@@ -68,32 +65,6 @@ describe('Schedule record events', function (): void {
         );
     });
 
-    it('broadcasts schedule.updated when an app instance schedule is activated', function (): void {
-        $schedule = Schedule::query()->create([
-            'target_type' => Node::class,
-            'target_id' => $this->node->id,
-            'host_node_id' => $this->node->id,
-            'name' => 'nightly-backup',
-            'calendar' => '*-*-* 02:00:00',
-            'command' => 'backup.sh',
-            'timeout_seconds' => 3600,
-            'desired_timer_state' => DesiredTimerState::Disabled,
-            'status' => LifecycleStatus::Active,
-        ]);
-        // Activation is only supported for Instance-targeted schedules.
-        $schedule->update(['target_type' => Instance::MorphAlias, 'target_id' => 1]);
-
-        Event::fake([RecordBroadcast::class]);
-
-        new ActivateScheduleAction($this->runtime)->execute($schedule);
-
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated
-                && $event->id === $schedule->id,
-        );
-    });
-
     it('broadcasts schedule.updated when a run completes', function (): void {
         $schedule = Schedule::query()->create([
             'target_type' => Node::class,
@@ -119,53 +90,4 @@ describe('Schedule record events', function (): void {
         );
     });
 
-    it('broadcasts schedule.deleted when a schedule is fully removed', function (): void {
-        $schedule = Schedule::query()->create([
-            'target_type' => Node::class,
-            'target_id' => $this->node->id,
-            'host_node_id' => $this->node->id,
-            'name' => 'nightly-backup',
-            'calendar' => '*-*-* 02:00:00',
-            'command' => 'backup.sh',
-            'timeout_seconds' => 3600,
-            'desired_timer_state' => DesiredTimerState::Enabled,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        Event::fake([RecordBroadcast::class]);
-
-        new DestroyScheduleAction($this->runtime)->execute($schedule);
-
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleDeleted
-                && $event->id === $schedule->id
-                && $event->data === ['id' => $schedule->id, 'name' => 'nightly-backup'],
-        );
-    });
-
-    it('broadcasts schedule.updated instead when a removal does not fully complete in the same request', function (): void {
-        $schedule = Schedule::query()->create([
-            'target_type' => Node::class,
-            'target_id' => $this->node->id,
-            'host_node_id' => $this->node->id,
-            'name' => 'nightly-backup',
-            'calendar' => '*-*-* 02:00:00',
-            'command' => 'backup.sh',
-            'timeout_seconds' => 3600,
-            'desired_timer_state' => DesiredTimerState::Enabled,
-            'status' => LifecycleStatus::Active,
-        ]);
-        $this->runtime->removalComplete = false;
-
-        Event::fake([RecordBroadcast::class]);
-
-        new DestroyScheduleAction($this->runtime)->execute($schedule);
-
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated
-                && $event->id === $schedule->id,
-        );
-    });
 });

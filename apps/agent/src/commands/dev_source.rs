@@ -560,6 +560,103 @@ impl Command for ResolveDevelopmentSource {
     }
 }
 
+/// Read only the committed application template, never a workload `.env` or an untracked file.
+#[derive(schemars::JsonSchema, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvironmentTemplateInput {
+    #[serde(flatten)]
+    pub source: Source,
+    pub application: PathBuf,
+    pub commit: String,
+}
+
+#[derive(schemars::JsonSchema, Serialize)]
+pub struct EnvironmentTemplateOutput {
+    pub environment_template: String,
+}
+
+pub struct ReadDevelopmentEnvironmentTemplate;
+
+impl Command for ReadDevelopmentEnvironmentTemplate {
+    const NAME: &'static str = "instance.read-development-environment-template";
+    const SUMMARY: &'static str =
+        "Read the committed environment template of the resolved development source.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    type Input = EnvironmentTemplateInput;
+    type Output = EnvironmentTemplateOutput;
+    type Error = DevSourceError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+
+    fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
+        input.source.inspect(true)?;
+        let checkout = &input.source.checkout;
+        check(
+            matches!(input.commit.len(), 40 | 64)
+                && input.commit.bytes().all(|b| b.is_ascii_hexdigit())
+                && git_output(checkout, &["rev-parse", "HEAD"], true).as_deref()
+                    == Some(input.commit.as_bytes()),
+            "the template belongs to the resolved commit",
+        )?;
+        let relative = input
+            .application
+            .strip_prefix(checkout)
+            .map_err(|_| invalid("the application is inside the checkout")())?;
+        check(
+            relative
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_))),
+            "the application path has no traversal",
+        )?;
+        let file = relative.join(".env.example");
+        let path = file
+            .to_str()
+            .ok_or_else(invalid("the template path is UTF-8"))?;
+        let tree = git_in(
+            checkout,
+            &["ls-tree", "-z", &input.commit, "--", path],
+            true,
+        );
+        check(tree.status.success(), "the template tree can be read")?;
+        let tree = tree.stdout;
+        if tree.is_empty() {
+            return Ok(EnvironmentTemplateOutput {
+                environment_template: String::new(),
+            });
+        }
+        let tree = String::from_utf8(tree).map_err(|_| invalid("the template tree is UTF-8")())?;
+        let (header, name) = tree
+            .split_once('\t')
+            .ok_or_else(invalid("the template tree entry"))?;
+        let entry: Vec<_> = header.split_whitespace().collect();
+        check(
+            name == format!("{path}\0")
+                && entry.len() == 3
+                && matches!(entry[0], "100644" | "100755")
+                && entry[1] == "blob",
+            "the template is a committed regular file",
+        )?;
+        let blob = entry[2];
+        let size = git_output(checkout, &["cat-file", "-s", blob], true)
+            .and_then(|v| String::from_utf8(v).ok())
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(invalid("the template has a bounded size"))?;
+        check(size <= 131_072, "the template is at most 128 KiB")?;
+        let output = git_in(checkout, &["cat-file", "blob", blob], true);
+        check(
+            output.status.success() && output.stdout.len() == size,
+            "the template content matches its blob",
+        )?;
+        Ok(EnvironmentTemplateOutput {
+            environment_template: String::from_utf8(output.stdout)
+                .map_err(|_| invalid("the template is UTF-8")())?,
+        })
+    }
+}
+
 #[cfg(test)]
 #[path = "dev_source_tests.rs"]
 mod tests;

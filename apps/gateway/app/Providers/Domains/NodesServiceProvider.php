@@ -11,7 +11,6 @@ use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
-use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -20,9 +19,6 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
-use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
-use App\Infrastructure\AgentCommands\OperationAgentTransport;
-use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
@@ -34,16 +30,13 @@ use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
-use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
 use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
+use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
-use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
-use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -54,7 +47,6 @@ final class NodesServiceProvider extends ServiceProvider
     public array $bindings = [
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
-        NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
@@ -73,13 +65,8 @@ final class NodesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->bind(NodeOperationAgentInstaller::class, NativeAgentCommandRunner::class);
-        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class], OperationSecretSource::class);
+        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
         $this->app->singleton(NodeWireGuardProjectionLock::class, static fn (): NodeWireGuardProjectionLock => new NodeWireGuardProjectionLock(Config::string('orbit.home')));
-        $this->app->bind(NodeWireGuardOperationTransport::class, static fn (): NodeWireGuardOperationTransport => new NodeWireGuardOperationTransport(
-            app(OperationAgentTransport::class), app(NodeWireGuardProjectionLock::class), app(WireGuardServerConfigRenderer::class),
-            app(ProtectedFileWriter::class), Config::string('orbit.home'),
-        ));
         $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
         $this->app->singleton(
             NodeLocks::class,

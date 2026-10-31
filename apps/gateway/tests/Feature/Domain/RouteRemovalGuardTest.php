@@ -6,9 +6,9 @@ use App\Actions\Clusters\DestroyClusterAction;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Actions\Projects\DestroyProjectAction;
-use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
+use App\Actions\Routes\RouteTargetState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
@@ -56,7 +56,7 @@ it('guards App ownership, Node scope, target host, retained basis, and app roles
         ->toThrow(NodeRoleValidationException::class, 'hosts Route targets');
 
     $this->instance->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($this->route);
+    app(RouteTargetState::class)->clear($this->route, $this->route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     expect(fn () => $this->guard->assertNodeRemovable($this->node))
         ->toThrow(ResourceOperationException::class, 'referenced by Routes');
 });

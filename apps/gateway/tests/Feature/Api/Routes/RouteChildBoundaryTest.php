@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -13,15 +14,19 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 it('admits only the open Route phase, yields to its stamped child and finishes only after canonical proof', function (): void {
+    config(['swamp.direct_writers' => ['route.caddy_converge' => 'direct']]);
+    config(['swamp.run_token' => 'fixture.fake']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     $gateway = Node::query()->create(['name' => 'gateway-child', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $services = Node::query()->create(['name' => 'services-child', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.17', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $services->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $services->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
-    $node = Node::query()->create(['name' => 'dev-child', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $node = Node::query()->create(['name' => 'dev-child', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Child', 'slug' => 'child', 'repository_url' => 'https://example.test/child.git', 'root' => 'public']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'private', 'checkout_path' => '/srv/child/private', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved']);
     $route = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'node_id' => $node->id, 'domain' => 'tracking.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
@@ -50,13 +55,14 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $run('stage-commit.host-withdraw', ['action' => 'commit', 'stage' => 'host-withdraw'])->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
     $this->postJson($path.'/wait', ['worker' => 'parent-one', 'keys' => [$key]])->assertOk()->assertJsonPath('data.status', 'waiting');
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data', null);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child['kind'], 'worker' => 'child', 'operation_id' => $child['id']])->assertOk()->assertJsonPath('data.id', $child['id']);
-    $childPath = '/api/v1/operation-executor/'.$child['id'];
-    $this->postJson($childPath.'/run', ['worker' => 'child', 'key' => 'prepare', 'transport' => 'gateway', 'name' => 'route.caddy-prepare', 'input' => $child['input']])->assertOk();
-    $descriptor = $this->postJson($childPath.'/heartbeat', ['worker' => 'child'])->assertOk()->json('data.execution_context.descriptors.1');
-    $result = $this->postJson($childPath.'/run', ['worker' => 'child', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))])->assertOk()->json('data');
-    $this->postJson($childPath.'/step', ['worker' => 'child', 'key' => 'publish-proof', 'name' => 'caddy-publish', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($childPath.'/complete', ['worker' => 'child', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $childPath = '/api/v1/direct-operations/'.$child['id'];
+    $runId = Operation::query()->findOrFail($child['id'])->state['swamp_run_id'];
+    $publication = $this->getJson($childPath.'?run_id='.$runId)->assertOk()->json('data.input.caddy_publication');
+    expect($publication['node_id'])->toBe($node->id);
+    $this->postJson($childPath.'/primitive', ['run_id' => $runId])->assertUnprocessable();
+    $result = ['ready' => true, 'result' => 'unserved', 'version' => $publication['caddy']['version']];
+    $this->postJson($childPath.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'result' => $result,
+        'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'])->assertOk();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data.id', $parent->id);
     $run('stage-commit.host-withdraw', ['action' => 'commit', 'stage' => 'host-withdraw'], 'parent-two')->assertOk();
     $run('stage-open.host-certificate-remove', ['action' => 'open', 'stage' => 'host-certificate-remove'], 'parent-two')->assertOk();
@@ -65,6 +71,6 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $this->postJson($path.'/step', ['worker' => 'parent-two', 'key' => 'final-proof', 'name' => 'route-proof', 'status' => 'succeeded', 'result' => $proof])->assertOk();
     $this->postJson($path.'/complete', ['worker' => 'parent-two', 'status' => 'succeeded', 'result' => [...$proof, 'route_id' => $route->id + 1]])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $this->postJson($path.'/complete', ['worker' => 'parent-two', 'status' => 'succeeded', 'result' => $proof])->assertOk()->assertJsonPath('data.status', 'succeeded');
-    expect($agents->calls)->toHaveCount(1)->and($agents->calls[0]['node'])->toBe('dev-child')
+    expect($agents->calls)->toBe([])
         ->and(Operation::query()->findOrFail($child['id'])->parent_operation_id)->toBe($parent->id);
 });

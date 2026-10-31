@@ -9,6 +9,7 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\FirewallRule;
@@ -28,6 +29,7 @@ final readonly class StoreFirewallRuleAction
             $this->guardLinuxPlatform($node);
             $this->guardRecoverySsh($node, $data);
             $this->guardActionConflict($node, $data);
+            app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
             $rule = FirewallRule::query()->firstOrNew([
                 'node_id' => $node->id,
                 'name' => $data->name,

@@ -78,6 +78,12 @@ final class FleetMaintenanceController extends Controller
 
     public function peerDnsTargets(FleetMaintenanceRequest $request, PeerDnsTargetsAction $action): JsonResponse
     {
+        return response()->json(['data' => array_column($action->execute(), 'node_id'),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+    }
+
+    public function peerDnsPlan(FleetMaintenanceRequest $request, PeerDnsTargetsAction $action): JsonResponse
+    {
         return response()->json(['data' => $action->execute(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }

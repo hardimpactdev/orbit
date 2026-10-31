@@ -8,6 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Instances\InstanceSqliteSeedIntent;
+use App\Domain\Instances\InstanceTransferDiscardProjection;
 use App\Domain\Instances\TransferCompensation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationChildAdmission;
@@ -15,6 +16,8 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -23,6 +26,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 
 final readonly class CompensationProcessAdmission implements OperationChildAdmission
 {
@@ -33,6 +37,12 @@ final readonly class CompensationProcessAdmission implements OperationChildAdmis
 }
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'fixture.run.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-instance-lifecycle-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
     $definitions = [
         ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
         'process.instance_runtime' => ['executor' => 'swamp', 'admission' => CompensationProcessAdmission::class,
@@ -43,8 +53,8 @@ beforeEach(function (): void {
     // This compensation path has scalar receipts; C gates the complete root family.
     $definitions['instance.transfer']['result_fields'] = array_values(array_filter($definitions['instance.transfer']['result_fields'], is_string(...)));
     app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
-    $source = Node::query()->create(['name' => 'compensation-source', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
-    $destination = Node::query()->create(['name' => 'compensation-target', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $source = Node::query()->create(['name' => 'compensation-source', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $destination = Node::query()->create(['name' => 'compensation-target', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $source->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $destination->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Compensation proof', 'slug' => 'compensation-proof', 'type' => 'monorepo', 'root' => '.', 'repository_url' => 'https://github.com/example/compensation.git']);
@@ -115,7 +125,8 @@ it('keeps compensation Gateway steps in the child and restores state only after 
     expect(fn () => $execute('rollback-state'))->toThrow(ResourceOperationException::class);
     $this->assertDatabaseHas('vite_port_assignments', ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
     $this->assertDatabaseHas('ssr_port_assignments', ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
-    $discard->update(['status' => 'succeeded', 'result' => ['lifecycle_complete' => true]]);
+    app(InstanceTransferDiscardProjection::class)->apply($discard->refresh(), ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00Z', 'finished_at' => '2026-10-30T19:00:01Z', 'result' => ['discarded' => true]]);
     expect($execute('rollback-state'))->toMatchArray(['transfer_id' => $this->transfer->id, 'restored' => true]);
     foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
         $this->assertDatabaseMissing($table, ['instance_id' => $this->instance->id, 'node_id' => $this->transfer->destination_node_id]);
@@ -320,3 +331,36 @@ it('still stamps and cascades pre-cutover cancellation through the shared cancel
     expect($this->root->refresh()->cancel_requested_at)->not->toBeNull();
     expect($this->stop->refresh()->status->value)->toBe('cancelled');
 })->skip(! OperationKinds::supports('cancel_guard'), 'Await the lane 0d cancel guard runtime.');
+
+it('records direct destination discard only after source restoration without changing the child contract', function (): void {
+    $this->transfer->destinationNode->update(['architecture' => 'x86_64']);
+    config(['swamp.direct_writers' => ['instance.transfer_discard' => 'direct'], 'swamp.run_token' => 'fixture.run.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-instance-lifecycle-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $this->stop->update(['status' => 'succeeded']);
+    ($this->captureRefusal)();
+    $this->root->update(['cancel_requested_at' => now()]);
+    $rollback = $this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-rollback'], $this->peer)['operation'];
+    $rollback = $this->executor->claim('instance.transfer_rollback', 'direct-rollback', $this->peer, $rollback->id);
+    $result = $this->executor->run($rollback, ['worker' => 'direct-rollback', 'key' => 'rollback-record',
+        'transport' => 'gateway', 'name' => 'instance.transfer-compensation', 'input' => ['action' => 'record']], $this->peer);
+    $this->executor->step($rollback, ['worker' => 'direct-rollback', 'key' => 'rollback-record.finish', 'name' => 'rollback-record', 'status' => 'succeeded', 'result' => $result], $this->peer);
+    expect(fn () => $this->executor->child($rollback, ['worker' => 'direct-rollback', 'key' => 'transfer-discard-destination'], $this->peer))->toThrow(ResourceOperationException::class);
+    $restore = $this->executor->child($rollback, ['worker' => 'direct-rollback', 'key' => 'transfer-restore-source'], $this->peer)['operation'];
+    $restore->update(['status' => 'succeeded']);
+    $discard = $this->executor->child($rollback, ['worker' => 'direct-rollback', 'key' => 'transfer-discard-destination'], $this->peer)['operation'];
+    expect($discard->input)->toBe(['instance_id' => $this->instance->id, 'transfer_id' => $this->transfer->id]);
+    expect($discard->state['instance_lifecycle_writer'])->toBe('direct');
+    expect($discard->state['transfer_discard_intent'])->toBe([
+        'agent_sha256' => app(AgentDelivery::class)->pin($this->transfer->destinationNode),
+        'destination' => '/srv/apps/moved/proof',
+    ]);
+    expect($discard->node_id)->toBe($this->transfer->destination_node_id);
+    expect($discard->lock_key)->toBeNull();
+    $this->transfer->update(['destination_path' => '/srv/apps/later/proof']);
+    expect(app(InstanceTransferDiscardProjection::class)->input($discard)['destination'])->toBe('/srv/apps/moved/proof');
+    expect(fn () => $this->executor->claim('instance.transfer_discard', 'old-worker', $this->peer, $discard->id))->toThrow(ResourceOperationException::class);
+});

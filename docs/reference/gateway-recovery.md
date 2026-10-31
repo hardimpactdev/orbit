@@ -107,6 +107,8 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 ### Prepare a release
 
+The observer is frozen at the published delivery in `apps/gateway/resources/agent/frozen-manifest.json`. Prepare resolves the Gateway commit independently and verifies that fixed delivery's manifest, checksums and provenance. It never waits for the Gateway commit's CLI release or for new agent builds. The desired fleet state keeps the same agent commit and binary digests. Changing agent source does not change the delivered agent.
+
 As `orbit`, build a release for one commit:
 
 ```bash
@@ -115,13 +117,13 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
 
 Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused.
 
-Prepare first takes the commit's agent, in PHP and before any agent command, so a commit without a release refuses before anything changes:
+Prepare first verifies the frozen agent, in PHP and before any agent command:
 
-1. It finds the commit's [published release](/reference/cli-binaries#published-releases). `git ls-remote` lists the `cli-v*` tags of `ORBIT_CLI_RELEASE_REPOSITORY`. The tag that points at the commit names the release, which also resolves a short SHA.
+1. It accepts the full Gateway commit SHA directly. For a short SHA, `git ls-remote` resolves it from published tags or branches. An unresolved prefix requires the full SHA. The frozen manifest names the fixed agent release.
 2. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
-3. It checks the manifest against `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
+3. It checks that the manifest equals the frozen manifest and matches `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
 
-A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. An automatic release tries it again 10 minutes later, as for any [retryable failure](#what-a-tick-does). A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
+An unreachable frozen delivery refuses with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks availability every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
 
 Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
@@ -180,7 +182,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_web_build_invalid` | The artifact is larger than the limits, has no digest or does not match it, has an unsafe entry, or has no `index.html`. The commit is marked failed. |
 | `gateway.release_web_build_unavailable` | GitHub Actions cannot be read: no GitHub App, no `Actions: read` permission, or no answer. The commit is tried again later. |
 | `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
-| `gateway.release_agent_delivery_unavailable` | No published release holds the commit yet, or its agent cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
+| `gateway.release_agent_delivery_unavailable` | The frozen agent delivery cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
 | `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
 | `gateway.release_provenance_invalid` | The release has no `provenance.sigstore.json`, or the bundle does not [verify](#release-provenance). Nothing changed. The commit is marked failed and is not tried again automatically. |
 | `gateway.release_provenance_unconfigured` | The trust root cannot be read or is malformed, or `ORBIT_CLI_RELEASE_REPOSITORY` is not on github.com. Nothing changed. The commit is tried again later without spending its attempts. |
@@ -472,10 +474,12 @@ The Gateway sends the release ID and phase to `gateway.handoff-release`. The age
 
 The serving phase:
 
-1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
+1. submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its `caddy_operation_id`;
 2. converges the PHP-FPM pool and the start hooks, as described below;
 3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
 4. starts [Laravel Horizon](/reference/gateway-queue#releases) after the pre-switch drain. A manual handoff of an active Process uses `php artisan horizon:terminate`.
+
+The native Caddy Operation owns publication and its final result. Submission is not a publication claim. Release verification still checks live HTTPS.
 
 The scheduler phase:
 
@@ -530,6 +534,12 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
 
 Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider. Use the guarded [Docker provider migration](/reference/docker-provider-migration) in a separate maintenance window; fallback requires explicit approval with `--fallback`.
+
+The Caddy handoff submits the normal `route.caddy_converge` native root on the
+Gateway Node worker. Its report records `caddy.outcome: submitted` and
+`caddy.operation_id`; the Operation records publication success or failure.
+The handoff performs no agent publication or Gateway wait loop. Release smoke
+still checks the live HTTPS response.
 
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
@@ -636,7 +646,11 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
 8. It deploys that commit with the trigger `auto`, under the release lock.
 
-The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts.
+The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts. Waiting for published agent delivery is not a failed attempt and spends no retry budget.
+
+The automatic command continues publication checks for up to 15 minutes per invocation. Each check releases the lock before the 20-second wait, then resolves the newest green commit again. A newer green commit replaces the queued candidate. Disable, pause, a manual request or a busy lock stops this invocation. After the bound, the command exits successfully with the record still queued; the next timer invocation resumes it.
+
+Publication waiting survives process exit and raises one alert after 15 minutes of continuous publication waiting, even if newer green candidates replace the original. A queued publication record has changed no live state and does not block a manual request. A manual release or an already-current target ends it as `superseded`, without a failure or an alert.
 
 Every tick stores its result as the last tick. A tick prints it as one JSON object. It exits 1 only when it ran a release that failed.
 
@@ -645,6 +659,7 @@ Every tick stores its result as the last tick. A tick prints it as one JSON obje
 | `disabled`, `paused`, `busy` | Automatic releases are off or paused, or another release step runs or waits for its unit. A `busy` result counts toward a stall |
 | `not_adopted`, `no_deployed_release` | The Gateway does not run from a release, or its `REVISION` is unreadable. Deploy the first release by hand |
 | `up_to_date` | No newer commit qualifies |
+| `waiting_for_agent_delivery` | The candidate stays queued until its published delivery can be verified; the runner rechecks every 20 seconds |
 | `backing_off` | The newest commit failed for a retryable reason less than 10 minutes ago |
 | `source_unavailable` | GitHub, the App, or the shared repository's origin did not answer. The tick is skipped |
 | `released` | The tick released a commit, and it went live |
@@ -821,7 +836,7 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `release_failed` | A release failed. Nothing went live, or the previous release serves again |
 | `release_paused` | A release failed after its migrations ran, or died after it touched the schema or the current link, and automatic releases are paused |
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
-| `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
+| `release_stalled` | Published agent delivery waited 15 minutes, [automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
 | `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |

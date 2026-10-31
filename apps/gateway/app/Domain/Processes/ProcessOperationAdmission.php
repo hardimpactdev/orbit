@@ -8,9 +8,11 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
@@ -32,7 +34,15 @@ final readonly class ProcessOperationAdmission
 
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, ValidatedData::integer($input['node_id']), $input, 'operator', $requestId);
+            if ($verb === 'create') {
+                $input['installation'] = ['$secret' => 'process.installation', 'id' => $process->id];
+            }
+            $nodeId = ValidatedData::integer($input['node_id']);
+            $writer = app(DirectOperation::class)->writer('process.'.$verb, $input, $nodeId);
+            if ($writer === 'direct') {
+                $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($nodeId));
+            }
+            $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, $nodeId, $input, 'operator', $requestId, expectedWriter: $writer);
             $process->update(['status' => $verb === 'destroy' ? LifecycleStatus::Removing : LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
 
             return $operation;
@@ -47,7 +57,9 @@ final readonly class ProcessOperationAdmission
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        app(ProcessSwampSafety::class)->assertAllowed($target->node);
+        if (! in_array($verb, ['create', 'stop', 'destroy'], true)) {
+            app(ProcessSwampSafety::class)->assertAllowed($target->node);
+        }
         if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
             $instance = $target->instance;
             if ($instance !== null) {
@@ -61,7 +73,7 @@ final readonly class ProcessOperationAdmission
             'runtime' => $process->runtime->value, 'variant' => $process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true) ? 'vite' : $process->runtime->value, 'desired' => $process->desired_state->value,
             'on_demand' => $target->onDemandHostStart, 'created' => $created, 'preserve_record' => $preserveRecord,
             'caller_node_id' => $caller?->id,
-            'vite' => $systemd && $process->isVpDev() ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
+            'vite' => $verb !== 'stop' && $systemd && $process->isVpDev() ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
         if ($target->productionReleaseLayout && ($process->desired_state === DesiredProcessState::Running || in_array($verb, ['start', 'restart'], true)) && $verb !== 'destroy' && $verb !== 'stop') {
             $input['directory'] = $target->defaultWorkingDirectory;
         }

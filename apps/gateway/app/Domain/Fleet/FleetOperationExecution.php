@@ -28,7 +28,7 @@ final readonly class FleetOperationExecution implements OperationFamilyChildren,
     public function context(Operation $operation): array
     {
         $kind = $this->kinds->definition($operation->kind);
-        if (! is_array($kind)) {
+        if (! is_array($kind) || ! isset($kind['runs'])) {
             throw new \LogicException('Fleet execution needs a declared kind.');
         }
         $descriptors = [];

@@ -188,7 +188,6 @@ describe('operation requests', function (): void {
     it('uses the exact Gateway methods, paths, and queries', function (): void {
         expect([
             [new ShowOperationRequest(42), Method::GET, '/api/v1/operations/42', []],
-            [new ShowOperationRequest(42, 7), Method::GET, '/api/v1/operations/42', ['after_sequence' => 7]],
             [new ListOperationsRequest, Method::GET, '/api/v1/operations', []],
             [new ListOperationsRequest('running', 'instance.deploy', 'instance', 17), Method::GET, '/api/v1/operations', ['status' => 'running', 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17]],
             [new CancelOperationRequest(42), Method::POST, '/api/v1/operations/42/cancel', []],
@@ -200,11 +199,10 @@ describe('operation requests', function (): void {
         });
 
         expect((string) new CancelOperationRequest(42)->body())->toBe('{}')
-            ->and(static fn () => new ShowOperationRequest(0))->toThrow(InvalidArgumentException::class)
-            ->and(static fn () => new ShowOperationRequest(1, -1))->toThrow(InvalidArgumentException::class);
+            ->and(static fn () => new ShowOperationRequest(0))->toThrow(InvalidArgumentException::class);
     });
 
-    it('maps an operation with its steps and its outcome', function (): void {
+    it('maps the parent Operation with its native outcome', function (): void {
         $mock = new MockClient([
             ShowOperationRequest::class => MockResponse::make(['data' => [
                 ...operation_payload([
@@ -221,15 +219,14 @@ describe('operation requests', function (): void {
             ], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 200, ['X-Orbit-Request-Id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']),
         ]);
 
-        $operation = operation_connector($mock)->send(new ShowOperationRequest(42, 8))->dto();
+        $operation = operation_connector($mock)->send(new ShowOperationRequest(42))->dto();
 
         expect($operation)->toBeInstanceOf(OperationResponse::class)
             ->and($operation->terminal())->toBeTrue()
             ->and($operation->succeeded())->toBeFalse()
             ->and($operation->failedStep)->toBe('before_activation.migrate')
             ->and($operation->result['selected_release'] ?? null)->toBe('r1')
-            ->and($operation->steps[0]->output)->toBe("boom\n")
-            ->and($operation->toArray()['steps'][0]['name'])->toBe('before_activation.migrate')
+            ->and($operation->toArray())->not->toHaveKey('steps')
             ->and(json_encode($operation->toArray()['input']))->toBe('{}');
     });
 

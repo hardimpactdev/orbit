@@ -168,8 +168,21 @@ final readonly class UpCloudServers
         $this->api->request('POST', "server/{$uuid}/stop", ['stop_server' => $timeout === null ? ['stop_type' => 'hard'] : ['stop_type' => 'soft', 'timeout' => (string) $timeout]]);
     }
 
-    /** Stops the server hard when it runs, then deletes it with its storage, and waits until it is gone. Absent counts as deleted. */
-    public function delete(string $name, string $labelKey, string $labelValue, ?string $uuid): void
+    /** Requests deletion of one owned stopped server. Swamp observes completion; absence is already satisfied. */
+    public function requestDelete(string $name, string $labelKey, string $labelValue, ?string $uuid): void
+    {
+        $server = $this->find($name, $labelKey, $labelValue, $uuid);
+        if ($server === null) {
+            return;
+        }
+        if ($server->state !== 'stopped') {
+            throw new TaskVmException('task_vm.not_settled', 'The owned UpCloud server must be stopped before requesting deletion.');
+        }
+        $this->deleteServer($server->uuid);
+    }
+
+    /** Retained synchronous lifecycle: stop, delete with storage, then confirm absence. Removed with its owning caller cutover. */
+    public function deleteSynchronously(string $name, string $labelKey, string $labelValue, ?string $uuid): void
     {
         $server = $this->find($name, $labelKey, $labelValue, $uuid);
         if ($server === null) {
@@ -182,7 +195,7 @@ final readonly class UpCloudServers
         if ($server->state !== 'stopped') {
             $this->await($name, $labelKey, $labelValue, $uuid, 'stopped', 180);
         }
-        $this->api->request('DELETE', "server/{$uuid}?storages=1&backups=delete", allowMissing: true);
+        $this->deleteServer($uuid);
         $deadline = now()->getTimestamp() + 120;
         while ($this->find($name, $labelKey, $labelValue, $uuid) !== null) {
             if (now()->getTimestamp() >= $deadline) {
@@ -190,6 +203,11 @@ final readonly class UpCloudServers
             }
             Sleep::for(self::PollSeconds)->seconds();
         }
+    }
+
+    private function deleteServer(string $uuid): void
+    {
+        $this->api->request('DELETE', "server/{$uuid}?storages=1&backups=delete", allowMissing: true);
     }
 
     /**
@@ -266,35 +284,6 @@ final readonly class UpCloudServers
         arsort($verified, SORT_STRING);
 
         return (string) array_key_first($verified);
-    }
-
-    /** Turns the stopped server's disk into a template titled `$title`, and returns the template's UUID once it is online. */
-    public function renameTemplate(string $uuid, string $title, string $recipeIdentity): void
-    {
-        $this->api->request('PUT', "storage/{$uuid}", ['storage' => [
-            'title' => $title,
-            'labels' => [['key' => 'orbit.recipe', 'value' => $recipeIdentity]],
-        ]]);
-    }
-
-    /** Starts one template request; Swamp observes its state. */
-    public function beginTemplate(string $disk, string $title): string
-    {
-        $uuid = data_get($this->api->request('POST', "storage/{$disk}/templatize", ['storage' => ['title' => $title]]), 'storage.uuid');
-
-        return is_string($uuid) && Str::isUuid($uuid) ? $uuid : throw self::invalid($title, 'the template answer has no UUID');
-    }
-
-    public function templateState(string $uuid): ?string
-    {
-        $state = data_get($this->api->request('GET', "storage/{$uuid}", allowMissing: true), 'storage.state');
-
-        return is_string($state) ? $state : null;
-    }
-
-    public function deleteTemplate(string $uuid): void
-    {
-        $this->api->request('DELETE', "storage/{$uuid}", allowMissing: true);
     }
 
     private static function invalid(string $subject, string $reason): TaskVmException

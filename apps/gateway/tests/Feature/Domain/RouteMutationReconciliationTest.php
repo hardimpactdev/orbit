@@ -7,11 +7,11 @@ use App\Actions\Clusters\DetachClusterNodeAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Routes\AdmitClusterRouterOperationAction;
-use App\Actions\Routes\ClearRouteTargetAction;
+use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
+use App\Actions\Routes\RouteTargetState;
 use App\Actions\Routes\SetRouteTargetAction;
-use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
@@ -58,6 +58,7 @@ use Tests\Support\FakeAnalyticsTrackingRouteProjector;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManagerMaterializer;
+use Tests\Support\RouteForeignChildKinds;
 
 function ensure_active_app_dev_role(Node $node): void
 {
@@ -82,22 +83,6 @@ beforeEach(function (): void {
     ]);
     $this->node = reconciliation_node('dev', 'dev.test');
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
-});
-
-it('broadcasts a cleared Route target before a metrics reconcile failure', function (): void {
-    Event::fake();
-    $route = reconciliation_route($this->orbitApp, 'clear-before-reconcile.test', $this->node);
-    $this->target->update(['status' => InstanceState::Reserved]);
-    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
-    app()->instance(MetricsFleetReconciler::class, $metrics);
-
-    expect(fn () => app(ClearRouteTargetAction::class)->execute($route))
-        ->toThrow(RuntimeException::class, 'metrics unavailable');
-
-    Event::assertDispatched(RecordBroadcast::class);
-    expect($route->refresh()->targets)->toBeEmpty();
 });
 
 it('broadcasts a changed Route target before a metrics reconcile failure', function (): void {
@@ -134,7 +119,7 @@ it('reports association conflicts before active Route reconciliation refusals', 
 
     foreach ([
         fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
-        fn () => app(ClearRouteTargetAction::class)->execute($route),
+        fn () => app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all()),
         fn () => app(DestroyRouteAction::class)->execute($route),
     ] as $mutation) {
         expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
@@ -261,7 +246,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
     $retainedTarget = reconciliation_instance($this->orbitApp, $this->node, 'retained');
     $retained = app(CreateRouteAction::class)->ensureForInstance($retainedTarget, null);
     $retainedTarget->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($retained);
+    app(RouteTargetState::class)->clear($retained, $retained->targets()->orderBy('instance_id')->pluck('instance_id')->all());
 
     $cluster = reconciliation_active_cluster('production', 'cluster.test');
     $firstNode = reconciliation_node('production-one', null);
@@ -328,7 +313,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
 it('uses provisioning baseline overrides to select retained generated Routes', function (): void {
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->node->update(['tld' => 'next.test']);
 
     app(RouteMutationReconciler::class)->reconcile(baselineNodeOverrides: [
@@ -400,7 +385,7 @@ it('reconciles a zero-target generated Route from its retained basis', function 
     $this->node->update(['cluster_id' => $cluster->id, 'tld' => null]);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $owner = new RouteReconciliationClusterRouterOperationLock;
     app()->instance(ClusterRouterOperationLock::class, $owner);
     Route::updating(static function (Route $updating) use ($owner): void {
@@ -470,7 +455,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
     ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->target->delete();
     $observed = [];
     bind_route_reconciliation_provisioning(function (Node $node) use (&$observed): void {
@@ -565,7 +550,7 @@ it('preserves Node and Route state when the last app-dev TLD has no active fallb
     ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->target->delete();
     $nodeBefore = $this->node->fresh()->getAttributes();
     $routeBefore = $route->fresh(['targets'])->toArray();
@@ -594,7 +579,7 @@ it('keeps the Cluster TLD when a retained basis Node TLD is cleared', function (
     ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->target->delete();
     bind_route_reconciliation_provisioning();
 
@@ -2451,7 +2436,8 @@ final class NodeTldRouteConfigurator implements DevelopmentInstanceConfigurator
     }
 }
 
-it('converges an eligible active explicit development Route domain', function (): void {
+it('records an eligible active explicit development Route replacement without executing it', function (): void {
+    RouteForeignChildKinds::register();
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         projectId: $this->orbitApp->id,
@@ -2462,42 +2448,21 @@ it('converges an eligible active explicit development Route domain', function ()
         clusterId: null,
     ))['route'];
     $route->update(['status' => RouteStatus::Active]);
-    $projector = Mockery::mock(RouteDomainProjector::class);
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
 
-    foreach ([
-        'prepareWorkloadCertificate',
-        'prepareWorkloadCaddy',
-        'prepareRouterCertificate',
-        'prepareFirewallPolicy',
-        'prepareRouterCaddy',
-        'publishDns',
-        'prepareCleanup',
-        'cleanup',
-    ] as $method) {
-        $projector->shouldReceive($method)->once();
-    }
-    $projector->shouldReceive('verifyWorkload')->twice();
-
-    app()->instance(RouteDomainProjector::class, $projector);
-    app()->instance(
-        DevelopmentInstanceConfigurator::class,
-        Mockery::mock(DevelopmentInstanceConfigurator::class),
-    );
-    app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
-
-    $updated = app(UpdateRouteAction::class)->execute(
+    $operation = app(AdmitRouteOperationAction::class)->update(
         $route,
         new UpdateRouteData(true, 'next.example.test', false, null),
     );
+    $candidate = Route::query()->findOrFail($operation->input['candidate_route_id']);
 
-    expect($updated->domain)
-        ->toBe('next.example.test')
-        ->and($updated->status)
-        ->toBe(RouteStatus::Active)
-        ->and($updated->id)
-        ->not->toBe($route->id)
-        ->and($updated->replaced_by_route_id)
-        ->toBeNull();
+    expect($operation->kind)->toBe('route.update')
+        ->and($operation->status->value)->toBe('queued')
+        ->and($operation->input['mode'])->toBe('replace_domain')
+        ->and($route->refresh()->domain)->toBe('active.example.test')
+        ->and($candidate->domain)->toBe('next.example.test')
+        ->and($candidate->replaces_route_id)->toBe($route->id)
+        ->and($candidate->sites_published)->toBeFalse();
 });
 
 it('retains reconciliation refusals for active Route changes without association conflicts', function (): void {
@@ -2519,7 +2484,7 @@ it('retains reconciliation refusals for active Route changes without association
     $before = $route->fresh(['targets'])->toArray();
 
     foreach ([
-        fn () => app(UpdateRouteAction::class)->execute(
+        fn () => app(AdmitRouteOperationAction::class)->update(
             $route,
             new UpdateRouteData(true, 'changed.example.test', false, null),
         ),
@@ -2533,7 +2498,7 @@ it('retains reconciliation refusals for active Route changes without association
     }
 });
 
-it('retains domain reconciliation refusals for generated Routes before projection', function (): void {
+it('refuses operator updates of generated Route domains before projection', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
@@ -2547,11 +2512,11 @@ it('retains domain reconciliation refusals for generated Routes before projectio
 
     $before = $generated->fresh(['targets'])->toArray();
 
-    expect(fn () => app(UpdateRouteAction::class)->execute(
+    expect(fn () => app(AdmitRouteOperationAction::class)->update(
         $generated,
         new UpdateRouteData(true, "next-{$generated->id}.example.test", false, null),
     ))->toThrow(function (ResourceOperationException $exception): void {
-        expect($exception->errorCode)->toBe('route.reconciliation_required');
+        expect($exception->errorCode)->toBe('route.domain_immutable');
     });
 
     expect($generated->fresh(['targets'])->toArray())->toBe($before);

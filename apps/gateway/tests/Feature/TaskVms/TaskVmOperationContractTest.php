@@ -2,14 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\TaskVms\AdmitTaskVmChildAction;
 use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
 use App\Actions\TaskVms\StartTaskVmIncusEffectAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
-use App\Actions\TaskVms\StartTaskVmPackageCacheMountAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -19,26 +18,22 @@ use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Domain\TaskVms\TaskVmProvider;
-use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentGuest;
-use App\Infrastructure\AgentCommands\AgentSchemas;
-use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmGuestCommand;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
-use App\Infrastructure\TaskVms\TaskVmUpCloudImageCommand;
+use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -80,32 +75,6 @@ function taskVmEffectClaim(Operation $operation): void
 {
     test()->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'vm-workflow'])->assertOk()->assertJsonPath('data.id', $operation->id);
 }
-
-it('sends image inspection parameters without mutation receipt metadata', function (string $command, array $parameters): void {
-    $operation = taskVmEffectFixture();
-    $guest = ['project' => 'orbit-tasks', 'name' => $operation->input['vm']['name']];
-    $input = ['command' => $command, 'guest' => $guest, 'parameters_json' => json_encode((object) $parameters, JSON_THROW_ON_ERROR)];
-    $run = ['input' => $input, 'effect_key' => 'op-'.$operation->id.'.inspection', 'effect_metadata' => new EffectReceiptMetadata([], ['nonce' => str_repeat('a', 64), 'created_at' => now()->getTimestamp()])];
-    $runner = Mockery::mock(GuestAgentCommandRunner::class);
-    $runner->shouldReceive('runGuest')->once()->withArgs(function (AgentGuest $target, string $name, array $actual) use ($command, $parameters): bool {
-        AgentSchemas::assertInput($name, $actual);
-
-        return $name === $command && $actual === $parameters;
-    })->andReturn(['ready' => true]);
-    app()->instance(GuestAgentCommandRunner::class, $runner);
-
-    expect(app(TaskVmGuestCommand::class)->run($operation, $run, $input))->toBe(['ready' => true]);
-    expect(app(TaskVmUpCloudImageCommand::class)->effectful($operation, ['input' => ['action' => 'guest', 'command' => $command]]))->toBeFalse();
-})->with([
-    'owner' => ['image.owner', []],
-    'smoke check' => ['image.check', ['lean_boot' => true, 'firewall' => false]],
-]);
-
-it('keeps keyed receipt enforcement for image mutations on both providers', function (): void {
-    $operation = new Operation;
-    expect(app(TaskVmGuestCommand::class)->effectful($operation, ['input' => ['command' => 'image.boot']]))->toBeTrue();
-    expect(app(TaskVmUpCloudImageCommand::class)->effectful($operation, ['input' => ['action' => 'guest', 'command' => 'image.boot']]))->toBeTrue();
-});
 
 it('records exact Incus intent without a PHP executor or queue', function (string $verb): void {
     Queue::fake();
@@ -236,78 +205,32 @@ it('refuses a literal runtime key or a reference to another target before hydrat
     $this->postJson("/api/v1/operation-executor/{$operation->id}/run", ['worker' => 'vm-workflow', 'key' => 'model-issue', 'transport' => 'task_vm_runtime', 'name' => 'task_vm.runtime', 'input' => [...$input, 'action' => 'issue']])->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 })->with(['literal', 'other-owner']);
 
-function taskVmParkParent(): Operation
+function taskVmResumeParent(): Operation
 {
     $previous = taskVmEffectFixture();
     $id = $previous->target_id;
     $previous->delete();
-    TaskVm::query()->whereKey($id)->update(['state' => 'ready']);
+    TaskVm::query()->whereKey($id)->update(['state' => 'parked']);
 
-    return app(StartTaskVmLifecycleOperationAction::class)->execute($id, 'park');
+    return app(StartTaskVmLifecycleOperationAction::class)->execute($id, 'resume');
 }
 
 it('builds VM child inputs in the Gateway and rejects caller-selected commands or Nodes', function (): void {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'vm-parent'])->assertOk();
     $path = "/api/v1/operation-executor/{$parent->id}/children";
-    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-stop', 'node_id' => $parent->node_id + 100])
+    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-start', 'node_id' => $parent->node_id + 100])
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
-    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-stop', 'kind' => 'task_vm.incus_delete'])
+    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-start', 'kind' => 'task_vm.incus_delete'])
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
-    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-stop', 'input' => ['vm' => ['name' => 'tvm-foreign']]])
+    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-start', 'input' => ['vm' => ['name' => 'tvm-foreign']]])
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
-    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-stop'])->assertAccepted();
+    $this->postJson($path, ['worker' => 'vm-parent', 'key' => 'provider-start'])->assertAccepted();
     $child = $parent->children()->sole();
-    expect($child->kind)->toBe('task_vm.incus_stop');
+    expect($child->kind)->toBe('task_vm.incus_start');
     expect($child->node_id)->toBe($parent->node_id);
     expect($child->input['vm']['name'])->toBe(TaskVm::query()->findOrFail($parent->target_id)->name);
-    expect(app(OperationChildren::class)->child($parent, 'provider-stop')->id)->toBe($child->id);
-});
-
-it('requires every park effect before completing and releases its lease while children run', function (): void {
-    $parent = taskVmParkParent();
-    $path = "/api/v1/operation-executor/{$parent->id}";
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'vm-parent'])->assertOk();
-    $this->postJson($path.'/complete', ['worker' => 'vm-parent', 'status' => 'succeeded', 'result' => ['ready' => true]])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
-    $this->postJson($path.'/children', ['worker' => 'vm-parent', 'key' => 'lifecycle-intent'])->assertAccepted();
-    $child = $parent->children()->sole();
-    $this->postJson($path.'/wait', ['worker' => 'vm-parent', 'keys' => ['lifecycle-intent']])
-        ->assertOk()->assertJsonPath('data.status', 'waiting');
-    expect($parent->fresh()->worker)->toBeNull();
-    expect($parent->fresh()->lock_key)->toBe('task_vm:'.$parent->target_id);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'vm-child'])->assertOk();
-    $childPath = "/api/v1/operation-executor/{$child->id}";
-    $this->postJson($childPath.'/run', ['worker' => 'vm-child', 'key' => 'lifecycle-intent', 'transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle',
-        'input' => ['task_vm_id' => $parent->target_id, 'action' => 'intent']])->assertOk();
-    $this->postJson($childPath.'/step', ['worker' => 'vm-child', 'key' => 'finish', 'name' => 'lifecycle-intent', 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-    $this->postJson($childPath.'/complete', ['worker' => 'vm-child', 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'vm-parent'])->assertOk();
-    $this->postJson($path.'/complete', ['worker' => 'vm-parent', 'status' => 'succeeded', 'result' => ['ready' => true]])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
-    $agents = Mockery::mock(AgentCommandRunner::class);
-    $agents->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name, array $input): bool => $node->id === $parent->node_id
-        && $name === 'incus.vm' && $input['operation'] === ['kind' => 'stop']
-        && $input['__orbit_effect_receipt'] instanceof EffectReceiptMetadata)->andReturn(['ready' => true]);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $provider = Mockery::mock(TaskVmProvider::class);
-    $provider->shouldReceive('observe')->once()->andReturn(new VmObservation(false, null));
-    app()->instance(TaskVmProvider::class, $provider);
-    foreach (['provider-stop' => ['task_vm.incus_stop', 'incus-stop', 'agent', 'incus.vm'],
-        'confirm-stopped' => ['task_vm.confirm_stopped', 'confirm-stopped', 'task_vm_lifecycle', 'task_vm.lifecycle']] as $key => [$kind, $step, $transport, $name]) {
-        $this->postJson($path.'/children', ['worker' => 'vm-parent', 'key' => $key])->assertAccepted();
-        $next = $parent->children()->where('child_key', $key)->sole();
-        $this->postJson('/api/v1/operation-executor/claim', ['kind' => $kind, 'operation_id' => $next->id, 'worker' => 'vm-child'])->assertOk();
-        $nextPath = "/api/v1/operation-executor/{$next->id}";
-        $input = $key === 'provider-stop' ? ['vm' => $next->input['vm'], 'operation' => ['kind' => 'stop']]
-            : ['task_vm_id' => $parent->target_id, 'action' => 'stopped'];
-        $this->postJson($nextPath.'/run', ['worker' => 'vm-child', 'key' => $step, 'transport' => $transport, 'name' => $name, 'input' => $input])->assertOk();
-        $this->postJson($nextPath.'/step', ['worker' => 'vm-child', 'key' => 'finish', 'name' => $step, 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-        $this->postJson($nextPath.'/complete', ['worker' => 'vm-child', 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-    }
-    $this->postJson($path.'/complete', ['worker' => 'vm-parent', 'status' => 'succeeded', 'result' => ['ready' => true]])
-        ->assertOk()->assertJsonPath('data.status', 'succeeded');
-    expect(TaskVm::query()->findOrFail($parent->target_id)->state)->toBe(TaskVmState::Parked);
+    expect(app(OperationChildren::class)->child($parent, 'provider-start')->id)->toBe($child->id);
 });
 
 it('refuses provider deletion before the stamped destruction boundary', function (): void {
@@ -321,9 +244,10 @@ it('refuses provider deletion before the stamped destruction boundary', function
 });
 
 it('rechecks workspace preservation before accepting the destruction boundary', function (): void {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     $parent->update(['kind' => 'task_vm.destroy']);
     $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $before = $vm->state;
     $project = Project::query()->create(['name' => 'Preservation', 'slug' => 'preservation', 'repository_url' => 'https://github.com/example/preservation.git']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Keep workspace', 'brief' => 'Still in use', 'status' => 'running',
         'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
@@ -339,40 +263,15 @@ it('rechecks workspace preservation before accepting the destruction boundary', 
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'vm-child'])->assertOk();
     $this->postJson("/api/v1/operation-executor/{$child->id}/run", ['worker' => 'vm-child', 'key' => 'mark-destroying', 'transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle',
         'input' => ['task_vm_id' => $vm->id, 'action' => 'destroying']])->assertConflict()->assertJsonPath('error.code', 'task_vm.workspace_not_preserved');
-    expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+    expect($vm->fresh()->state)->toBe($before);
 });
 
-it('admits cache preparation for only the ready VM’s Project and retains its selected inventory', function (): void {
-    $prior = taskVmEffectFixture();
-    $prior->delete();
-    $vm = TaskVm::query()->sole();
-    $project = Project::query()->create(['name' => 'Cache', 'slug' => 'cache', 'repository_url' => 'https://github.com/example/cache.git']);
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Cache workspace', 'brief' => 'Seed selected inventory', 'status' => 'running',
-        'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
-    $vm->update(['group_id' => $group->id, 'state' => 'ready']);
-    $snapshot = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => []]);
-    $agents = Mockery::mock(AgentCommandRunner::class);
-    $agents->shouldNotReceive('run');
-    app()->instance(AgentCommandRunner::class, $agents);
-    $action = app(StartTaskVmPackageCacheMountAction::class);
-    $operation = $action->execute($vm, $project);
-    expect($action->execute($vm, $project)->id)->toBe($operation->id);
-    expect($operation->input['artifacts_json'])->toBe('{"artifacts":[]}');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'cache-parent'])->assertOk();
-    foreach (['cache-initialize', 'cache-mount', 'cache-seed'] as $key) {
-        $this->postJson("/api/v1/operation-executor/{$operation->id}/children", ['worker' => 'cache-parent', 'key' => $key])->assertAccepted();
-    }
-    $seed = $operation->children()->where('child_key', 'cache-seed')->sole();
-    expect($seed->node_id)->toBe($vm->host_node_id);
-    expect($seed->input['guest']['name'])->toBe($vm->name);
-    $snapshot->update(['artifacts' => [['manager' => 'npm', 'package' => 'left-pad', 'version' => '1.3.0', 'url' => 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz', 'integrity' => null, 'key' => 'new-selection']]]);
-    expect($seed->fresh()->input['parameters_json'])->toBe('{"artifacts":[]}');
-    $foreign = Project::query()->create(['name' => 'Foreign', 'slug' => 'foreign', 'repository_url' => 'https://github.com/example/foreign.git']);
-    expect(fn () => $action->execute($vm, $foreign))->toThrow(TaskVmException::class, 'Cache preparation requires this Project');
-});
+it('does not register unused cache-preparation Operations', function (string $kind): void {
+    expect(app(OperationKinds::class)->definition($kind))->toBeNull();
+})->with(['task_vm.prepare_package_cache', 'task_vm.cache_initialize', 'task_vm.cache_mount', 'task_vm.cache_seed']);
 
 it('retains workspace records until the exact owning Route child succeeds', function (): void {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     $vm = TaskVm::query()->findOrFail($parent->target_id);
     $vm->update(['state' => 'destroying', 'node_id' => $vm->host_node_id]);
     $project = Project::query()->create(['name' => 'Cleanup', 'slug' => 'cleanup', 'repository_url' => 'https://github.com/example/cleanup.git']);
@@ -406,7 +305,7 @@ it('refuses enrollment projection from an unrelated terminal Node Operation', fu
 
 function taskVmEnrollmentParent(): Operation
 {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     TaskVm::query()->whereKey($parent->target_id)->update(['state' => 'provisioning']);
     $parent->update(['kind' => 'task_vm.enroll']);
 
@@ -498,7 +397,7 @@ it('admits the reserved Node through its real owning adapter and replays the sta
 });
 
 it('never forgets workspaces through a null Node identity', function (): void {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     $parent->update(['kind' => 'task_vm.destroy']);
     $vm = TaskVm::query()->findOrFail($parent->target_id);
     $vm->update(['state' => 'destroying']);
@@ -509,7 +408,7 @@ it('never forgets workspaces through a null Node identity', function (): void {
 });
 
 it('gates Node removal on workspace cleanup and preserves its recorded identity after Node deletion', function (): void {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     $vm = TaskVm::query()->findOrFail($parent->target_id);
     $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90', 'wireguard_ip' => $vm->wireguard_ip]);
     $vm->update(['state' => 'destroying', 'node_id' => $node->id, 'address' => $node->public_ssh_host]);
@@ -572,7 +471,7 @@ it('records an already active VM Node and omits redundant Node enrollment intent
 });
 
 it('proves provider deletion and workspace cleanup before admitting owning Node removal', function (): void {
-    $parent = taskVmParkParent();
+    $parent = taskVmResumeParent();
     $vm = TaskVm::query()->findOrFail($parent->target_id);
     $node = Node::query()->create(['name' => $vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.90', 'wireguard_ip' => $vm->wireguard_ip]);
     $vm->update(['state' => 'destroying', 'node_id' => $node->id, 'address' => $node->public_ssh_host]);
@@ -599,3 +498,99 @@ it('proves provider deletion and workspace cleanup before admitting owning Node 
         expect($removal->child_admission['intent'])->toBe($intent);
     }
 });
+
+function taskVmDestroyParent(string $provider = 'incus'): Operation
+{
+    $previous = taskVmEffectFixture();
+    $vm = TaskVm::query()->findOrFail($previous->target_id);
+    $previous->delete();
+    $vm->update(['provider' => $provider, 'host_node_id' => $provider === 'incus' ? $vm->host_node_id : null,
+        'provider_id' => $provider === 'upcloud' ? '00000000-0000-4000-8000-000000000001' : null]);
+
+    return app(StartTaskVmLifecycleOperationAction::class)->execute($vm->id, 'destroy');
+}
+
+function taskVmProveDeletion(Operation $parent): Operation
+{
+    $vm = TaskVm::query()->findOrFail($parent->target_id);
+    $vm->update(['state' => 'destroying']);
+    taskVmStampedChild($parent, 'destroy-intent')->update(['status' => 'succeeded', 'result' => ['ready' => true]]);
+    $child = taskVmStampedChild($parent, 'provider-delete');
+    $path = "/api/v1/operation-executor/{$child->id}";
+    test()->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'worker' => 'delete-proof'])->assertOk()->assertJsonPath('data.id', $child->id);
+    if ($parent->input['provider'] === 'incus') {
+        $runner = Mockery::mock(AgentCommandRunner::class);
+        $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name, array $input): bool => $node->id === $child->node_id
+            && $name === 'incus.vm' && $input['vm']['name'] === $vm->name && $input['operation']['kind'] === 'delete')->andReturn(['ready' => true]);
+        app()->instance(AgentCommandRunner::class, $runner);
+        $run = ['transport' => 'agent', 'name' => 'incus.vm', 'input' => array_intersect_key($child->input, array_flip(['vm', 'operation']))];
+        $result = ['ready' => true];
+        $step = 'incus-delete';
+    } else {
+        app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'ucat_cancel_guard_test'));
+        Http::preventStrayRequests();
+        Http::fake(['https://api.upcloud.com/1.3/server/'.$vm->provider_id => Http::response([], 404)]);
+        $run = ['transport' => 'task_vm_upcloud', 'name' => 'task_vm.upcloud', 'input' => ['task_vm_id' => $vm->id, 'token' => $child->input['token'], 'action' => 'delete']];
+        $result = ['ready' => true, 'provider_id' => $vm->provider_id];
+        $step = 'upcloud-delete';
+    }
+    test()->postJson($path.'/run', ['worker' => 'delete-proof', 'key' => $step, ...$run])->assertOk()->assertJsonPath('data.ready', true);
+    test()->postJson($path.'/step', ['worker' => 'delete-proof', 'key' => 'finish', 'name' => $step, 'status' => 'succeeded', 'result' => $result])->assertOk();
+    test()->postJson($path.'/complete', ['worker' => 'delete-proof', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.status', 'succeeded');
+    if ($parent->input['provider'] === 'upcloud') {
+        Http::assertSentCount(1);
+    }
+
+    return $child->refresh();
+}
+
+it('allows destroy cancellation before proven provider deletion even when the VM is destroying', function (string $status): void {
+    $parent = taskVmDestroyParent();
+    TaskVm::query()->whereKey($parent->target_id)->update(['state' => 'destroying']);
+    if ($status !== 'missing') {
+        taskVmStampedChild($parent, 'provider-delete')->update(['status' => $status]);
+    }
+
+    $cancelled = app(CancelOperationAction::class)->execute($parent);
+
+    expect($cancelled->cancel_requested_at)->not->toBeNull();
+    expect($cancelled->status)->toBe(OperationStatus::Cancelled);
+})->with(['missing', 'queued', 'running', 'failed']);
+
+it('refuses destroy cancellation after the exact proven provider deletion without changing cleanup', function (string $provider): void {
+    $parent = taskVmDestroyParent($provider);
+    $deletion = taskVmProveDeletion($parent);
+    $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
+    $this->withServerVariables(['REMOTE_ADDR' => Node::query()->where('name', 'gateway')->sole()->wireguard_ip]);
+
+    $this->call('POST', "/api/v1/operations/{$parent->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'operation.cancel_refused');
+
+    expect($parent->fresh()->cancel_requested_at)->toBeNull();
+    expect($parent->fresh()->status)->toBe(OperationStatus::Queued);
+    expect($cleanup->fresh()->cancel_requested_at)->toBeNull();
+    expect($cleanup->fresh()->status)->toBe(OperationStatus::Queued);
+    expect($deletion->fresh()->status)->toBe(OperationStatus::Succeeded);
+})->with(['incus', 'upcloud']);
+
+it('refuses cancellation when a succeeded provider-delete row has no valid deletion proof', function (string $corruption): void {
+    $parent = taskVmDestroyParent();
+    $deletion = taskVmProveDeletion($parent);
+    $code = 'operation.child_unproven';
+    if ($corruption === 'step') {
+        $deletion->steps()->delete();
+        $code = 'operation.completion_unproven';
+    } elseif ($corruption === 'kind') {
+        $deletion->update(['kind' => 'task_vm.incus_stop']);
+    } elseif ($corruption === 'target') {
+        $deletion->update(['target_id' => $deletion->target_id + 1]);
+    } else {
+        $deletion->forceFill(['child_fingerprint' => str_repeat('0', 64)])->save();
+    }
+    $cleanup = taskVmStampedChild($parent, 'forget-workspaces');
+
+    expect(fn () => app(CancelOperationAction::class)->execute($parent))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
+    expect($parent->fresh()->cancel_requested_at)->toBeNull();
+    expect($cleanup->fresh()->cancel_requested_at)->toBeNull();
+})->with(['step', 'kind', 'target', 'stamp']);

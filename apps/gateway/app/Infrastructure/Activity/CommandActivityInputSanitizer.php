@@ -233,12 +233,12 @@ final readonly class CommandActivityInputSanitizer
             return false;
         }
 
-        $segments = explode('_', $this->normalizeKey($key));
+        $segments = explode('_', self::normalizeKey($key));
 
         return in_array(end($segments), self::NUMERIC_METRIC_SUFFIXES, strict: true);
     }
 
-    private function normalizeKey(string $key): string
+    private static function normalizeKey(string $key): string
     {
         $separated = preg_replace('/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/', '_', $key) ?? $key;
 
@@ -247,7 +247,7 @@ final readonly class CommandActivityInputSanitizer
 
     private function isSensitiveKey(string $key): bool
     {
-        $normalized = $this->normalizeKey($key);
+        $normalized = self::normalizeKey($key);
 
         if (in_array($normalized, ['content_text', 'content_base64'], true)) {
             return true;
@@ -257,7 +257,13 @@ final readonly class CommandActivityInputSanitizer
             return false;
         }
 
-        return array_intersect(explode('_', $normalized), self::SECRET_WORDS) !== [];
+        return self::hasSecretWord($key);
+    }
+
+    /** Shared name detection without activity-specific public-key exceptions. */
+    public static function hasSecretWord(string $name): bool
+    {
+        return array_intersect(explode('_', self::normalizeKey($name)), self::SECRET_WORDS) !== [];
     }
 
     /**

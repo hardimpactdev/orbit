@@ -23,6 +23,7 @@ final class ConnEnvironmentData extends Data
         public string $adminSessionExpiresAt,
         public string $status,
         public bool $cleanupPending,
+        public int $cleanupVersion,
     ) {}
 
     public static function fromModel(ConnEnvironment $environment): self
@@ -39,6 +40,7 @@ final class ConnEnvironmentData extends Data
             adminSessionExpiresAt: $environment->admin_session_expires_at->toIso8601String(),
             status: $environment->admin_session_expires_at->isAfter(CarbonImmutable::now()) ? 'registered' : 'session_expired',
             cleanupPending: $environment->cleanup_version > $environment->cleanup_completed_version,
+            cleanupVersion: $environment->cleanup_version,
         );
     }
 }

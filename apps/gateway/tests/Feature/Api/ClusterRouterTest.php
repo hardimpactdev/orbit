@@ -21,6 +21,7 @@ use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(cluster_router_api_node('gateway-router-peer', '10.44.0.1'));
+    $this->gateway->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     $this->cluster = Cluster::query()->create(['name' => 'development']);
     $this->first = cluster_router_api_node('first-router', '10.44.0.2', $this->cluster);
     $this->second = cluster_router_api_node('second-router', '10.44.0.3', $this->cluster);
@@ -284,7 +285,7 @@ function cluster_router_owned_route(Cluster $cluster, Node $workload): array
 
 function cluster_router_api_node(string $name, string $wireguardIp, ?Cluster $cluster = null): Node
 {
-    return Node::query()->create(['cluster_id' => $cluster?->id, 'name' => $name, 'status' => 'active', 'public_ssh_host' => '192.0.2.'.substr($wireguardIp, strrpos($wireguardIp, '.') + 1), 'wireguard_ip' => $wireguardIp, 'platform' => 'linux', 'user' => 'orbit']);
+    return Node::query()->create(['architecture' => 'x86_64', 'cluster_id' => $cluster?->id, 'name' => $name, 'status' => 'active', 'public_ssh_host' => '192.0.2.'.substr($wireguardIp, strrpos($wireguardIp, '.') + 1), 'wireguard_ip' => $wireguardIp, 'platform' => 'linux', 'user' => 'orbit']);
 }
 
 final class ClusterRouterApiOperationLock implements ClusterRouterOperationLock

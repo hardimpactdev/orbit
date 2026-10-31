@@ -12,7 +12,6 @@ use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\RecipeImageInput;
-use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use InvalidArgumentException;
 
@@ -44,7 +43,6 @@ final readonly class NodeEnrollmentPrograms
         private NodeBootstrapCommandFactory $bootstrap,
         private RolePrerequisites $roles,
         private AgentInvocation $agent,
-        private VpToolManager $vp,
         private RemotePhpPackageManager $php,
         private InstancePhpVersionCatalog $phpVersions,
     ) {}
@@ -87,10 +85,6 @@ final readonly class NodeEnrollmentPrograms
             $javascript = $role === RoleName::AppDev || $role === RoleName::AppProd ? NodeRecipeProgram::javascript($node, $role) : null;
             if ($javascript !== null) {
                 $programs[EnrollmentProgram::JavascriptRuntime] ??= $this->agent->command($node, 'recipe.install-javascript', $javascript);
-            }
-            if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
-                $programs[EnrollmentProgram::VpManager] ??= $this->agent->command($node, 'tool.materialize-vp', $this->vp->materializeInput($node));
-                $programs[EnrollmentProgram::ComposerManager] ??= $this->agent->command($node, 'tool.materialize-composer', ['user' => $node->user]);
             }
             if ($role === RoleName::AppDev) {
                 foreach ($this->php->appDevPrograms($node, $this->phpVersions->versions()) as $name => $program) {

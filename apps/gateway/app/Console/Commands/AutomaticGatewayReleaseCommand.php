@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Sleep;
 
 /**
  * One tick of automatic Gateway releases, started every minute by `orbit-gateway-release.timer`.
@@ -21,8 +23,15 @@ final class AutomaticGatewayReleaseCommand extends GatewayReleaseCommand
 
     public function handle(RunAutomaticGatewayReleaseAction $action): int
     {
-        $tick = $action->execute();
-        $this->emit($tick);
+        $until = CarbonImmutable::now()->addMinutes(RunAutomaticGatewayReleaseAction::PublicationWaitMinutes);
+        do {
+            $tick = $action->execute();
+            $this->emit($tick);
+            if ($tick['result'] !== 'waiting_for_agent_delivery' || CarbonImmutable::now()->gte($until)) {
+                break;
+            }
+            Sleep::for(RunAutomaticGatewayReleaseAction::PublicationCheckSeconds)->seconds();
+        } while (true);
 
         return in_array($tick['result'], ['failed', 'paused'], true) && $tick['record'] !== null ? self::FAILURE : self::SUCCESS;
     }

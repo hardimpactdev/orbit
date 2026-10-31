@@ -43,6 +43,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
         $url = 'https://metrics.orbit';
         $items = [];
         $reconcileErrorCode = null;
+        $exporterErrorCode = null;
         foreach ($this->projection->for($metrics) as $item) {
             $node = $item->node;
             $selection = $item->selection;
@@ -61,6 +62,10 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
                 } catch (\Throwable) {
                 }
             }
+            if ($selection->selected && $actual !== 'active') {
+                $exporterErrorCode ??= 'metrics.exporter_'.($degradation->value ?? 'not_active');
+            }
+
             $items[] = new MetricsExporterData(
                 $node->id,
                 $node->name,
@@ -76,6 +81,8 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
             $left->name,
             $right->name,
         ));
+
+        $reconcileErrorCode ??= $exporterErrorCode;
 
         return new MetricsStatusData(
             true,

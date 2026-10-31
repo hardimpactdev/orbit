@@ -147,11 +147,13 @@ it('reads exact lost-response receipts and terminal evidence without a new start
     $lookup = $this->url.'/deploy/automatic/receipt?request_key=auto.lost&commit='.$this->sha;
     $this->getJson($lookup)->assertOk()->assertJsonPath('data.found', true)->assertJsonPath('data.request_key', 'auto.lost')
         ->assertJsonPath('data.operation.id', $operation->id)->assertJsonPath('data.operation.input.caller_node_id', $this->fixture->caller->id)->assertJsonPath('data.deployment', null);
-    run_operation_jobs();
+    $row = InstanceDeployment::query()->create(['instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'status' => 'succeeded',
+        'triggered_by' => 'swamp:auto-deploy', 'commit' => $this->sha, 'started_at' => now(), 'finished_at' => now()]);
+    $operation->update(['status' => 'succeeded', 'result' => ['deployment_id' => $row->id], 'finished_at' => now(), 'lock_key' => null]);
     $this->fixture->instance->update(['auto_deploy' => false]);
     $this->getJson($lookup)->assertOk()->assertJsonPath('data.operation.status', 'succeeded')->assertJsonPath('data.deployment.kind', 'deploy')->assertJsonPath('data.deployment.commit', $this->sha);
     $this->assertDatabaseCount('operations', 1);
-    expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
+    expect($this->fixture->deployment->preparedCommits)->toBe([]);
 });
 
 it('does not admit work for a missing receipt or match another commit or manual command', function (): void {
@@ -511,22 +513,6 @@ it('keeps automatic discovery within the caller Node access', function (): void 
         ->assertJsonPath('data.0.id', $this->fixture->instance->id);
 });
 
-it('rechecks the active app-prod role before effects and finishes resumed history', function (?string $status): void {
-    $id = $this->withHeader('Idempotency-Key', 'role-change')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])
-        ->assertAccepted()->json('data.id');
-    $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
-    Operation::query()->findOrFail($id)->update(['state' => ['deployment_id' => $row->id], 'attempts' => 1]);
-    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
-    $status === null ? $roles->delete() : $roles->update(['status' => $status]);
-
-    run_operation_jobs();
-
-    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')
-        ->assertJsonPath('data.error_code', 'instance.auto_deploy_role_inactive');
-    expect($row->fresh()->status)->toBe('failed')->and($row->fresh()->error_code)->toBe('instance.auto_deploy_role_inactive');
-    expect($this->fixture->deployment->invocations)->toBe(0);
-})->with(['removing', null]);
-
 it('fences a missing admission and replays the cancelled receipt instead of deploying late', function (): void {
     $body = ['request_key' => 'lost', 'commit' => $this->sha];
     $id = $this->postJson($this->url.'/deploy/automatic/resolve', $body)->assertOk()->assertJsonPath('data.found', true)
@@ -554,14 +540,6 @@ it('validates resolution identity before fencing any admission', function (): vo
     $this->postJson($this->url.'/deploy/automatic/resolve', [])->assertUnprocessable();
     $this->postJson($this->url.'/deploy/automatic/resolve', ['request_key' => 'invalid key', 'commit' => 'main'])->assertUnprocessable();
     $this->assertDatabaseCount('operations', 0);
-});
-
-it('rechecks the code owned writer before automatic deployment effects', function (): void {
-    $id = $this->withHeader('Idempotency-Key', 'owner-change')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->json('data.id');
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
-    run_operation_jobs();
-    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'instance.auto_deploy_policy_owner');
-    $this->assertDatabaseCount('instance_deployments', 0);
 });
 
 it('resolves the original caller identity explicitly and audits both Nodes', function (): void {
@@ -618,21 +596,3 @@ it('returns the fence when resolution wins after the admission preflight read', 
     run_operation_jobs();
     $this->assertDatabaseCount('instance_deployments', 0);
 });
-
-it('finishes resumed automatic history when ownership or enablement stops effects', function (bool $ownerChange): void {
-    $id = $this->withHeader('Idempotency-Key', 'resumed')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->json('data.id');
-    $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
-    Operation::query()->findOrFail($id)->update(['state' => ['deployment_id' => $row->id], 'attempts' => 1]);
-    if ($ownerChange) {
-        app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
-    } else {
-        $this->fixture->instance->update(['auto_deploy' => false]);
-    }
-
-    run_operation_jobs();
-
-    $code = $ownerChange ? 'instance.auto_deploy_policy_owner' : 'deployment.paused';
-    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', $code);
-    expect($row->fresh()->status)->toBe('failed')->and($row->fresh()->error_code)->toBe($code)
-        ->and($this->fixture->deployment->invocations)->toBe(0);
-})->with([true, false]);

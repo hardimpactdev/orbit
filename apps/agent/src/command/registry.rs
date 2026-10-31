@@ -250,6 +250,7 @@ fn registry() -> &'static Registry {
             services: Vec::new(),
         };
         registry.service::<crate::commands::task_topology::Worker>();
+        registry.service::<crate::commands::node_worker::Check>();
         registry.service::<crate::commands::plausible::Plausible>();
         orbit_documents_agent::register(&mut registry);
         orbit_ai_router_agent::register(&mut registry);
@@ -586,11 +587,6 @@ mod tests {
             "recipe.apply",
             "recipe.install-javascript",
             "role.install-prerequisites",
-            "tool.apt-install",
-            "tool.apt-remove",
-            "tool.apt-update",
-            "tool.materialize-composer",
-            "tool.materialize-homebrew",
         ];
         let firewall = [
             "firewall.gateway-vpn",

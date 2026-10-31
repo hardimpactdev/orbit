@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 namespace App\Actions\GitHub;
 
+use App\Data\GitHub\GitHubAppData;
 use App\Data\GitHub\GitHubAppInstallData;
-use App\Domain\GitHub\GitHubApi;
-use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppRegistration;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubInstallation;
-use App\Domain\Shared\ResourceOperationException;
 
 final readonly class InstallGitHubAppAction
 {
     public function __construct(
         private GitHubAppStore $store,
-        private GitHubApi $github,
     ) {}
 
     public function handle(string $gatewayUrl, string $name, ?string $owner): GitHubAppInstallData
@@ -41,24 +37,14 @@ final readonly class InstallGitHubAppAction
             );
         }
 
-        try {
-            $installations = $this->github->installations($credentials);
-        } catch (GitHubApiException $exception) {
-            throw new ResourceOperationException(
-                errorCode: 'github.unavailable',
-                message: $exception->getMessage(),
-                status: 502,
-                previous: $exception,
-            );
-        }
+        $data = GitHubAppData::fromStore($this->store);
 
         return new GitHubAppInstallData(
             step: 'install',
             url: $credentials->installUrl(),
-            accounts: array_map(
-                static fn (GitHubInstallation $installation): string => $installation->account,
-                $installations,
-            ),
+            accounts: array_values(array_filter(array_column($data->installations, 'account'), is_string(...))),
+            accountsStatus: $data->installationsStatus,
+            observedAt: $data->observedAt,
         );
     }
 }

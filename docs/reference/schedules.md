@@ -33,15 +33,15 @@ Swamp requests failed queue job pruning daily, keeping seven days by default. [G
 
 ## Execution
 
-Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. The Gateway projects a completion only after its successful command receipt is proven. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
+Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. Enable, manual run and destroy start their native workflow directly and the Gateway projects the bounded outcome. Create keeps its current receipt path until their own cutover. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
 
-All Schedules for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs.
+The unconverted kinds for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs. Enable, manual run and destroy have no Gateway execution hold; Swamp owns their placement and concurrency.
 
 Retained Gateway callers keep the synchronous Schedule actions and native runtime manager until their owning lane cuts over. Clone and deployment definition installation use this path. They do not admit or await Schedule Operations.
 
-When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create, run, enable and destroy use the synchronous PHP actions too. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry. The other mutations return HTTP 200 with Schedule data. They admit no Operation, so a maintenance command can stop serve without removing the Process API's synchronous recovery path.
+When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create uses the synchronous PHP action until their conversion. Enable, manual run and destroy return HTTP 202 and start Swamp directly on every Node. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry.
 
-Direct Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
+Polled Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
 
 ## Fields
 
@@ -117,6 +117,18 @@ Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mo
 Create validates the input and the target first. Then Swamp calls `schedule.install` through the keyed executor and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
 
 An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, Rust restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
+
+## Direct Swamp control
+
+`schedule.enable`, `schedule.run` and `schedule.destroy` use `operation-schedule-control` directly. Admission records the selected writer. Destroy has no Gateway executor, so the shared writer defaults to direct without a family configuration override. Its public PHP branch, polled descriptors and receipt contract are removed. An explicit polled override refuses. Manual run also has no Gateway executor: its polled receipt contract is removed and it defaults to direct when the shared writer map is empty. The PHP run method is removed too. Roll back through a revert PR.
+
+When you enable an active Instance Schedule, its writer defaults to direct. Its public PHP action and runtime activation method are removed. The Gateway changes desired timer state after native success; a failed activation preserves the prior intent.
+
+The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and alone binds its root run ID. A Node worker reads the admitted Schedule UUID, agent digest, runtime user and working directory. It verifies the pinned root-owned local binary, then invokes the fixed Schedule command with passwordless `sudo -n` as the configured Node user. The step limits time and output and projects only bounded ready/error fields. It uses no Gateway execution relay, lease, claim, target hold or receipt.
+
+Node 209 uses its existing `swamp209-migration-a` worker identity for the first canary. Every other Node uses exactly `orbit-node-<admitted Node ID>` with no fallback to another Node. The workflow waits for that target's enrolled worker when it is unavailable. Replace the 209 identity when its per-Node worker is enrolled. Native systemd timers keep serving independently of this control path.
+
+Each remaining kind changes in one PR after an actual safe action canary: native path, writer takeover and old PHP/test deletion together. The previous 209 pre-cancelled runs proved binding only. Existing Instance removal parents record the admitted Schedule UUID and cascade intent through the same direct destroy writer. Their synchronous cleanup helper remains solely for the unconverted Instance removal path; its owning lane removes that caller with the parent conversion.
 
 ## Timer state
 

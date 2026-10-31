@@ -134,17 +134,18 @@ Human output shows bytes and durations in readable units. JSON keeps the raw num
 
 ## orbit node:converge
 
-Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, private DNS listener on VPN and Gateway Nodes, and AI router collector. The fleet rollout runs the same step on each Node. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
+Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, PHP runtime policy, temporary-file cleanup and applicable network artifacts. Only an active VPN owner receives the private DNS listener; a Gateway-only Node is a resolver client. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
 
 ```bash
-orbit node:converge <node> [--force] [--json]
+orbit node:converge <node> [--force] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--force` | Re-apply every artifact, not only the ones whose digest changed. Each artifact still leaves a matching live copy alone |
+| `--idempotency-key=KEY` | Reuse the same key to repeat admission safely |
 
-For workload Nodes, the Gateway returns HTTP 202 with the Operation. Configured Services and executor-worker Nodes finish synchronously and return the existing footprint table or JSON result. The CLI follows its steps and prints the final Operation with `--json`. Its result contains artifact and verified child-skip lists. Use `--idempotency-key` to repeat admission safely. When every digest matches the one the Node last received, the Gateway sends the Node no command. A Node that is not an active, managed Linux Node fails with `node.converge_unsupported`. [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists the artifacts and error codes.
+The Gateway returns HTTP 202 with an Operation for every admitted target. The CLI follows its steps and prints the final Operation with `--json`. Worker-backed standalone requests use one native Swamp DAG. Workerless Nodes 1 and 18 and existing parent callers keep their current execution path. Unsupported applicable artifacts refuse before native Node effects; a matching digest does not prove an unsupported action. A Node that is not an active, managed Linux Node fails with `node.converge_unsupported`. [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists the artifacts and error codes.
 
 ```bash
 orbit node:converge beast

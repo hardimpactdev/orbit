@@ -50,7 +50,7 @@ describe('fleet transport', function (): void {
     });
 
     it('reads a node converge', function (): void {
-        $result = fleet_fixture_send('nodes/node-converge/queued', new ConvergeNodeRequest(2))->result;
+        $result = fleet_fixture_send('nodes/node-converge/queued', new ConvergeNodeRequest(2));
 
         expect($result)->toBeInstanceOf(OperationResponse::class)
             ->and($result->kind)->toBe('node.converge')

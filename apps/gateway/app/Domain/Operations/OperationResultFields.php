@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use LogicException;
@@ -13,6 +14,9 @@ use stdClass;
 /** Strict bounded result containers. Scalar paths retain their existing leaf selection. */
 final class OperationResultFields
 {
+    /** @var list<string> Exact declaration paths; list item paths omit the numeric index. */
+    private const array PublicSecretWordPaths = ['key', 'skipped.key', 'child_phases.key', 'public_key', 'host_key_fingerprint', 'key_count'];
+
     public const int MaximumItems = 4096;
 
     public const int MaximumTotalItems = 65536;
@@ -34,6 +38,8 @@ final class OperationResultFields
             }
             $names[] = $name;
             if (is_string($field)) {
+                self::publicPath($name);
+
                 continue;
             }
             if (! is_array($field)) {
@@ -49,6 +55,7 @@ final class OperationResultFields
 
                 continue;
             }
+            self::publicPath($name);
             if (isset($field['list_of'])) {
                 self::keys($field, ['name', 'type', 'list_of', 'max']);
                 if ((isset($field['type']) && $field['type'] !== 'list') || ! is_array($field['list_of']) || $field['list_of'] === []) {
@@ -60,6 +67,7 @@ final class OperationResultFields
                     if (! is_string($key) || preg_match('/\A[a-zA-Z_][a-zA-Z0-9_-]*\z/D', $key) !== 1) {
                         self::invalidDeclaration();
                     }
+                    self::publicPath($name.'.'.$key);
                     if (is_array($rule)) {
                         self::validateScalarList($rule);
                         $entryItems += ValidatedData::integer($rule['max']);
@@ -75,6 +83,13 @@ final class OperationResultFields
             if ($totalItems > self::MaximumTotalItems) {
                 self::invalidDeclaration();
             }
+        }
+    }
+
+    private static function publicPath(string $path): void
+    {
+        if (CommandActivityInputSanitizer::hasSecretWord($path) && ! in_array($path, self::PublicSecretWordPaths, true)) {
+            throw new LogicException("Operation result field [{$path}] requires a declared secret output or an exact public path exception.");
         }
     }
 

@@ -4,53 +4,38 @@ declare(strict_types=1);
 
 namespace App\Actions\GitHub;
 
-use App\Domain\GitHub\GitHubApi;
-use App\Domain\GitHub\GitHubApiException;
-use App\Domain\GitHub\GitHubAppCredentials;
-use App\Domain\GitHub\GitHubAppRegistration;
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Operation;
+use App\Models\Setting;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
-/**
- * Finishes a Project registration when GitHub redirects the operator's browser to the Gateway. The
- * `state` must match the pending registration, and the one-time code is exchanged once.
- */
+/** Consume browser admission once; Swamp exchanges the protected code. */
 final readonly class CompleteGitHubAppRegistrationAction
 {
-    public function __construct(
-        private GitHubAppStore $store,
-        private GitHubApi $github,
-    ) {}
+    public function __construct(private GitHubAppStore $store, private StartOperationAction $start, private GatewayServingHost $gateway) {}
 
-    public function handle(#[SensitiveParameter] string $state, #[SensitiveParameter] string $code): GitHubAppCredentials
+    public function handle(#[SensitiveParameter] string $state, #[SensitiveParameter] string $code, ?string $requestId = null): Operation
     {
-        $registration = $this->store->registration();
+        return DB::transaction(function () use ($state, $code, $requestId): Operation {
+            Setting::query()->where('scope_type', 'gateway')->where('scope_id', 0)
+                ->where('key', 'github.app.registration')->lockForUpdate()->first();
+            $registration = $this->store->registration();
+            $nodeId = $this->gateway->nodeId();
+            if ($registration === null || ! $registration->matches($state, now()->getTimestamp())
+                || $this->store->credentials() !== null || $this->store->exchange() !== null || $nodeId === null || $code === '' || strlen($code) > 4096) {
+                throw new ResourceOperationException('github.registration_invalid', 'The redirect does not match an unused GitHub App registration.', 422);
+            }
+            $operation = $this->start->execute('github.app_register', 'node', $nodeId, $nodeId, [
+                'registration_id' => hash('sha256', $state),
+                'registration_code' => ['$secret' => 'github.app.registration_code', 'id' => $nodeId],
+            ], 'github.app.callback', $requestId);
+            $this->store->beginExchange($operation, $code);
 
-        if (
-            ! $registration instanceof GitHubAppRegistration
-            || ! $registration->matches($state, now()->getTimestamp())
-            || $this->store->credentials() instanceof GitHubAppCredentials
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'github.registration_invalid',
-                message: 'The redirect does not match a pending GitHub App registration. Run github:app:install again.',
-            );
-        }
-
-        try {
-            $credentials = $this->github->convertManifest($code);
-        } catch (GitHubApiException $exception) {
-            throw new ResourceOperationException(
-                errorCode: 'github.registration_failed',
-                message: 'GitHub refused to exchange the one-time code.',
-                status: 502,
-                previous: $exception,
-            );
-        }
-
-        $this->store->put($credentials);
-
-        return $credentials;
+            return $operation;
+        });
     }
 }

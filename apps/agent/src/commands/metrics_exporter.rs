@@ -62,7 +62,7 @@ impl Kind {
     }
     fn configuration(self, address: Ipv4Addr) -> String {
         match self {
-            Self::Exporter => format!("{}[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={address}:9100\nRestart=always\nRestartSec=2\n", self.marker()),
+            Self::Exporter => format!("{}[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={address}:9100 --collector.systemd --collector.systemd.unit-include=orbit-node-worker[.]service\nRestart=always\nRestartSec=2\n", self.marker()),
             Self::Cadvisor => format!("{}[Unit]\nDescription=Orbit cAdvisor exporter\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart=/{CADVISOR_BINARY} --listen_ip={address} --port=9102 --store_container_labels=false --docker_only=false --disable_metrics={DISABLED_METRICS}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n", self.marker()),
         }
     }

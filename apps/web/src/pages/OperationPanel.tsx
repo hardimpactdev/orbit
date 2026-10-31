@@ -1,22 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
-    focusStep,
     instanceOperationsQuery,
     isTerminal,
     type Operation,
-    type OperationStep,
 } from "../api/operations";
 import type { Instance } from "../api/types";
 import { useFallbackPoll } from "../realtime/liveness";
 import { useOperation } from "../realtime/operation";
-import { LogPane } from "../ui/LogPane";
 import { type Column, Pane } from "../ui/Pane";
 
-const stepColumns: Column<OperationStep>[] = [
-    { header: "Step", width: 34, value: (step) => step.name },
-    { header: "Status", width: 12, fit: true, value: (step) => step.status },
-    { header: "Error", width: 30, value: (step) => step.error_code ?? "—" },
+const columns: Column<Operation>[] = [
+    { header: "Operation", width: 12, value: (record) => String(record.id) },
+    { header: "Status", width: 12, fit: true, value: (record) => record.status },
+    { header: "Error", width: 30, value: (record) => record.error_code ?? "—" },
 ];
 
 /** The pane title for each operation kind that runs on an Instance. */
@@ -25,17 +22,7 @@ const TITLES: Record<string, string> = {
     "instance.rollback": "Rollback",
 };
 
-const headline = (operation: Operation): string =>
-    operation.failed_step === null
-        ? `Operation ${operation.id} · ${operation.status}`
-        : `Operation ${operation.id} · ${operation.status} at ${operation.failed_step}`;
-
-/**
- * The newest deploy or rollback of the Instance and its steps, followed live over the operation's own channel
- * (docs/reference/web-app.md). It shows while one runs, also one that another client started, and keeps showing
- * the result of one this page followed. The steps come from the Gateway's record. While a step runs, its output
- * comes live from the Node agent; once it ends, the output tail comes from the record.
- */
+/** Follows the newest parent operation and displays its native result status. */
 export function OperationPanel({ instance }: { instance: Instance }) {
     const operations = useQuery({
         ...instanceOperationsQuery(instance.id),
@@ -49,21 +36,11 @@ export function OperationPanel({ instance }: { instance: Instance }) {
             setTracked(newest.id);
         }
     }, [newest]);
-    const { operation, lines: live } = useOperation(tracked);
+    const { operation } = useOperation(tracked);
 
     if (operation === null) {
         return null;
     }
-
-    const step = focusStep(operation);
-    const lines =
-        step === null
-            ? []
-            : step.status === "running" && live[step.name] !== undefined
-              ? live[step.name]
-              : step.output === null
-                ? []
-                : step.output.replace(/\n$/, "").split("\n");
 
     return (
         <div
@@ -74,14 +51,14 @@ export function OperationPanel({ instance }: { instance: Instance }) {
                 name="operation"
                 order={0.5}
                 title={TITLES[operation.kind] ?? "Operation"}
-                testId="operation-steps"
+                testId="operation-record"
                 className="w-full min-h-[120px] max-h-[30vh] md:max-h-none"
-                columns={stepColumns}
-                rows={operation.steps ?? []}
-                rowId={(row) => row.name}
+                columns={columns}
+                rows={[operation]}
+                rowId={(row) => String(row.id)}
                 warn={(row) => row.status === "failed"}
                 topRight={[
-                    headline(operation),
+                    `Operation ${operation.id} · ${operation.status}`,
                     operation.triggered_by,
                     operation.caller_node_name ??
                         (operation.caller_node_id == null
@@ -90,15 +67,7 @@ export function OperationPanel({ instance }: { instance: Instance }) {
                 ]
                     .filter(Boolean)
                     .join(" · ")}
-                empty={operation.status === "queued" ? "Waiting for a worker." : "No steps yet."}
-            />
-            <LogPane
-                title={step === null ? "Output" : `Output of ${step.name}`}
-                testId="operation-output"
-                className="min-h-[120px]"
-                lines={lines}
-                loading={false}
-                live={!isTerminal(operation)}
+                empty="No operation."
             />
         </div>
     );

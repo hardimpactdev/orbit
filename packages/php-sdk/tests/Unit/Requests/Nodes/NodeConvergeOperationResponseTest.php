@@ -18,7 +18,7 @@ it('returns the admitted Operation and preserves the converge idempotency key', 
     $connector = new GatewayConnector('https://gateway.example.test');
     $connector->withMockClient($mock);
 
-    $response = $connector->send($request)->dto()->result;
+    $response = $connector->send($request)->dto();
 
     expect($response)->toBeInstanceOf(OperationResponse::class);
     expect($response->kind)->toBe('node.converge');
@@ -26,14 +26,13 @@ it('returns the admitted Operation and preserves the converge idempotency key', 
         && $pending->body()->all() === ['force' => true]);
 });
 
-it('reads the synchronous executor footprint response without an Operation', function (): void {
+it('refuses a retired synchronous footprint response', function (): void {
     $request = new ConvergeNodeRequest(17, true);
     $connector = new GatewayConnector('https://gateway.example.test');
     $connector->withMockClient(new MockClient([ConvergeNodeRequest::class => MockResponse::make([
         'data' => ['node_id' => 17, 'node' => 'services', 'artifacts' => ['agent' => 'applied'], 'digest' => str_repeat('a', 64), 'changed' => true],
         'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
     ], 200)]));
-    $result = $connector->send($request)->dto()->result;
-    expect($result)->toBeInstanceOf(\Orbit\Sdk\Responses\Fleet\NodeFootprintResponse::class)
-        ->and($result->nodeId)->toBe(17)->and($result->changed)->toBeTrue();
+    expect(fn () => $connector->send($request)->dto())
+        ->toThrow(InvalidArgumentException::class, 'Gateway response contains an invalid operation.');
 });

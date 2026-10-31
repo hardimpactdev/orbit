@@ -231,13 +231,17 @@ For hosted handoff CI, cancel stops a queued push under the existing publish sto
 
 #### Run a tracked repository script
 
-`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The operation holds the group target and the existing workspace lease. It does not create a check, agent turn, commit, or dependency record.
+`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement, workspace locking and execution. The script does not create a check, agent turn, commit, or dependency record.
 
-`script` is a relative repository path with no empty, `.` or `..` components. It must name a regular executable tracked as executable at HEAD, with unchanged file content and no symlink in its path. Orbit pins the script digest, HEAD, whole-workspace tree, and literal argument list before dispatch and verifies them again in the owned process. Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
+`script` is a relative repository path with no empty, `.` or `..` components. It must name a regular executable tracked as executable at HEAD, with unchanged file content and no symlink in its path. The native step checks the executable against tracked HEAD, snapshots the whole workspace, and runs the admitted literal arguments. It does not inherit Gateway or worker dispatch credentials.
+
+Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
 
 Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` combines stdout and stderr into a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
 
-The detached runner uses the existing run receipt and cgroup supervision. Lost start replies reconcile the reserved run; they never blindly dispatch it again. A reservation proven not started is tombstoned and fails as `tasks.script_not_started`. An unavailable tracked executable fails as `tasks.script_unavailable`. Unknown process or lease ownership keeps the operation waiting and the workspace fenced. Cancellation must prove the process and descendants terminal before releasing ownership. A script has a fixed one-hour limit. An interrupted run reports failure after terminal proof; it is not an automatic retry.
+Swamp runs the script synchronously on the task VM's exact Node worker. The Gateway does not acquire a workspace lease, dispatch a detached process or poll it. Native history owns step completion and recovery.
+
+The VM keeps an operation-keyed execution marker: a completed replay returns the same bounded result; an interrupted execution is refused as `tasks.script_interrupted` and is never dispatched again under that key. An unavailable tracked executable fails as `tasks.script_unavailable`. Cancellation stops the command process group and waits for it to end before reporting cancellation. A script has a fixed one-hour limit. A new attempt requires a new operation key.
 
 ## Analyze an external group's repository
 
@@ -1242,6 +1246,25 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 Teardown steps run before the workspace and task VM are destroyed. Recorded approved work is preserved through the existing removal push contract. Cleanup does not choose new task work or merge a PR.
 
+Task VM Node cleanup records `task_vm.destroy` and returns. Swamp proves provider absence, removes any remaining workspace records, admits the owning `node.remove` child, and only then marks the VM destroyed. Already queued `DestroyTaskVm` jobs record the same intent; they perform no VM or Node work and never wait for completion. Workspace teardown, preservation and the retained provider deletion still run before this admission; their separate caller cutover remains pending.
+
+### Direct lifecycle acknowledgement
+
+`task_vm.lifecycle_intent` uses the direct Swamp writer. Swamp acknowledges the admitted task VM identity through `operation-task-vms` on the Node 209 control worker. This stage changes no VM state, contacts no provider and runs no Node command. It uses the existing workflow grant and has no credential material. The Gateway validates the target and bounded result; the old lifecycle transport cannot run this kind. An explicit `polled` writer is refused. The owning cutover is reversed with a revert PR.
+
+The scheduled workflow continues to discover the other Task VM kinds. A direct acknowledgement skips discovery and execution of that batch. Incus effects remain placed on their owning host worker.
+
+### Direct Incus VM effects
+
+Incus create, start, stop and delete also declare the direct Swamp workflow
+`operation-task-vm-incus`. Each kind defaults to `polled` in
+`swamp.direct_writers` until its owning Node worker passes a canary. Direct
+admission captures the agent digest and the fixed VM command. The exact Node
+worker runs the pinned agent with the Node user's passwordless sudo. The
+Gateway records its bounded result; it adds no execution queue, retry or wait.
+Deletion still requires the owning destruction intent and model-key revocation
+before admission. A worker for another Node cannot execute the action.
+
 ## Configuration
 
 These Gateway environment keys configure the extension.
@@ -1455,19 +1478,19 @@ Production smoke recovery uses the [keyed failure block and guarded rollback con
 
 ### Dependency batch squash admission
 
-Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a `tasks.dependency_merge` Operation; Swamp executes its one `gateway` command, `github.dependency-squash`, through the operation executor. The command receives a Project-bound `github.dependency_merge` secret reference. Write tokens stay in Gateway memory. Completion requires the proven merge receipt.
+Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a direct `tasks.dependency_merge` Operation on the Swamp configuration Node (209). Swamp owns the GitHub checks, dependency content and version policy, then runs the expected-head squash request. The Gateway records its bounded public result. The existing shared private-material read supplies the `github.dependency_merge` credential for that Project inside the callback that performs the effect. Tokens never enter native arguments, outputs, history or logs. The old PHP command and polled executor path are deleted.
 
-All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live smoke/rollback pilot. Package and unclassified monorepo Projects are ineligible. Admission and the command independently verify the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
+All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live smoke/rollback pilot. Package and unclassified monorepo Projects are ineligible. Admission and private credential resolution use the same owning policy to verify the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
 
 Fresh GitHub reads must show an open non-draft same-repository `task-{group}` PR into the current Project and repository default branch. Require GitHub Actions' `Required checks` on the exact head. Every enabled policy must name `smoke_workflow`, an exact `.github/workflows/*.yml` or `.yaml` path. Its active workflow and `Production smoke / smoke` are mandatory: the raw `smoke` job must belong to that exact workflow's latest PR suite. Removing or renaming the workflow refuses the merge.
 
-Missing, pending, skipped, failed, unreadable or superseded checks refuse admission and execution. Changed head, base, lineage or enable switch before the effect refuses the merge. The GitHub write uses squash with the expected head SHA and a repository token with only Contents write and Pull requests write, never Workflows write.
+Missing, pending, skipped, failed, unreadable or superseded checks refuse the native merge. Changed head, base, lineage or enable switch before the effect refuses the merge. The GitHub write uses squash with the expected head SHA and a repository token with only Contents write and Pull requests write, never Workflows write.
 
-Before admission and execution, complete paged PR-file evidence must match `changed_files` and contain only root `composer.json`, `composer.lock`, `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`. Both paths of a rename must qualify. Missing, truncated, duplicate or GitHub-capped (3,000 files) evidence refuses the merge. Workflow and code changes go through ordinary PR handling. Binary `bun.lockb` is excluded.
+Before the native write, complete paged PR-file evidence must match `changed_files` and contain only root `composer.json`, `composer.lock`, `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`. Both paths of a rename must qualify. Missing, truncated, duplicate or GitHub-capped (3,000 files) evidence refuses the merge. Workflow and code changes go through ordinary PR handling. Binary `bun.lockb` is excluded.
 
-For each changed manifest, the Gateway fetches base and head by commit SHA and compares decoded JSON. Only values of existing Composer `require`/`require-dev` or JavaScript `dependencies`/`devDependencies`/`optionalDependencies`/`peerDependencies` may differ. Dependency names must match the base map. Constraints must be registry semver ranges or npm dist-tags; URL, alias, local, Git and Composer dev/hash specifications refuse the merge. All other keys, including scripts, repositories, config, autoload, extra, overrides and resolutions, must match. Invalid JSON, duplicate keys, deleted manifests and unreadable content refuse the merge.
+For each changed manifest, Swamp fetches base and head by commit SHA and compares decoded JSON. Only values of existing Composer `require`/`require-dev` or JavaScript `dependencies`/`devDependencies`/`optionalDependencies`/`peerDependencies` may differ. Dependency names must match the base map. Constraints must be registry semver ranges or npm dist-tags; URL, alias, local, Git and Composer dev/hash specifications refuse the merge. All other keys, including scripts, repositories, config, autoload, extra, overrides and resolutions, must match. Invalid JSON, duplicate keys, deleted manifests and unreadable content refuse the merge.
 
-Lock sources and package identities are checked before admission and execution. Composer package, dist and source entries accept only known keys, with no mirrors or transport options and only Packagist's notification URL. Every package must match its version's fresh Packagist P2 metadata for dist, source, type, autoload, extra and bin. Unavailable Packagist evidence refuses the merge. Composer archives use HTTPS on `repo.packagist.org`, `api.github.com` or `codeload.github.com`; optional Git source metadata uses HTTPS on `github.com`.
+Swamp checks lock sources and package identities before execution. Composer package, dist and source entries accept only known keys, with no mirrors or transport options and only Packagist's notification URL. Every package must match its version's fresh Packagist P2 metadata for dist, source, type, autoload, extra and bin. Unavailable Packagist evidence refuses the merge. Composer archives use HTTPS on `repo.packagist.org`, `api.github.com` or `codeload.github.com`; optional Git source metadata uses HTTPS on `github.com`.
 
 JavaScript artifacts use HTTPS on `registry.npmjs.org`, including implicit npm-registry sources in pnpm and text Bun locks. Local, link, Git-protocol, credential-bearing and unknown-host sources refuse the merge. npm tarballs must match the installed name and version exactly and include integrity. pnpm tarball overrides are forbidden. Bun requires implicit registry sources and a name matching its package key. Supported locks are Composer JSON, npm v2/v3 JSON, pnpm v9 YAML and Bun v1/v2 text JSONC. Unsupported formats, including Yarn, require the ordinary PR path.
 
@@ -1475,6 +1498,12 @@ Every locked package must be reachable from the root manifest. Composer walks it
 
 A range-to-dist-tag change is refused. Archive names are not dist-tags. A constraint that crosses or adds a breaking semver boundary, or a locked top-level package that crosses one, refuses with `dependency_merge.major_bump`. The boundary is the leftmost non-zero component: major for 1.x and above, minor for 0.x, and patch for 0.0.x. Its PR stays open and its development Instance stays active for hand-testing. Agent repair does not waive this rule.
 
-Run receipts and input fingerprints store and hash only the unhydrated input, including the secret reference. Hydrated tokens never enter receipts, fingerprints or exception arguments. Swamp refreshes the private project configuration before an unproven merge invocation and refuses it when `dependencyAutoMerge` is off. A proven receipt still completes after disablement.
+Operation input stores the credential reference. The callback receives fresh tokens for repository writes and for reading contents, checks and Actions. It revokes each token before it exits. Every native invocation and resume refreshes private Project configuration before credential resolution. When `dependencyAutoMerge` is off, an unmerged PR cannot receive a new PUT; an already-merged exact head can still return its receipt. Gateway policy disablement still refuses credential release and leaves recovery unconfirmed.
 
-The Gateway run is explicitly resumable: lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.
+The native run is explicitly resumable: lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.
+
+## Native Pi turns
+
+Swamp runs task turns on the task VM's exact Node worker. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
+
+Pi writes and reviews code inside the VM. Swamp installs the local turn command, sends the admitted prompt with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Review checks compare the admitted candidate in the VM before the send. Reviewer changes are captured and the candidate is restored before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.

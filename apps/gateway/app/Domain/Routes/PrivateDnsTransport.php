@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationEffectTransport;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\RemotePrograms\KeyedRemoteProgramRunner;
@@ -16,7 +17,7 @@ use App\Models\Operation;
 use SensitiveParameter;
 
 /** One fixed root program. It receives rendered data, never caller program source. */
-final readonly class PrivateDnsTransport implements OperationEffectTransport
+final readonly class PrivateDnsTransport implements OperationEffectTransport, RoutePublicationPrimitive
 {
     public function __construct(private KeyedRemoteProgramRunner $programs, private RemoteProgramCatalog $catalog, private DevelopmentProjectionOperationLock $lock, private DevelopmentDnsConfigRenderer $renderer) {}
 
@@ -34,14 +35,33 @@ final readonly class PrivateDnsTransport implements OperationEffectTransport
         $node = Node::query()->findOrFail($operation->node_id);
 
         return $this->lock->run(function () use ($node, $input, $run): array {
-            $catalog = json_encode(['requesters' => $this->renderer->registeredRequesters(), ...$this->renderer->catalog()->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-            if ($input['records'] !== $this->renderer->render() || $input['catalog'] !== $catalog) {
+            if (! $this->current($input)) {
                 return ['error_code' => 'private_dns.plan_stale'];
             }
             $result = $this->programs->run($node, $this->catalog->program('route.publish-dns', user: 'root'), $input, $run['effect_key'], effect: EffectReceiptMetadata::fromRun($run));
 
             return ['outcome' => $result->outcome, 'data' => $result->data];
         });
+    }
+
+    public function publish(Operation $operation, #[SensitiveParameter] array $input): array
+    {
+        $node = Node::query()->findOrFail($operation->node_id);
+
+        if (! $this->current($input)) {
+            return ['error_code' => 'private_dns.plan_stale'];
+        }
+        $result = app(RemoteProgramRunner::class)->run($node, $this->catalog->program('route.publish-dns', user: 'root'), $input);
+
+        return ['outcome' => $result->outcome, 'data' => $result->data];
+    }
+
+    /** @param array<string, mixed> $input */
+    private function current(#[SensitiveParameter] array $input): bool
+    {
+        $catalog = json_encode(['requesters' => $this->renderer->registeredRequesters(), ...$this->renderer->catalog()->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+
+        return $input['records'] === $this->renderer->render() && $input['catalog'] === $catalog;
     }
 
     public function effectful(Operation $operation, array $run): bool

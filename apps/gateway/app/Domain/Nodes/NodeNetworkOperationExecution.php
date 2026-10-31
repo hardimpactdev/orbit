@@ -186,7 +186,7 @@ final readonly class NodeNetworkOperationExecution implements OperationFamilyChi
         $peer['peer_public_key'] = $operation->state['network_public_key'] ?? null;
 
         return [$this->key($operation), $this->bootstrap($operation, 'network-publish', 'wireguard.publish-peer', $peer),
-            $this->descriptor('network-private-ssh', 'agent', 'agent.status', []),
+            [...$this->descriptor('network-private-ssh', 'agent', 'agent.status', []), 'resumable' => true],
             $this->descriptor('network-trust', 'agent', 'firewall.rules', ValidatedData::object($this->snapshot($operation)['trust'] ?? []))];
     }
 

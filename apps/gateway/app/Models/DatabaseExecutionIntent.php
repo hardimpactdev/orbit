@@ -24,8 +24,10 @@ final class DatabaseExecutionIntent extends Model
 {
     public const int RETRY_HOURS = 24;
 
+    #[\Override]
     protected $guarded = [];
 
+    #[\Override]
     protected $hidden = ['payload'];
 
     public static function recorded(mixed $id): self

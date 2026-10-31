@@ -34,10 +34,11 @@ final readonly class SshHostKeyScanner implements HostKeyScanner
             );
         }
 
-        if (! is_string($key['type'] ?? null) || ! is_string($key['value'] ?? null) || ! is_string($key['fingerprint'] ?? null)) {
+        if (! is_string($key['type'] ?? null) || ! is_string($key['value'] ?? null)
+            || ($bytes = base64_decode($key['value'], strict: true)) === false || $bytes === '') {
             throw new SshHostKeyScanException("SSH host [{$host}:{$port}] returned an invalid host key.");
         }
 
-        return new HostKey(type: $key['type'], value: $key['value'], fingerprint: $key['fingerprint']);
+        return new HostKey(type: $key['type'], value: $key['value'], fingerprint: 'SHA256:'.rtrim(base64_encode(hash('sha256', $bytes, binary: true)), '='));
     }
 }

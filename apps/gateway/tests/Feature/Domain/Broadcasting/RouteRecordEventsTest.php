@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
-use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Broadcasting\RecordBroadcast;
@@ -79,24 +79,23 @@ describe('Route record events', function (): void {
         );
     });
 
-    it('broadcasts route.updated when the domain changes', function (): void {
+    it('does not announce a pending domain change while recording its Operation', function (): void {
         $route = route_record_pending($this->orbitApp->id, $this->node->id);
 
         Event::fake([RecordBroadcast::class]);
 
-        $result = app(UpdateRouteAction::class)->execute($route, new UpdateRouteData(
+        $operation = app(AdmitRouteOperationAction::class)->update($route, new UpdateRouteData(
             domainProvided: true,
             domain: 'docs-renamed.orbit',
             publicationProvided: false,
             publication: null,
         ));
 
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated
-                && $event->id === $result->id
-                && $event->data['domain'] === 'docs-renamed.orbit',
-        );
+        expect($operation->kind)->toBe('route.update')
+            ->and($operation->status->value)->toBe('queued')
+            ->and($route->refresh()->domain)->toBe('docs.orbit')
+            ->and($operation->input['candidate_route_id'])->toBeInt();
+        Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated);
     });
 
     it('broadcasts route.deleted with a minimal snapshot when a route is removed', function (): void {

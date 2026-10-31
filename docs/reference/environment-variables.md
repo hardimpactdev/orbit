@@ -72,25 +72,33 @@ The import and update endpoints accept either a positive numeric Instance ID or 
 
 Import and update change stored configuration only. The `.env` file on the Node stays the same until you synchronize. The Gateway refuses unknown, duplicate, or wrongly typed members with 422 before it changes anything.
 
-A success returns `instance_id`, `operation`, `changed`, and `key_count`, the total number of stored keys. `changed` is `false` when the stored value or the file already matched.
+Import and update return `instance_id`, `operation`, `changed`, and `key_count`. Synchronization returns HTTP 202 with its native Operation. The final result includes `instance_id`, `changed`, `environment_changed`, `key_count`, the synchronized key names, testing status and runtime refresh status.
 
 The Instance must be active and have complete placement. The Node must have exactly one active `app-dev` or `app-prod` role; without one, the Gateway returns `instance.placement_unavailable` (409).
 
 Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 
-## Environment child Operations
+## Native environment synchronization
 
-Route plans use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. Instance lifecycle and deployment parents use `{instance_id}`. The Gateway stamps parent ancestry and fixes the Instance and Node. Callers cannot supply a mode, a path, environment contents or parent metadata. Existing synchronous environment commands and retained deploy callers keep their current execution path until their owning cutover. An explicit synchronous `env:sync` refuses with `env.operation_busy` while an Instance deploy or rollback is queued, running or waiting. Stored updates and imports remain available.
+`instance.sync_environment` records one Instance intent and starts one native Swamp root on its exact owning Node. Swamp checks the existing workload keys locally, writes `.env` and merges the managed `.env.testing` keys. The Gateway stores only the result and synchronized key names. Environment values stay inside the approved shared private-material callback. Create and clone use the same local action as steps of their own native roots.
 
-Swamp executes preparation, the main environment write, managed testing-file merge, additional Route URL writes and final verification in that order. URL-only web-root stages, including rollback stages, leave the main environment and testing files alone. Removed targets remain owned through the Route's admitted previous-target set. Each required write needs its original keyed receipt and a matching successful step before the child can succeed.
+The admission freezes the environment, account, application path and agent digest from stored placement. Development uses the configured Node account. Production uses the Instance production account. Caller input cannot choose an account or a Node. Native jobs target `orbit-node-N` with the string Node label. There is no Gateway child, agent relay, receipt protocol or polled writer.
 
-Every environment-child run holds the Instance environment lock across protected rendering and hydration, dispatch and receipt projection. Route-owned children use the Route middleware to acquire the complete Instance set before any per-child lock reentry; other parents use the Instance middleware. Concurrent synchronous updates, imports and syncs serialize on that same lock.
+The local preflight refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization that needs a PHP runtime refresh or an opted-in Process restart returns `operation.kind_unavailable` before admission. Development and file-only parent preparation use the local filesystem steps.
 
-The Gateway resolves stored values and checks workload keys in memory immediately before dispatch. Operation input and workflow context contain protected references, never raw or encoded environment values. An uncertain write keeps its result open for the original target receipt; a retry does not render or write again. Cancellation cannot turn an unknown result into successful synchronization.
+## Parent environment steps
+
+Create seeds encrypted values from its bounded source template before the native environment step. The Gateway validates the exact create root, preparation ID, Project, Node and checkout. Clone reads its stored candidate snapshot. These steps run within their parent roots and admit no child Operation. Public synchronization still requires an active Instance.
+
+The shared private read can occur before source preparation while a parent needs Git material. In that phase its environment field is null. Once the source is classified, the Gateway checks the owner and returns rendered content, key names and the optional testing-file plan inside the private callback. A null field never means synchronization succeeded.
 
 ## Where the file lives
 
-The Instance's recorded [vp runtime and package-manager environment](/reference/tools#project-environments-in-the-vite-store) is separate from its environment variables. The nullable `vp_environment` record holds store versions and prerequisite status, not `.env` keys or values. Preparing or adopting those tools does not import, synchronize, or rewrite the Instance's `.env` file.
+The Instance's recorded [vp runtime and package-manager environment](/reference/tools#project-environments-in-the-vite-store) is separate from its environment variables.
+
+Development create prepares its Vite+ environment after synchronization and before Route publication. This preparation is a step of the parent native root. A Project without Vite+ requirements needs no runtime installation.
+
+The nullable `vp_environment` record holds store versions and prerequisite status, not `.env` keys or values. Preparing or adopting those tools does not import, synchronize, or rewrite the Instance's `.env` file.
 
 The Gateway derives the file location and the user from the Instance's placement. The caller cannot choose the Node, the user, the directory, or the file name.
 
@@ -137,11 +145,11 @@ The Gateway checks the complete result before it stores any part of an import or
 
 Synchronization takes one snapshot of the Instance, any authoritative Route, and the stored configuration. It resolves `{{instance.domain}}` to the Route's domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
 
-Before it decrypts a stored value, the Gateway checks SSH access, the user, the path, the directory's write permission, the file type and owner, read-only storage, and free space. For synchronization that preserves workload keys, `instance.inspect-environment-sync` performs the writable preflight and reads the existing file in one agent call. It reports the checks separately, so a failed preflight never reads the file and a read failure keeps its existing error. A failed check leaves `.env` as it is.
+The Gateway resolves stored placement and renders the protected values without contacting the Node. The native worker runs `instance.inspect-environment-sync` locally before replacement. It checks the user, path, directory permission, file type and owner, read-only storage and free space, then reads existing workload keys. A failed preflight leaves `.env` unchanged.
 
 The Gateway renders every stored key in sorted order, as a quoted value. The [Node agent](/reference/node-agent#commands)'s `instance.write-environment` writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`; `instance.read-environment` reads and checks the file. Both walk to the directory without following a link and accept only the runtime user's regular file. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
 
-Before it writes, the Gateway reads the file's key names. A key that stored configuration lacks returns `env.sync_would_drop_keys` (409), and the file stays as it is. The details list the key names, comma-separated, never a value. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
+Before it writes, Swamp reads the file's key names locally. A key that stored configuration lacks fails the Operation with `env.sync_would_drop_keys`, and the file stays unchanged. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
@@ -151,31 +159,21 @@ For an Instance that owns its `DB` database, synchronization also writes `.env.t
 
 - A missing file is created from the same values as `.env`, with `APP_ENV=testing` and those `DB_*` keys.
 - In an existing untracked file, Orbit sets only those `DB_*` keys and removes the other `DB_*` keys of the connection. Every other line stays.
-- A file that Git tracks in the checkout stays unchanged. Orbit records the test database name in the `testing` property of the `env:sync` activity.
+- A file that Git tracks in the checkout stays unchanged. The Operation result records the test database name and testing status.
 
 Laravel loads `.env.testing` instead of `.env` when `APP_ENV` is `testing`. So a new file holds every key of `.env`, such as `APP_KEY`.
 
 When Git cannot report whether it tracks the file, for example because of a dubious-ownership error or a damaged repository, synchronization returns `env.testing_tracking_unknown` and leaves `.env.testing` unchanged. A checkout outside a Git repository counts as untracked. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
-Development synchronization changes only `.env` and `.env.testing`. On production, when `.env` changes and a PHP version is selected, Orbit checks `<home>/current`. Orbit resolves the application directory inside that release from the Instance root, falling back to the Project root, and removes a trailing `public` component. For example, `apps/site/public` selects `<home>/current/apps/site`.
+Development synchronization changes only `.env` and `.env.testing`. The placed Swamp worker performs these writes directly as the admitted Node account, using fixed local filesystem commands. It never calls an agent action.
 
-If that application directory has `bootstrap/cache/config.php`, Orbit runs `php<version> artisan config:cache` there as the Instance user. It then resets FPM's opcache through the same runtime refresh used by deploys. An uncached release stays uncached. Changes only to `.env.testing` do not trigger a refresh. Deploys and Route-domain transitions use file-only synchronization; only the explicit env-sync API/CLI path runs this refresh. Unchanged files do not trigger a refresh unless an earlier refresh is pending.
+Production synchronization that needs PHP cache refresh, FPM refresh or an opted-in Process restart returns `operation.kind_unavailable` before admission. No file changes or private material reads occur. These runtime steps require their owners' native lower actions. Production with no selected PHP version and no opted-in Process restart can synchronize files only.
 
-No current release or no selected PHP version produces an explicit skipped result.
-
-The production sync response adds `runtime_refresh`: `config_cache_and_opcache_refreshed`, `opcache_refreshed_config_uncached`, `skipped_unchanged`, `skipped_no_current_release`, or `skipped_no_php_version`. Development responses keep their existing shape. Config-cache failures return `env.config_cache_refresh_failed` (502) and do not reset opcache. Runtime reset failures return `env.php_runtime_refresh_failed` (502). Both errors say the file changed; neither exposes application output or environment values.
-
-Config is built at a temporary `APP_CONFIG_CACHE` path and verified by booting Artisan against that cache before renaming it over the old cache. Laravel loads the cached array using the application's own bootstrap and autoload context, including custom Composer vendor directories and shared repository autoloaders. Valid cached enums and class instances need no special handling. A build failure keeps the old cache. Fix the cause and repeat env-sync; the Gateway remembers pending refreshes and retries them even when `.env` is unchanged.
-
-It records the pending refresh in the Instance database row as soon as the production `.env` replacement is confirmed, before key tracking or `.env.testing` synchronization can fail, and clears it only after PHP refresh and eligible Process restarts succeed. Pending refreshes survive application cache clears, including Gateway recovery. The database migration copies existing cache markers into Instance rows.
-
-After refresh, Orbit uses the deploy Process restart action to restart running Instance Processes opted into `restart_on_deploy`. The response includes `restarted_process_ids`. Restart failures return `env.process_restart_failed` (502), including IDs already restarted, without exposing application output. An unexpected refresh failure returns `env.runtime_refresh_failed` (502).
-
-Only successful explicit production runtime refresh restarts eligible Instance Processes. Development synchronization, deploy and Route file synchronization, and skipped or failed runtime refresh do not restart them through env-sync. Opted-out and failed Processes are excluded. Check `process:list` after `env.process_restart_failed`, recover failed Processes with `process:restart <process-id>`, then retry env-sync to finish any remaining eligible restarts. Repeating env-sync can succeed while those Processes remain failed. Restart unmanaged workers separately when they retain configuration in memory.
+The Gateway records the native outcome and updates the list of owned keys only after success. A failed root preserves the previous key list and pending-runtime marker. Repeat synchronization after correcting the bounded error.
 
 The Gateway takes one consistent snapshot of the Instance owner, any authoritative Route, and complete stored configuration. It resolves `{{instance.domain}}` from the Route when available and `{{instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
-Import, update, synchronize, deploy, removal, and Route changes on one Instance share one operation lock. A competing request waits or returns `env.operation_busy`.
+A running Instance root owns that Instance target. A competing native request returns `operation.target_busy`. Import and update modify stored values; file effects remain owned by the native root.
 
 ## Laravel mode
 
@@ -216,7 +214,7 @@ When a step fails before the new slug is published, the Gateway restores the sto
 
 The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key.
 
-Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. When development provisioning creates a missing Laravel `.env`, it writes the non-empty stored key, or generates one for that file only when neither the store nor `.env.example` has a key. It does not store the generated key. Import the file to keep it in stored configuration. See [Laravel application URL](/domains/applications#laravel-application-url). Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
+Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. Swamp development create stores a missing Laravel `APP_KEY` before synchronizing the first `.env`, so a retry keeps the same key. Retained synchronous provisioning writes the non-empty stored key, or generates one for the file only when neither the store nor `.env.example` has a key; import that file to keep its generated key in stored configuration. See [Laravel application URL](/domains/applications#laravel-application-url). Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
 
 ## Errors
 
@@ -235,7 +233,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
 | `env.config_cache_refresh_failed` | 502 | The file changed, but config cache preparation failed or was unconfirmed. FPM opcache was not reset. |
 | `env.php_runtime_refresh_failed` | 502 | The file changed and config cache preparation completed, but FPM opcache refresh failed. |
-| `env.process_restart_failed` | 502 | PHP refresh succeeded, but an opted-in Instance Process could not restart; the error reports IDs already restarted. Recover failed Processes with `process:restart <process-id>` before repeating env-sync. |
+| `operation.kind_unavailable` | 409 | Production synchronization needs PHP runtime refresh or an owned Process restart whose native composition is not implemented. No Operation or file change is admitted. |
 | `env.runtime_refresh_failed` | 502 | Orbit could not record or confirm the runtime refresh. No application output is returned. Retry env-sync. |
 | `env.sync_would_drop_keys` | 409 | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
 | `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
@@ -264,7 +262,7 @@ A write that pulls edits from the Node would replace stored intent with changes 
 
 Development synchronization must work before dependencies are installed and before the application runs, so it only writes files. Production FPM disables opcache timestamp validation. Writing `.env` alone cannot make a cached Laravel configuration take effect there. A changed production sync therefore rebuilds an existing config cache before resetting opcache.
 
-The Node agent's `instance.refresh-config-cache` rebuilds the cache as the production user into a temporary file, and replaces the cache only after Artisan boots against it. It skips runtime work before the first release or PHP selection, and never creates a config cache where none existed. After refresh, running Instance Processes opted into `restart_on_deploy` restart so workers also see the new environment.
+Production environment refresh is unavailable until the native PHP and Process actions can be composed in this root. The Gateway refuses before admission instead of writing files whose runtime refresh cannot finish.
 
 ### The Node role decides isolation
 

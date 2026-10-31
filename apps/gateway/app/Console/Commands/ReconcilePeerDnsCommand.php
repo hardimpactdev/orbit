@@ -22,9 +22,9 @@ final class ReconcilePeerDnsCommand extends Command
     public function handle(PeerDnsTargetsAction $targets, AdmitPeerDnsAction $admit): int
     {
         $operations = [];
-        foreach ($targets->execute() as $id) {
+        foreach ($targets->execute() as $target) {
             try {
-                $operations[] = $admit->execute(Node::query()->findOrFail($id))->id;
+                $operations[] = $admit->execute(Node::query()->findOrFail($target['node_id']))->id;
             } catch (ResourceOperationException $error) {
                 if ($error->errorCode !== 'operation.target_busy') {
                     throw $error;

@@ -6,8 +6,11 @@ namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Routes\CreateRouteData;
+use App\Data\Routes\RouteData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Data\Routes\UpdateRouteData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -150,13 +153,23 @@ final readonly class AdmitRouteOperationAction
 
     public function clearTarget(Route $route, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('route.target_unset');
+        $previous = array_values($route->targets()->orderBy('instance_id')->pluck('instance_id')->map(StoredInteger::from(...))->all());
 
-        return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $caller, $requestId): Operation {
-            $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
-            $updated = app(ClearRouteTargetAction::class)->execute($route, projectMetrics: false);
+        return $this->owned($previous, function () use ($route, $previous, $caller, $requestId): Operation {
+            $updated = $this->targets->clear($route, $previous);
+            $nodeId = Instance::query()->whereKey($previous)->orderBy('id')->value('node_id')
+                ?? $updated->node_id ?? $updated->cluster?->routerAssignment?->node_id;
+            if (! is_int($nodeId)) {
+                throw new ResourceOperationException('route.router_required', 'The Route requires a serving Node.', 409);
+            }
+            $operation = $this->operations->execute('route.target_unset', 'route', $updated->id, $nodeId,
+                ['route_id' => $updated->id, 'node_ids' => [$nodeId], 'access_node_ids' => [$nodeId],
+                    'caller_node_id' => $caller?->id, 'previous_target_instance_ids' => $previous], 'operator', $requestId);
+            DB::afterCommit(fn () => app(RecordEventBroadcaster::class)->broadcast(
+                RecordEventType::RouteUpdated, $updated->id, RouteData::fromModel($updated)->toArray(),
+            ));
 
-            return $this->start('route.target_unset', $updated, ['mode' => 'state_only', 'previous_target_instance_ids' => $previous], $caller, $requestId);
+            return $operation->refresh();
         });
     }
 

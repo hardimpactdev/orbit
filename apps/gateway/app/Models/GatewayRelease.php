@@ -112,6 +112,34 @@ final class GatewayRelease extends Model
         return null;
     }
 
+    /** Publication waiting owns no unit or live changes and can resume after process exit. */
+    public function awaitingPublication(): bool
+    {
+        return $this->trigger === 'auto'
+            && $this->outcome === self::Queued
+            && $this->publicationPhase() !== null;
+    }
+
+    /** @return array{outcome: string, since: string, alerted: bool, checked_at?: string}|null */
+    public function publicationPhase(): ?array
+    {
+        $phase = $this->phases['publication'] ?? null;
+        if (! is_array($phase) || ($phase['outcome'] ?? null) !== 'waiting'
+            || ! is_string($phase['since'] ?? null) || ! is_bool($phase['alerted'] ?? null)) {
+            return null;
+        }
+
+        return ['outcome' => 'waiting', 'since' => $phase['since'], 'alerted' => $phase['alerted'],
+            ...(is_string($phase['checked_at'] ?? null) ? ['checked_at' => $phase['checked_at']] : [])];
+    }
+
+    /** The one queued automatic candidate, before it has changed anything. */
+    public static function publicationWaiting(): ?self
+    {
+        return self::query()->where('trigger', 'auto')->where('outcome', self::Queued)
+            ->latest('id')->get()->first(static fn (self $record): bool => $record->awaitingPublication());
+    }
+
     /** Whether the attempt has ended. A queued or running record can still change. */
     public function finished(): bool
     {

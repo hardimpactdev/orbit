@@ -47,23 +47,21 @@ final readonly class ScheduleRuntimeChildAdmission implements OperationChildAdmi
     {
         $owner = app(InstanceRemovalRuntime::class)->owner($parent, $intent);
 
-        return app(ProcessAdmissionLock::class)->run([$owner], function () use ($parent, $intent, $owner): Operation {
-            return DB::transaction(function () use ($parent, $intent, $owner): Operation {
-                $id = $intent['input']['id'] ?? null;
-                if (! is_string($id) || $intent['kind'] !== 'schedule.destroy'
-                    || ! OperationChildIntent::same($intent['input'], ['id' => $id])) {
-                    $this->refuse();
-                }
-                $schedule = Schedule::query()->whereKey($id)->lockForUpdate()->firstOrFail();
-                if (! Instance::isMorphType($schedule->target_type) || $schedule->target_id !== $owner
-                    || $schedule->host_node_id !== $parent->node_id
-                    || Instance::query()->whereKey($owner)->value('node_id') !== $parent->node_id) {
-                    $this->refuse();
-                }
+        return app(ProcessAdmissionLock::class)->run([$owner], fn (): Operation => DB::transaction(function () use ($parent, $intent, $owner): Operation {
+            $id = $intent['input']['id'] ?? null;
+            if (! is_string($id) || $intent['kind'] !== 'schedule.destroy'
+                || ! OperationChildIntent::same($intent['input'], ['id' => $id])) {
+                $this->refuse();
+            }
+            $schedule = Schedule::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+            if (! Instance::isMorphType($schedule->target_type) || $schedule->target_id !== $owner
+                || $schedule->host_node_id !== $parent->node_id
+                || Instance::query()->whereKey($owner)->value('node_id') !== $parent->node_id) {
+                $this->refuse();
+            }
 
-                return $this->admission->execute($schedule, 'destroy', cascade: true);
-            });
-        });
+            return $this->admission->execute($schedule, 'destroy', cascade: true);
+        }));
     }
 
     private function refuse(): never

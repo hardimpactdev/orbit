@@ -2,20 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\CloneCandidateSource;
-use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
-use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
-use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->caller = clone_api_node('clone-api-caller');
@@ -24,7 +20,7 @@ beforeEach(function (): void {
     $this->candidateNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->destinationNode = clone_api_node('clone-api-destination');
     $project = Project::query()->create([
-        'name' => 'Clone API',
+        'name' => 'Clone API', 'type' => 'monorepo', 'root' => '.',
         'slug' => 'clone-api',
         'repository_url' => 'https://example.test/clone-api.git',
         'default_branch' => 'main',
@@ -156,45 +152,33 @@ it('returns 404 for a missing candidate before clone execution', function (): vo
     expect(Instance::query()->count())->toBe(1);
 });
 
-it('returns a replayable clone Operation and reserves its private Route before any provisioning', function (bool $clustered): void {
-    app()->instance(OperationKinds::class, new OperationKinds(app(), [
-        ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
-    ]));
-    $this->candidate->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $this->candidate->environmentValues()->create(['env_key' => 'REDIS_URL', 'env_value' => 'redis://user:clone-secret@example.test']);
-    $this->destinationNode->update(['tld' => 'prod.orbit']);
+it('returns a replayable native clone Operation without any source effects', function (): void {
     $this->destinationNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $cluster = null;
-    if ($clustered) {
-        $cluster = Cluster::query()->create(['name' => 'clone-cluster', 'tld' => 'cluster.orbit', 'state' => ClusterState::Active]);
-        $this->destinationNode->update(['cluster_id' => $cluster->id]);
-        $router = clone_api_node('clone-router');
-        $router->update(['cluster_id' => $cluster->id]);
-        $router->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
-    }
-    $inspector = Mockery::mock(InstanceCloneCandidateInspector::class);
-    $inspector->shouldReceive('inspect')->once()->andReturn(new CloneCandidateSource($this->candidate->id,
-        'development', $this->candidate->checkout_path, 'orbit', 'main', str_repeat('a', 40), $this->candidateNode));
-    app()->instance(InstanceCloneCandidateInspector::class, $inspector);
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $agents);
-    Queue::fake();
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'clone-api-native-fixture']);
     $body = ['node_id' => $this->destinationNode->id, 'name' => 'preview', 'preview_name' => 'shop.com'];
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])->withHeader('Idempotency-Key', 'clone-admission');
     $id = $this->postJson($this->cloneUrl, $body)->assertAccepted()->assertJsonPath('data.kind', 'instance.clone')
-        ->assertJsonPath('data.status', 'queued')->json('data.id');
+        ->assertJsonPath('data.status', 'running')->json('data.id');
     $this->postJson($this->cloneUrl, $body)->assertAccepted()->assertJsonPath('data.id', $id);
     $operation = Operation::query()->findOrFail($id);
     $target = Instance::query()->findOrFail($operation->target_id);
-    $route = $target->routes()->sole();
     expect($target->provisioning_step)->toBe('clone-reserved')->and($target->clone_completed_at)->toBeNull();
-    expect($route->domain)->toBe('shop.com.prod.orbit')->and($route->cluster_id)->toBe($cluster?->id)
-        ->and($route->node_id)->toBe($clustered ? null : $this->destinationNode->id)
-        ->and($route->targets()->sole()->instance_id)->toBe($target->id);
-    expect(json_encode($operation->toArray()))->not->toContain('clone-secret', 'redis://');
-    Queue::assertNothingPushed();
-})->with([false, true]);
+    expect($target->routes()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
+    expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+});
+
+it('refuses unavailable publication composition before reserving a clone', function (): void {
+    $this->candidate->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $this->destinationNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])->postJson($this->cloneUrl, [
+        'node_id' => $this->destinationNode->id, 'name' => 'preview', 'preview_name' => 'shop.com',
+    ])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+    expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(0);
+});
 
 function clone_api_node(string $name): Node
 {

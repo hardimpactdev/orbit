@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\VpEnvironment;
+use App\Domain\Tools\VpManagerVersion;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -106,9 +107,7 @@ final readonly class VpToolManager implements ToolManager
 
     public function versionSatisfies(string $observed, string $required): bool
     {
-        $normalized = $this->versions->normalize(preg_replace('/\\Avp\\s+/', '', trim($observed)) ?? '');
-
-        return $normalized !== null && version_compare($normalized, $required, '>=');
+        return VpManagerVersion::satisfies($observed, $required);
     }
 
     /** @param list<VpEnvironment> $environments
@@ -168,13 +167,6 @@ final readonly class VpToolManager implements ToolManager
         return new ToolInventoryReceipt()->parse(ToolManagerName::Vp, ['scan_complete' => $inventory['scan_complete'], 'packages' => $inventory['packages']], $this->validatePackage(...));
     }
 
-    public function installedVersion(Node $node, string $package): ?string
-    {
-        $this->guardPackage($package);
-
-        return $this->installedInventory($node)->versionFor($package);
-    }
-
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
@@ -189,18 +181,6 @@ final readonly class VpToolManager implements ToolManager
         throw new ToolManagerException(
             step: 'node',
             message: 'The VP tool manager does not support this node.',
-        );
-    }
-
-    private function guardPackage(string $package): void
-    {
-        if ($this->validatePackage($package)) {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: 'package',
-            message: 'The VP package coordinate is invalid.',
         );
     }
 

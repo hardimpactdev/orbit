@@ -1,0 +1,35 @@
+name: Select this build from changed inputs
+description: Check scope before toolchain setup while independent builds start in parallel.
+inputs:
+  job:
+    description: Build name in bin/ci-build-plan.
+    required: true
+  enabled:
+    description: Select from changes, or run unconditionally for release builds.
+    default: 'true'
+outputs:
+  selected:
+    description: Whether this build has changed inputs.
+    value: ${{ steps.scope.outputs.selected }}
+runs:
+  using: composite
+  steps:
+    - id: scope
+      shell: bash
+      env:
+        SCOPE_JOB: ${{ inputs.job }}
+        SCOPE_ENABLED: ${{ inputs.enabled }}
+        BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        EVENT_SHA: ${{ github.sha }}
+        MAIN: ${{ github.ref == 'refs/heads/main' }}
+      run: |
+        if [ "$SCOPE_ENABLED" != true ]; then echo 'selected=true' >> "$GITHUB_OUTPUT"; exit 0; fi
+        if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+          if ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then git fetch --no-tags --deepen=1 origin "$EVENT_SHA"; fi
+          BASE=HEAD^
+        elif ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          git fetch --no-tags --depth=1 origin "$BASE"
+        fi
+        args=()
+        if [ "$MAIN" = true ]; then args+=(--main); fi
+        python3 bin/ci-build-plan --base "$BASE" "${args[@]}" | python3 -c 'import json,os,sys; print("selected=" + str(json.load(sys.stdin)["jobs"][os.environ["SCOPE_JOB"]]).lower())' >> "$GITHUB_OUTPUT"

@@ -6,7 +6,6 @@ namespace App\Domain\Operations;
 
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Operation;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Arr;
@@ -20,7 +19,7 @@ use LogicException;
 final readonly class OperationSecrets
 {
     /** @param iterable<OperationSecretSource> $sources */
-    public function __construct(#[Tag(OperationSecretSource::class)] private iterable $sources, private LogRedactor $redactor, private CommandActivityInputSanitizer $sanitizer) {}
+    public function __construct(#[Tag(OperationSecretSource::class)] private iterable $sources, private LogRedactor $redactor) {}
 
     /** @param array<string, mixed> $input
      * @param  array<string, string>  $declarations
@@ -132,15 +131,16 @@ final readonly class OperationSecrets
     }
 
     /** @param list<string> $values */
-    public function redact(mixed $value, #[\SensitiveParameter] array $values): mixed
+    public function redact(#[\SensitiveParameter] mixed $value, #[\SensitiveParameter] array $values): mixed
     {
-        return $this->redactValues(is_array($value) ? $this->sanitizer->sanitizeProperties($value) : $value, $values);
+        return $this->redactValues($value, $values);
     }
 
     /** @param list<string> $values */
     private function redactValues(#[\SensitiveParameter] mixed $value, #[\SensitiveParameter] array $values): mixed
     {
-        if (is_scalar($value) && ! is_string($value) && in_array((string) $value, $values, true)) {
+        // Boolean proof carries no secret bytes; casting true to "1" would match numeric hydration metadata.
+        if ((is_int($value) || is_float($value)) && in_array((string) $value, $values, true)) {
             return '[REDACTED]';
         }
         if (is_string($value)) {

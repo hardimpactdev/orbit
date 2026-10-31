@@ -43,6 +43,12 @@ describe(AgentContract::class, function (): void {
             ->and($contract->command('task-vm.export-git-pack')->needsSudo('linux'))->toBeFalse();
     });
 
+    it('removes the custom Node worker issuer from every transport', function (): void {
+        $contract = app(AgentContract::class);
+        expect($contract->names())->not->toContain('swamp.issue-node-worker');
+        expect(fn () => $contract->operationCommand('swamp.issue-node-worker'))->toThrow(LogicException::class);
+    });
+
     it('refuses an unknown command as a programming error', function (): void {
         expect(fn () => app(AgentContract::class)->command('no.such'))->toThrow(LogicException::class);
     });
@@ -81,12 +87,12 @@ describe(AgentDelivery::class, function (): void {
             ['agent' => 'tampered'],
         );
 
-        expect(fn () => (new AgentDelivery($manifest, sys_get_temp_dir()))->localFile(deliveryNode()))
+        expect(fn () => new AgentDelivery($manifest, sys_get_temp_dir())->localFile(deliveryNode()))
             ->toThrow(RuntimeException::class, 'does not match its pin');
     });
 
     it('refuses a manifest without a commit, version, or valid artifact digests', function (array $manifest): void {
-        expect(fn () => (new AgentDelivery(temporaryDelivery($manifest), sys_get_temp_dir()))->pin(deliveryNode()))
+        expect(fn () => new AgentDelivery(temporaryDelivery($manifest), sys_get_temp_dir())->pin(deliveryNode()))
             ->toThrow(RuntimeException::class);
     })->with([
         'no version' => [['commit' => 'c', 'artifacts' => []]],
@@ -112,7 +118,7 @@ it('refuses a corrupt adjacent artifact instead of downloading another copy', fu
         'linux-x86_64' => ['sha256' => hash('sha256', 'pinned'), 'path' => 'agent', 'url' => 'https://example.test/agent'],
     ]], ['agent' => 'corrupt']);
     Http::fake();
-    expect(fn () => (new AgentDelivery($manifest, dirname($manifest).'/cache'))->localFile(deliveryNode()))
+    expect(fn () => new AgentDelivery($manifest, dirname($manifest).'/cache')->localFile(deliveryNode()))
         ->toThrow(RuntimeException::class, 'does not match its pin');
     Http::assertNothingSent();
 });

@@ -10,6 +10,7 @@ impl Drop for Sandbox {
 struct Fake {
     calls: Vec<Invocation>,
     active: bool,
+    state: Option<&'static str>,
     fail_start: bool,
     fail_stop: bool,
 }
@@ -32,7 +33,11 @@ impl Host for Fake {
         }
         Ok(CommandOutput {
             code,
-            stdout: "sensitive diagnostic".into(),
+            stdout: if call.argv.get(1).is_some_and(|v| v == "show") {
+                self.state.unwrap_or("inactive").into()
+            } else {
+                "sensitive diagnostic".into()
+            },
             stderr: "sensitive diagnostic".into(),
             signal: None,
             truncated: false,
@@ -79,6 +84,7 @@ fn fixture() -> (Sandbox, Files, Account, Input, Fake) {
         Fake {
             calls: vec![],
             active: false,
+            state: None,
             fail_start: false,
             fail_stop: false,
         },

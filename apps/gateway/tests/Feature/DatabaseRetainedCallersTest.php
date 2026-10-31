@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
+use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
@@ -12,7 +12,9 @@ use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
+use App\Models\Instance;
 use App\Models\Operation;
+use Illuminate\Support\Str;
 use Tests\Support\FakeDatabaseServerAdmin;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
@@ -20,10 +22,9 @@ uses(ServerDatabaseFixtures::class);
 
 beforeEach(fn () => $this->prepareServerDatabaseFixtures());
 
-it('creates and removes an Instance database synchronously with durable password-free ownership receipts', function (): void {
-    $connection = app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'retained', 'retained', $this->instance, null);
+it('removes an Instance database using stored password-free lifecycle ownership receipts', function (): void {
+    $connection = retainedCreatedDatabase($this->server, $this->instance);
     expect($connection)->toBeInstanceOf(DatabaseConnection::class)
-        ->and($connection->targets()->sole()->instance_id)->toBe($this->instance->id)
         ->and(app(DatabaseOwnership::class)->mysqlNames($connection))->toBe(['retained', 'retained_test'])
         ->and(Operation::query()->count())->toBe(0)
         ->and(DatabaseExecutionIntent::query()->count())->toBe(0);
@@ -39,8 +40,51 @@ it('creates and removes an Instance database synchronously with durable password
         ->and(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
 
-it('does not accept a synchronous creation receipt for a changed recorded identity', function (): void {
-    $connection = app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'retained', 'retained', $this->instance, null);
+it('refuses system names and prefixes before retained removal probes or effects', function (string $driver, string $database, ?string $prefix, string $entrypoint): void {
+    $this->server->update(['driver' => $driver]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'unsafe-retained', 'driver' => $driver, 'database_server_id' => $this->server->id,
+        'database' => $database, 'test_database' => $prefix, 'username' => 'unsafe_owner', 'owner_instance_id' => $this->instance->id]);
+    $connection->forceFill(['ownership_adoption' => ['databases' => [$database], 'prefix' => $prefix,
+        'username' => 'unsafe_owner', 'server_id' => $this->server->id, 'node_id' => $this->server->node_id]])->save();
+
+    $remove = $entrypoint === 'synchronous'
+        ? fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id)
+        : fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection]);
+    expect($remove)->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('database.system_database');
+    });
+
+    $this->assertModelExists($connection);
+    expect($this->admin->statements)->toBe([]);
+    expect(Operation::query()->count())->toBe(0);
+    expect(DatabaseExecutionIntent::query()->count())->toBe(0);
+})->with([
+    ['mysql', 'mysql', null], ['mysql', 'sys', null], ['mysql', 'performance_schema', null], ['mysql', 'information_schema', null],
+    ['mysql', 'MySQL', null], ['mysql', 'safe', 'm'], ['mysql', 'safe', 's'], ['mysql', 'safe', 'performance_'],
+    ['mysql', 'safe', 'information_'], ['mysql', 'safe', ''], ['pgsql', 'postgres', null], ['pgsql', 'template0', null],
+    ['pgsql', 'template_other', null], ['pgsql', 'Template1', null], ['pgsql', 'safe', 'p'], ['pgsql', 'safe', 'tem'],
+])->with(['synchronous', 'admission']);
+
+it('refuses an expanded system database before ownership probes or drop SQL', function (string $entrypoint): void {
+    $connection = retainedCreatedDatabase($this->server, $this->instance);
+    $this->admin->rows['SCHEMATA'] = ['mysql'];
+
+    $remove = $entrypoint === 'synchronous'
+        ? fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id)
+        : fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection]);
+    expect($remove)->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('database.system_database');
+    });
+
+    $this->assertModelExists($connection);
+    expect($this->admin->statements)->toHaveCount(1);
+    expect($this->admin->sql())->toContain('SELECT SCHEMA_NAME')->not->toContain('DROP DATABASE', 'DROP USER', 'SELECT DISTINCT blocker');
+    expect(Operation::query()->count())->toBe(0);
+    expect(DatabaseExecutionIntent::query()->count())->toBe(0);
+})->with(['synchronous', 'admission']);
+
+it('does not accept a stored lifecycle creation receipt for a changed recorded identity', function (): void {
+    $connection = retainedCreatedDatabase($this->server, $this->instance);
     $connection->update(['username' => 'somebody_else']);
     $this->admin->statements = [];
 
@@ -77,13 +121,8 @@ it('holds the removal lock through synchronous effects and row deletion and rech
     };
     app()->instance(DatabaseRemovalLock::class, $lock);
     $admin = new RetainedDatabaseAdmin($this->admin);
-    $admin->before = static function (string $sql) use ($lock): void {
-        if (str_contains($sql, 'CREATE DATABASE') || str_contains($sql, 'DROP DATABASE')) {
-            expect($lock->held)->toBeTrue();
-        }
-    };
     app()->instance(DatabaseServerAdmin::class, $admin);
-    $connection = app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'retained', 'retained', $this->instance, null);
+    $connection = retainedCreatedDatabase($this->server, $this->instance);
     $admin->before = function (string $sql) use ($connection): void {
         if (str_contains($sql, 'SELECT DISTINCT blocker')) {
             DatabaseConnection::query()->firstOrCreate(['slug' => 'new-consumer'], ['driver' => 'mysql', 'database_server_id' => $this->server->id,
@@ -112,59 +151,6 @@ it('holds the removal lock through synchronous effects and row deletion and rech
     expect($this->admin->sql())->toContain('DROP DATABASE')->not->toContain('DROP USER');
 });
 
-it('keeps an uncertain failed create unproven and refuses to drop a database that appeared during the failure', function (): void {
-    $admin = new RetainedDatabaseAdmin($this->admin);
-    $admin->before = function (string $sql): void {
-        if (str_contains($sql, 'CREATE DATABASE')) {
-            $this->admin->rows['SCHEMATA'] = ['restored'];
-        }
-    };
-    $this->admin->failOn = 'CREATE DATABASE';
-    app()->instance(DatabaseServerAdmin::class, $admin);
-    expect(fn () => app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'restored', 'restored', $this->instance, null))
-        ->toThrow(ResourceOperationException::class);
-    $connection = DatabaseConnection::query()->where('slug', 'restored')->sole();
-    expect($connection->creation_receipts)->toBeNull();
-    $this->admin->failOn = null;
-    $this->admin->statements = [];
-
-    expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
-        ->toThrow(ResourceOperationException::class, 'successful creation receipt');
-    $this->assertModelExists($connection);
-    expect($this->admin->sql())->not->toContain('DROP DATABASE', 'DROP USER');
-});
-
-it('preserves the original create error when the names-absent read fails', function (Throwable $readError): void {
-    $original = new ResourceOperationException('database.create_refused', 'Original create failure.', 502);
-    $failed = false;
-    $readAttempts = 0;
-    $admin = new RetainedDatabaseAdmin($this->admin);
-    $admin->before = static function (string $sql) use ($original, $readError, &$failed, &$readAttempts): void {
-        if (str_contains($sql, 'CREATE DATABASE')) {
-            $failed = true;
-            throw $original;
-        }
-        if ($failed && str_contains($sql, 'SCHEMATA')) {
-            $readAttempts++;
-            throw $readError;
-        }
-    };
-    app()->instance(DatabaseServerAdmin::class, $admin);
-
-    expect(fn () => app(CreateServerDatabaseAction::class)->createOnServer($this->server, 'uncertain', 'uncertain', $this->instance, null))
-        ->toThrow(function (ResourceOperationException $caught) use ($original): void {
-            expect($caught)->toBe($original);
-        });
-
-    expect($readAttempts)->toBe(1)
-        ->and(DatabaseConnection::query()->where('slug', 'uncertain')->sole()->creation_receipts)->toBeNull()
-        ->and(DatabaseExecutionIntent::query()->count())->toBe(0)
-        ->and($this->admin->sql())->not->toContain('DROP DATABASE');
-})->with([
-    'remote refusal' => [new ResourceOperationException('database.server_command_failed', 'Ownership read failed.', 502)],
-    'transport failure' => [new RuntimeException('Ownership transport failed.')],
-]);
-
 it('keeps the PostgreSQL fenced owner check and restores admission after a synchronous failure', function (): void {
     $this->server->update(['driver' => 'pgsql']);
     $connection = DatabaseConnection::query()->create(['slug' => 'foreign', 'driver' => 'pgsql', 'database_server_id' => $this->server->id,
@@ -178,26 +164,32 @@ it('keeps the PostgreSQL fenced owner check and restores admission after a synch
         ->and(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
 
-it('repairs a retained PostgreSQL test pool synchronously without nesting the server lock', function (): void {
-    $this->server->update(['driver' => 'pgsql']);
-    $action = app(CreateServerDatabaseAction::class);
-    $connection = $action->createOnServer($this->server, 'pool', 'pool', $this->instance, null, testProcesses: 2);
-    $this->admin->rows = ["WHERE rolname = '{$connection->username}'" => [$connection->username]];
-    $this->admin->statements = [];
+/** Arrange the stored legacy receipt that live removal still accepts. */
+function retainedCreatedDatabase(DatabaseServer $server, Instance $instance): DatabaseConnection
+{
+    $connection = DatabaseConnection::query()->create(['slug' => 'retained', 'driver' => 'mysql',
+        'database_server_id' => $server->id, 'node_id' => $server->node_id, 'database' => 'retained',
+        'test_database' => 'retained_test', 'username' => 'retained', 'password' => 'stored-private-password',
+        'owner_instance_id' => $instance->id]);
+    $proofs = [];
+    foreach ([['database' => 'retained'], ['database' => 'retained_test'], ['database' => 'retained_test', 'scope' => 'prefix']] as $name) {
+        $proof = [...$name, 'username' => $connection->username, 'server_id' => $server->id];
+        $activity = Activity::query()->create(['request_id' => (string) Str::uuid(), 'command' => 'database:lifecycle:create',
+            'description' => 'Stored lifecycle creation proof.', 'subject_type' => DatabaseConnection::class,
+            'subject_id' => $connection->id, 'status' => 'succeeded', 'exit_code' => 0,
+            'properties' => ['connection_id' => $connection->id, 'node_id' => $server->node_id, 'receipt' => $proof]]);
+        $proofs[] = [...$proof, 'activity_id' => $activity->id];
+    }
+    $connection->forceFill(['creation_receipts' => $proofs])->save();
 
-    $repaired = $action->createOnServer($this->server, 'pool', 'pool', $this->instance, null, testProcesses: 2);
-
-    expect($repaired->id)->toBe($connection->id)
-        ->and($this->admin->sql())->toContain('CREATE DATABASE "pool_test"', 'CREATE DATABASE "pool_test_test_2"', "RAISE EXCEPTION 'database.name_conflict'")
-        ->not->toContain('DROP DATABASE')
-        ->and(Operation::query()->count())->toBe(0);
-});
+    return $connection;
+}
 
 final class RetainedDatabaseAdmin implements DatabaseServerAdmin
 {
     public ?Closure $before = null;
 
-    public function __construct(private FakeDatabaseServerAdmin $admin) {}
+    public function __construct(private readonly FakeDatabaseServerAdmin $admin) {}
 
     public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool
     {

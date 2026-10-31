@@ -41,17 +41,6 @@ final readonly class HomebrewToolManager implements ToolManager
         return HomebrewPackageName::valid($package);
     }
 
-    public function managerVersion(Node $node): string
-    {
-        $this->guardSupportedNode($node);
-        $data = $this->agentCommand($node, 'tool.homebrew-version', [], 'manager-version');
-        if (! is_string($data['version'] ?? null)) {
-            throw new ToolManagerException('manager-version', 'The agent returned an invalid Homebrew version.');
-        }
-
-        return $data['version'];
-    }
-
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $this->guardSupportedNode($node);
@@ -59,28 +48,9 @@ final readonly class HomebrewToolManager implements ToolManager
         return $this->homebrew->inventory($this->agentCommand($node, 'tool.homebrew-formula-inventory', [], 'installed-version'));
     }
 
-    public function installedVersion(Node $node, string $package): ?string
-    {
-        $this->guardPackage($package);
-
-        return $this->installedInventory($node)->versionFor($package);
-    }
-
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
-    }
-
-    private function guardPackage(string $package): void
-    {
-        if ($this->validatePackage($package)) {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: 'package',
-            message: 'The Homebrew formula name is invalid.',
-        );
     }
 
     private function guardSupportedNode(Node $node): void

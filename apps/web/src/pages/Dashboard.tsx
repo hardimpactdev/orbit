@@ -94,27 +94,27 @@ export function Dashboard() {
                 name="nodes"
                 testId="dashboard-workers"
                 order={0}
-                title="Nodes with roles"
+                title="Tracked nodes"
                 className="w-full min-h-[160px] max-h-[40vh] md:col-span-4 md:max-h-[34vh]"
                 columns={workerColumns}
                 rows={workers}
                 rowId={(n) => String(n.id)}
                 warn={(n) => !nodeHealthy(n) || offline(n)}
                 target={(row) => ({ kind: "nodes", row })}
-                empty={fleet.loading ? "Loading fleet data…" : "No Nodes with roles."}
+                empty={fleet.loading ? "Loading fleet data…" : "No tracked nodes."}
             />
             <Pane
                 name="clients"
                 testId="dashboard-clients"
                 order={1}
-                title="Roleless Nodes"
+                title="Other nodes"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-2 md:max-h-[34vh]"
                 columns={clientColumns}
                 rows={clients}
                 rowId={(n) => String(n.id)}
                 warn={(n) => !nodeHealthy(n)}
                 target={(row) => ({ kind: "nodes", row })}
-                empty={fleet.loading ? "Loading fleet data…" : "No roleless Nodes."}
+                empty={fleet.loading ? "Loading fleet data…" : "No other nodes."}
             />
             <Pane
                 name="projects"

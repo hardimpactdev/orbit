@@ -9,15 +9,16 @@ import { screenText } from "./screen";
 it("draws the dashboard", async () => {
     const app = await openApp("/");
     await expect.element(row("Needs attention", /Node\s*app-prod/)).toBeVisible();
-    await expect.element(row("Nodes with roles", "beast")).toMatchTextContent("82%");
+    await expect.element(row("Tracked nodes", "beast")).toMatchTextContent("82%");
 
     await expect(screenText()).toMatchFileSnapshot("./expected/dashboard.txt");
     // The Gateway names the Nodes and hands out the Grafana credential once; no metrics request goes out per Node.
     expect(
         app.gateway.requests
             .map((request) => request.path)
-            .filter((path) => path.includes("metrics")),
-    ).toEqual(["/api/v1/metrics/credentials"]);
+            .filter((path) => path.includes("metrics"))
+            .sort(),
+    ).toEqual(["/api/v1/metrics/credentials", "/api/v1/metrics/status"]);
 });
 
 it("draws a section list with its filters", async () => {

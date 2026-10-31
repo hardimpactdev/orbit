@@ -379,13 +379,16 @@ it('keeps failing closed when a fleet node cannot prove exporter ownership', fun
     expect($degradations->get($dead->id))->toBeNull();
 });
 
-it('clears a recorded degradation once the node can be inspected again', function (): void {
+it('retries an explicitly enabled skipped exporter on the next reconcile', function (): void {
     [$metrics, $assignment, , $dead] = metricsExporterDegradationFleet();
     $degradations = app(ExporterDegradationRepository::class);
     $degradations->put($dead->id, ExporterDegradationReason::Unreachable);
+    $dead->roles()->delete();
+    app(ExporterPreferenceRepository::class)->put($dead->id, ExporterPreference::Enabled);
+    $runtime = new MetricsExporterDegradingRuntimeFake;
 
     new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterDegradingRuntimeFake,
+        executor: $runtime,
         projection: new NativeMetricsExporterProjection(
             new ExporterSelector,
             app(ExporterPreferenceRepository::class),
@@ -393,7 +396,8 @@ it('clears a recorded degradation once the node can be inspected again', functio
         degradations: $degradations,
     )->converge($metrics, $assignment);
 
-    expect($degradations->get($dead->id))->toBeNull();
+    expect($degradations->get($dead->id))->toBeNull()
+        ->and($runtime->events)->toContain('snapshot:dead', 'converge:dead');
 });
 
 it('forgets a retired node degradation even when its exporter cannot be removed', function (): void {

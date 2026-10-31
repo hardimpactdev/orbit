@@ -11,11 +11,11 @@ use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-it('follows a footprint Operation and renders its final receipt', function (bool $json): void {
+it('follows a footprint Operation and renders its final receipt', function (bool $json, int $node): void {
     $home = sys_get_temp_dir().'/orbit-converge-'.Str::uuid();
     config(['orbit.home' => $home]);
     app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', caPath: '/unused'));
-    $operation = ['id' => 7, 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => 2,
+    $operation = ['id' => 7, 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node,
         'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'steps' => [], 'result' => [],
         'finished_at' => '2026-10-28T12:00:00Z'];
     $envelope = ['data' => $operation, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']];
@@ -26,7 +26,7 @@ it('follows a footprint Operation and renders its final receipt', function (bool
     ]);
 
     try {
-        $this->artisan('node:converge', ['node' => '2', '--force' => true,
+        $this->artisan('node:converge', ['node' => (string) $node, '--force' => true,
             '--idempotency-key' => 'converge-proof', '--json' => $json])
             ->expectsOutputToContain($json ? 'node.converge' : 'Node footprint')->assertExitCode(0);
         $mock->assertSent(fn ($pending): bool => $pending instanceof ConvergeNodeRequest
@@ -38,22 +38,4 @@ it('follows a footprint Operation and renders its final receipt', function (bool
         MockClient::destroyGlobal();
         new Filesystem()->deleteDirectory($home);
     }
-})->with([true, false]);
-
-it('renders synchronous executor convergence without following an Operation', function (bool $json): void {
-    $home = sys_get_temp_dir().'/orbit-converge-sync-'.Str::uuid();
-    config(['orbit.home' => $home]);
-    app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', caPath: '/unused'));
-    $mock = MockClient::global([ConvergeNodeRequest::class => MockResponse::make([
-        'data' => ['node_id' => 17, 'node' => 'services', 'artifacts' => ['agent' => 'applied'], 'digest' => str_repeat('a', 64), 'changed' => true],
-        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-    ], 200)]);
-    try {
-        $this->artisan('node:converge', ['node' => '17', '--json' => $json])
-            ->expectsOutputToContain($json ? 'node_id' : 'footprint re-applied')->assertSuccessful();
-        $mock->assertSentCount(1);
-    } finally {
-        MockClient::destroyGlobal();
-        new Filesystem()->deleteDirectory($home);
-    }
-})->with([true, false]);
+})->with([true, false])->with([2, 17]);

@@ -16,7 +16,7 @@ interface NodeFootprintArtifact
     public function name(): string;
 
     /**
-     * Whether the Node carries this artifact. It can read stored state that `apply()` changes.
+     * Whether stored intent assigns this artifact to the Node.
      *
      * @phpstan-impure
      */
@@ -24,10 +24,4 @@ interface NodeFootprintArtifact
 
     /** The digest of what the Gateway renders for the Node now. */
     public function digest(Node $node): string;
-
-    /**
-     * Publishes the artifact on the Node. Each artifact compares with the live copy first and changes
-     * nothing that already matches. Returns whether it changed the Node, or null when it cannot tell.
-     */
-    public function apply(Node $node): ?bool;
 }

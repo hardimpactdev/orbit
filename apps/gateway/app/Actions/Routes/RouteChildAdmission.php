@@ -6,11 +6,14 @@ namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Routes\UpdateRouteData;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Routes\AnalyticsRouteParentCommand;
+use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
+use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -55,7 +58,12 @@ final readonly class RouteChildAdmission implements OperationChildAdmission
                     : $this->projections->cleanupInstance($instance, $parent->request_id);
             } else {
                 $node = Node::query()->findOrFail(ValidatedData::integer($intent['node_id']));
-                if (in_array($kind, ['route.caddy_converge', 'route.private_dns_publish', 'route.offline_residue_clean'], true)) {
+                if (in_array($kind, [...RouteOperationProjection::Kinds, ...RouteOperationProjection::LocalKinds], true)) {
+                    $operation = app(StartRouteNodeOperationAction::class)->execute($kind, $node, $input, $parent);
+                } elseif (in_array($kind, ['route.caddy_converge', 'route.private_dns_publish', 'route.offline_residue_clean'], true)) {
+                    if (DirectRoutePublication::handles($kind) && app(DirectOperation::class)->writer($kind) !== 'direct') {
+                        throw new ResourceOperationException('operation.kind_unavailable', 'Route publication requires its direct Swamp writer.', 409);
+                    }
                     $operation = $this->operations->execute($kind, $kind === 'route.offline_residue_clean' ? 'node_route_residue' : 'node_route_projection', $node->id,
                         $node->id, $input, $parent->triggered_by, $parent->request_id);
                 } elseif ($kind === 'route.workload_prepare' || in_array($kind, RouteNodeEffectExecution::Kinds, true)) {

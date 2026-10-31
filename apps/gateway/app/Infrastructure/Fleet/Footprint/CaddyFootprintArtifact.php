@@ -4,15 +4,10 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
-use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\CaddyRelease;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Node;
 use Illuminate\Container\Attributes\Tag;
@@ -27,7 +22,7 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
     /** @param iterable<ContributedCaddySiteSource> $contributions */
     public function __construct(
         private NodeCaddyfileRenderer $renderer,
-        private NodeCaddyBuilds $builds,
+
         #[Tag(ContributedCaddySiteSource::class)] private iterable $contributions,
     ) {}
 
@@ -63,31 +58,5 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
             static fn (ContributedCaddySiteSource $source): string => $source::class,
             array_values([...$this->contributions]),
         )]);
-    }
-
-    public function apply(Node $node): bool
-    {
-        try {
-            return $this->builds->build($node) === NodeCaddyBuildResult::Published;
-        } catch (NodeCaddyBuildException $exception) {
-            // A render problem names a site that cannot be built, which is a user's data: skip, keep the live
-            // Caddyfile, and let Doctor report the drift. A validation failure can also be Orbit's own template
-            // or Caddy pin, so the rollout fails it on the first Node it visits (the fleet child carries first_visit).
-            if ($exception->stage === 'render') {
-                throw new FootprintArtifactSkipped(self::RenderRefused, 'The Caddyfile was not published: '.$exception->getMessage());
-            }
-
-            if ($exception->stage === 'validate') {
-                throw new FootprintArtifactSkipped(self::ValidateRefused, 'Caddy refused the Caddyfile: '.$exception->getMessage());
-            }
-
-            throw new ResourceOperationException(
-                'node.footprint_caddy_failed',
-                'The Caddyfile could not be published: '.$exception->getMessage(),
-                502,
-                $exception,
-                ['stage' => $exception->stage],
-            );
-        }
     }
 }

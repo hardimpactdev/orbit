@@ -6,11 +6,9 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ReservesRolePackages;
-use App\Domain\Tools\ToolConstraintIntervals;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -36,7 +34,6 @@ final readonly class StartToolOperationAction
         private ToolManagerRegistry $managers,
         private ToolNodeEligibility $eligibility,
         private VersionConstraint $constraints,
-        private ToolConstraintIntervals $intervals,
         private NodeBootstrapPackageCatalog $bootstrapPackages,
     ) {}
 
@@ -82,19 +79,15 @@ final readonly class StartToolOperationAction
 
                 $intentOnly = $roleOwned || ($verb === 'remove' && $tool?->status === ToolStatus::Failed
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
-                $variant = $intentOnly ? 'version' : ($verb === 'adopt' && in_array($managerName, ['brew', 'brew-cask'], true) ? 'adoption' : 'inventory');
-
-                OperationFamilySpec::assertAvailable('tool.'.$verb);
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
-                    'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package,
+                    'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
                     'platform' => $node->platform, 'architecture' => $node->architecture,
-                    'version_constraint' => $constraint, 'constraint_intervals' => $this->intervals->for($constraint),
+                    'version_constraint' => $constraint,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
                     'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
                     'intent_only' => $intentOnly,
-                    'completion_variant' => $managerName.':'.$variant,
                     'protected_packages' => $protected,
                     ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name()) : []),
                 ], 'operator', request()->attributes->getString('orbit.request_id'));

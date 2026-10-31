@@ -644,7 +644,7 @@ TAGS = [
     ('extension', 'Extensions', 'Gateway-owned extension switches.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),
-    ('operation', 'Operations', 'Long operations, such as an Instance deploy or rollback, that run on the Gateway queue as named steps.'),
+    ('operation', 'Operations', 'Parent intent and result records for native Swamp workflows.'),
     ('ai-router', 'ai-router', 'CLIProxyAPI quota snapshots, provider pools, and account controls.'),
     ('vault', 'Vaultwarden', 'The copy of database credentials into a Vaultwarden collection.'),
     ('conn', 'Conn', 'Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node.'),
@@ -652,8 +652,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
-INTERNAL.update({'task-vm-executor:runtime', 'task-vm-executor:lifecycle', 'task-vm-executor:image', 'task-vm-executor:upcloud-image', 'task-vm-executor:sweep'})
+INTERNAL = {'operation:direct:failure', 'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 INTERNAL.update({'observation:plan', 'observation:observe', 'observation:inspect', 'observation:signals', 'observation:maintain'})
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
@@ -668,6 +667,7 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
+    'operation:direct:failure': 'Record a native workflow failure',
     'instance:smoke:context': 'Read production smoke context', 'instance:smoke': 'Start production smoke', 'instance:smoke:receipt': 'Read a production smoke receipt',
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
@@ -676,7 +676,6 @@ SUMMARIES = {
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
-    'operation:executor:claim': 'Claim a Swamp Operation', 'operation:executor:heartbeat': 'Renew a Swamp Operation lease', 'operation:executor:step': 'Record a step and log lines', 'operation:executor:run': 'Run a named Node program', 'operation:executor:complete': 'Complete a Swamp Operation',
     'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
     'tool:manager:list': 'List Tool Managers', 'tool:scan': 'Scan installed packages', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:adopt': 'Adopt a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
     'github:app:install': 'Start a GitHub App registration or installation', 'github:app:show': 'Show the GitHub App', 'github:app:destroy': 'Remove the stored GitHub App',
@@ -738,6 +737,7 @@ SUMMARIES = {
     'tasks:worker': 'Start a Task group Swamp worker', 'tasks:provision': 'Provision a Task group workspace', 'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
+    'operation:direct:failure': 'Native failed-dependency callback for the bound parent run. Only the root Node may call it. Records operation.native_failed without private material, domain projection or effects; a terminal Operation stays unchanged. Send run_id only.',
     'instance:smoke:failure': 'Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
     'instance:smoke:failure:receipt': 'Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.',
     'instance:smoke:rollback': 'Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
@@ -756,11 +756,6 @@ DESCRIPTIONS = {
     'instance:deployment-source:checks': 'Reads the latest exact runs for the configured Project merge check on commit, through the GitHub App. Includes head SHA and App slug so the policy can reject mismatched evidence. Requires Gateway Node access. Empty evidence does not prove success.',
     'instance:deploy:automatic:resolve': 'Fences an absent automatic admission with a retained cancelled receipt (operation.admission_fenced, zero attempts). Requires Gateway access, request_key, Instance, and commit. caller_node_id optionally names the original caller; omission uses the authenticated Node. A delayed admission replays this receipt instead of deploying. Returns an existing receipt unchanged if admission won the race. Activity records the acting Node and original caller. Never starts or cancels a deploy. See /reference/deployments#clear-an-unresolved-admission-hold.',
     'instance:deploy:automatic:receipt': 'Reads the original automatic admission by exact request key, caller, Instance, command, and commit. Returns the operation and retained terminal deployment evidence. A conflicting identity returns operation.idempotency_conflict. A missing receipt does not authorize retry: an admission might still be in flight. This read starts nothing. Requires Gateway Node access.',
-    'operation:executor:claim': 'Services only. Claim one queued Operation of a registered Swamp kind. Use one stable worker identity per workflow run. Repeating it returns the same claim. The lease lasts 120 seconds; an expired claim can be reclaimed.',
-    'operation:executor:heartbeat': 'Services only. Renew the current worker lease and read the Operation input, Node, steps and step results. A stale worker gets operation.lease_lost.',
-    'operation:executor:step': 'Services only. Record a named step and append its output under a stable event key. Repeated keys do not append duplicate output. A changed payload conflicts. Keeps the existing 8 KiB output tail.',
-    'operation:executor:run': 'Services only. Run only the transport/name pairs declared by this kind. The target comes from the Operation; node_id in the body is forbidden. Input must match the command schema and admitted intent or returns operation.execution_forbidden. Only declared result fields are retained and redacted. The key binds name and input before execution and reuses a saved result. Families reconcile an uncertain effect or repeat a convergent command. No script source is accepted.',
-    'operation:executor:complete': 'Services only. Complete the Operation with a result or error_code and project Gateway intent. Success requires the kind’s recorded successful Node run and matching step/result or returns operation.completion_unproven. Results and errors are filtered and redacted. Repeating the same completion returns its receipt; another completion conflicts. The terminal receipt releases the target.',
     'instance:auto-deploy:policy:update': 'Publishes the shared public automatic deployment projection only under Swamp ownership. Returns instance.auto_deploy_policy_owner under PHP ownership. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.',
     'instance:auto-deploy:event:create': 'Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. Returns instance.auto_deploy_policy_owner under PHP ownership. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.',
     'instance:deploy:automatic': 'Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Records swamp:auto-deploy from the authorized automatic command and caller_node_id from the authenticated Gateway peer. Deployment and operation reads expose both fields; clients cannot supply them. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.',
@@ -768,9 +763,9 @@ DESCRIPTIONS = {
     'instance:rollback': 'Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.',
     'tasks:swamp-runs': 'Returns the latest five Swamp workflow runs for this task group, with bounded redacted step output and a run log tail. Poll every five seconds. Availability is available, stale with the last successful snapshot, or unavailable. Requires Gateway access and the Tasks extension. See /reference/tasks#swamp-run-output.',
     'tasks:agent:show': 'Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer\'s `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread\'s Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.',
-    'operation:show': 'Returns one operation and its steps from one database read. With `after_sequence`, returns only the steps whose `sequence` is greater. `poll_after_seconds` says when to read again; it is null once `status` is terminal. A finished operation carries `result`, or `failed_step` and `error_code`. See /reference/operations#read-an-operation.',
+    'operation:show': 'Returns one parent Operation with its admitted input, native status, safe result and error code. Starts no work and records no Gateway step receipts. See /reference/operations#read-an-operation.',
     'operation:list': 'Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds active jobs; `status=waiting` finds operations waiting for existing work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.',
-    'operation:cancel': 'Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A waiting one calls its step stop hook at once and ends `cancelled` only when the stop is confirmed. An unconfirmed stop records the cancel request, returns the step error, and stays `waiting`; its next read retries the stop. A finished operation stays as it is. Returns the operation with its steps.',
+    'operation:cancel': 'Records a cooperative cancellation request for the native workflow and returns the current parent Operation. Swamp observes the request and records the terminal result. A finished Operation stays unchanged.',
     'gateway:release:rollback': 'Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Switches code only; restoring a database snapshot is an explicit operator step. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.',
     'gateway:release:list': 'Lists the 50 newest Gateway release records, newest first, including queued and running ones.',
     'gateway:release:show': 'Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.',
@@ -1245,12 +1240,6 @@ def rules_to_schema(rules_text, route_name=None):
         root['minProperties'] = 1
     if route_name == 'instance:update':
         root['properties']['shared_paths']['type'] = ['array', 'null']
-    if route_name == 'operation:executor:run':
-        root['properties'].pop('node_id', None)
-    if route_name.startswith('operation:executor:'):
-        for field in ('input', 'result'):
-            if field in root['properties']:
-                root['properties'][field] = {'type': 'object', 'additionalProperties': True}
     return clean_schema(root), body_required
 
 
@@ -1807,10 +1796,10 @@ def data_schema_for(route):
         return ref(cls), is_list
     if action in SDK_RESPONSE_FALLBACK:
         return sdk_schema(SDK_RESPONSE_FALLBACK[action]), False
+    if action == 'DirectOperationsController@failure':
+        return {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['failed', 'succeeded', 'cancelled']}}, 'required': ['id', 'status'], 'additionalProperties': False}, False
     if action in ('OperationsController@show', 'OperationsController@cancel'):
-        return {'allOf': [ref('OperationData'), {'type': 'object', 'properties': {
-            'steps': {'type': 'array', 'items': ref('OperationStepData'), 'description': 'The steps in order. With `after_sequence`, only the steps whose `sequence` is greater.'},
-        }, 'required': ['steps']}]}, False
+        return ref('OperationData'), False
     cands = [c for c in controllers.get(action, {}).get('data', []) if not INPUT_PREFIX.match(c) and c in gdata]
     is_list = action.endswith(('@index', '@processIndex', '@scheduleIndex'))
     if not cands:
@@ -1829,6 +1818,11 @@ def data_schema_for(route):
             'excluded_nodes': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
         }}]}, False
     return ref(cands[0]), is_list
+
+
+def direct_run_body():
+    return {'type': 'object', 'properties': {'run_id': {'type': 'string', 'format': 'uuid'}},
+            'required': ['run_id'], 'additionalProperties': False}
 
 
 # ---------------------------------------------------------------- build the document
@@ -1964,6 +1958,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] == 'tasks:worker':
         body_schema['required'] = ['worker']
         body_required = True
+    if route['name'] in ('operation:direct:failure', 'operation:direct:primitive'):
+        body_schema, body_required = direct_run_body(), True
     if route['name'] in ('conn:profile:settings:update', 'conn:profile:settings:patch'):
         body_schema, body_required = conn_settings_body(route['name']), True
     if route['name'] in ('process:create', 'process:update') and body_schema:
@@ -2144,8 +2140,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['202'] = envelope(ref('OperationData'), 'Accepted pending registration cleanup. Follow conn:operation:show.')
             responses['204'] = {'description': 'The registration cleanup revision is already complete.'}
         elif starts_operation:
-            if route['name'] == 'node:converge':
-                responses['200'] = envelope(ref('NodeFootprintData'), 'Swamp executor Nodes converge synchronously without a worker or Operation.')
             responses['202'] = envelope(ref('OperationData'), 'Accepted. The operation is queued; follow it with `operation:show`.')
             responses['503'] = error_response('The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.')
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):
@@ -2186,7 +2180,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['422'] = error_response('The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).')
     if params and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
         responses['404'] = error_response('No record matches the path parameters.')
-    if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
+    if starts_operation or (route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL):
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
         responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`.')

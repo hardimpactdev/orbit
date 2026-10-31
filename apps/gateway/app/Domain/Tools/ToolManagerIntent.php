@@ -29,6 +29,6 @@ final readonly class ToolManagerIntent
         }
         $input = $manager === ToolManagerName::Vp ? $this->vp->materializeInput($node) : ['user' => $node->user];
 
-        return [...$input, 'materialize_command' => $command, 'materialize_fields' => array_keys($input)];
+        return ['materialize' => $input];
     }
 }

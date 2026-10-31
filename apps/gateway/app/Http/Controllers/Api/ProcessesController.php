@@ -53,11 +53,6 @@ final class ProcessesController extends Controller
     public function store(StoreProcessRequest $request, CreateProcessAction $action): JsonResponse
     {
         $data = $request->payload();
-        if ($this->safety->requiresSynchronous($this->targets->resolve($data->targetType, $data->targetId)->node)) {
-            $result = $action->execute($data);
-
-            return $this->processResponse($request, $result['process'], $result['created'] ? 201 : 200);
-        }
 
         return $this->operationResponse($request, $action->admit($data, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
@@ -85,10 +80,6 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.stop')]
     public function stop(Request $request, Process $process, StopProcessAction $action): JsonResponse
     {
-        if ($this->synchronous($process)) {
-            return $this->processResponse($request, $action->execute($process));
-        }
-
         return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
@@ -125,13 +116,7 @@ final class ProcessesController extends Controller
     public function destroy(Request $request, string $process, DestroyProcessAction $action): JsonResponse
     {
         $record = Process::query()->findOrFail($process);
-        if ($this->synchronous($record)) {
-            $request->route()?->setParameter('process', $record);
-            $data = ProcessData::fromModel($record, 'absent')->toArray();
-            $action->execute($record);
-
-            return response()->json(['data' => $data, 'meta' => $this->meta($request)]);
-        }
+        $request->route()?->setParameter('process', $record);
 
         return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }

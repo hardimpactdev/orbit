@@ -8,9 +8,8 @@ use JsonException;
 use LogicException;
 
 /**
- * The commands of the pinned agent, read from `apps/agent/contract/commands.json`. Rust writes that file
- * from the compiled commands and a Rust test keeps it current, so the privilege, bound, and error codes
- * live in one place.
+ * The frozen published binary's command contract, captured with `orbit-agent contract`.
+ * Source registry changes cannot change the commands, privileges, or bounds of the deployed pin.
  */
 final class AgentContract
 {
@@ -31,6 +30,17 @@ final class AgentContract
     public function command(string $name): AgentCommandSpec
     {
         return $this->commands()[$name] ?? throw new LogicException("The agent contract has no command [{$name}].");
+    }
+
+    public function operationCommand(string $name): AgentCommandSpec
+    {
+        return $this->command($name);
+    }
+
+    /** @return list<string> */
+    public function operationNames(): array
+    {
+        return $this->names();
     }
 
     /** @return list<string> */

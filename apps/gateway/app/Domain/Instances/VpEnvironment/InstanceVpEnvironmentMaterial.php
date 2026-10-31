@@ -35,17 +35,17 @@ final readonly class InstanceVpEnvironmentMaterial
         $instance = Instance::query()->with(['node', 'project'])->findOrFail($operation->target_id);
         if ($operation->kind !== 'instance.prepare_vp_environment' || $operation->target_type !== 'instance'
             || $operation->node_id !== $instance->node_id || ($operation->input['instance_id'] ?? null) !== $instance->id
-            || $parent?->kind !== 'instance.deploy' || $parent->target_type !== 'instance'
+            || ! in_array($parent?->kind, ['instance.create', 'instance.deploy'], true) || $parent->target_type !== 'instance'
             || $parent->target_id !== $instance->id || $parent->node_id !== $operation->node_id
             || ($parent->input['instance_id'] ?? null) !== $instance->id) {
             throw $this->invalid();
         }
+        if ($parent->kind === 'instance.create') {
+            return [$instance, $parent, $instance->checkout_path];
+        }
         $intent = InstanceDeploymentIntent::admitted($parent);
-        $path = $intent['variant'] === 'development' ? $intent['home']
-            : (InstanceDeploymentIntent::storedRelease(InstanceExecutionEvidence::step($parent, 'source_preparation')['release'] ?? null)?->path);
-        $sources = $intent['variant'] === 'development'
-            ? [['key' => 'source.checkout', 'name' => 'instance.checkout-development-default']]
-            : [['key' => 'source.prepare', 'name' => 'instance.prepare-release']];
+        $path = InstanceDeploymentIntent::storedRelease(InstanceExecutionEvidence::step($parent, 'source_preparation')['release'] ?? null)?->path;
+        $sources = [['key' => 'source.prepare', 'name' => 'instance.prepare-release']];
         $proven = array_any($sources, static function (array $source) use ($parent): bool {
             $run = InstanceExecutionEvidence::run($parent, $source['key']);
 
@@ -63,16 +63,16 @@ final readonly class InstanceVpEnvironmentMaterial
         return [$instance, $parent, $path];
     }
 
-    /** @return array{path:string,environment:array<string,string|null>|null} */
+    /** @return array{path:string,requirements:array<string,string|null>|null} */
     public function plan(Operation $operation): array
     {
         [$instance, $parent, $path] = $this->target($operation);
-        if (! InstanceDeploymentIntent::admitted($parent)['needs_vp']) {
-            return ['path' => $path, 'environment' => null];
+        if ($parent->kind === 'instance.deploy' && ! InstanceDeploymentIntent::admitted($parent)['needs_vp']) {
+            return ['path' => $path, 'requirements' => null];
         }
         $environment = $this->requirements($instance, $path);
 
-        return ['path' => $path, 'environment' => $environment?->record('checking')];
+        return ['path' => $path, 'requirements' => $environment?->record('checking')];
     }
 
     public function npmrc(Operation $operation): string
@@ -80,7 +80,7 @@ final readonly class InstanceVpEnvironmentMaterial
         [$instance, , $path] = $this->target($operation);
         $configuration = $this->read($instance, $path);
         $environment = new VpProjectRequirements()->resolve($configuration, '/unresolved');
-        $admitted = ValidatedData::object($operation->state['vp_plan'] ?? [])['environment'] ?? null;
+        $admitted = ValidatedData::object($operation->state['vp_plan'] ?? [])['requirements'] ?? null;
         if ($environment?->record('checking') !== $admitted) {
             throw $this->invalid();
         }
@@ -112,6 +112,12 @@ final readonly class InstanceVpEnvironmentMaterial
     public function reference(Operation $operation, VpEnvironment $environment, string $status): void
     {
         [$instance, , $path] = $this->target($operation);
+        $this->recordReference($instance, $path, $environment, $status);
+    }
+
+    /** Store public pins for a checkout already validated by its owning parent. Performs no runtime action. */
+    public function recordReference(Instance $instance, string $path, VpEnvironment $environment, string $status): void
+    {
         DB::transaction(function () use ($instance, $path, $environment, $status): void {
             DB::table('nodes')->where('id', $instance->node_id)->update(['id' => $instance->node_id]);
             $previous = $this->checkoutReferences($instance->refresh()->getAttribute('vp_environment'), $instance->checkout_path);

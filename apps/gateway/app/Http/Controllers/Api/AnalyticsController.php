@@ -4,28 +4,31 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Analytics\AdmitAnalyticsUpdateAction;
 use App\Actions\Analytics\SetAnalyticsCredentialsAction;
 use App\Actions\Analytics\ShowAnalyticsCredentialsAction;
 use App\Actions\Analytics\UnsetAnalyticsCredentialsAction;
-use App\Actions\Analytics\UpdateAnalyticsAction;
 use App\Data\Analytics\AnalyticsCredentialsData;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Analytics\SetAnalyticsCredentialsRequest;
 use App\Http\Requests\Analytics\UpdateAnalyticsRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class AnalyticsController extends Controller
 {
-    public function update(UpdateAnalyticsRequest $request, UpdateAnalyticsAction $action): JsonResponse
+    #[StartsOperation('analytics.update')]
+    public function update(UpdateAnalyticsRequest $request, AdmitAnalyticsUpdateAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($request->version()),
+            'data' => OperationData::fromModel($action->execute($request->version()))->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], 202);
     }
 
     public function credentials(Request $request, ShowAnalyticsCredentialsAction $action): JsonResponse

@@ -8,6 +8,7 @@ use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
@@ -69,7 +70,9 @@ it('returns healthy services and deterministic exporter reasons', function (): v
         ->and(array_column($data['exporters'], 'name'))
         ->toBe(['disabled-node', 'enabled-node', 'metrics', 'role-node', 'roleless-node'])
         ->and(array_column($data['exporters'], 'reason'))
-        ->toBe(['explicit_disabled', 'explicit_enabled', 'metrics_node', 'role_default', 'roleless_default_excluded']);
+        ->toBe(['explicit_disabled', 'explicit_enabled', 'metrics_node', 'role_default', 'roleless_default_excluded'])
+        ->and($data['reconcile_status'])->toBe('healthy')
+        ->and($data['reconcile_error_code'])->toBeNull();
 });
 
 it('selects a node whose role is still provisioning', function (): void {
@@ -158,7 +161,74 @@ it('reports a skipped node as unknown with its recorded degradation reason', fun
             'degraded_reason' => 'unreachable',
         ])
         ->and($rows['metrics-degraded'])
-        ->toMatchArray(['actual' => 'active', 'degraded_reason' => null]);
+        ->toMatchArray(['actual' => 'active', 'degraded_reason' => null])
+        ->and($data['reconcile_status'])->toBe('degraded')
+        ->and($data['reconcile_error_code'])->toBe('metrics.exporter_unreachable');
+});
+
+it('degrades reconciliation until an explicitly desired exporter is active', function (string $actual): void {
+    $metrics = statusNode('metrics-exporter-recovery');
+    NodeRole::query()->create(['node_id' => $metrics->id, 'role' => 'metrics', 'status' => 'active']);
+    $node = statusNode('desired-exporter');
+    $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($node->id, ExporterPreference::Enabled);
+    $reader = new NativeMetricsStatusReader(
+        new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
+        new StatusRuntimeFake,
+        new StatusExporterFake([$node->id => $actual]),
+        app(ExporterDegradationRepository::class),
+    );
+
+    $data = $reader->status()->toArray();
+
+    expect($data['prometheus'])->toBe('healthy')
+        ->and($data['grafana'])->toBe('healthy')
+        ->and($data['reconcile_status'])->toBe('degraded')
+        ->and($data['reconcile_error_code'])->toBe('metrics.exporter_not_active');
+    expect(collect($data['exporters'])->keyBy('id')[$node->id])->toMatchArray([
+        'desired' => true, 'actual' => $actual, 'reason' => 'explicit_enabled',
+    ]);
+})->with(['inactive', 'drift', 'unknown']);
+
+it('keeps reconciliation healthy for an inactive exporter that is not desired', function (): void {
+    $metrics = statusNode('metrics-excluded-exporter');
+    NodeRole::query()->create(['node_id' => $metrics->id, 'role' => 'metrics', 'status' => 'active']);
+    $node = statusNode('excluded-exporter');
+    $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($node->id, ExporterPreference::Disabled);
+    $reader = new NativeMetricsStatusReader(
+        new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
+        new StatusRuntimeFake,
+        new StatusExporterFake([$node->id => 'inactive']),
+        app(ExporterDegradationRepository::class),
+    );
+
+    $data = $reader->status()->toArray();
+
+    expect($data['reconcile_status'])->toBe('healthy')
+        ->and($data['reconcile_error_code'])->toBeNull();
+});
+
+it('preserves a recorded reconcile error ahead of an inactive exporter observation', function (): void {
+    $metrics = statusNode('metrics-recorded-error');
+    NodeRole::query()->create(['node_id' => $metrics->id, 'role' => 'metrics', 'status' => 'active']);
+    $inactive = statusNode('inactive-exporter');
+    $failed = statusNode('failed-exporter');
+    $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($inactive->id, ExporterPreference::Enabled);
+    $preferences->put($failed->id, ExporterPreference::Enabled);
+    app(MetricsReconcileDegradationRepository::class)->put($failed->id, 'metrics.exporter_service_verify_failed');
+    $reader = new NativeMetricsStatusReader(
+        new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
+        new StatusRuntimeFake,
+        new StatusExporterFake([$inactive->id => 'inactive']),
+        app(ExporterDegradationRepository::class),
+    );
+
+    $data = $reader->status()->toArray();
+
+    expect($data['reconcile_status'])->toBe('degraded')
+        ->and($data['reconcile_error_code'])->toBe('metrics.exporter_service_verify_failed');
 });
 
 function statusNode(string $name): Node
@@ -188,6 +258,9 @@ final class StatusRuntimeFake implements MetricsRuntimeLifecycle
 
 final class StatusExporterFake implements MetricsExporterLifecycle
 {
+    /** @param array<int, string> $states */
+    public function __construct(private readonly array $states = []) {}
+
     public function converge(Node $node, NodeRole $assignment): void {}
 
     public function remove(Node $node, NodeRole $assignment): void {}
@@ -196,7 +269,7 @@ final class StatusExporterFake implements MetricsExporterLifecycle
 
     public function actual(Node $node): string
     {
-        return 'active';
+        return $this->states[$node->id] ?? 'active';
     }
 
     public function targets(Node $metricsNode): array

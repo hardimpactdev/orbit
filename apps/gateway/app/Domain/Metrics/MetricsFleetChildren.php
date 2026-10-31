@@ -112,11 +112,13 @@ final class MetricsFleetChildren
 
                             continue;
                         }
-                        $caddy = $this->add($operation, 'service-caddy-'.$node['node_id'], 'route.caddy_converge', $node['node_id'], ['reason' => 'metrics service projection']);
-                        if ($caddy?->status !== OperationStatus::Succeeded) {
-                            $ready = false;
-                            $fatal = $caddy?->status->terminal() ?? false;
-                            break;
+                        if ($node['caddy']) {
+                            $caddy = $this->add($operation, 'service-caddy-'.$node['node_id'], 'route.caddy_converge', $node['node_id'], ['reason' => 'metrics service projection']);
+                            if ($caddy?->status !== OperationStatus::Succeeded) {
+                                $ready = false;
+                                $fatal = $caddy?->status->terminal() ?? false;
+                                break;
+                            }
                         }
                         $healthyServices[] = $node;
                     }
@@ -186,7 +188,7 @@ final class MetricsFleetChildren
         if ($restore === null || ! $restore->status->terminal()) {
             return false;
         }
-        if ($component === 'service') {
+        if ($component === 'service' && $node['caddy']) {
             return $this->add($parent, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key])?->status->terminal() ?? false;
         }
 

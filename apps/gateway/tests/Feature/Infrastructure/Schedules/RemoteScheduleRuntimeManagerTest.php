@@ -18,7 +18,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
     $this->agents = new FakeAgentCommandRunner;
-    foreach (['schedule.install', 'schedule.activate', 'schedule.run', 'schedule.remove'] as $command) {
+    foreach (['schedule.install', 'schedule.activate', 'schedule.remove'] as $command) {
         $this->agents->answer($command, []);
     }
     $this->agents->answer('schedule.logs', ['output' => "older\nnewest\n", 'truncated' => false]);
@@ -129,18 +129,10 @@ it('maps each install refusal to its Schedule error', function (string $refusal,
     ['schedule.failed', 'install', ScheduleErrorCode::InstallFailed],
 ]);
 
-it('reports a Node that does not answer as unreachable', function (): void {
-    $this->agents->answer('schedule.run', fn () => throw new RuntimeException('ssh failed'));
-
-    expect(fn () => $this->manager->run($this->schedule))
-        ->toThrow(fn (ScheduleOperationException $exception) => expect($exception->error)->toBe(ScheduleErrorCode::NodeUnreachable));
-});
-
-it('runs the Schedule and reads its bounded newest logs', function (): void {
-    $this->manager->run($this->schedule);
+it('reads bounded newest Schedule logs', function (): void {
     $logs = $this->manager->logs($this->schedule, 25);
 
-    expect($this->agents->calls[1]['input'])->toBe(['id' => $this->schedule->id, 'lines' => 25, 'max_bytes' => 1_048_576])
+    expect($this->agents->calls[0]['input'])->toBe(['id' => $this->schedule->id, 'lines' => 25, 'max_bytes' => 1_048_576])
         ->and($logs->output)->toBe("older\nnewest\n")
         ->and($logs->truncated)->toBeFalse();
 });

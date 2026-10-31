@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useFleet } from "../api/queries";
 import type { Node } from "../api/types";
-import { useFleetMetrics, useFleetReach } from "../metrics/grafana";
+import { useFleetMetrics, useFleetReach, useTrackedNodeIds } from "../metrics/grafana";
 import type { NodeMetrics } from "../metrics/prometheus";
 import { Bar } from "../ui/Bar";
 import type { Column } from "../ui/Pane";
@@ -24,17 +24,20 @@ function NodeStatus({
     return dot ? <StatusDot {...props} /> : <Status {...props} />;
 }
 
-/**
- * The two node tables, for the dashboard and the Nodes page. A node with a role serves the fleet and
- * is scraped, so it has meters and reads online or offline; one without is a machine that only joins
- * the network. `wide` adds the columns the Nodes page has room for.
- */
+/** Shared tables group Nodes by exporter tracking; `wide` adds Node-list columns. */
 export function useNodeTables(wide = false) {
     const fleet = useFleet();
     const metrics = useFleetMetrics();
     const reach = useFleetReach();
-    const workers = useMemo(() => fleet.nodes.filter((n) => n.roles.length > 0), [fleet.nodes]);
-    const clients = useMemo(() => fleet.nodes.filter((n) => n.roles.length === 0), [fleet.nodes]);
+    const trackedIds = useTrackedNodeIds();
+    const workers = useMemo(
+        () => fleet.nodes.filter((n) => trackedIds.has(n.id)),
+        [fleet.nodes, trackedIds],
+    );
+    const clients = useMemo(
+        () => fleet.nodes.filter((n) => !trackedIds.has(n.id)),
+        [fleet.nodes, trackedIds],
+    );
 
     const workerColumns = useMemo<Column<Node>[]>(() => {
         const reachOf = (node: Node): boolean | null => reach[node.wireguard_ip ?? ""] ?? null;

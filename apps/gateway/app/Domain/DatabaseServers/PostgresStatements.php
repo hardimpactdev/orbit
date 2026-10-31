@@ -10,7 +10,7 @@ use SensitiveParameter;
 /** PostgreSQL SQL and psql commands. Passwords reach the server only as SCRAM verifiers. */
 final readonly class PostgresStatements
 {
-    public function ensureUser(string $username, #[SensitiveParameter] string $password, bool $replication = false): string
+    public function ensureUser(string $username, #[SensitiveParameter] string $password, bool $replication = false, bool $knownUser = true): string
     {
         $name = $this->identifier($username);
         $literal = $this->literal($username);
@@ -25,8 +25,11 @@ final readonly class PostgresStatements
         $serverKey = hash_hmac('sha256', 'Server Key', $salted, true);
         $verifier = 'SCRAM-SHA-256$4096:'.base64_encode($salt).'$'.base64_encode($storedKey).':'.base64_encode($serverKey);
 
-        return "DO \$orbit\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = {$literal}) THEN CREATE ROLE {$name} LOGIN; END IF; END \$orbit\$;\n"
-            ."ALTER ROLE {$name} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE {$attribute} PASSWORD ".$this->literal($verifier).";\n";
+        $credential = $this->literal($verifier);
+        $ownership = $knownUser ? '' : "IF EXISTS (SELECT FROM pg_authid WHERE rolname = {$literal} AND rolpassword IS DISTINCT FROM {$credential}) THEN RAISE EXCEPTION 'database.name_conflict'; END IF; ";
+        $attributes = "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE {$attribute} PASSWORD {$credential}";
+
+        return "DO \$orbit\$ BEGIN {$ownership}IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = {$literal}) THEN CREATE ROLE {$name} {$attributes}; ELSE ALTER ROLE {$name} {$attributes}; END IF; END \$orbit\$;\n";
     }
 
     public function createDatabase(string $database, ?string $locale = null, ?string $owner = null): string

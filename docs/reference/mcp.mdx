@@ -96,17 +96,17 @@ The agreed docs-first [fixed repository analysis](/reference/tasks#analyze-an-ex
 
 ```json
 {
-  "operation": { "id": 42, "kind": "instance.deploy", "status": "queued", "sequence": 1, "poll_after_seconds": 2, "...": "..." },
+  "operation": { "id": 42, "kind": "instance.deploy", "status": "queued", "sequence": 1, "...": "..." },
   "poll": { "tool": "operation-show", "after_seconds": 2 },
   "meta": { "request_id": "..." }
 }
 ```
 
-Call `operation-show` with `operation` and `after_sequence` set to the last `sequence` you have, after `poll.after_seconds`. Each reply returns the record, only the steps that changed, the new `sequence`, and `poll_after_seconds`: about 2 seconds at first and at most 15. Wait that long and call again, until `status` is `succeeded`, `failed`, or `cancelled`; `poll_after_seconds` is then null. A finished operation carries `result`, or `failed_step` and `error_code`. Each call is one database read.
+Call `operation-show` with the numeric `operation` ID after `poll.after_seconds`. Each reply returns the parent record, its status, result and error code. The MCP follow hint uses a fixed two-second interval; it does not depend on execution state. Repeat reads until `status` is `succeeded`, `failed`, or `cancelled`. Replies carry the current parent record, never step deltas or an output tail. Each call is one database read.
 
 `tasks-check` keeps `{ subtask, phase }` and its existing optional idempotency key. The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) adds `result.ci`, null for baseline/no-policy, without a new tool or caller-selected CI option. The Gateway still refuses external review-and-merge groups. A required-CI handoff waits for its push and hosted check; `result.commit` is the candidate HEAD, not the pre-commit `result.head`. Only a completed passed operation with passed CI on that check/commit supplies a candidate for reviewer or publish admission. Cancellation after push stops observation, not GitHub workflows, and preserves evidence. The generated tool input remains unchanged; [Tasks](/reference/tasks#check-an-external-group) owns the result fields and eligibility rule.
 
-After a lost context, `operation-list` with `status` set to `running` or `queued` finds the operations still at work. `operation-cancel` asks one to stop. The record maps onto the experimental MCP Tasks primitive: the operation ID is the task ID, `queued` and `running` are `working`, and `poll_after_seconds` is the poll interval. `laravel/mcp` does not support Tasks yet, so the tools carry the contract.
+After a lost context, `operation-list` with an unfinished status finds Operations still at work. `operation-cancel` asks one to stop. `laravel/mcp` does not support the experimental MCP Tasks primitive yet, so the tools carry the follow hint.
 
 `instance-rollback` takes `instance` and `release`. A release the Instance does not retain returns the tool error `rollback.release_not_retained` (status 422), and nothing changes. Its operation is an `instance.rollback`, which cancels a deploy of the Instance that no worker has started ([One operation at a time](/reference/deployments#one-operation-at-a-time)). Each step keeps the last 8 KiB of its output. To read the full output of a deploy or rollback, call `instance-deployment-show` with the `deployment_id` from `result`; it returns the [stored deployment log](/cli/instance#orbit-instancedeploymentshow).
 

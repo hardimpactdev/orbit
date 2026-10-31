@@ -214,6 +214,13 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         if (in_array($run['key'], ['source-profile', 'clone-source-profile'], true)) {
             return $this->classifyProfile($operation, $run['transport'] === 'gateway' ? ['kind' => 'none'] : $receipt);
         }
+        if ($operation->kind === 'instance.create' && $run['key'] === 'source-configuration') {
+            if (($receipt['environment_template'] ?? null) !== ['$secret' => 'instance.create_environment', 'id' => $operation->target_id]) {
+                throw $this->forbidden();
+            }
+
+            return ['written' => true];
+        }
         if ($operation->kind === 'instance.register') {
             return app(RegistrationLifecycleExecution::class)->received($operation, $run, $receipt);
         }
@@ -439,7 +446,6 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             return [$this->inspect($operation, 'source-inspect'), ...$database];
         }
         $source = $this->source($operation);
-        $profile = $this->recordedResult($operation, 'source-profile');
         $instance = $this->state->instance($operation);
 
         return [
@@ -460,9 +466,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
                     'application' => $instance->applicationDirectory(), 'owner' => $source['user'],
                     'entry_point' => $instance->project->type->frameworkEntryPoint(),
                 ]),
-            ($profile['laravel'] ?? false) && isset($input['route_domain'])
-                ? $this->url($operation, 'source-configuration', $instance, ValidatedData::string($input['route_domain']))
-                : $this->descriptor('source-configuration', 'gateway', 'instance.lifecycle-state', ['action' => 'configuration', 'operation_id' => $operation->id]),
+            $this->descriptor('source-configuration', 'instance_lifecycle', 'instance.read-development-environment-template', [
+                ...$source, 'application' => $instance->applicationDirectory(), 'commit' => $instance->starting_commit,
+            ]),
             $this->descriptor('instance-activate', 'gateway', 'instance.lifecycle-state', ['action' => 'activate', 'operation_id' => $operation->id]),
             ...$database,
         ];

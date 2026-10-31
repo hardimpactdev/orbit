@@ -36,7 +36,7 @@ final readonly class ConnOperationSecrets implements OperationSecretSource
         if ($this->ownerId($operation) !== $id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Conn session does not belong to this Operation.', 422);
         }
-        if ($operation->kind === 'conn.pairing_create' && ! ConnPairing::query()->whereKey($operation->target_id)->where('conn_environment_id', $id)->where('node_id', $operation->input['caller_node_id'])->exists()) {
+        if ($operation->kind === 'conn.pairing_create' && ! ConnPairing::query()->whereKey($operation->target_id)->where('conn_environment_id', $id)->where('node_id', $operation->input['caller_node_id'])->whereNull('revoked_at')->exists()) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The pairing has another environment owner.', 422);
         }
         if ($operation->kind === 'conn.pairing_revoke' && $operation->target_id !== ($operation->input['subject_node_id'] ?? null)) {
@@ -46,6 +46,9 @@ final readonly class ConnOperationSecrets implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup has another environment owner.', 422);
         }
         $environment = ConnEnvironment::query()->findOrFail($id);
+        if ($operation->kind === 'conn.gateway_sessions_revoke' && $environment->cleanup_version !== $operation->input['cleanup_version']) {
+            throw new ResourceOperationException('conn.environment_changed', 'The cleanup revision changed.', 409);
+        }
 
         return new OperationSecretValue(new ConnExecutionInput(['url' => $environment->url, 'admin_session' => $environment->admin_session, 'id' => $environment->id]), [$environment->admin_session]);
     }

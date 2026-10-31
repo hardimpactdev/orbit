@@ -21,6 +21,10 @@ Instance deploy, rollback, [task provision](/reference/tasks#provision-an-extern
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
+## Native public participants
+
+A direct Operation may admit immutable `input.participant_node_ids`. A foreign participant may use the existing direct-operation GET with the bound root run ID while the parent is unfinished. A projection implementing `DirectOperationPublicView` asserts its participant ownership and returns fresh public input for that authenticated Node. The response preserves the parent Node identity, omits the parent result and uses `Cache-Control: no-store`. Participation grants neither a result POST nor private-material access; those have their own shared authorization.
+
 ## The record
 
 `input` is the stored argument object. Operations with no arguments serialize it as an empty array (`[]`).
@@ -74,6 +78,8 @@ Executor responses encode map fields as JSON objects, including empty Operation 
 
 A Swamp parent admits children through its owning family's `OperationFamilyChildren::childContext()`. The context returns exact keyed intents `{key,kind,node_id,input}` from admitted input or prepared Gateway state. The parent kind declares allowed child kinds and Node relations. Each child kind registers an `OperationChildAdmission` adapter that calls its normal owning admission action. Swamp posts `{worker,key}` to `operation-executor/{parent}/children`; optional kind, Node and input fields are exact assertions only. Repeating a key returns the same child before repeating family admission.
 
+A child receipt omits executor worker, lease, waiting, step-result and execution-context fields when its kind is direct-only, including an older row without a direct writer stamp. It retains the recorded status and nullable result. This read does not restore an execution contract or admit another child.
+
 The Gateway stamps `parent_operation_id`, `child_key` and an admission fingerprint. `OperationChildren::requireSucceeded(parent,key)` verifies the child's exact recorded target, input and constraints before returning its result. Parents cannot finish while any admitted child is nonterminal. A `children_succeeded` completion contract requires matching successful children, including each eligible keyed intent. Unsupported guarantees fail when the kind loads; families check `OperationKinds::supports()` before registration.
 
 A same-target child inherits the ancestor's target hold, including chains such as `node.add -> node.role_add -> node.converge`. Child completion releases only its own hold. An unrelated start remains busy until the ancestor ends. A child on another target acquires the normal hold for that target.
@@ -108,6 +114,7 @@ Use the kind and target type to start or find the work of a command.
 | --- | --- | --- | --- |
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
+| `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
 | `tasks:park` | `tasks.park` | `task_group` | Gateway |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `POST /api/v1/task-groups/{group}/worker` | `tasks.worker` | `task_group` | Gateway |
@@ -393,9 +400,7 @@ Cancellation stops observation and reports unknown; it never resends or cancels 
 
 ## Swamp execution
 
-The inactive `orbit.family/v1` build format uses a closed catalogue exported by `bin/export-family-catalogue`. Agent command names and mutation flags come from the pinned `apps/agent/contract/commands.json`. Gateway-local commands come from the existing family command registrations. Projection and invariant names resolve only to registered code. Native method bindings are registered with their implemented typed adapters. The initial catalogue has no command method bindings. Families that execute commands cannot adopt it yet.
-
-`OperationFamilyContract::load` accepts only a local compiler artifact with a matching code-owned release digest and the exact installed catalogue digest. It rejects unknown commands and hooks. The release pin never comes from an Operation or Swamp input. This loader registers no kinds and changes no current family. Shared admission, run identity, completion and secret-reference adapters must land before adoption. The compiler and its native step binding rules live in `hardimpactdev/orbit-swamp`, `docs/family-v1.md`.
+Author native workflows in `hardimpactdev/orbit-swamp`. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader. The claim-based API below remains for kinds still being converted.
 
 A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway never dispatches a PHP job for it. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
 
@@ -413,7 +418,13 @@ Each family supplies tagged resolvers for protected values and redaction strings
 
 Each kind declares a closed list of allowed transport/name pairs, typed input bindings to admitted intent, a successful step/result completion contract, and scalar result fields that may be retained. The Gateway validates agent input against the exported schema; RemotePrograms require an explicit input schema. Run targets come only from the Operation, and a supplied target or unlisted command receives `operation.execution_forbidden`. Successful completion requires a recorded successful Node run and matching step, or returns `operation.completion_unproven`.
 
-Immediately before a new Node command, the Gateway rechecks status, worker lease and cancellation. Cancellation returns a keyed `operation.cancelled` refusal without invoking the Node; a saved successful receipt can still be completed. Step names support dotted phase names such as `setup.install`. Step and completion error codes contain only lowercase letters, digits, underscores, dots and hyphens. Undeclared result fields are dropped; retained values, logs and errors pass through the existing secret redactor before storage or return.
+Immediately before a new Node command, the Gateway rechecks status, worker lease and cancellation. Cancellation returns a keyed `operation.cancelled` refusal without invoking the Node; a saved successful receipt can still be completed. Step names support dotted phase names such as `setup.install`. Step and completion error codes contain only lowercase letters, digits, underscores, dots and hyphens.
+
+Undeclared result fields are dropped. Structured result sensitivity follows the kind’s `result_fields` declarations: secret outputs use their declared stores and return owning-record references.
+
+Kind loading rejects public result paths containing a secret word, including nested and list fields, unless the exact path is `key`, `skipped.key`, `child_phases.key`, `public_key`, `host_key_fingerprint` or `key_count`. Other secret-named results require a declared secret output. Public fields such as `environment` keep their declared structure. Boolean completion proofs keep their native type.
+
+Hydrated secret values and secret text patterns remain masked before projection, storage or return; numeric masks never coerce booleans. Activity inputs, logs and errors retain their existing redaction rules.
 
 Firewall `allow`, `deny` and `remove` use Swamp. Their normal commands validate and record managed intent before returning the Operation. Firewall list, live-list, managed-list and fleet-list remain reads in Orbit. The agent's existing `firewall.rule` command converges or removes the exact owned UFW rule. The conversion recipe is maintained in `hardimpactdev/orbit-swamp`, `docs/conversion-kit.md`.
 
@@ -503,3 +514,97 @@ The destination execution class implements `OperationFamilyArchiveRelay::archive
 Kind loading refuses an archive relay without that family interface. The reader's archive or SQLite path must match the proven producer receipt. Before staging, the Gateway checks free space for the archive plus the larger of 64 MiB or ten percent. Binding, download, integrity or cancellation failures before destination dispatch leave the run unstarted and retryable. A previous uncertain destination attempt stays uncertain; a later preparation failure cannot erase it.
 
 The source producer and destination receiver have separate keyed receipts. A lost destination reply uses the existing target receipt route, with the original effect identity. Recovery never downloads the archive or resolves payload secrets again. Gateway staging is an unlinked private file closed in `finally`. Families keep their source artifact until the destination outcome is proven, then remove only that artifact through a named cleanup child on success or failure. Cancellation uses declared compensation children and their proven boundary; destination discard and source checkout removal remain separate effects.
+
+## Executor health
+
+The Gateway runs `orbit:operations-check` every minute for every registered Swamp kind, independently of Swamp. Queued work without an executor for five minutes reports `operation.executor_unclaimed`; a waiting parent reports the same code while a child has been unclaimed that long. Running or waiting work without an Operation sequence change for fifteen minutes reports `operation.no_progress`. More than three attempts reports `operation.reclaim_churn`.
+
+A direct `node.converge` whose target worker is offline remains covered after its native run is bound. Five minutes queued raises `operation.executor_unclaimed` and records one Activity alert per health change. Restore the exact target worker and inspect the existing native run before recovery; do not create another intent or claim the Operation from the Gateway. See [break-glass Node recovery](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209).
+
+The primary code appears in `operation:show` assistance, including owner-checked family reads. Existing execution proof assistance takes priority, followed by unclaimed work, no progress and reclaim churn. Activity records each health change once and records recovery once. Health checks never execute, cancel or release an Operation. Terminal work clears its computed assistance.
+
+A Swamp Operation has at most five execution attempts. After the fifth lease expires, the next claim parks it as `waiting` with `operation.reclaim_limit` assistance and keeps its target hold and receipts. Replaying a live claim or resuming a proven child wait spends no additional attempt. Read-only discovery can dispatch one final claim to park exhausted work; it does not change the Operation itself.
+
+### Resume after the reclaim limit
+
+An operator can resume this parked Operation with `orbit operation:resume <id>` (`POST /api/v1/operations/{operation}/resume`, empty JSON object). Under the Operation lock, resume resets attempts to zero, clears reclaim-limit assistance and queues the same Operation for Swamp. It preserves intent, steps, receipts and the target hold. Activity records the caller, Operation and outcome. Resume returns the Operation with its steps and never waits for execution.
+
+A repeated request after the reset, another assistance code, a terminal Operation, a non-Swamp kind or a pending cancellation returns HTTP 409 `operation.not_resumable` without changing the Operation. Each new reclaim-limit stop needs an explicit operator resume; there is no automatic reset. Cancellation still uses the normal proof-aware path.
+
+## Direct Swamp starts
+
+Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` submits the committed intent through native `workflow.run` and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. The immutable Operation ID supplies the stable `orbit_start_key` runtime tag. Connection and reply budgets follow the native client's 15-second connection and 30-second request defaults.
+
+If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal ends that submission call without resubmission.
+
+An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. Bound, terminal and cancellation-requested intents make no native request. Reads remain side-effect free. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
+
+This is bounded submission recovery, with no job, timer, execution retry or history poll. Native runtime tags support lookup; they do not provide atomic start deduplication. The recorded run binding remains required before a workflow can read intent or invoke a primitive. Swamp alone waits for this initial binding: its shared first read retries only `409 operation.run_unbound`, once per second for up to 90 seconds. Cancellation ends that wait. Other errors and all mutations remain single attempts.
+
+A declaration names the workflow, writer configuration path, immutable writer-state field and a typed projection hook. New families use the common `swamp.direct_writers` map (`ORBIT_SWAMP_DIRECT_WRITERS` JSON keyed by exact kind, default `{}`). Families add no token, controller or HTTP routes. Routes retain their existing per-kind settings and `route_publication_writer` field.
+
+After a kind cuts over and removes its previous executor, its `operation-kinds.php` entry contains only `executor: 'swamp'`, `result_fields`, and optional `admission`. Its matching `direct-operations.php` declaration supplies the workflow and projection. The registry resolves that projection without requiring old `runs`, completion handlers or receipt proofs. These direct-only kinds default to the direct writer; an explicit polled setting, a scope mismatch or a missing direct declaration refuses admission rather than falling back to deleted code. The previous executor's claim, execution and completion paths also refuse them. Rollback reverts the kind's cutover PR.
+
+A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
+
+Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
+
+A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
+
+`firewall.allow`, `firewall.deny` and `firewall.remove` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors, receipt proofs and legacy execution tests are removed. Rollback is a revert PR, which restores both admission and the previous execution contract.
+
+All Tool kinds use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy, manager child admission and receipt adapters are removed. Swamp materializes the admitted manager and applies package policy locally. The Gateway retains typed manager and Tool result projection.
+
+Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
+
+Undeclared or unstamped Operations stay on their previous Swamp path. The helper rejects a PHP writer. Families keep their own authorization, input and result validation; shared projection only records bounded status/results and native run identity. It adds no execution policy.
+
+The optional typed primitive hook is reserved for shared generic Gateway primitives, such as Route/Caddy publication or scoped token minting. New family execution relays are refused; family actions run on their Node worker.
+
+Direct workers authenticate as active WireGuard peers. Direct requests authorize the bound run and immutable participant and field bindings. They require no Gateway access grant. A TaskVM participant receives only its admitted public view and readable private fields, and may store only explicitly writable fields.
+
+Only the root Node may send result, failure or primitive requests. Other Gateway APIs keep their Node access checks. Participation never grants general access to the Gateway or another Node.
+
+Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase without remote diagnostics or credentials.
+
+Read input comes only from the projection hook, never automatically from raw intent. Primitive calls accept only the run ID; the hook selects its command and input from admitted state. Existing Route publication URLs reach the same shared controller during the Swamp rollout.
+
+| Shared endpoint | Contract |
+| --- | --- |
+| `GET /api/v1/direct-operations/{operation}?run_id=UUID` | Safe admitted input, status, result and cancellation request |
+| `POST /api/v1/direct-operations/{operation}/result` | Run ID, status, timestamps, bounded result and error code |
+| `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
+| `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
+| `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
+
+A family may declare `github_token: {repository: "owner/name", permissions: {contents: "write", pull_requests: "write"}}` and `private_material: {github: "github.installation"}` in its checked-in declaration. Its admitted input records `github: {$secret: "github.installation", id: <Operation Node ID>}`. The shared `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` resolves that owned reference and returns the credential under `data.github`. It refuses undeclared grants, cancelled intents and terminal Operations. Repository and permissions never come from workflow input. The closed permission names are `contents`, `pull_requests`, `checks`, `actions` and `metadata`; checks, actions and metadata are read-only. No mint route or family transport is added.
+
+The Gateway keeps the GitHub App signing key and mints a fresh token for exactly that repository and permission map. It validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. The mint response may omit its optional `repositories` field. The next query uses the new token and proves which repository it can read. A failed scope check refuses delivery and attempts to revoke the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies.
+
+The private `no-store` response contains `repository`, `permissions`, `token` and `expires_at`. This response bypasses public Operation result filtering without changing `result_fields`; the credential is never projected into an Operation, step, receipt, Activity or shared token cache. Each successful mint records one token-free Activity with the Operation, bound run, caller Node, repository, permissions and expiry.
+
+Swamp mints once per native step through the effect-only private-material callback, outside any item loop, and uses the credential only in worker memory for fixed GitHub/git calls, never package or repository code. The shared client attempts to revoke it with `DELETE https://api.github.com/installation/token` when the callback ends, including failures. Revocation is best effort: a failure reports only `operation.github_token_revoke_failed`, preserves the GitHub action's result or refusal, and never changes a successful write into a failed step. A client instance permits only one mint attempt.
+
+Mint callers must match the Operation's Node, including control-plane workflows. The shared private reader grants no Services or Node209 exception for a Gateway14-owned intent. A control-plane consumer must admit the intent on its actual executing Node before using this source. The action refreshes and checks the run, Node, writer and lifecycle before and after minting. A mismatch after minting refuses the private response and attempts to revoke the new token. Safe intent reads and result projection keep their existing authority.
+
+Each adopting family must bound mints per native run and make its GitHub writes idempotent. The shared client's one-attempt limit applies to one instance; it does not impose a run-wide cap across steps or resumed executions. Reconcile an uncertain write before retrying it.
+
+The shared client refuses a callback result that contains the credential and sanitizes callback failures. A declaration is a credential-authority change and needs access review before adoption. Gateway deployment precedes the paired client consumer.
+
+On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
+
+`instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. The unconverted lifecycle kinds, including `instance.rename`, use their existing polled workflow. Rename has no dormant direct writer or binding-only canary. Its complete direct cutover must include branch and Route behavior, the writer change, and deletion of the polled dispatch and execution path.
+
+Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
+
+### Private material transport
+
+A direct declaration may map `private_material` input paths to registered `OperationSecretSource` names and `secret_outputs` output names to registered `OperationSecretOutputStore` names. The shared endpoints accept no caller-selected source, store, owner or Node. Reads hydrate only those admitted references; writes call the registered store with its existing owner checks and preconditions. They perform no execution and record no receipt.
+
+Declared private fields use the same fixed credential wire serializer as agent commands, including typed values nested inside those fields. A `GitReadEnvironment` becomes `{github_token: string|null}`, and an `AgentGitHubToken` becomes its token string. Arrays, scalar values and null keep their shape. This normalization neither hydrates undeclared input nor changes the caller, owner or native run checks.
+
+Both paths require the recorded native run ID, an unfinished direct Operation, and an active peer with Gateway access whose caller Node equals `Operation.node_id`. The Services peer has no fleet bypass on these paths. Responses use `Cache-Control: no-store`; Activity records no request body, and MCP excludes both endpoints. Private material and output values never enter Operation input, state, results, steps or logs. Swamp consumes them in memory or protected stdin; it must not write them to arguments or resources.
+
+A declared `OperationArtifactSource` may return a bounded existing-file reference: a relative private-read path, SHA-256, byte count and the shared 256 MiB maximum. `GET` on the same private-material path with `artifact=FIELD` serves only that declared artifact field, with the same Node, run and unfinished-Operation checks. It accepts no file path or source from the caller. The Gateway rejects symlinks, oversized files and digest mismatches. The worker bounds the download and verifies the admitted digest before use. No binary is embedded in JSON and no public artifact URL is added.
+
+`DirectOperationResultProjection` supplies the common atomic status/result transaction for extension families. Their fixed `result_hook` validates safe input and domain metadata; the result hook invokes its existing domain completion. Conn’s issue observations update its existing pairing metadata before the registered credential store accepts the output. No family transport or result controller is added.

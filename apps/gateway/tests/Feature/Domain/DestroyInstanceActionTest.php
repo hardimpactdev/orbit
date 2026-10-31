@@ -101,6 +101,26 @@ describe('reserved worktree removable', function (): void {
     });
 });
 
+it('recognizes only receipt-bound unresolved seeded worktrees as interrupted creation', function (array $change, bool $expected): void {
+    $instance = reserved_removal_instance();
+    $instance->fill(['status' => InstanceState::CheckoutPrepared, 'task_workspace_routed' => null,
+        'seed_repository' => '/srv/orbit/apps/reserved-removal/default', 'seed_commit' => str_repeat('a', 40), ...$change]);
+
+    expect(InstanceCreationRecovery::isPreActivation($instance))->toBe($expected);
+    if ($expected) {
+        $instance->status = InstanceState::Removing;
+        expect(InstanceCreationRecovery::isPreActivation($instance, removing: true))->toBeTrue();
+    }
+})->with([
+    'recorded prepared worktree' => [[], true],
+    'no preparation ID' => [['source_prepare_id' => null], false],
+    'no seed repository' => [['seed_repository' => null], false],
+    'no seed commit' => [['seed_commit' => null], false],
+    'resolved source' => [['starting_commit' => str_repeat('b', 40)], false],
+    'registered source' => [['registration_request_id' => 'registration-1'], false],
+    'activated source' => [['status' => InstanceState::Active], false],
+]);
+
 describe('PHP-FPM pool withdrawal', function (): void {
     it('withdraws the pool and reloads PHP-FPM before it deletes the task workspace source', function (): void {
         $instance = reserved_removal_instance();

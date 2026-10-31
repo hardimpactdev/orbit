@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -11,8 +12,6 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
@@ -27,7 +26,7 @@ use Throwable;
  * Hands the Gateway's long-running processes over to the release that is now current. It runs in that release, so
  * a release that changes what the Gateway renders applies it at once:
  *
- * 1. Caddy publishes the Node's Caddyfile only when it changed, with a graceful reload.
+ * 1. A native Caddy root receives the publication intent; its Operation records the final result.
  * 2. PHP-FPM reloads only when the rendered pool differs from the live pool. Requests keep running otherwise.
  * 3. The hibernator, agent-view, and release units are installed again; agent-view restarts on the new code.
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
@@ -59,7 +58,7 @@ final readonly class GatewayRuntimeHandoff
      * @param  (Closure(): void)|null  $recipeImages  reconcile the newly deployed recipe without running builds inline
      */
     public function __construct(
-        private NodeCaddyBuilds $builds,
+        private StartOperationAction $operations,
         private GatewayFpmConfigRenderer $fpmRenderer,
         private NativeGatewayFpmConverger $fpm,
         private RuntimeHibernatorConverger $hibernator,
@@ -119,7 +118,8 @@ final readonly class GatewayRuntimeHandoff
         $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? 'none');
 
         return [
-            'caddy' => $caddy,
+            'caddy' => $caddy['outcome'],
+            'caddy_operation_id' => $caddy['operation_id'],
             'fpm' => $fpm,
             'agent_view' => 'restarted',
             'horizon' => $horizon,
@@ -203,20 +203,15 @@ final readonly class GatewayRuntimeHandoff
         return $node;
     }
 
-    private function caddy(Node $gateway): string
+    /** @return array{outcome:string,operation_id:int} */
+    private function caddy(Node $gateway): array
     {
-        try {
-            return $this->builds->build($gateway)->value === 'published' ? 'reloaded' : 'unchanged';
-        } catch (NodeCaddyBuildException $exception) {
-            throw new GatewayReleaseException(
-                step: 'handoff',
-                errorCode: 'gateway.release_caddy_failed',
-                message: 'The Gateway Caddyfile could not be published: '.$exception->getMessage(),
-                status: 500,
-                previous: $exception,
-                result: $exception->result(),
-            );
-        }
+        $operation = $this->step('caddy', 'gateway.release_caddy_failed', fn () => $this->operations->execute(
+            'route.caddy_converge', 'node_route_projection', $gateway->id, $gateway->id,
+            ['reason' => 'Gateway release handoff'], 'gateway-release', null,
+        ));
+
+        return ['outcome' => 'submitted', 'operation_id' => $operation->id];
     }
 
     /**
