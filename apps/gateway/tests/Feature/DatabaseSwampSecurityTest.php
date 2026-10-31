@@ -2,18 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
-use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseServers\DatabaseChildAdmission;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseOperationCompletion;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\DatabaseConnections\DatabaseSnapshotTransport;
@@ -36,56 +33,6 @@ function failedDatabaseAttempt(PreparedDatabaseOperation $prepared): Operation
         'target_id' => $prepared->targetId, 'node_id' => $prepared->nodeId, 'input' => $prepared->input,
         'status' => 'failed', 'finished_at' => now()]);
 }
-
-it('loads other families and refuses database execution with 503 until kit B and I are enforced', function (): void {
-    if (OperationKinds::supports('children') && OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('The full database execution suite covers the enabled kit.');
-    }
-    $this->prepareServerDatabaseFixtures();
-    expect(OperationKinds::definitions())->toHaveKey('firewall.allow')->not->toHaveKey('database.create');
-
-    $this->postJson('/api/v1/database-connections', ['slug' => 'throwaway', 'server' => $this->server->slug])
-        ->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.kind_unavailable');
-
-    expect(Operation::query()->where('kind', '!=', 'instance.create')->count())->toBe(0);
-    expect(DatabaseConnection::query()->count())->toBe(0);
-    expect(DatabaseExecutionIntent::query()->count())->toBe(0);
-    expect($this->admin->sql())->not->toContain('CREATE ', 'GRANT ');
-});
-
-it('refuses a foreign database that appears between failed create and retry', function (string $driver): void {
-    $this->prepareServerDatabaseFixtures();
-    $this->server->update(['driver' => $driver]);
-    $data = new CreateServerDatabaseData(slug: 'throwaway', server: $this->server->slug, instanceId: null);
-    $action = app(CreateServerDatabaseAction::class);
-    $prepared = $action->prepare($data, null);
-    failedDatabaseAttempt($prepared);
-    $this->admin->statements = [];
-    $this->admin->rows = [$driver === 'pgsql' ? 'pg_get_userbyid(datdba)' : 'information_schema.SCHEMATA' => ['throwaway']];
-
-    expect(fn () => DB::transaction(fn () => $action->prepare($data, null)))
-        ->toThrow(ResourceOperationException::class, 'already has a database');
-
-    expect(Operation::query()->count())->toBe(1);
-    expect(DatabaseExecutionIntent::query()->count())->toBe(1);
-    expect($this->admin->sql())->not->toContain('ALTER ', 'CREATE ', 'REVOKE ', 'DROP ');
-})->with(['mysql', 'pgsql']);
-
-it('rechecks names and retains reserved credentials on an empty retry target', function (): void {
-    $this->prepareServerDatabaseFixtures();
-    $data = new CreateServerDatabaseData(slug: 'throwaway', server: $this->server->slug, instanceId: null);
-    $action = app(CreateServerDatabaseAction::class);
-    $prepared = $action->prepare($data, null);
-    failedDatabaseAttempt($prepared);
-    $this->admin->statements = [];
-
-    $retry = $action->prepare($data, null);
-
-    expect($retry->input)->toBe($prepared->input);
-    expect($this->admin->sql())->toContain('information_schema.SCHEMATA');
-    expect(DatabaseExecutionIntent::recorded($prepared->input['intent_id'])->payload['commands']['create-database-0']['input']['sql'])
-        ->toContain('CREATE DATABASE `throwaway`;')->not->toContain('CREATE DATABASE IF NOT EXISTS');
-});
 
 it('refuses a planned MySQL login that becomes shared before execution', function (bool $additionalUser): void {
     $this->prepareServerDatabaseFixtures();

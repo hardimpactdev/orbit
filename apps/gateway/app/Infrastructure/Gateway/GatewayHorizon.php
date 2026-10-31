@@ -98,7 +98,7 @@ final readonly class GatewayHorizon
     private function create(Node $gateway, Process $scheduler): void
     {
         $command = $scheduler->runtime_config['command'] ?? null;
-        $this->processes->execute(new AddProcessData(
+        $this->processes->bootstrapHorizon(new AddProcessData(
             targetType: ProcessTargetType::Node,
             targetId: $gateway->id,
             name: self::Name,

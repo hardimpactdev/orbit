@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseCleanupProjection;
+use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
@@ -13,6 +14,18 @@ return ['database_server.create' => [
     'writer_state' => 'database_server_create_writer',
     'projection' => DatabaseServerCreateProjection::class,
     'private_material' => ['password' => 'database.intent', 'environment' => 'database.intent', 'acl' => 'database.intent', 'payload' => 'database.intent'],
+], 'database.mysql_clone' => [
+    'workflow' => 'operation-database-mysql-clone',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'database_mysql_clone_writer',
+    'projection' => DatabaseCreateProjection::class,
+    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
+], 'database.create' => [
+    'workflow' => 'operation-database-create',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'database_create_writer',
+    'projection' => DatabaseCreateProjection::class,
+    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
 ], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'writer_config' => 'swamp.direct_writers',
