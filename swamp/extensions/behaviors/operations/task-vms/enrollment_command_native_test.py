@@ -305,6 +305,10 @@ print("inactive" if (root / "inactive").exists() else "active")
         self.cli("workflow", "validate", "task-vm-runtime-command-confirm")
         self.run_confirm()
         self.assertEqual(self.requests, [("/capabilities", True)])
+        self.assertEqual(
+            json.loads(self.calls.read_text())[-1],
+            ["is-active", "--", "orbit-process-55-pi-server.service"],
+        )
         outputs = []
         for path in (self.repo / ".swamp/data").rglob("raw"):
             try:

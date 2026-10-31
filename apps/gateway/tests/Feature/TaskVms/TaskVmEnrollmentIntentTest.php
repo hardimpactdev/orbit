@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
+use App\Domain\TaskVms\TaskVmEnrollmentWorkflowInput;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\VpnSettings;
@@ -58,6 +59,26 @@ function nativeEnrollmentVm(): TaskVm
 
     return $vm;
 }
+
+it('keeps the canonical Process unit name in command-step public intent', function (): void {
+    $vm = nativeEnrollmentVm();
+    $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
+    $nodeId = $vm->fresh()->node_id;
+    $hostId = $vm->host_node_id;
+    $public = app(TaskVmEnrollmentWorkflowInput::class)->fromCaptured($intent, [
+        'gateway_node_id' => $hostId, 'issuer_node_id' => $hostId, 'model_router_node_id' => $hostId,
+        'model_origin' => TaskVmSettingsBuilder::Origin, 'participant_node_ids' => [$hostId, $nodeId],
+        '_wireguard' => ['schema_version' => 1, 'executor_node_id' => $hostId, 'hub_id' => $hostId,
+            'context_node_id' => $nodeId, 'excluded_node_id' => null, 'agent_sha256' => str_repeat('a', 64)],
+        'network' => ['server_public_key' => str_repeat('a', 43).'=', 'endpoint' => 'vpn.example.test:51820',
+            'address' => '10.44.0.129/32', 'subnet' => '10.44.0.0/16', 'dns_server' => '10.44.0.1', 'domains' => ['orbit']],
+    ], ['address' => null, 'public_key' => null]);
+
+    expect(data_get($public, 'runtime.process.name'))->toBe('orbit-process-'.Process::query()->sole()->id.'-pi-server.service');
+    expect(data_get($public, 'runtime.process.process_id'))->toBe(Process::query()->sole()->id);
+    expect($public['runtime'])->toBe($intent['runtime']);
+    $this->assertDatabaseCount('operations', 0);
+});
 
 it('records one workerless guest and Pi Process intent without running or admitting children', function (): void {
     $vm = nativeEnrollmentVm();

@@ -54,7 +54,7 @@ export function commandIntent(): zIntent {
             models: ["one"],
             process: {
                 process_id: 55,
-                name: "pi-server",
+                name: "orbit-process-55-pi-server.service",
                 runtime: "systemd",
                 content_hash: "c".repeat(64),
                 desired: "running",
@@ -126,6 +126,7 @@ Deno.test("public command intent refuses cross-VM and cross-Node placements", ()
         (v) => v.node.node_id = 213,
         (v) => v.runtime.guest_node_id = 213,
         (v) => v.runtime.agent_sha256 = "b".repeat(64),
+        (v) => v.runtime.process.name = "orbit-process-56-pi-server.service",
         (v) => v.model_origin = "https://foreign.example.test",
         (v) => v._wireguard.executor_node_id = 13,
         (v) => v._wireguard.context_node_id = 213,

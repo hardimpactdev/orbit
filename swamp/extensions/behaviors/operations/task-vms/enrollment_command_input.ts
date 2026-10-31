@@ -5,7 +5,7 @@ const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Key = z.string().regex(/^[A-Za-z0-9+/]{43}=$/);
 const Process = z.object({
     process_id: Id,
-    name: z.literal("pi-server"),
+    name: z.string().regex(/^orbit-process-[1-9][0-9]*-pi-server\.service$/),
     runtime: z.literal("systemd"),
     content_hash: Digest,
     desired: z.literal("running"),
@@ -106,6 +106,8 @@ export const EnrollmentCommandIntent = z.object({
         value.node.node_id !== value.guest_node_id ||
         value.runtime.guest_node_id !== value.guest_node_id ||
         value.runtime.agent_sha256 !== value.agent_sha256 ||
+        value.runtime.process.name !==
+            `orbit-process-${value.runtime.process.process_id}-pi-server.service` ||
         value.runtime.origin !== value.model_origin ||
         pi.protocol !== "http:" || pi.port === "" ||
         pi.hostname !== value.node.wireguard_ip ||
@@ -157,6 +159,7 @@ export function enrollmentCommandInputs() {
                     guest_address: z.ipv4(),
                     process_id: Id,
                     process_hash: Digest,
+                    process_unit: z.string(),
                 }),
                 lifetime: "infinite" as const,
                 garbageCollection: 10,
@@ -196,6 +199,7 @@ export function enrollmentCommandInputs() {
                                 process_id: value.runtime.process.process_id,
                                 process_hash:
                                     value.runtime.process.content_hash,
+                                process_unit: value.runtime.process.name,
                             }),
                         ],
                     };
