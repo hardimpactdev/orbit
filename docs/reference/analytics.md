@@ -3,7 +3,6 @@ title: "Analytics role"
 description: "How the analytics role runs Plausible Community Edition, where it keeps its data, and how an Instance publishes a tracking host."
 covers:
   - apps/gateway/{app/Domain/Analytics,app/Infrastructure/Analytics,app/Actions/Analytics,extensions/analytics}/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/AnalyticsRoleBaseline.php
   - apps/gateway/app/Actions/Routes/ConvergeAnalyticsTrackingPlacementAction.php
   - apps/gateway/resources/analytics/**
   - apps/gateway/tests/{Feature/Infrastructure/Analytics,Feature/Extensions/Analytics,Unit/Extensions/Analytics}/**
@@ -62,9 +61,9 @@ The Analytics footprint requires these resources. Role convergence is unavailabl
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-The native workflow waits for Plausible with the agent's `http.await-healthy`: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
+Swamp waits for Plausible with the canonical Process readiness check: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
 
-Plausible creates and migrates its PostgreSQL database each time it starts. Its Process runs the compiled `plausible` agent service from a read-only bind of the installed static Linux agent. The service runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` steps in order, then replaces itself with `/entrypoint.sh run`. A failed step stops startup. It keeps the image's non-root account and forwards stop signals during initialization. Agent installation restarts running managed containers that use a registered compiled service and that read-only binary mount, so the next start uses the new pin. Stopped containers stay stopped.
+Swamp runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands in order before replacing the server container. A failed initialization stops the update while the old server remains in place. The server container runs only `/entrypoint.sh run` as the image's normal account. It has no agent binary mount, initialization wrapper or agent service.
 
 The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
 
@@ -78,7 +77,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The role calls `analytics.configure-clickhouse` on the Node that runs the ClickHouse Process. The Rust agent carries Plausible's four files and publishes them as root with mode `0644`. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The native footprint mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
+The native Node footprint publishes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The native footprint mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
 
 | Host file | Container path |
 | --- | --- |
@@ -111,11 +110,11 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 ### Update Plausible
 
-`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp asks the Node agent to change the existing Plausible container image and check health under its existing Process lock, preserving its Process identity, environment, ports and mounts. The agent keeps the rollback container until readiness passes and restores it before releasing the lock when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
+`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp runs the canonical Process system component on the admitted Node. It changes the container image and checks health, preserving its Process identity, environment, ports and application mounts. It removes the agent startup wrapper and binary mount. The Process component keeps the rollback container until readiness passes and restores it when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
 
-A repeated version checks health without replacing the container. Start a stopped Plausible Process before updating it. The agent refuses a stale replacement under its Process lock. The Gateway records the native result without revalidating execution.
+A repeated version checks health without replacing an unchanged container. The first update replaces a container that still uses the agent startup wrapper, even when its version is unchanged. Start a stopped Plausible Process before updating it. The canonical Swamp Process component refuses a stale replacement and owns health checks and rollback. The Gateway records its result without validating execution receipts.
 
-The Analytics direct declaration registers this kind with its workflow and projection. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach only the local agent's protected stdin; they never enter workflow arguments, resources, results or logs.
+The Analytics direct declaration registers its workflow and projection. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach Docker only through the canonical system component's protected stdin; they never enter workflow arguments, resources, results or logs.
 
 This update declares no secret-output store and generates no credentials. No runtime vault copy is required.
 

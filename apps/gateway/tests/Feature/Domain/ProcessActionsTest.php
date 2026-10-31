@@ -13,6 +13,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -31,7 +32,6 @@ use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\Instance;
 use App\Models\Node;
@@ -179,7 +179,7 @@ it('refuses arbitrary intent at every fixed bootstrap entry point', function (st
     $this->assertDatabaseCount('processes', 0);
     $this->assertDatabaseCount('operations', 0);
     expect($this->runtime->converged)->toBeEmpty();
-})->with(['bootstrapCollector', 'bootstrapPlausible', 'bootstrapPi', 'bootstrapHorizon']);
+})->with(['bootstrapCollector', 'bootstrapPi', 'bootstrapHorizon']);
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
@@ -343,39 +343,6 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         ->toBeFalse()
         ->and(Process::query()->count())
         ->toBe(1);
-});
-
-it('refuses arbitrary Docker intent at the closed Plausible bootstrap boundary without leaking secrets', function (): void {
-    $sensitiveValue = 'action-boundary-secret';
-    $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
-        targetId: $this->instance->id,
-        name: 'worker',
-        runtime: ProcessRuntime::Docker,
-        command: ['php', 'artisan', 'queue:work'],
-        image: 'php:8.5-cli',
-        workingDirectory: '/app',
-        environment: ['APP_KEY' => $sensitiveValue],
-        ports: [],
-        volumes: [],
-        restartPolicy: 'unless-stopped',
-        start: false,
-    );
-    $this->runtime->startFailure = new ProcessOperationException(
-        step: 'create-container',
-        errorCode: 'process.docker_converge_failed',
-        message: 'Docker convergence failed.',
-    );
-
-    try {
-        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->bootstrapPlausible($data);
-    } catch (ResourceOperationException $exception) {
-        expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($sensitiveValue);
-
-        return;
-    }
-
-    $this->fail('Expected the closed bootstrap boundary to refuse.');
 });
 
 it('records desired-running Docker intent with explicit configuration without executing it', function (): void {
@@ -1236,49 +1203,24 @@ final class ProcessActionsFakeAdmissionLock implements ProcessAdmissionLock
     }
 }
 
-describe('the analytics role\'s plausible Process', function (): void {
+describe('the analytics role\'s Process ownership', function (): void {
     beforeEach(function (): void {
         $storage = analytics_storage_processes();
         $this->storageProcesses = $storage;
-        $this->connection = AnalyticsStorageConnection::from($storage['postgres'], $storage['clickhouse']);
-        $this->lifecycle = app(NativePlausibleRuntimeLifecycle::class);
-        $this->assignAnalytics = function () use ($storage): void {
-            $this->node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
-            app(AnalyticsRoleSettingsRepository::class)->store(
-                $this->node,
-                new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
-            );
-        };
-    });
-
-    it('creates a running Node-targeted Docker Process, and converges it again without replacing it', function (): void {
-        $first = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        $second = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-
-        expect($first->name)->toBe('plausible')
-            ->and($first->owner_type)->toBe(Node::class)
-            ->and($first->owner_id)->toBe($this->node->id)
-            ->and($first->runtime)->toBe(ProcessRuntime::Docker)
-            ->and($first->desired_state)->toBe(DesiredProcessState::Running)
-            ->and($first->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.2.1')
-            ->and($second->id)->toBe($first->id)
-            ->and($this->runtime->removed)->toBe([]);
-    });
-
-    it('replaces the Process when the pinned version changes', function (): void {
-        $first = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        $second = $this->lifecycle->converge($this->node, '3.3.0', $this->connection, str_repeat('k', 64));
-
-        expect($this->runtime->removed)->toBe([$first->id])
-            ->and($second->id)->not->toBe($first->id)
-            ->and($second->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.3.0')
-            ->and(Process::query()->where('name', 'plausible')->count())->toBe(1);
+        $connection = AnalyticsStorageConnection::from($storage['postgres'], $storage['clickhouse']);
+        $this->plausible = app(RecordProcessIntentAction::class)->execute(
+            PlausibleProcess::data($this->node, '3.2.1', $connection, str_repeat('k', 64)),
+            $this->targets->forNodeAdmission($this->node),
+        )['process'];
+        $this->node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        app(AnalyticsRoleSettingsRepository::class)->store(
+            $this->node,
+            new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
+        );
     });
 
     it('refuses an operator who removes a Process the assigned role needs', function (string $which): void {
-        $plausible = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        ($this->assignAnalytics)();
-        $process = ['plausible' => $plausible, 'postgres' => $this->storageProcesses['postgres'], 'clickhouse' => $this->storageProcesses['clickhouse']][$which];
+        $process = ['plausible' => $this->plausible, 'postgres' => $this->storageProcesses['postgres'], 'clickhouse' => $this->storageProcesses['clickhouse']][$which];
 
         expect(fn () => app(DestroyProcessAction::class)->execute($process))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('process.required_by_analytics')->and($exception->status)->toBe(409));
@@ -1286,23 +1228,11 @@ describe('the analytics role\'s plausible Process', function (): void {
             ->and(Process::query()->whereKey($process->id)->exists())->toBeTrue();
     })->with(['plausible', 'postgres', 'clickhouse']);
 
-    it('lets the role remove its own Process, and lets an operator remove the storage once the role is gone', function (): void {
-        $plausible = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        ($this->assignAnalytics)();
-
-        $this->lifecycle->remove($this->node);
+    it('lets the owner remove its Process and an operator remove storage after the role is gone', function (): void {
+        app(DestroyProcessAction::class)->execute($this->plausible, removedByOwningRole: true);
         $this->node->roles()->delete();
         app(DestroyProcessAction::class)->execute($this->storageProcesses['postgres']);
 
-        expect($this->runtime->removed)->toBe([$plausible->id, $this->storageProcesses['postgres']->id]);
-    });
-
-    it('forgets the record of a node it cannot reach without touching the runtime', function (): void {
-        $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-
-        $this->lifecycle->forget($this->node);
-
-        expect(Process::query()->where('name', 'plausible')->exists())->toBeFalse()
-            ->and($this->runtime->removed)->toBe([]);
+        expect($this->runtime->removed)->toBe([$this->plausible->id, $this->storageProcesses['postgres']->id]);
     });
 });
