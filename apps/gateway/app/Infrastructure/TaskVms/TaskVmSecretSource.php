@@ -8,10 +8,12 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskParkIntent;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Models\Operation;
 use App\Models\Project;
@@ -21,6 +23,12 @@ use App\Models\UpCloudTaskVmImageBuild;
 /** Tagged family sources. Ownership checks never read credentials. */
 final readonly class TaskVmSecretSource implements OperationSecretSource
 {
+    private const array RuntimeFields = [
+        'task_vm.model_key' => 'model_key',
+        'task_vm.pi_token' => 'pi_token',
+        'task_vm.model_router' => 'model_router',
+    ];
+
     public function __construct(private string $source) {}
 
     public function name(): string
@@ -32,6 +40,7 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
     public function targetTypes(): array
     {
         return match ($this->source) {
+            'task_vm.model_key', 'task_vm.pi_token', 'task_vm.model_router' => ['task_vm', 'task_group'],
             'upcloud.api' => ['task_vm', 'task_vm_upcloud_image', 'task_vm_sweep', 'task_group'],
             'task_vm.package_cache_github' => ['task_vm_cache'],
             'task_vm.image_bootstrap' => ['task_vm_upcloud_image'],
@@ -43,6 +52,9 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
     {
         if (! in_array($operation->target_type, $this->targetTypes(), true)) {
             return null;
+        }
+        if (isset(self::RuntimeFields[$this->source])) {
+            return $this->runtimeOwner($operation)?->id;
         }
         $id = $operation->target_id;
         if ($operation->target_type === 'task_group') {
@@ -107,11 +119,37 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
             return new OperationSecretValue(null);
         }
         $vm = TaskVm::query()->findOrFail($id);
+        if ($this->source === 'task_vm.model_router') {
+            $origin = $operation->input['enrollment']['runtime']['origin'] ?? $operation->input['runtime']['origin'] ?? $operation->input['origin'] ?? null;
+            if (! is_string($origin) || $origin === '' || $origin !== $vm->ai_router_origin) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The model router origin does not match admitted VM intent.', 422);
+            }
+
+            return new OperationSecretValue(app(ModelKeyIssuer::class)->privateMaterial($origin,
+                app(DirectOperationPrivateBindings::class)->ownerNode($operation, 'model_router')));
+        }
         $value = $this->source === 'task_vm.model_key' ? $vm->model_key : $vm->pi_token;
         if (! is_string($value) || $value === '') {
             throw new ResourceOperationException('operation.secret_unavailable', 'The task VM credential is unavailable.', 409);
         }
 
         return new OperationSecretValue($value);
+    }
+
+    private function runtimeOwner(Operation $operation): ?TaskVm
+    {
+        $id = $operation->input['task_vm_id'] ?? null;
+        if (! is_int($id) || ($operation->target_type === 'task_vm' && $id !== $operation->target_id)) {
+            return null;
+        }
+        $vm = TaskVm::query()->find($id);
+        if ($vm === null || ($operation->target_type === 'task_group' && $vm->group_id !== $operation->target_id)) {
+            return null;
+        }
+        $field = self::RuntimeFields[$this->source];
+        $ownerNodeId = app(DirectOperationPrivateBindings::class)->ownerNode($operation, $field);
+        $expectedNodeId = $field === 'model_router' ? app(ModelKeyIssuer::class)->ownerNodeId() : $vm->node_id;
+
+        return $ownerNodeId === $expectedNodeId ? $vm : null;
     }
 }
