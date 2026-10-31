@@ -88,7 +88,9 @@ Run [`orbit github:app:install`](/cli/github#orbit-githubappinstall) from a mach
 | First run on a Gateway | Registers the App on GitHub, then opens the install page. |
 | Each next run | Opens the install page for another account or organization. |
 
-Registration takes one confirmation in the browser. The Gateway serves a page that posts the App's manifest to GitHub. GitHub shows the App name, and you confirm. GitHub App names are unique across GitHub, so GitHub asks for another name when the name is taken. GitHub then redirects the browser to the Gateway with a one-time code and the `state` value that ties it to this registration. The callback admits the native registration workflow and returns its Operation with HTTP 202. Swamp exchanges the code for the App ID, slug, and private key, then stores credentials through the declared private output. A registration expires after one hour.
+Registration takes one confirmation in the browser. The Gateway serves a page that posts the App's manifest to GitHub. GitHub shows the App name, and you confirm. GitHub App names are unique across GitHub, so GitHub asks for another name when the name is taken. GitHub then redirects the browser to the Gateway with a one-time code and the `state` value that ties it to this registration.
+
+The callback admits the native registration workflow and returns its Operation with HTTP 202. Swamp exchanges the code for the App ID, slug, and private key, then stores credentials through the declared private output. A registration expires after one hour.
 
 On the install page, choose the account or organization and all or selected repositories. Run the App sync endpoint after changing installations. Install and show read the last projected observation and explicitly report its age and certainty.
 
