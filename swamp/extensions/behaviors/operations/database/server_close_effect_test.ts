@@ -13,9 +13,14 @@ Deno.test({
         args,
         stdout: "piped",
         stderr: "null",
-        signal: AbortSignal.timeout(15000),
+        // A fresh CI runner also downloads the image during container creation.
+        signal: AbortSignal.timeout(args[0] === "run" ? 120000 : 15000),
       }).output();
-      if (!result.success) throw new Error("Disposable Valkey fixture failed");
+      if (!result.success) {
+        throw new Error(
+          `Disposable Valkey fixture ${args[0]} failed (exit ${result.code})`,
+        );
+      }
       return new TextDecoder().decode(result.stdout).trim();
     };
     try {
