@@ -6,8 +6,10 @@ use App\Actions\Routes\RouteMutationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\NativeRouteRemovalIntent;
+use App\Domain\Routes\NativeRouteRemovalPlan;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Cluster;
@@ -102,4 +104,30 @@ it('captures authoritative environment restoration for every unactivated replace
         ->and($snapshot['nodes'][0]['certificate_scopes'])->toContain("app-instance-{$instance->id}-hostname-change")
         ->and($candidate->fresh()->status)->toBe(RouteStatus::Pending)
         ->and($candidate->targets()->count())->toBe(1);
+});
+
+it('captures Node-owned Route rows then withdraws publication without deleting the rows', function (): void {
+    $node = Node::query()->create(['name' => 'removed', 'public_ssh_host' => '192.0.2.70', 'wireguard_ip' => '10.44.0.70', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $other = Node::query()->create(['name' => 'survivor', 'public_ssh_host' => '192.0.2.71', 'wireguard_ip' => '10.44.0.71', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $routes = collect([$node, $other])->map(function (Node $target): Route {
+        $route = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $target->id, 'domain' => $target->name.'.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->customProxy()->create(['node_id' => $target->id, 'upstream' => 'http://127.0.0.1:8787']);
+        $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+
+        return $route;
+    });
+    $plan = app(NativeRouteRemovalPlan::class);
+    $snapshot = $plan->captureForNode($node);
+    expect(array_column($snapshot['routes'], 'route_id'))->toBe([$routes[0]->id])
+        ->and($routes[0]->fresh()->sites_published)->toBeTrue();
+    $plan->recordWithdrawal($snapshot);
+    expect($routes[0]->fresh()->sites_published)->toBeFalse()
+        ->and($routes[0]->fresh()->status)->toBe(RouteStatus::Retiring)
+        ->and($routes[1]->fresh()->sites_published)->toBeTrue()
+        ->and(Route::query()->count())->toBe(2);
+    $dns = app(NativeRoutePublicationInput::class)->dns($other);
+    expect($dns['records'])->not->toContain('removed.private.test')->toContain('survivor.private.test');
+    app(NativeRouteRemovalCompletion::class)->apply($snapshot);
+    expect(Route::query()->whereKey($routes[0]->id)->exists())->toBeFalse()
+        ->and(Route::query()->whereKey($routes[1]->id)->exists())->toBeTrue();
 });
