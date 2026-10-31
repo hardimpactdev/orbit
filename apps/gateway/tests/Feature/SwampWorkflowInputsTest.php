@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
@@ -71,3 +72,70 @@ it('keeps unconverted declarations on their original envelope without copying st
         'operation_id' => $operation->id, 'kind' => 'route.private_dns_publish', 'node_id' => $node->id,
     ]);
 });
+
+final readonly class DescriptorCommandInputsProjection implements DirectOperationProjection
+{
+    public function input(Operation $operation): array
+    {
+        return ['intent' => ['target' => 12], 'execution_secrets' => $operation->input['references']];
+    }
+
+    public function apply(Operation $operation, array $data): Operation
+    {
+        return $operation;
+    }
+}
+
+function commandInputDefinition(array $options = []): DirectOperation
+{
+    $direct = new DirectOperation([new class($options) implements DirectOperationContribution
+    {
+        public function __construct(private array $options) {}
+
+        public function definitions(): array
+        {
+            return ['test.command_descriptor' => $this->options + ['workflow' => 'operation-test-command-descriptor',
+                'projection' => DescriptorCommandInputsProjection::class, 'workflow_inputs' => true]];
+        }
+    }]);
+    app()->instance(DirectOperation::class, $direct);
+
+    return $direct;
+}
+
+it('accepts fixed terminal selectors independently of the full-input opt-in', function (): void {
+    $direct = commandInputDefinition(['workflow_inputs' => false, 'terminal_result' => ['job' => 'horizon', 'step' => 'result']]);
+    $operation = new Operation(['kind' => 'test.command_descriptor', 'node_id' => 14, 'input' => ['references' => []]]);
+    $operation->id = 27;
+
+    expect($direct->workflowInputs($operation))->toBe(['operation_id' => 27, 'kind' => 'test.command_descriptor', 'node_id' => 14]);
+    expect($direct->definition('test.command_descriptor')['terminal_result'])->toBe(['job' => 'horizon', 'step' => 'result']);
+});
+
+it('rejects malformed fixed terminal declarations', function (mixed $selector): void {
+    expect(fn () => commandInputDefinition(['terminal_result' => $selector]))->toThrow(LogicException::class);
+})->with([
+    [null], [true], [[]], [['job' => 'horizon']], [['job' => '', 'step' => 'result']],
+    [['job' => 'horizon', 'step' => false]], [['job' => 'horizon', 'step' => 'result', 'path' => 'arbitrary']],
+]);
+
+it('serializes an empty execution descriptor map as an object', function (): void {
+    $operation = new Operation(['kind' => 'test.command_descriptor', 'node_id' => 14, 'input' => ['references' => []]]);
+    $operation->id = 27;
+    $input = commandInputDefinition()->workflowInputs($operation);
+    expect(json_encode($input, JSON_THROW_ON_ERROR))->toContain('"execution_secrets":{}');
+});
+
+it('refuses non-reference secret maps before a native request can contain values', function (mixed $references): void {
+    $operation = new Operation(['kind' => 'test.command_descriptor', 'node_id' => 14, 'input' => ['references' => $references]]);
+    $operation->id = 27;
+    expect(fn () => commandInputDefinition()->workflowInputs($operation))->toThrow(ResourceOperationException::class);
+})->with([
+    ['raw-private-value'],
+    [[['vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-14']]],
+    [['identity' => ['vault' => 'orbit-control-inputs', 'key' => 'key', 'value' => 'raw-private-value']]],
+    [['identity' => ['vault' => 'orbit-control-inputs']]],
+    [['identity' => ['vault' => [], 'key' => 'key']]],
+    [['identity' => ['vault' => 'orbit-control-inputs', 'key' => "private\nvalue"]]],
+    [['bad field' => ['vault' => 'orbit-control-inputs', 'key' => 'key']]],
+]);

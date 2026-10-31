@@ -292,9 +292,8 @@ final readonly class GatewayReleaseCommands
         }
         $phaseResult = $data[$required] ?? null;
         $valid = $phase === 'serve'
-            ? $phaseResult === 'submitted'
-                && is_int($data['caddy_operation_id'] ?? null)
-                && $data['caddy_operation_id'] > 0
+            ? (($phaseResult === 'submitted' && is_int($data['caddy_operation_id'] ?? null) && $data['caddy_operation_id'] > 0)
+                || ($phaseResult === 'unchanged' && array_key_exists('caddy_operation_id', $data) && $data['caddy_operation_id'] === null))
             : is_string($phaseResult);
         if (! $result['succeeded'] || ! $valid) {
             throw new GatewayReleaseException(
