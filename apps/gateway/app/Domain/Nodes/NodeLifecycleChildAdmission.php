@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Actions\Nodes\ProvisionNodeAction;
-use App\Actions\Nodes\RemoveNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationIdempotency;
@@ -48,13 +47,7 @@ final readonly class NodeLifecycleChildAdmission implements OperationChildAdmiss
 
             return app(ProvisionNodeAction::class)->start($data, $parent->request_id);
         }
-        if ($intent['kind'] !== 'node.remove' || count($input) !== 4 || ! is_int($input['caller_node_id'] ?? null)
-            || ! is_bool($input['offline'] ?? null) || ! is_bool($input['force'] ?? null) || ! is_bool($input['deleted'] ?? null)) {
-            throw $this->forbidden();
-        }
-        $caller = Node::query()->findOrFail($input['caller_node_id']);
-
-        return app(RemoveNodeAction::class)->start($node, $caller, $input['offline'], $input['force'], $input['deleted'], $parent->request_id);
+        throw $this->forbidden();
     }
 
     private function forbidden(): ResourceOperationException

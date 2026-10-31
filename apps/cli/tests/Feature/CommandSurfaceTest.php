@@ -873,7 +873,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:migrate-docker' => [['node'], ['dry-run' => false, 'yes' => false, 'fallback' => false, 'restore-policies' => false, 'recipe' => null, 'idempotency-key' => null, 'json' => false]],
         'node:network:converge' => [['node'], ['idempotency-key' => null, 'json' => false]],
         'node:platform' => [['node', 'platform'], ['json' => false]],
-        'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
+        'node:remove' => [['node'], ['force' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],
         'node:rename' => [['node', 'name'], ['json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'idempotency-key' => null, 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],

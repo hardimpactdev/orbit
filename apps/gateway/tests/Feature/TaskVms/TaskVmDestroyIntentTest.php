@@ -132,7 +132,7 @@ it('returns kind unavailable before admission when complete cleanup participants
 it('projects the provider-only removal inside the truthful parent transaction without an Operation child', function (): void {
     $input = app(TaskVmDestroyIntent::class)->capture($this->vm);
 
-    DB::transaction(fn () => app(TaskVmDestroyProjection::class)->projectRemoval($input));
+    DB::transaction(fn () => app(TaskVmDestroyProjection::class)->projectRemoval($input, ['task_vm_id' => $input['task_vm_id'], 'removal_id' => $input['removal_id'], 'removed' => true]));
 
     expect($this->vm->fresh()->state->value)->toBe('destroyed');
     expect($this->vm->fresh()->pi_token)->toBeNull();
@@ -144,7 +144,7 @@ it('preserves VM metadata when the owning Task parent projection rolls back', fu
     $before = $this->vm->fresh()->getRawOriginal();
 
     expect(fn () => DB::transaction(function () use ($input): void {
-        app(TaskVmDestroyProjection::class)->projectRemoval($input);
+        app(TaskVmDestroyProjection::class)->projectRemoval($input, ['task_vm_id' => $input['task_vm_id'], 'removal_id' => $input['removal_id'], 'removed' => true]);
         throw new RuntimeException('Parent projection rolled back');
     }))->toThrow(RuntimeException::class, 'Parent projection rolled back');
 
@@ -159,7 +159,7 @@ it('composes the owning Node projector and VM record projection in the same Task
     expect($input['node_removal'])->toMatchArray(['schema_version' => 1, 'task_vm_id' => $this->vm->id, 'node_id' => $guest->id, 'machine_deleted' => true, 'offline' => true]);
     expect($input['participant_node_ids'])->toBe([$this->host->id, $guest->id, $this->gateway->id]);
 
-    DB::transaction(fn () => app(TaskVmDestroyProjection::class)->projectRemoval($input));
+    DB::transaction(fn () => app(TaskVmDestroyProjection::class)->projectRemoval($input, ['task_vm_id' => $input['task_vm_id'], 'removal_id' => $input['removal_id'], 'removed' => true]));
 
     $this->assertModelMissing($guest);
     $this->assertModelExists($this->host);
@@ -175,7 +175,7 @@ it('rolls back both Node removal and VM finalization with the parent Task projec
     $input = app(TaskVmDestroyIntent::class)->capture($this->vm->fresh());
 
     expect(fn () => DB::transaction(function () use ($input): void {
-        app(TaskVmDestroyProjection::class)->projectRemoval($input);
+        app(TaskVmDestroyProjection::class)->projectRemoval($input, ['task_vm_id' => $input['task_vm_id'], 'removal_id' => $input['removal_id'], 'removed' => true]);
         throw new RuntimeException('Task rollback');
     }))->toThrow(RuntimeException::class, 'Task rollback');
 

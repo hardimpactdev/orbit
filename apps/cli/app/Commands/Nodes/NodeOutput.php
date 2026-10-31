@@ -11,7 +11,6 @@ use App\Support\Console\TerminalText;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 
 final class NodeOutput
 {
@@ -46,23 +45,16 @@ final class NodeOutput
     {
         $valid = match (true) {
             $response instanceof NodeResponse => ! $removing && $response->status === 'active',
-            $response instanceof RemovedNodeResponse => $removing && $response->removed,
             default => false,
         };
 
         if (! $valid) {
             throw new GatewayApiException('Gateway response does not confirm the Node operation.',
                 'gateway.invalid_response', requestId: $response instanceof NodeResponse
-                    || $response instanceof RemovedNodeResponse
                         ? $response->requestId : null);
         }
 
-        $warning = match (true) {
-            $response instanceof RemovedNodeResponse => $response->degradation !== null,
-            default => false,
-        };
-
-        return $warning ? ProgressState::Warning : ProgressState::Success;
+        return ProgressState::Success;
     }
 
     /**

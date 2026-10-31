@@ -15,7 +15,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
-use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -71,7 +70,7 @@ final readonly class NodeRemovalInput
         }
 
         $required = array_filter($ids, static fn (int $id): bool => ($id !== $context->id || ! $snapshot['offline']) && $id !== $snapshot['hub_id']);
-        $unavailable = Node::query()->whereKey($required)->get()->filter(static fn (Node $node): bool => ! app(NodeWorkerRollout::class)->allows($node))->pluck('id')->all();
+        $unavailable = Node::query()->whereKey($required)->get()->filter(static fn (Node $node): bool => ! app(NodeRolePlacement::class)->allows($node))->pluck('id')->all();
 
         $onlineBlocker = null;
         try {
@@ -90,9 +89,9 @@ final readonly class NodeRemovalInput
             default => $snapshot['offline'] ? [...app(NodeSideResidue::class)->describe($roles, nodeLeavesFleet: true), 'Swamp worker unit, credentials and cache'] : [],
         };
 
-        return ['snapshot' => $snapshot, 'retained_on_node' => $retained, 'online_blocker' => $onlineBlocker, 'unavailable_node_ids' => $unavailable, 'placements' => array_map(static fn (int $id): array => [
+        return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'snapshot' => $snapshot, 'retained_on_node' => $retained, 'online_blocker' => $onlineBlocker, 'unavailable_node_ids' => $unavailable, 'placements' => array_map(static fn (int $id): array => [
             'effect_node_id' => $id, 'execution_node_id' => $id, 'transport' => 'local'], $ids),
-            'hub' => $hub, 'restore_hub' => $hub === null ? null : [...$hub, 'excluded_node_id' => null],
+            'hub' => $hub, 'restore_hub' => $hub === null ? null : NodeWireGuardInput::restorationSnapshot($hub),
             'restore_certificates' => $this->certificates($routes),
             'retirement' => $retirement, 'host_retained' => $context->platform !== 'linux' || $context->ssh_host_fingerprint === null,
             'routes' => $routes, 'metrics_fleet' => $retiringFleet,

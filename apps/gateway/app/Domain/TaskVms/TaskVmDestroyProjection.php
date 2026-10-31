@@ -11,7 +11,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -81,17 +80,17 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($status === OperationStatus::Running && ($result['node_cleanup_restoring'] ?? false) === true && $vm->node_id !== null) {
                 $snapshot = ValidatedData::object($operation->input['node_removal']);
-                Node::query()->findOrFail($vm->node_id)->update(['status' => LifecycleStatus::from(ValidatedData::string($snapshot['prior_status']))]);
+                $this->nodes->restore($snapshot);
                 $projected->update(['state' => [...($projected->state ?? []), 'node_cleanup_restoring' => true]]);
                 if ($operation->input['_wireguard'] !== null) {
                     NodeWireGuardInput::beginRestoration($projected);
                 }
             } elseif ($status === OperationStatus::Running && ($result['node_cleanup_started'] ?? false) === true && $vm->node_id !== null) {
-                Node::query()->findOrFail($vm->node_id)->update(['status' => LifecycleStatus::Removing]);
+                $this->nodes->begin(ValidatedData::object($operation->input['node_removal']));
                 $vm->update(['state' => TaskVmState::Destroying]);
             }
             if ($status === OperationStatus::Succeeded) {
-                $this->projectRemoval($operation->input);
+                $this->projectRemoval($operation->input, $result);
             } elseif ($status === OperationStatus::Failed) {
                 $vm->update(['error_code' => ValidatedData::string($data['error_code']), 'error_message' => 'The task VM destruction did not complete.']);
             }
@@ -102,13 +101,14 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
 
     /** Call inside the owning parent's projection transaction after native success.
      * @param  array<string,mixed>  $canonicalInput
+     * @param  array<string,mixed>  $result
      */
-    public function projectRemoval(array $canonicalInput): TaskVm
+    public function projectRemoval(array $canonicalInput, array $result): TaskVm
     {
         $this->intent->available($canonicalInput);
         $vm = $this->intent->ownedInput($canonicalInput, lock: true);
         if ($canonicalInput['node_removal'] !== null) {
-            $this->nodes->remove(ValidatedData::object($canonicalInput['node_removal']));
+            $this->nodes->remove(ValidatedData::object($canonicalInput['node_removal']), $result);
             $vm->refresh();
         }
         $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null, 'model_key' => null, 'provider_bootstrap' => null,
