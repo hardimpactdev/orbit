@@ -11,7 +11,7 @@ use App\Domain\Nodes\NodeBootstrapIntent;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -19,7 +19,7 @@ use App\Models\Operation;
 final readonly class AdmitNodeBootstrapAction
 {
     public function __construct(private StartOperationAction $operations, private GatewayServingHost $gateway, private NodeBootstrapIntent $intent,
-        private SshKeyProvider $keys, private SwampVaultExecutionCopy $copies) {}
+        private SshKeyProvider $keys, private SwampCommandStep $steps) {}
 
     public function execute(Node $node, string $kind, ?ProvisionNodeData $candidate = null): Operation
     {
@@ -35,7 +35,7 @@ final readonly class AdmitNodeBootstrapAction
             if (! is_string($identity) || $identity === '') {
                 throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The bootstrap SSH identity is unavailable.', 503);
             }
-            $operationInput['execution_secrets'] = ['bootstrap_identity' => $this->copies->synchronize(
+            $operationInput['execution_secrets'] = ['bootstrap_identity' => $this->steps->executionCopy(
                 'orbit-control-inputs', 'bootstrap-identity-node-'.$root->id, $identity,
             )];
         } else {

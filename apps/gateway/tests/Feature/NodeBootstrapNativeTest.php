@@ -7,6 +7,7 @@ use App\Actions\Nodes\StartNodePhpPackagesAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -15,6 +16,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -32,7 +34,7 @@ beforeEach(function (): void {
     $keys->shouldReceive('privateKeyPath')->andReturn('/private/bootstrap-key-sentinel');
     app()->instance(SshKeyProvider::class, $keys);
     $this->run = '0d363abd-ec96-4979-8866-f1c0233c576c';
-    $socket = new FakeRoutePublicationSocket;
+    $socket = $this->socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture-token']);
@@ -141,6 +143,29 @@ it('copies the probe SSH value to its fixed execution key and records names only
         expect($operation->input)->not->toHaveKeys(['bootstrap_identity', 'private_bindings']);
         expect(json_encode($operation->toArray()))->not->toContain($value)->not->toContain($path);
         expect($this->target->fresh()->user)->toBe('prior');
+        $definition = app(DirectOperation::class)->definition('node.bootstrap_probe');
+        expect($definition['workflow_inputs'])->toBeTrue();
+        expect($definition['terminal_result'])->toBe(['job' => 'bootstrap', 'step' => 'probe-host']);
+        expect($definition)->not->toHaveKey('private_material');
+        $inputs = $this->socket->sent[0]['payload']['inputs'];
+        expect($inputs)->toBe([
+            'intent' => ['bootstrap' => $operation->input['bootstrap']],
+            'execution_secrets' => $operation->input['execution_secrets'],
+            'operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $this->gateway->id,
+        ]);
+        expect(json_encode($inputs))->not->toContain($value)->not->toContain($path);
+        $history = ['id' => $this->run, 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
+            'inputs' => $inputs, 'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
+            'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => [
+                'stdout' => json_encode(['probed' => true, 'architecture' => 'x86_64', 'host_type' => 'ssh-ed25519',
+                    'public_key' => 'public-fixture', 'host_key_fingerprint' => $this->target->ssh_host_fingerprint]),
+            ]]]]],
+        ];
+        $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+        $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], $definition['terminal_result']);
+        expect($projected->status)->toBe(OperationStatus::Succeeded);
+        expect($this->target->fresh()->ssh_host_key)->toBe('public-fixture')->and($this->target->fresh()->user)->toBe('prior');
+        expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get']);
     } finally {
         fclose($identity);
     }
