@@ -6,6 +6,9 @@ inputs:
   properties:
     node_id:
       type: integer
+      minimum: 1
+      not:
+        enum: [1, 18]
     intent:
       type: object
   required:
