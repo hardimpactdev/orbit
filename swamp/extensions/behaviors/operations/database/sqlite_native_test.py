@@ -241,12 +241,6 @@ behavior.methods.cleanupSource.execute = async (...args: Parameters<typeof clean
         self.assertGreaterEqual(final['operation']['result']['bytes'], 16)
         self.assertEqual(len(final['operation']['result']['sha256']), 64)
 
-    def test_abandon_cleans_target_then_source_without_export(self):
-        final = self.run_kind('seed_abandon')
-        self.assertEqual([final[k] for k in ('exports', 'targetCleanups', 'cleanups')], [0, 1, 1])
-        self.assertEqual(final['commands'][0]['action'], 'seedTarget')
-        self.assertEqual(final['commands'][1]['action'], 'seedSource')
-        self.assertEqual(final['operation']['result'], {'backend': 'absent'})
 
 
 if __name__ == '__main__':

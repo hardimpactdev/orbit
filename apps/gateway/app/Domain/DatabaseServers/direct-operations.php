@@ -60,6 +60,8 @@ return ['database.update' => [
     'projection' => DatabaseSqliteProjection::class,
 ], 'database.sqlite_seed_abandon' => [
     'workflow' => 'operation-database-sqlite-seed-abandon',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'abandon', 'step' => 'result'],
     'projection' => DatabaseSqliteProjection::class,
 ], 'database.clone' => [
     'workflow' => 'operation-database-clone',

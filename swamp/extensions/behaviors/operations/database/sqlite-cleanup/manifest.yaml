@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/database-sqlite-cleanup-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Native SQLite seed scratch cleanup scripts.
+behaviors:
+  - operations/database/sqlite-cleanup/assets.ts
+additionalFiles:
+  - scripts/source_cleanup.py
+  - scripts/target_abandon.py

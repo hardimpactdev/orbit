@@ -16,7 +16,23 @@ final readonly class DatabaseSqliteProjection implements DirectOperationProjecti
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['source', 'target']));
+        $input = array_intersect_key($operation->input, array_flip(['source', 'target']));
+        if ($operation->kind !== 'database.sqlite_seed_abandon') {
+            return $input;
+        }
+        $source = ValidatedData::object($input['source'] ?? []);
+        $target = ValidatedData::object($input['target'] ?? []);
+        if ($operation->target_type !== 'instance' || ($operation->input['owner_instance_id'] ?? null) !== $operation->target_id
+            || ($operation->input['source_instance_id'] ?? null) !== $operation->target_id || ($source['variant'] ?? null) !== 'seed' || ($source['node_id'] ?? null) === ($target['node_id'] ?? null)
+            || ($target['node_id'] ?? null) !== $operation->node_id || ($target['target_instance_id'] ?? null) !== $operation->target_id
+            || ($source['target_instance_id'] ?? null) !== $operation->target_id || ($target['environment'] ?? null) !== 'development'
+            || ($source['operation'] ?? null) !== ($target['operation'] ?? null)
+            || ! is_string($source['operation'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $source['operation']) !== 1
+            || in_array($source['node_id'] ?? null, [1, 18], true) || in_array($target['node_id'] ?? null, [1, 18], true)) {
+            throw new ResourceOperationException('sqlite.seed_abandon_forbidden', 'The seed cleanup needs its admitted source and target workers.', 422);
+        }
+
+        return ['intent' => $input, 'execution_secrets' => []];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void

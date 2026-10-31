@@ -4,6 +4,7 @@ import os
 import pwd
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -13,7 +14,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = yaml.safe_load((ROOT / 'workflows/workflow-operation-database-cleanup.yaml').read_text())
-SCRIPTS = {step['name']: step['task']['inputs']['run'] for step in WORKFLOW['jobs'][0]['steps'] if step['name'] != 'accept-result'}
+SCRIPTS = {step['name']: step['task']['inputs']['run'] for step in WORKFLOW['jobs'][0]['steps'] if step['task'].get('behaviorType') == 'command/shell'}
 
 
 def run_action(name, env, user=None):
@@ -91,12 +92,14 @@ class CloneCleanup(unittest.TestCase):
         if shutil.which('shellcheck') is None:
             self.skipTest('Shellcheck runs on the host.')
         for script in SCRIPTS.values():
+            import re
+            script = re.sub(r'\$\{\{.*?\}\}', '/native-cache/script.py', script)
             result = subprocess.run(['shellcheck', '-s', 'sh', '-'], check=False, input=script,
                                     text=True, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
-@unittest.skipUnless(os.geteuid() == 0, 'Root seed custody runs only in a disposable container.')
+@unittest.skipUnless(os.geteuid() == 0 and os.environ.get('ORBIT_DISPOSABLE_SQLITE_TEST') == '1', 'Root seed custody runs only in a disposable container.')
 class SeedCleanup(unittest.TestCase):
     def setUp(self):
         self.operation = uuid.uuid4().hex * 2
@@ -126,9 +129,8 @@ class SeedCleanup(unittest.TestCase):
         selected.chmod(0o600)
 
     def run_cleanup(self):
-        # Same Python program, root already owns this disposable process; no test sudo shim.
-        script = SCRIPTS['seed'].replace(SCRIPTS['seed'].splitlines()[2], "exec /usr/local/bin/python3 -I - <<'PY'")
-        result = subprocess.run(['/bin/sh'], check=False, input=script, env={'PATH': '/usr/bin:/bin', **self.env},
+        script = ROOT / 'extensions/behaviors/operations/database/sqlite-cleanup/scripts/source_cleanup.py'
+        result = subprocess.run([sys.executable, '-E', '-s', str(script)], check=False, env={'PATH': '/usr/bin:/bin', **self.env},
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.stderr, '')
         return result.returncode, json.loads(result.stdout)

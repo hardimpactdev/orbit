@@ -20,6 +20,7 @@ def reply(raw):
 class DatabaseCleanupNative(NativeTestCase):
     def setUp(self):
         super().setUp()
+        self.copy_behaviors("operations/database/sqlite-cleanup")
         self.directory = Path('/tmp/orbit-sqlite-clone-' + uuid.uuid4().hex)
         self.directory.mkdir(mode=0o700)
         self.snapshot = self.directory / 'snapshot.sqlite'
@@ -49,14 +50,14 @@ class DatabaseCleanupNative(NativeTestCase):
         run = self.run_cleanup()
         self.assertEqual(run['status'], 'succeeded')
         self.assertFalse(self.directory.exists())
-        self.assertEqual(json.loads(reply(self.cli('workflow', 'history', 'get', run['id']).stdout)['jobs'][0]['steps'][2]['outputs']['stdout']), {'backend': 'absent'})
+        self.assertEqual(json.loads(reply(self.cli('workflow', 'history', 'get', run['id']).stdout)['jobs'][0]['steps'][3]['outputs']['stdout']), {'backend': 'absent'})
 
     def test_refusal_keeps_snapshot_and_native_run_failed(self):
         self.directory.chmod(0o755)
         run = self.run_cleanup(False)
         self.assertEqual(run['status'], 'failed')
         self.assertTrue(self.snapshot.exists())
-        self.assertEqual(json.loads(reply(self.cli('workflow', 'history', 'get', run['id']).stdout)['jobs'][0]['steps'][2]['outputs']['stdout']),
+        self.assertEqual(json.loads(reply(self.cli('workflow', 'history', 'get', run['id']).stdout)['jobs'][0]['steps'][3]['outputs']['stdout']),
                          {'error_code': 'database.sqlite_cleanup_failed'})
 
     def test_repaired_refusal_resumes_failed_action_and_its_result(self):
@@ -67,7 +68,7 @@ class DatabaseCleanupNative(NativeTestCase):
         self.assertEqual(resumed['status'], 'succeeded')
         self.assertFalse(self.directory.exists())
         history = reply(self.cli('workflow', 'history', 'get', run['id']).stdout)
-        self.assertEqual(json.loads(history['jobs'][0]['steps'][2]['outputs']['stdout']), {'backend': 'absent'})
+        self.assertEqual(json.loads(history['jobs'][0]['steps'][3]['outputs']['stdout']), {'backend': 'absent'})
 
     def test_result_only_resume_does_not_repeat_completed_cleanup(self):
         fail = self.repo / 'delivery-failure'

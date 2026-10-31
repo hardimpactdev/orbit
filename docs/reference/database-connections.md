@@ -254,3 +254,13 @@ owned scratch is already clean; a foreign or replaced file is a refusal. Native
 dependencies order each cleanup and its result. The shared terminal subscriber projects the
 bounded stdout result, and result delivery can resume without repeating a
 completed cleanup.
+
+### Abandon a SQLite seed attempt
+
+`database.sqlite_seed_abandon` uses the source and target descriptors captured by
+its recorded transfer seed. Placed command steps remove the target attempt's
+incoming file, candidate file and state, then clean its source snapshot. Source
+cleanup runs even if target cleanup fails. Each action checks its saved identity,
+owner and inode before deleting scratch. It preserves the installed database.
+The kind needs no execution-vault copy and makes no Gateway calls from steps.
+The shared terminal subscriber records success only when both cleanups finish.

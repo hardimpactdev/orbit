@@ -1,9 +1,10 @@
 id: 6def8239-b27a-5feb-961b-fd2b54515359
 name: operation-database-sqlite-seed-abandon
-description: Run database.sqlite_seed_abandon as one native placed DAG.
+description: Clean only the captured source and target scratch of one seed attempt.
 writes: true
 vaults: []
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -15,111 +16,236 @@ inputs:
       type: string
       enum:
       - database.sqlite_seed_abandon
+    intent:
+      type: object
+      properties:
+        source:
+          type: object
+          properties:
+            variant:
+              type: string
+              enum:
+              - seed
+            node_id:
+              type: integer
+              minimum: 1
+            operation:
+              type: string
+            target_instance_id:
+              type: integer
+              minimum: 1
+            base:
+              type: string
+            source_path:
+              type: string
+            snapshot_path:
+              type: string
+            state_dir:
+              type: string
+            source_user:
+              type: string
+            transport_user:
+              type: string
+          required:
+          - variant
+          - node_id
+          - operation
+          - target_instance_id
+          - base
+          - source_path
+          - snapshot_path
+          - state_dir
+          - source_user
+          - transport_user
+          additionalProperties: false
+        target:
+          type: object
+          properties:
+            node_id:
+              type: integer
+              minimum: 1
+            operation:
+              type: string
+            target_instance_id:
+              type: integer
+              minimum: 1
+            base:
+              type: string
+            relative_path:
+              type: string
+            state_dir:
+              type: string
+            target_user:
+              type: string
+            transport_user:
+              type: string
+            environment:
+              type: string
+              enum:
+              - development
+          required:
+          - node_id
+          - operation
+          - target_instance_id
+          - base
+          - relative_path
+          - state_dir
+          - target_user
+          - transport_user
+          - environment
+          additionalProperties: false
+      required:
+      - source
+      - target
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-- name: admission
+- name: abandon
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
     node: ${{ string(inputs.node_id) }}
   steps:
-  - name: read
+  - name: target_assets
+    target: ${{ "orbit-node-" + string(inputs.intent.target.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target.node_id) }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
+      behaviorType: '@nckrtl/database-sqlite-cleanup-assets'
+      behaviorName: ${{ "db-cleanup-assets-" + run.id + "-target" }}
       methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: failure-admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: failed
-  steps:
-  - name: report
+        action: target
+  - name: target
+    target: ${{ "orbit-node-" + string(inputs.intent.target.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target.node_id) }}
+    dependsOn:
+    - step: target_assets
+      condition:
+        type: succeeded
+    writes: true
     task:
       type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      behaviorType: command/shell
+      behaviorName: ${{ "database-abandon-target-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: abandon
-  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
-  labels:
-    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
-  steps:
-  - name: cleanupTarget
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/sudo -n --preserve-env=ORBIT_CLEANUP_OPERATION,ORBIT_CLEANUP_TARGET,ORBIT_CLEANUP_BASE,ORBIT_CLEANUP_RELATIVE,ORBIT_CLEANUP_STATE,ORBIT_CLEANUP_OWNER,ORBIT_CLEANUP_TRANSPORT,ORBIT_CLEANUP_ENVIRONMENT -- /usr/bin/python3 -E -s "${{ steps.target_assets.outputs.script }}"
+        env:
+          ORBIT_CLEANUP_OPERATION: ${{ inputs.intent.target.operation }}
+          ORBIT_CLEANUP_TARGET: ${{ string(inputs.intent.target.target_instance_id) }}
+          ORBIT_CLEANUP_BASE: ${{ inputs.intent.target.base }}
+          ORBIT_CLEANUP_RELATIVE: ${{ inputs.intent.target.relative_path }}
+          ORBIT_CLEANUP_STATE: ${{ inputs.intent.target.state_dir }}
+          ORBIT_CLEANUP_OWNER: ${{ inputs.intent.target.target_user }}
+          ORBIT_CLEANUP_TRANSPORT: ${{ inputs.intent.target.transport_user }}
+          ORBIT_CLEANUP_ENVIRONMENT: ${{ inputs.intent.target.environment }}
+  - name: source_assets
+    target: ${{ "orbit-node-" + string(inputs.intent.source.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.source.node_id) }}
+    dependsOn:
+    - step: target
+      condition:
+        type: always
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: cleanupTarget
+      behaviorType: '@nckrtl/database-sqlite-cleanup-assets'
+      behaviorName: ${{ "db-cleanup-assets-" + run.id + "-source" }}
+      methodName: read
       inputs:
-        target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-- name: cleanup
-  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
-  labels:
-    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
-  steps:
-  - name: cleanupSource
+        action: source
+  - name: source
+    target: ${{ "orbit-node-" + string(inputs.intent.source.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.source.node_id) }}
+    dependsOn:
+    - step: source_assets
+      condition:
+        type: succeeded
+    writes: true
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: cleanupSource
+      behaviorType: command/shell
+      behaviorName: ${{ "database-abandon-source-" + run.id }}
+      methodName: execute
       inputs:
-        source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: abandon
-    condition:
-      type: always
-- name: projection
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  steps:
-  - name: project
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/sudo -n --preserve-env=ORBIT_CLEANUP_OPERATION,ORBIT_CLEANUP_TARGET,ORBIT_CLEANUP_BASE,ORBIT_CLEANUP_SOURCE,ORBIT_CLEANUP_SNAPSHOT,ORBIT_CLEANUP_STATE,ORBIT_CLEANUP_OWNER,ORBIT_CLEANUP_TRANSPORT -- /usr/bin/python3 -E -s "${{ steps.source_assets.outputs.script }}"
+        env:
+          ORBIT_CLEANUP_OPERATION: ${{ inputs.intent.source.operation }}
+          ORBIT_CLEANUP_TARGET: ${{ string(inputs.intent.source.target_instance_id) }}
+          ORBIT_CLEANUP_BASE: ${{ inputs.intent.source.base }}
+          ORBIT_CLEANUP_SOURCE: ${{ inputs.intent.source.source_path }}
+          ORBIT_CLEANUP_SNAPSHOT: ${{ inputs.intent.source.snapshot_path }}
+          ORBIT_CLEANUP_STATE: ${{ inputs.intent.source.state_dir }}
+          ORBIT_CLEANUP_OWNER: ${{ inputs.intent.source.source_user }}
+          ORBIT_CLEANUP_TRANSPORT: ${{ inputs.intent.source.transport_user }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: target
+      condition:
+        type: always
+    - step: source
+      condition:
+        type: always
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: project
+      behaviorType: command/shell
+      behaviorName: ${{ "database-abandon-result-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: abandon
-    condition:
-      type: always
-  - job: cleanup
-    condition:
-      type: always
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/python3 -I - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          result = {'error_code': 'database.sqlite_native_failed'}
+          try:
+              if all(json.loads(os.environ[key]) == {'backend': 'absent'} for key in ('ORBIT_TARGET_RESULT', 'ORBIT_SOURCE_RESULT')):
+                  result = {'backend': 'absent'}
+          except (KeyError, TypeError, ValueError):
+              pass
+          print(json.dumps(result))
+          sys.exit(1 if 'error_code' in result else 0)
+          PYTHON
+        env:
+          ORBIT_TARGET_RESULT: '${{ has(steps.target) && has(steps.target.outputs) && has(steps.target.outputs.stdout) ? steps.target.outputs.stdout
+            : "" }}'
+          ORBIT_SOURCE_RESULT: '${{ has(steps.source) && has(steps.source.outputs) && has(steps.source.outputs.stdout) ? steps.source.outputs.stdout
+            : "" }}'
+        ignoreExitCode: true
+  - name: accept_result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: The SQLite seed attempt was not fully cleaned.
