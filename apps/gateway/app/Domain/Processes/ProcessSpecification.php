@@ -5,11 +5,19 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Process;
 use SensitiveParameter;
 
 final readonly class ProcessSpecification
 {
+    public function assertOptions(AddProcessData $data): void
+    {
+        if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
+            throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
+        }
+    }
+
     /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool} */
     public function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
