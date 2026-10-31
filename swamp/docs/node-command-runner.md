@@ -1,11 +1,17 @@
-# Native local Node commands
+# Placed Node commands
 
-`extensions/behaviors/operations/_lib/node-commands.ts::run(command, stdin, as_user, options?)` implements the merged `node-worker/command.ts` contract. A native parent can pass it as the required third argument to `configureNodeWorker`.
+Follow the binding [Swamp shape guide](swamp-shape.md). Run each operational
+action as a placed `command/shell` step. Keep script text in `run:` or a file
+delivered through Swamp's supported dispatch path, never in a TypeScript string.
 
-Commands and arguments come from reviewed source. Private bytes use stdin. The account is `node`, `root`, or a fixed admitted user. The runner uses no shell, caller environment, SSH, key, credential API, or Gateway identity routing. It refuses orbit-agent action invocations.
+Pass full non-secret intent as workflow inputs. Steps resolve vault key names
+with `vault.get`; the command receives secrets through the native environment
+mapping. A tool reads a secret from stdin or a config file, never argv. Stdin is
+a tool interface, not a private-material transport from the Gateway.
 
-On Linux, a bounded fixed `cat /proc/self/cgroup` subprocess checks worker membership, because the compiled native runtime forbids direct `/proc` reads. The local runner refuses every `orbit-node-proxy-worker-N.service` cgroup before effects. It never runs a proxy Node's work on209. Logical Node1/18 workflow targets remain exact and wait for separately approved proxy execution.
+Use native timeout, cancellation, guards and resume. Do not build another
+subprocess supervisor or Gateway client. The pilot settles script-file delivery
+and the exact vault-to-environment syntax before new conversions use them.
 
-The process helper drains stdin and stdout concurrently, preserves nonzero exit status, hides stderr, bounds output, and propagates cancellation or deadline failure without exposing private bytes. No retry or result projection belongs in this helper.
-
-Families that consumed draft proxy plumbing must remove its `node-proxy.ts` imports and Gateway HTTP forwarding before shipping only this local runner. Do not treat the draft proxy transport or key setup as approved source. Proxy credential and execution review remains separate.
+See [worker placement](node-workers.md) and
+[app accounts](instance-sudo-steps.md).

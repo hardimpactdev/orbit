@@ -1,7 +1,0 @@
-# Remove Instance-owned databases
-
-`database.destroy_owned` records one Instance-owned intent and starts one native workflow. The admitted list contains each server's Node and safe database identifiers, plus each SQLite file's Node, checkout and absolute path. It contains no password or SQL.
-
-The native plan step exposes this admitted list. One native forEach step dispatches each fixed removal action to its Node. The final step aggregates safe outcomes and projects one parent result. It creates no Gateway child Operation, per-server database intent, poll, receipt, or wait. No owned connection record is removed until every native effect succeeds. Partial failures keep all records for inspection and a convergent retry.
-
-`destroyOwnedStep` is exported for Instance lifecycle workflows. Server removal uses `destroyDatabase` and the shared private callback; its strictly typed payload contains only the authenticated worker Node's admitted server passwords keyed by server ID. This existing `database.intent` material never becomes a workflow argument or resource. The shared private source selects that Node from authenticated request context. No caller selects a Node in its body or query, and no worker receives another Node's password. The existing shared participant binding checks each reader before the source filters the encrypted map. SQLite removal uses the fixed native SQLite copy/remove action.

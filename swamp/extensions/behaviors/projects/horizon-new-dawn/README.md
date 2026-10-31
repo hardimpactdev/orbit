@@ -1,54 +1,34 @@
 # Horizon New Dawn project extension
 
-Private `@nckrtl/project-horizon-new-dawn` moves upstream detection out of the
-package's maintenance script. `config.ts` holds Project 57, repository identity,
-paths, ledger location, checks and Nick's merge approval. The ledger stays in
-the package. This extension does not use generic dependency maintenance.
+Private project configuration lives beside this page in `mod.ts`, `config.ts`
+where present, and `manifest.yaml`. Preserve its repository, package paths,
+check, branch, policy and approval settings. Fixture data records the selected
+configuration; it is not live execution evidence.
 
-- `configuration` writes the project config resource.
-- `detect({cwd})` runs on the group's VM worker. It writes the script-compatible
-  `detection` resource and a `plan` with one ordered task per candidate. A
-  missing ledger writes one baseline task instead. Invalid ledgers fail. The
-  checkout must point to the package repository and its ledger must be
-  committed.
-- The Gateway extension's `horizon_worker` verifies the existing enrollment
-  receipt and open package group. It never changes worker lifecycle state.
-- `horizon_tasks({plan})` on `orbit-gateway` creates one external **backlog**
-  group containing the planned tasks. It selects package Project 57 and checks
-  the Project's exact repository and requires automatic review/merge to be off.
-  A repeated scan reuses the group's receipt. An uncertain create stops for
-  reconciliation.
+Read the binding [Swamp shape guide](../../../../docs/swamp-shape.md) before
+writing or reviewing execution. Use full non-secret workflow inputs, native
+placed steps and vault references. Existing Gateway-client routines and
+task-driver adapters are grandfathered debt, not templates. The native pilot
+settles dispatch and terminal projection before conversions resume.
 
-`@nckrtl/project-horizon-new-dawn-detect` verifies worker placement on the
-server, runs detection on that worker and materializes tasks on the server using
-Swamp data references. It requires an existing enrolled package task group, its
-exact worker name and its VM checkout path. The Project ID comes from config. It
-has no schedule and starts no factory run. The orchestrator must authorize a
-live call. When started, parity tasks run through the existing official software
-factory and Gateway; PRs wait for Nick. No factory engine is copied.
+Keep private distribution and existing access boundaries. Configuration grants
+no authority to publish, start a live run or change production resources.
 
-The merged package baseline is already at `v5.50.1`. Do not repeat it. Detection
-cannot proceed on Project 27 `horizon-new-dawn-website`: that Project points to
-the separate website repo. Project 57 `horizon-new-dawn` is the package Project.
-Its check is `composer format:test && composer analyse && composer test`, and
-review and merge remain off so that parity PRs wait for Nick.
+## Upstream parity policy
 
-Delivery stays in the private orbit-swamp deployment bundle. Do not publish this
-manifest to the registry without the orchestrator's approval. After merge, the
-orchestrator deploys from Nick's Mac and restarts serve. Leave
-`scripts/horizon-sync` in the package until phase 5.
+This extension tracks Horizon New Dawn parity, not the generic dependency-update
+routine. `horizon-sync.json` in the package is the parity ledger. Its completed
+baseline is `v5.50.1`; do not create that baseline again. A checkout without a
+ledger needs an explicit baseline before release work.
 
-Run affected checks from orbit-swamp (one test worker):
+Compare only the next stable upstream `vX.Y.Z` tag after `synced_tag`. Compare
+route statements, public controller actions, Vue screens and configuration keys
+as text; do not boot upstream PHP. Read or fetch errors fail detection rather
+than producing an empty change set. A current ledger yields no candidates; a tag
+with no item changes still needs a compatibility release check.
 
-```sh
-~/.swamp/deno/deno test --allow-all extensions/behaviors/projects/horizon-new-dawn/mod_test.ts extensions/behaviors/projects/horizon-new-dawn/queue_test.ts extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts
-~/.swamp/deno/deno check extensions/behaviors/projects/horizon-new-dawn/mod.ts extensions/behaviors/projects/horizon-new-dawn/gateway.ts
-```
-
-See [the parity contract](../../../../../docs/horizon-new-dawn.md) for the
-baseline history and fixture tag pairs.
-
-Detection refreshes `origin/main` before comparing the checkout. Fetch failures
-stop before planning tasks. Empty or non-JSON Gateway responses report the HTTP
-status and require reconciliation. A non-object ledger reports an invalid
-`synced_tag` before reading upstream.
+Preserve each candidate's upstream identity and test requirement. Update
+`covered` for that item, and advance `synced_tag` only after every item for the
+tag completes. Only the final item advances the tag. Keep Project57
+`horizon-new-dawn` distinct from Project27 `horizon-new-dawn-website`. Parity
+changes wait for Nick's review and merge; this policy starts no live task.
