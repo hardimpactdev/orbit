@@ -159,6 +159,7 @@ it('captures publication changes once and projects or rolls back only the admitt
     expect($changes)->toHaveCount(1);
     expect($changes[0]['node_ids'])->toContain($this->router->id, $this->ingress->id, $this->vpn->id);
     expect($changes[0]['rollback']['caddy_node_ids'])->toContain($this->ingress->id);
+    expect($changes[0]['rollback']['cleanup'])->toBe([]);
     expect($tracking->fresh()->getAttributes())->toBe($before);
     expect($changes[0]['publish']['certificates'][0]['domain'])->toBe('custom-tracker.example.com');
     expect($changes[0]['publish']['certificates'][0])->not->toHaveKey('home');
@@ -189,4 +190,35 @@ it('keeps existing tracking hostnames and creates no host plan for a domain-only
 
     expect(app(AnalyticsRoutePlan::class)->captureUpdate($owner, $candidate))->toBe([]);
     expect($tracking->fresh()->domain)->toBe('analytics.current-shop.example.com');
+});
+
+it('captures new-only rollback leaves and preserves freshly loaded scopes after restoration', function (): void {
+    $project = Project::query()->create(['name' => 'Rollback Shop', 'slug' => 'rollback-shop',
+        'repository_url' => 'https://example.test/rollback.git', 'default_branch' => 'main', 'root' => 'public']);
+    $node = instance_analytics_node('rollback-app', '10.44.0.60', $this->cluster, RoleName::AppProd);
+    $instance = instance_analytics_instance($project, $node, 'production');
+    $owner = instance_analytics_app_route($instance, 'shop.example.com', RoutePublication::Public);
+    $tracking = instance_analytics_tracking($instance, 'tracker.example.com');
+    $candidateNode = instance_analytics_node('candidate-host', '10.44.0.80', null, RoleName::AppDev);
+    instance_analytics_node('plausible', '10.44.0.90', null, RoleName::Analytics);
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn('public-root');
+    app()->instance(LeafCertificateSigner::class, $signer);
+    $candidate = clone $owner;
+    $candidate->fill(['node_id' => $candidateNode->id, 'cluster_id' => null, 'publication' => RoutePublication::Private]);
+    $plans = app(AnalyticsRoutePlan::class);
+
+    $changes = $plans->captureUpdate($owner, $candidate);
+
+    expect($changes)->toHaveCount(1);
+    $rollback = $changes[0]['rollback'];
+    expect(array_column($rollback['cleanup'], 'node_id'))->toBe([$candidateNode->id]);
+    expect($rollback['cleanup'][0])->toMatchArray(['scope' => "route-{$tracking->id}-router", 'in_use' => false]);
+    $plans->checkpointUpdate($changes, 'certificates_ready');
+    expect($plans->cleanupForNode($rollback, $candidateNode->id))->toBe([]);
+    $plans->checkpointUpdate($changes, 'rollback');
+    expect($plans->cleanupForNode($rollback, $candidateNode->id))->toBe($rollback['cleanup']);
+    expect($plans->cleanupForNode($rollback, $this->router->id))->toBe([]);
+    $tracking->update(['transition_node_id' => $candidateNode->id, 'replacement_step' => null]);
+    expect($plans->cleanupForNode($rollback, $candidateNode->id))->toBe([]);
 });

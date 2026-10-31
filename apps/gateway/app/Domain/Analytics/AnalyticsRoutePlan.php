@@ -12,7 +12,9 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Routes\IngressSiteRepository;
+use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
 
@@ -122,12 +124,32 @@ final readonly class AnalyticsRoutePlan
                     'transition_dns_moved_at' => null] : [])]);
             $publish = $this->capture($next);
             $rollback = $this->capture($tracking);
+            $active = array_column($rollback['certificates'], 'scope', 'node_id');
+            foreach ($publish['certificates'] as $leaf) {
+                if (($active[$leaf['node_id']] ?? null) !== $leaf['scope']) {
+                    $rollback['cleanup'][] = [...$leaf, 'in_use' => false];
+                }
+            }
             $changes[] = ['route_id' => $tracking->id, 'before' => $this->state($tracking), 'after' => $this->state($next),
                 'publish' => $publish, 'rollback' => $rollback, 'node_ids' => array_values(array_unique([
                     ...$publish['caddy_node_ids'], ...$rollback['caddy_node_ids'], ...$publish['dns_node_ids'], ...$rollback['dns_node_ids']]))];
         }
 
         return $changes;
+    }
+
+    /** Fresh caller-scoped cleanup after the parent restores and publishes stored state.
+     *
+     * @param  Plan  $plan
+     * @return list<Leaf>
+     */
+    public function cleanupForNode(array $plan, int $nodeId): array
+    {
+        $node = Node::query()->findOrFail($nodeId);
+        $sites = app(DevelopmentSiteRepository::class)->forNode($node);
+
+        return array_values(array_filter($plan['cleanup'], static fn (array $leaf): bool => $leaf['node_id'] === $nodeId
+            && ! $sites->contains(static fn ($site): bool => $site->loadsCertificate($leaf['scope']))));
     }
 
     /** Apply only the parent's immutable captured state, never an arbitrary result payload.
