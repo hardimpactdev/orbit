@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Check static agent call sites against the frozen published binary's contract."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import urllib.request
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+# Keep strings as tokens so comments cannot introduce calls or unbalance objects.
+TOKEN = re.compile(r'''//[^\n]*|/\*[\s\S]*?\*/|\#[^\n]*|(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|->|::|=>|[A-Za-z_$][\w$]*|[^\s]''')
+NAME = re.compile(r'[a-z][a-z0-9_-]*\.[a-z][a-z0-9_.-]*\Z')
+
+
+def literal(token):
+    if len(token) > 1 and token[0] in "'\"" and token[-1] == token[0]:
+        return token[1:-1]
+    return None
+
+
+def tokens(source):
+    return [(m[0], source.count('\n', 0, m.start()) + 1) for m in TOKEN.finditer(source)
+            if not m[0].startswith(('//', '/*', '#'))]
+
+
+def groups(ts, start, opening='(', closing=')'):
+    """Split a call or object at its own commas, preserving nested expressions."""
+    stack = [closing]
+    result, begin = [], start + 1
+    pairs = {'(': ')', '[': ']', '{': '}'}
+    for end in range(start + 1, len(ts)):
+        t = ts[end][0]
+        if t in pairs:
+            stack.append(pairs[t])
+        elif t == stack[-1]:
+            stack.pop()
+            if not stack:
+                result.append(ts[begin:end])
+                return result
+        elif t == ',' and len(stack) == 1:
+            result.append(ts[begin:end])
+            begin = end + 1
+    return []
+
+
+def references(source, php=False):
+    ts = tokens(source)
+    agent_file = bool(re.search(r'AgentCommandRunner|AgentInvocation|AgentStep|AgentContract|AgentSchemas|node-agent|orbit-agent|localAgent|image_guest|image_ssh', source))
+    found = set()
+    receivers = {variable: kind for kind, variable in re.findall(r'(AgentCommandRunner|GuestAgentCommandRunner|WorkspaceAgentCommandRunner|AgentInvocation|AgentContract)\s+\$(\w+)', source)} if php else {}
+    wrappers = {}
+    if php and agent_file:
+        for method in re.finditer(r'function\s+(\w+)\s*\(([^)]*)\)', source):
+            for index, parameter in enumerate(method[2].split(',')):
+                if re.search(r'string\s+\$command\b', parameter):
+                    wrappers[method[1]] = index
+    def add(expression, resolve=True):
+        if resolve:
+            symbols = {t for t, _ in expression if re.fullmatch(r'\$?[A-Za-z_]\w*', t)}
+            for symbol in symbols:
+                for j, (token, _) in enumerate(ts[:-2]):
+                    if token == symbol and ts[j + 1][0] == '=' and ts[j + 2][0] not in ('=', '>'):
+                        end = next((k for k in range(j + 2, len(ts)) if ts[k][0] == ';'), j + 2)
+                        add(ts[j + 2:end], False)
+        # A literal or a finite conditional/constant list. Never inspect nested input objects.
+        if any(t in ('(', '[', '{', '=>') for t, _ in expression):
+            return
+        conditional = next((j for j, (t, _) in enumerate(expression) if t == '?'), -1)
+        candidates = expression[conditional + 1:] if conditional >= 0 else expression
+        if any(t in ('.', '+') for t, _ in candidates):
+            return
+        for t, line in candidates:
+            value = literal(t)
+            if value is not None:
+                found.add((line, value))
+    for i, (t, line) in enumerate(ts):
+        if t in ('{', '['):
+            fields = {}
+            for field in groups(ts, i, t, '}' if t == '{' else ']'):
+                if len(field) >= 3 and field[1][0] in (':', '=>'):
+                    fields[literal(field[0][0]) or field[0][0]] = field[2:]
+            name = fields.get('name', [])
+            transport = fields.get('transport', [])
+            wire = literal(transport[0][0]) if transport else None
+            if wire in ('agent', 'instance-deploy-agent') or (not php and wire is None and name and (
+                ('pin' in fields and 'input' in fields) or ('step' in fields and 'input' in fields))):
+                add(name)
+        if i + 1 < len(ts) and ts[i + 1][0] == '(' and agent_file:
+            index = None
+            if php and i >= 2:
+                receiver = ts[i - 2][0].lstrip('$')
+                kind = receivers.get(receiver)
+                if t == 'run' and receiver == 'AgentStep':
+                    index = 2
+                elif kind and t in ('run', 'runGuest', 'runInWorkspace', 'command', 'operationCommand'):
+                    index = 0 if kind == 'AgentContract' else (2 if t == 'runInWorkspace' else 1)
+                elif ts[i - 1][0] == '->' and receiver == '$this' and t in wrappers:
+                    index = wrappers[t]
+                elif ts[i - 1][0] == '->' and receiver == 'this' and t in wrappers:
+                    index = wrappers[t]
+                elif receiver == 'AgentSchemas' and t == 'inputSchema':
+                    index = 0
+            elif not php and t in ('command', 'localAgent', 'call'):
+                index = 0
+            if index is not None:
+                args = groups(ts, i + 1)
+                named = next((arg[2:] for arg in args if len(arg) > 2 and arg[0][0] == 'command' and arg[1][0] == ':'), None)
+                if named is not None:
+                    add(named)
+                elif len(args) > index:
+                    add(args[index])
+        # Direct argv, including sudo and embedded fixed command launchers.
+        if agent_file and literal(t) == 'command' and i + 2 < len(ts) and ts[i + 1][0] == ',' and any('orbit-agent' in prior or prior in ('binary', 'Binary', 'agent') for prior, _ in ts[max(0, i - 10):i]):
+            add(ts[i + 2:i + 3])
+        # Constants and command budgets forwarded through dynamic runner wrappers.
+        if agent_file and i + 2 < len(ts) and NAME.fullmatch(literal(t) or '') and ts[i + 1][0] == ':' and ts[i + 2][0].isdigit():
+            add(ts[i:i + 1])
+    # Shell commands in workflow files and fixed launch strings.
+    for match in re.finditer(r"orbit-agent\s+command\s+([a-z][a-z0-9_.-]*)", source):
+        found.add((source.count('\n', 0, match.start()) + 1, match[1]))
+    return sorted(found)
+
+
+def check(root, resources, binary_cache=None):
+    contract_bytes = (resources / 'frozen-commands.json').read_bytes()
+    proof = json.loads((resources / 'frozen-commands-source.json').read_text())
+    manifest = json.loads((resources / 'frozen-manifest.json').read_text())
+    artifact = manifest['artifacts'][proof['platform']]
+    if hashlib.sha256(contract_bytes).hexdigest() != proof['contract_sha256'] or artifact['sha256'] != proof['agent_sha256'] or f"/{proof['release']}/" not in artifact['url']:
+        raise ValueError('The frozen command manifest does not match its recorded published binary.')
+    if binary_cache is not None:
+        binary_cache.mkdir(parents=True, exist_ok=True)
+        binary = binary_cache / proof['agent_sha256']
+        if not binary.exists():
+            with urllib.request.urlopen(artifact['url'], timeout=60) as response:
+                binary.write_bytes(response.read())
+        if hashlib.sha256(binary.read_bytes()).hexdigest() != proof['agent_sha256']:
+            binary.unlink()
+            raise ValueError('The published agent binary does not match its frozen digest.')
+        binary.chmod(0o700)
+        actual = subprocess.check_output([str(binary.resolve()), 'contract'], timeout=15)
+        if actual != contract_bytes:
+            raise ValueError('The frozen command manifest differs from the published binary contract.')
+    names = {c['name'] for c in json.loads(contract_bytes)['commands']}
+    failures = []
+    count = 0
+    paths = ['apps/gateway/app', 'apps/gateway/extensions'] if (root / 'apps/gateway').is_dir() else ['extensions', 'workflows']
+    for base in paths:
+        for path in sorted((root / base).rglob('*')):
+            if path.suffix not in ('.php', '.ts', '.js', '.py', '.yaml', '.yml') or any(part in ('tests', 'fixtures', 'vendor', 'node_modules') for part in path.relative_to(root).parts) or re.search(r'(?:_test|\.test|_fixture|_canary)', path.name):
+                continue
+            refs = references(path.read_text(), path.suffix == '.php')
+            count += len(refs)
+            for line, command in refs:
+                if command not in names:
+                    failures.append(f'{path.relative_to(root)}:{line}: agent command [{command}] is absent from {proof["release"]}. Port the action into Swamp; do not change the frozen agent.')
+    return count, failures
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=ROOT)
+    parser.add_argument('--resources', type=Path)
+    parser.add_argument('--binary-cache', type=Path, help='Verify the snapshot with the checksum-verified published binary (CI).')
+    args = parser.parse_args()
+    resources = args.resources or args.root / ('apps/gateway/resources/agent' if (args.root / 'apps/gateway').is_dir() else 'config/frozen-agent')
+    try:
+        count, failures = check(args.root, resources, args.binary_cache)
+    except (ValueError, KeyError, OSError) as error:
+        sys.exit(f'Frozen agent guard: {error}')
+    if failures:
+        sys.exit('\n'.join(failures))
+    print(f'Frozen agent guard: {count} static references match the published command manifest.')
+
+
+if __name__ == '__main__':
+    main()

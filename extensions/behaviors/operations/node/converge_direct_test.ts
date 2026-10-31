@@ -71,6 +71,7 @@ function dependencies() {
       calls.push(call);
       return Promise.resolve({ changed: false });
     },
+    program: () => Promise.resolve({ result: "unchanged" }),
     install: () => Promise.resolve({ changed: false }),
     account: () => Promise.resolve({ home: "/home/orbit", group: "orbit" }),
     dns: () => Promise.resolve({ ready: true }),
@@ -240,7 +241,7 @@ Deno.test("only Caddy validation refusal is skippable and first-visit failure st
       unserved: true,
     },
   };
-  f.deps.agent = () =>
+  f.deps.program = () =>
     Promise.resolve({
       error_code: "caddy.publication_failed",
       stage: "validate",
@@ -264,7 +265,7 @@ Deno.test("only Caddy validation refusal is skippable and first-visit failure st
       .deferred_error,
     undefined,
   );
-  f.deps.agent = () =>
+  f.deps.program = () =>
     Promise.resolve({
       error_code: "caddy.publication_failed",
       stage: "reload",

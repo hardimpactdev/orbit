@@ -1,3 +1,5 @@
+import { caddyProgram } from "../routes/caddy-program.ts";
+import { runLocalProgram } from "../routes/local-program.ts";
 import { z } from "npm:zod@4.4.3";
 import { agentReply, runNodeAgent } from "../_lib/node-agent.ts";
 import {
@@ -273,7 +275,7 @@ async function cleanResidue(snapshot: Snapshot, signal?: AbortSignal) {
     if (input.caddy.error_code) {
       return { error_code: Code.parse(input.caddy.error_code) };
     }
-    const result = await call("caddy.publish", input.caddy);
+    const result = await runLocalProgram(caddyProgram, input.caddy, signal);
     if (result.error_code) return result;
     z.object({ result: z.enum(["published", "unchanged"]) }).parse(result);
   }
