@@ -37,6 +37,7 @@ return ['database.update' => [
     'private_material' => ['password' => 'database.intent', 'environment' => 'database.intent', 'acl' => 'database.intent', 'payload' => 'database.intent'],
 ], 'database.write' => [
     'workflow' => 'operation-database-write',
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$']],
     'projection' => DatabaseWriteProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'write', 'step' => 'result'],

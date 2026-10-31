@@ -303,6 +303,42 @@ Deno.test("official systemd apply and restart methods need no local adapter", as
   assertEquals(foreign.success, false);
 });
 
+Deno.test("official firewall apply is recognized without opening the extension namespace", async () => {
+  const task = {
+    type: "behavior",
+    behaviorType: "@swamp/cfgmgmt/firewall",
+    behaviorName: "route-lan-rule",
+    methodName: "apply",
+    globalArgs: {
+      port: 32444,
+      protocol: "tcp",
+      action: "allow",
+      direction: "in",
+      source: "10.44.0.2/32",
+      ensure: "present",
+      nodeHost: "10.44.0.7",
+      nodeUser: "orbit",
+      nodePort: 22,
+      nodeIdentityFile:
+        "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+      become: true,
+    },
+    inputs: {},
+  };
+  const allowed = await check(task);
+  assertEquals(allowed.success, true, allowed.diagnostic);
+  for (
+    const behaviorType of [
+      "@swamp/cfgmgmt/firewall-extra",
+      "@other/cfgmgmt/firewall",
+    ]
+  ) {
+    const rejected = await check({ ...task, behaviorType });
+    assertEquals(rejected.success, false);
+    assertStringIncludes(rejected.diagnostic, "not third-party extensions");
+  }
+});
+
 Deno.test("the reviewed HTTP source extraction retains its exact raw adapter path", async () => {
   const root = await Deno.makeTempDir();
   try {

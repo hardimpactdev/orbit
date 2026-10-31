@@ -1,6 +1,12 @@
 {
-  "version": 1,
+  "version": 2,
   "principal": "user:orbit-gateway",
+  "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^database-write-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^bootstrap-identity-node-14$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^vault-sync-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]}
+  ],
   "workflows": [
     {"workflow": "operation-analytics-disable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-enable-direct", "actions": ["run", "read"]},
@@ -42,6 +48,7 @@
     {"workflow": "operation-instance-deploy-direct", "actions": ["run", "read"]},
     {"workflow": "operation-instance-destroy", "actions": ["run", "read"]},
     {"workflow": "operation-instance-environment", "actions": ["run", "read"]},
+    {"workflow": "operation-instance-policy-activity", "actions": ["run", "read"]},
     {"workflow": "operation-instance-register", "actions": ["run", "read"]},
     {"workflow": "operation-instance-rename", "actions": ["run", "read"]},
     {"workflow": "operation-instance-setup-direct", "actions": ["run", "read"]},

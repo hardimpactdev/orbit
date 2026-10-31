@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 
 /** Captures validated Route input; the native workflow owns execution. */
@@ -34,7 +36,7 @@ final readonly class StartRouteNodeOperationAction
             }
 
             return $this->operations->execute($kind, 'route_effect', ValidatedData::integer($input['route_id']), $node->id,
-                [...$input, 'lan_removal' => ['route_id' => $input['route_id'], 'node_id' => $node->id, 'destination' => $node->lan_ip]],
+                [...$input, 'lan_removal' => ['route_id' => $input['route_id'], 'node_id' => $node->id, 'migrate' => app(NativeRouteLanInput::class)->migrationPending($node->id), 'rules' => app(NativeRouteLanInput::class)->withdrawal($node, Route::query()->findOrFail(ValidatedData::integer($input['route_id'])))]],
                 $parent === null ? 'operator' : $parent->triggered_by, $parent?->request_id);
         }
         $plan = $this->plans->networkVerification($draft);
