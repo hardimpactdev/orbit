@@ -33,13 +33,13 @@ Swamp requests failed queue job pruning daily, keeping seven days by default. [G
 
 ## Execution
 
-Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. Manual run and destroy start their native workflow directly and the Gateway projects the bounded outcome. Create and enable keep their current receipt path until their own cutover. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
+Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. Enable, manual run and destroy start their native workflow directly and the Gateway projects the bounded outcome. Create keeps its current receipt path until their own cutover. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
 
-The unconverted kinds for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs. Manual run and destroy have no Gateway execution hold; Swamp owns their placement and concurrency.
+The unconverted kinds for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs. Enable, manual run and destroy have no Gateway execution hold; Swamp owns their placement and concurrency.
 
 Retained Gateway callers keep the synchronous Schedule actions and native runtime manager until their owning lane cuts over. Clone and deployment definition installation use this path. They do not admit or await Schedule Operations.
 
-When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create and enable use the synchronous PHP actions until their conversion. Manual run and destroy return HTTP 202 and start Swamp directly on every Node. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry. Enable returns HTTP 200 with Schedule data.
+When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create uses the synchronous PHP action until their conversion. Enable, manual run and destroy return HTTP 202 and start Swamp directly on every Node. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry.
 
 Polled Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
 
@@ -120,7 +120,9 @@ An existing file at an owned path must be a regular file with the expected owner
 
 ## Direct Swamp control
 
-`schedule.run` and `schedule.destroy` use `operation-schedule-control` directly. Admission records the selected writer. Destroy has no Gateway executor, so the shared writer defaults to direct without a family configuration override. Its public PHP branch, polled descriptors and receipt contract are removed. An explicit polled override refuses. Manual run also has no Gateway executor: its polled receipt contract is removed and it defaults to direct when the shared writer map is empty. The PHP run method is removed too. Roll back through a revert PR. The shared `ORBIT_SWAMP_DIRECT_WRITERS` map keeps an independent setting for unconverted `schedule.enable`, which still defaults to `polled`.
+`schedule.enable`, `schedule.run` and `schedule.destroy` use `operation-schedule-control` directly. Admission records the selected writer. Destroy has no Gateway executor, so the shared writer defaults to direct without a family configuration override. Its public PHP branch, polled descriptors and receipt contract are removed. An explicit polled override refuses. Manual run also has no Gateway executor: its polled receipt contract is removed and it defaults to direct when the shared writer map is empty. The PHP run method is removed too. Roll back through a revert PR.
+
+When you enable an active Instance Schedule, its writer defaults to direct. Its public PHP action and runtime activation method are removed. The Gateway changes desired timer state after native success; a failed activation preserves the prior intent.
 
 The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and alone binds its root run ID. A Node worker reads the admitted Schedule UUID, agent digest, runtime user and working directory. It verifies the pinned root-owned local binary, then invokes the fixed Schedule command with passwordless `sudo -n` as the configured Node user. The step limits time and output and projects only bounded ready/error fields. It uses no Gateway execution relay, lease, claim, target hold or receipt.
 
