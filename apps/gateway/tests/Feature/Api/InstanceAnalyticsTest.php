@@ -99,6 +99,11 @@ describe('instance:analytics:enable', function (): void {
             ->and(Operation::query()->count())->toBe(1)
             ->and(RouteAnalyticsTracking::query()->count())->toBe(1)
             ->and($operation->input['tracking']['publish'])->toHaveCount(1)
+            ->and($operation->input['tracking']['certificates'])->toHaveCount(1)
+            ->and($operation->input['tracking']['certificates'][0]['scope'])->toEndWith('-router')
+            ->and($operation->input['tracking']['certificates'][0]['home'])->toBe('/srv/managed/orbit')
+            ->and($operation->input['tracking']['router_node_ids'])->toBe([$this->router->id])
+            ->and($operation->input['tracking']['ingress_node_ids'])->toBe([$this->ingress->id])
             ->and($operation->input['participant_node_ids'])->toContain($this->analytics->id, $this->router->id, $this->ingress->id)
             ->and($operation->state)->not->toHaveKey('analytics_writer');
     });
@@ -109,7 +114,10 @@ describe('instance:analytics:enable', function (): void {
         expect($route->status)->toBe(RouteStatus::Pending)->and($route->sites_published)->toBeFalse();
         $projection = app(AnalyticsIntentProjection::class);
         $projection->apply($operation, analytics_intent_result('running', ['certificates_ready' => true]));
-        expect($route->fresh()->sites_published)->toBeTrue();
+        expect($route->fresh()->sites_published)->toBeTrue()
+            ->and($route->fresh()->replacement_step)->toBeNull();
+        $projection->apply($operation, analytics_intent_result('running', ['public_verified' => true]));
+        expect($route->fresh()->replacement_step)->toBe(RouteReplacementStep::PublicActivated);
         $projection->apply($operation, analytics_intent_result('succeeded', analytics_intent_success()));
         $this->getJson($this->url)->assertOk()->assertJsonPath('data.enabled', true)
             ->assertJsonPath('data.hosts.0.host', 'analytics.shop.example.com')
@@ -127,7 +135,7 @@ describe('instance:analytics:enable', function (): void {
         $old = instance_analytics_tracking($this->instance, 'old.shop.example.com');
         $operation = analytics_intent_start($this, ['hosts' => [' Stats.Shop.Example.Com ']]);
         $plan = $operation->fresh()->input['tracking'];
-        expect($plan['remove'])->toBe([$old->id])->and($plan['cleanup'])->toHaveCount(2)
+        expect($plan['remove'])->toBe([$old->id])->and($plan['cleanup'])->toHaveCount(1)
             ->and($plan['caddy_node_ids'])->toBe([$this->router->id, $this->ingress->id])
             ->and($operation->input['hosts'])->toBe(['stats.shop.example.com']);
         app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('running', ['certificates_ready' => true]));
@@ -141,6 +149,71 @@ describe('instance:analytics:enable', function (): void {
         $operation = analytics_intent_start($this);
         expect($operation->fresh()->input['tracking']['caddy_node_ids'])->toBe([$this->router->id])
             ->and($operation->fresh()->input['tracking']['certificates'])->toHaveCount(1);
+    });
+
+    it('keeps the existing Router leaf while retiring only the public edge on a private change', function (): void {
+        $route = instance_analytics_tracking($this->instance);
+        $this->appRoute->update(['publication' => RoutePublication::Private]);
+
+        $operation = analytics_intent_start($this);
+
+        expect($operation->input['tracking']['cleanup'])->toBe([])
+            ->and($operation->input['tracking']['ingress_node_ids'])->toBe([])
+            ->and($operation->input['tracking']['cleanup_caddy_node_ids'])->toBe([$this->router->id, $this->ingress->id])
+            ->and($route->fresh()->publication)->toBe(RoutePublication::Private);
+    });
+
+    it('needs no retiring placement publication when the exact host set is already current', function (): void {
+        instance_analytics_tracking($this->instance);
+
+        $operation = analytics_intent_start($this);
+
+        expect($operation->input['tracking']['cleanup_caddy_node_ids'])->toBe([])
+            ->and($operation->input['tracking']['cleanup'])->toBe([]);
+    });
+
+    it('keeps retiring placement identity until native cleanup and successful completion', function (): void {
+        $oldCluster = Cluster::query()->create(['name' => 'old-edge', 'tld' => 'old.test', 'state' => ClusterState::Active]);
+        $oldRouter = instance_analytics_node('old-router', '10.44.0.80', $oldCluster, RoleName::Router);
+        $oldIngress = instance_analytics_node('old-ingress', '10.44.0.81', $oldCluster, RoleName::Ingress);
+        $route = instance_analytics_tracking($this->instance);
+        $route->update(['cluster_id' => $oldCluster->id]);
+
+        $operation = analytics_intent_start($this);
+        $plan = $operation->input['tracking'];
+        expect($route->fresh()->cluster_id)->toBe($this->cluster->id)
+            ->and($route->fresh()->transition_cluster_id)->toBe($oldCluster->id)
+            ->and($plan['router_node_ids'])->toBe([$this->router->id])
+            ->and($plan['ingress_node_ids'])->toBe([$this->ingress->id])
+            ->and($plan['cleanup_caddy_node_ids'])->toBe([$oldRouter->id, $oldIngress->id])
+            ->and($plan['cleanup'])->toHaveCount(1)
+            ->and($plan['cleanup'][0]['node_id'])->toBe($oldRouter->id)
+            ->and($plan['cleanup'][0]['in_use'])->toBeFalse();
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running', ['certificates_ready' => true, 'public_verified' => true]));
+        expect($route->fresh()->transition_cluster_id)->toBe($oldCluster->id);
+        $projection->apply($operation, analytics_intent_result('running', ['placement_cleanup' => true]));
+        expect($route->fresh()->replacement_step)->toBe(RouteReplacementStep::Cleanup)
+            ->and($route->fresh()->transition_cluster_id)->toBe($oldCluster->id);
+        $projection->apply($operation, analytics_intent_result('succeeded', analytics_intent_success()));
+        expect($route->fresh()->transition_cluster_id)->toBeNull()
+            ->and($route->fresh()->transition_dns_moved_at)->toBeNull()
+            ->and($route->fresh()->status)->toBe(RouteStatus::Active);
+    });
+
+    it('preserves its old binding and retiring Routes when native publication fails', function (): void {
+        $settings = app(SettingRepository::class);
+        $scope = new SettingScope(SettingScopeType::Gateway);
+        $binding = json_encode(['domain' => 'old.example.com', 'timezone' => 'UTC']);
+        $settings->put($scope, 'analytics.site.'.$this->instance->id, $binding);
+        $old = instance_analytics_tracking($this->instance, 'old.shop.example.com');
+        $operation = analytics_intent_start($this);
+
+        app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('failed', [], 'analytics.change_failed'));
+
+        expect($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBe($binding)
+            ->and($old->fresh()->status)->toBe(RouteStatus::Retiring)
+            ->and(Route::query()->where('domain', 'analytics.shop.example.com')->sole()->status)->toBe(RouteStatus::Pending);
     });
 
     it('refuses absent analytics and authoritative domains before submitting a run', function (): void {
@@ -219,7 +292,7 @@ describe('instance:analytics:disable', function (): void {
             ->and($operation->input['tracking']['remove'])->toBe([$first->id, $second->id]);
         $projection = app(AnalyticsIntentProjection::class);
         $projection->apply($operation, analytics_intent_result('running'));
-        expect($operation->fresh()->input['tracking']['cleanup'])->toHaveCount(4)
+        expect($operation->fresh()->input['tracking']['cleanup'])->toHaveCount(2)
             ->and($first->fresh()->status)->toBe(RouteStatus::Retiring)
             ->and($second->fresh()->sites_published)->toBeFalse();
         $result = ['ready' => true, 'enabled' => false, 'domain' => null, 'timezone' => null, 'detached' => true];
@@ -350,6 +423,35 @@ describe('analytics native participant boundary', function (): void {
         $next = $this->getJson($this->path.$query)->assertOk();
         expect($next->json('data.input.caddy_publication.caddy.content'))->not->toBe($first->json('data.input.caddy_publication.caddy.content'));
         expect($next->getContent())->not->toContain('private-management-sentinel')->not->toContain('private-stats-sentinel');
+    });
+
+    it('admits private TLS probes only on Ingress and activates its handler after verification', function (): void {
+        $projection = app(AnalyticsIntentProjection::class);
+        $router = $projection->publicInput($this->operation, $this->router->id);
+        $before = $projection->publicInput($this->operation, $this->ingress->id);
+        expect($router['public_verification'])->toBe([])
+            ->and($before['certificates'])->toBe([])
+            ->and($before['public_verification'][0]['probe'])->toBe([
+                'address' => '10.10.0.20', 'port' => 443, 'domain' => 'analytics.shop.example.com',
+            ]);
+        $projection->apply($this->operation, analytics_intent_result('running', ['certificates_ready' => true]));
+        $prepared = $projection->publicInput($this->operation, $this->ingress->id);
+        expect($prepared['caddy_publication']['caddy']['content'])->toBe($before['caddy_publication']['caddy']['content']);
+        $projection->apply($this->operation, analytics_intent_result('running', ['public_verified' => true]));
+        $active = $projection->publicInput($this->operation, $this->ingress->id);
+        expect($active['caddy_publication']['caddy']['content'])->not->toBe($prepared['caddy_publication']['caddy']['content'])
+            ->toContain('tls force_automate');
+    });
+
+    it('exposes the canonical private DNS payload only to its admitted owner', function (): void {
+        $dns = instance_analytics_node('private-dns', '10.44.0.82', null, RoleName::Vpn);
+        $operation = analytics_intent_start($this);
+
+        $view = app(AnalyticsIntentProjection::class)->publicInput($operation, $dns->id);
+
+        expect($view)->toHaveKey('private_dns_publication')->not->toHaveKey('dns_publication')
+            ->and($view['private_dns_publication']['node_id'])->toBe($dns->id)
+            ->and($view['private_dns_publication']['digest'])->toBe(hash('sha256', $view['private_dns_publication']['catalog']));
     });
 
     it('refuses fresh participant reads after admitted ownership or placement changes', function (string $change): void {

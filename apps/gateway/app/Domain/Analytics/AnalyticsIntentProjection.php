@@ -97,13 +97,17 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
             $view['ingress_firewall'] = ['desired' => array_map(static fn (UfwManagedRule $rule): array => ['shape' => $rule->shape->toAgentInput(), 'replace_port' => $rule->replacePort], $desired),
                 'remove' => array_map(static fn (UfwManagedRule $rule): array => $rule->shape->toAgentInput(), $removed), 'enable' => false];
         }
+        $view['public_verification'] = array_values(array_map(
+            static fn (array $entry): array => ValidatedData::object($entry['verification']),
+            array_filter($plan['public_verifications'], static fn (array $entry): bool => $entry['node_id'] === $nodeId),
+        ));
         if (in_array($nodeId, $dnsIds, true)) {
             if (! PrivateDnsPublicationNodes::query()->whereKey($nodeId)->exists()) {
                 throw new ResourceOperationException('analytics.tracking_changed', 'The admitted DNS owner changed.', 409);
             }
             $dns = app(DevelopmentDnsConfigRenderer::class);
             $catalog = json_encode(['requesters' => $dns->registeredRequesters(), ...$dns->catalog()->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-            $view['dns_publication'] = ['node_id' => $nodeId, 'records' => $dns->render(), 'catalog' => $catalog, 'digest' => hash('sha256', $catalog)];
+            $view['private_dns_publication'] = ['node_id' => $nodeId, 'records' => $dns->render(), 'catalog' => $catalog, 'digest' => hash('sha256', $catalog)];
         }
 
         return $view;
@@ -117,7 +121,7 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
         $published = ($result['certificates_ready'] ?? null) === true;
         $safeResult = $this->safeResult($result);
 
-        return DB::transaction(function () use ($operation, $data, $status, $safeResult, $requests, $published): Operation {
+        return DB::transaction(function () use ($operation, $data, $status, $safeResult, $requests, $published, $result): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
             if (! $terminal && $status === OperationStatus::Succeeded) {
@@ -128,6 +132,12 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
             }
             if (! $terminal && $published) {
                 $this->tracking->publish($operation);
+            }
+            if (! $terminal && ($result['public_verified'] ?? false) === true) {
+                $this->tracking->activatePublic($operation);
+            }
+            if (! $terminal && ($result['placement_cleanup'] ?? false) === true) {
+                $this->tracking->cleanupPlacement($operation);
             }
             $projected = $this->direct->project($operation, $data, $status->terminal() ? $safeResult : []);
 

@@ -195,7 +195,9 @@ The fleet does not have to own its public edge. A tracking host mirrors the Inst
 
 ### Native workflows manage sites
 
-Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals and participant Nodes. Placed publication steps read fresh public configuration through the shared direct Operation endpoint. Only the owning Analytics Node reads the declared protected Plausible credentials. The Gateway projects bounded results without checking execution receipts. The Project owns its markup.
+Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, managed account homes and participant Nodes. Placed steps reuse the shared Route publication and certificate primitives. Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
+
+The Gateway projects these checkpoints, clears retiring placements and saves the site binding after successful completion. It does not check execution receipts. Only the owning Analytics Node reads the declared protected Plausible credentials. The Project owns its markup.
 
 Enable and disable return an accepted Operation. Every effect step requires its admitted Node worker. A workerless DNS owner is unsupported; these workflows do not skip DNS or use an SSH fallback. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
 

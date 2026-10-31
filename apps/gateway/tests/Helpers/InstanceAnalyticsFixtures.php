@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Analytics\AnalyticsIntentProjection;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
@@ -120,6 +122,13 @@ function instance_analytics_tracking(Instance $instance, ?string $domain = null)
 
 function analytics_intent_socket(): FakeRoutePublicationSocket
 {
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount($node->user, $node->user, '/srv/managed/'.$node->user);
+        }
+    });
     $signer = Mockery::mock(LeafCertificateSigner::class);
     $signer->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\npublic-root\n-----END CERTIFICATE-----");
     app()->instance(LeafCertificateSigner::class, $signer);
