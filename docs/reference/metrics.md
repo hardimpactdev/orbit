@@ -117,6 +117,10 @@ If a Node's service-metrics snapshot or convergence fails, the Gateway records t
 
 Service degradation belongs to service metrics. Exporter and cAdvisor snapshots do not clear it. The Gateway clears it only after that Node's service reconciliation and publication succeed. Step and error-code updates are atomic. If the operation loses a Node lock, reconciliation stops and reports `node.lock_lost`. This failure affects the whole operation, not only service metrics on one Node.
 
+## Swamp worker state
+
+The Node exporter enables its systemd collector for `orbit-node-worker.service`. Query `node_systemd_unit_state{name="orbit-node-worker.service",state="failed"} == 1` to detect a failed worker. Doctor also reports `node.worker_failed` from its read-only Node observation. Native authentication and restart errors remain in the worker journal.
+
 ## Process runtime status
 
 A Process list reads each Process's status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view) first. For a Process whose Node has no fresh view, it reads Prometheus in one query.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -20,12 +21,23 @@ final readonly class StartSwampRun
 
     public function start(Operation $operation): void
     {
+        $this->submit($operation, false);
+    }
+
+    /** Replay an existing intent only after a reliable native history read. */
+    public function recover(Operation $operation): void
+    {
+        $this->submit($operation, true);
+    }
+
+    private function submit(Operation $operation, bool $historyFirst): void
+    {
         $declaration = app(DirectOperation::class)->definition($operation->kind);
         if ($declaration === null || ! DirectOperation::owns($operation)) {
             throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
         }
         $operation->refresh();
-        if (isset($operation->state['swamp_run_id'])) {
+        if (isset($operation->state['swamp_run_id']) || $operation->status !== OperationStatus::Queued || $operation->cancel_requested_at !== null) {
             return;
         }
         $workflow = $declaration['workflow'];
@@ -40,14 +52,18 @@ final readonly class StartSwampRun
         $started = microtime(true);
         $outcome = 'uncertain';
         try {
-            try {
-                $runId = ValidatedData::string($this->request($endpoint, 'workflow.run', $payload, 'start')['run_id']);
-                $outcome = 'started';
-            } catch (ResourceOperationException $exception) {
-                if ($exception->errorCode !== 'swamp.start_uncertain') {
-                    $outcome = 'refused';
-                    throw $exception;
+            $runId = null;
+            if (! $historyFirst) {
+                try {
+                    $runId = ValidatedData::string($this->request($endpoint, 'workflow.run', $payload, 'start')['run_id']);
+                    $outcome = 'started';
+                } catch (ResourceOperationException $exception) {
+                    if ($exception->errorCode !== 'swamp.start_uncertain') {
+                        throw $exception;
+                    }
                 }
+            }
+            if ($runId === null) {
                 $history = $this->request($endpoint, 'workflow.run.search', [
                     'workflow' => $workflow, 'inputs' => ['operation_id' => (string) $operation->id],
                     'tags' => ['orbit_start_key' => $key], 'limit' => 2,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
@@ -11,7 +12,7 @@ use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use Illuminate\Support\Arr;
 
-/** Kit v2 hydrates a parameter only after this intent's target and Node match the Operation. */
+/** Resolves only protected admitted parameters after matching their target and Node. */
 final readonly class DatabaseIntentSource implements OperationSecretSource
 {
     public function targetTypes(): array
@@ -42,6 +43,12 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The database intent belongs to another target.', 422);
         }
         $intent = DatabaseExecutionIntent::recorded($id);
+        if ($key === '' && DirectOperation::owns($operation)
+            && in_array($parameter, match ($operation->kind) {
+                'database_user.create' => ['password', 'sql'], 'database_server.close' => ['password'], default => []
+            }, true)) {
+            $key = 'database-apply';
+        }
         $command = $intent->payload['commands'][$key] ?? null;
         if (! is_array($command) || ! in_array($parameter, $command['protected'] ?? [], true) || ! Arr::has($command['input'], $parameter)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This parameter is not protected database intent.', 422);

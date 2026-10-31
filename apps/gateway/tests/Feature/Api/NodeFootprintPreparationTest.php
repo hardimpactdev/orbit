@@ -5,15 +5,21 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Nodes\NodeFootprintEvidence;
+use App\Domain\Nodes\NodeFootprintOperationCompletion;
+use App\Domain\Nodes\NodeFootprintOperationExecution;
 use App\Domain\Nodes\PrepareNodeAgentConfigurationCommand;
 use App\Domain\Nodes\PrepareNodeFootprintCommand;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeWorkerEnrollment;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\WireGuard\PeerDnsInspector;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
@@ -21,6 +27,9 @@ use App\Models\Instance;
 use App\Models\NodeFootprint as FootprintRecord;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskVm;
+use Illuminate\Support\Facades\Cache;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -51,7 +60,10 @@ it('freezes worker installation only for the operator-selected Node', function (
     $command->run($operation, $operation->input);
 
     $configuration = $operation->refresh()->input['_footprint']['payloads']['agent']['configuration'];
-    expect(str_contains($configuration, 'swamp_worker = true'))->toBe($enabled);
+    expect(str_contains($configuration, '[swamp_worker]'))->toBe($enabled);
+    if ($enabled) {
+        expect($configuration)->toContain("node_id = {$node->id}", 'user = '.json_encode($node->user, JSON_THROW_ON_ERROR));
+    }
 })->with([true, false]);
 
 it('prepares a matching footprint without any Node effect', function (): void {
@@ -167,14 +179,60 @@ it('refuses forged, failed and wrong installer evidence', function (string $vari
         ->and($operation->refresh()->input['_footprint']['payloads']['agent'])->not->toHaveKey('binary_changed');
 })->with(['wrong_command', 'wrong_transport', 'failed', 'unproven', 'forged_step']);
 
-it('refuses required collector preparation when its owning child kind is unavailable', function (): void {
+it('records an unavailable collector at its ordered boundary without blocking protected agent preparation', function (): void {
     $definitions = OperationKinds::definitions();
     unset($definitions['ai_router.collector_converge']);
     app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
-    [, $operation, , $command] = footprintPreparation([new FakeFootprintArtifact('ai-router', 'current')]);
-    expect($command->run($operation, $operation->input))->toBe(['error_code' => 'operation.kind_unavailable'])
-        ->and($operation->fresh()->state['child_intents'] ?? [])->toBe([])
-        ->and($operation->input)->not->toHaveKey('_footprint');
+    [$node, $operation, , $command] = footprintPreparation([
+        new FakeFootprintArtifact('agent', 'agent-current'), new FakeFootprintArtifact('ai-router', 'collector-current'),
+    ]);
+    config(['swamp_workers.nodes' => [$node->id]]);
+    expect($command->run($operation, $operation->input))->toBe(['prepared' => true]);
+    $snapshot = $operation->refresh()->input['_footprint'];
+    expect(array_column($snapshot['artifacts'], 'name'))->toBe(['agent', 'ai-router'])
+        ->and($snapshot['artifacts'][1]['required'])->toBeTrue()
+        ->and($snapshot['artifacts'][1]['error_code'])->toBe('operation.kind_unavailable')
+        ->and($snapshot['payloads']['agent']['worker_credentials'])->toBe(['$secret' => 'node.worker_credentials', 'id' => $node->id])
+        ->and($snapshot['payloads']['agent']['configuration'])->toContain('[swamp_worker]')
+        ->and($snapshot['children'])->toBe([])
+        ->and($operation->state['child_intents'])->toBe([]);
+});
+
+it('requires prior agent proof and fails unavailable collector without recording its digest', function (): void {
+    [$node, $operation, , $command] = footprintPreparation([
+        new FakeFootprintArtifact('agent', 'agent-current'), new FakeFootprintArtifact('ai-router', 'collector-current'),
+    ]);
+    $definitions = OperationKinds::definitions();
+    unset($definitions['ai_router.collector_converge']);
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
+    FootprintRecord::query()->create(['node_id' => $node->id, 'digest' => 'old',
+        'artifacts' => ['ai-router' => 'old-collector'], 'converged_at' => now()]);
+    $command->run($operation, $operation->input);
+    $operation->refresh();
+    $evidence = app(NodeFootprintEvidence::class);
+    $execution = app(NodeFootprintOperationExecution::class);
+    expect(array_column($execution->context($operation)['descriptors'], 'key'))->toBe([
+        'prepare-footprint', 'footprint-agent-install', 'footprint-result',
+    ]);
+    expect(fn () => $evidence->derive($operation, []))->toThrow(ResourceOperationException::class);
+    $operation->update(['state' => [...$operation->state, 'executor_runs' => [
+        'footprint-agent-install' => ['transport' => 'node-agent', 'name' => 'agent.install', 'result' => ['installed' => true, 'changed' => true]],
+        'prepare-agent-configuration' => ['transport' => 'gateway', 'name' => 'node.prepare-agent-configuration', 'result' => ['prepared' => true]],
+        'footprint-agent' => ['transport' => 'agent', 'name' => 'agent.configure', 'result' => ['restarted' => true]],
+    ]]]);
+    $derived = $evidence->derive($operation, []);
+    expect($derived['error_code'])->toBe('operation.kind_unavailable')
+        ->and($derived['result']['artifacts'])->toBe([['name' => 'agent', 'status' => 'applied', 'reason' => null]])
+        ->and($derived['result']['skipped'])->toBe([])
+        ->and($derived['recorded'])->toHaveKey('agent')->not->toHaveKey('ai-router')
+        ->and(array_column($execution->context($operation)['descriptors'], 'key'))->toBe([
+            'prepare-footprint', 'footprint-agent-install', 'prepare-agent-configuration', 'footprint-agent', 'footprint-result',
+        ]);
+    $completion = app(NodeFootprintOperationCompletion::class);
+    expect(fn () => $completion->complete($operation, OperationOutcome::succeeded($derived['result'])))->toThrow(ResourceOperationException::class);
+    $completion->complete($operation, OperationOutcome::failed('operation.kind_unavailable', $derived['result']));
+    expect(FootprintRecord::query()->where('node_id', $node->id)->firstOrFail()->artifacts)
+        ->toBe($derived['recorded']);
 });
 
 it('stages private DNS only for active VPN owners including a combined Gateway holder', function (array $roles, string $status, bool $stages): void {
@@ -228,3 +286,35 @@ it('captures ordered PHP inputs from the retained renderer and active Instance v
         ]);
     }
 })->with([[[RoleName::AppDev], '512'], [[RoleName::AppProd], '256'], [[RoleName::AppProd, RoleName::AppDev], '512']]);
+
+it('permits a selected task VM host but excludes the task VM Node', function (): void {
+    [$node] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    config(['swamp_workers.nodes' => [$node->id]]);
+    $node->update(['user' => 'nckrtl', 'settings' => ['task_vms' => ['max_vms' => 6]]]);
+    $rollout = app(NodeWorkerRollout::class);
+    expect($rollout->allows($node))->toBeTrue();
+    $project = Project::query()->create(['name' => 'Worker task', 'slug' => 'worker-task', 'repository_url' => 'git@github.com:acme/worker-task.git']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Task worker', 'brief' => 'Task worker', 'status' => 'backlog']);
+    $guest = FleetFixtures::node('worker-guest');
+    TaskVm::query()->create(['group_id' => $group->id, 'node_id' => $guest->id, 'host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-worker', 'wireguard_ip' => $guest->wireguard_ip, 'state' => 'ready']);
+    config(['swamp_workers.nodes' => [$node->id, $guest->id]]);
+    expect($rollout->allows($node))->toBeTrue()->and($rollout->allows($guest))->toBeFalse();
+});
+
+it('stages Node worker credentials outside intent and re-delivers only for the admitted Node', function (): void {
+    [$node, $operation, $footprint, $command] = footprintPreparation([new FakeFootprintArtifact('agent', 'current')]);
+    config(['swamp_workers.nodes' => [$node->id]]);
+    $source = app(NodeWorkerEnrollment::class);
+    $credentials = ['enrollment_token' => 'orbit-node-'.$node->id.'.privateEnrollmentSentinel', 'server_token' => 'orbit-node-'.$node->id.'-access.privateServerSentinel'];
+    $reference = $source->stage($node, $credentials);
+    $operation->update(['input' => [...$operation->input, '_worker_enrollment' => $reference]]);
+    FootprintRecord::query()->create(['node_id' => $node->id, 'digest' => 'old', 'artifacts' => $footprint->expected($node)->artifacts, 'converged_at' => now()]);
+    $command->run($operation, ['force_artifacts' => false, 'first_visit' => false]);
+    $snapshot = $operation->refresh()->input['_footprint'];
+    expect($snapshot['artifacts'][0]['required'])->toBeTrue()->and($snapshot['payloads']['agent']['worker_credentials'])->toBe(['$secret' => 'node.worker_credentials', 'id' => $node->id]);
+    expect(json_encode($operation->toArray(), JSON_THROW_ON_ERROR))->not->toContain('privateEnrollmentSentinel', 'privateServerSentinel');
+    expect($source->resolve($operation, $node->id, 'footprint-agent', 'worker_credentials')->value)->toBe($credentials);
+    expect(fn () => $source->resolve($operation, $node->id + 1, 'footprint-agent', 'worker_credentials'))->toThrow(ResourceOperationException::class);
+    Cache::flush();
+    expect(fn () => $source->resolve($operation, $node->id, 'footprint-agent', 'worker_credentials'))->toThrow(ResourceOperationException::class);
+});

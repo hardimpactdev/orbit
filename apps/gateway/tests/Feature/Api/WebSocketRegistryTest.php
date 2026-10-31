@@ -231,7 +231,7 @@ it('binds each registry kind to its admitted identity and rejects unlisted effec
     $operation->state = ['executor_runs' => ['probe' => ['transport' => 'remote_program', 'name' => 'websocket.registry-applied', 'result' => $result]]];
     $contract->assertStep($operation, 'reverb-registry-applied', $result);
     expect($contract->result($operation, [...$result, 'secret' => 'must-not-survive', 'stdout' => 'must-not-survive']))->toBe($result);
-})->with(['create', 'destroy', 'rotate']);
+})->with(['rotate']);
 
 it('rechecks the current boot before completing a proven registry Operation', function (): void {
     $registry = app(ChangeWebSocketRegistryAction::class)->execute('create', 'alpha', $this->gateway->id, 'boot-proof');
@@ -264,7 +264,8 @@ it('admits sync while a registry mutation still waits for a missing Reverb proce
     $operation = Operation::query()->findOrFail($sync->json('data.id'));
     expect($operation->target_id)->toBe($mutation->target_id)
         ->and($operation->target_type)->toBe('websocket_sync')
-        ->and($operation->lock_key)->not->toBe($mutation->lock_key)
+        ->and($operation->lock_key)->toBeNull()
+        ->and($mutation->lock_key)->toBeNull()
         ->and($mutation->refresh()->status)->toBe(OperationStatus::Queued);
 });
 

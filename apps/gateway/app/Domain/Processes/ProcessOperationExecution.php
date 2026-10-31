@@ -29,55 +29,41 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
                 'input' => $input, 'resumable' => $resumable, 'required' => $required];
         };
         $artifact = Arr::only($input, ['process_id', 'runtime', 'name']);
-        if ($verb === 'destroy') {
-            $add('process-remove', 'process.remove', [...$artifact, 'vite' => $input['vite']]);
-        } else {
-            if (isset($input['directory'])) {
-                $add('process-check-release', 'process.check-release', Arr::only($input, ['directory']));
+        if (isset($input['directory'])) {
+            $add('process-check-release', 'process.check-release', Arr::only($input, ['directory']));
+        }
+        $plan = $input['vite_plan'] ?? null;
+        if (is_array($plan)) {
+            $add('vite-suspend', 'vite.set-traffic', ValidatedData::object($plan['suspend']));
+            $add('vite-environment', 'vite.set-traffic', ValidatedData::object($plan['environment']));
+            if ($input['desired'] === 'running') {
+                for ($check = 0; $check < 60; $check++) {
+                    $add('vite-ready-'.$check, 'vite.check-listener', ValidatedData::object($plan['listener']), required: false);
+                }
+                $add('vite-stop-unready', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop'], required: false);
             }
-            $plan = $input['vite_plan'] ?? null;
-            if (is_array($plan)) {
-                $add('vite-suspend', 'vite.set-traffic', ValidatedData::object($plan['suspend']));
-                if ($verb === 'restart') {
-                    $add('vite-stop', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop']);
-                }
-                $add('vite-environment', 'vite.set-traffic', ValidatedData::object($plan['environment']));
-                if ($input['desired'] === 'running' || in_array($verb, ['start', 'restart'], true)) {
-                    for ($check = 0; $check < 60; $check++) {
-                        $add('vite-ready-'.$check, 'vite.check-listener', ValidatedData::object($plan['listener']), required: false);
-                    }
-                    $add('vite-stop-unready', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop'], required: false);
-                }
-                if ($verb === 'start') {
-                    $add('vite-awake', 'vite.set-traffic', ValidatedData::object($plan['awake']));
-                }
+        }
+        if (in_array($verb, ['create', 'update'], true)) {
+            if (isset($input['retired_runtime'])) {
+                $add('process-remove-retired', 'process.remove', ['process_id' => $input['process_id'], 'runtime' => $input['retired_runtime'], 'name' => $input['retired_name'], 'vite' => null]);
             }
-            if (in_array($verb, ['start', 'restart'], true)) {
-                $add('process-'.$verb, 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => $verb], $verb !== 'restart');
-            } elseif (in_array($verb, ['create', 'update'], true)) {
-                if (isset($input['retired_runtime'])) {
-                    $add('process-remove-retired', 'process.remove', ['process_id' => $input['process_id'], 'runtime' => $input['retired_runtime'], 'name' => $input['retired_name'], 'vite' => null]);
-                }
-                if ($input['runtime'] === 'docker') {
-                    $add('process-converge-container', 'process.converge-container', Arr::only($input, ['process_id', 'container', 'desired', 'spec', 'image', 'command', 'restart', 'working_directory', 'ports', 'mounts', 'environment']));
-                } else {
-                    $add('process-stage-unit', 'process.stage-unit', Arr::only($input, ['process_id', 'unit', 'content']));
-                    $steps = ValidatedData::object($operation->state['steps'] ?? []);
-                    $stage = $steps['process-stage-unit'] ?? null;
-                    if (is_array($stage)) {
-                        $settled = ($stage['state'] ?? null) === ($input['desired'] === 'running' ? 'active' : 'inactive');
-                        $required = ($stage['staged'] ?? null) !== false || ($input['activation_pending'] ?? false) || ! $settled;
-                        $add('process-activate-unit', 'process.activate-unit', [...Arr::only($input, ['process_id', 'unit', 'desired', 'on_demand']),
-                            'change' => ($stage['staged'] ?? false) ? (($stage['previous'] ?? false) ? 'replace' : 'create') : 'reload'], required: $required);
-                    }
-                }
+            if ($input['runtime'] === 'docker') {
+                $add('process-converge-container', 'process.converge-container', Arr::only($input, ['process_id', 'container', 'desired', 'spec', 'image', 'command', 'restart', 'working_directory', 'ports', 'mounts', 'environment']));
             } else {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Process action.', 422);
+                $add('process-stage-unit', 'process.stage-unit', Arr::only($input, ['process_id', 'unit', 'content']));
+                $steps = ValidatedData::object($operation->state['steps'] ?? []);
+                $stage = $steps['process-stage-unit'] ?? null;
+                if (is_array($stage)) {
+                    $settled = ($stage['state'] ?? null) === ($input['desired'] === 'running' ? 'active' : 'inactive');
+                    $required = ($stage['staged'] ?? null) !== false || ($input['activation_pending'] ?? false) || ! $settled;
+                    $add('process-activate-unit', 'process.activate-unit', [...Arr::only($input, ['process_id', 'unit', 'desired', 'on_demand']),
+                        'change' => ($stage['staged'] ?? false) ? (($stage['previous'] ?? false) ? 'replace' : 'create') : 'reload'], required: $required);
+                }
             }
+        } else {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Process action.', 422);
         }
-        if ($verb !== 'destroy') {
-            $add('process-status', 'process.status', $artifact);
-        }
+        $add('process-status', 'process.status', $artifact);
         $descriptors[] = ['key' => 'runtime-ready', 'step' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.runtime_ready',
             'input' => ['process_id' => $input['process_id']], 'resumable' => true, 'required' => true];
 
@@ -97,7 +83,7 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
     public function beforeRun(Operation $operation, array $run): void
     {
         $process = Process::query()->whereKey($operation->target_id)->firstOrFail();
-        $target = $operation->kind === 'process.destroy' ? $this->targets->forRemoval($process) : $this->targets->forInstallation($process);
+        $target = $this->targets->forInstallation($process);
         app(ProcessSwampSafety::class)->assertAllowed($target->node);
         if ($operation->target_type !== 'process' || $process->id !== ($operation->input['process_id'] ?? null)
             || $target->node->id !== $operation->node_id || $process->runtime->value !== ($operation->input['runtime'] ?? null)) {
@@ -148,7 +134,6 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
         $verb = substr($operation->kind, strlen('process.'));
         $key = match ($verb) {
             'create', 'update' => $operation->input['runtime'] === 'docker' ? 'process-converge-container' : 'process-activate-unit',
-            'destroy' => 'process-remove',
             default => 'process-'.$verb,
         };
         $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);

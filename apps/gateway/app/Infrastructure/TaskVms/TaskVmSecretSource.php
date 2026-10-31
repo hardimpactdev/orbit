@@ -8,7 +8,6 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
@@ -56,10 +55,11 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
                 return null;
             }
         } elseif ($operation->target_type === 'task_vm_sweep') {
-            if (($operation->input['provider'] ?? null) !== 'upcloud' || $operation->node_id !== $id) {
+            if ($operation->kind !== 'task_vm.sweep_host' || ($operation->input['provider'] ?? null) !== 'upcloud'
+                || ($operation->input['node_id'] ?? null) !== $id || $operation->node_id !== $id) {
                 return null;
             }
-        } elseif ($operation->target_type === 'task_vm_cache' && $operation->node_id !== $id) {
+        } elseif ($operation->target_type === 'task_vm_cache' && ($operation->kind !== 'task_vm.fill_package_cache' || $operation->node_id !== $id || ($operation->input['host_node_id'] ?? null) !== $id)) {
             return null;
         }
 
@@ -79,12 +79,10 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         }
         if ($this->source === 'task_vm.package_cache_github') {
             if (array_any(TaskVmInputs::artifacts($operation->input['artifacts']), static fn (array $artifact): bool => $artifact['manager'] === 'composer') && app(GitHubAppStore::class)->credentials() !== null) {
-                $source = Operation::query()->find($operation->parent_operation_id);
-                if ($source === null || $source->kind !== 'task_vm.fill_package_cache' || $source->target_id !== $id) {
+                if ($operation->kind !== 'task_vm.fill_package_cache' || $operation->node_id !== $id || $operation->target_id !== $id) {
                     throw new ResourceOperationException('operation.execution_forbidden', 'Cache credentials require the owning fill parent.', 422);
                 }
-                app(OperationChildren::class)->child($source, (string) $operation->child_key);
-                $projects = array_column(TaskVmInputs::snapshots($source->input['snapshots']), 'project_id');
+                $projects = array_column(TaskVmInputs::snapshots($operation->input['snapshots']), 'project_id');
                 foreach (Project::query()->whereIn('id', $projects)->orderBy('id')->get() as $project) {
                     $repository = GitHubRepository::fromOrigin($project->repository_url);
                     if ($repository instanceof GitHubRepository) {

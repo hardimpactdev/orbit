@@ -42,6 +42,7 @@ pub struct Output {
     agent_binary: Option<bool>,
     agent_unit: Option<bool>,
     agent_active: Option<bool>,
+    worker_state: Option<String>,
     agent_checksum: Option<String>,
     secret_checksum: Option<String>,
     disks: Vec<Disk>,
@@ -59,6 +60,9 @@ trait Host {
     fn addresses(&self) -> Result<Vec<Ipv4Addr>>;
     fn filesystem(&self, path: &Path) -> Result<Filesystem>;
     fn active(&self) -> Result<bool>;
+    fn worker_state(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
 }
 struct NativeHost;
 impl Host for NativeHost {
@@ -79,6 +83,33 @@ impl Host for NativeHost {
             files: stat.f_files,
             free_files: stat.f_ffree,
         })
+    }
+    fn worker_state(&self) -> Result<Option<String>> {
+        if !Path::new("/etc/systemd/system/orbit-node-worker.service").exists() {
+            return Ok(None);
+        }
+        let result = Process::new("/usr/bin/timeout")
+            .args([
+                "5s",
+                "/usr/bin/systemctl",
+                "show",
+                "orbit-node-worker.service",
+                "--property=ActiveState",
+                "--value",
+            ])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .map_err(|_| Error::Unavailable {})?;
+        if !result.status.success() {
+            return Err(Error::Unavailable {});
+        }
+        let state = String::from_utf8(result.stdout).map_err(|_| Error::Unavailable {})?;
+        let state = state.trim();
+        if !["active", "activating", "deactivating", "inactive", "failed"].contains(&state) {
+            return Err(Error::Unavailable {});
+        }
+        Ok(Some(state.into()))
     }
     fn active(&self) -> Result<bool> {
         let status = Process::new("/usr/bin/timeout")
@@ -174,6 +205,7 @@ fn observe(host: &impl Host, root: &Path, home: &Path, address: Ipv4Addr) -> Res
         agent_binary: None,
         agent_unit: None,
         agent_active: None,
+        worker_state: None,
         agent_checksum: None,
         secret_checksum: None,
         disks: vec![],
@@ -191,6 +223,7 @@ fn observe(host: &impl Host, root: &Path, home: &Path, address: Ipv4Addr) -> Res
                 .is_some_and(|meta| meta.is_file()),
         );
         output.agent_active = Some(host.active()?);
+        output.worker_state = host.worker_state()?;
         let secret = root.join("etc/orbit/agent/secret");
         if optional_metadata(&secret)?.is_some_and(|meta| meta.is_file()) {
             output.secret_checksum = Some(file_sha256(&secret).map_err(|_| Error::Unavailable {})?);

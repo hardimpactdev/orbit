@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Analytics;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Analytics\UpdateAnalyticsRequest;
-use Orbit\Sdk\Responses\Analytics\AnalyticsUpdateResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class UpdateAnalyticsCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'analytics:update
         {version? : Plausible Community Edition version, for example 3.2.1}
@@ -52,33 +54,17 @@ final class UpdateAnalyticsCommand extends GatewayCommand
         $response = $this->sendWithProgress(
             $connector,
             new UpdateAnalyticsRequest($version),
-            AnalyticsUpdateResponse::class,
-            ['Update Plausible', 'Replacing the plausible Process', 'Updated Plausible'],
+            OperationResponse::class,
+            ['Update Plausible', 'Requesting the update', 'Update accepted'],
         );
 
-        if (! $response instanceof AnalyticsUpdateResponse) {
+        if (! $response instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
+        $profile = $this->activeGatewayProfile($repository);
 
-            return self::SUCCESS;
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
-            $response->version === $response->previousVersion
-                ? "Plausible already runs {$response->version} on node [{$response->nodeName}]."
-                : "Plausible updated on node [{$response->nodeName}].",
-            [
-                'Node' => "{$response->nodeName} (#{$response->nodeId})",
-                'Version' => $response->version,
-                'Previous version' => $response->previousVersion,
-                'Request ID' => $response->requestId,
-            ],
-        ));
-
-        return self::SUCCESS;
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $response, 'Update Plausible', 'Plausible');
     }
 
     private static function versionError(string $version): ?string

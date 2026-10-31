@@ -2,27 +2,20 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\Environment\InstanceWebRootsProjection;
-use App\Domain\Instances\InstanceRenameProjection;
 use App\Domain\Instances\InstanceTransferDiscardProjection;
+use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
-    'instance.rename' => [
-        'workflow' => 'operation-instance-lifecycle-direct',
+    'instance.run_steps' => [
+        'workflow' => 'operation-instance-setup-direct',
         'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'instance_lifecycle_writer',
-        'projection' => InstanceRenameProjection::class,
+        'writer_state' => 'instance_step_writer',
+        'projection' => InstanceSetupProjection::class,
     ],
     'instance.transfer_discard' => [
         'workflow' => 'operation-instance-lifecycle-direct',
         'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'instance_lifecycle_writer',
         'projection' => InstanceTransferDiscardProjection::class,
-    ],
-    'instance.prepare_served_web_roots' => [
-        'workflow' => 'operation-instance-web-roots',
-        'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'instance_writer',
-        'projection' => InstanceWebRootsProjection::class,
     ],
 ];

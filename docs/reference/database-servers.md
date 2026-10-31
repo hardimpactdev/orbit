@@ -22,7 +22,7 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs the steps and reports proven results, including Valkey readiness, ACL writes, save failures and recovery. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
 
-Retained Instance create, clone, removal and transfer callers finish their database work synchronously until their lifecycle cutover composes database children. They use the same SQL plans, removal locks and ownership checks as the children. Successful synchronous MySQL create steps record password-free Activity receipts; removal accepts these receipts, proven child receipts or explicit operator adoption. If the live absence check fails during failed-create cleanup, Orbit retains the unproven reservation and reports the original create error. SQLite copy and seed callers keep their synchronous agent bindings.
+Retained Instance removal finishes its database work synchronously with the existing SQL plans, removal locks and ownership checks. MySQL removal accepts stored Activity receipts that prove creation without passwords, proven child receipts or explicit operator adoption. Removal refuses system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres` and names beginning with `template`), including any test prefix that could match them. The same check applies before retained synchronous removal probes and to expanded database names. SQL create and clone reset prepare work for Operations; they have no synchronous execution helper. SQLite seed callers keep their synchronous agent bindings.
 
 The Gateway resolves stored database credentials only when it invokes an authorized named command. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
 
@@ -423,3 +423,7 @@ Database removal follows Orbit’s existing refusal rule for connected clients. 
 A durable admission fence closes the worker-start race between that check and the drops. The server stores the journal beside its catalog so the snapshot and fence share one PostgreSQL transaction. A Gateway-only snapshot would create another crash window between the two systems.
 
 PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure failure still requires a retry. Avoid changing server dependencies through another admin connection during removal. Missing databases and users count as removed on retry.
+
+### Direct default-user closure
+
+`database:server:close` starts `operation-database-server-close` on the admitted Node. It reads only the declared admin password through the shared private-material endpoint. The native step checks other default-user clients, changes the password, saves the ACL file and disconnects default-user sessions. Save failure restores anonymous access only when it was open on entry, then reports a bounded failure. A resumed step authenticates with the admitted admin password even if the first attempt already closed anonymous access. The Gateway records `default_open=false` only after success.

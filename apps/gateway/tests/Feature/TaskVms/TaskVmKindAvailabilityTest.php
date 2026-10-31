@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
-use App\Actions\TaskVms\StartTaskVmPackageCacheOperationAction;
 use App\Actions\TaskVms\StartTaskVmRuntimeOperationAction;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
@@ -19,19 +18,16 @@ it('refuses unavailable task VM primitives without recording intent or queuing P
     Queue::assertNothingPushed();
 })->with([
     'runtime' => [StartTaskVmRuntimeOperationAction::class, 'children'],
-    'cache' => [StartTaskVmPackageCacheOperationAction::class, 'list_of'],
 ]);
 
 it('never registers a weaker VM contract while child or receipt enforcement is absent', function (): void {
     $kinds = OperationKinds::definitions();
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        foreach (['task_vm.prepare_runtime', 'task_vm.provision', 'task_vm.image_build', 'task_vm.upcloud_image_build', 'task_vm.sweep_host'] as $kind) {
+        foreach (['task_vm.prepare_runtime', 'task_vm.provision', 'task_vm.image_build', 'task_vm.upcloud_image_build'] as $kind) {
             expect($kinds)->not->toHaveKey($kind);
         }
     }
-    if (! OperationKinds::supports('list_of') || ! OperationKinds::supports('receipts')) {
-        expect($kinds)->not->toHaveKey('task_vm.fill_package_cache');
-    }
+
 });
 
 it('keeps dependent lifecycle and runtime admissions inert until the owning composition is registered', function (string $verb): void {

@@ -100,14 +100,6 @@ describe('fleet response fixtures', function (): void {
         );
     });
 
-    it('records synchronous executor convergence that applies and then matches', function (): void {
-        FleetFixtures::bind([new FakeFootprintArtifact('agent', 'agent-digest', changes: null), new FakeFootprintArtifact('caddy', 'caddy-digest')]);
-        $node = FleetFixtures::node('app-dev', [RoleName::AppDev]);
-        config(['dependency_detection.services_node_id' => $node->id]);
-        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertOk(), 'nodes/node-converge/applied', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
-        record_fixture($this->postJson("/api/v1/nodes/{$node->id}/converge")->assertOk()->assertJsonPath('data.changed', false), 'nodes/node-converge/unchanged', ConvergeNodeRequest::class, 'POST /api/v1/nodes/{node}/converge');
-    });
-
     it('requires an active WireGuard peer', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.9']);
 

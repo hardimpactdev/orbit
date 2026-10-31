@@ -25,6 +25,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -32,6 +33,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     app()->instance(OperationKinds::class, new OperationKinds(app(), [
@@ -60,6 +62,9 @@ beforeEach(function (): void {
         'status' => InstanceState::Active, 'provisioning_step' => 'active', 'branch' => 'old']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->dev->wireguard_ip]);
     Queue::fake();
+    $this->socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['swamp.direct_writers' => ['instance.rename' => 'direct']]);
     $response = $this->withHeader('Idempotency-Key', 'rename-proof')
         ->postJson('/api/v1/instances/'.$this->instance->id.'/rename', ['branch' => 'feature'])
         ->assertAccepted();
@@ -102,6 +107,11 @@ it('admits rename without PHP dispatch and projects only proven source evidence'
         ->and($this->operation->status)->toBe(OperationStatus::Succeeded)
         ->and($this->operation->state['executor_lease_node_id'])->toBe($this->services->id)
         ->and($this->operation->state['executor_runs']['rename-inspect']['result'])->toBe($result);
+});
+
+it('has one rename dispatch even when a stale direct-writer setting is present', function (): void {
+    expect($this->socket->sent)->toBe([])
+        ->and($this->operation->state)->not->toHaveKeys(['instance_lifecycle_writer', 'swamp_run_id']);
 });
 
 it('projects a lost protected source reply only after its original target identity is proven', function (string $variation): void {
@@ -205,23 +215,27 @@ it('composes the real setup child with its immutable digest and retains the pare
         'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']])->assertOk()->json('data');
     ($this->record)('source-inspect', $source);
 
+    config(['swamp.run_token' => 'fixture.shared.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-setup-direct', 'runId' => $runId]]];
+    app()->instance(WebSocketClient::class, $socket);
     $id = $this->postJson($this->path.'/children', ['worker' => 'proof-worker', 'key' => 'setup'])
         ->assertAccepted()->assertJsonPath('data.input', ['instance_id' => $this->instance->id,
-            'source' => 'project', 'list' => 'setup', 'configuration_digest' => $digest])
+            'source' => 'project', 'list' => 'setup', 'configuration_digest' => $digest,
+            ...app(StartInstanceStepListAction::class)->appStepAdmission($this->instance, LifecyclePhase::Setup)])
         ->assertJsonPath('data.parent_operation_id', $this->operation->id)->assertJsonPath('data.child_key', 'setup')->json('data.id');
     $this->postJson($this->path.'/children', ['worker' => 'proof-worker', 'key' => 'setup'])->assertOk()->assertJsonPath('data.id', $id);
     $hold = $this->operation->refresh()->lock_key;
     expect($hold)->not->toBeNull()->and(Operation::query()->findOrFail($id)->lock_key)->toBeNull();
     $this->postJson($this->path.'/wait', ['worker' => 'proof-worker', 'keys' => ['setup']])->assertOk()->assertJsonPath('data.status', 'waiting');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.run_steps', 'worker' => 'setup-worker', 'operation_id' => $id])
-        ->assertOk()->assertJsonPath('data.id', $id);
-    $child = '/api/v1/operation-executor/'.$id;
-    $result = $this->postJson($child.'/run', ['worker' => 'setup-worker', 'key' => 'lifecycle.receipt', 'transport' => 'gateway',
-        'name' => 'instance.step-list-receipt', 'input' => ['instance_id' => $this->instance->id]])
-        ->assertOk()->assertJsonPath('data.outcome', 'succeeded')->assertJsonPath('data.no_op', true)->json('data');
-    $this->postJson($child.'/step', ['worker' => 'setup-worker', 'key' => 'receipt-finish', 'name' => 'lifecycle_receipt',
-        'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($child.'/complete', ['worker' => 'setup-worker', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.run_steps', 'worker' => 'setup-worker', 'operation_id' => $id])->assertUnprocessable();
+    $child = '/api/v1/direct-operations/'.$id;
+    $this->getJson($child.'?run_id='.$runId)->assertOk()->assertJsonPath('data.input.list', 'setup');
+    $result = ['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => true];
+    $reply = $this->postJson($child.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => now()->subSecond()->utc()->format('Y-m-d\TH:i:s.v\Z'),
+        'finished_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $result, 'error_code' => null]);
+    $reply->assertOk();
     expect($this->operation->refresh()->lock_key)->toBe($hold);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'instance.create', 'worker' => 'resumed-parent', 'operation_id' => $this->operation->id])
         ->assertOk()->assertJsonPath('data.id', $this->operation->id);

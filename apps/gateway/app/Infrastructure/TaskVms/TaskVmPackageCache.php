@@ -5,17 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentEffectReceipts;
-use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
-use App\Models\Node;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use App\Models\TaskVm;
@@ -30,46 +26,6 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
     public const string Device = 'package-cache';
 
     public function __construct(private AgentCommandRunner $agents, private GuestAgentCommandRunner $guests) {}
-
-    /**
-     * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
-     * @param  array<string,mixed>  $run
-     * @return array{hashes: array<string, string>, failures: array<string, string>}
-     */
-    public function fillProven(TaskVmHost $host, Node $node, array $artifacts, #[\SensitiveParameter] ?string $githubToken, int $maxBytes, array $run): array
-    {
-        if ($maxBytes < 1) {
-            throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
-        }
-        $response = $this->request(fn () => $this->agents->run($node, 'package-cache.host', AgentEffectReceipts::input($run, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken === null ? null : new AgentGitHubToken($githubToken)])));
-
-        return self::verifiedResult($artifacts, $response);
-    }
-
-    /** @param list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}> $artifacts
-     * @param  array<string,mixed>  $response
-     * @return array{hashes:array<string,string>,failures:array<string,string>}
-     */
-    public static function verifiedResult(array $artifacts, array $response): array
-    {
-        $hashes = $response['hashes'] ?? null;
-        $failures = $response['failures'] ?? null;
-        if (! is_array($hashes) || ! is_array($failures) || array_diff(array_keys($hashes + $failures), array_column($artifacts, 'key')) !== []) {
-            throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned an invalid artifact result.');
-        }
-        foreach ($artifacts as $artifact) {
-            $key = $artifact['key'];
-            $hash = $hashes[$key] ?? null;
-            $failure = $failures[$key] ?? null;
-            if (array_key_exists($key, $hashes) === array_key_exists($key, $failures)
-                || (array_key_exists($key, $hashes) && (! is_string($hash) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hash) !== 1))
-                || (array_key_exists($key, $failures) && (! is_string($failure) || preg_match('/\A[\x20-\x7e]{1,160}\z/D', $failure) !== 1))) {
-                throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash or artifact failure.');
-            }
-        }
-
-        return ['hashes' => array_filter($hashes, is_string(...)), 'failures' => array_filter($failures, is_string(...))];
-    }
 
     /** Attach at workspace creation, and keep all writes on the workspace disk. */
     public function prepare(TaskVm $vm, Project $project): void

@@ -72,20 +72,62 @@ fn soon() -> Instant {
 fn input(secret_hash: Option<String>) -> ConfigureInput {
     ConfigureInput {
         secret_hash,
+        allow_secret_rotation: true,
         configuration: "gateway = \"https://gateway.orbit\"\n".into(),
         certificate: "-----BEGIN CERTIFICATE-----\n".into(),
         unit: "[Service]\nExecStart=/usr/local/bin/orbit-agent observe\n".into(),
         checkouts: vec![],
         binary_changed: false,
+        worker_credentials: None,
     }
 }
 
 #[test]
-fn worker_opt_in_uses_a_boolean_without_an_extra_node_identity() {
-    assert!(!worker_enabled("gateway_url = 'https://gateway.orbit'\n").unwrap());
-    assert!(worker_enabled("swamp_worker = true\n").unwrap());
-    for value in ["0", "-1", "'71'", "[]"] {
-        assert!(worker_enabled(&format!("swamp_worker = {value}\n")).is_err());
+fn worker_configuration_carries_the_admitted_identity_and_user() {
+    assert!(
+        worker_configuration("gateway_url = 'https://gateway.orbit'\n")
+            .unwrap()
+            .is_none()
+    );
+    let worker = worker_configuration("[swamp_worker]\nnode_id = 9\nuser = 'nckrtl'\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(worker.node_id, 9);
+    assert_eq!(worker.user, "nckrtl");
+    for value in ["true", "0", "'71'", "[]", "{node_id=9}"] {
+        assert!(worker_configuration(&format!("swamp_worker = {value}\n")).is_err());
+    }
+}
+
+#[test]
+fn low_worker_memory_preserves_existing_agent_secret_and_files() {
+    let mut sandbox = Sandbox::new();
+    sandbox.configure(&input(None)).unwrap();
+    let before: Vec<_> = [SECRET_PATH, CONFIG_PATH, CA_PATH, UNIT_PATH]
+        .map(|path| {
+            (
+                path,
+                fs::read(sandbox.path(path)).unwrap(),
+                sandbox.inode(path),
+            )
+        })
+        .into_iter()
+        .collect();
+    sandbox.host.calls.clear();
+    fs::create_dir_all(sandbox.path("/proc")).unwrap();
+    fs::write(sandbox.path("/proc/meminfo"), "MemAvailable: 100000 kB\n").unwrap();
+    let mut selected = input(None);
+    selected
+        .configuration
+        .push_str("[swamp_worker]\nnode_id = 1\nuser = 'orbit'\n");
+    assert!(matches!(
+        sandbox.configure(&selected),
+        Err(FootprintError::WorkerMemoryLow {})
+    ));
+    assert!(sandbox.host.calls.is_empty());
+    for (path, bytes, inode) in before {
+        assert_eq!(fs::read(sandbox.path(path)).unwrap(), bytes);
+        assert_eq!(sandbox.inode(path), inode);
     }
 }
 
@@ -434,4 +476,32 @@ fn configure_secret_hash_is_live_once_and_never_saved_in_effect_receipts() {
         repeated["secret_hash"],
         serde_json::json!({"$secret_output":true})
     );
+}
+
+#[test]
+fn direct_configure_refuses_rotation_without_changing_files_or_units() {
+    let mut sandbox = Sandbox::new();
+    let mut direct = input(None);
+    direct.allow_secret_rotation = false;
+    assert_eq!(
+        sandbox.configure(&direct),
+        Err(FootprintError::SecretMismatch {})
+    );
+    assert!(!sandbox.path(SECRET_PATH).exists());
+    assert!(sandbox.host.calls.is_empty());
+    let initial = sandbox.configure(&input(None)).unwrap();
+    let secret = sandbox.secret();
+    let inode = sandbox.inode(SECRET_PATH);
+    sandbox.host.calls.clear();
+    direct.secret_hash = Some(hash("a-different-owner-secret"));
+    assert_eq!(
+        sandbox.configure(&direct),
+        Err(FootprintError::SecretMismatch {})
+    );
+    assert_eq!(sandbox.secret(), secret);
+    assert_eq!(sandbox.inode(SECRET_PATH), inode);
+    assert!(sandbox.host.calls.is_empty());
+    direct.secret_hash = Some(initial.secret_hash);
+    assert!(!sandbox.configure(&direct).unwrap().restarted);
+    assert_eq!(sandbox.inode(SECRET_PATH), inode);
 }

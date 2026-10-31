@@ -10,9 +10,7 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Domain\T3AdminSession;
-use Orbit\Extensions\Conn\Domain\T3ClientSession;
 use Orbit\Extensions\Conn\Domain\T3EnvironmentDescriptor;
-use Orbit\Extensions\Conn\Domain\T3PairingCredential;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Domain\T3ServerException;
 use SensitiveParameter;
@@ -23,30 +21,6 @@ use Throwable;
  */
 final readonly class HttpT3ServerClient implements T3ServerClient
 {
-    /**
-     * Scopes a device pairing link grants: T3's administrative set, so a paired device can manage
-     * linked environments on a headless server. The registered admin session holds all of them;
-     * `review:write` is left out because T3 no longer grants it.
-     */
-    private const array DEVICE_SCOPES = [
-        'orchestration:read',
-        'orchestration:operate',
-        'settings:write',
-        'providers:manage',
-        'environment:maintain',
-        'preview:operate',
-        'diagnostics:read',
-        'terminal:read',
-        'terminal:operate',
-        'source-control:write',
-        'filesystem:read',
-        'filesystem:write',
-        'relay:read',
-        'access:read',
-        'access:write',
-        'relay:write',
-    ];
-
     private const int CONNECT_TIMEOUT_SECONDS = 3;
 
     private const int TIMEOUT_SECONDS = 10;
@@ -89,69 +63,6 @@ final readonly class HttpT3ServerClient implements T3ServerClient
             expiresAt: $this->timestamp($baseUrl, 'session', $expiresAt),
             scopes: array_values(array_filter($scopes, is_string(...))),
         );
-    }
-
-    public function issuePairingCredential(string $baseUrl, #[SensitiveParameter] string $adminSession, string $label): T3PairingCredential
-    {
-        $body = $this->json($baseUrl, 'pairing-token', fn (): Response => $this->request($adminSession)
-            ->post($this->endpoint($baseUrl, '/api/auth/pairing-token'), ['label' => $label, 'scopes' => self::DEVICE_SCOPES]));
-
-        $id = $body['id'] ?? null;
-        $credential = $body['credential'] ?? null;
-        $expiresAt = $body['expiresAt'] ?? null;
-
-        if (! is_string($id) || ! is_string($credential) || $credential === '' || ! is_string($expiresAt)) {
-            throw T3ServerException::malformed($baseUrl, 'pairing-token');
-        }
-
-        return new T3PairingCredential($id, $credential, $this->timestamp($baseUrl, 'pairing-token', $expiresAt));
-    }
-
-    public function clientSessions(string $baseUrl, #[SensitiveParameter] string $adminSession): array
-    {
-        $body = $this->json($baseUrl, 'clients', fn (): Response => $this->request($adminSession)
-            ->get($this->endpoint($baseUrl, '/api/auth/clients')));
-
-        if (! array_is_list($body)) {
-            throw T3ServerException::malformed($baseUrl, 'clients');
-        }
-
-        $sessions = [];
-
-        foreach ($body as $session) {
-            $sessionId = is_array($session) ? ($session['sessionId'] ?? null) : null;
-
-            if (! is_array($session) || ! is_string($sessionId)) {
-                throw T3ServerException::malformed($baseUrl, 'clients');
-            }
-
-            $client = is_array($session['client'] ?? null) ? $session['client'] : [];
-            $label = $client['label'] ?? null;
-
-            $sessions[] = new T3ClientSession(
-                sessionId: $sessionId,
-                label: is_string($label) ? $label : null,
-                current: ($session['current'] ?? false) === true,
-            );
-        }
-
-        return $sessions;
-    }
-
-    public function revokeClientSession(string $baseUrl, #[SensitiveParameter] string $adminSession, string $sessionId): bool
-    {
-        $body = $this->json($baseUrl, 'clients/revoke', fn (): Response => $this->request($adminSession)
-            ->post($this->endpoint($baseUrl, '/api/auth/clients/revoke'), ['sessionId' => $sessionId]));
-
-        return ($body['revoked'] ?? false) === true;
-    }
-
-    public function revokePairingLink(string $baseUrl, #[SensitiveParameter] string $adminSession, string $pairingLinkId): bool
-    {
-        $body = $this->json($baseUrl, 'pairing-links/revoke', fn (): Response => $this->request($adminSession)
-            ->post($this->endpoint($baseUrl, '/api/auth/pairing-links/revoke'), ['id' => $pairingLinkId]));
-
-        return ($body['revoked'] ?? false) === true;
     }
 
     private function request(#[SensitiveParameter] ?string $adminSession = null): PendingRequest

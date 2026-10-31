@@ -459,3 +459,11 @@ it('reports a mac that cannot be reached or read without an agent finding', func
     'unreachable' => [false],
     'malformed observation' => [true],
 ]);
+
+it('reports a failed Swamp worker from the read-only agent observation', function (): void {
+    $node = new Node(['name' => 'worker', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'amd64', 'wireguard_ip' => '10.44.0.7', 'ssh_host_fingerprint' => 'SHA256:managed']);
+    $inspection = new NodeInspectionData(true, 'linux', 'x86_64', true, workerState: 'failed');
+    expect(NodeInspectionData::fromArray($inspection->toArray())->workerState)->toBe('failed');
+    $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext($node, $inspection));
+    expect(array_column($report->issues, 'code'))->toContain('node.worker_failed');
+});

@@ -20,7 +20,7 @@ A Database connection is a Gateway record that describes one database: its drive
 
 Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs the steps and reports proven results. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
 
-The Gateway resolves stored database credentials only when it invokes an authorized named command. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
+Direct workflows read stored database credentials through the shared private-material API for the recorded run and owning Node. Legacy kinds still resolve their protected parameters through the old executor until their conversion. Operation projections and native history contain no passwords. Removal deletes the managed record only after the Node confirms the effect.
 
 ## Instance lifecycle children
 
@@ -48,7 +48,7 @@ Transfer rollback prepares `sqliteSeedAbandon` from the seed intent ID stored in
 
 Kind contracts, including runs, child Node relations, completion proof, and redacted results, live in `apps/gateway/app/Domain/DatabaseServers/operation-kinds.php`. Database workflow execution lives under `extensions/behaviors/operations/database/` in orbit-swamp. The placed family invocation claims and executes on the same worker. It records its assigned Operation before effects, and retries keep that assignment. A retry after a lost completion response confirms the original terminal result through the read API before finishing.
 
-Database execution requires the kit's children and receipt capabilities. Until both are available, admission returns `operation.kind_unavailable`; the Gateway still loads other families and serves database reads. Child admission uses the recorded database intent's kind, target, Node and exact input. Swamp supplies only its key.
+Legacy database execution requires the kit's children and receipt capabilities. Until both are available, admission returns `operation.kind_unavailable`; the direct SQL-user workflow and database reads stay available. Child admission uses the recorded database intent's kind, target, Node and exact input. Swamp supplies only its key.
 
 A failed create can reuse its reserved credentials for 24 hours. Every retry repeats the name check. PostgreSQL permits existing names only when the reserved role owns them and repeats that guard in SQL before grants. MySQL uses strict `CREATE DATABASE`, so an existing database refuses creation, including a partially completed create without a successful receipt. Recovery of the same Operation uses its keyed receipt.
 
@@ -104,6 +104,12 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
 
 User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). List returns the recorded `replication` attribute without passwords. Create returns an Operation and updates the recorded user after its command succeeds. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
+
+`database_user.create` starts its Swamp workflow directly after admission. The Node worker runs the pinned SQL admin command with sudo. PostgreSQL WAL and foreign-role checks run there before changing the login. Those failures appear on the Operation; request validation still rejects unsupported drivers, unsafe names and a username already owned by a connection.
+
+SQL and passwords stay in the encrypted database intent and reach only the shared run-bound private-material callback. Public intent contains the driver, container, username, admitted digest and validation flags. The Gateway projects the recorded user after native success, without a command relay or execution receipt. This direct-only kind has no polled fallback; rollback reverts its cutover PR.
+
+Native resume retries a failed terminal projection from its saved safe outcome without repeating successful SQL. PostgreSQL checks and creates a new login in one atomic block. If SQL succeeds before its native outcome is saved, replay accepts only the exact password verifier recorded in that intent; it refuses a foreign role. Grant replacement can then run again. This recovery does not promise exactly-once SQL.
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
@@ -244,8 +250,10 @@ The SQL, the path, and the token travel on protected standard input, so they nev
 
 ## Direct SQLite cleanup
 
-The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map selects `polled` (default) or `direct` for `database.sqlite_cleanup`; for example, `{"database.sqlite_cleanup":"direct"}` selects only this kind. Admission records the choice, so changing the setting affects only new intents. The shared `StartSwampRun` helper starts `operation-database-cleanup` after commit with `ORBIT_SWAMP_RUN_TOKEN`. Its inactive canary workflow accepts only Node 209 on the existing migration pool and reads only the typed cleanup intent. Exact per-Node placement follows when those workers are available.
+SQLite snapshot cleanup uses only the direct `operation-database-cleanup` workflow. It defaults to direct admission and refuses a `polled` setting in `ORBIT_SWAMP_DIRECT_WRITERS`. The family dispatcher remains only for unconverted database kinds. Rollback reverts the kind change.
 
-The Gateway exposes no cleanup primitive or relay. Swamp owns execution and recovery; the Gateway projects its bounded result. Direct cleanup has no Gateway claim, lease, target hold, keyed receipt or Node lock. The previous Swamp path remains available until live proof permits its removal.
+The shared `StartSwampRun` helper starts the workflow after commit with `ORBIT_SWAMP_RUN_TOKEN`. The Gateway exposes only the admitted cleanup fields and projects the bounded result. It has no cleanup primitive, claim, lease, target hold, keyed receipt or Node lock.
 
-Clone snapshot cleanup needs the managed database owner's account, because its export directory is private (`0700`). It does not inherently require root. The dedicated `orbit-swamp-worker` account cannot assume that owner's access. The canary action can clean up only a private clone directory already owned by its non-root worker UID; an absent directory succeeds. Seed snapshot cleanup removes root-owned private state under `/var/lib/orbit/app-instance-sqlite-seeds` and stays refused pending a separately reviewed cleanup-only local capability. The first live canary proves run binding/read/projection on an absent disposable 209 path; it does not prove owner access or readiness for takeover. No worker unit or sudo exception is added.
+The action runs on the admitted Node. Node 209 uses its existing migration worker; other Nodes require the matching `orbit-node-<node_id>` worker and Node label. Missing placement stays queued under native Swamp defaults.
+
+The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup uses the admitted pinned agent through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.

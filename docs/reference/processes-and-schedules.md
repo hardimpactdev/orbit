@@ -22,11 +22,13 @@ Process create, update, start, stop, restart, and destroy record an Operation an
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
-When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Create returns HTTP 201 for a new Process or 200 for an existing one. Update, start, restart and destroy return HTTP 200 with Process data. Stop returns HTTP 202 and starts Swamp directly on every Node.
+When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Create returns HTTP 201 for a new Process or 200 for an existing one. Update, start and restart return HTTP 200 with Process data. Stop and destroy return HTTP 202 and start Swamp directly on every Node.
 
 Placement uses the configured Node identities; renaming a Process cannot bypass it. Unconverted Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
 
 The SDK exposes the mutation's Process or Operation result through `ProcessMutationResponse.result`. The CLI prints the completed Process for synchronous responses and follows the Operation for HTTP 202.
+
+Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record.
 
 ## Owners
 
@@ -314,8 +316,22 @@ The runtime family reads target receipts before remote effects. A lost restart r
 
 `process.stop` uses `operation-process-control` directly for every systemd and Docker Process, including Vite Processes. Stop needs no Vite traffic preparation or private material. The kind has no Gateway executor, so the shared writer defaults to direct. Rollback is a revert PR. An explicit `polled` override refuses because that executor is removed. The PHP stop action, polled stop descriptor and receipt proof are removed. The idle-hibernation sweep keeps its runtime stop method until its own conversion because it preserves desired-running state. Admission takes no Gateway runtime lease or target hold. Each admitted Operation preserves its selected writer and delivered agent digest.
 
-The shared `ORBIT_SWAMP_DIRECT_WRITERS` JSON map keeps independent settings for unconverted standalone `process.start`, `process.restart` and `process.destroy`, which default to `polled`. Their Vite and Instance child paths keep the current writer.
+Unconverted Schedule enable uses its polled path only. Its unused direct declaration is removed; each owning cutover adds its direct declaration and deletes its polled path together. The landed direct kinds have no polled discovery or executor registration, and an explicit polled writer refuses.
+
+When you destroy a Process, the kind uses the direct default for every Node and existing owning admission. It has no Gateway runtime lease, target hold, polled removal descriptor or public PHP execution branch. Native removal receives the admitted unit or container identity and, for Vite, the exact Instance environment path. The Gateway deletes the record only after native success. A refused removal keeps the record with its error. Retained synchronous Instance and Analytics helpers stay until their owning callers convert.
 
 The Gateway starts `operation-process-control` directly and binds its native run ID. The exact Node worker reads safe admitted input through the shared direct Operation endpoint. It checks a selected production release when required, invokes the local agent with passwordless sudo, and reads runtime state. Native agent ownership checks protect the selected unit or container. The step validates the admitted digest and binary ownership, limits time and output, and returns only a typed ready/state result or error code. The Gateway projects lifecycle and desired state without checking old keyed receipts or scheduling children.
 
-For the first safe stop proof, admitted Node 209 uses its existing `swamp209-migration-a` worker. Every other Node uses exactly `orbit-node-<admitted Node ID>`, with no fallback to another Node. Each remaining kind changes in one PR after its safe dev/canary action passes: native path, writer switch and old executor/test deletion together. Vite startup, create/update specifications and Instance composition keep their existing path until their own conversion.
+For the first safe stop and destroy proofs, admitted Node 209 uses its existing `swamp209-migration-a` worker. Every other Node uses exactly `orbit-node-<admitted Node ID>`, with no fallback to another Node. Each remaining kind changes in one PR after its safe dev/canary action passes: native path, writer switch and old executor/test deletion together. Create/update specifications and Instance composition keep their existing path until their own conversion.
+
+### Native Process start
+
+`process.start` records intent and starts one native Swamp run. Admission takes no Gateway runtime lease or execution lock. The exact Node worker checks the selected release and prepares Vite traffic when needed. Vite startup publishes current Caddy configuration through the canonical Node publication behavior in the same root run, then starts the Process, proves its owned listener ready, and marks traffic awake.
+
+The Caddy method reads the bound Process intent after acquiring its native publication lock; the Gateway supplies a fresh public render on each read. No child Operation, child run, Gateway primitive or Process relay participates. A Process without Vite needs no Caddy publication. The Gateway projects only the final bounded runtime result. The kind defaults to its direct writer; rollback is a revert PR. The Gateway keeps the existing synchronous recovery path for Processes on a Swamp executor Node, so it can recover Swamp when Swamp is down.
+
+### Native Process restart
+
+Ordinary process restart records one direct intent and runs the native Process DAG on its admitted Node. A Vite restart suspends traffic, stops its owned runtime, writes the admitted environment and publishes Caddy in the same root run. It then starts that runtime and proves its owned listener ready. Restart preserves the existing hibernation wake policy; only an explicit start marks traffic awake. A Process without Vite uses its local restart primitive and returns bounded runtime status.
+
+The kind requires its direct writer. Its old polled discovery, claim/run contract, Gateway readiness proof and admission lease are removed together. The Gateway retains the existing synchronous executor-Node recovery exception. Rollback is a revert PR.

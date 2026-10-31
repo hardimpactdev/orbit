@@ -7,6 +7,7 @@ namespace App\Data\Nodes;
 use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Support\ValidatedData;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -39,6 +40,7 @@ final class NodeData extends Data
         public array $roles,
         public ?NodeSettingsData $settings = null,
         public ?NodeUpdatingData $updating = null,
+        public bool $swampWorkerSelected = false,
     ) {}
 
     /**
@@ -82,6 +84,7 @@ final class NodeData extends Data
             roles: self::roles($node),
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
             updating: $updating,
+            swampWorkerSelected: app(NodeWorkerRollout::class)->allows($node),
         );
     }
 

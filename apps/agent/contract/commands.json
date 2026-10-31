@@ -2092,7 +2092,7 @@
     },
     {
       "name": "swamp.start-worker",
-      "summary": "Start or check a Swamp task worker or operator-selected Node worker.",
+      "summary": "Start a Swamp task worker.",
       "mutates": true,
       "timeout_seconds": 60,
       "privilege": {
@@ -2102,20 +2102,6 @@
       "errors": [
         "swamp.worker_invalid",
         "swamp.worker_start_failed"
-      ]
-    },
-    {
-      "name": "swamp.issue-node-worker",
-      "summary": "Issue one allowlisted Node's short-lived worker credentials using the operator credential.",
-      "mutates": true,
-      "timeout_seconds": 180,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "swamp.node_worker_failed",
-        "swamp.node_worker_invalid"
       ]
     },
     {
@@ -2825,6 +2811,8 @@
       },
       "errors": [
         "agent.update_busy",
+        "swamp.node_worker_not_ready",
+        "swamp.node_worker_memory_low",
         "agent.configure_failed"
       ]
     },
@@ -2839,6 +2827,8 @@
       },
       "errors": [
         "agent.update_busy",
+        "swamp.node_worker_not_ready",
+        "swamp.node_worker_memory_low",
         "agent.configure_failed"
       ]
     },
@@ -4991,6 +4981,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5018,6 +5010,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5045,6 +5039,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5072,6 +5068,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5099,6 +5097,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5126,6 +5126,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5153,6 +5155,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",
@@ -5180,6 +5184,8 @@
         "process.invalid",
         "process.name_collision",
         "process.not_found",
+        "process.spec_changed",
+        "process.health_failed",
         "process.start_failed",
         "process.stop_failed",
         "process.restart_failed",

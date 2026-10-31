@@ -86,14 +86,13 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
                 return ['error_code' => 'node.footprint_failed'];
             }
             $matches = ($recorded[$name] ?? null) === $digest;
-            $required = ($input['force_artifacts'] ?? false) === true || in_array($name, $repairs, true) || ! $matches;
-            if ($required && $name === 'ai-router' && app(OperationKinds::class)->definition('ai_router.collector_converge') === null) {
-                return ['error_code' => 'operation.kind_unavailable'];
-            }
+            $required = ($name === 'agent' && isset($operation->input['_worker_enrollment'])) || ($input['force_artifacts'] ?? false) === true || in_array($name, $repairs, true) || ! $matches;
+            $unavailable = $required && $name === 'ai-router' && app(OperationKinds::class)->definition('ai_router.collector_converge') === null;
             if ($required && $name === 'peer-dns' && $this->dnsInspector->inspect($node)['policy']) {
                 $required = false;
             }
-            $plan[] = ['name' => $name, 'digest' => $digest, 'required' => $required, 'repair' => $matches];
+            $plan[] = ['name' => $name, 'digest' => $digest, 'required' => $required, 'repair' => $matches,
+                ...($unavailable ? ['error_code' => 'operation.kind_unavailable'] : [])];
             if (! $required) {
                 continue;
             }
@@ -102,7 +101,8 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
             }
             $payloads[$name] = match ($name) {
                 'agent' => [...$this->agent->configuration($node),
-                    'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id]],
+                    'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id],
+                    'worker_credentials' => ['$secret' => 'node.worker_credentials', 'id' => $node->id]],
                 'caddy-package' => AgentCaddyPackage::input(),
                 'tmpfiles' => ['rule' => TmpfilesFootprintArtifact::Rule],
                 'php-runtime' => ['configurations' => app(PhpRuntimeFootprintArtifact::class)->inputs($node)],
@@ -114,7 +114,7 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
         $children = [];
         foreach (['caddy' => 'route.caddy_converge', 'private-dns' => 'route.private_dns_publish',
             'route-residue' => 'route.offline_residue_clean', 'ai-router' => 'ai_router.collector_converge'] as $artifact => $kind) {
-            if (! array_any($plan, static fn (array $item): bool => $item['name'] === $artifact && $item['required'])) {
+            if (! array_any($plan, static fn (array $item): bool => $item['name'] === $artifact && $item['required'] && ! isset($item['error_code']))) {
                 continue;
             }
             $children[$artifact] = ['kind' => $kind, 'node_id' => $node->id, 'input' => match ($artifact) {

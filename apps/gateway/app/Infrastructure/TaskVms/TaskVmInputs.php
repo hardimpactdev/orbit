@@ -27,20 +27,6 @@ final class TaskVmInputs
         return $result;
     }
 
-    /** @return list<array{artifacts:list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}>,conflicts:array<string,string>}> */
-    public static function cacheFillBatches(mixed $value): array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            throw new InvalidArgumentException('Cache fill batches must be a list.');
-        }
-
-        return array_map(static function (mixed $batch): array {
-            $batch = ValidatedData::object($batch);
-
-            return ['artifacts' => self::artifacts($batch['artifacts']), 'conflicts' => ValidatedData::stringMap($batch['conflicts'])];
-        }, $value);
-    }
-
     /** @return list<array{project_id:int,blobs:array<string,string>,artifacts:list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}>}> */
     public static function snapshots(mixed $value): array
     {

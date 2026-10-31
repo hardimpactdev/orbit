@@ -20,14 +20,9 @@ The Gateway validates Route changes and records intent as an Operation. Swamp ex
 
 Domain, publication and web-root updates use the Route admission action. They return an Operation before execution. Instance rename records its own Operation and composes the Route update. Neither path uses a synchronous Route update executor.
 
-Caddy convergence and private DNS publication start a Swamp run directly after
-their intent commits. They do not use scheduled discovery, claims, leases,
-heartbeats or Gateway execution locks. Swamp serializes these publications by
-Node and retains their run history. The Gateway renders committed state, offers
-the named publication primitive and projects its reported result. It does not
-retry a refused or uncertain start. Follow the Swamp run before retrying an
-uncertain admission. The remaining Route lifecycle kinds still use the existing
-executor while their Swamp workflow conversion is in progress.
+Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. It validates and reloads Caddy locally with sudo, then reports the result. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
+
+Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds retain their existing executor until their owning conversion.
 
 A Route has one of three kinds. The kind never changes.
 
@@ -359,11 +354,13 @@ Router Caddy forwards Orbit CA HTTPS to the workload Node and keeps the domain a
 
 The Gateway sends the Route ID and the two LAN addresses to `firewall.route-lan`. The agent owns the TCP 443 allowance and its `orbit:route-<id>-lan` comment. Repeated convergence keeps an existing matching rule. Removal deletes every numbered rule with that exact comment, highest number first, and verifies absence under the same firewall lock. An inactive firewall stays inactive; convergence checks its stored rule, and removal leaves its stored rules unchanged.
 
+`route.lan_remove` starts `operation-route-lan-remove` directly on its admitted Node worker. The Gateway captures the Route ID and agent pin only after its sites are withdrawn and its workload placement is verified. Swamp runs the fixed local removal command with sudo and requires its absence check. The kind has no polled discovery, Gateway run contract or PHP executor. DNS publication keeps its current path.
+
 Before publication, `route.verify-certificate` checks the admitted workload or Router endpoint from the control worker. It connects to the selected address on port 443, sends the Route domain as TLS SNI, and requires a chain trusted by the control worker. This preserves the existing OpenSSL chain check; it does not add a separate hostname check. The Gateway records the validated placement and public error mapping; Swamp drives the activation order. Router replacement uses the same commands.
 
-The `route.workload_verify` and `route.public_verify` kinds use the direct Swamp path. The old claim-based verification executor is removed. Their direct path records the selected probe and agent pin at admission, then starts `operation-route-verification`. Its non-root network probe runs on the Node 209 migration workers and calls the typed read-only agent command against the stored workload or Router WireGuard address. The Operation Node still records the owning Router or Ingress; it does not select where the network probe runs. Colocated Router and workload placements are probed too. Public Process checks keep their validated published listener.
+The `route.workload_verify` and `route.public_verify` kinds use the direct Swamp path. Their direct path records a required TLS or HTTP probe and agent pin at admission, then starts `operation-route-verification`. The Node 209 migration worker uses the shared bounded Node runner without sudo to call the typed read-only agent command against the stored workload or Router WireGuard address. The Operation Node records the owning Router or Ingress. Colocated placements require the same probe; there is no skip mode. Public Process checks keep their validated published listener.
 
-Caddy and private DNS publication also use their proven direct workflow. Their old prepare commands and claim-based descriptors are removed. The four direct kinds expose no `/operation-executor` run allowlist. Caddy/DNS retain the existing generic publication primitive while per-Node worker execution is converted; residue and Instance cleanup still use the shared transports. This is the remaining publication execution to remove, not a second dispatch path.
+Caddy and private DNS publication use direct workflows. The direct kinds expose no `/operation-executor` run allowlist. Caddy runs locally on its exact admitted Node; private DNS retains its existing publication primitive. Residue and Instance cleanup still use the shared transports until their owning cutover. The old `/route-publications` relay URLs are removed; callers use the shared bound Operation API.
 
 The workflow uses the shared direct Operation read/result endpoints and no Gateway execution relay. The proven writers select `direct` through `ORBIT_SWAMP_DIRECT_WRITERS`; disabling one refuses admission instead of restoring the removed executor. Certificate mutations retain their current executor until their workflow uses sudo from the Node account and passes its cutover proof; verification needs no privilege change.
 
@@ -737,7 +734,9 @@ LAN address selection uses the recorded /24, not Cluster membership; the source 
 
 Route and certificate dispatch takes a kind and worker identity. The placed family invocation claims and executes on the same worker Node. Before its first effect, it saves the claimed Operation ID. A retry keeps that ID and verifies a saved terminal result through the Gateway. An empty claim ends the invocation. A lost lease ends the attempt; a later dispatch may reclaim expired work.
 
-Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and renders the whole Caddyfile from Gateway state. A changed render, listener address set or Caddy serving role refuses before publication. A failed Caddy child includes `stage: render|validate` only when its Gateway render receipt or target validation receipt proves that stage. Completion checks the stage against that recorded failure, including after receipt recovery. Other failures supply no stage that permits first-Node baseline degradation. The Node build lock covers the fresh check and dispatch, so an older render cannot replace a newer serving configuration.
+Retained Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and publishes the current whole-Node render through its native workflow. The bound public GET returns `input.caddy_publication` from `CaddyPublicationPlan::forNode()`. It includes the Node identity and agent pin, then either the Caddy content, version, listener addresses and serving flag, or a bounded render refusal. Native model `@nckrtl/route-publication`, named `route-publication-node-ID`, holds its lock through the read and local validation/reload. Only proven render or target validation failures include `stage: render|validate`; other failures cannot permit first-Node degradation.
+
+Other same-Node native parents can call the canonical model's `publishCaddy` method with their existing Operation ID, kind, Node ID and root run ID. Their owning public projection supplies the same fresh `caddy_publication` shape. This method performs no parent-result POST and starts no child. Rendered configuration must not enter pre-lock workflow inputs. Foreign Node reads remain outside this contract. Retained Gateway builders still require migration before the native lock can coordinate every Caddy writer.
 
 Instance removal calls `route.withdraw_instance` with `{instance_id}` before it removes source files. This converges shared PHP-FPM pools even when the Instance has no Route. After source removal, `route.cleanup_instance` withdraws Caddy before removing the unused Instance certificate and runtime. A certificate still named by a stored site stays on the Node.
 
@@ -781,10 +780,8 @@ Route Operations request `metrics.reconcile` with an empty input only when their
 
 Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
 
-### Direct publication rollout
+### Direct dispatch
 
-The direct publication path starts `operation-route-publication` after intent commits. Swamp serializes the complete publication on its Node, owns retries and projects run results back through the Gateway. Direct Operations use no discovery, claim, lease, heartbeat, target hold, keyed effect receipt or Gateway Node lock. The previous Swamp path remains available during rollout.
+`route.caddy_converge`, `route.private_dns_publish`, `route.workload_verify` and `route.public_verify` each have one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
 
-`ORBIT_ROUTE_CADDY_WRITER` and `ORBIT_ROUTE_PRIVATE_DNS_WRITER` select `polled` (the previous Swamp workflow, default) or `direct` (native `operation-route-publication`). Each admitted Operation stores its selected writer. Changing the setting affects only new Operations; existing work completes through its original path. Invalid values refuse admission. Rollback selects `polled` for new work, never a PHP executor.
-
-Load both workflows and deploy the dormant Gateway endpoints first. After the live cutover Operations finish, admit a private dev canary through the normal owning action with a request-local direct setting; verify its native run and projected result before changing the shared per-kind setting. Prove production success before deleting the previous Swamp path. Approval and signal permissions implied by the native run grant are inert: this workflow contains no approval or signal-wait steps. Adding either requires checking the credential grant again.
+These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.

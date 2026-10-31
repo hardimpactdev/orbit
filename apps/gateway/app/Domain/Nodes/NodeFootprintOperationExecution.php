@@ -179,6 +179,9 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
                 continue;
             }
             $name = ValidatedData::string($artifact['name']);
+            if (($artifact['error_code'] ?? null) === 'operation.kind_unavailable') {
+                break;
+            }
             if ($name === 'php-runtime') {
                 $configurations = ValidatedData::object($payloads[$name] ?? [])['configurations'] ?? null;
                 if (! is_array($configurations) || ! array_is_list($configurations)) {

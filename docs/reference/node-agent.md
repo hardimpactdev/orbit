@@ -27,6 +27,10 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 `swamp.start-worker` starts a task VM worker through fixed systemd runtime files and protected stdin input after its workspace is ready. `swamp.stop-worker` stops that service and its children, then removes its runtime unit. Worker command errors use the `swamp.*` namespace; the Gateway reports task-operation failures as `tasks.*`. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell. [Task worker enrollment](/reference/tasks#optional-swamp-worker) owns their credential lifetime.
 
+`process.converge-container` accepts an optional `health` object (`url`, `attempts`, `interval_seconds`) for a running container. It validates the HTTP URL and bounds the check to 1–90 attempts, at most 2 seconds apart. The Process lock covers activation, readiness and rollback. The agent retains the previous container until the check succeeds, including when recovering an interrupted replacement. A failed check restores the previous container before returning `process.health_failed` with `restored: true`; failed restoration reports `process.recovery_required`. New and unchanged containers also run the check. Existing callers can omit it.
+
+An optional `expected_spec` refuses replacement before mutation when the current container is missing or has a newer definition. A completed desired spec is accepted for replay. With `expected_spec`, an optional `expected_running` also guards the current state outside interrupted rollback recovery. Retained rollback containers must match the expected spec.
+
 ## Package-tool account boundary
 
 `package.prepare-account` creates the fixed Linux system account `orbit-swamp-package`. It creates `/var/lib/orbit-swamp-package/jobs` under root ownership with mode 0700. Its typed input names a worker account that must already exist and must not be root. Package and worker UIDs must differ. The package account has its own primary group, no supplementary groups, `/nonexistent` as home and `/usr/sbin/nologin` as shell. UID and GID come from the Node's system-account allocator; they are returned by the command, never fixed fleet-wide.
@@ -51,7 +55,7 @@ Every package command belongs to the calling native host service's lifetime. Can
 
 The native package-boundary CI job runs the real delivered agent on systemd. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
 
-Persistent Node workers share `swamp.start-worker` and `swamp.stop-worker` with task VMs. The Node profile requires the root-owned converge opt-in and runs as its dedicated non-root account. `swamp.issue-node-worker` alone mints the protected 24-hour pair on the Linux issuer; it is excluded from the compiler and Operation transports and refuses keyed effects. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for activation gates.
+Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. Task VM workers retain `swamp.start-worker` and `swamp.stop-worker`. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
 
 ## Where it runs
 
@@ -396,11 +400,11 @@ Every Unix user on a Node reaches the Gateway from the Node's WireGuard address,
 
 The agent reads the file when it starts. It exits with an error when the file is missing or malformed, and systemd starts it again after 2 seconds. The Gateway compares the hashes in constant time.
 
-Each agent converge sends the stored hash to `agent.configure`. The command keeps the secret while the file matches that hash; otherwise it creates a new secret and restarts the agent. It returns only the hash. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge.
+Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone direct footprint convergence sets `allow_secret_rotation=false`: a missing or mismatched secret refuses before writes, and the returned hash stays inside the private callback. Deleting the secret and running standalone `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
 
-The converge writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
+Retained configuration that permits rotation writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
 
-One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
+Retained Gateway enrollment and role callers serialize agent configuration under a lock in a file cache store under `ORBIT_HOME`. Native direct convergence uses Swamp concurrency and the agent update lock instead. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
 ### Recover a lost agent secret reply
 

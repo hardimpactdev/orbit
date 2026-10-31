@@ -9,7 +9,7 @@ use App\Domain\TaskVms\TaskVmCommandContracts;
 use App\Domain\TaskVms\TaskVmDestroyCancelGuard;
 use App\Domain\TaskVms\TaskVmEffectCompletion;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
-use App\Domain\TaskVms\TaskVmSweepContracts;
+use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageContracts;
 
 return (static function (): array {
@@ -32,7 +32,7 @@ return (static function (): array {
         ];
     }
 
-    $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::packageCacheKinds(), ...TaskVmCommandContracts::cacheMountKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
+    $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds()];
     foreach ($kinds as $kind => &$definition) {
         if ($kind === 'task_vm.destroy') {
             if (! OperationKinds::supports('cancel_guard')) {
@@ -42,7 +42,7 @@ return (static function (): array {
             }
             $definition['cancel_guard'] = TaskVmDestroyCancelGuard::class;
         }
-        $localKinds = ['task_vm.model_issue', 'task_vm.model_revoke', 'task_vm.runtime_confirm', 'task_vm.image_phase_confirm'];
+        $localKinds = ['task_vm.lifecycle_intent', 'task_vm.model_issue', 'task_vm.model_revoke', 'task_vm.runtime_confirm', 'task_vm.image_phase_confirm'];
         if (! OperationKinds::supports('receipts') && ! in_array($kind, $localKinds, true)) {
             unset($kinds[$kind]);
 
@@ -51,7 +51,7 @@ return (static function (): array {
 
         if (isset($definition['runs']) && is_array($definition['runs'])) {
             foreach ($definition['runs'] as &$run) {
-                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_package-cache', 'task_vm_lifecycle', 'task_vm_sweep', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.image_promote', 'task_vm.image_prune', 'task_vm.guest_install', 'task_vm.guest_pi_upload', 'task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
+                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_lifecycle', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.image_promote', 'task_vm.image_prune', 'task_vm.guest_install', 'task_vm.guest_pi_upload', 'task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
                     $run['resumable'] = true;
                 }
             }
@@ -77,11 +77,8 @@ return (static function (): array {
         if (OperationKinds::supports('children')) {
             $definition['admission'] = TaskVmChildAdmission::class;
         }
-        if (str_starts_with($kind, 'task_vm.fill_package_cache') && (! OperationKinds::supports('list_of') || ! OperationKinds::supports('children_settled'))) {
-            unset($kinds[$kind]);
-        }
     }
     unset($definition);
 
-    return $kinds;
+    return [...$kinds, ...TaskVmCommandContracts::packageCacheKinds(), 'task_vm.sweep_host' => ['executor' => 'swamp', 'result_fields' => TaskVmSweepProjection::resultFields()]];
 })();

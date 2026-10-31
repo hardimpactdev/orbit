@@ -14,46 +14,39 @@ return (static function (): array {
     }
     $kinds = [];
     $artifact = ['process_id', 'runtime', 'name'];
-    foreach (['create', 'update', 'start', 'restart', 'destroy'] as $verb) {
+    foreach (['create', 'update'] as $verb) {
         $runs = [];
-        if (in_array($verb, ['create', 'update'], true)) {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => ['process_id'], 'input_values' => ['vite' => null], 'bind' => ['runtime' => 'input.retired_runtime', 'name' => 'input.retired_name']];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.stage-unit', 'input_fields' => ['process_id', 'unit', 'content'], 'input_values' => [], 'secrets' => ['content' => 'process.unit_content']];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.activate-unit', 'input_fields' => ['process_id', 'unit', 'desired', 'on_demand', 'change'], 'input_values' => []];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.converge-container', 'input_fields' => ['process_id', 'container', 'desired', 'spec', 'image', 'command', 'restart', 'working_directory', 'ports', 'mounts', 'environment'], 'input_values' => [], 'secrets' => ['environment' => 'process.environment', 'command' => 'process.command']];
-        } elseif ($verb === 'destroy') {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => [...$artifact, 'vite'], 'input_values' => []];
-        } else {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => $verb]];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => ['process_id'], 'input_values' => ['vite' => null], 'bind' => ['runtime' => 'input.retired_runtime', 'name' => 'input.retired_name']];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.stage-unit', 'input_fields' => ['process_id', 'unit', 'content'], 'input_values' => [], 'secrets' => ['content' => 'process.unit_content']];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.activate-unit', 'input_fields' => ['process_id', 'unit', 'desired', 'on_demand', 'change'], 'input_values' => []];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.converge-container', 'input_fields' => ['process_id', 'container', 'desired', 'spec', 'image', 'command', 'restart', 'working_directory', 'ports', 'mounts', 'environment'], 'input_values' => [], 'secrets' => ['environment' => 'process.environment', 'command' => 'process.command']];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.check-release', 'input_fields' => ['directory'], 'input_values' => []];
+        foreach (['suspend' => ['operation', 'marker'], 'awake' => ['operation', 'marker'], 'environment' => ['operation', 'application', 'path', 'instance_id', 'marker', 'content']] as $variant => $fields) {
+            $runs[] = ['transport' => 'agent', 'name' => 'vite.set-traffic', 'input_fields' => [], 'input_values' => [],
+                'bind' => array_combine($fields, array_map(static fn (string $field): string => 'input.vite_plan.'.$variant.'.'.$field, $fields))];
         }
-        if ($verb !== 'destroy') {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.check-release', 'input_fields' => ['directory'], 'input_values' => []];
-        }
-        if (in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
-            foreach (['suspend' => ['operation', 'marker'], 'awake' => ['operation', 'marker'], 'environment' => ['operation', 'application', 'path', 'instance_id', 'marker', 'content']] as $variant => $fields) {
-                $runs[] = ['transport' => 'agent', 'name' => 'vite.set-traffic', 'input_fields' => [], 'input_values' => [],
-                    'bind' => array_combine($fields, array_map(static fn (string $field): string => 'input.vite_plan.'.$variant.'.'.$field, $fields))];
-            }
-            $fields = ['unit', 'port', 'process_id', 'probe'];
-            $runs[] = ['transport' => 'agent', 'name' => 'vite.check-listener', 'input_fields' => [], 'input_values' => [],
-                'bind' => array_combine($fields, array_map(static fn (string $field): string => 'input.vite_plan.listener.'.$field, $fields))];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => 'stop']];
-        }
-        if ($verb !== 'destroy') {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.status', 'input_fields' => $artifact, 'input_values' => []];
-        }
+        $fields = ['unit', 'port', 'process_id', 'probe'];
+        $runs[] = ['transport' => 'agent', 'name' => 'vite.check-listener', 'input_fields' => [], 'input_values' => [],
+            'bind' => array_combine($fields, array_map(static fn (string $field): string => 'input.vite_plan.listener.'.$field, $fields))];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => 'stop']];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.status', 'input_fields' => $artifact, 'input_values' => []];
         foreach ($runs as &$run) {
-            $run['resumable'] = ! ($run['name'] === 'process.control' && $run['input_values']['operation'] === 'restart');
+            $run['resumable'] = true;
         }
         unset($run);
         $runs[] = ['transport' => 'gateway', 'name' => 'process.runtime_ready', 'resumable' => true, 'input_fields' => ['process_id'], 'input_values' => []];
         $kinds['process.'.$verb] = ['executor' => 'swamp', 'completion' => ProcessOperationCompletion::class, 'execution' => ProcessOperationExecution::class, 'admission' => ProcessRuntimeChildAdmission::class,
-            'runs' => $runs, 'children' => in_array($verb, ['create', 'update', 'start', 'restart'], true) ? [['kind' => 'route.caddy_converge', 'node_from' => 'operation.node_id']] : [],
+            'runs' => $runs, 'children' => [['kind' => 'route.caddy_converge', 'node_from' => 'operation.node_id']],
             'completion_contract' => ['step' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.runtime_ready', 'result' => ['ready' => true]],
             'result_fields' => ['state', 'staged', 'previous', 'backup_left', 'available', 'owned', 'ready', 'error_code']];
     }
 
+    $kinds['process.restart'] = ['executor' => 'swamp', 'admission' => ProcessRuntimeChildAdmission::class, 'result_fields' => ['ready', 'state', 'error_code']];
+
+    $kinds['process.start'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
+
     $kinds['process.stop'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
+    $kinds['process.destroy'] = ['executor' => 'swamp', 'admission' => ProcessRuntimeChildAdmission::class, 'result_fields' => ['ready', 'error_code']];
 
     foreach (['install_instance_definitions' => 'process.create', 'restart_instance' => 'process.restart'] as $verb => $childKind) {
         if ($verb === 'restart_instance' && ! OperationKinds::supports('list_of')) {

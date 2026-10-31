@@ -121,13 +121,7 @@ final class ProcessesController extends Controller
     public function destroy(Request $request, string $process, DestroyProcessAction $action): JsonResponse
     {
         $record = Process::query()->findOrFail($process);
-        if ($this->synchronous($record)) {
-            $request->route()?->setParameter('process', $record);
-            $data = ProcessData::fromModel($record, 'absent')->toArray();
-            $action->execute($record);
-
-            return response()->json(['data' => $data, 'meta' => $this->meta($request)]);
-        }
+        $request->route()?->setParameter('process', $record);
 
         return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }

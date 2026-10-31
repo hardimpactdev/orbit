@@ -13,8 +13,10 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -40,7 +42,7 @@ beforeEach(function (): void {
 it('exposes only admitted safe input through the shared endpoint and declares no relay', function (): void {
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit', 'agent_sha256' => str_repeat('a', 64)]);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
 });
 
 it('projects safe native results once and refuses conflicting or unproven completion', function (): void {
@@ -80,13 +82,13 @@ it('checks shared start-response and first-read ordering without a family token 
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
-it('restricts Node workers to their admitted Node and preserves the control-plane peer', function (): void {
+it('restricts Node workers without the legacy allowlist and preserves the control-plane peer', function (): void {
     $own = Node::query()->create(['name' => 'schedule-owner', 'public_ssh_host' => '192.0.2.10', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.10']);
     $foreign = Node::query()->create(['name' => 'schedule-foreign', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.11']);
     foreach ([$own, $foreign] as $peer) {
         $peer->accessibleNodes()->attach($this->node);
     }
-    config(['operation_executor.worker_node_ids' => [$own->id, $foreign->id]]);
+    config(['operation_executor.worker_node_ids' => []]);
     $this->operation->update(['node_id' => $own->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
@@ -98,21 +100,44 @@ it('restricts Node workers to their admitted Node and preserves the control-plan
 });
 
 it('projects a bounded failure without enabling the timer', function (): void {
-    $this->operation->update(['kind' => 'schedule.enable']);
     $this->schedule->update(['desired_timer_state' => 'disabled']);
-    $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.activation_failed', 'result' => ['error_code' => 'other.failure']];
+    $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.run_failed', 'result' => ['error_code' => 'other.failure']];
     $this->postJson($this->path.'/result', $body)->assertUnprocessable();
-    $this->postJson($this->path.'/result', [...$body, 'result' => ['error_code' => 'schedule.activation_failed']])->assertOk();
-    expect($this->schedule->fresh()->error_code)->toBe('schedule.activation_failed');
+    $this->postJson($this->path.'/result', [...$body, 'result' => ['error_code' => 'schedule.run_failed']])->assertOk();
+    expect($this->schedule->fresh()->error_code)->toBe('schedule.run_failed');
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
 });
 
 it('projects a successful enable into desired timer state', function (): void {
+    config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
     $this->operation->update(['kind' => 'schedule.enable']);
     $this->schedule->update(['desired_timer_state' => 'disabled']);
+    Event::fake([RecordBroadcast::class]);
     $this->postJson($this->path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe('enabled');
     expect($this->schedule->fresh()->error_code)->toBeNull();
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated && $event->id === $this->schedule->id);
+});
+
+it('starts native enable on an executor Node without invoking the PHP runtime', function (): void {
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Enable proof', 'slug' => 'enable-proof', 'repository_url' => 'https://example.test/enable-proof.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'main',
+        'environment' => 'development', 'checkout_path' => '/home/orbit/apps/enable-proof', 'status' => 'active', 'provisioning_step' => 'active']);
+    $this->schedule->update(['target_type' => Instance::MorphAlias, 'target_id' => $instance->id, 'desired_timer_state' => 'disabled']);
+    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
+    $id = $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/activate')->assertAccepted()->assertJsonPath('data.kind', 'schedule.enable')->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($operation->state['schedule_control_writer'])->toBe('direct');
+    expect($operation->state['swamp_run_id'])->toBe($this->runId);
+    expect($operation->lock_key)->toBeNull();
+    expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
+    expect($this->socket->sent)->toHaveCount(1);
+    config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.kind', 'schedule.enable');
 });
 
 it('exposes admitted removal input and deletes the Schedule only on native success', function (): void {
@@ -175,4 +200,23 @@ it('admits manual runs directly on a worker Node without PHP runtime execution',
     expect($admitted->state['swamp_run_id'])->toBe($this->runId);
     expect($admitted->lock_key)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('starts a manual run natively when the shared writer map is empty', function (): void {
+    config(['swamp.direct_writers' => [], 'operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
+    $id = $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->state['schedule_control_writer'])->toBe('direct')
+        ->and($operation->state['swamp_run_id'])->toBe($this->runId)
+        ->and($this->socket->sent)->toHaveCount(1);
+});
+
+it('refuses a polled manual run override before recording another intent', function (): void {
+    config(['swamp.direct_writers' => ['schedule.run' => 'polled']]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    $count = Operation::query()->count();
+    $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(Operation::query()->count())->toBe($count)->and($this->socket->sent)->toBe([]);
 });
