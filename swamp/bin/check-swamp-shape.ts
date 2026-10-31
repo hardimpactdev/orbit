@@ -2,6 +2,7 @@ import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
+import { nodeCommandLaunch } from "./node-command-launch.ts";
 
 export const SCHEMA = 1;
 export const BASELINE = "config/swamp-shape-baseline.json";
@@ -1622,6 +1623,14 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
   }
   return sources;
 }
+/** Inspect Python inside the remote action, not the outer Python transport heredoc. */
+export function inlinePythonScripts(run: string): string[] {
+  const body = nodeCommandLaunch(run)?.action ?? run;
+  return [...body.matchAll(
+    /(?:python[\d.]*[^\n]*<<[\t ]*['"]?(\w+)['"]?[^\n]*\n)([\s\S]*?)\n\1(?:\n|$)/g,
+  )].map((block) => block[2]);
+}
+
 let pythonAnalyzer = "bin/swamp-shape-python.py";
 async function toolFindings(
   sources: Map<string, string>,
@@ -1649,11 +1658,15 @@ async function toolFindings(
               "shape_value",
             );
             files.push([file, shell, "sh"]);
-            for (
-              const block of shell.matchAll(
-                /(?:python[\d.]*[^\n]*<<[\t ]*['"]?(\w+)['"]?[^\n]*\n)([\s\S]*?)\n\1(?:\n|$)/g,
-              )
-            ) files.push([file, block[2], "py"]);
+            const proxy = nodeCommandLaunch(item);
+            if (proxy) files.push([file, proxy.action, "sh"]);
+            for (const program of inlinePythonScripts(item)) {
+              files.push([
+                file,
+                program.replace(/\$\{\{[\s\S]*?\}\}/g, "shape_value"),
+                "py",
+              ]);
+            }
           } else walk(item);
         }
       };
