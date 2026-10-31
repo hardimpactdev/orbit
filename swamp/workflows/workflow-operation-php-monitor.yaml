@@ -1,6 +1,7 @@
 id: 553b2e77-c04d-4509-ac8c-2e25836822f6
 name: operation-php-monitor
-description: Compose dedicated PHP monitoring with full public intent and one placed action per step.
+description: Compose dedicated PHP monitoring with full public intent and one placed
+  action per step.
 vaults: []
 inputs:
   type: object
@@ -21,6 +22,10 @@ inputs:
         node_id:
           type: integer
           minimum: 1
+          not:
+            enum:
+            - 1
+            - 18
       required:
       - php_runtime
       - node_id
@@ -47,7 +52,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
-      behaviorName: ${{ "php-monitor-assets-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-assets-" + run.id }}
       methodName: assets
       inputs:
         run_id: ${{ run.id }}
@@ -68,12 +73,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-stage-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-stage-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.stage }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.stage }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
   - name: stage-result
@@ -82,7 +87,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
-      behaviorName: ${{ "php-monitor-stage-result-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-stage-result-" + run.id }}
       methodName: observe
       inputs:
         stdout: ${{ steps.stage.outputs.stdout }}
@@ -96,12 +101,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-validate-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-validate-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.validate }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.validate }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -115,12 +120,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-publish-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-publish-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.publish }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.publish }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -134,12 +139,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-reload-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-reload-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.reload }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.reload }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -153,12 +158,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-confirm-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-confirm-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.confirm }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.confirm }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -172,12 +177,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-cleanup-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-cleanup-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -200,12 +205,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-recovery-restore-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-restore-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.restore }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.restore }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
   - name: recovery-reload_restored
@@ -214,12 +219,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-recovery-reload_restored-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-reload_restored-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.reload_restored }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.reload_restored }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -232,12 +237,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-recovery-finish_restore-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-finish_restore-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.finish_restore }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.finish_restore }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -250,12 +255,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-recovery-cleanup-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-cleanup-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup }}"'
+        run: |-
+          set -eu
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup }}"
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
     dependsOn:
@@ -277,11 +282,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "php-monitor-result-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "php-mon-result-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          /usr/bin/printf ''%s\n'' "$ORBIT_PHP_MONITOR_RESULT"'
+        run: |-
+          set -eu
+          /usr/bin/printf '%s\n' "$ORBIT_PHP_MONITOR_RESULT"
         env:
-          ORBIT_PHP_MONITOR_RESULT: '${{ steps["stage-result"].outputs.present ? steps.confirm.outputs.stdout : ''{"ready":true,"present":false,"changed":false,"active":false}'' }}'
+          ORBIT_PHP_MONITOR_RESULT: '${{ steps["stage-result"].outputs.present ? steps.confirm.outputs.stdout
+            : ''{"ready":true,"present":false,"changed":false,"active":false}'' }}'
