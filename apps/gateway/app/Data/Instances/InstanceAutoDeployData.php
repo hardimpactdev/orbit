@@ -55,7 +55,7 @@ final class InstanceAutoDeployData extends Data
             blocked: $history === null ? $automatic->smokeBlocked() : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,
             enabled: $enabled,
-            policyOwner: $developmentDefault ? AutomaticDeployPolicyWriter::Gateway->value : app(AutomaticDeployPolicyWriter::class)->value,
+            policyOwner: app(AutomaticDeployPolicyWriter::class)->value,
             gate: $gate,
             warning: $enabled && ! $developmentDefault && $gate === null
                 ? 'The Project has no merge_check, so every new commit on the branch deploys without a check.'

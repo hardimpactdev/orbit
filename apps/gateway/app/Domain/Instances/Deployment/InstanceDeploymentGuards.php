@@ -85,6 +85,9 @@ final readonly class InstanceDeploymentGuards
             return;
         }
         $this->writer->assertSwamp($instance);
+        if ($instance->placedOnAppDev()) {
+            return;
+        }
         $history = new AutomaticDeployHistory($instance);
         if ($history->pausedBy() instanceof InstanceDeployment) {
             throw new ResourceOperationException(AutomaticDeployHistory::Paused, 'A manual deployment or rollback pauses automatic deployment.', 409);

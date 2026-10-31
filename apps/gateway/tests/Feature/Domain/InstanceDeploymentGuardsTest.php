@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Domain\Instances\Deployment\InstanceDeploymentGuards;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
@@ -21,6 +22,7 @@ it('rechecks automatic admission changes before an effect without creating a his
         'triggered_by' => 'swamp:auto-deploy', 'input' => ['commit' => str_repeat('a', 40), 'caller_node_id' => $node->id],
         'sequence' => 1, 'attempts' => 1]);
     match ($change) {
+        'writer' => app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway),
         'disabled' => $instance->update(['auto_deploy' => false]),
         'role' => $node->roles()->where('role', 'app-prod')->update(['status' => 'failed']),
         'hold' => $instance->update(['auto_deploy_state' => ['smoke_control' => ['hold' => ['key' => 'held']]]]),
@@ -37,6 +39,7 @@ it('rechecks automatic admission changes before an effect without creating a his
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
     expect($effects)->toBe(0)->and(InstanceDeployment::query()->count())->toBe(0);
 })->with([
+    'writer changed after admission' => ['writer', 'instance.auto_deploy_policy_owner'],
     'disabled after admission' => ['disabled', 'deployment.paused'],
     'inactive role after admission' => ['role', 'instance.auto_deploy_role_inactive'],
     'hold after admission' => ['hold', 'instance.smoke_held'],

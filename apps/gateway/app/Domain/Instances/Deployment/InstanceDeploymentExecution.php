@@ -153,13 +153,11 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             $children[] = $child('activation.process_definitions', 'process.install_instance_definitions', $input);
             $children[] = $child('activation.schedule_definitions', 'schedule.install_instance_definitions', $input);
         }
-        if ($intent['variant'] !== 'development') {
-            if ($intent['php']) {
-                $children[] = $child('php_refresh.packages', 'node.prepare_php_packages', ['versions' => [$intent['php_version']], 'profile' => 'app-prod']);
-            }
-            if (! $intent['runtime_synchronous']) {
-                $children[] = $child('process_restart', 'process.restart_instance', $input);
-            }
+        if ($intent['php']) {
+            $children[] = $child('php_refresh.packages', 'node.prepare_php_packages', ['versions' => [$intent['php_version']], 'profile' => 'app-prod']);
+        }
+        if (! $intent['runtime_synchronous']) {
+            $children[] = $child('process_restart', 'process.restart_instance', $input);
         }
 
         return $children;
@@ -226,10 +224,6 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         $this->budget->requireRemaining($operation);
         $this->guards->around($operation, function (Instance $instance) use ($operation, $run): void {
             $current = $this->intents->snapshot($instance, rollback: $operation->kind === 'instance.rollback');
-            $projection = InstanceDeploymentIntent::admitted($operation)['projection_route_id'];
-            if ($projection !== null && $instance->authoritativeRoute()?->id !== $projection) {
-                throw new ResourceOperationException('deployment.identity_changed', 'The admitted development Route changed before projection.', 409);
-            }
             foreach (['variant', 'project_id', 'repository', 'home', 'user', 'relative_root', 'application_suffix', 'served', 'shared_paths', 'php', 'php_version', 'php_runtime', 'php_refresh', 'php_profile', 'runtime_synchronous'] as $field) {
                 if (($current[$field] ?? null) !== (InstanceDeploymentIntent::admitted($operation)[$field] ?? null)) {
                     throw new ResourceOperationException('deployment.identity_changed', 'The Instance ownership or runtime configuration changed after admission.', 409);
@@ -346,6 +340,9 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
         $result = $this->result($operation);
+        if ($outcome->status === OperationStatus::Cancelled && $outcome->result === null && $result === []) {
+            return;
+        }
         if ($outcome->result !== $result) {
             throw $this->unproven();
         }

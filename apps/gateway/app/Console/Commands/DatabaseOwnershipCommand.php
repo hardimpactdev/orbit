@@ -13,9 +13,11 @@ use Illuminate\Console\Command;
 /** Local operator command; deliberately absent from the API and public command registry. */
 final class DatabaseOwnershipCommand extends Command
 {
+    #[\Override]
     protected $signature = 'database:ownership {action : adopt or forget} {connection : Database connection slug}
         {--actor= : Operator responsible for this decision} {--reason= : Reason for adoption or forgetting}';
 
+    #[\Override]
     protected $description = 'Prove existing MySQL ownership or forget a connection without dropping data';
 
     public function handle(ManageDatabaseOwnershipAction $ownership): int

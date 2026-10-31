@@ -55,6 +55,7 @@ final class InstanceData extends Data
         /** @var list<string> */
         public array $sharedPaths = [],
         public ?InstanceAutoDeployData $autoDeploy = null,
+        public ?int $developmentProjectionRouteId = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -105,6 +106,8 @@ final class InstanceData extends Data
                 : null,
             transfer: self::transfer($instance),
             autoDeploy: InstanceAutoDeployData::fromModel($instance),
+            developmentProjectionRouteId: $instance->development_projection_pending && $instance->placedOnAppDev()
+                ? $instance->authoritativeRoute()?->id : null,
             deploySteps: array_map(
                 DeploymentStepData::fromDomain(...),
                 app(InstanceDeployStepStore::class)->ordered($instance),

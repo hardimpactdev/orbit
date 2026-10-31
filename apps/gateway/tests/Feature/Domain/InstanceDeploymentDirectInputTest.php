@@ -30,7 +30,6 @@ it('returns the bound safe deployment input without private commands or environm
         ->and($input['deployment']['node_user'])->toBe($this->instance->node->user)
         ->and($input['deployment']['steps'][0]['command_digest'])->toBe(hash('sha256', 'private deploy command'))
         ->and($input['release_name'])->toBe(InstanceDeploymentIntent::releaseName($this->operation))
-        ->and($input['timeout_seconds'])->toBe(960)
         ->and($input['commit'])->toBeNull()
         ->and(json_encode($input))->not->toContain('private deploy command', 'private deployment token');
 });

@@ -49,7 +49,7 @@ final readonly class DependencyBatchGraph
                         $name = substr((string) $key, 0, $separator);
                     } else {
                         $parts = explode('node_modules/', (string) $key);
-                        $name = $parts[array_key_last($parts)];
+                        $name = array_last($parts);
                     }
                     $names[$name] = true;
                 }

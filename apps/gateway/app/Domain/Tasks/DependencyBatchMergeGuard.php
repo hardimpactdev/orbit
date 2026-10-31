@@ -213,7 +213,7 @@ final readonly class DependencyBatchMergeGuard
         $this->check(is_array($rows) && array_is_list($rows) && count($rows) < 100 && ($data['total_count'] ?? null) === count($rows)
             && array_all($rows, static fn (mixed $row): bool => is_array($row)), 'dependency_merge.checks_unreadable');
 
-        return array_map(static fn (array $row): array => ValidatedData::object($row), $rows);
+        return array_map(ValidatedData::object(...), $rows);
     }
 
     /** @phpstan-assert true $condition */

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
-use App\Domain\Instances\Deployment\InstanceProjectionExecution;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\InstanceExecutionChildAdmission;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
@@ -53,17 +52,6 @@ $instanceExecutionKinds = [
         'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.web-roots-receipt', 'result' => ['confirmed' => true]],
         'result_fields' => ['instance_id', 'confirmed', 'no_op', 'prepared', 'changed', 'error_code'],
     ],
-    'instance.repair_projection' => [
-        'executor' => 'swamp', 'execution' => InstanceProjectionExecution::class, 'completion' => InstanceProjectionExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'instance.child-receipt', 'resumable' => true],
-            ['transport' => 'gateway', 'name' => 'instance.projection-receipt', 'resumable' => true],
-        ],
-        'children' => [['kind' => 'route.converge', 'node_from' => 'operation.node_id']],
-        'completion_contract' => ['step' => 'verification', 'transport' => 'gateway', 'name' => 'instance.projection-receipt',
-            'result' => ['confirmed' => true], 'children_succeeded' => ['route.converge']],
-        'result_fields' => ['instance_id', 'confirmed', 'child_id', 'child_kind', 'child_status', 'error_code'],
-    ],
     'instance.deploy' => $deployment(false),
     'instance.rollback' => $deployment(true),
     'instance.prepare_php_runtime' => [
@@ -111,7 +99,7 @@ $instanceExecutionKinds = [
 ];
 
 if (! OperationKinds::supports('children')) {
-    foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.repair_projection', 'instance.prepare_served_web_roots'] as $kind) {
+    foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.prepare_served_web_roots'] as $kind) {
         unset($instanceExecutionKinds[$kind]);
     }
 }

@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RunAutomaticDeploysAction;
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -19,6 +19,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Contracts\Console\Kernel;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\TestCase;
 
@@ -208,20 +209,68 @@ it('refuses manual deployment until the existing default Route repair finishes',
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('admits Route repair ahead of a newer commit through the existing automatic ticker', function (): void {
-    $instance = dev935_instance();
-    $instance->update(['development_projection_pending' => true, 'seed_commit' => str_repeat('a', 40)]);
+function native_development_policy_route(TestCase $test): array
+{
+    [$instance] = native_deploy_projection_fixture($test);
+    $instance->update(['development_projection_pending' => true]);
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id,
-        'node_id' => $instance->node_id, 'domain' => 'pending-auto.example.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+        'node_id' => $instance->node_id, 'domain' => 'policy-repair.example.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
     $instance->routes()->attach($route->id, ['position' => 0]);
     $route->update(['status' => 'active']);
-    $heads = Mockery::mock(RemoteBranchHeads::class);
-    $heads->shouldReceive('head')->once()->andReturn(str_repeat('b', 40));
-    app()->instance(RemoteBranchHeads::class, $heads);
+    $receipt = Operation::query()->create(['kind' => 'route.update', 'target_type' => 'route', 'target_id' => $route->id,
+        'node_id' => $instance->node_id, 'status' => OperationStatus::Succeeded,
+        'input' => ['mode' => 'publication', 'domain' => $route->domain, 'publication' => $route->publication->value]]);
+    $body = ['resumed_after' => 0, 'last_deployment_id' => 0,
+        'history_version' => new AutomaticDeployHistory($instance)->snapshot()->version,
+        'result' => 'busy', 'commit' => str_repeat('a', 40), 'head' => str_repeat('a', 40), 'since' => now()->toIso8601String(),
+        'error_code' => null, 'message' => null, 'pause' => null, 'route_operation_id' => $receipt->id];
 
-    app(RunAutomaticDeploysAction::class)->execute();
+    return [$instance, $receipt, $body];
+}
 
-    expect(Operation::query()->sole()->kind)->toBe('instance.repair_projection')
-        ->and($instance->fresh()->development_projection_pending)->toBeTrue()
-        ->and($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40));
+it('projects only the matching completed authoritative Route publication without a repair child', function (): void {
+    [$instance, , $body] = native_development_policy_route($this);
+    $this->putJson('/api/v1/instances/'.$instance->id.'/auto-deploy/policy', $body)->assertOk();
+    expect($instance->fresh()->development_projection_pending)->toBeFalse()
+        ->and(Operation::query()->count())->toBe(2)->and(InstanceDeployment::query()->count())->toBe(0);
+});
+
+it('refuses an unrelated or unfinished Route receipt before changing development publication state', function (string $fault): void {
+    [$instance, $receipt, $body] = native_development_policy_route($this);
+    match ($fault) {
+        'kind' => $receipt->update(['kind' => 'route.create']),
+        'status' => $receipt->update(['status' => OperationStatus::Running]),
+        'target' => $receipt->update(['target_id' => $receipt->target_id + 1]),
+        'mode' => $receipt->update(['input' => [...$receipt->input, 'mode' => 'state_only']]),
+        'domain' => $receipt->update(['input' => [...$receipt->input, 'domain' => 'foreign.example.test']]),
+        'publication' => $receipt->update(['input' => [...$receipt->input, 'publication' => 'public']]),
+    };
+    $this->putJson('/api/v1/instances/'.$instance->id.'/auto-deploy/policy', $body)
+        ->assertStatus(409)->assertJsonPath('error.code', 'instance.projection_unproven');
+    expect($instance->fresh()->development_projection_pending)->toBeTrue();
+})->with(['kind', 'status', 'target', 'mode', 'domain', 'publication']);
+
+it('exposes Swamp as the development policy owner and removes the PHP tick and repair kind', function (): void {
+    [$instance] = native_deploy_projection_fixture($this);
+    $this->getJson('/api/v1/instances/'.$instance->id)->assertOk()->assertJsonPath('data.auto_deploy.policy_owner', 'swamp');
+    expect(array_keys(app(Kernel::class)->all()))->not->toContain('orbit:auto-deploy')
+        ->and(OperationKinds::definitions())->not->toHaveKey('instance.repair_projection');
+});
+
+it('refuses development policy publication when the app-dev role is no longer active', function (): void {
+    [$instance, , $body] = native_development_policy_route($this);
+    $instance->node->roles()->where('role', RoleName::AppDev)->update(['status' => 'failed']);
+    $this->putJson('/api/v1/instances/'.$instance->id.'/auto-deploy/policy', $body)
+        ->assertStatus(409)->assertJsonPath('error.code', 'instance.auto_deploy_role_inactive');
+    expect($instance->fresh()->development_projection_pending)->toBeTrue();
+});
+
+it('exposes only pending authoritative development publication instead of the display Route fallback', function (): void {
+    [$instance, $receipt] = native_development_policy_route($this);
+    $url = '/api/v1/instances/'.$instance->id;
+    $this->getJson($url)->assertOk()->assertJsonPath('data.development_projection_route_id', $receipt->target_id);
+    Route::query()->findOrFail($receipt->target_id)->update(['status' => 'pending']);
+    $this->getJson($url)->assertOk()->assertJsonPath('data.route.id', $receipt->target_id)
+        ->assertJsonPath('data.development_projection_route_id', null);
+    expect($instance->fresh()->development_projection_pending)->toBeTrue();
 });

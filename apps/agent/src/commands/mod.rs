@@ -427,7 +427,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_certificates::RemoveLeaf>(),
         entry::<dev_deploy::ResolveTarget>(),
         entry::<dev_deploy::CheckoutDefault>(),
-        entry::<dev_deploy::RunStep>(),
         entry::<dev_deploy::RunLifecycleStep>(),
         entry::<production_home::PrepareUser>(),
         entry::<production_home::PrepareSource>(),

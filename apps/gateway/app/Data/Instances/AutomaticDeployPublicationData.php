@@ -22,11 +22,12 @@ final class AutomaticDeployPublicationData extends Data
         public ?string $errorCode,
         public ?string $message,
         public ?InstanceAutoDeployPauseData $pause,
+        public ?int $routeOperationId = null,
     ) {}
 
     /** @return array<string, mixed> */
     public function projection(): array
     {
-        return array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id', 'history_version']));
+        return array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id', 'history_version', 'route_operation_id']));
     }
 }

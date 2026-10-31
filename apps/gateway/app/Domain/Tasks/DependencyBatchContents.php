@@ -57,7 +57,7 @@ final readonly class DependencyBatchContents
                     $identity = $idParts[1];
                     $parts = explode('/', $key);
                     $name = array_pop($parts);
-                    if ($parts !== [] && str_starts_with($parts[array_key_last($parts)], '@')) {
+                    if ($parts !== [] && str_starts_with(array_last($parts), '@')) {
                         $name = array_pop($parts).'/'.$name;
                     }
                     $this->check($identity === $name);

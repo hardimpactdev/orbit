@@ -44,11 +44,8 @@ final readonly class InstanceVpEnvironmentMaterial
             return [$instance, $parent, $instance->checkout_path];
         }
         $intent = InstanceDeploymentIntent::admitted($parent);
-        $path = $intent['variant'] === 'development' ? $intent['home']
-            : (InstanceDeploymentIntent::storedRelease(InstanceExecutionEvidence::step($parent, 'source_preparation')['release'] ?? null)?->path);
-        $sources = $intent['variant'] === 'development'
-            ? [['key' => 'source.checkout', 'name' => 'instance.checkout-development-default']]
-            : [['key' => 'source.prepare', 'name' => 'instance.prepare-release']];
+        $path = InstanceDeploymentIntent::storedRelease(InstanceExecutionEvidence::step($parent, 'source_preparation')['release'] ?? null)?->path;
+        $sources = [['key' => 'source.prepare', 'name' => 'instance.prepare-release']];
         $proven = array_any($sources, static function (array $source) use ($parent): bool {
             $run = InstanceExecutionEvidence::run($parent, $source['key']);
 

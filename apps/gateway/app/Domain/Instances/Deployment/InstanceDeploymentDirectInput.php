@@ -54,8 +54,7 @@ final readonly class InstanceDeploymentDirectInput
 
         return ['instance_id' => $operation->target_id, 'project_id' => ValidatedData::integer($admitted['project_id']),
             'agent_sha256' => $pin, 'deployment' => $admitted, 'commit' => InstanceDeploymentIntent::commit($operation),
-            'release_name' => InstanceDeploymentIntent::releaseName($operation),
-            'timeout_seconds' => InstanceDeploymentBudget::seconds($operation)];
+            'release_name' => InstanceDeploymentIntent::releaseName($operation)];
     }
 
     private function changed(): ResourceOperationException

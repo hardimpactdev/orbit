@@ -14,6 +14,7 @@ use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -81,6 +82,7 @@ final readonly class Orb220DeploymentApiFixture
             'provisioning_step' => 'active',
             'status' => 'active',
         ]);
+        $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5')->attributes());
         store_deploy_steps($instance, $steps ?? [
             [
                 'name' => 'prepare',

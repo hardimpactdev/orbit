@@ -305,7 +305,7 @@ Command mode currently runs as the enrolled macOS account. A future LaunchAgent 
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner, and `instance.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner. Native Swamp development deployment uses its shared sudo runner as the configured Node account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
 
 While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 

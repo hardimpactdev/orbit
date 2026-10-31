@@ -20,7 +20,7 @@ final class InstanceDeploymentAvailability
     {
         $definitions ??= OperationKinds::definitions();
         $required = ['instance.deploy', 'instance.rollback'];
-        foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.repair_projection'] as $kind) {
+        foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime'] as $kind) {
             $definition = $definitions[$kind] ?? [];
             if (is_array($definition)) {
                 $children = $definition['children'] ?? [];
@@ -65,9 +65,6 @@ final class InstanceDeploymentAvailability
         }
         if (($intent['needs_vp'] ?? false) === true) {
             $required = [...$required, 'instance.prepare_vp_environment', 'tool.manager_converge'];
-        }
-        if (($intent['projection_route_id'] ?? null) !== null) {
-            $required[] = 'route.converge';
         }
         $definitions = OperationKinds::definitions();
         foreach ($required as $kind) {
