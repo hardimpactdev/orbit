@@ -220,10 +220,16 @@ export async function imageStage(
       const result = await image({
         kind: "publish",
         name: input.name,
-        alias: input.candidate_alias,
+        alias: `${input.candidate_alias}-attempt-${input.attempt}`,
         properties: { "orbit.recipe": input.identity, "orbit.profile": "base" },
       });
-      return { fingerprint: fingerprint(result) };
+      const candidate = fingerprint(result);
+      await image({
+        kind: "promote",
+        alias: input.candidate_alias,
+        fingerprint: candidate,
+      });
+      return { fingerprint: candidate };
     }
     case "smoke": {
       await remove(false);
@@ -318,7 +324,7 @@ export function imageBuildDirect(
   };
   return {
     type: "@nckrtl/task-vm-image-build",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     resources: {
       boot: {

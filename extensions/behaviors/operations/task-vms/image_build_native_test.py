@@ -75,7 +75,8 @@ class ImageBuildNative(NativeTestCase):
         self.run_workflow(success=False)
         saved = self.read()
         self.assertEqual(saved['operation']['status'], 'failed')
-        self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote' for call in saved['actions']))
+        self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote'
+            and call['input']['operation'].get('alias') == 'orbit-task-base' for call in saved['actions']))
 
     def test_lost_final_reply_resumes_same_root_without_repeating_actions(self):
         self.state['loseFinal'] = True
@@ -93,7 +94,8 @@ class ImageBuildNative(NativeTestCase):
         saved = self.read()
         self.assertEqual(saved['operation']['status'], 'failed')
         self.assertFalse(saved['artifactDelivered'])
-        self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote' for call in saved['actions']))
+        self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote'
+            and call['input']['operation'].get('alias') == 'orbit-task-base' for call in saved['actions']))
 
 
 if __name__ == '__main__':

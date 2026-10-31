@@ -161,6 +161,57 @@ Deno.test("a failed native smoke never reaches seed or promotion", async () => {
   assertEquals(f.calls.some((name) => /seed|promote/.test(name)), false);
 });
 
+Deno.test("a new image attempt replaces the same candidate safely and retries its own publication", async () => {
+  const input = intent();
+  const old = "d".repeat(64);
+  const fresh = "e".repeat(64);
+  const aliases = new Map([[input.candidate_alias, old], [
+    input.base_alias,
+    old,
+  ]]);
+  let publications = 0;
+  let failPublish = true;
+  const host: (call: NodeCall) => Promise<Record<string, unknown>> = (call) => {
+    assertEquals(call.name, "incus.image");
+    const op = call.input.operation as Record<string, string>;
+    if (op.kind === "publish") {
+      if (!aliases.has(op.alias)) {
+        if (failPublish) {
+          return Promise.reject(new Error("publish interrupted"));
+        }
+        publications++;
+        aliases.set(op.alias, fresh);
+      }
+      return Promise.resolve({
+        ready: true,
+        fingerprint: aliases.get(op.alias),
+      });
+    }
+    assertEquals(op.kind, "promote");
+    assertEquals(op.alias, input.candidate_alias);
+    aliases.set(op.alias, op.fingerprint);
+    return Promise.resolve({ ready: true, fingerprint: op.fingerprint });
+  };
+  const publish = () =>
+    imageStage(
+      "publish",
+      { ...input, attempt: 2 },
+      null,
+      host,
+      fixture().guest,
+      () => Promise.reject(new Error("unused")),
+    );
+  await assertRejects(publish, Error, "publish interrupted");
+  assertEquals(aliases.get(input.candidate_alias), old);
+  failPublish = false;
+  assertEquals(await publish(), { fingerprint: fresh });
+  assertEquals(await publish(), { fingerprint: fresh });
+  assertEquals(publications, 1);
+  assertEquals(aliases.get(`${input.candidate_alias}-attempt-2`), fresh);
+  assertEquals(aliases.get(input.candidate_alias), fresh);
+  assertEquals(aliases.get(input.base_alias), old);
+});
+
 Deno.test("image publication refuses an absent or malformed fingerprint", async () => {
   const f = fixture();
   await assertRejects(() =>

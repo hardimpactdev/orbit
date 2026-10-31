@@ -15,6 +15,12 @@ and GID 1000. Root commands and mutation supervision start as root; setting
 `SUDO_USER` does not change a read command's effective identity. The retained
 paths below apply to other Task VM kinds, including UpCloud images.
 
+Publication uses an attempt-scoped alias, then atomically promotes its verified
+fingerprint to the stable candidate alias. A new stock attempt never reuses an
+older candidate fingerprint. Repeating a publication within the same attempt
+reuses its fingerprint; failure before candidate promotion preserves the prior
+candidate. The public base alias changes only after smoke and seed checks.
+
 The Gateway records VM, runtime, image and host sweep intent. This family drives
 their effects through fixed Operations. Discovery dispatches a kind and worker;
 the placed family claims its Operation and saves that assignment before effects.
