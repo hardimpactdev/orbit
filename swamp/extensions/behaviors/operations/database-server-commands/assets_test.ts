@@ -1,0 +1,94 @@
+import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { behavior } from "./assets.ts";
+
+const context = {
+    extensionFile: (name: string) => "/native-cache/" + name,
+    writeResource: () => Promise.resolve(),
+};
+
+Deno.test("server files contain only public admitted inputs and native bundle paths", async () => {
+    const value = await behavior.methods.read.execute({
+        intent: { driver: "mysql", process_id: 42 },
+    }, context);
+    assertEquals(value, {
+        directory: "/native-cache/scripts",
+        intent_json: '{"driver":"mysql","process_id":42}',
+    });
+});
+Deno.test("server plan selects creation, no-op and replacement using observed specs", async () => {
+    const spec = "b".repeat(64);
+    const plan = (state: unknown) =>
+        behavior.methods.plan.execute(
+            { stdout: JSON.stringify(state), spec },
+            context,
+        );
+    assertEquals(await plan({ present: false, state: "absent" }), {
+        present: false,
+        state: "absent",
+        replace: false,
+        rollback_slot: "rollback-stopped",
+    });
+    assertEquals(
+        (await plan({ present: true, state: "running", spec })).replace,
+        false,
+    );
+    assertEquals(
+        await plan({ present: true, state: "running", spec: "c".repeat(64) }),
+        {
+            present: true,
+            state: "running",
+            spec: "c".repeat(64),
+            replace: true,
+            rollback_slot: "rollback-running",
+        },
+    );
+    await assertRejects(() =>
+        plan({ present: true, state: "running", spec: "not-a-spec" })
+    );
+});
+Deno.test("server result refuses missing completion and retains bounded action refusal", async () => {
+    const result = behavior.methods.result.execute;
+    assertEquals(
+        await result({
+            completed: true,
+            steps: [{ status: "succeeded", exit_code: 0 }, {
+                status: "skipped",
+            }],
+        }, context),
+        { stdout: '{"backend":"active"}\n', exitCode: 0 },
+    );
+    assertEquals(
+        await result(
+            { completed: false, steps: [{ status: "skipped" }] },
+            context,
+        ),
+        {
+            stdout: '{"error_code":"database.server_create_outcome_unknown"}\n',
+            exitCode: 1,
+        },
+    );
+    assertEquals(
+        await result({
+            completed: false,
+            steps: [{
+                status: "succeeded",
+                exit_code: 1,
+                stdout: '{"error_code":"database.server_adoption_refused"}',
+            }],
+        }, context),
+        {
+            stdout: '{"error_code":"database.server_adoption_refused"}\n',
+            exitCode: 1,
+        },
+    );
+    assertEquals(
+        await result({
+            completed: false,
+            steps: [{ status: "failed", stdout: "private diagnostic" }],
+        }, context),
+        {
+            stdout: '{"error_code":"database.server_create_outcome_unknown"}\n',
+            exitCode: 1,
+        },
+    );
+});

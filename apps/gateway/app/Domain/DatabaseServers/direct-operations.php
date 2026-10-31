@@ -34,7 +34,8 @@ return ['database.update' => [
 ], 'database_server.create' => [
     'workflow' => 'operation-database-server-create',
     'projection' => DatabaseServerCreateProjection::class,
-    'private_material' => ['password' => 'database.intent', 'environment' => 'database.intent', 'acl' => 'database.intent', 'payload' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'server', 'step' => 'result'],
 ], 'database.write' => [
     'workflow' => 'operation-database-write',
     'projection' => DatabaseWriteProjection::class,

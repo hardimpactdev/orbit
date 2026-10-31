@@ -30,7 +30,7 @@ The SQL user parent resolves private data inside its existing read boundary. The
 
 ## Create a server
 
-`database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes.
+`database_server.create` records Server and Process intent and starts `operation-database-server-create` with the full public intent and vault key names. Every step runs on Node 209. The official SSH extension reaches the server Node with its recorded host key and the approved control key. Native steps perform adoption checks, container replacement, readiness and initializer removal. The shared terminal subscriber projects the public result. The initializer environment, admin password, ACL file and ACL user data use the shared vault execution copy; they are absent from workflow inputs and command arguments.
 
 Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. Container convergence, rollback, removal, and SQL readiness run directly in Swamp. Private command and initialization values reach Docker through protected stdin. The agent observes the Node. Rollback reverts the kind PR.
 
@@ -50,14 +50,14 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 
 ### A MySQL server
 
-The Gateway records the server and protected command intent. Swamp runs local system commands through the admitted Node worker and creates a MySQL server in this order:
+The Gateway records the server and protected command intent. Swamp runs placed SSH steps from Node 209 and creates a MySQL server in this order:
 
 1. It generates a random root password and stores it encrypted on the server record.
 2. It creates a Docker Node Process named `<slug>` with image `mysql:<tag>`, the port published on the Node's WireGuard address to container port `3306`, and the volume `orbit-<slug>-data` for `/var/lib/mysql`.
 3. It starts the Process with `MYSQL_ROOT_PASSWORD` set and waits until MySQL accepts the root login.
 4. It removes the variable from the Process and recreates the container. The data volume keeps the password.
 
-Until password removal succeeds, an initialization retry injects the same recorded password into the container environment again. After step 4, the root password exists only encrypted in the Gateway. It is not in the Process record, the container environment, `docker inspect`, or a file on the Node. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
+Until password removal succeeds, an initialization retry injects the same recorded password into the container environment again. After step 4, the Gateway keeps the encrypted root password and Swamp keeps its vault execution copy. The password is absent from the Process record, the container environment and `docker inspect`. Client commands use a temporary 0600 credentials file and remove it when they finish. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
 
 ### A PostgreSQL server
 

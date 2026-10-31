@@ -802,29 +802,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/server_create.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/server_create.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET default"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/server_create.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/server_destroy.ts",
       "rule": "gateway-http",
       "count": 1,

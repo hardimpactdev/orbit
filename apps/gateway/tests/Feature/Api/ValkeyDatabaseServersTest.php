@@ -38,7 +38,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     config(['swamp.run_token' => 'fake.token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => Str::uuid()->toString()]]];
+    $socket->reply = fn (array $sent): array => ($sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => Str::uuid()->toString()]]]);
     app()->instance(WebSocketClient::class, $socket);
 
     $this->dbNode = Node::query()->create([
