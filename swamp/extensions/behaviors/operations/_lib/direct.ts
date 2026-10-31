@@ -1,4 +1,17 @@
 import { z } from "npm:zod@4.4.3";
+import {
+  DirectOperationCancelled,
+  DirectResult,
+  type DirectIntent,
+  type Result,
+} from "./direct-input.ts";
+export {
+  DirectArgs,
+  DirectOperationCancelled,
+  DirectResult,
+  type DirectIntent,
+  type Result,
+} from "./direct-input.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 /** Shared native configuration, independent of the retired polled runner. */
@@ -9,16 +22,6 @@ export const Globals = z.object({
   ),
 });
 
-export const DirectArgs = z.object({
-  operation_id: z.number().int().positive(),
-  kind: z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/),
-  node_id: z.number().int().positive().nullable(),
-  run_id: z.string().uuid(),
-});
-export const DirectResult = z.preprocess(
-  (value) => Array.isArray(value) && value.length === 0 ? {} : value,
-  z.record(z.string(), z.unknown()),
-);
 const GitHubCredential = z.object({
   repository: z.string().max(140).regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   permissions: z.object({
@@ -41,21 +44,6 @@ const Outcome = z.object({
   result: DirectResult.nullable(),
   cancel_requested: z.boolean(),
 });
-export type DirectIntent = z.infer<typeof DirectArgs>;
-export type Result = z.infer<typeof DirectResult>;
-
-/** An action may cancel a read-only wait only after confirming no effect is running. */
-export class DirectOperationCancelled extends Error {
-  constructor(evidence: { effectRunning: false }) {
-    super("Direct Operation cancelled with no effect running");
-    if (evidence.effectRunning !== false) {
-      throw new Error(
-        "Cancellation requires confirmation that no effect is running",
-      );
-    }
-  }
-}
-
 const Unbound = z.object({
   error: z.object({ code: z.literal("operation.run_unbound") }),
 });

@@ -61,6 +61,11 @@ its own file/rule finding, so new steps cannot inherit a historical exception.
 Intent arrives as non-secret workflow inputs, vault
 names and key names identify secrets, and step outputs carry results.
 
+Shared public Operation schemas and cancellation evidence live in
+`extensions/behaviors/operations/_lib/direct-input.ts`. Metadata and data-only
+helpers import that module directly. Importing `direct.ts` also reaches the
+retained Gateway client and therefore keeps that dependency in the shape audit.
+
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow accepts `working-directory` and
 `base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
