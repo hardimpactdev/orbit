@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationProjection;
@@ -12,10 +13,15 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeRoutePublicationSocket;
 
@@ -262,6 +268,7 @@ function startTerminalHistory(Operation $operation, string $status): array
 }
 
 it('projects a root terminal event received in the start batch after binding the run', function (string $status, string $eventKind): void {
+    Queue::fake([ProjectSwampTerminal::class]);
     $operation = startTerminalIntent();
     $history = startTerminalHistory($operation, $status);
     $socket = new FakeRoutePublicationSocket;
@@ -279,6 +286,11 @@ it('projects a root terminal event received in the start batch after binding the
     config(['swamp.run_token' => 'private.start-token']);
 
     app(StartSwampRun::class)->start($operation);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
+    Queue::assertPushed(ProjectSwampTerminal::class, 1);
+    Queue::pushed(ProjectSwampTerminal::class)->first()->handle(app(SwampCommandStep::class));
 
     expect($operation->fresh()->status->value)->toBe($status);
     expect($operation->fresh()->state['swamp_run_id'])->toBe($history['id']);
@@ -318,6 +330,7 @@ it('ignores a foreign terminal frame in the start batch without reading history'
 })->with(['request', 'run', 'workflow', 'child', 'active']);
 
 it('keeps an accepted start bound when its coalesced terminal history is unavailable', function (): void {
+    Queue::fake([ProjectSwampTerminal::class]);
     $operation = startTerminalIntent();
     $history = startTerminalHistory($operation, 'succeeded');
     $socket = new FakeRoutePublicationSocket;
@@ -337,9 +350,50 @@ it('keeps an accepted start bound when its coalesced terminal history is unavail
     app(StartSwampRun::class)->start($operation);
     app(StartSwampRun::class)->start($operation->fresh());
 
+    Queue::assertPushed(ProjectSwampTerminal::class, 1);
+    expect(fn () => Queue::pushed(ProjectSwampTerminal::class)->first()->handle(app(SwampCommandStep::class)))
+        ->toThrow(ResourceOperationException::class);
+
     expect($operation->fresh()->status)->toBe(OperationStatus::Running);
     expect($operation->fresh()->error_code)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe($history['id']);
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get']);
     expect(json_encode($operation->fresh()->toArray()))->not->toContain('private-native-diagnostic');
+});
+
+it('announces the committed native binding on the existing private orbit record channel', function (): void {
+    $operation = startTerminalIntent();
+    Event::fake([RecordBroadcast::class]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.start-token']);
+
+    app(StartSwampRun::class)->start($operation);
+
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->channel === 'orbit'
+        && $event->id === $operation->id && ($event->data['sequence'] ?? null) === 3 && ($event->data['status'] ?? null) === 'running');
+    expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+});
+
+it('announces a fast bound run for the observer when its terminal notice could not be queued', function (): void {
+    $operation = startTerminalIntent();
+    Event::fake([RecordBroadcast::class]);
+    Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('synthetic-queue-refusal'));
+    $history = startTerminalHistory($operation, 'succeeded');
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [
+        ['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $history['workflowName'], 'runId' => $history['id']]],
+        ['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'completed', 'run' => $history]],
+    ];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.start-token']);
+
+    app(StartSwampRun::class)->start($operation);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($operation->fresh()->state['swamp_run_id'])->toBe($history['id']);
+    expect($operation->fresh()->error_code)->toBeNull();
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->channel === 'orbit'
+        && $event->id === $operation->id && ($event->data['sequence'] ?? null) === 3);
 });
