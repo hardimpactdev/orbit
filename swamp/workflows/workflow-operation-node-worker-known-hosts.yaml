@@ -31,11 +31,9 @@ inputs:
 jobs:
   - name: known_hosts
     target: orbit-node-209
-    labels: {node: '209'}
     steps:
       - name: assets
         target: orbit-node-209
-        labels: {node: '209'}
         task:
           type: behavior
           behaviorType: '@nckrtl/node-worker-assets'
@@ -44,7 +42,6 @@ jobs:
           inputs: {node_id: 209}
       - name: write
         target: orbit-node-209
-        labels: {node: '209'}
         writes: true
         dependsOn:
           - step: assets

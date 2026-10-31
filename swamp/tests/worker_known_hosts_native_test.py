@@ -26,11 +26,13 @@ runpy.run_path(sys.argv[1],run_name='__main__')
         wrapper.chmod(0o755)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-node-worker-known-hosts.yaml').read_text())
         for job in workflow['jobs']:
+            self.assertEqual(job['target'], 'orbit-node-209')
+            self.assertNotIn('labels', job)
             job.pop('target')
-            job.pop('labels')
             for step in job['steps']:
+                self.assertEqual(step['target'], 'orbit-node-209')
+                self.assertNotIn('labels', step)
                 step.pop('target')
-                step.pop('labels')
                 if step['name'] == 'write':
                     step['task']['inputs']['run'] = step['task']['inputs']['run'].replace('/usr/bin/python3', str(wrapper))
         (self.repo / 'workflows/workflow-fixture.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
