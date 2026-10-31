@@ -96,9 +96,9 @@ Swamp executes explicit Project setup as an `instance.run_steps` Operation. The 
 
 Client migration: older MCP, SDK and CLI clients expect a synchronous setup result. Update them to follow the returned Operation. Creation, removal, registration and task-workspace teardown keep the native Project lifecycle runner until the lifecycle conversion ships. They do not start a child Operation or wait on Swamp while holding their lifecycle locks.
 
-A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
+A native create failure retains its reserved Instance and owned checkout with a bounded failure code. Retry the same create after its root is terminal, or use [Instance removal](/reference/instance-removal). Create does not start a rollback or cleanup child.
 
-`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies. Setup steps receive two variables:
+The native `instance:create` root runs its setup list after source and environment preparation, before recording the Instance as active. It currently refuses Route, database and runtime-definition combinations before reservation. Setup steps receive two variables:
 
 | Variable | Value |
 | --- | --- |

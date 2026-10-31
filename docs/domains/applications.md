@@ -36,10 +36,12 @@ Select an active Linux Node with an active `app-dev` role. The name `default` is
 
 ```bash
 orbit instance:create <project> <node> default
-orbit instance:create <project> <node> feature-one --branch=release --domain=feature.example.test
+orbit instance:create <project> <node> feature-one --branch=release
 ```
 
-The Gateway returns HTTP 202 with an Operation. Swamp clones the repository to `<apps-root>/<project-slug>/<name>` and prepares the Instance using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from the Node settings. The name decides the path and the generated domain. The branch is a separate choice.
+The Gateway returns HTTP 202 with one native Operation. The current create root supports development checkouts without a Route, database work, Task VM placement, or Process and Schedule definitions. A web-serving Project, custom domain, database server or automatic database copy returns `operation.kind_unavailable` before reservation. Swamp prepares source, classifies it, imports the committed environment template, writes protected environment files, checks an existing Vite+ runtime, and runs setup as steps of that root. It runs local commands as the recorded Node account. The frozen agent performs no action.
+
+Swamp clones the repository to `<apps-root>/<project-slug>/<name>` using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from recorded Node settings. The branch is a separate choice.
 
 | Input | Selected branch |
 | --- | --- |
@@ -62,19 +64,17 @@ The admission response contains an Operation, as in this abbreviated example:
     "kind": "instance.create",
     "target_type": "instance",
     "target_id": 15,
-    "status": "queued",
+    "status": "running",
     "poll_after_seconds": 2
   }
 }
 ```
 
-Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. A failure before activation removes the new Instance and its owned checkout, Route and projections, runtime, staging paths, and database copies. Setup has not run, so cleanup runs no teardown and never cascades into another Instance. The response keeps the original failure code. Once cleanup completes, another create is a fresh request and can use a different branch.
+Creation records `reserved`, `source_resolved`, and then `active`. A native failure retains the Instance and owned source, records `failed_step` and `error_code`, and leaves `first_setup_pending` set. It does not admit cleanup children. An identical create can retry after the failed root is terminal.
 
 A fresh reservation records a unique source preparation ID before remote work. Preparation refuses an existing destination, creates the directory exclusively, and records the ID with its device and inode in Git metadata after cloning.
 
-Cleanup and retry require that receipt when a new reservation's directory exists. A lost successful preparation response can be recovered from the receipt. An interruption before the receipt is written retains the unconfirmed directory and reports incomplete cleanup; retry and forced removal neither adopt nor delete it. Legacy reserved rows without preparation evidence cannot adopt existing source on retry. Matching origin and account ownership alone do not prove that an attempt owns a checkout.
-
-An interruption or incomplete cleanup can leave a pre-activation Instance. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`. When cleanup cannot finish, the original error includes `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. An identical retry of a create whose cleanup started first finishes that cleanup, then creates the Instance afresh. [Pre-activation removal](/reference/instance-removal#pre-activation-removal) accepts these states without weakening the source ownership guards.
+Source preparation and retry require the saved preparation identity when the destination exists. A lost reply can reuse that owned source. An unconfirmed directory is refused rather than adopted. A retry must keep the same Project, Node, root, and branch override; a change returns `instance.placement_conflict`. Resolved source identity is retained across a setup retry. Use [Instance removal](/reference/instance-removal) to remove an abandoned reservation.
 
 After activation, you can commit and move `HEAD`. The starting commit stays as it is. The recorded branch changes only through [recording a renamed branch](#record-a-renamed-branch), or when a Project default-branch update switches a `default` Instance without `branch_override`. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
@@ -88,7 +88,7 @@ The Gateway refuses these requests before it changes anything:
 | `instance.node_not_app_dev` | The Node has no active `app-dev` role. |
 | `instance.node_excluded` | The Project [excludes](/reference/development-node-exclusions) the Node. |
 | `instance.path_taken` | The name is not `default`, and another managed Instance uses the path. |
-| `instance.default_path_occupied` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
+| `instance.default_path_occupied` | The name is `default`, and its path overlaps another managed Instance. Unmanaged paths are checked by Swamp after admission. |
 | `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
 | `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 
@@ -160,81 +160,42 @@ Rename the Git branch in the checkout first, then tell Orbit what is already che
 ```bash
 git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
-orbit instance:rename <instance> --branch=t3code/login-redirect --domain=login-redirect.orbit-website.test
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain` strings; at least one nonempty value is required. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Admission returns an Operation; the CLI follows its native Swamp result. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
 
-For a supplied branch, Orbit reads the checkout locally on its Node. Symbolic `HEAD` must already name that exact branch, or the request returns `instance.branch_not_checked_out` without changing anything. Orbit checks source identity but never contacts origin, changes Git refs, switches the checkout, or renames the branch itself. Dirty or unpublished source is allowed for this recording operation.
+Swamp reads the checkout locally on its Node. Symbolic `HEAD` must already name the supplied branch, or the Operation fails with `instance.branch_not_checked_out`. Swamp checks source identity without contacting origin or changing Git refs. Dirty or unpublished source is allowed.
 
-A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch is a no-op that preserves the existing override. Domain-only rename leaves both branch fields alone. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
+A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch preserves the existing override. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
 
-A supplied domain moves the Instance's own single-target Project Route through [Route replacement](/reference/routes#change-an-instance-route-domain), including a generated Route. Laravel's stored `APP_URL`, `.env`, and cached config follow the new URL. All supplied fields and the domain's availability are checked before mutation. A combined request with a wrong branch or occupied domain changes neither record. The branch record changes only after any requested domain convergence succeeds.
-
-An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response. Incomplete Route replacements follow [Route recovery](/reference/routes#resume-or-refuse-a-change). If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds.
-
-Another lifecycle owner returns `instance.lifecycle_busy`, including contention from the environment owner. A different domain while replacement recovery is incomplete returns `route.domain_change_conflict`. This includes requesting the original domain before or after cutover: the retained replacement owns its destination, so the original domain is not a no-op. That refusal changes neither the recorded branch nor stored or application environment values. Infrastructure failure can leave Route recovery work before or after cutover, so inspect the Route and repeat the same request. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes. [Development branch reconciliation](#development-branch-reconciliation) explains the reasons and alternatives.
+A request containing `domain` returns `operation.kind_unavailable` before admission. Native Route replacement is not available through rename. A repeated idempotency key returns the same Operation. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes.
 
 ## Register an existing checkout
 
-Run registration on the `app-dev` Node that holds the source. The Node that sends the request is the Node that receives the Instance.
+Run registration on the `app-dev` Node that holds the source. The Node that sends the request receives the Instance. Native registration requires an explicit Project ID, one checkout already at `<apps-root>/<project-slug>/<name>`, and a Project without a Route.
 
 ```bash
-cd ~/src/acme
-orbit instance:register
-orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
+cd /fast/apps/acme/feature
+orbit instance:register --project=12 --name=feature --yes
 ```
 
-The Gateway validates registration and reserves its source set and initial Routes, then returns HTTP 202 with an Operation. Swamp moves the source and configures each endpoint through Gateway-bound steps. `Idempotency-Key` replays the same admission.
+Admission reserves an Instance and returns an `instance.register` Operation. Swamp inspects the real checkout on the admitted Node, verifies its origin against the Project, and adopts it in place. It preserves Git HEAD, the index, dirty files and private environment contents. It removes public permissions from an existing `.env`. Source facts in the native result activate the Instance; a failed adoption leaves it reserved for a later request.
 
-Follow that Operation to success before fetching its captured `target_id` with `instance:show`; the admission response has no `data.instance`. With `--setup`, the registration's immutable `setup_digest` belongs to the parent input and applies to the primary member's setup list.
+Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 
-Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
+The CLI refuses a directory outside Git and an unsafe origin before sending a request. Swamp independently checks the source's path, owner, Git layout, origin, branch and content digest. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project#orbit-projectcreate) first, then supply its ID.
 
-The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/projects#repository-identity), or uses `--project`. Registration never creates a Project or infers a nested web root. It inherits the configured Project root unless `--root` supplies an explicit override. When no Project owns the repository, the Gateway returns `instance.project_missing` and changes nothing. Create the Project with [`project:create`](/cli/project#orbit-projectcreate) first.
+The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override.
 
-The Gateway then inspects the source on the caller's Node. It trusts none of the facts the CLI sends.
-
-| Source | Instance name |
-| --- | --- |
-| An independent checkout whose directory name is the Project slug and whose branch is the `default_branch` | `default` |
-| Any other checkout or linked worktree | `--name`, or the directory name |
-
-A `--name` that equals the Project `default_branch` means `default`, as it does for create. Orbit converts it before it applies this table, so the table stays the only rule: a source that qualifies as `default` accepts it, and any other source gets the name `default`, as it would with `--name=default`. The final Operation result carries `name_converted_from`: the requested `--name` when Orbit converted it, otherwise null. Orbit converts only a name you pass. A directory name that equals the default branch stays as it is, because the table above decides when a source is the default one.
-
-For a source that qualifies as `default`, a `--name` other than `default` or the default branch returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
-
-Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path is adopted in place: Orbit verifies it without moving, copying, or repairing its Git links.
-
-Registration can also adopt an existing `source_resolved` Instance left by a failed or cancelled create. It keeps that Instance and checkout, records the current branch and commit, and continues endpoint setup. The Project, Node, managed path, and Instance name must match. It refuses ambiguous source matches and any queued, running, or waiting create for that Instance or Node path. It does not fetch or check out a seed branch. Active Instances and unresolved creates cannot enter this recovery path.
-
-Source verification covers this source's `HEAD`, branch, index, working tree, and local Git configuration. It does not include other branches, tags, remote-tracking refs, or agent checkpoint refs in the shared repository. Those refs can change while registration runs or between attempts. A change to the source itself before adoption or during a move still refuses registration. An identical retry resumes when the source itself is unchanged. After adoption, the managed destination is authoritative and retries check its Git identity rather than the pre-adoption content digest.
-
-By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move. Swamp finishes that move during registration. It does not stop and ask you to change the source yourself.
-
-Interactive registration asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. `--setup` runs the Project setup steps after adoption. Plain registration runs no setup. A confirmed provisioning failure restores its saved Laravel configuration before the Operation fails. Cancelled or uncertain effects retain the saved receipt for recovery.
+Project inference, source relocation, linked worktrees, `--setup`, and domain requests return `operation.kind_unavailable` before reservation. Projects that serve web traffic also return that refusal. No legacy executor runs those combinations. [instance:register](/cli/instance#orbit-instanceregister) lists the options.
 
 ## Provision the application endpoint
 
 Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and an [SSR port](/reference/assigned-ssr-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
 
-After the source is ready, Swamp follows Gateway-admitted steps in this order:
+After source resolution, the native root classifies the application, stores its public branch and commit, imports the committed environment template, writes the protected environment, checks any existing Vite+ runtime, and runs the Project setup list. The Instance becomes active only after setup succeeds. A `monorepo` skips single-application metadata classification and records no PHP version.
 
-1. It inspects the source once. It records the [PHP version](/reference/php-runtime#select-the-php-version) and whether the source is Laravel. This pair is the source profile.
-2. For a Laravel source with a Route, it sets `APP_URL` to the Route URL. See [Laravel application URL](#laravel-application-url).
-3. It publishes the Route, certificates, Caddy site, firewall rules, and private DNS records.
-4. It marks the Instance and Route active.
-5. It runs the Project [setup steps](/reference/instance-setup).
-
-An Instance without a Route skips steps 2 and 3. A `monorepo` Instance without a Route also skips application metadata inspection: its checkout can contain several Composer projects, so Orbit records no PHP version and a false Laravel flag rather than treating the repository root as one application. It becomes `active`, runs setup, and stays healthy without a visitable endpoint. This includes the Orbit Project's `default` Instance. An identical retry of a create stopped at `source-classification` resumes from the resolved source.
-
-For an Instance with a Route, a retry after step 1 inspects the source again. If the PHP version or the Laravel flag changed, the retry returns `app-dev.source_evidence_changed`. For an Instance without a Route, a retry records the new profile.
-
-A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
-
-An identical `instance:create` for an active Instance returns a proven Operation receipt, leaves the Instance unchanged, and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
-
-Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
+An identical create for an active Instance with completed first setup skips source and setup effects. If a later explicit setup failed, create returns `instance.setup_step_failed`; use `instance:setup`. A failed initial setup keeps the source and resolved identity for an identical create retry. There is no automatic teardown or removal child.
 
 ## Laravel application URL
 

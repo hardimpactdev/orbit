@@ -55,7 +55,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     $stored = json_encode([Activity::query()->get()->toArray(), Operation::query()->get()->toArray(),
-        $this->operation->steps()->get()->toArray(), $this->logs], JSON_THROW_ON_ERROR);
+        $this->logs], JSON_THROW_ON_ERROR);
     expect($stored)->not->toContain('ephemeral-sentinel', 'private-upstream-sentinel');
     foreach (Exceptions::reported() as $exception) {
         expect((string) $exception)->not->toContain('ephemeral-sentinel', 'private-upstream-sentinel');
@@ -63,7 +63,7 @@ afterEach(function (): void {
 });
 
 it('returns fresh exact-scope credentials privately without changing public results or execution state', function (): void {
-    Http::fake(['*/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Http::fake(['*/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($this->reply['repositories']), 'repositories' => $this->reply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     $before = $this->operation->fresh()->toArray();
     foreach ([1, 2] as $_) {
         $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk()->assertHeader('Cache-Control', 'no-store, private')
@@ -84,11 +84,10 @@ it('returns fresh exact-scope credentials privately without changing public resu
                 'expires_at' => $this->reply['expires_at'],
             ]);
     }
-    Http::assertSentCount(4);
+    Http::assertSentCount(6);
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.github.com/app/installations/7/access_tokens'
         && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
     expect($this->operation->fresh()->toArray())->toBe($before);
-    expect($this->operation->steps()->count())->toBe(0);
     $this->getJson('/api/v1/operations/'.$this->operation->id)->assertOk()->assertDontSee('ephemeral-sentinel');
 });
 
@@ -108,16 +107,17 @@ it('binds a Node worker credential request to its own Operation Node', function 
     $this->operation->update(['node_id' => $this->gateway->id]);
     $this->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
     $this->operation->update(['node_id' => $this->worker->id]);
-    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($this->reply['repositories']), 'repositories' => $this->reply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk();
-    Http::assertSentCount(2);
+    Http::assertSentCount(3);
 });
 
 it('does not grant a configured control-plane peer private access to another Node intent', function (string $target): void {
     $foreign = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
     $this->operation->update(['node_id' => $target === 'null' ? null : ($target === 'Gateway' ? $this->gateway->id : $foreign->id)]);
 
-    $this->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    $response = $this->getJson($this->path.'?'.http_build_query($this->body));
+    $target === 'null' ? $response->assertUnprocessable() : $response->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 
     Http::assertNothingSent();
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
@@ -132,25 +132,34 @@ it('refuses a direct mint for another Node even for the configured control-plane
     Http::assertNothingSent();
 });
 
-it('refuses an unknown peer and missing Gateway access', function (): void {
+it('refuses an unknown peer before any GitHub request', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.50'])->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden();
-    $this->worker->accessibleNodes()->detach();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip])->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden();
     Http::assertNothingSent();
 });
 
-it('refuses a cancelled terminal or non-direct intent before minting', function (string $condition): void {
+it('mints for its authenticated own Node without a fleet access edge', function (): void {
+    $this->worker->accessibleNodes()->detach();
+    unset($this->reply['repositories']);
+    Http::fake([
+        '*/installation' => Http::response(['id' => 7]),
+        '*/access_tokens' => Http::response($this->reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]]),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk()->assertJsonPath('data.github.token', 'ephemeral-sentinel');
+    Http::assertSentCount(3);
+});
+
+it('refuses a cancelled terminal or undeclared intent before minting', function (string $condition): void {
     match ($condition) {
         'cancel' => $this->operation->update(['cancel_requested_at' => now()]),
         'terminal' => $this->operation->update(['status' => OperationStatus::Succeeded]),
-        'polled' => $this->operation->update(['state' => ['route_publication_writer' => 'polled', 'swamp_run_id' => $this->runId]]),
         'undeclared' => app()->instance(DirectOperation::class, new DirectOperation),
     };
     $this->getJson($this->path.'?'.http_build_query($this->body))->assertStatus(match ($condition) {
-        'polled', 'undeclared' => 422, default => 409
+        'undeclared' => 422, default => 409
     });
     Http::assertNothingSent();
-})->with(['cancel', 'terminal', 'polled', 'undeclared']);
+})->with(['cancel', 'terminal', 'undeclared']);
 
 it('refuses caller-selected repository scope and transport on the shared private read', function (array $extra): void {
     $this->getJson($this->path.'?'.http_build_query([...$this->body, ...$extra]))->assertUnprocessable();
@@ -184,15 +193,16 @@ it('refuses an upstream scope repository or lifetime mismatch without leaking th
         'extra' => $this->reply['permissions']['administration'] = 'write',
         'repository' => $this->reply['repositories'][0]['full_name'] = 'other/repo',
         'multiple' => $this->reply['repositories'][] = ['full_name' => 'other/repo'],
+        'missing-expiry' => $this->reply['expires_at'] = null,
         'expired' => $this->reply['expires_at'] = now()->subSecond()->format('Y-m-d\TH:i:s\Z'),
         'long' => $this->reply['expires_at'] = now()->addHours(2)->format('Y-m-d\TH:i:s\Z'),
         'empty' => $this->reply['token'] = '',
         'large' => $this->reply['token'] = str_repeat('x', 2049),
     };
-    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($this->reply['repositories']), 'repositories' => $this->reply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     $this->getJson($this->path.'?'.http_build_query($this->body))->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.github_token_unavailable')->assertDontSee('ephemeral-sentinel');
-    Http::assertSentCount(2);
-})->with(['scope', 'extra', 'repository', 'multiple', 'expired', 'long', 'empty', 'large']);
+    Http::assertSentCount(in_array($mutation, ['repository', 'multiple'], true) ? 4 : ($mutation === 'empty' || $mutation === 'large' ? 2 : 3));
+})->with(['scope', 'extra', 'repository', 'multiple', 'missing-expiry', 'expired', 'long', 'empty', 'large']);
 
 it('sanitizes a transport or upstream refusal without serializing private diagnostics', function (bool $connection): void {
     Http::fake($connection ? fn () => throw new ConnectionException('private-upstream-sentinel')
@@ -216,7 +226,7 @@ it('rejects unsafe checked-in grants before they can mint', function (array $def
 ]);
 
 it('refreshes stale cancellation and terminal state before minting', function (bool $cancel): void {
-    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($this->reply['repositories']), 'repositories' => $this->reply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     Operation::query()->whereKey($this->operation->id)->update($cancel
         ? ['cancel_requested_at' => now()] : ['status' => OperationStatus::Succeeded]);
     expect(fn () => app(IssueDirectGitHubTokenAction::class)->handle($this->operation, $this->worker->id, $this->runId))
@@ -226,7 +236,7 @@ it('refreshes stale cancellation and terminal state before minting', function (b
 })->with([true, false]);
 
 it('rechecks the requested run after refreshing before any GitHub mint', function (): void {
-    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201)]);
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($this->reply['repositories']), 'repositories' => $this->reply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     Operation::query()->whereKey($this->operation->id)->update(['state' => [
         'route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38',
     ]]);
@@ -254,14 +264,15 @@ it('revokes a freshly minted credential when the intent changes during minting',
             return Http::response(null, 204);
         }
         if ($request->method() === 'GET') {
-            return Http::response(['id' => 7]);
+            return str_contains($request->url(), '/installation/repositories')
+                ? Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])
+                : Http::response(['id' => 7]);
         }
         $changes = match ($change) {
             'cancel' => ['cancel_requested_at' => now()],
             'terminal' => ['status' => OperationStatus::Succeeded],
             'node' => ['node_id' => $this->gateway->id],
             'run' => ['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']],
-            'writer' => ['state' => ['route_publication_writer' => 'polled', 'swamp_run_id' => $this->runId]],
             'grant' => ['kind' => 'route.private_dns_publish'],
         };
         $this->operation->update($changes);
@@ -271,18 +282,20 @@ it('revokes a freshly minted credential when the intent changes during minting',
 
     $this->getJson($this->path.'?'.http_build_query($this->body))
         ->assertStatus(match ($change) {
-            'node' => 403, 'writer' => 422, default => 409
+            'node' => 403, default => 409
         })
         ->assertDontSee('ephemeral-sentinel');
 
-    Http::assertSentCount(3);
+    Http::assertSentCount(4);
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
-})->with(['cancel', 'terminal', 'node', 'run', 'writer', 'grant']);
+})->with(['cancel', 'terminal', 'node', 'run', 'grant']);
 
 it('keeps a stale mint refused when revocation fails and logs only a fixed code', function (bool $throws): void {
     Http::fake(function (Request $request) use ($throws) {
         if ($request->method() === 'GET') {
-            return Http::response(['id' => 7]);
+            return str_contains($request->url(), '/installation/repositories')
+                ? Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])
+                : Http::response(['id' => 7]);
         }
         if ($request->method() === 'POST') {
             $this->operation->update(['cancel_requested_at' => now()]);
@@ -301,3 +314,65 @@ it('keeps a stale mint refused when revocation fails and logs only a fixed code'
     expect(array_column($this->logs, 0))->toContain('operation.github_token_revoke_failed');
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
 })->with([false, true]);
+
+it('accepts the documented mint response without a repository list only after proving issued-token scope', function (): void {
+    unset($this->reply['repositories']);
+    Http::fake([
+        '*/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 7]),
+        '*/access_tokens' => Http::response($this->reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]]),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk()->assertJsonPath('data.github.token', 'ephemeral-sentinel');
+    Http::assertSentCount(3);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.github.com/installation/repositories?per_page=2'
+        && $request->header('Authorization') === ['Bearer ephemeral-sentinel']);
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(1);
+});
+
+it('refuses and revokes an issued credential when authenticated repository scope is not exact', function (string $case): void {
+    $scope = ['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]];
+    match ($case) {
+        'foreign' => $scope['repositories'][0]['full_name'] = 'foreign/repository',
+        'multiple' => $scope['total_count'] = 2,
+        'empty' => $scope['repositories'] = [],
+        'count' => $scope['total_count'] = '1',
+        'unreadable', 'redirect' => null,
+    };
+    Http::fake([
+        '*/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 7]),
+        '*/access_tokens' => Http::response($this->reply, 201),
+        '*/installation/repositories*' => Http::response($scope, $case === 'unreadable' ? 503 : ($case === 'redirect' ? 302 : 200)),
+        '*/installation/token' => Http::response(null, 204),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertServiceUnavailable()
+        ->assertJsonPath('error.code', 'operation.github_token_unavailable')->assertDontSee('ephemeral-sentinel');
+    Http::assertSentCount(4);
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && $request->url() === 'https://api.github.com/installation/token');
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+})->with(['foreign', 'multiple', 'empty', 'count', 'unreadable', 'redirect']);
+
+it('logs only a fixed refusal phase and HTTP status without changing mint requests', function (string $phase): void {
+    $reply = $this->reply;
+    match ($phase) {
+        'token_format' => $reply['token'] = '',
+        'permission_scope' => $reply['permissions']['contents'] = 'read',
+        'expiry_format' => $reply['expires_at'] = 'private-upstream-sentinel',
+        'expiry_lifetime' => $reply['expires_at'] = now()->subSecond()->format('Y-m-d\TH:i:s\Z'),
+        default => null,
+    };
+    Http::fake([
+        '*/installation' => Http::response(['id' => 7], $phase === 'installation' ? 500 : 200),
+        '*/access_tokens' => Http::response($reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 0, 'repositories' => []]),
+        '*/installation/token' => Http::response(null, 204),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertServiceUnavailable()
+        ->assertJsonPath('error.code', 'operation.github_token_unavailable');
+    $diagnostics = array_map(static fn (array $row): array => [$row[0], array_intersect_key($row[1], ['phase' => true, 'http_status' => true])], $this->logs);
+    expect($diagnostics)->toContain(['github.scoped_token_refused', [
+        'phase' => $phase, 'http_status' => $phase === 'installation' ? 500 : ($phase === 'repository_scope' ? 200 : 201),
+    ]]);
+    Http::assertSentCount(match ($phase) {
+        'installation' => 1, 'token_format' => 2, 'repository_scope' => 4, default => 3,
+    });
+})->with(['installation', 'token_format', 'permission_scope', 'expiry_format', 'expiry_lifetime', 'repository_scope']);

@@ -8,7 +8,6 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\BrowserLauncher;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleInterrupted;
-use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\TerminalText;
 use Laravel\Prompts\TextPrompt;
@@ -18,12 +17,11 @@ use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
 use Orbit\Sdk\Responses\GitHub\GitHubAppInstallResponse;
 use Orbit\Sdk\Responses\GitHub\GitHubAppResponse;
-use RuntimeException;
 
 /**
  * Sends the operator's browser to GitHub, first to register the App when the Gateway has none, then
- * to install it on an account. The Gateway receives no webhook, so the command polls until the new
- * installation appears.
+ * to install it on an account. Native Swamp workflows handle conversion and installation refresh;
+ * the CLI returns the browser URL without polling.
  */
 final class InstallGitHubAppCommand extends GitHubCommand
 {
@@ -32,10 +30,6 @@ final class InstallGitHubAppCommand extends GitHubCommand
     private const string NAME_PATTERN = '/\A[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?\z/D';
 
     private const string OWNER_PATTERN = '/\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\z/D';
-
-    private const int POLL_SECONDS = 3;
-
-    private const int WAIT_SECONDS = 600;
 
     #[\Override]
     protected $signature = 'github:app:install
@@ -93,7 +87,10 @@ final class InstallGitHubAppCommand extends GitHubCommand
         $this->writeHumanMessage($step->url);
         app(BrowserLauncher::class)->open($step->url);
 
-        return $this->waitForInstallation($connector, $step);
+        $this->writeHumanMessage('Registration and installation are pending. Run github:app:sync after completing the browser steps.');
+        $this->writeHumanMessage("Request ID: {$step->requestId}");
+
+        return self::SUCCESS;
     }
 
     /**
@@ -174,109 +171,5 @@ final class InstallGitHubAppCommand extends GitHubCommand
         $this->writeHumanMessage("Request ID: {$step->requestId}");
 
         return self::SUCCESS;
-    }
-
-    private function waitForInstallation(GatewayConnector $connector, GitHubAppInstallResponse $step): int
-    {
-        $poll = self::configuredSeconds('orbit.github.install_poll_seconds', self::POLL_SECONDS);
-        $deadline = time() + self::configuredSeconds('orbit.github.install_wait_seconds', self::WAIT_SECONDS);
-        $progress = $this->progressDisplay('Wait for the installation');
-        $progress->admit('install', 'Wait for the installation', 'Waiting for GitHub', 'Installed the App');
-
-        $failure = null;
-        $account = $progress->during('install', function () use ($connector, $step, $deadline, $poll, &$failure): ?string {
-            while (true) {
-                try {
-                    $account = $this->newAccount($connector, $step->accounts);
-                } catch (GatewayApiException $exception) {
-                    $failure = $exception;
-
-                    return null;
-                }
-
-                if ($account !== null) {
-                    return $account;
-                }
-
-                if (time() >= $deadline) {
-                    return null;
-                }
-
-                if ($poll > 0) {
-                    sleep($poll);
-                }
-            }
-        });
-
-        if ($failure instanceof GatewayApiException) {
-            $progress->complete('install', ProgressState::Failure);
-            $progress->finish('Stopped waiting for the installation.');
-
-            return $this->renderApiFailure($failure);
-        }
-
-        if ($account === null) {
-            $progress->complete('install', ProgressState::Failure);
-            $progress->finish('Stopped waiting for the installation.');
-
-            return $this->renderGatewayFailure(
-                'github.installation_pending',
-                'Stopped waiting before the Gateway saw a new installation. Finish the installation in the browser, then run github:app:show.',
-            );
-        }
-
-        $progress->complete('install', ProgressState::Success);
-        $progress->finish("Installed the App on {$account}.");
-
-        return self::SUCCESS;
-    }
-
-    /**
-     * Whole seconds from configuration. Integers, finite floats, and numeric strings keep the
-     * previous truncation; anything else is not a duration.
-     */
-    private static function configuredSeconds(string $key, int $default): int
-    {
-        $value = config($key, $default);
-
-        if (is_int($value)) {
-            return max(0, $value);
-        }
-
-        if ((is_float($value) && is_finite($value)) || (is_string($value) && is_numeric($value))) {
-            return max(0, (int) $value);
-        }
-
-        throw new RuntimeException("Configuration [{$key}] must be a number of seconds.");
-    }
-
-    /**
-     * The account of an installation that the baseline did not contain, or null while the Gateway
-     * reports no new account. A Gateway that still has no App means the operator has not confirmed
-     * the registration yet, so the wait continues; any other failure ends it.
-     *
-     * @param  list<string>  $baseline
-     *
-     * @throws GatewayApiException
-     */
-    private function newAccount(GatewayConnector $connector, array $baseline): ?string
-    {
-        try {
-            $app = $this->sendOrThrow($connector, new ShowGitHubAppRequest, GitHubAppResponse::class);
-        } catch (GatewayApiException $exception) {
-            if ($exception->errorCode() === 'github.app_missing') {
-                return null;
-            }
-
-            throw $exception;
-        }
-
-        foreach ($app->installations as $installation) {
-            if (! in_array($installation['account'], $baseline, true)) {
-                return $installation['account'];
-            }
-        }
-
-        return null;
     }
 }

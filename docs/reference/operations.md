@@ -21,6 +21,10 @@ Instance deploy, rollback, [task provision](/reference/tasks#provision-an-extern
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
+## Native public participants
+
+A direct Operation may admit immutable `input.participant_node_ids`. A foreign participant may use the existing direct-operation GET with the bound root run ID while the parent is unfinished. A projection implementing `DirectOperationPublicView` asserts its participant ownership and returns fresh public input for that authenticated Node. The response preserves the parent Node identity, omits the parent result and uses `Cache-Control: no-store`. Participation grants neither a result POST nor private-material access; those have their own shared authorization.
+
 ## The record
 
 `input` is the stored argument object. Operations with no arguments serialize it as an empty array (`[]`).
@@ -557,7 +561,9 @@ Undeclared or unstamped Operations stay on their previous Swamp path. The helper
 
 The optional typed primitive hook is reserved for shared generic Gateway primitives, such as Route/Caddy publication or scoped token minting. New family execution relays are refused; family actions run on their Node worker.
 
-Per-Node workers authenticate as active WireGuard peers with Gateway access and must match the admitted Operation’s `node_id` on read, result and primitive requests. Direct requests do not use the legacy executor’s `worker_node_ids` allowlist. The configured control-plane peer keeps its existing fleet authority; adding a Node to `worker_node_ids` does not grant that authority. Gateway-scoped intents are refused to per-Node workers.
+Direct workers authenticate as active WireGuard peers. Direct requests authorize the bound run and immutable participant and field bindings. They require no Gateway access grant. A TaskVM participant receives only its admitted public view and readable private fields, and may store only explicitly writable fields.
+
+Only the root Node may send result, failure or primitive requests. Other Gateway APIs keep their Node access checks. Participation never grants general access to the Gateway or another Node.
 
 Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase without remote diagnostics or credentials.
 
@@ -573,7 +579,9 @@ Read input comes only from the projection hook, never automatically from raw int
 
 A family may declare `github_token: {repository: "owner/name", permissions: {contents: "write", pull_requests: "write"}}` and `private_material: {github: "github.installation"}` in its checked-in declaration. Its admitted input records `github: {$secret: "github.installation", id: <Operation Node ID>}`. The shared `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` resolves that owned reference and returns the credential under `data.github`. It refuses undeclared grants, cancelled intents and terminal Operations. Repository and permissions never come from workflow input. The closed permission names are `contents`, `pull_requests`, `checks`, `actions` and `metadata`; checks, actions and metadata are read-only. No mint route or family transport is added.
 
-The Gateway keeps the GitHub App signing key and mints a fresh token for exactly that repository and permission map. It validates GitHub's returned repository, permissions and expiry (at most about one hour). The private `no-store` response contains `repository`, `permissions`, `token` and `expires_at`. This response bypasses public Operation result filtering without changing `result_fields`; the credential is never projected into an Operation, step, receipt, Activity or shared token cache. Each successful mint records one token-free Activity with the Operation, bound run, caller Node, repository, permissions and expiry.
+The Gateway keeps the GitHub App signing key and mints a fresh token for exactly that repository and permission map. It validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. The mint response may omit its optional `repositories` field. The next query uses the new token and proves which repository it can read. A failed scope check refuses delivery and attempts to revoke the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies.
+
+The private `no-store` response contains `repository`, `permissions`, `token` and `expires_at`. This response bypasses public Operation result filtering without changing `result_fields`; the credential is never projected into an Operation, step, receipt, Activity or shared token cache. Each successful mint records one token-free Activity with the Operation, bound run, caller Node, repository, permissions and expiry.
 
 Swamp mints once per native step through the effect-only private-material callback, outside any item loop, and uses the credential only in worker memory for fixed GitHub/git calls, never package or repository code. The shared client attempts to revoke it with `DELETE https://api.github.com/installation/token` when the callback ends, including failures. Revocation is best effort: a failure reports only `operation.github_token_revoke_failed`, preserves the GitHub action's result or refusal, and never changes a successful write into a failed step. A client instance permits only one mint attempt.
 

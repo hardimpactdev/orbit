@@ -4,24 +4,20 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Models\Instance;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Records where a new development Instance starts: the default checkout on the same Node and the
- * last commit that deployed there. Selection shares the Node's source lock with the conversion of an
- * old release layout. Instance rows keep their seed until removal.
+ * last commit that deployed there. This records intent without a Node execution lock or source inspection.
+ * Instance rows keep their seed until removal.
  */
 final readonly class SelectInstanceSeedAction
 {
-    public function __construct(
-        private AppDevSourceOperationLock $sourceLock,
-    ) {}
-
     public function execute(Instance $instance): Instance
     {
-        return $this->sourceLock->synchronized($instance->node_id, fn (): Instance => $this->select($instance->refresh()));
+        return DB::transaction(fn (): Instance => $this->select($instance->refresh()));
     }
 
     private function select(Instance $instance): Instance

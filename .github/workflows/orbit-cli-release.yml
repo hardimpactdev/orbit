@@ -86,7 +86,7 @@ jobs:
           fi
           echo "Required checks passed on ${COMMIT}"
 
-      # The release carries the agent CI built or reused for this commit (ADR 0225); it never rebuilds it.
+      # Transition: copy the frozen agent until the independent Gateway reader is live; never compile it.
       - name: Find the CI run with the verified agent delivery
         id: delivery
         env:

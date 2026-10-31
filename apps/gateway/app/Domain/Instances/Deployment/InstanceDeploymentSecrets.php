@@ -14,6 +14,7 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Protected values are resolved only after the exact descriptor has been authorized. */
 final readonly class InstanceDeploymentSecrets implements OperationSecretSource
@@ -46,8 +47,11 @@ final readonly class InstanceDeploymentSecrets implements OperationSecretSource
         if ($this->ownerId($operation) !== $id || $operation->node_id !== $instance->node_id) {
             throw $this->forbidden();
         }
-        if (DirectOperation::owns($operation)) {
-            app(InstanceDeploymentDirectInput::class)->input($operation);
+        $admitted = ValidatedData::object($operation->input['deployment']);
+        if ($admitted['project_id'] !== $instance->project_id
+            || $admitted['repository'] !== $instance->project->repository_url
+            || $admitted['node_user'] !== $instance->node->user) {
+            throw $this->forbidden();
         }
         if ($parameter === 'vp_materialize' && DirectOperation::owns($operation)) {
             return new OperationSecretValue(InstanceDeploymentIntent::admitted($operation)['needs_vp']

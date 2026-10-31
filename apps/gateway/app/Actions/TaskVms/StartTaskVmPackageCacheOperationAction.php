@@ -8,7 +8,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\PackageCacheSnapshot;
@@ -20,7 +19,7 @@ final readonly class StartTaskVmPackageCacheOperationAction
     public function execute(int $hostNodeId): Operation
     {
         $this->settings->host($hostNodeId);
-        $node = Node::query()->whereKey($hostNodeId)->where('status', LifecycleStatus::Active)->firstOrFail();
+        Node::query()->whereKey($hostNodeId)->where('status', LifecycleStatus::Active)->firstOrFail();
         $existing = Operation::query()->where('kind', 'task_vm.fill_package_cache')->where('target_id', $hostNodeId)
             ->where('target_type', 'task_vm_cache')->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
         if ($existing !== null) {
@@ -49,7 +48,7 @@ final readonly class StartTaskVmPackageCacheOperationAction
         }
 
         return $this->start->execute('task_vm.fill_package_cache', 'task_vm_cache', $hostNodeId, $hostNodeId, [
-            'host_node_id' => $hostNodeId, 'agent_sha256' => app(AgentDelivery::class)->pin($node),
+            'host_node_id' => $hostNodeId,
             'artifacts' => array_values(array_diff_key($artifacts, $conflicts)), 'conflicts' => $conflicts,
             'max_bytes' => $maxBytes, 'github_token' => ['$secret' => 'task_vm.package_cache_github', 'id' => $hostNodeId],
             'snapshots' => $snapshots->map->only(['project_id', 'blobs', 'artifacts'])->all(),

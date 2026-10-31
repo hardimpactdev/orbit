@@ -290,7 +290,13 @@ final readonly class GatewayReleaseCommands
             }
             $data[$key] = $value;
         }
-        if (! $result['succeeded'] || ! is_string($data[$required] ?? null)) {
+        $phaseResult = $data[$required] ?? null;
+        $valid = $phase === 'serve'
+            ? $phaseResult === 'submitted'
+                && is_int($data['caddy_operation_id'] ?? null)
+                && $data['caddy_operation_id'] > 0
+            : is_string($phaseResult);
+        if (! $result['succeeded'] || ! $valid) {
             throw new GatewayReleaseException(
                 'handoff',
                 is_string($data['error_code'] ?? null) ? $data['error_code'] : 'gateway.release_handoff_failed',

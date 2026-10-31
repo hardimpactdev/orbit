@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
@@ -10,238 +11,116 @@ use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\FakeRoutePublicationSocket;
 
 describe('GitHub App API', function (): void {
     beforeEach(function (): void {
-        $this->markAsGateway(Node::query()->create([
-            'name' => 'operator',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.2',
-            'wireguard_ip' => '10.44.0.2',
+        $this->gateway = $this->markAsGateway(Node::query()->create([
+            'name' => 'operator', 'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
         ]));
+        app(GatewayServingHost::class)->remember($this->gateway);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
         Http::preventStrayRequests();
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+        config(['swamp.run_token' => 'private.fixture']);
     });
 
-    it('starts a registration on a Gateway without an App', function (): void {
-        $response = $this
-            ->postJson('https://gateway.orbit/api/v1/github/app/install', ['name' => 'orbit-acme', 'owner' => 'acme'])
-            ->assertOk()
-            ->assertJsonPath('data.step', 'register')
-            ->assertJsonPath('data.accounts', []);
-
+    it('starts an encrypted registration without contacting GitHub', function (): void {
+        $response = $this->postJson('https://gateway.orbit/api/v1/github/app/install', ['name' => 'orbit-acme', 'owner' => 'acme'])
+            ->assertOk()->assertJsonPath('data.step', 'register')->assertJsonPath('data.accounts_status', 'unknown');
         $registration = app(GitHubAppStore::class)->registration();
-
-        expect($registration)->not->toBeNull()
-            ->and($response->json('data.url'))
-            ->toBe("https://gateway.orbit/api/v1/github/app/register?state={$registration?->state}")
-            ->and($registration?->name)->toBe('orbit-acme')
-            ->and($registration?->owner)->toBe('acme')
-            ->and(Setting::query()->where('key', 'github.app.registration')->value('value'))
-            ->not->toContain((string) $registration?->state);
-    });
-
-    it('refuses a Project name or owner that GitHub cannot accept', function (array $body): void {
-        $this->postJson('/api/v1/github/app/install', $body)->assertUnprocessable();
-    })->with([
-        [['name' => 'orbit/acme']],
-        [['name' => str_repeat('a', 35)]],
-        [['owner' => 'acme/../evil']],
-    ]);
-
-    it('serves the manifest page for the pending registration only', function (): void {
-        $url = $this->postJson('https://gateway.orbit/api/v1/github/app/install', ['owner' => 'acme'])->json('data.url');
-        $state = app(GitHubAppStore::class)->registration()?->state;
-
-        $page = $this->get($url)->assertOk()->assertHeader('Cache-Control', 'no-store, private');
-        $html = $page->getContent();
-        preg_match('/name="manifest" value="([^"]+)"/', $html, $matches);
-        $manifest = json_decode(
-            html_entity_decode($matches[1] ?? '', ENT_QUOTES | ENT_HTML5),
-            associative: true,
-            flags: JSON_THROW_ON_ERROR,
-        );
-
-        expect($html)
-            ->toContain('action="https://github.com/organizations/acme/settings/apps/new?state='.$state.'"')
-            ->toContain('&quot;redirect_url&quot;:&quot;https://gateway.orbit/api/v1/github/app/callback&quot;')
-            ->toContain('&quot;public&quot;:true')
-            ->toContain('&quot;default_permissions&quot;:{&quot;actions&quot;:&quot;write&quot;,&quot;administration&quot;:&quot;read&quot;,&quot;checks&quot;:&quot;read&quot;,&quot;contents&quot;:&quot;write&quot;,&quot;metadata&quot;:&quot;read&quot;,&quot;pull_requests&quot;:&quot;write&quot;,&quot;workflows&quot;:&quot;write&quot;}')
-            ->not->toContain('hook_attributes');
-        expect($manifest)
-            ->toBeArray()
-            ->not->toHaveKey('default_events');
-
-        $this->get('/api/v1/github/app/register?state='.str_repeat('0', 64))
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'github.registration_invalid');
-    });
-
-    it('exchanges the one-time code, stores the App, and sends the browser to the install page', function (): void {
-        $this->postJson('https://gateway.orbit/api/v1/github/app/install', ['name' => 'orbit'])->assertOk();
-        $state = app(GitHubAppStore::class)->registration()?->state;
-        Http::fake([
-            'https://api.github.com/app-manifests/one-time-code/conversions' => Http::response([
-                'id' => 4242,
-                'slug' => 'orbit-acme',
-                'name' => 'orbit-acme',
-                'owner' => ['login' => 'acme', 'type' => 'Organization'],
-                'html_url' => 'https://github.com/apps/orbit-acme',
-                'pem' => GitHubTestSupport::privateKey(),
-            ], 201),
-        ]);
-
-        $this->get("/api/v1/github/app/callback?code=one-time-code&state={$state}")
-            ->assertRedirect('https://github.com/apps/orbit-acme/installations/new');
-
-        Http::assertSent(static function (Request $request): bool {
-            return $request->url() === 'https://api.github.com/app-manifests/one-time-code/conversions'
-                && $request->method() === 'POST'
-                && $request->body() === ''
-                && $request->body() !== '[]';
-        });
-
-        $store = app(GitHubAppStore::class);
-
-        expect($store->credentials()?->appId)->toBe(4242)
-            ->and($store->credentials()?->ownerType)->toBe('organization')
-            ->and($store->registration())->toBeNull()
-            ->and(Setting::query()->where('key', 'github.app.private_key')->value('value'))
-            ->not->toContain('PRIVATE KEY');
-
-        $this->get("/api/v1/github/app/callback?code=one-time-code&state={$state}")
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'github.registration_invalid');
-    });
-
-    it('refuses a redirect with a wrong or expired state and exchanges nothing', function (): void {
-        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk();
-        $state = app(GitHubAppStore::class)->registration()?->state;
-
-        $this->get('/api/v1/github/app/callback?code=one-time-code&state=wrong')
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'github.registration_invalid');
-
-        $this->travel(61)->minutes();
-
-        $this->get("/api/v1/github/app/callback?code=one-time-code&state={$state}")
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'github.registration_invalid');
-
+        expect($response->json('data.url'))->toBe("https://gateway.orbit/api/v1/github/app/register?state={$registration?->state}");
+        expect(Setting::query()->where('key', 'github.app.registration')->value('value'))->not->toContain($registration->state);
         Http::assertNothingSent();
     });
 
-    it('reports a refused code exchange', function (): void {
+    it('refuses a name or owner that GitHub cannot accept', function (array $body): void {
+        $this->postJson('/api/v1/github/app/install', $body)->assertUnprocessable();
+    })->with([[['name' => 'orbit/acme']], [['name' => str_repeat('a', 35)]], [['owner' => 'acme/../evil']]]);
+
+    it('serves only the matching manifest without a webhook or remote execution', function (): void {
+        $url = $this->postJson('https://gateway.orbit/api/v1/github/app/install', ['owner' => 'acme'])->json('data.url');
+        $page = $this->get($url)->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        expect($page->getContent())->toContain('https://github.com/organizations/acme/settings/apps/new')
+            ->not->toContain('hook_attributes', 'default_events');
+        $this->get('/api/v1/github/app/register?state='.str_repeat('0', 64))->assertUnprocessable();
+        Http::assertNothingSent();
+    });
+
+    it('admits code conversion once and never stores the code in public operation state', function (): void {
         $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk();
-        $state = app(GitHubAppStore::class)->registration()?->state;
-        Http::fake(['https://api.github.com/*' => Http::response(['message' => 'Not Found'], 404)]);
-
-        $this->get("/api/v1/github/app/callback?code=spent&state={$state}")
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'github.registration_failed');
-
-        expect(app(GitHubAppStore::class)->credentials())->toBeNull();
+        $store = app(GitHubAppStore::class);
+        $state = $store->registration()->state;
+        $path = '/api/v1/github/app/callback?'.http_build_query(['code' => 'one-time-code-sentinel', 'state' => $state]);
+        $response = $this->get($path)->assertAccepted()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('data.kind', 'github.app_register');
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        expect($store->exchange()['operation_id'])->toBe($operation->id);
+        expect(json_encode($operation->toArray()))->not->toContain('one-time-code-sentinel', $state);
+        expect(Setting::query()->where('key', 'github.app.registration_exchange')->value('value'))->not->toContain('one-time-code-sentinel');
+        $this->get($path)->assertUnprocessable()->assertJsonPath('error.code', 'github.registration_invalid');
+        $this->getJson('/api/v1/github/app')->assertOk()->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.installations_status', 'unknown')->assertDontSee('one-time-code-sentinel');
+        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertConflict()->assertJsonPath('error.code', 'github.registration_pending');
+        expect(Operation::query()->where('kind', 'github.app_register')->count())->toBe(1);
+        Http::assertNothingSent();
     });
 
-    it('opens the install page and lists current accounts when the Project exists', function (): void {
-        GitHubTestSupport::storeApp();
-        Http::fake([
-            'https://api.github.com/app/installations*' => Http::response([[
-                'id' => 9,
-                'account' => ['login' => 'acme'],
-                'target_type' => 'Organization',
-                'repository_selection' => 'selected',
-                'suspended_at' => null,
-            ]]),
-        ]);
+    it('refuses wrong or expired browser state without admitting work', function (bool $expired): void {
+        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk();
+        $state = app(GitHubAppStore::class)->registration()->state;
+        if ($expired) {
+            $this->travel(61)->minutes();
+        }
+        $this->get('/api/v1/github/app/callback?code=private-code&state='.($expired ? $state : 'wrong'))
+            ->assertUnprocessable()->assertJsonPath('error.code', 'github.registration_invalid');
+        expect(Operation::query()->count())->toBe(0);
+        Http::assertNothingSent();
+    })->with([true, false]);
 
-        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])
-            ->assertOk()
-            ->assertJsonPath('data.step', 'install')
-            ->assertJsonPath('data.url', 'https://github.com/apps/orbit-acme/installations/new')
-            ->assertJsonPath('data.accounts', ['acme']);
+    it('returns unknown installations without pretending to contact GitHub', function (): void {
+        GitHubTestSupport::storeApp();
+        $this->getJson('/api/v1/github/app')->assertOk()->assertJsonPath('data.app_id', 4242)
+            ->assertJsonPath('data.installations_status', 'unknown')->assertJsonPath('data.observed_at', null)
+            ->assertJsonPath('data.installations', [])->assertDontSee('PRIVATE KEY');
+        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk()->assertJsonPath('data.step', 'install')
+            ->assertJsonPath('data.accounts_status', 'unknown')->assertJsonPath('data.accounts', []);
+        Http::assertNothingSent();
     });
 
-    it('shows the Project and its installations without the private key', function (): void {
+    it('shows the native observation as stale after five minutes without refreshing in PHP', function (): void {
+        $this->freezeTime();
         GitHubTestSupport::storeApp();
-        Http::fake([
-            'https://api.github.com/app/installations*' => Http::response([[
-                'id' => 9,
-                'account' => ['login' => 'acme'],
-                'target_type' => 'Organization',
-                'repository_selection' => 'all',
-                'suspended_at' => '2026-09-01T00:00:00Z',
-            ]]),
-        ]);
-
-        $response = $this->getJson('/api/v1/github/app')
-            ->assertOk()
-            ->assertJsonPath('data.slug', 'orbit-acme')
-            ->assertJsonPath('data.app_id', 4242)
-            ->assertJsonPath('data.settings_url', 'https://github.com/organizations/acme/settings/apps/orbit-acme')
-            ->assertJsonPath('data.installations', [[
-                'id' => 9,
-                'account' => 'acme',
-                'type' => 'organization',
-                'repositories' => 'all',
-                'suspended' => true,
-            ]]);
-
-        expect($response->getContent())->not->toContain('PRIVATE KEY');
-
-        Http::assertSent(static function (Request $request): bool {
-            [$header, $claims] = explode('.', substr($request->header('Authorization')[0], 7));
-            $decoded = json_decode(base64_decode(strtr($claims, '-_', '+/')), true);
-
-            return $decoded['iss'] === '4242' && $decoded['exp'] - $decoded['iat'] === 600;
-        });
+        $op = Operation::query()->create(['kind' => 'github.app_sync', 'node_id' => $this->gateway->id,
+            'target_type' => 'node', 'target_id' => $this->gateway->id, 'input' => ['app_id' => 4242], 'status' => 'succeeded']);
+        app(GitHubAppStore::class)->observe($op, ['app_id' => 4242, 'observed_at' => now()->toISOString(),
+            'installations' => [['id' => 9, 'account' => 'acme', 'type' => 'organization', 'repositories' => 'all', 'suspended' => false]]]);
+        $this->getJson('/api/v1/github/app')->assertOk()->assertJsonPath('data.installations_status', 'current')
+            ->assertJsonPath('data.installations.0.account', 'acme');
+        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk()->assertJsonPath('data.accounts', ['acme']);
+        $this->travel(5)->minutes();
+        $this->getJson('/api/v1/github/app')->assertOk()->assertJsonPath('data.installations_status', 'stale')
+            ->assertJsonPath('data.installations.0.account', 'acme');
+        Http::assertNothingSent();
     });
 
-    it('reports an unexpected installation target type as a user', function (): void {
+    it('reports missing App state and deletes only local credentials', function (): void {
+        $this->getJson('/api/v1/github/app')->assertNotFound();
+        $this->postJson('/api/v1/github/app/sync', [])->assertNotFound();
         GitHubTestSupport::storeApp();
-        Http::fake([
-            'https://api.github.com/app/installations*' => Http::response([[
-                'id' => 9,
-                'account' => ['login' => 'acme'],
-                'target_type' => 'Enterprise',
-                'repository_selection' => 'everything',
-                'suspended_at' => null,
-            ]]),
-        ]);
-
-        $this->getJson('/api/v1/github/app')
-            ->assertOk()
-            ->assertJsonPath('data.installations.0.type', 'user')
-            ->assertJsonPath('data.installations.0.repositories', 'selected');
-    });
-
-    it('reports a missing App and an unreachable GitHub', function (): void {
-        $this->getJson('/api/v1/github/app')->assertNotFound()->assertJsonPath('error.code', 'github.app_missing');
-        $this->deleteJson('/api/v1/github/app')->assertNotFound()->assertJsonPath('error.code', 'github.app_missing');
-
-        GitHubTestSupport::storeApp();
-        Http::fake(['https://api.github.com/*' => Http::response([], 500)]);
-
-        $this->getJson('/api/v1/github/app')->assertStatus(502)->assertJsonPath('error.code', 'github.unavailable');
-    });
-
-    it('destroys the stored App and names the GitHub page that deletes the registration', function (): void {
-        GitHubTestSupport::storeApp();
-
-        $this->deleteJson('/api/v1/github/app')
-            ->assertOk()
+        $this->deleteJson('/api/v1/github/app')->assertOk()
             ->assertJsonPath('data.settings_url', 'https://github.com/organizations/acme/settings/apps/orbit-acme');
-
-        expect(app(GitHubAppStore::class)->credentials())->toBeNull()
-            ->and(Setting::query()->where('key', 'like', 'github.%')->count())->toBe(0);
-
+        expect(Setting::query()->where('key', 'like', 'github.%')->count())->toBe(0);
         Http::assertNothingSent();
     });
 });

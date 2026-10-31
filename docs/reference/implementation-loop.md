@@ -8,7 +8,7 @@ covers:
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
-  - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
+  - .github/{workflows/*.yml,actions/{php,no-sudo,ci-scope}/action.yml}
   - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
 ---
 
@@ -85,36 +85,44 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 | Check | Work |
 | --- | --- |
-| PHP syntax and Composer | Validate every tracked Composer manifest and run `php -l` on added or changed PHP files, with at most four workers |
+| PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
 | Generated contracts | Boot the Gateway and load all Operation kinds, executors and completion contracts; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Required checks | Require all five build and static-check jobs to succeed; failures, cancellations and skips fail it |
+| Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
+
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
+
+Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+
+CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
+
+Installed Gateway runtime and CLI build dependencies use lock-based caches. Composer install and its current lifecycle scripts always rerun, including contract generation and autoload discovery. Download caches restore across lockfile changes. Source, generated contracts and release binaries are never restored as dependency caches.
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
 The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
-Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Main keeps its running run; a newer push replaces only the waiting run.
+Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
 On `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 
-Actions use pinned commits. Build and check jobs have read-only tokens. The CLI release publisher alone has the content write and attestation permissions needed to publish signed releases. It downloads CI's verified `agent-delivery` artifact without compiling or executing the agent.
+Actions use pinned commits. Build and check jobs have read-only tokens. The CLI release publisher alone has the content write and attestation permissions needed to publish signed releases. It downloads CI's verified copy of the frozen `agent-delivery` artifact without compiling or executing the agent.
 
 ### One PHP build in CI
 
 Generated API contracts, web types, documentation navigation, and context are built in CI and stay out of Git. The Gateway Composer install builds its runtime MCP catalogue before generated-contract and web checks.
 
-Managed Linux Nodes, recipe artifacts, and PHP builds support amd64 only. The Linux agent delivery builds once for x86_64 when its source changes; unchanged source reuses the authenticated published delivery.
+Managed Linux Nodes, recipe artifacts, and PHP builds support amd64 only. CI builds no agent delivery. It reuses the frozen authenticated published delivery.
 
 The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
 
 ### Gateway shards
 
-Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server, web and agent test jobs do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
+Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server, web and agent test jobs, including the native package boundary checks, do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
 
 ### Runner policy during the Swamp migration
 

@@ -8,8 +8,8 @@ pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
 mod caddy_certificate;
+mod caddy_observation;
 mod caddy_package;
-mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
 mod cli_update;
@@ -89,7 +89,6 @@ pub mod production_home;
 pub mod project_source;
 pub mod recipe;
 pub mod recipe_delivery;
-pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
@@ -115,7 +114,6 @@ pub mod transfer_source;
 pub mod valkey_acl;
 pub mod vite;
 mod vp_global;
-mod vp_materialize;
 pub mod vp_project;
 mod vp_scope;
 mod vp_store;
@@ -194,46 +192,28 @@ pub fn all() -> Vec<Entry> {
         entry::<vp_store::Prune>(),
         entry::<vp_project::ReadProject>(),
         entry::<vp_scope::Inspect>(),
-        entry::<vp_materialize::Materialize>(),
         entry::<composer_global::Version>(),
         entry::<composer_global::Candidate>(),
         entry::<composer_global::Inventory>(),
         entry::<composer_global::Plan>(),
-        entry::<composer_global::Install>(),
-        entry::<composer_global::Update>(),
-        entry::<composer_global::Remove>(),
         entry::<homebrew_scope::Inspect>(),
-        entry::<homebrew_scope::Materialize>(),
         entry::<homebrew::Version>(),
         entry::<homebrew::FormulaInventory>(),
         entry::<homebrew::formula::Candidate>(),
         entry::<homebrew::formula::Adoption>(),
-        entry::<homebrew::formula::Install>(),
-        entry::<homebrew::formula::Update>(),
-        entry::<homebrew::formula::Remove>(),
         entry::<homebrew::cask::Inventory>(),
         entry::<homebrew::cask::Candidate>(),
         entry::<homebrew::cask::Adoption>(),
-        entry::<homebrew::cask::Install>(),
-        entry::<homebrew::cask::Update>(),
-        entry::<homebrew::cask::Remove>(),
         entry::<homebrew::scan::Scan>(),
         entry::<composer_scope::Inspect>(),
-        entry::<composer_scope::Materialize>(),
         entry::<tools_apt::Version>(),
         entry::<tools_apt::Candidate>(),
         entry::<tools_apt::Inventory>(),
         entry::<tools_apt::Plan>(),
-        entry::<tools_apt::Install>(),
-        entry::<tools_apt::Update>(),
-        entry::<tools_apt::Remove>(),
         entry::<vp_global::Version>(),
         entry::<vp_global::Candidate>(),
         entry::<vp_global::Inventory>(),
         entry::<vp_global::Plan>(),
-        entry::<vp_global::Install>(),
-        entry::<vp_global::Update>(),
-        entry::<vp_global::Remove>(),
         entry::<image_recipe::lifecycle::Inspect>(),
         entry::<image_recipe::lifecycle::Begin>(),
         entry::<image_recipe::lifecycle::Retry>(),
@@ -320,9 +300,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
         entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
-        entry::<registration::InspectRegistrationSource>(),
-        entry::<registration::RelocateRegistrationSource>(),
-        entry::<registration::LaravelRegistrationReceipt>(),
         entry::<production::PrepareRelease>(),
         entry::<production::ActivateRelease>(),
         entry::<production::InspectRelease>(),
@@ -369,9 +346,8 @@ pub fn all() -> Vec<Entry> {
         entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
-        entry::<caddy_publication::Publish>(),
-        entry::<caddy_publication::CheckAddresses>(),
-        entry::<caddy_publication::ReadLive>(),
+        entry::<caddy_observation::CheckAddresses>(),
+        entry::<caddy_observation::ReadLive>(),
         entry::<doctor_node::InspectNode>(),
         entry::<doctor_project::InspectProject>(),
         entry::<doctor_project::InspectDevelopmentSource>(),

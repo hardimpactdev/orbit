@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
@@ -15,6 +16,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -23,12 +25,13 @@ use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeNodeCaddyBuilds;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\MonotonicTime;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -144,7 +147,7 @@ final class SchedulerDrainProbe
 }
 
 /**
- * @return array{GatewayRuntimeHandoff, FakeAgentCommandRunner, FakeReleaseCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
+ * @return array{GatewayRuntimeHandoff, FakeAgentCommandRunner, FakeReleaseCleanup, FakeRoutePublicationSocket, RecordingHandoffUnits, SchedulerDrainProbe}
  */
 function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeAgentCommandRunner $agent = null, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null, ?FakeAgentCommandRunner $hooks = null): array
 {
@@ -161,7 +164,9 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeA
         });
     }
     $cleanup = new FakeReleaseCleanup;
-    $builds = new FakeNodeCaddyBuilds;
+    config(['swamp.run_token' => 'fixture-token']);
+    $builds = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $builds);
     $units = new RecordingHandoffUnits('units');
     $orbitHome = sys_get_temp_dir().'/orbit-handoff-'.bin2hex(random_bytes(4));
     $rendered = new GatewayFpmConfigRenderer()->renderPool(HANDOFF_APP, $orbitHome);
@@ -169,7 +174,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeA
     return [
         new GatewayRuntimeHandoff(
             recipeImages: $recipeImages,
-            builds: $builds,
+            operations: app(StartOperationAction::class),
             fpmRenderer: new GatewayFpmConfigRenderer,
             fpm: new NativeGatewayFpmConverger($hooks ?? new FakeAgentCommandRunner()->answer('gateway.converge-fpm', ['changed' => true, 'activated' => $livePool !== null]), [...app()->tagged(GatewayServiceStartHook::class)]),
             hibernator: $units,
@@ -244,7 +249,8 @@ describe('gateway:release:handoff', function (): void {
         $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
 
         expect($result)->toMatchArray([
-            'caddy' => 'reloaded',
+            'caddy' => 'submitted',
+            'caddy_operation_id' => Operation::query()->where('kind', 'route.caddy_converge')->latest('id')->value('id'),
             'fpm' => 'unchanged',
             'scheduler' => 'restarted',
             'scheduler_unit' => $unit,
@@ -254,7 +260,7 @@ describe('gateway:release:handoff', function (): void {
         ])
             ->and($result['scheduler_drain']['outcome'])->toBe('drained')
             ->and($result['scheduler_drain'])->toBe($probe->drain)
-            ->and($builds->built)->toBe(['gateway'])
+            ->and($builds->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-caddy')
             ->and($units->converged)->toBe(['units', 'units', 'units'])
             ->and($schedulerAgents->calls)->toBe([
                 ['node' => 'gateway', 'command' => 'gateway.drain-scheduler', 'input' => ['process_id' => $scheduler->id, 'name' => $unit, 'drain_seconds' => 5]],
@@ -465,10 +471,10 @@ describe('gateway:release:handoff', function (): void {
             ->and(array_slice($schedulerAgents->commands(), -1))->toBe(['gateway.start-scheduler']);
     });
 
-    it('fails the handoff with a release error when Caddy cannot publish', function (): void {
+    it('fails the handoff if the native Caddy root cannot start', function (): void {
         handoff_gateway();
         [$handoff, , , $builds] = runtime_handoff();
-        $builds->failNext('gateway', 'reload');
+        $builds->reply = static fn (array $request): array => [];
 
         expect(release_failure(fn () => $handoff->run())->errorCode)->toBe('gateway.release_caddy_failed');
     });
