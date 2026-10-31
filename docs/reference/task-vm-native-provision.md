@@ -17,6 +17,8 @@ The outer workflow inputs are `{operation_id, kind, node_id, intent, execution_s
 
 Each action is a separate visible `command/shell` step. Typed behaviors only shape public data and validate observations. Native dependencies and guards skip satisfied state. Initialize, clone and start read current state when executed, including after native resume. A lost start reply therefore does not repeat a successful start. An unavailable address fails after one final observation; there is no family sleep or readiness loop.
 
+Native resume retains successful step outputs. When external state changes after a typed observation fails, resume from its read step to obtain fresh data. For a newly available guest address, use `swamp workflow resume task-vm-provider-incus --run RUN_ID --from inspect-created-vm --job provider`. After supplying a missing topology seed, use `--from observe-seed --job provider`. After correcting the initial VM observation, use `--from observe-vm --job provider`. These commands reset the selected read and its dependents; they do not recreate earlier successful actions. A failed start command already reads current state on an ordinary `resume --run RUN_ID`.
+
 The fragment exposes a typed public `provider` result with its address, admitted image, provider identity and settled state. The enclosing provision root can consume this result through a native workflow step. A failed seed clone or a foreign image prevents VM initialization. Provider absence is not cleanup evidence.
 
 ## Enrollment and results
@@ -31,4 +33,4 @@ The parent integration must end with a result step that prints one public JSON o
 
 The Incus fragment and public composer are executable conversion checkpoints. The registered provision root and projector remain on their existing path until the enrollment fragment, admission envelope and terminal selector are switched together. Shared code used by Tasks remains until its owner consumes the same conversion; its grandfather entries cannot be removed while it still executes.
 
-Official Swamp e459 currently refuses remote vault-put stdin. The orchestrator owns that upstream blocker. Logical Nodes 1 and 18 also need the shared built-in shell proxy transport. Synthetic scratch-vault and isolated native tests do not establish live provision readiness. No fresh Task VM admission is implied by this source checkpoint.
+Official Swamp e459 currently refuses remote vault-put stdin. The orchestrator owns that upstream blocker. Logical Nodes 1 and 18 also need the shared transport for built-in shell steps on proxy Nodes. Synthetic scratch-vault and isolated native tests do not establish live provision readiness. No fresh Task VM admission is implied by this source checkpoint.

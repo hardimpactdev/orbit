@@ -176,6 +176,42 @@ class ProvisionCommands(NativeTestCase):
         self.run_provider(success=False)
         self.assertLessEqual([call[2] for call in self.read()["calls"]].count("list"), 4)
 
+    def test_native_resume_from_final_observation_reads_a_new_address_without_recreating_vm(self):
+        self.state["no_address"] = True
+        self.save()
+        result = self.run_provider(success=False)
+        run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]["id"]
+        self.state = self.read()
+        reads = [call[2] for call in self.state["calls"]].count("list")
+        self.state["no_address"] = False
+        self.save()
+
+        self.cli("workflow", "resume", "task-vm-provider-incus", "--run", run_id,
+                 "--from", "inspect-created-vm", "--job", "provider")
+
+        actions = [call[2] for call in self.read()["calls"]]
+        self.assertEqual(actions.count("list"), reads + 1)
+        self.assertEqual(actions.count("init"), 1)
+        self.assertEqual(actions.count("start"), 1)
+
+    def test_native_resume_from_seed_observation_reads_a_repaired_seed_before_initialization(self):
+        self.intent["create"]["topology"] = True
+        self.state["volumes"] = []
+        self.save()
+        result = self.run_provider(success=False)
+        run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]["id"]
+        self.state = self.read()
+        self.assertFalse(self.state["exists"])
+        self.state["volumes"] = ["orbit-topology-seed-" + "a" * 12]
+        self.save()
+
+        self.cli("workflow", "resume", "task-vm-provider-incus", "--run", run_id,
+                 "--from", "observe-seed", "--job", "provider")
+
+        state = self.read()
+        self.assertTrue(state["running"])
+        self.assertEqual(state["initial_config"]["devices"]["topology-seed"]["source"], "tvm-12-topology-seed")
+
     def test_native_resume_observes_an_uncertain_start_without_repeating_the_mutation(self):
         self.state["lose_start_reply"] = True
         self.save()

@@ -10,10 +10,12 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmEnrollmentWorkflowInput;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
+use App\Domain\TaskVms\TaskVmProvisionWorkflowInputs;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Domain\WireGuard\VpnSettings;
@@ -67,6 +69,22 @@ beforeEach(function (): void {
     app()->instance(TaskVmProvider::class, Mockery::mock(TaskVmProvider::class));
     app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
 
+});
+
+it('composes the canonical enrollment public capture with its actual provider allocation', function (): void {
+    $allocation = app(TaskVmProvisionIntent::class)->capture($this->vm);
+    $enrollment = app(TaskVmEnrollmentWorkflowInput::class);
+    $public = $enrollment->fromCaptured($allocation['enrollment'], $allocation, ['address' => null, 'public_key' => null]);
+    $inputs = app(TaskVmProvisionWorkflowInputs::class)->compose($allocation, $enrollment->envelope($public));
+
+    expect($inputs['intent'])->toMatchArray(['task_vm_id' => $this->vm->id,
+        'node_id' => $this->host->id, 'execution_node_id' => $this->host->id,
+        'guest_node_id' => $allocation['guest_node_id'], 'vm' => $allocation['vm'],
+        'runtime' => $public['runtime'], '_wireguard' => $public['_wireguard']])
+        ->and($inputs['execution_secrets'])->toBe([]);
+    foreach (['$secret', 'private_bindings', 'read_node_ids', 'write_node_ids', 'upcloud_token'] as $private) {
+        expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain($private);
+    }
 });
 
 function savedNativeProvisionIntent(): Operation
