@@ -47,7 +47,7 @@ final class FakeRoutePublicationSocket implements WebSocketClient
         }
 
         return $this->accepted ? [['type' => 'event', 'id' => array_last($this->sent)['id'], 'event' => [
-            'kind' => 'started', 'workflowName' => array_last($this->sent)['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+            'kind' => 'started', 'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
         ]]] : [];
     }
 

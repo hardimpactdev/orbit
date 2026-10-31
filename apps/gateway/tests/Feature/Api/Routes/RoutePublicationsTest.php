@@ -13,10 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Caddy\Build\CaddyListenerRule;
-use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -34,7 +31,7 @@ beforeEach(function (): void {
     $this->worker->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
     $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued,
         'sequence' => 1, 'state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => ['reason' => 'private proof']]);
@@ -46,13 +43,12 @@ beforeEach(function (): void {
     app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([]));
 });
 
-it('returns a public current render without executing Caddy in the Gateway', function (): void {
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.caddy_publication.node_id', $this->node->id)
-        ->assertJsonPath('data.input.caddy_publication.user', 'orbit')
-        ->assertJsonPath('data.input.caddy_publication.caddy.unserved', true);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    expect($this->agents->calls)->toBe([]);
+it('publishes the stored Node without claims keys or Gateway execution state', function (): void {
+    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.ready', true);
+
+    expect($this->agents->calls)->toHaveCount(1);
+    expect($this->agents->calls[0])->toMatchArray(['command' => 'caddy.publish', 'node' => 'private-dev']);
+    expect($this->agents->calls[0]['input'])->not->toHaveKeys(['effect_key', 'worker']);
     expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']);
     expect($this->operation->fresh()->worker)->toBeNull();
 });
@@ -62,7 +58,7 @@ it('binds enrolled Node workers to their own intent across shared endpoints', fu
     config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
+    $this->postJson($this->path.'/primitive', $this->body)->assertOk();
     $running = [...$this->body, 'status' => 'running', 'started_at' => '2026-10-30T12:00:00.000Z'];
     $this->postJson($this->path.'/result', $running)->assertOk();
     foreach ([$this->worker->id, null] as $foreignNode) {
@@ -71,7 +67,7 @@ it('binds enrolled Node workers to their own intent across shared endpoints', fu
         $this->postJson($this->path.'/primitive', $this->body)->assertForbidden();
         $this->postJson($this->path.'/result', $running)->assertForbidden();
     }
-    expect($this->agents->calls)->toBe([]);
+    expect($this->agents->calls)->toHaveCount(1);
 });
 
 it('refuses every worker request until the Gateway start response binds the run', function (): void {
@@ -90,13 +86,15 @@ it('refuses every worker request until the Gateway start response binds the run'
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
-it('reads only approved public data and refuses the removed family relay URLs', function (): void {
+it('reads only projection-approved input through the shared endpoint and retains deployed Route URLs', function (): void {
     $this->operation->update(['input' => ['password' => 'private-input-sentinel', 'command' => 'foreign']]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.caddy_publication.node_id', $this->node->id)->assertDontSee('private-input-sentinel')->assertDontSee('foreign');
-    $this->getJson('/api/v1/route-publications/'.$this->operation->id.'?run_id='.$this->runId)->assertNotFound();
-    $this->postJson('/api/v1/route-publications/'.$this->operation->id.'/publish', $this->body)->assertNotFound();
-    expect($this->agents->calls)->toBe([]);
+        ->assertJsonPath('data.input', [])->assertDontSee('private-input-sentinel');
+    $this->getJson('/api/v1/route-publications/'.$this->operation->id.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.id', $this->operation->id);
+    $this->postJson('/api/v1/route-publications/'.$this->operation->id.'/publish', $this->body)
+        ->assertOk()->assertJsonPath('data.ready', true);
+    expect($this->agents->calls)->toHaveCount(1);
 });
 
 it('refuses missing peers malformed run IDs and undeclared kinds on shared endpoints', function (): void {
@@ -174,7 +172,7 @@ it('submits once after commit and records a native run without acquiring a targe
     DB::commit();
     expect($socket->sent)->toHaveCount(1);
     expect($socket->sent[0])->toMatchArray(['type' => 'workflow.run', 'payload' => [
-        'workflowIdOrName' => 'operation-route-caddy', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'route.caddy_converge', 'node_id' => $this->node->id],
+        'workflowIdOrName' => 'operation-route-publication', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'route.caddy_converge', 'node_id' => $this->node->id],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]]);
     expect($operation->fresh()->lock_key)->toBeNull();
@@ -216,7 +214,7 @@ it('reads tagged admitted intent before the start reply without establishing a r
     $before = $this->operation->fresh()->getAttributes();
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
-        'workflowName' => 'operation-route-caddy', 'runId' => $this->runId, 'status' => 'running',
+        'workflowName' => 'operation-route-publication', 'runId' => $this->runId, 'status' => 'running',
         'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
         'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
     ]]]]]];
@@ -224,7 +222,7 @@ it('reads tagged admitted intent before the start reply without establishing a r
     config(['swamp.run_token' => 'private.fixture.token']);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.id', $this->operation->id);
     expect($socket->sent)->toHaveCount(1);
-    expect($socket->sent[0]['payload'])->toBe(['workflow' => 'operation-route-caddy', 'inputs' => ['operation_id' => (string) $this->operation->id], 'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id], 'limit' => 2]);
+    expect($socket->sent[0]['payload'])->toBe(['workflow' => 'operation-route-publication', 'inputs' => ['operation_id' => (string) $this->operation->id], 'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id], 'limit' => 2]);
     expect($this->operation->fresh()->getAttributes())->toBe($before);
     expect($this->agents->calls)->toBe([]);
 });
@@ -234,7 +232,7 @@ it('refuses unbound identities that native history cannot prove without submissi
     $before = $this->operation->fresh()->getAttributes();
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = function (array $message) use ($mode): array {
-        $run = ['workflowName' => 'operation-route-caddy', 'runId' => $this->runId, 'status' => 'running',
+        $run = ['workflowName' => 'operation-route-publication', 'runId' => $this->runId, 'status' => 'running',
             'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
             'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id]];
         $runs = match ($mode) {
@@ -272,7 +270,7 @@ it('keeps an early native result when the start acknowledgement later records th
     $this->operation->update(['state' => ['route_publication_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
     $verify = new FakeRoutePublicationSocket;
     $verify->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
-        'workflowName' => 'operation-route-caddy', 'runId' => $this->runId, 'status' => 'running',
+        'workflowName' => 'operation-route-publication', 'runId' => $this->runId, 'status' => 'running',
         'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
         'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
     ]]]]]];
@@ -283,7 +281,7 @@ it('keeps an early native result when the start acknowledgement later records th
             'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
         expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
 
-        return [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-route-caddy', 'runId' => $this->runId]]];
+        return [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-route-publication', 'runId' => $this->runId]]];
     };
     app()->instance(WebSocketClient::class, $start);
     config(['swamp.run_token' => 'private.fixture.token']);
@@ -296,31 +294,5 @@ it('keeps an early native result when the start acknowledgement later records th
     expect($op->steps()->count())->toBe(1);
     expect(array_column($start->sent, 'type'))->toBe(['workflow.run']);
     expect(array_column($verify->sent, 'type'))->toBe(['workflow.run.search']);
-});
-
-it('renders current public state again on each read without persisting the rendered data', function (): void {
-    $source = Mockery::mock(NodeCaddySiteSource::class);
-    $source->shouldReceive('order')->andReturn(1);
-    $source->shouldReceive('sites')->andReturnUsing(fn (Node $node): array => [new CaddySite('test', 'current', CaddyListenerRule::WireGuard, ['preview.test'], 443, "preview.test { respond {$node->name} }")]);
-    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([$source]));
-    $before = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input.caddy_publication');
-    $this->node->update(['name' => 'updated-survivor']);
-    $after = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input.caddy_publication');
-    expect($after['caddy']['content'])->toContain('updated-survivor')->not->toContain('private-dev');
-    expect($after['caddy']['version'])->not->toBe($before['caddy']['version']);
-    expect($after['node_id'])->toBe($this->node->id);
-    expect($this->operation->fresh()->input)->toBe(['reason' => 'private proof']);
-    expect($this->agents->calls)->toBe([]);
-});
-
-it('exposes only a bounded render refusal without diagnostics or an executable primitive', function (): void {
-    $source = Mockery::mock(NodeCaddySiteSource::class);
-    $source->shouldReceive('order')->andReturn(1);
-    $source->shouldReceive('sites')->andThrow(new RuntimeException('private-render-sentinel'));
-    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([$source]));
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.caddy_publication.error_code', 'caddy.render_failed')
-        ->assertJsonPath('data.input.caddy_publication.stage', 'render')->assertDontSee('private-render-sentinel');
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
     expect($this->agents->calls)->toBe([]);
 });
