@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { Operation } from "../../operation-runner/mod.ts";
 import type { Outcome } from "./recipe.ts";
+import { cliInstallError } from "./contract.ts";
 
 const Input = z.object({
   user: z.string(),
@@ -34,16 +35,10 @@ export async function executeCliConverge(
     const result = Result.parse(
       await post("run", { key, transport, name, input: body }),
     );
-    const code = result.error_code === "cli.update_busy"
-      ? "node.update_busy"
-      : result.error_code === "cli.release_needed"
-      ? "cli.release_unavailable"
+    const code = name === "cli.install"
+      ? cliInstallError(result)
       : typeof result.error_code === "string"
       ? result.error_code
-      : name === "cli.install" &&
-          (!Object.hasOwn(result, "installed") ||
-            typeof result.configured !== "boolean")
-      ? "cli.install_failed"
       : name === "fleet.cli-converge-result" && result.completed !== true
       ? "fleet.cli_converge_failed"
       : null;

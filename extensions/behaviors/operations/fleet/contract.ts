@@ -36,3 +36,19 @@ export function matchesPolicy(
       }` &&
     setting(observed.default_route) === "no";
 }
+
+/** The existing install refusal mapping, shared with the polled wrapper. */
+export function cliInstallError(
+  result: Record<string, unknown>,
+): string | null {
+  return result.error_code === "cli.update_busy"
+    ? "node.update_busy"
+    : result.error_code === "cli.release_needed"
+    ? "cli.release_unavailable"
+    : typeof result.error_code === "string"
+    ? result.error_code
+    : !Object.hasOwn(result, "installed") ||
+        typeof result.configured !== "boolean"
+    ? "cli.install_failed"
+    : null;
+}
