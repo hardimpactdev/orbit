@@ -17,7 +17,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
     ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
@@ -74,7 +74,7 @@ it('starts creation directly without the old admission lease or claim contract',
     app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->state['process_control_writer'])->toBe('direct')->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')->and($operation->lock_key)->toBeNull();
+    expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')->and($operation->lock_key)->toBeNull();
     config(['dependency_detection.services_node_id' => $this->node->id]);
 });
 
@@ -91,13 +91,6 @@ it('returns only admitted public installation input and binds private bytes to t
     $process = Process::query()->sole();
     $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'example:changed']]);
     $this->getJson($path.'/private-material'.$query)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
-});
-
-it('refuses a removed polled creation writer before storing a row', function (): void {
-    config(['swamp.direct_writers' => ['process.create' => 'polled']]);
-    $this->postJson('/api/v1/processes', $this->payload)->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->assertDatabaseCount('processes', 0);
-    $this->assertDatabaseCount('operations', 0);
 });
 
 it('captures the real first-visit systemd input with a boolean activation flag', function (): void {
@@ -133,8 +126,7 @@ it('starts update directly without an admission lease and keeps private definiti
     $this->patchJson('/api/v1/processes/'.$process->id, ['environment' => ['PASSWORD' => 'update-private-value']])->assertAccepted()->assertJsonPath('data.kind', 'process.update');
 
     $operation = Operation::query()->where('kind', 'process.update')->sole();
-    expect($operation->state['process_control_writer'])->toBe('direct')
-        ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
+    expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
         ->and($operation->lock_key)->toBeNull()
         ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => $process->id])
         ->and($operation->input)->not->toHaveKeys(['environment', 'command', 'content', 'image'])

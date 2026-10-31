@@ -6,17 +6,14 @@ use App\Domain\Processes\ProcessControlProjection;
 
 $control = [
     'workflow' => 'operation-process-control',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'process_control_writer',
     'projection' => ProcessControlProjection::class,
-    'writer_scope' => ['vite' => null, 'parent_operation_id' => null],
 ];
 
 return [
-    'process.update' => [...$control, 'writer_scope' => [], 'private_material' => ['installation' => 'process.installation']],
-    'process.create' => [...$control, 'writer_scope' => [], 'private_material' => ['installation' => 'process.installation']],
-    'process.destroy' => [...$control, 'writer_scope' => []],
-    'process.restart' => [...$control, 'writer_scope' => []],
-    'process.start' => [...$control, 'writer_scope' => []],
-    'process.stop' => [...$control, 'writer_scope' => []],
+    'process.update' => [...$control, 'workflow' => 'operation-process-update', 'private_material' => ['installation' => 'process.installation']],
+    'process.create' => [...$control, 'private_material' => ['installation' => 'process.installation']],
+    'process.destroy' => [...$control],
+    'process.restart' => [...$control],
+    'process.start' => [...$control],
+    'process.stop' => [...$control],
 ];

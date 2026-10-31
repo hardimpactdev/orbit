@@ -11,7 +11,6 @@ return (static function (): array {
         return [];
     }
     $kinds = [];
-    $kinds['process.update'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
 
     $kinds['process.create'] = ['executor' => 'swamp', 'admission' => ProcessRuntimeChildAdmission::class, 'result_fields' => ['ready', 'state', 'error_code']];
 

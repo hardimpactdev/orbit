@@ -361,3 +361,5 @@ Four internal callers still require synchronous bootstrap completion: AI Router 
 ### Native Process update
 
 Ordinary Process update records the changed definition and starts one native installation run. It preserves omitted fields, validates route listeners, and retains the prior desired state. The native steps prepare Vite traffic when needed, publish Caddy in the same root, remove its admitted artifact from the previous runtime, install the private definition and check readiness. The Gateway projects the final bounded result. Its last leaf Process executor, readiness command and receipt checks are removed, along with the old per-field private sources. The fixed `process.installation` callback supplies the admitted definition. Rollback is a revert PR.
+
+Process updates run in `operation-process-update` on the admitted Node. The Gateway records the requested specification and projects the native outcome. It does not execute an update or record executor steps.
