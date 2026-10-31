@@ -26,7 +26,7 @@ it('follows a network Operation and renders its terminal result', function (bool
     ]);
 
     try {
-        $this->artisan('node:network:converge', ['node' => (string) $node, 
+        $this->artisan('node:network:converge', ['node' => (string) $node,
             '--idempotency-key' => 'network-proof', '--json' => $json])
             ->expectsOutputToContain($json ? 'node.network_converge' : 'Node network')->assertExitCode(0);
         $mock->assertSent(fn ($pending): bool => $pending instanceof ConvergeNodeNetworkRequest

@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
+use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 
 return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
     'workflow' => 'operation-node-network-converge',
-    'projection' => \App\Domain\Nodes\NodeNetworkProjection::class,
+    'projection' => NodeNetworkProjection::class,
     'private_material' => ['configuration' => 'node.vpn_configuration'],
 ], 'node.agent_rekey' => [
     'workflow' => 'operation-node-agent-rekey',
