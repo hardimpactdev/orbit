@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\DirectOperation;
-use App\Infrastructure\Swamp\StartSwampRun;
-use App\Infrastructure\AgentView\WebSocketClient;
-use Tests\Support\FakeRoutePublicationSocket;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeCaddyPublicationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->node = Node::unguarded(fn (): Node => Node::query()->create(['id' => 9, 'name' => 'native-caddy', 'public_ssh_host' => '192.0.2.9',
@@ -39,6 +39,7 @@ it('captures the complete canonical public config without a worker callback or a
 });
 
 it('refuses logical proxy identities before rendering for built-in shell', function (int $nodeId): void {
+    Node::unguarded(fn (): Node => Node::query()->create(['id' => $nodeId, 'name' => 'proxy-'.$nodeId, 'user' => 'orbit', 'status' => 'active', 'public_ssh_host' => '192.0.2.'.$nodeId]));
     $this->operation->node_id = $nodeId;
     try {
         app(NativeCaddyPublicationInput::class)->forOperation($this->operation);
@@ -80,8 +81,8 @@ it('records a native failure before the selected result step could run', functio
         ->and($this->agents->calls)->toBe([]);
 });
 
-
 it('dispatches canonical public input through the shared builder with no execution secret', function (): void {
+    $this->operation->update(['state' => [], 'status' => OperationStatus::Queued]);
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.start-token']);

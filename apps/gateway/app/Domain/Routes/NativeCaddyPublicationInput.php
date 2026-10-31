@@ -17,6 +17,7 @@ final readonly class NativeCaddyPublicationInput
         if ($operation->kind !== 'route.caddy_converge' || $operation->node_id === null) {
             throw new ResourceOperationException('route.publication_invalid', 'Caddy publication requires its admitted Node.', 422);
         }
+
         return ['caddy_publication' => $this->forNode(Node::query()->findOrFail($operation->node_id))];
     }
 
