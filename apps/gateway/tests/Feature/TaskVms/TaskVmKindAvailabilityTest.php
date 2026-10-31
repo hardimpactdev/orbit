@@ -23,7 +23,7 @@ it('refuses unavailable task VM primitives without recording intent or queuing P
 it('never registers a weaker VM contract while child or receipt enforcement is absent', function (): void {
     $kinds = OperationKinds::definitions();
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        foreach (['task_vm.prepare_runtime', 'task_vm.provision', 'task_vm.upcloud_image_build'] as $kind) {
+        foreach (['task_vm.prepare_runtime', 'task_vm.provision', 'task_vm.image_build', 'task_vm.upcloud_image_build'] as $kind) {
             expect($kinds)->not->toHaveKey($kind);
         }
     }
