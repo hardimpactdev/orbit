@@ -173,11 +173,20 @@ helpers import that module directly. Importing `direct.ts` also reaches the
 retained Gateway client and therefore keeps that dependency in the shape audit.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
-`Swamp Deno tests`. The reusable workflow accepts `working-directory` and
+`Swamp Deno tests`. The reusable workflow splits every Operations test file
+across four parallel jobs with Deno's native
+`--shard` flag. Each shard keeps `--parallel -A` and `DENO_JOBS=4`, runs the same
+prerequisite checks and receives no validation credentials. All shards run even
+when one fails. The single `Swamp Deno tests` aggregate always runs and succeeds
+only when the complete matrix succeeds; failed, cancelled or skipped shards fail
+the aggregate. The root `Required checks` continues to require this reusable
+workflow.
+
+The reusable workflow accepts `working-directory` and
 `base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
 with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
-tests run with four workers, including disposable database effect tests.
+tests run with four workers per shard, including disposable database effect tests.
 
 Native assertion expressions and guards use Swamp CEL, including grouping,
 `has()` and collection macros such as `all()`. Workflow validation owns CEL

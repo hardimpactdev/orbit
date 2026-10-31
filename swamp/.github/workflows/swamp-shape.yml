@@ -47,6 +47,7 @@ jobs:
           deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
+          python3 tests/swamp_deno_shards_test.py
           python3 tests/swamp_base_policy_test.py
       - name: Reject new violations with current and base rules
         env:
@@ -95,7 +96,26 @@ jobs:
 
   tests:
     name: Swamp Deno tests
+    needs: [test-shards]
+    if: always()
     runs-on: ubuntu-26.04
+    steps:
+      - name: Require every Operations shard
+        env:
+          SHARDS_RESULT: ${{ needs.test-shards.result }}
+        run: |
+          if [[ "$SHARDS_RESULT" != success ]]; then
+            echo "::error::Operations shards did not all succeed ($SHARDS_RESULT)"
+            exit 1
+          fi
+
+  test-shards:
+    name: Swamp Deno shard ${{ matrix.shard }}
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
@@ -117,7 +137,8 @@ jobs:
           sudo -n true
           # shellcheck disable=SC2016
           php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
-      - name: Run every Operations test
+      - name: Run Operations test shard
         env:
           DENO_JOBS: "4"
-        run: deno test --parallel -A extensions/behaviors/operations
+          DENO_SHARD: ${{ matrix.shard }}
+        run: deno test --parallel -A --shard="$DENO_SHARD" extensions/behaviors/operations
