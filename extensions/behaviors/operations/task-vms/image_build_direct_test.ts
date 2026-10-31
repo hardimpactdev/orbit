@@ -9,6 +9,7 @@ import {
   phases,
   stages,
 } from "./image_build_direct.ts";
+import { FakeTime } from "jsr:@std/testing@1.0.17/time";
 import { agentReply, type NodeCall } from "../_lib/node-agent.ts";
 import { guestArgv, incusGuest } from "./image_guest.ts";
 
@@ -496,4 +497,115 @@ Deno.test("admitted recipe JSON preserves empty native maps through Gateway stor
   });
   assertEquals(parsed.recipe, recipe);
   assertEquals(Array.isArray(parsed.recipe.rust), false);
+});
+
+Deno.test("artifact delivery leaves the started phase its full observation budget", async () => {
+  using time = new FakeTime(0);
+  const input = intent();
+  input.pi_artifact = { sha256: "d".repeat(64) };
+  let starts = 0;
+  let reads = 0;
+  const guest = () => ({
+    bootstrap: () => Promise.resolve(),
+    artifact() {
+      time.tick(1440001);
+      return Promise.resolve();
+    },
+    command(name: string) {
+      if (name === "image.start-phase") {
+        starts++;
+        return Promise.resolve({ state: "running", boot_id: boot });
+      }
+      reads++;
+      return Promise.resolve({
+        state: reads === 1 ? "missing" : "complete",
+        boot_id: boot,
+      });
+    },
+  });
+  const result = imageStage(
+    "pi",
+    input,
+    null,
+    fixture().host,
+    guest,
+    () => Promise.resolve(new Uint8Array([1])),
+    boot,
+  ).then(() => null, (error) => error);
+  await time.runMicrotasks();
+  await time.tickAsync(1000);
+  assertEquals(await result, null);
+  assertEquals(starts, 1);
+  assertEquals(reads, 2);
+});
+
+Deno.test("a continuous phase channel outage fails within sixty seconds without another mutation", async () => {
+  using time = new FakeTime(0);
+  let reads = 0;
+  const guest = () => ({
+    bootstrap: () => Promise.resolve(),
+    artifact: () => Promise.resolve(),
+    command(name: string) {
+      assertEquals(name, "image.inspect-phase");
+      if (++reads === 1) {
+        return Promise.resolve({ state: "running", boot_id: boot });
+      }
+      return Promise.reject(new Error("task_vm.image_channel_lost"));
+    },
+  });
+  let outcome = "pending";
+  let finishedAt: number | undefined;
+  const run = imageStage(
+    "packages",
+    intent(),
+    null,
+    fixture().host,
+    guest,
+    () => Promise.reject(new Error("unused")),
+    boot,
+  )
+    .then(() => {
+      outcome = "succeeded";
+    }, (error) => {
+      outcome = error.message;
+      finishedAt = Date.now();
+    });
+  for (let second = 0; second < 61; second++) await time.tickAsync(1000);
+  await time.runMicrotasks();
+  assertEquals(outcome, "task_vm.image_channel_lost");
+  assertEquals(finishedAt, 60000);
+  await run;
+});
+
+Deno.test("a successful phase read resets the consecutive channel outage budget", async () => {
+  using time = new FakeTime(0);
+  let reads = 0;
+  const guest = () => ({
+    bootstrap: () => Promise.resolve(),
+    artifact: () => Promise.resolve(),
+    command(name: string) {
+      assertEquals(name, "image.inspect-phase");
+      const read = reads++;
+      if (read === 0 || read === 50) {
+        return Promise.resolve({ state: "running", boot_id: boot });
+      }
+      if (read === 100) {
+        return Promise.resolve({ state: "complete", boot_id: boot });
+      }
+      return Promise.reject(new Error("task_vm.image_channel_lost"));
+    },
+  });
+  const result = imageStage(
+    "packages",
+    intent(),
+    null,
+    fixture().host,
+    guest,
+    () => Promise.reject(new Error("unused")),
+    boot,
+  ).then(() => null, (error) => error);
+  for (let second = 0; second < 110; second++) await time.tickAsync(1000);
+  await time.runMicrotasks();
+  assertEquals(await result, null);
+  assertEquals(reads, 101);
 });

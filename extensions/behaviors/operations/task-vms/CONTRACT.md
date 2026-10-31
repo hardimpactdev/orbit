@@ -22,9 +22,13 @@ reuses its fingerprint; failure before candidate promotion preserves the prior
 candidate. The public base alias changes only after smoke and seed checks.
 
 Package installation may re-execute the guest systemd manager. An uncertain
-`image.inspect-phase` read is observed again within the same phase deadline. The
-workflow keeps the expected boot ID and never restarts a phase because its
-status read was uncertain. Other command failures still end the native step.
+`image.inspect-phase` read is observed again within the phase's 1440-second
+budget. The budget starts after `image.start-phase` returns, so artifact
+delivery does not consume it. Sixty seconds without a successful phase read ends
+the step; a successful read resets that outage budget. Each read is bounded by
+the time remaining. The workflow keeps the expected boot ID and never restarts a
+phase because its status read was uncertain. Other command failures still end
+the native step.
 
 The Gateway records VM, runtime, image and host sweep intent. This family drives
 their effects through fixed Operations. Discovery dispatches a kind and worker;

@@ -147,20 +147,22 @@ export async function imageStage(
       phase: stage,
       execution: `${input.build_id}-${input.attempt}`,
     };
-    const deadline = Date.now() + 1440000;
+    let lastReadAt = Date.now();
+    let deadline = lastReadAt + 1440000;
     const observe = async (
       boot_id: string | null,
     ): Promise<Record<string, unknown>> => {
       for (;;) {
-        if (Date.now() >= deadline) {
-          throw new Error("task_vm.image_channel_lost");
-        }
+        const remaining = Math.min(deadline, lastReadAt + 60000) - Date.now();
+        if (remaining <= 0) throw new Error("task_vm.image_channel_lost");
         try {
-          return await builder.command(
+          const observed = await builder.command(
             "image.inspect-phase",
             { key, boot_id },
-            30,
+            Math.min(30, Math.ceil(remaining / 1000)),
           );
+          lastReadAt = Date.now();
+          return observed;
         } catch (error) {
           if (
             !(error instanceof Error) ||
@@ -185,6 +187,8 @@ export async function imageStage(
         boot_id,
         recipe: input.recipe,
       });
+      lastReadAt = Date.now();
+      deadline = lastReadAt + 1440000;
     }
     // Local observation of the guest's existing bounded service, never a Gateway wait or child.
     while (observation.state === "running") {
@@ -341,7 +345,7 @@ export function imageBuildDirect(
   };
   return {
     type: "@nckrtl/task-vm-image-build",
-    version: "2026.10.31.4",
+    version: "2026.10.31.5",
     globalArguments: Globals,
     resources: {
       boot: {
