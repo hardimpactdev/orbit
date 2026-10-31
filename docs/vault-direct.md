@@ -14,8 +14,24 @@ workflow and the verified worker TLS configuration. Injected native fixtures ove
 only this file path with `/dev/null`. A native
 behavior lock serializes the Gateway's collection operations. HTTP deadlines and
 the original 900-second overall program deadline remain. Existing source
-matching, crypto, duplicate/orphan adoption, Orbit-only TLS and foreign-item
+matching, crypto, wanted-source adoption, Orbit-only TLS and foreign-item
 preservation remain in the ported collection program.
+
+Sync and teardown delete only cipher IDs whose decrypted source matches the
+publishing ledger in the configured organization and collection. Marker-only
+copies of a recorded source are preserved even if its published cipher is
+missing or trashed. Sync then creates a new item instead of rewriting a copy.
+Adoption after a lost create reply is allowed only for a wanted source with no
+ledger entry.
+The real HTTP sync fixture accepts `VAULT_TEST_REPLACEMENT=missing` or `trashed`
+to prove replacement of a recorded cipher while preserving an identical-source
+user copy and an unrelated item byte for byte.
+Deletion candidates are checked for additional visible collections before any
+deletion; a shared item refuses with `vault.item_shared`.
+
+Vaultwarden's `collectionIds` lists only memberships visible to the account.
+The sharing check cannot establish the absence of memberships in collections
+hidden from that account.
 
 Shared Gateway globals reject an empty CA path, so TLS cannot fall back to the
 system trust store. The production sync canary records the current collection

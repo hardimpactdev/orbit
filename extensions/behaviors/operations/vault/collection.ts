@@ -249,6 +249,19 @@ class Collection:
         return {'id': value(result, 'id'), 'revision': value(result, 'revisionDate') or ''}
 
 
+def published_deletions(config, ciphers):
+    published = {(entry['cipher_id'], entry['source']) for entry in config.get('ledger', [])}
+    identities = set()
+    for cipher in ciphers:
+        if cipher['source'] is None or (cipher['id'], cipher['source']) not in published:
+            continue
+        # DELETE removes the whole cipher; collection_ids contains visible memberships only.
+        if any(identity != config['collection_id'] for identity in cipher['collection_ids']):
+            refuse('vault.item_shared')
+        identities.add(cipher['id'])
+    return sorted(identities)
+
+
 def reconcile(action, config, remote):
     if action == 'teardown' and config.get('keep_items'):
         return {'backend': 'absent'}
@@ -273,36 +286,29 @@ def reconcile(action, config, remote):
         refuse('vault.organization_missing')
     ciphers = [item for item in snapshot['ciphers'] if item['organization_id'] == config['organization_id'] and config['collection_id'] in item['collection_ids']]
     if action == 'teardown':
-        by_id = {item['id']: item for item in ciphers}
-        identities = set()
-        for entry in config.get('ledger', []):
-            cipher = by_id.get(entry['cipher_id'])
-            if cipher is None or cipher['source'] is None or cipher['source'] != entry['source']:
-                continue
-            # DELETE removes the whole cipher, including its other collections.
-            if any(identity != config['collection_id'] for identity in cipher['collection_ids']):
-                refuse('vault.item_shared')
-            identities.add(cipher['id'])
-        for identity in sorted(identities):
+        for identity in published_deletions(config, ciphers):
             remote.delete(identity)
         return {'backend': 'absent'}
     wanted = {item['source']: item for item in config['wanted']}
     ledger = {item['source']: item for item in config['ledger']}
     kept = {}
+    discarded = []
     for cipher in ciphers:
         source = cipher['source']
         if source is None:
             continue
-        if cipher['deleted'] or source not in wanted:
-            remote.delete(cipher['id'])
-            continue
         previous = ledger.get(source)
-        if source not in kept or (previous and previous['cipher_id'] == cipher['id']):
-            if source in kept:
-                remote.delete(kept[source]['id'])
+        if previous is not None and previous['cipher_id'] != cipher['id']:
+            continue
+        if cipher['deleted'] or source not in wanted:
+            discarded.append(cipher)
+            continue
+        if source not in kept:
             kept[source] = cipher
         else:
-            remote.delete(cipher['id'])
+            discarded.append(cipher)
+    for identity in published_deletions(config, discarded):
+        remote.delete(identity)
     result = {'backend': 'synced', 'sources': [], 'cipher_ids': [], 'revisions': [], 'fingerprints': []}
     errors = []
     for source, item in wanted.items():

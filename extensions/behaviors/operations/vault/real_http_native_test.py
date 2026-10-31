@@ -39,6 +39,10 @@ class VaultRealHttp(NativeTestCase):
     def test_real_operation_keeps_private_material_out_of_native_scratch(self):
         action = os.environ.get('VAULT_TEST_ACTION', 'sync')
         self.assertIn(action, ('sync', 'setup', 'teardown'))
+        replacement = os.environ.get('VAULT_TEST_REPLACEMENT', '')
+        self.assertIn(replacement, ('', 'missing', 'trashed'))
+        if replacement:
+            self.assertEqual(action, 'sync')
         shared_refusal = action == 'teardown' and os.environ.get('VAULT_TEST_SHARED_ITEM') == '1' and os.environ.get('VAULT_TEST_KEEP_ITEMS') != '1'
         expected_status = 'failed' if shared_refusal else 'succeeded'
         backend = {'sync': 'synced', 'setup': 'configured', 'teardown': 'absent'}[action]
@@ -84,6 +88,7 @@ class VaultRealHttp(NativeTestCase):
             APP_PACKAGES_CACHE=str(scratch / 'packages.php'), ORBIT_HOME=str(scratch / 'orbit-home'),
             VAULT_TEST_SCRATCH=str(scratch), VAULT_TEST_GATEWAY_ROOT=str(gateway),
             VAULT_TEST_ACTION=action,
+            VAULT_TEST_REPLACEMENT=replacement,
             VAULT_TEST_SWAMP_PORT=str(serve_port),
             VAULT_TEST_BACKEND_SEED_URL=f'http://127.0.0.1:{backend_port}',
             VAULT_TEST_BACKEND_URL=f'https://{fixture_host}:{backend_tls_port}',
@@ -242,7 +247,7 @@ class VaultRealHttp(NativeTestCase):
             self.assertEqual(outcome['items'], expected_items)
             self.assertEqual(outcome['configured'], shared_refusal or action != 'teardown')
             self.assertEqual(outcome['configuration_matches_fixture'], shared_refusal or action != 'teardown')
-            remote = php('verify-backend') if action == 'teardown' else {}
+            remote = php('verify-backend') if action == 'teardown' or replacement else {}
             # Projection can finish before the native run; observe this same root.
             until = time.monotonic() + 5
             while True:

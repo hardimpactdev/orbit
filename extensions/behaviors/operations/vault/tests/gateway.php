@@ -254,9 +254,12 @@ try {
         if (getenv('VAULT_TEST_ACTION') !== 'setup') {
             app(VaultSettings::class)->put(VaultConfiguration::fromStoredArray($config));
         }
-        DatabaseConnection::create(['slug' => 'vault-dev', 'driver' => 'pgsql', 'node_id' => 9,
+        $connection = DatabaseConnection::create(['slug' => 'vault-dev', 'driver' => 'pgsql', 'node_id' => 9,
             'host' => '127.0.0.1', 'port' => 5432, 'database' => 'isolated', 'username' => 'fixture', 'password' => $hidden]);
-        if (getenv('VAULT_TEST_ACTION') === 'teardown') {
+        $replacement = getenv('VAULT_TEST_ACTION') === 'sync' ? getenv('VAULT_TEST_REPLACEMENT') : '';
+        $replacePublished = in_array($replacement, ['missing', 'trashed'], true);
+        if (getenv('VAULT_TEST_ACTION') === 'teardown' || $replacePublished) {
+            $connectionSource = 'database-connection:'.$connection->id;
             $marked = [];
             $foreign = null;
             $collections = [$config['collection_id']];
@@ -266,7 +269,7 @@ try {
                 insist(is_string(item($other, 'id')), 'fixture_collection_missing');
                 $collections[] = item($other, 'id');
             }
-            foreach (['database-connection:1', 'database-user:gone', null] as $index => $source) {
+            foreach ([$connectionSource, $replacePublished ? $connectionSource : 'database-user:gone', null] as $index => $source) {
                 $fields = [['type' => 1, 'name' => seal('password', $orgKey), 'value' => seal($hidden, $orgKey), 'linkedId' => null]];
                 if ($source !== null) {
                     $fields[] = ['type' => 0, 'name' => seal('orbit.source', $orgKey), 'value' => seal($source, $orgKey), 'linkedId' => null];
@@ -285,14 +288,28 @@ try {
                 }
             }
             // A stale ledger must not turn a foreign item into a deletion target.
-            foreach (['database-connection:1' => $marked[0], 'database-user:stale' => $foreign] as $source => $identity) {
+            $ledger = [$connectionSource => $marked[0]];
+            if (! $replacePublished) {
+                $ledger['database-user:stale'] = $foreign;
+            }
+            foreach ($ledger as $source => $identity) {
                 VaultItem::create(['source' => $source, 'cipher_id' => $identity, 'fingerprint' => str_repeat('a', 64)]);
             }
+            if ($replacement === 'missing') {
+                api('DELETE', '/api/ciphers/'.$marked[0], token: $token);
+            } elseif ($replacement === 'trashed') {
+                api('PUT', '/api/ciphers/'.$marked[0].'/delete', token: $token);
+            }
             $before = collectionCiphers($config, $token);
-            insist(count($before) === 3 && VaultItem::count() === 2, 'fixture_teardown_seed_incomplete');
+            insist(count($before) === ($replacement === 'missing' ? 2 : 3)
+                && VaultItem::count() === ($replacePublished ? 1 : 2), 'fixture_cipher_seed_incomplete');
+            if ($replacement === 'trashed') {
+                insist(item($before[$marked[0]], 'deletedDate') !== null, 'fixture_cipher_not_trashed');
+            }
             app(SettingRepository::class)->put(fixtureScope(), 'vault.fixture', json_encode([
                 'configuration' => $config, 'hidden' => $hidden, 'backend_token' => $token,
                 'published_id' => $marked[0], 'marker_only_id' => $marked[1], 'foreign_id' => $foreign, 'ciphers_before' => $before,
+                'replacement' => $replacePublished ? $replacement : '', 'source' => $connectionSource,
             ], JSON_THROW_ON_ERROR), SettingValueProtection::Secret);
         }
         echo json_encode(['initialized' => true, 'node_id' => 9, 'isolated' => true]);
@@ -327,7 +344,7 @@ try {
         vaultFixtureScan($bytes);
         echo $bytes;
     } elseif ($mode === 'verify-backend') {
-        insist(getenv('VAULT_TEST_ACTION') === 'teardown', 'fixture_backend_check_invalid');
+        insist(in_array(getenv('VAULT_TEST_ACTION'), ['sync', 'teardown'], true), 'fixture_backend_check_invalid');
         $private = vaultFixtureData();
         $after = collectionCiphers($private['configuration'], $private['backend_token']);
         $before = $private['ciphers_before'];
@@ -337,6 +354,20 @@ try {
         $copy = $private['marker_only_id'];
         insist(isset($after[$foreign]) && $after[$foreign] === $before[$foreign], 'fixture_foreign_item_changed');
         insist(isset($after[$copy]) && $after[$copy] === $before[$copy], 'fixture_marker_only_item_changed');
+        if (($private['replacement'] ?? '') !== '') {
+            $published = VaultItem::query()->where('source', $private['source'])->sole();
+            $created = array_diff(array_keys($after), [$foreign, $copy, $private['published_id']]);
+            insist(count($after) === 3 && count($created) === 1 && ! isset($after[$private['published_id']])
+                && in_array($published->cipher_id, $created, true) && VaultItem::count() === 1
+                && app(VaultSettings::class)->configuration() !== null, 'fixture_replacement_outcome_invalid');
+            echo json_encode(['replacement' => $private['replacement'], 'marker_copy_unchanged' => true,
+                'foreign_unchanged' => true, 'fresh_cipher_created' => 1, 'old_recorded_cipher_absent' => true,
+                'new_cipher_recorded' => true, 'configuration_retained' => true]);
+            echo "\n";
+            $GLOBALS['vault_fixture_finished'] = true;
+
+            return;
+        }
         insist($keep || $sharedRefusal ? $after == $before : count($after) === 2
             && ! isset($after[$private['published_id']]), 'fixture_published_item_outcome_invalid');
         insist((app(VaultSettings::class)->configuration() === null) === ! $sharedRefusal
