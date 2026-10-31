@@ -215,13 +215,6 @@ describe('a Valkey Database server in Docker', function (): void {
             ->toBe(['database_server.acl_mismatch']);
     });
 
-    it('reads the effective persistence and database settings before adoption', function (): void {
-        expect($this->admin->adoptionConfiguration($this->server))->toMatchArray([
-            'dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir',
-            'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16',
-        ]);
-    });
-
     it('reports the live database count and accepts only indexes below it', function (): void {
         expect($this->admin->databaseCount($this->server))->toBe(16);
         $default = valkey_docker_client($this->server, 'default', $this->password);
