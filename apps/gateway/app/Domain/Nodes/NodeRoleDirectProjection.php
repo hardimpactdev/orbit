@@ -23,7 +23,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
 {
     public function input(Operation $operation): array
     {
-        $snapshot = ValidatedData::object($operation->input['_role'] ?? []);
+        $snapshot = $this->snapshot($operation);
         if (isset($operation->state['role_footprint'])) {
             $snapshot['footprint'] = $operation->state['role_footprint'];
         }
@@ -49,7 +49,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = ValidatedData::object($data['result'] ?? []);
-        $snapshot = ValidatedData::object($operation->input['_role'] ?? []);
+        $snapshot = $this->snapshot($operation);
         $snapshot['footprint'] = $operation->state['role_footprint'] ?? $snapshot['footprint'];
         $artifacts = NodeFootprintProjection::artifacts(ValidatedData::object($result['footprint'] ?? []));
 
@@ -61,6 +61,16 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 return $projected;
             }
             if (! $status->terminal()) {
+                if (($result['target_completed'] ?? false) === true) {
+                    $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
+                    $assignment->markConvergenceActive();
+                    $projected->state = [...($projected->state ?? []), 'role_target_completed' => true];
+                    $projected->save();
+                    app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($snapshot['footprint']), ValidatedData::object($result['footprint']), $artifacts);
+                }
+                if (($result['source_completed'] ?? false) === true && $operation->kind === 'node.role_relocate') {
+                    NodeRoleRemovalProjection::recordCleanup(ValidatedData::object(ValidatedData::object($operation->input['_relocate'])['source']), true);
+                }
                 if (($result['runtime_completed'] ?? false) === true) {
                     app(NodeRoleRuntimeProjection::class)->record($snapshot);
                 }
@@ -89,7 +99,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 } elseif (($cli['outcome'] ?? null) !== 'skipped' && ! isset($cli['error_code'])) {
                     app(NodeCliState::class)->clear($assignment->node);
                 }
-            } else {
+            } elseif (($projected->state['role_target_completed'] ?? false) !== true) {
                 $assignment->markConvergenceFailed(ValidatedData::string($result['failed_step'] ?? 'operation'),
                     ValidatedData::string($result['error_code'] ?? 'operation.cancelled'));
             }
@@ -98,5 +108,19 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
 
             return $projected;
         });
+    }
+
+    /** @return array<string,mixed> */
+    private function snapshot(Operation $operation): array
+    {
+        if ($operation->kind !== 'node.role_relocate') {
+            return ValidatedData::object($operation->input['_role'] ?? []);
+        }
+        $transfer = ValidatedData::object($operation->input['_relocate']);
+
+        return [...ValidatedData::object($transfer['target']),
+            'publication' => $transfer['publication'], 'certificates' => $transfer['certificates'],
+            'metrics_fleet' => $transfer['metrics_fleet'], 'source_removal' => $transfer['source'],
+            'withdrawal_grace_seconds' => $transfer['withdrawal_grace_seconds']];
     }
 }

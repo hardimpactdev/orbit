@@ -59,15 +59,16 @@ it('returns only the authenticated DNS participant public artifacts', function (
         ->and(json_encode($input))->not->toContain('runtime_material', '$secret');
 });
 
-it('refuses an admitted runtime participant that has no publication responsibility', function (): void {
+it('gives an admitted runtime participant only its public cleanup plan without publication artifacts', function (): void {
     $root = FleetFixtures::node('publication-runtime', [RoleName::Metrics]);
     $foreign = FleetFixtures::node('publication-no-duty', [RoleName::Database]);
     $plan = app(NodeRolePublicationInput::class)->capture($root, RoleName::Metrics);
     $operation = new Operation(['kind' => 'node.role_remove', 'node_id' => $root->id,
         'target_type' => 'node', 'target_id' => $root->id, 'status' => 'running',
         'input' => ['participant_node_ids' => [$root->id, $foreign->id], '_role_remove' => ['publication' => $plan]]]);
-    expect(fn () => app(NodeRolePublicationInput::class)->publicInput($operation, $foreign->id))
-        ->toThrow(ResourceOperationException::class, 'not an admitted role publication');
+    $input = app(NodeRolePublicationInput::class)->publicInput($operation, $foreign->id);
+    expect($input)->toBe(['node_id' => $foreign->id, 'role_removal' => ['publication' => $plan]]);
+    expect($input)->not->toHaveKeys(['caddy_publication', 'php_publication', 'private_dns_publication', 'runtime_material']);
 });
 
 it('refuses a role root with no immutable publication plan instead of treating it as empty', function (): void {
@@ -77,4 +78,40 @@ it('refuses a role root with no immutable publication plan instead of treating i
         'input' => ['participant_node_ids' => [$root->id], '_role' => []]]);
     expect(fn () => app(NodeRolePublicationInput::class)->publicInput($operation, $root->id))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('renders fresh parent publication through the canonical lower without exposing role material', function (): void {
+    $node = FleetFixtures::node('parent-publication-dns', [RoleName::Vpn]);
+    $plan = ['caddy_node_ids' => [], 'php_node_ids' => [], 'dns_node_ids' => [$node->id]];
+    $input = app(NodeRolePublicationInput::class)->forPlan($plan, $node);
+    expect(array_keys($input))->toBe(['node_id', 'private_dns_publication']);
+    expect($input['private_dns_publication']['node_id'])->toBe($node->id);
+    expect(json_encode($input))->not->toContain('runtime_material', '$secret');
+});
+
+it('preserves lifecycle publication metadata when delegating to the parent callable lower', function (string $kind): void {
+    $node = FleetFixtures::node('lifecycle-publication-dns', [RoleName::Vpn]);
+    $plan = ['caddy_node_ids' => [], 'php_node_ids' => [], 'dns_node_ids' => [$node->id]];
+    $source = ['node_id' => $node->id, 'role' => 'websocket'];
+    $snapshot = ['publication' => $plan, 'role' => 'websocket', 'metrics_fleet' => null,
+        'proxy_node_ids' => [1, 18], 'source_node_id' => $node->id, 'source' => $source];
+    $operation = new Operation(['kind' => $kind, 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
+        'status' => 'running', 'input' => ['participant_node_ids' => [$node->id],
+            $kind === 'node.role_remove' ? '_role_remove' : '_relocate' => $snapshot]]);
+    $input = app(NodeRolePublicationInput::class)->publicInput($operation, $node->id);
+    expect($input['role'])->toBe('websocket');
+    expect($input['metrics_fleet'])->toBeNull();
+    expect($input['proxy_node_ids'])->toBe([1, 18]);
+    expect($input['role_removal'])->toBe($kind === 'node.role_remove' ? $snapshot : $source);
+    if ($kind === 'node.role_relocate') {
+        expect($input['source_removal'])->toBe($source);
+    }
+    expect($input['private_dns_publication']['node_id'])->toBe($node->id);
+})->with(['node.role_remove', 'node.role_relocate']);
+
+it('refuses direct publication rendering for a Node outside the admitted plan', function (): void {
+    $node = FleetFixtures::node('parent-outside-publication', [RoleName::Database]);
+    $plan = ['caddy_node_ids' => [], 'php_node_ids' => [], 'dns_node_ids' => []];
+    expect(fn () => app(NodeRolePublicationInput::class)->forPlan($plan, $node))
+        ->toThrow(ResourceOperationException::class, 'not an admitted role publication');
 });

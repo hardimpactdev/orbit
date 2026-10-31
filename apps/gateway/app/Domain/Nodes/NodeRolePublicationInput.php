@@ -76,24 +76,58 @@ final readonly class NodeRolePublicationInput
         $this->assertPublicParticipant($operation, $callerNodeId);
         $snapshot = $this->snapshot($operation);
         $node = Node::query()->findOrFail($callerNodeId);
-        $root = ValidatedData::object($operation->input['_role'] ?? []);
-        $input = ['node_id' => $callerNodeId];
+        $root = ValidatedData::object(match ($operation->kind) {
+            'node.role_remove' => $operation->input['_role_remove'] ?? [],
+            'node.role_relocate' => $operation->input['_relocate'] ?? [],
+            default => $operation->input['_role'] ?? [],
+        });
+        if ($operation->kind === 'node.role_relocate' && ($root['source_node_id'] ?? null) === $callerNodeId) {
+            $source = ValidatedData::object($root['source']);
+            $inputSource = ['source_removal' => $source];
+        } else {
+            $inputSource = [];
+        }
+        $input = ['node_id' => $callerNodeId, ...$inputSource];
+        if ($operation->kind === 'node.role_remove') {
+            $input['role_removal'] = $root;
+        } elseif ($operation->kind === 'node.role_relocate') {
+            $input['role_removal'] = $root['source'];
+        }
         if (isset($root['role'])) {
             $input['role'] = $root['role'];
             $input['metrics_fleet'] = $root['metrics_fleet'] ?? null;
+            $input['proxy_node_ids'] = $root['proxy_node_ids'] ?? [];
         }
-        if (in_array($callerNodeId, $snapshot['caddy_node_ids'], true) || in_array($callerNodeId, $snapshot['php_node_ids'], true)) {
+
+        return in_array($callerNodeId, self::participants($snapshot), true)
+            ? [...$input, ...$this->forPlan($snapshot, $node)] : $input;
+    }
+
+    /** Fresh public artifacts only. The owning parent checks its immutable participant authority.
+     * @param  array<string,mixed>  $plan
+     * @return array<string,mixed>
+     */
+    public function forPlan(array $plan, Node $node): array
+    {
+        $plan = ['caddy_node_ids' => ValidatedData::integerList($plan['caddy_node_ids'] ?? null),
+            'php_node_ids' => ValidatedData::integerList($plan['php_node_ids'] ?? null),
+            'dns_node_ids' => ValidatedData::integerList($plan['dns_node_ids'] ?? null)];
+        if (! in_array($node->id, self::participants($plan), true)) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'The Node is not an admitted role publication participant.', 403);
+        }
+        $input = ['node_id' => $node->id];
+        if (in_array($node->id, $plan['caddy_node_ids'], true) || in_array($node->id, $plan['php_node_ids'], true)) {
             $artifacts = $this->publication->forNode($node);
-            if (in_array($callerNodeId, $snapshot['caddy_node_ids'], true)) {
+            if (in_array($node->id, $plan['caddy_node_ids'], true)) {
                 $input['caddy_publication'] = $artifacts['caddy_publication'];
                 $input['ingress_firewall'] = CaddySiteRoles::nodeServes($node->id, RoleName::Ingress)
                     ? $this->firewall->converge($node, RoleName::Ingress) : $this->firewall->remove($node, RoleName::Ingress);
             }
-            if (in_array($callerNodeId, $snapshot['php_node_ids'], true)) {
+            if (in_array($node->id, $plan['php_node_ids'], true)) {
                 $input['php_publication'] = $artifacts['php_publication'];
             }
         }
-        if (in_array($callerNodeId, $snapshot['dns_node_ids'], true)) {
+        if (in_array($node->id, $plan['dns_node_ids'], true)) {
             $input['private_dns_publication'] = $this->publication->dns($node);
         }
 

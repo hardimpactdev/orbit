@@ -33,7 +33,7 @@ it('records certificate before rendering Caddy and switches WebSocket DNS only a
     expect($dns->isServing($source->id))->toBeTrue();
 });
 
-it('preserves the ready WebSocket target and source serving mark through failed source withdrawal', function (): void {
+it('withdraws only source DNS before grace while preserving the ready WebSocket target', function (): void {
     $source = FleetFixtures::node('state-withdraw-source');
     $target = FleetFixtures::node('state-withdraw-target', [RoleName::WebSocket]);
     $unrelated = FleetFixtures::node('state-withdraw-unrelated');
@@ -50,7 +50,7 @@ it('preserves the ready WebSocket target and source serving mark through failed 
     $state->record($plan, 'withdrawal_started', $source->id);
 
     expect($certificates->published($source->id, 'websocket'))->toBeFalse();
-    expect($dns->isServing($source->id))->toBeTrue();
+    expect($dns->isServing($source->id))->toBeFalse();
     expect($certificates->published($target->id, 'websocket'))->toBeTrue();
     expect($dns->isServing($target->id))->toBeTrue();
     expect($certificates->published($unrelated->id, 'websocket'))->toBeTrue();
