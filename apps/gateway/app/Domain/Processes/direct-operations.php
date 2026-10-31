@@ -20,5 +20,5 @@ return [
     'process.destroy' => [...$control],
     'process.restart' => [...$control],
     'process.start' => [...$control],
-    'process.stop' => [...$control],
+    'process.stop' => [...$control, 'workflow' => 'operation-process-stop', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'runtime', 'step' => 'verify']],
 ];

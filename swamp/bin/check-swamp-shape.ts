@@ -1481,8 +1481,22 @@ export function analyzeYaml(
       Object.keys(inputs).join() === "run" &&
       inputs.run === "/usr/bin/sleep 31";
   };
-  // Official @swamp/ssh 2026.10.23.1 marks precisely this transport field
-  // sensitive and consumes it natively. Do not extend this to method inputs.
+  const officialSshTask = (path: string[]) => {
+    if (
+      !file.startsWith("workflows/") || path[0] !== "jobs" ||
+      !/^\d+$/.test(path[1] ?? "") || path[2] !== "steps" ||
+      !/^\d+$/.test(path[3] ?? "") || path[4] !== "task"
+    ) return undefined;
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    const steps = object(jobs[Number(path[1])]).steps;
+    const step = Array.isArray(steps) ? steps[Number(path[3])] : undefined;
+    const task = object(object(step).task);
+    return task.type === "behavior" && task.behaviorType === "@swamp/ssh" ||
+        task.type === "model_method" && task.modelType === "@swamp/ssh"
+      ? task
+      : undefined;
+  };
+  // Official @swamp/ssh 2026.10.23.1 consumes these transport fields natively.
   const sshIdentity = (path: string[]) => {
     let field: string[];
     if (
@@ -1490,20 +1504,7 @@ export function analyzeYaml(
       path[0] === "globalArguments"
     ) {
       field = path.slice(1);
-    } else if (
-      file.startsWith("workflows/") && path[0] === "jobs" &&
-      /^\d+$/.test(path[1] ?? "") && path[2] === "steps" &&
-      /^\d+$/.test(path[3] ?? "") && path[4] === "task" &&
-      path[5] === "globalArgs"
-    ) {
-      const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-      const steps = object(jobs[Number(path[1])]).steps;
-      const step = Array.isArray(steps) ? steps[Number(path[3])] : undefined;
-      const task = object(object(step).task);
-      if (
-        !(task.type === "behavior" && task.behaviorType === "@swamp/ssh" ||
-          task.type === "model_method" && task.modelType === "@swamp/ssh")
-      ) return false;
+    } else if (path[5] === "globalArgs" && officialSshTask(path)) {
       field = path.slice(6);
     } else return false;
     return field.join(".") === "transport.identityContent" ||
@@ -1528,6 +1529,8 @@ export function analyzeYaml(
   };
   const walk = (value: unknown, path: string[]) => {
     const nativeIdentity = sshIdentity(path);
+    const nativeStdin = path.length === 7 && path[5] === "inputs" &&
+      path[6] === "stdin" && officialSshTask(path)?.methodName === "exec";
     if (nativeIdentity && !wholeVault(value)) add("secret-native-source");
     if (typeof value === "string") {
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
@@ -1538,7 +1541,7 @@ export function analyzeYaml(
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !(nativeIdentity && wholeVault(value)) && !(envValue &&
+        !((nativeIdentity || nativeStdin) && wholeVault(value)) && !(envValue &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&

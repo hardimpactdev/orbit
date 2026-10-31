@@ -8,6 +8,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationCompletion;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -25,7 +26,7 @@ beforeEach(function (): void {
     Queue::fake();
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'process-admission', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'throwaway',
@@ -167,4 +168,59 @@ it('refuses update intent while a Route owns the Process reservation lock', func
         expect(Operation::query()->where('kind', 'process.update')->exists())->toBeFalse();
     });
     $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:changed'])->assertAccepted();
+});
+
+it('submits complete public stop inputs and waits for native completion before changing desired state', function (): void {
+    $this->postJson('/api/v1/processes', [...$this->payload, 'environment' => ['PASSWORD' => 'stop-private-value']])->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active', 'desired_state' => 'running']);
+
+    $this->postJson('/api/v1/processes/'.$process->id.'/stop')->assertAccepted()->assertJsonPath('data.kind', 'process.stop');
+
+    $socket = app(WebSocketClient::class);
+    $request = array_last($socket->sent);
+    expect($request['payload']['workflowIdOrName'])->toBe('operation-process-stop');
+    expect($request['payload']['inputs']['intent']['control'])->toEqual([
+        'process_id' => $process->id, 'runtime' => 'docker',
+        'name' => 'orbit-process-'.$process->id.'-throwaway', 'on_demand' => false, 'vite' => null,
+    ]);
+    expect($request['payload']['inputs']['intent']['ssh_execution']['target']['user'])->toBe('orbit');
+    expect($request['payload']['inputs']['intent']['ssh_execution']['target'])->toBe(['name' => 'target', 'host' => $this->node->wireguard_ip, 'user' => 'orbit', 'port' => 22, 'host_keys' => ['ssh-ed25519 fixture-public-host-key']]);
+    expect($request['payload']['inputs']['execution_secrets'])->toEqual((object) []);
+    expect(json_encode($request))->not->toContain('stop-private-value');
+    expect($process->refresh()->desired_state->value)->toBe('running');
+    expect($process->status->value)->toBe('provisioning');
+    Queue::assertNothingPushed();
+});
+
+it('projects explicit stop from one terminal history read without a Gateway result callback', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active', 'desired_state' => 'running']);
+    $this->postJson('/api/v1/processes/'.$process->id.'/stop')->assertAccepted();
+    $operation = Operation::query()->where('kind', 'process.stop')->sole();
+    $runId = $operation->state['swamp_run_id'];
+    $history = ['id' => $runId, 'workflowName' => 'operation-process-stop', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => '2026-10-31T18:00:00Z', 'completedAt' => '2026-10-31T18:00:01Z',
+        'jobs' => [['name' => 'runtime', 'steps' => [
+            ['name' => 'verify', 'outputs' => ['stdout' => '{"ready":true,"state":"exited"}']],
+        ]]],
+    ];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'synthetic-native-reader']);
+
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'succeeded'], ['job' => 'runtime', 'step' => 'verify']);
+
+    expect($terminal->status)->toBe(OperationStatus::Succeeded);
+    expect($terminal->result)->toBe(['ready' => true, 'state' => 'exited']);
+    expect($process->refresh()->desired_state->value)->toBe('stopped');
+    expect($process->status->value)->toBe('active');
+    expect($socket->sent)->toHaveCount(1);
+    expect($socket->sent[0]['type'])->toBe('workflow.history.get');
+    Queue::assertNothingPushed();
 });

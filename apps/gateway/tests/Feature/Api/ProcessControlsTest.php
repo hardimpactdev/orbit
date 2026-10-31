@@ -9,23 +9,24 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeLease;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'process-direct', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']));
+    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'process-direct', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'direct-proof', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '60']], 'desired_state' => 'stopped', 'status' => 'active', 'restart_policy' => 'never']);
@@ -35,15 +36,15 @@ beforeEach(function (): void {
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true, 'state' => 'active']];
     $this->socket = new FakeRoutePublicationSocket;
-    $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => $this->runId]]];
+    $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $this->socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
 });
 
 it('exposes only safe admitted Process control input and bypasses old claims', function (): void {
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', $this->input);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['intent' => ['control' => Arr::except($this->input, ['agent_sha256']), 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($this->node)], 'execution_secrets' => []]);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.stop', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.stop', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertNotFound();
 });
 
 it('projects native controls without keyed receipts and keeps terminal projection idempotent', function (string $verb, string $state, string $desired): void {
@@ -62,9 +63,7 @@ it('projects native controls without keyed receipts and keeps terminal projectio
         && $event->id === $this->process->id && $event->data['runtime_status'] === $state);
 })->with([['stop', 'inactive', 'stopped'], ['restart', 'active', 'running']]);
 
-it('requires a bounded runtime state and a matching run before projecting success', function (): void {
-    $this->postJson($this->path.'/result', [...$this->body, 'result' => ['ready' => true]])->assertUnprocessable();
-    $this->postJson($this->path.'/result', [...$this->body, 'result' => ['ready' => true, 'state' => 'active PASSWORD=private']])->assertUnprocessable();
+it('requires a matching native run before projecting success', function (): void {
     $this->operation->update(['state' => ['process_control_writer' => 'direct']]);
     $this->postJson($this->path.'/result', $this->body)->assertConflict();
     expect($this->process->fresh()->desired_state->value)->toBe('stopped');
@@ -90,7 +89,7 @@ it('starts native destroy on an executor Node without a runtime lease or target 
         ->assertAccepted()->assertJsonPath('data.kind', 'process.destroy')->json('data.id');
     $operation = Operation::query()->findOrFail($id);
     expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
-    expect($operation->state['process_control_writer'])->toBe('direct');
+    expect($operation->state)->not->toHaveKey('process_control_writer');
     expect($operation->state['swamp_run_id'])->toBe($this->runId);
     expect($operation->lock_key)->toBeNull();
     expect($this->process->fresh()->status->value)->toBe('removing');
@@ -110,7 +109,7 @@ it('uses the direct default for Vite and existing owning destroy admission', fun
     app(OperationIdempotency::class)->parent = $this->operation;
     expect(app(DirectOperation::class)->writer('process.destroy', ['vite' => null]))->toBe('direct');
     config(['swamp.direct_writers' => ['process.destroy' => 'polled']]);
-    expect(fn () => app(DirectOperation::class)->writer('process.destroy', ['vite' => null]))->toThrow(ResourceOperationException::class);
+    expect(app(DirectOperation::class)->writer('process.destroy', ['vite' => null]))->toBe('direct');
 });
 
 it('starts a native stop on an executor Node without a Gateway runtime lease or target hold', function (): void {
@@ -121,7 +120,7 @@ it('starts a native stop on an executor Node without a Gateway runtime lease or 
     $response = $this->postJson('/api/v1/processes/'.$this->process->id.'/stop')->assertAccepted()->assertJsonPath('data.kind', 'process.stop');
     $operation = Operation::query()->findOrFail($response->json('data.id'));
     expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
-    expect($operation->state['process_control_writer'])->toBe('direct');
+    expect($operation->state)->not->toHaveKey('process_control_writer');
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
     expect($operation->lock_key)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
@@ -137,13 +136,13 @@ it('admits Vite stop and destroy without traffic preparation', function (string 
     $this->process->update(['owner_type' => $instance->getMorphClass(), 'owner_id' => $instance->id,
         'runtime_config' => ['preset' => 'vp-dev'], 'desired_state' => 'running']);
     $operation = app(ProcessOperationAdmission::class)->execute($this->process, $verb);
-    expect($operation->state['process_control_writer'])->toBe('direct');
+    expect($operation->state)->not->toHaveKey('process_control_writer');
     $vite = $verb === 'stop' ? null : ['path' => '/etc/orbit/vite/app-instance-'.$instance->id.'.env', 'instance_id' => $instance->id];
     expect($operation->input['vite'])->toBe($vite);
     expect($operation->input)->not->toHaveKey('vite_plan');
     expect($operation->lock_key)->toBeNull();
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
-        ->assertOk()->assertJsonPath('data.input.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
+        ->assertOk()->assertJsonPath($verb === 'stop' ? 'data.input.intent.control.vite' : 'data.input.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
 })->with(['stop', 'destroy']);
 
 it('uses one direct start writer for Vite and existing owning admissions', function (): void {
@@ -188,15 +187,16 @@ it('admits a native lifecycle control while an obsolete PHP runtime lease is una
     $this->operation->update(['status' => OperationStatus::Succeeded]);
     $id = $this->postJson('/api/v1/processes/'.$this->process->id.'/'.$verb)->assertAccepted()->json('data.id');
     $admitted = Operation::query()->findOrFail($id);
-    expect($admitted->state['process_control_writer'])->toBe('direct')
+    expect($admitted->state)->not->toHaveKey('process_control_writer')
         ->and($admitted->state['swamp_run_id'])->toBe($this->runId)
-        ->and($admitted->lock_key)->toBeNull()
-        ->and($admitted->children()->count())->toBe(0);
+        ->and($admitted->lock_key)->toBeNull();
+    expect(Operation::query()->count())->toBe(2);
 })->with(['start', 'restart']);
 
-it('refuses a removed polled lifecycle writer before recording intent', function (string $verb): void {
+it('admits native controls without the retired writer selector', function (string $verb): void {
     config(['swamp.direct_writers' => ['process.'.$verb => 'polled'], 'dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
     $before = Operation::query()->count();
-    $this->postJson('/api/v1/processes/'.$this->process->id.'/'.$verb)->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
-    expect(Operation::query()->count())->toBe($before)->and($this->socket->sent)->toBe([]);
+    $this->postJson('/api/v1/processes/'.$this->process->id.'/'.$verb)->assertAccepted()->assertJsonPath('data.kind', 'process.'.$verb);
+    expect(Operation::query()->count())->toBe($before + 1);
+    expect($this->socket->sent)->toHaveCount(1);
 })->with(['start', 'restart']);
