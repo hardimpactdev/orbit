@@ -193,6 +193,26 @@ final readonly class NativeRouteTransferPlan
             'route_transfer' => $snapshot, 'route_retire' => $retire];
     }
 
+    /** Existing URL material only, after the parent records authoritative placement.
+     * The parent declares its own fixed private source and Node-bound field; values stay inside its callback.
+     *
+     * @return list<array{instance_id:int,name:string,input:array<string,mixed>}>
+     */
+    public function environmentMaterial(Operation $operation, int $nodeId): array
+    {
+        $snapshot = ValidatedData::object($operation->input['route_transfer']);
+        $instance = Instance::query()->findOrFail(ValidatedData::integer($snapshot['instance_id']));
+        if (! in_array($nodeId, ValidatedData::integerList($operation->input['participant_node_ids']), true)
+            || ! in_array($nodeId, [$snapshot['source_node_id'], $snapshot['destination_node_id']], true)
+            || $instance->node_id !== $nodeId) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Route URL material belongs only to the authoritative Instance placement.', 403);
+        }
+        $view = clone $operation;
+        $view->input = [...$operation->input, 'route_removal' => ['nodes' => [['node_id' => $nodeId, 'url_instance_ids' => [$instance->id]]]]];
+
+        return app(NativeRouteEnvironmentMaterial::class)->forNode($view, $nodeId);
+    }
+
     /** @return array<string,mixed> */
     private function routeRow(Route $route): array
     {
