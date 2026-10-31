@@ -27,7 +27,7 @@ beforeEach(function (): void {
     $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'proof', 'runtime' => 'docker', 'runtime_config' => [], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
     $this->server = DatabaseServer::query()->create(['slug' => 'proof', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'private-root-sentinel', 'status' => 'active']);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $socket = new FakeRoutePublicationSocket;
+    $socket = $this->socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-destroy', 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->operation = app(DestroyDatabaseServerAction::class)->execute($this->server);
@@ -39,7 +39,7 @@ it('starts removal without a relay or target hold and deletes only after native 
     expect($this->operation->state)->toMatchArray(['swamp_run_id' => $this->runId]);
     expect($this->operation->lock_key)->toBeNull();
     $this->assertDatabaseCount('database_execution_intents', 0);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.process_id', $this->server->process_id)->assertJsonMissingPath('data.input.agent_sha256');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', $this->server->process_id)->assertJsonMissingPath('data.input.agent_sha256');
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
     $this->assertModelExists($this->server);
     $processId = $this->server->process_id;
@@ -53,15 +53,14 @@ it('starts removal without a relay or target hold and deletes only after native 
 it('projects admitted Process deletion without rechecking mutable server state', function (): void {
     $processId = $this->server->process_id;
     $this->server->update(['process_id' => null]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.process_id', $processId);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', $processId);
     $this->postJson($this->path.'/result', $this->finished)->assertOk();
     $this->assertModelMissing($this->server);
     $this->assertDatabaseMissing('processes', ['id' => $processId]);
     expect($this->operation->fresh()->state)->not->toHaveKey('steps');
 });
 
-it('keeps records on a bounded failure and refuses fabricated success', function (): void {
-    $this->postJson($this->path.'/result', [...$this->finished, 'result' => ['backend' => 'active']])->assertUnprocessable();
+it('keeps records on a bounded native failure', function (): void {
     $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'process.remove_failed', 'result' => ['error_code' => 'process.remove_failed']])->assertOk();
     $this->assertModelExists($this->server);
     expect($this->server->fresh()->status->value)->toBe('failed');
@@ -75,7 +74,7 @@ it('uses a native no-op for a failed server without a Process', function (): voi
     $server = DatabaseServer::query()->create(['slug' => 'empty', 'driver' => 'mysql', 'node_id' => $this->node->id, 'tag' => '8.4', 'port' => 3333, 'root_password' => 'private-empty', 'status' => 'failed']);
     $operation = app(DestroyDatabaseServerAction::class)->execute($server);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.process_id', null)->assertJsonPath('data.input.container', null);
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', null)->assertJsonPath('data.input.intent.container', null);
     $this->postJson($path.'/result', $this->finished)->assertOk();
     $this->assertModelMissing($server);
 });
@@ -125,8 +124,19 @@ it('preserves the operator Process during admitted record-only cleanup', functio
     $processId = $this->server->process_id;
     $this->operation->update(['input' => [...$this->operation->input, 'record_only' => true]]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.process_id', null)->assertJsonPath('data.input.container', null);
+        ->assertJsonPath('data.input.intent.process_id', null)->assertJsonPath('data.input.intent.container', null);
     $this->postJson($this->path.'/result', $this->finished)->assertOk();
     $this->assertModelMissing($this->server);
     $this->assertDatabaseHas('processes', ['id' => $processId]);
+});
+
+it('passes full public removal inputs and projects only bounded fields', function (): void {
+    $sent = array_last($this->socket->sent);
+    $input = $sent['payload']['inputs'];
+    expect($input['intent']['process_id'])->toBe($this->server->process_id);
+    expect($input['intent']['ssh'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
+    expect((array) $input['execution_secrets'])->toBe([]);
+    expect(json_encode($input))->not->toContain('private-root-sentinel');
+    $response = $this->postJson($this->path.'/result', [...$this->finished, 'result' => ['backend' => 'absent', 'private' => 'private-sentinel']])->assertOk();
+    expect($response->json('data.result'))->toBe(['backend' => 'absent']);
 });

@@ -28,7 +28,7 @@ class SshAccessNative(NativeTestCase):
         self.own.chmod(0o600)
         fixture = self.repo / 'fixture-ssh'
         fixture.write_text('#!' + sys.executable + '\n' + '''
-import ast,json,os,sys
+import ast,json,os,sys,shlex
 from pathlib import Path
 args=sys.argv[1:]
 own=OWN in args
@@ -41,6 +41,7 @@ if own:
     with Path(AUDIT).open('a') as stream: stream.write(json.dumps({'action':'verify','own_identity':True,'control_path':control})+'\\n')
     raise SystemExit(1 if Path(FAILURE).exists() else 0)
 assert os.environ.get('SSH_AUTH_SOCK') or ('-i' in args and args[args.index('-i')+1] != OWN)
+assert 'sudo' not in shlex.split(args[-1])
 body=sys.stdin.read()
 tree=ast.parse(body)
 node=next(node for node in tree.body if isinstance(node,ast.Assign) and isinstance(node.targets[0],ast.Name) and node.targets[0].id=='BOOTSTRAP_INPUT')
