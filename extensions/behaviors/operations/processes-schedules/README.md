@@ -3,8 +3,8 @@
 This family executes `process.create`, `process.update`, `process.start`,
 `process.stop`, `process.restart`, `process.destroy`, `schedule.create`,
 `schedule.enable`, `schedule.run`, and `schedule.destroy`. Direct controls are
-described below. The remaining polled kinds use the following contract;
-`process.start` is removed from their discovery, registration and executor.
+described below. The remaining polled kinds use the following contract; The
+combined polled Process/Schedule executor is retired.
 
 The Gateway admits the target and complete specification. It supplies references
 for unit content, Docker commands and environments, and Schedule commands. Swamp
@@ -35,7 +35,7 @@ Run the focused checks from the repository root:
 ```sh
 ~/.swamp/deno/deno fmt --check extensions/behaviors/operations/processes-schedules
 ~/.swamp/deno/deno lint extensions/behaviors/operations/processes-schedules
-~/.swamp/deno/deno test --allow-read=. extensions/behaviors/operations/processes-schedules/mod_test.ts
+deno test --allow-all extensions/behaviors/operations/processes-schedules/{installation,schedule-system,control}_test.ts
 python3 -B -m unittest discover -s extensions/behaviors/operations/processes-schedules -p native_test.py -v
 ```
 
@@ -60,32 +60,18 @@ child targets; Swamp sends only stable `runtime-N` keys, waits through kit B,
 then invokes the Gateway readiness descriptor. Restart success carries the exact
 verified `process_ids` list. Its registration remains gated on kit C.
 
-The polled family claims only kinds listed in `registration.json`, persists an
-assignment before effects, and keeps retries bound to that Operation. Native
-tests remove placement labels only inside their disposable local repository.
-They prove DAG and receipt recovery, while deployed worker placement needs the
-live verification. Direct `process.stop`, `process.destroy`, `schedule.enable`,
-`schedule.run` and `schedule.destroy` are absent from that registration and
-scheduled discovery; the executor refuses them before any claim or command.
-Their Gateway declarations require direct execution and refuse an explicit
-polled writer.
+The Gateway records intent; each native parent owns its complete run.
 
 ## Direct Schedule controls
 
-`operation-schedule-control` handles `schedule.enable`, `schedule.run` and
-standalone `schedule.destroy` through the shared direct Operation boundary. It
-reads the Gateway-admitted input after root-run binding, then runs the fixed
-local agent command with `sudo -n` as the configured Node user. It verifies the
-admitted agent digest, root ownership, regular file and safe permissions first.
-Native command deadlines are15/45/60seconds and output is capped at16KiB. Only a
-typed ready result or error code reaches Gateway projection. No root socket or
-broker is used. Node209 uses `swamp209-migration-a`; other targets are exactly
-`orbit-node-<admitted node_id>` with matching Node labels.
-
-`schedule.enable`, `schedule.run` and `schedule.destroy` require direct
-execution. Enable's owning Gateway slice removes PHP activation and its polled
-contract. Create and Instance definition installation retain their polled paths
-until their own complete cutovers.
+Schedule create runs `operation-schedule-create`. The exact admitted Node reads
+its command through the shared private callback. `schedule-system.ts` installs
+public service/timer units with system commands and no agent action. Timer
+firings only admit a native run. Swamp executes the command from protected stdin
+as its recorded account and journals business output under the Schedule UUID.
+Identical installation preserves actual timer state; conflicting public or
+obsolete artifacts refuse before effects. Safe inputs, results and history
+contain no command bytes. The existing private source is reused.
 
 ## Direct Process controls
 

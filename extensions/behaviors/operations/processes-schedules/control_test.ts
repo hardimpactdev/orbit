@@ -1,10 +1,5 @@
-import {
-  assertEquals,
-  assertRejects,
-  assertThrows,
-} from "jsr:@std/assert@1.0.14";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
 import { scheduleControl } from "./control.ts";
-import { assertAgent } from "./agent.ts";
 const args = {
   operation_id: 17,
   node_id: 9,
@@ -13,8 +8,15 @@ const args = {
 };
 const input = {
   id: "9a067a27-c2ce-45c5-83f5-735e03dc5b2f",
-  agent_sha256: "a".repeat(64),
+  command_hash: "a".repeat(64),
   user: "orbit",
+  group: "orbit",
+  home: "/home/orbit",
+  shell: "/bin/sh",
+  login_shell: false,
+  calendar: "daily",
+  timeout_seconds: 60,
+  desired: "enabled" as const,
   working_directory: "/home/orbit",
 };
 function fixture() {
@@ -117,12 +119,7 @@ Deno.test("non-admitted commands are rejected before the Node action", async () 
 Deno.test("destroy passes only admitted removal fields to the Node action", async () => {
   const f = fixture();
   f.current.kind = "schedule.destroy";
-  const removal = {
-    id: input.id,
-    agent_sha256: input.agent_sha256,
-    group: "orbit",
-    cascade: false,
-  };
+  const removal = { ...input, cascade: false };
   Object.assign(f.current, { input: removal });
   assertEquals(
     await f.control.methods.control.execute({
@@ -133,27 +130,9 @@ Deno.test("destroy passes only admitted removal fields to the Node action", asyn
   );
   assertEquals(f.seen, [{ kind: "schedule.destroy", input: removal }]);
 });
-Deno.test("Node action refuses untrusted binaries and a different admitted digest", () => {
-  const file = { isFile: true, isSymlink: false, uid: 0, mode: 0o100755 };
-  assertAgent(file, input.agent_sha256, input.agent_sha256);
-  for (
-    const changed of [{ isFile: false }, { isSymlink: true }, { uid: 1000 }, {
-      mode: 0o100777,
-    }, { mode: null }]
-  ) {
-    assertThrows(() =>
-      assertAgent(
-        { ...file, ...changed },
-        input.agent_sha256,
-        input.agent_sha256,
-      )
-    );
-  }
-  assertThrows(() => assertAgent(file, "b".repeat(64), input.agent_sha256));
-});
-Deno.test("missing admitted digest refuses before the local action", async () => {
+Deno.test("missing admitted command hash refuses before the local action", async () => {
   const f = fixture();
-  Reflect.deleteProperty(f.current.input, "agent_sha256");
+  Reflect.deleteProperty(f.current.input, "command_hash");
   await assertRejects(() => f.control.methods.control.execute(args, f.ctx));
   assertEquals(f.seen, []);
 });

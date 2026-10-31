@@ -8,9 +8,20 @@ function save(state: unknown) {
 export function http(method: string, url: string, body?: unknown) {
   const state = read();
   state.calls.push({ method, url, body });
+  if (url.endsWith("/failure")) {
+    save(state);
+    return Promise.resolve({ status: 200, body: { data: state.operation } });
+  }
   if (state.unbound) {
     save(state);
     return Promise.resolve({ status: 409, body: {} });
+  }
+  if (url.includes("/private-material")) {
+    save(state);
+    return Promise.resolve({
+      status: 200,
+      body: { data: { command: "/usr/bin/true" } },
+    });
   }
   if (method === "POST") {
     const report = body as Record<string, unknown>;
@@ -33,4 +44,13 @@ export function action(kind: string, input: unknown) {
   return Promise.resolve(
     state.refuse ? { error_code: "schedule.run_failed" } : { ready: true },
   );
+}
+
+export function install(_name: string, input: Record<string, unknown>) {
+  const state = read();
+  state.actions++;
+  const { command: _command, ...safe } = input;
+  state.seen = safe;
+  save(state);
+  return Promise.resolve({});
 }

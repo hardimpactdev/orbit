@@ -3,6 +3,8 @@ import { nativeEffect } from "./native_effect.ts";
 import { ValkeyClient } from "./valkey_client.ts";
 import type { PrivateMaterialUse } from "./user_create_action.ts";
 
+const registration = { type: "@nckrtl/database-connection-update" } as const;
+
 const Input = z.discriminatedUnion("validate_index", [
   z.object({ validate_index: z.literal(false) }).strict(),
   z.object({
@@ -74,7 +76,7 @@ export function connectionUpdate(
 ) {
   return nativeEffect(
     "database.update",
-    "@nckrtl/database-connection-update",
+    registration.type,
     UpdateResult,
     (input, gateway, signal) =>
       updateConnection(
