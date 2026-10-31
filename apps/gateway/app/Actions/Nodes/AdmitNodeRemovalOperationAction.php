@@ -7,11 +7,11 @@ namespace App\Actions\Nodes;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\NodeRemovalEnvironmentSource;
 use App\Domain\Nodes\NodeRemovalInput;
+use App\Domain\Nodes\NodeRemovalIntent;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalPolicy;
 use App\Domain\Nodes\NodeRoleMetricsInput;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\NativeRouteRemovalPlan;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -82,10 +82,7 @@ final readonly class AdmitNodeRemovalOperationAction
                 $input['private_bindings']['metrics_runtime'] = ['owner_node_id' => $metricsOwner, 'read_node_ids' => [$metricsOwner], 'write_node_ids' => []];
             }
             $input = NodeRemovalEnvironmentSource::bind($input, $executor->id);
-            $routes = ValidatedData::object($execution['routes']);
-            app(NativeRouteRemovalPlan::class)->recordWithdrawal(['routes' => array_map(
-                static fn (mixed $row): array => ['route_id' => ValidatedData::integer(ValidatedData::object($row)['route_id'])],
-                is_array($routes['routes']) ? array_values($routes['routes']) : [])]);
+            $input['_removal'] = app(NodeRemovalIntent::class)->capture($node, $executor, $input);
 
             return $this->operations->execute('node.remove', 'node', $node->id, $executor->id, $input, 'operator', $requestId);
         });
