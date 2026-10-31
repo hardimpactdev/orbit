@@ -90,7 +90,21 @@ contributing source literal once, including when a wrapper passes it to Python.
 The scanner resolves TypeScript literals, templates, tagged templates,
 concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
-polling, retries and lock calls are counted separately. Agent calls are checked
+polling, retries and lock calls are counted separately.
+
+The approved Route private DNS grace is the sole sleep exception. It matches only
+`workflows/workflow-route-dns-grace.yaml`, job `grace`, step
+`wait-private-dns-ttl`, target `orbit-node-209`, labels `{node: '209'}`, and the
+exact `command/shell` behavior `route-dns-grace.execute` with the sole input
+`run: /usr/bin/sleep 31`. The workflow contains one job and one step. This covers
+the existing 30-second private DNS TTL after replacement publication and before
+old Caddy sites, certificate scopes and LAN allowances retire, including restore.
+Core and the official workflows extension provide no native delay. The binding
+guide's **Approved exception: Route private DNS grace** records the approval.
+Other files, steps, tasks, durations, flags, wrappers and commands remain findings;
+the grandfather baseline does not grow. The Route owner owns phase ordering.
+
+Agent calls are checked
 against an explicit observer/action inventory; dynamic agent targets are unknown,
 not passing. The agent rule examines executable command positions in shell and
 Python subprocess calls, including sudo, shell and SSH wrappers. Service units

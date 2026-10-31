@@ -35,6 +35,17 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
             throw new ResourceOperationException('operation.execution_forbidden', 'Private Route material belongs to an admitted workload Node.', 403);
         }
         $route = Route::query()->findOrFail(ValidatedData::integer($intent['route_id']));
+
+        return $this->forRoute($route, $ownerNodeId, $intent, $rollingBack);
+    }
+
+    /** Pure rendering for full-input parents; never resolves an Operation or calls a Node.
+     * @param  array<string,mixed>  $intent
+     * @param  array<int,Route>  $candidates  Prospective replacements keyed by original Route id.
+     * @return list<array{instance_id:int,name:string,input:array<string,mixed>}>
+     */
+    public function forRoute(Route $route, int $ownerNodeId, array $intent, bool $rollingBack = false, array $candidates = []): array
+    {
         $writes = [];
         foreach (RouteExecutionProof::objects($intent['workloads'] ?? []) as $member) {
             if ($member['node_id'] !== $ownerNodeId) {
@@ -63,7 +74,12 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
             if ($instance->selected_php_version === null) {
                 continue;
             }
-            $routes = RouteWebRoot::applicationUrlCandidates($instance);
+            $routes = RouteWebRoot::applicationUrlCandidates($instance)->reject(static fn (Route $stored): bool => isset($candidates[$stored->id]));
+            foreach ($candidates as $candidate) {
+                if ($candidate->hasWebRoot() && $candidate->targets->contains('instance_id', $instance->id)) {
+                    $routes->push($candidate);
+                }
+            }
             if (! $rollingBack && $route->hasWebRoot() && ! $routes->contains('id', $route->id)) {
                 $routes->push($route);
             }

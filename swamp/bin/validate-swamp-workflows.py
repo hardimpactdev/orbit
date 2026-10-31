@@ -26,7 +26,7 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     args.report.unlink(missing_ok=True)
-    source = Path("extensions/behaviors/node-worker/install.ts").read_text()
+    source = Path("extensions/behaviors/node-worker/config.ts").read_text()
     pin = re.search(r'export const Swamp = \{\s*version: "([\w.-]+)",\s*sha256: "([a-f0-9]{64})",\s*bytes: (\d+)', source)
     if not pin:
         raise SystemExit("Missing canonical runtime pin")
