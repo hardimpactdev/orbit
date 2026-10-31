@@ -17,6 +17,8 @@ use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Saloon\Enums\Method;
@@ -200,25 +202,19 @@ it('renders credentials in human output without leaking them in errors', functio
         ->and($output)->toContain('22222222-2222-4222-8222-222222222222');
 });
 
-it('enables Metrics on an explicit node and sends the node payload', function (): void {
+it('follows the admitted role Operation when enabling Metrics', function (): void {
+    $queued = ['id' => 42, 'kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => 7,
+        'status' => 'queued', 'sequence' => 1, 'input' => ['role' => 'metrics']];
+    $finished = [...$queued, 'status' => 'succeeded', 'sequence' => 2, 'result' => ['role' => 'metrics', 'ready' => true]];
     $mock = MockClient::global([
-        EnableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'active'],
-            'meta' => ['request_id' => '66666666-6666-4666-8666-666666666666'],
-        ]),
+        EnableMetricsRequest::class => MockResponse::make(['data' => $queued, 'meta' => ['request_id' => metrics_cli_request_id()]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $finished, 'meta' => ['request_id' => metrics_cli_request_id()]]),
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
-
     [$exit, $output] = metrics_cli_display('metrics:enable', ['node' => '7']);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
-
-    expect($exit)->toBe(0)
-        ->and($output)->toContain('Metrics operation completed for node #7.')
-        ->and($flat)->toContain('Status active')
-        ->and($flat)->toContain('Request ID 66666666-6666-4666-8666-666666666666')
-        ->and($output)->not->toContain('Publication');
-
-    $mock->assertSentCount(1);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
+    expect($exit)->toBe(0)->and($output)->toContain('Metrics succeeded.')->toContain('Operation: 42');
+    $mock->assertSent(static fn ($request): bool => $request instanceof EnableMetricsRequest && $request->body()->all() === ['node_id' => 7]);
+    $mock->assertSent(ShowOperationRequest::class);
 });
 
 it('refuses non-interactive disable without --force before reading status', function (): void {
@@ -404,31 +400,17 @@ it('resets credentials through the focused request and renders exact JSON', func
         ->toBe('https://10.44.0.1/api/v1/metrics/credentials/reset');
 });
 
-it('enables Metrics on a node given by name', function (): void {
+it('follows Metrics enable given by exact Node name', function (): void {
+    $finished = ['id' => 42, 'kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => 2,
+        'status' => 'succeeded', 'sequence' => 2, 'input' => ['role' => 'metrics'], 'result' => ['ready' => true]];
     $mock = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [
-                metrics_cli_node_payload(id: 1, name: 'gateway', status: 'active', roles: ['gateway', 'vpn']),
-                metrics_cli_node_payload(id: 2, name: 'app-dev', status: 'active', roles: ['app-dev']),
-            ],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
-        EnableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 2, 'status' => 'active'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        ListNodesRequest::class => MockResponse::make(['data' => [metrics_cli_node_payload(id: 2, name: 'app-dev', status: 'active', roles: ['app-dev'])], 'meta' => ['request_id' => metrics_cli_request_id()]]),
+        EnableMetricsRequest::class => MockResponse::make(['data' => $finished, 'meta' => ['request_id' => metrics_cli_request_id()]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $finished, 'meta' => ['request_id' => metrics_cli_request_id()]]),
+        ShowRealtimeRequest::class => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
-
-    $this
-        ->artisan('metrics:enable', ['node' => 'app-dev', '--json' => true])
-        ->expectsOutput(json_encode([
-            'node_id' => 2,
-            'status' => 'active',
-            'request_id' => metrics_cli_request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->assertSuccessful();
-
-    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 2]);
+    $this->artisan('metrics:enable', ['node' => 'app-dev', '--json' => true])->expectsOutputToContain('node.role_add')->assertSuccessful();
+    $mock->assertSent(static fn ($request): bool => $request instanceof EnableMetricsRequest && $request->body()->all() === ['node_id' => 2]);
 });
 
 it('rejects an unknown node name before any Metrics mutation', function (): void {

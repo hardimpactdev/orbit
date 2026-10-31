@@ -18,7 +18,9 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\MetricsController;
 use App\Models\Activity;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Routing\Route;
+use Tests\Support\Fleet\FleetFixtures;
 
 it('exposes the eight focused metrics routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
@@ -232,12 +234,14 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
         'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($gateway);
+    $enable = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $target->id,
+        'node_id' => $target->id, 'input' => ['role' => 'metrics'], 'state' => [], 'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
     $manager = Mockery::mock(MetricsRoleManager::class);
     $manager
         ->shouldReceive('enable')
         ->once()
         ->with($target->id)
-        ->andReturn(new MetricsMutationData($target->id, 'active'));
+        ->andReturn($enable);
     $manager
         ->shouldReceive('remove')
         ->once()
@@ -248,8 +252,9 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/metrics', ['node_id' => $target->id])
-        ->assertCreated()
-        ->assertJsonPath('data.status', 'active');
+        ->assertAccepted()
+        ->assertJsonPath('data.kind', 'node.role_add')
+        ->assertJsonPath('data.status', 'queued');
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
@@ -389,6 +394,11 @@ it('refuses a second Metrics claim through the generic role route with a stable 
         'public_ssh_host' => '192.0.2.3',
         'wireguard_ip' => '10.44.0.3',
     ]);
+
+    FleetFixtures::bind();
+    $other->update(['platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:managed', 'agent_secret_hash' => str_repeat('e', 64)]);
+    config(['swamp_workers.nodes' => [$other->id]]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])

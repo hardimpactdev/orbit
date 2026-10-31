@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
-use App\Actions\Nodes\AddNodeRoleAction;
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Metrics\MetricsMutationData;
 use App\Domain\Metrics\ExporterPreference;
@@ -15,23 +15,28 @@ use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
+use App\Models\Operation;
 
 final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 {
     public function __construct(
-        private AddNodeRoleAction $add,
-        private RemoveNodeRoleAction $remove,
         private ExporterPreferenceRepository $preferences,
         private MetricsFleetReconciler $fleet,
         private MetricsPublicationReport $report,
         private ManagedNodeEligibility $eligibility,
     ) {}
 
-    public function enable(int $nodeId): MetricsMutationData
+    public function enable(int $nodeId): Operation
     {
+        if (($existing = app(OperationIdempotency::class)->replay('node.role_add')) !== null) {
+            return $existing;
+        }
+
         if (Node::query()->whereHas('roles', static fn ($query) => $query->where(
             'role',
             RoleName::Metrics->value,
@@ -42,9 +47,9 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
         $node = Node::query()->findOrFail($nodeId);
         $this->guardLinuxPlatform($node);
-        $result = $this->add->execute($node, RoleName::Metrics, true);
+        app(DirectOperation::class)->writer('node.role_add');
 
-        return new MetricsMutationData($nodeId, $result['assignment']->status->value);
+        return app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::Metrics);
     }
 
     public function remove(bool $force, bool $purge): MetricsMutationData
@@ -64,7 +69,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
 
         $node = $nodes->sole();
-        $this->remove->execute($node, RoleName::Metrics, $force, $purge);
+        app(RemoveNodeRoleAction::class)->execute($node, RoleName::Metrics, $force, $purge);
 
         // The baseline records what it did to the publication. Reading the
         // Gateway state again here would report a guess, and the guess is

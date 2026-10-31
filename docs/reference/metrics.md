@@ -35,7 +35,7 @@ The role runs its containers and units itself. They create no `Process` records,
 
 ## Enable and recover
 
-Enable the role with `orbit metrics:enable <node>`. The Node must be active. The role is a singleton and can share a Node with any other role. A second enable returns `node.role_conflict`, even when the existing assignment failed.
+Enable the role with `orbit metrics:enable <node>`. The Gateway returns202 with a `node.role_add` Operation, and the CLI follows it to completion. Admission records intent only; the native role workflow executes the change. The Node must be active. The role is a singleton and can share a Node with any other role. A second enable returns `node.role_conflict`, even when the existing assignment failed.
 
 Convergence runs four steps in this order. Each failure records its step as `failed_step`.
 
