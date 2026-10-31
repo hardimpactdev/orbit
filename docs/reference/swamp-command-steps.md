@@ -11,7 +11,7 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 ## Secret inputs
 
-Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper delegates to the native vault push primitive, which sends the value on stdin and retains only a synchronization digest. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
+Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper sends one native `vault.put` request over the authenticated TLS WebSocket and retains only a synchronization digest. The value is in `payload.value`, never process arguments. It accepts only a matching vault/key acknowledgement from a `local_encryption` vault before recording synchronization. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 
@@ -24,7 +24,9 @@ inputs:
 
 Swamp resolves the value. The script uses stdin or a protected config file when handing it to a tool. It must not expand a secret into `run:`, argv or shell tracing. Environment delivery does not isolate the value from the worker user: `/proc` can expose the environment.
 
-The primitive requires native remote stdin support and the exact approved vault permission. Official e459 does not accept remote vault-put stdin. That upstream gap remains blocked; the helper adds no access or runtime workaround. Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
+Official e459 accepts this server protocol even though its remote CLI refuses stdin. The request is `{type: "vault.put", id, payload: {vaultName, key, value, force: true}}`; no refresh hook is supplied. The primitive still requires approved vault authority; it adds no permission. Official e459 authorizes `write` on `vault:<name>` with the key in request context. That action also admits delete and annotate; a `methods: [put]` restriction does not narrow it because the handler supplies no method name. A put-only request does not authorize a broader write grant.
+
+Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ## Terminal outputs
 
