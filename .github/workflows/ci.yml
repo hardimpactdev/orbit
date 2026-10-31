@@ -25,6 +25,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Cache frozen published agent
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/orbit-frozen-agent
+          key: frozen-agent-${{ runner.os }}-${{ hashFiles('apps/gateway/resources/agent/frozen-manifest.json') }}
+      - name: Check frozen agent command references
+        run: bin/check-frozen-agent-commands --binary-cache "$HOME/.cache/orbit-frozen-agent"
       - uses: ./.github/actions/ci-scope
         id: scope
         with:

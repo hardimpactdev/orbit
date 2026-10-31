@@ -85,7 +85,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 | Check | Work |
 | --- | --- |
-| PHP syntax and Composer | Validate every tracked Composer manifest and run `php -l` on added or changed PHP files, with at most four workers |
+| PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
 | Generated contracts | Boot the Gateway and load all Operation kinds, executors and completion contracts; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
@@ -94,7 +94,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
 
-Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. A PR with changes under `apps/agent` builds the agent directly, without querying published releases. A PR without those changes starts no agent build or delivery work. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
