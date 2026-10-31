@@ -3,122 +3,151 @@ import {
     CaddyInput,
     CaddyPublication,
     prepareCaddyInput,
+    PublicationConnection,
 } from "../caddy-input.ts";
-
-const SectionInput = CaddyInput.extend({
-    blocks: z.array(
-        z.object({ source: z.string(), name: z.string(), block: z.string() })
-            .strict(),
-    ).optional(),
-}).transform(({ blocks: _blocks, ...publication }) => publication);
-const Args = z.object({
-    run_id: z.uuid(),
-    node_id: z.number().int().positive(),
-    user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
-    before: SectionInput,
-    after: SectionInput,
+import { mergeCaddy, mergePhp, phpSections } from "./sections.ts";
+const Name = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
+const Version = z.string().regex(/^[1-9][0-9]*\.[0-9]+$/);
+const Placement = z.object({
+    node_id: z.number().int().positive().refine((id) => id !== 1 && id !== 18),
+    user: Name,
+    control_node_id: z.number().int().positive(),
+    connection: PublicationConnection,
     direction: z.enum(["forward", "restore"]),
-}).strict();
-const Assets = z.object({
-    metadata_json: z.string(),
-    input_json: z.string(),
-    input_path: z.string(),
-    stage_path: z.string(),
-    scripts: z.record(z.string(), z.string()),
-    versions: z.array(z.string()).optional(),
 });
-export async function publicationAssets(
-    raw: unknown,
-    extensionFile: (name: string) => string,
-) {
-    const args = Args.parse(raw);
-    for (const caddy of [args.before, args.after]) {
+const Section = CaddyInput.extend({
+    blocks: z.array(
+        z.object({ source: z.string(), name: z.string(), block: z.string() }),
+    ).optional(),
+});
+const CaddyArgs = Placement.extend({
+    before: Section,
+    after: Section,
+    current: z.string(),
+}).strict();
+export async function composeCaddy(raw: unknown) {
+    const value = CaddyArgs.parse(raw);
+    for (const caddy of [value.before, value.after]) {
+        const { blocks: _blocks, ...input } = caddy;
         await prepareCaddyInput({
-            node_id: args.node_id,
-            target_node_id: args.node_id,
-            run_id: args.run_id,
-            publication: { node_id: args.node_id, user: args.user, caddy },
+            node_id: value.node_id,
+            user: value.user,
+            control_node_id: value.control_node_id,
+            connection: value.connection,
+            caddy: input,
         });
     }
-    return payloadAssets(args, "caddy", [
-        "compose_caddy",
-        "cleanup_payload",
-    ], extensionFile);
-}
-
-async function payloadAssets(
-    value: { run_id: string },
-    family: "caddy" | "php" | "dns",
-    names: string[],
-    extensionFile: (name: string) => string,
-) {
-    const bytes = new TextEncoder().encode(JSON.stringify(value));
-    // Full public input and metadata must fit the shared measured 8 MiB frame.
-    if (bytes.length > 4194304) throw new Error("caddy.delta_input_too_large");
-    const roots = {
-        caddy: "/etc/caddy",
-        php: "/etc/php",
-        dns: "/var/lib/orbit/private-dns",
-    };
-    const stage_path = `${roots[family]}/.orbit-deltas/${value.run_id}`;
-    return {
-        metadata_json: JSON.stringify({ run_id: value.run_id, family }),
-        input_json: new TextDecoder().decode(bytes),
-        input_path: `${stage_path}/input.json`,
-        stage_path,
-        scripts: Object.fromEntries(
-            names.map((name) => [name, extensionFile(`scripts/${name}.py`)]),
+    const [before, after] = value.direction === "forward"
+        ? [value.before, value.after]
+        : [value.after, value.before];
+    const content = mergeCaddy(before.content, after.content, value.current);
+    const version = Array.from(
+        new Uint8Array(
+            await crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(content),
+            ),
         ),
+        (b) => b.toString(16).padStart(2, "0"),
+    ).join("").slice(0, 32);
+    return {
+        node_id: value.node_id,
+        user: value.user,
+        control_node_id: value.control_node_id,
+        connection: value.connection,
+        caddy: {
+            content,
+            version,
+            listen_addresses: [
+                ...new Set([
+                    ...before.listen_addresses,
+                    ...after.listen_addresses,
+                ]),
+            ].sort(),
+            unserved: !content.includes("# orbit: "),
+        },
     };
 }
-
 const Php = z.object({
-    account_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
-    configurations: z.record(
-        z.string().regex(/^[1-9][0-9]*\.[0-9]+$/),
-        z.string().max(1048576),
-    ),
+    account_user: Name,
+    configurations: z.record(Version, z.string().max(1048576)),
 }).strict();
-const PhpArgs = z.object({
-    run_id: z.uuid(),
-    node_id: z.number().int().positive().refine((id) => id !== 1 && id !== 18),
-    user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
-    before: Php,
-    after: Php,
-    direction: z.enum(["forward", "restore"]),
-}).strict();
-export async function phpAssets(
-    raw: unknown,
-    extensionFile: (name: string) => string,
-) {
-    const args = PhpArgs.parse(raw);
+const PhpArgs = Placement.extend({ before: Php, after: Php }).strict();
+export function planPhp(raw: unknown) {
+    const value = PhpArgs.parse(raw);
     if (
-        args.before.account_user !== args.user ||
-        args.after.account_user !== args.user
+        value.before.account_user !== value.user ||
+        value.after.account_user !== value.user
     ) throw new Error("php.account_conflict");
+    const indices = [value.before, value.after].map((input) => {
+        const index = new Map<string, string>();
+        for (const [version, text] of Object.entries(input.configurations)) {
+            for (const name of phpSections(text).groups.keys()) {
+                if (index.has(name)) throw new Error("php.shared_pool_invalid");
+                index.set(name, version);
+            }
+        }
+        return index;
+    });
+    for (const [name, version] of indices[0]) {
+        if (indices[1].has(name) && indices[1].get(name) !== version) {
+            throw new Error("php.version_move_requires_withdrawal");
+        }
+    }
     const versions = [
         ...new Set([
-            ...Object.keys(args.before.configurations),
-            ...Object.keys(args.after.configurations),
+            ...Object.keys(value.before.configurations),
+            ...Object.keys(value.after.configurations),
         ]),
     ].sort();
-    const output = await payloadAssets(args, "php", [
-        "php_stage",
-        "php_validate",
-        "php_publish",
-        "php_enable",
-        "php_reload",
-        "php_confirm",
-        "php_restore",
-        "php_restore_enable",
-        "php_restore_runtime",
-        "cleanup_payload",
-    ], extensionFile);
-    return { ...output, versions };
+    return { versions, versions_json: JSON.stringify(versions) };
 }
-
+const PhpCompose = PhpArgs.extend({ current: z.string(), account: z.string() });
+const File = z.object({
+    version: Version,
+    path: z.string(),
+    content: z.string(),
+    ensure: z.enum(["present", "absent"]),
+});
+export function composePhp(raw: unknown) {
+    const value = PhpCompose.parse(raw);
+    const { current: _current, account: _account, ...plan } = value;
+    const { versions } = planPhp(plan);
+    const account = z.object({
+        user: Name,
+        group: Name,
+        home: z.string().startsWith("/"),
+    }).strict().parse(JSON.parse(value.account));
+    if (account.user !== value.user) throw new Error("php.account_conflict");
+    const current = z.record(Version, z.string()).parse(
+        JSON.parse(value.current),
+    );
+    const resolve = (text: string) =>
+        text.replaceAll("__ORBIT_NODE_GROUP__", account.group).replaceAll(
+            "/__ORBIT_NODE_HOME__",
+            account.home,
+        );
+    const [before, after] = value.direction === "forward"
+        ? [value.before, value.after]
+        : [value.after, value.before];
+    const files = versions.flatMap((version) => {
+        const previous = resolve(before.configurations[version] ?? ""),
+            desired = resolve(after.configurations[version] ?? "");
+        if (previous === desired) return [];
+        if (!(version in current)) {
+            throw new Error("php.current_config_missing");
+        }
+        const content = mergePhp(previous, desired, current[version]);
+        return [{
+            version,
+            path: `/etc/php/${version}/fpm/pool.d/orbit-scopes.conf`,
+            content,
+            ensure: content ? "present" as const : "absent" as const,
+        }];
+    });
+    return { files };
+}
 type Context = {
-    extensionFile: (name: string) => string;
     writeResource: (
         spec: string,
         name: string,
@@ -127,55 +156,60 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
-        assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
-        publication: {
+        caddy: {
+            schema: CaddyPublication,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        plan: {
             schema: z.object({
-                publication: CaddyPublication,
-                result_json: z.string(),
+                versions: z.array(Version),
+                versions_json: z.string(),
             }),
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        php: {
+            schema: z.object({ files: z.array(File) }),
             lifetime: "infinite",
             garbageCollection: 10,
         },
     },
     methods: {
+        caddy: {
+            description:
+                "Compose captured Route sections against current public Caddy text",
+            arguments: CaddyArgs,
+            execute: async (args: unknown, ctx: Context) => ({
+                dataHandles: [
+                    await ctx.writeResource(
+                        "caddy",
+                        "caddy",
+                        await composeCaddy(args),
+                    ),
+                ],
+            }),
+        },
+        phpPlan: {
+            description: "Select admitted shared PHP versions",
+            arguments: PhpArgs,
+            execute: async (args: unknown, ctx: Context) => ({
+                dataHandles: [
+                    await ctx.writeResource("plan", "plan", planPhp(args)),
+                ],
+            }),
+        },
         php: {
             description:
-                "Shape immutable shared PHP deltas and resolve one-action scripts",
-            arguments: PhpArgs,
-            execute: async (raw: unknown, ctx: Context) => {
-                const value = await phpAssets(raw, ctx.extensionFile);
-                await ctx.writeResource("assets", "assets", value);
-                return value;
-            },
-        },
-        assets: {
-            description:
-                "Validate public section inputs and resolve native action files",
-            arguments: Args,
-            execute: async (raw: unknown, ctx: Context) => {
-                const value = await publicationAssets(raw, ctx.extensionFile);
-                await ctx.writeResource("assets", "assets", value);
-                return value;
-            },
-        },
-        publication: {
-            description:
-                "Shape the public composed candidate and its observed generation precondition",
-            arguments: z.object({ stdout: z.string() }).strict(),
-            execute: async (args: { stdout: string }, ctx: Context) => {
-                const value = CaddyPublication.parse(JSON.parse(args.stdout));
-                const output = {
-                    publication: value,
-                    result_json: JSON.stringify({
-                        ready: true,
-                        version: value.caddy.version,
-                    }),
-                };
-                await ctx.writeResource("publication", "publication", output);
-                return output;
-            },
+                "Compose captured PHP pools against current public text",
+            arguments: PhpCompose,
+            execute: async (args: unknown, ctx: Context) => ({
+                dataHandles: [
+                    await ctx.writeResource("php", "php", composePhp(args)),
+                ],
+            }),
         },
     },
 };

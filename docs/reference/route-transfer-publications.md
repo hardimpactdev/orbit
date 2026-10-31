@@ -1,40 +1,32 @@
 ---
 title: Route transfer publications
-description: Admission-time Route publication capture for native Instance transfer.
+description: Capture immutable Route transfer inputs and apply public configuration with official file actions.
 ---
 
-# Route transfer publications
+`NativeRouteTransferPublication::capture(array $transferPlan, array $destinationInstallations)` captures complete public `before` and `after` publications before physical cutover or terminal database projection. The parent calls it in its admission transaction after canonical Route and Process capture. The second argument is `process_installations.destination_installations`, including the admitted checkout and collision-adjusted Vite ports. No model is saved to render the prospective view.
 
-`NativeRouteTransferPublication::capture(array $transferPlan, array $destinationInstallations)` captures complete public `before` and `after` publications while Instance and Route placement remain unchanged. The Instance parent calls this inside its admission transaction after `NativeRouteTransferPlan::capture` and canonical Process capture. The second argument is exactly `process_installations.destination_installations`, including its admitted destination Instance identity and any collision-adjusted Vite ports. The Route lower does not allocate ports or reuse the source ports. The parent records the result as workflow input. Steps never call the Gateway to refresh it.
+Each Node row contains `node_id`, `user`, `control_node_id`, the existing Gateway SSH `connection`, and `before`/`after` Caddy, shared PHP and DNS artifacts. The connection comes from `NativeCaddyPublicationInput::connectionForNode`. Certificate scopes describe references; they do not authorize leaf deletion. Steps never fetch intent from the Gateway.
 
-The prospective view replaces the moving Instance's site projections through `DevelopmentSiteRepository::projectSites`. It uses the admitted destination Node and checkout path, and the canonical Route placements. Unrelated sites and literal alias domains remain in the complete inventory. No Node identity, Instance placement, Route status or target row is saved to produce the view. The request-scoped view is always cleared after rendering, including on failure.
+## Public configuration composition
 
-Each Node row contains its public identity and `before`/`after` Caddy, shared PHP and private DNS artifacts. Caddy captures every ordered site block, including multiple blocks with the same source and scope. A certificate scope list describes references in each view. It is an inventory, not permission to delete a leaf.
+An admission snapshot can become stale. The native workflows first read current public configuration on the effect Node. Typed metadata applies only the captured changed Caddy groups or PHP pools: current must equal the captured before value or the desired value. Other observed additions, changes and deletions remain intact. `direction: restore` reverses the captured delta. An owned conflict fails before a write.
 
-## Publication revisions
+### Caddy
 
-An admission snapshot is not fresh state. A worker must compare each changed owned section with its captured before value. If current equals before, apply after; if current already equals after, keep it. Otherwise refuse the owned conflict. Sections outside the delta retain their current values, including unrelated additions and deletions. Restoration applies the inverse delta under the same rule. Replaying a whole admission-time file is unsafe.
+`operation-route-caddy-delta` reads `/etc/caddy/Caddyfile`, composes the public candidate, and applies it through official `@swamp/cfgmgmt/file` on the Gateway worker. Separate Node-local steps run `caddy validate` and `systemctl reload caddy`, in that order. The metadata method is `@nckrtl/route-publication-command.caddy`.
 
-The executable Caddy section merge retains all blocks in a source/name group. It requires the canonical global header to agree, and refuses foreign or malformed files. The resulting candidate still requires native Caddy validation, serialized activation and reload before cleanup. A merge result alone does not prove a loaded configuration or authorize certificate deletion.
+### Shared PHP
 
-## Native Caddy composition
+`operation-route-php-delta` reads the admitted shared pool files. The metadata methods `phpPlan` and `php` select versions and compose pool text. Native `forEach` applies each changed file through official cfgmgmt, validates the affected FPM configurations with `php-fpm -t`, and reloads their services. Withdrawing the last pool removes the managed pool file. Existing local tuning remains under its owner. Runtime installation and service prerequisites belong to the parent.
 
-The reusable native Caddy workflow is `operation-route-caddy-delta`, with fixed terminal selector `completion/result`. A parent passes its real `operation_id`, `kind`, `node_id`, an empty `execution_secrets` object, and `intent: {node_id: publicationNodeId, user, connection: node.connection, before: node.before.caddy, after: node.after.caddy, direction: "forward" | "restore"}`. It uses `@nckrtl/route-publication-command.assets` to validate the public payload and resolve shipped action files. The capture's optional block evidence is validated and omitted from the shipped payload.
+### Parent composition
 
-Official `@swamp/cfgmgmt/directory` and `@swamp/cfgmgmt/file` actions on control Node209 install the complete public JSON intent on the effect Node. They use the admitted `connection: {nodeHost,nodeUser}` and the official extension's default SSH identity selection. No base64, chunk offsets, shell environment data channel or custom copy implementation remains.
+Both workflows receive the real parent `operation_id`, `kind`, `node_id`, empty `execution_secrets`, and `intent: {node_id, user, control_node_id, connection, before, after, direction}`. Their fixed terminal selector is `completion/result`. Logical Nodes 1 and 18 are outside these Node-local validation workflows.
 
-The following placed steps compose the candidate against the current managed file, and call the canonical Caddy native workflow with the observed digest and generation path. An intervening revision refuses before publication. Resume from `compose` recalculates the candidate using the same immutable delta; no step retries itself or reads the Gateway. The complete public input is bounded to 4 MiB within the shared 8 MiB native frame. Logical Nodes 1/18 are refused.
+There is no encoded payload channel, host staging file, custom transport, deployment journal, generation tracking, load receipt or custom lock. Configuration text travels through native inputs and outputs and official file actions. Validation failure skips reload. Re-running reads the current configuration again and converges. The observation and file application are separate steps; this lower does not claim an atomic comparison across them. Parents own the ordering of their publications and recovery.
 
-Four official native scratch cases cover forward/restoration with unrelated revisions, owned conflicts, a missing destination file, and an intervening revision followed by native resume. Host commands are fixtures; these are not production or remote-custody proofs. Cleanup also needs proof that no loaded publication uses a certificate. This capture does not switch the transfer parent or make a live admission ready. Private DNS requires its own format-aware delta application; capturing it does not establish that application.
+## Scope and Swamp facilities
 
-## Native PHP composition
+Checked official cfgmgmt 2026.10.27.1 file/template/line/systemd and official SSH copy. Official file handles writes and ownership. The systemd extension has no reload method, so each reload is one visible command. Format-aware composition is pure public-data policy: whole-file replacement and line matching do not preserve unrelated Caddy groups or PHP pool sections. Swamp owns placement, dependencies, fan-out and resume.
 
-The shared PHP composition is `operation-route-php-delta`, with fixed terminal selector `completion/result`. Its parent identity and public intent have the Caddy delta shape, using `node.before.php` and `node.after.php`. The metadata method is `@nckrtl/route-publication-command.php`. It returns the full public JSON input, destination paths, version identifiers and shipped script paths. Official cfgmgmt actions install that file before local FPM actions run. No execution secret is needed. Native steps stage, validate, publish, enable, reload and confirm each version; failure restores files, service enablement and runtime in separate steps.
-
-Shared PHP deltas compare the exact changed pool sections with the current managed file. Unrelated pools and local text stay on the worker. A conflicting revision refuses before publication. Publication and compensation compare the captured file identity as well as its digest. The result never returns worker pool text. Missing application directories refuse; the parent must materialize destination files before this lower runs. This transfer lower does not move a pool between PHP versions in one call. Version migration requires the owning parent to order withdrawal and preparation explicitly. Its existence does not establish private DNS or loaded-certificate cleanup safety.
-
-## Swamp facilities used
-
-This lower uses core placed command/shell steps, shipped script files and native dependencies, fan-out and resume. Checked official swamp-extensions `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6` cfgmgmt file/template/line/systemd and SSH exec/script. Whole-file replacement and line convergence cannot preserve unrelated current Caddy groups or PHP pool sections under an immutable before/after delta. Format-aware merging and Caddy/FPM validation remain family actions; execution, scheduling, results and transport remain native. No custom transport or callback is added.
-
-Official `@swamp/cfgmgmt` stable package `2026.10.27.1` is recorded in Swamp's standard pulled-extension inventory. Each runtime must pull that official package before validating or loading these workflows. SSH key delivery remains with its existing owner; capture does not mint keys, change permissions or authorize a live action.
+This lower supplies capture and Caddy/PHP publication steps. It does not switch the transfer parent or establish DNS application, loaded-certificate cleanup, archive custody or live transfer readiness. DNS and certificate-scope inventories must not be treated as proof of those effects.

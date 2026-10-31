@@ -17,6 +17,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -26,6 +27,9 @@ use App\Models\Project;
 use App\Models\Route;
 
 beforeEach(function (): void {
+    $gateway = Node::query()->create(['name' => 'gateway-control', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->gateway = $gateway;
     $this->node = Node::query()->create(['name' => 'native-dev', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Native', 'slug' => 'native', 'repository_url' => 'https://example.test/native.git', 'root' => 'public']);
@@ -151,8 +155,10 @@ it('captures prospective complete publications without changing stored placement
     $rows = collect($publications['nodes'])->keyBy('node_id');
     $source = $rows[$this->node->id];
     $destination = $rows[$this->destination->id];
-    expect($source['connection'])->toBe(['nodeHost' => '10.44.0.11', 'nodeUser' => 'orbit'])
-        ->and($destination['connection'])->toBe(['nodeHost' => '10.44.0.12', 'nodeUser' => 'orbit'])
+    expect($source['control_node_id'])->toBe($this->gateway->id)
+        ->and($source['connection'])->toMatchArray(['nodeHost' => '10.44.0.11', 'nodeUser' => 'orbit', 'become' => true])
+        ->and($destination['connection'])->toMatchArray(['nodeHost' => '10.44.0.12', 'nodeUser' => 'orbit', 'become' => true])
+        ->and($destination['connection']['nodeIdentityFile'])->toBe(app(SshKeyProvider::class)->privateKeyPath())
         ->and($source['before']['caddy']['content'])->toContain('native.test')->toContain('survivor.source.test')
         ->and($source['after']['caddy']['content'])->toContain('survivor.source.test')->not->toContain('https://native.test')
         ->and($destination['after']['caddy']['content'])->toContain('native.destination.test')->toContain('/srv/new-native')->toContain('extra.test')

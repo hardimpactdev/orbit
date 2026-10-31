@@ -1,24 +1,8 @@
 manifestVersion: 1
-name: "@nckrtl/route-publication-command"
-version: 2026.10.31.1
+name: '@nckrtl/route-publication-command'
+version: 2026.10.31.2
 visibility: private
 license: MIT
-description: Public Route publication sections and placed candidate composition.
+description: Pure public Route publication composition for official file actions.
 behaviors:
   - operations/routes/publication-command/assets.ts
-additionalFiles:
-  - scripts/caddy_sections.py
-  - scripts/publication_files.py
-  - scripts/compose_caddy.py
-  - scripts/cleanup_payload.py
-  - scripts/php_sections.py
-  - scripts/php_common.py
-  - scripts/php_stage.py
-  - scripts/php_validate.py
-  - scripts/php_publish.py
-  - scripts/php_enable.py
-  - scripts/php_reload.py
-  - scripts/php_confirm.py
-  - scripts/php_restore.py
-  - scripts/php_restore_enable.py
-  - scripts/php_restore_runtime.py
