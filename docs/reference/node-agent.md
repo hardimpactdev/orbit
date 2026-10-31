@@ -607,7 +607,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 ## Doctor
 
-Doctor checks the agent in the `node` family on every managed Linux Node.
+Doctor checks the agent in the `node` family on every managed Linux Node. Doctor reads existing continuous unit and Docker observations through the Gateway. Swamp performs domain reads directly and never starts a request-time agent helper. The agent remains frozen at its last published pin during the port; its old command definitions stay until the final observer-only cleanup.
 
 | Issue code | Meaning |
 | --- | --- |
