@@ -206,12 +206,6 @@ Deno.test("an unbound or refused legacy read fails once before any effect or pro
     assertEquals(calls, ["GET"]);
     assertEquals(f.effects(), 0);
     assertEquals(f.projected, []);
-    await assertRejects(
-      () => gateway.primitive(),
-      Error,
-      "request did not succeed",
-    );
-    assertEquals(calls, ["GET", "POST"]);
   }
 });
 

@@ -19,9 +19,10 @@ type PrivateGateway = Pick<GatewayOperation, "withPrivateMaterial">;
 async function useGit(
   gateway: PrivateGateway,
   use: (git: Record<string, unknown>) => Promise<void>,
+  defaultCode = "instance.removal_refused",
 ) {
   let accepting = true, attempted = false, complete = false;
-  let code = "instance.removal_refused";
+  let code = defaultCode;
   try {
     await gateway.withPrivateMaterial(async (material) => {
       if (!accepting || attempted) return;
@@ -169,33 +170,17 @@ export async function verifyDestroySourcesWithMaterial(
 /** Finalize inside one awaited private delivery; delayed or repeated callbacks cannot act. */
 export async function finalizeDestroySourcesWithMaterial(
   local: DestroyLocalInput,
-  gateway: Pick<GatewayOperation, "withPrivateMaterial">,
+  gateway: PrivateGateway,
   source?: DestroyInvoke,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   let result: Record<string, unknown> | undefined;
-  let accepting = true, attempted = false;
-  let code = "instance.finalization_evidence_invalid";
-  try {
-    await gateway.withPrivateMaterial(async (material) => {
-      if (!accepting || attempted) return;
-      attempted = true;
-      try {
-        signal?.throwIfAborted();
-        const git = z.record(z.string(), z.unknown()).parse(material.git_read);
-        result = await finalizeDestroySources(local, git, source, signal);
-      } catch (error) {
-        if (
-          error instanceof DestroyRefusal &&
-          DestroyCode.safeParse(error.code).success
-        ) code = error.code;
-      }
-    });
-  } catch {
-    throw new DestroyRefusal(code);
-  } finally {
-    accepting = false;
+  await useGit(gateway, async (git) => {
+    signal?.throwIfAborted();
+    result = await finalizeDestroySources(local, git, source, signal);
+  }, "instance.finalization_evidence_invalid");
+  if (result === undefined) {
+    throw new DestroyRefusal("instance.finalization_evidence_invalid");
   }
-  if (result === undefined) throw new DestroyRefusal(code);
   return result;
 }
