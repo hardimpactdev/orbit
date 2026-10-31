@@ -22,6 +22,7 @@ final class DatabaseServerData extends Data
         public int $port,
         public string $status,
         public int $databasesCount,
+        public ?bool $defaultOpen,
     ) {}
 
     public static function fromModel(DatabaseServer $server): self
@@ -36,6 +37,7 @@ final class DatabaseServerData extends Data
             port: $server->port,
             status: $server->status->value,
             databasesCount: $server->databaseConnections()->count(),
+            defaultOpen: $server->default_open,
         );
     }
 }
