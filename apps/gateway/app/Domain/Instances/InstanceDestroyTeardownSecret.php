@@ -32,7 +32,7 @@ final readonly class InstanceDestroyTeardownSecret implements OperationSecretSou
         $input = $this->input($operation);
         if ($input === null || ! is_int($input['instance_id'] ?? null)
             || $operation->node_id !== ($input['node_id'] ?? null)
-            || ($input['environment'] ?? null) !== 'development') {
+            || ! in_array($input['environment'] ?? null, ['development', 'production'], true)) {
             return null;
         }
         $instance = Instance::query()->find($input['instance_id']);
@@ -69,8 +69,10 @@ final readonly class InstanceDestroyTeardownSecret implements OperationSecretSou
             }
             $instance = Instance::query()->with(['project', 'node'])->find($member['instance_id']);
             if ($instance === null || $instance->project_id !== $projectId
-                || $instance->node_id !== $operation->node_id || $instance->checkout_path !== ($member['checkout'] ?? null)
-                || ! $instance->placedOnAppDev() || $instance->node->user !== $user || ($member['user'] ?? null) !== $user) {
+                || $instance->node_id !== $operation->node_id || ($instance->placedOnAppProd() ? $instance->applicationDirectory() : $instance->checkout_path) !== ($member['checkout'] ?? null)
+                || $instance->placementEnvironment() !== ($input['environment'] ?? null)
+                || ($instance->placedOnAppProd() ? $instance->production_user : $instance->node->user) !== ($member['user'] ?? null)
+                || $instance->node->user !== $user) {
                 $this->refuse();
             }
             $seen[$instance->id] = true;

@@ -528,26 +528,18 @@ it('replays the saved admission after failure without recapturing database artif
     expect($removal->refresh()->status->value)->toBe('removing');
 });
 
-it('records native cancellation and leaves accepted removal retryable without restoring active intent', function (): void {
+it('refuses cancellation after removal intent is accepted', function (bool $started): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $input = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $run = (string) Str::uuid();
     $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
-        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued',
-        'input' => $input, 'state' => ['swamp_run_id' => $run]]);
-
-    app(CancelOperationAction::class)->execute($operation);
-    expect($operation->refresh()->status->value)->toBe('queued')
-        ->and($operation->cancel_requested_at)->not->toBeNull()
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => $started ? 'running' : 'queued',
+        'input' => $input, 'state' => $started ? ['swamp_run_id' => (string) Str::uuid()] : []]);
+    expect(fn () => app(CancelOperationAction::class)->execute($operation))
+        ->toThrow(ResourceOperationException::class, 'Accepted Instance removal must finish or resume.');
+    expect($operation->refresh()->cancel_requested_at)->toBeNull()
+        ->and($operation->status->value)->toBe($started ? 'running' : 'queued')
         ->and($this->instance->refresh()->status->value)->toBe('removing');
-    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'cancelled',
-        'started_at' => '2026-10-31T04:00:00Z', 'finished_at' => '2026-10-31T04:00:01Z',
-        'result' => ['error_code' => 'operation.cancelled', 'failed_step' => 'runtime'], 'error_code' => 'operation.cancelled']);
-    expect($operation->refresh()->status->value)->toBe('cancelled')
-        ->and($this->instance->refresh()->status->value)->toBe('removing');
-    $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance, true);
-    expect(app(DirectInstanceDestroyIntent::class)->record($retry))->toEqual($input);
-});
+})->with([false, true]);
 
 it('projects native failure with its exact failed phase and retries the complete saved admission', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
