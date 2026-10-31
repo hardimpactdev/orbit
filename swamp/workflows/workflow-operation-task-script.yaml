@@ -30,12 +30,12 @@ inputs:
 jobs:
 - name: script
   target: orbit-node-209
-  labels: &id001
+  labels: &worker_labels
     node: '209'
   steps:
   - name: assets
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@nckrtl/task-repository-assets'
@@ -48,13 +48,13 @@ jobs:
       behaviorName: ${{ "task-repository-assets-" + string(inputs.operation_id) }}
   - name: prepare-assets
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: &id002
+      globalArgs: &ssh_args
         name: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
         transport:
           kind: ssh
@@ -78,13 +78,13 @@ jobs:
         type: succeeded
   - name: copy-assets
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: copy
-      globalArgs: *id002
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         src: ${{ steps.assets.outputs.directory }}
@@ -97,13 +97,13 @@ jobs:
         type: succeeded
   - name: inspect
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
@@ -117,13 +117,13 @@ jobs:
         type: succeeded
   - name: snapshot-before
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
@@ -137,13 +137,13 @@ jobs:
         type: succeeded
   - name: execute
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
@@ -151,6 +151,7 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/execute_script.py" }}
         - ${{ steps.inspect.outputs.stdout }}
+        - ${{ steps["snapshot-before"].outputs.stdout }}
         stdin: ${{ steps.assets.outputs.input_json }}
         timeoutSec: 3600
     dependsOn:
@@ -159,13 +160,13 @@ jobs:
         type: succeeded
   - name: snapshot-after
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
@@ -179,15 +180,14 @@ jobs:
         type: succeeded
   - name: result
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_RESULT_SCRIPT"
-
-          '
+        run: |
+          python3 -B "$ORBIT_RESULT_SCRIPT"
         env:
           ORBIT_INPUT: ${{ steps.assets.outputs.input_json }}
           ORBIT_PREPARED: ${{ steps.inspect.outputs.stdout }}
@@ -202,13 +202,13 @@ jobs:
         type: succeeded
   - name: cleanup-assets
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
@@ -223,24 +223,19 @@ jobs:
         type: succeeded
   - name: outcome
     target: orbit-node-209
-    labels: *id001
+    labels: *worker_labels
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 - <<''PYTHON''
-
+        run: |
+          python3 - <<'PYTHON'
           import json
-
           import os
 
-
-          raise SystemExit(1 if json.loads(os.environ[''ORBIT_RESULT'']).get(''error_code'') else 0)
-
+          raise SystemExit(1 if json.loads(os.environ['ORBIT_RESULT']).get('error_code') else 0)
           PYTHON
-
-          '
         env:
           ORBIT_RESULT: ${{ steps.result.outputs.stdout }}
       behaviorName: ${{ "task-repository-outcome-" + string(inputs.operation_id) }}

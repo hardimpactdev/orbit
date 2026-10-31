@@ -18,9 +18,10 @@ from repository_common import (
 
 def execute():
     value = json.load(sys.stdin)
-    prepared = json.loads(sys.argv[1])
-    if "error_code" in prepared:
-        return prepared
+    prepared, before = (json.loads(arg) for arg in sys.argv[1:3])
+    for observation in (prepared, before):
+        if "error_code" in observation:
+            return observation
     root = checkout(value)
     if executable(root, value["script"]) != prepared["entrypoint_sha256"]:
         raise Refusal("tasks.script_unavailable")

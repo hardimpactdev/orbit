@@ -79,7 +79,7 @@ class RepositoryFixture(unittest.TestCase):
     def run_script(self):
         prepared = self.action("inspect.py")
         before = self.action("snapshot.py")
-        execution = self.action("execute_script.py", prepared)
+        execution = self.action("execute_script.py", prepared, before)
         after = self.action("snapshot.py")
         return self.action(
             "script_result.py",
@@ -133,12 +133,22 @@ class ScriptActions(RepositoryFixture):
     def test_entrypoint_changed_between_steps_never_executes(self):
         target = self.install("#!/bin/sh\ntouch invoked\n")
         prepared = self.action("inspect.py")
+        before = self.action("snapshot.py")
         target.write_text("#!/bin/sh\ntouch changed\n")
         self.assertEqual(
-            self.action("execute_script.py", prepared),
+            self.action("execute_script.py", prepared, before),
             {"error_code": "tasks.script_unavailable"},
         )
         self.assertFalse((self.root / "changed").exists())
+        self.assertFalse((self.root / "invoked").exists())
+
+    def test_failed_baseline_snapshot_never_runs_the_script(self):
+        self.install("#!/bin/sh\ntouch invoked\n")
+        prepared = self.action("inspect.py")
+        (self.root / ".git/index").write_bytes(b"corrupt")
+        before = self.action("snapshot.py")
+        self.assertEqual(before, {"error_code": "tasks.repository_execution_unknown"})
+        self.assertEqual(self.action("execute_script.py", prepared, before), before)
         self.assertFalse((self.root / "invoked").exists())
 
     def test_nonzero_is_business_failure_with_clean_temporary_directory_and_closed_environment(
