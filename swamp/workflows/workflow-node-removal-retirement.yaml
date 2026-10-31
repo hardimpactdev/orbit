@@ -67,6 +67,16 @@ inputs:
 jobs:
 - name: retirement
   steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.executor_node_id) }}
+    labels:
+      node: ${{ string(inputs.executor_node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-removal-retirement-assets'
+      behaviorName: ${{ "remove-assets-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs: {}
   - name: verify-admitted-target
     target: ${{ "orbit-node-" + string(inputs.executor_node_id) }}
     labels:
@@ -78,30 +88,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.verify_admitted_target }}"
         env:
           ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
           ORBIT_TARGET_HOST: ${{ inputs.target.host }}
@@ -110,9 +97,13 @@ jobs:
           ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
           ORBIT_TARGET_KEY: ${{ inputs.host_key }}
           ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
   - name: verify-node-identity
     target: ${{ "orbit-node-" + string(inputs.executor_node_id) }}
-    labels: &id001
+    labels:
       node: ${{ string(inputs.executor_node_id) }}
     task:
       type: behavior
@@ -121,60 +112,9 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              import shlex
-              program = "import json,os,pathlib,pwd,stat,sys,tomllib\nnode=int(sys.argv[1])\ndef safe(value,directory=False):\n p=pathlib.Path(value)\n try: s=p.lstat()\n except FileNotFoundError: return False\n if stat.S_ISLNK(s.st_mode) or s.st_uid!=0 or s.st_mode&0o022 or (not stat.S_ISDIR(s.st_mode) if directory else not stat.S_ISREG(s.st_mode)): raise RuntimeError('unsafe local state')\n return True\nfor value in ['/etc','/etc/systemd','/etc/systemd/system','/usr','/usr/local','/usr/local/bin']:\n if not safe(value,True): raise RuntimeError('unsafe parent')\nobserver=safe('/etc/systemd/system/orbit-agent.service')\nworker=safe('/etc/systemd/system/orbit-node-worker.service')\nbinary=safe('/usr/local/bin/orbit-agent')\ndirectory=safe('/etc/orbit/agent',True)\nconfiguration=None\nif directory:\n if not safe('/etc/orbit/agent/config.toml'): raise RuntimeError('missing configuration')\n configuration=tomllib.loads(pathlib.Path('/etc/orbit/agent/config.toml').read_text()).get('swamp_worker')\n if configuration is not None and (not isinstance(configuration,dict) or configuration.get('node_id')!=node): raise RuntimeError('foreign Node')\nelif observer or binary or worker: raise RuntimeError('missing owner configuration')\nif worker:\n if not isinstance(configuration,dict) or not isinstance(configuration.get('user'),str) or configuration['user']=='root': raise RuntimeError('missing worker account')\n account=pwd.getpwnam(configuration['user'])\n cache=pathlib.Path('/var/lib/orbit-node-worker')\n if cache.exists() or cache.is_symlink():\n  info=cache.lstat()\n  if not stat.S_ISDIR(info.st_mode) or info.st_uid!=account.pw_uid or stat.S_IMODE(info.st_mode)!=0o700: raise RuntimeError('unsafe cache')\n for value in ['/etc/orbit','/usr/local/libexec']:\n  if not safe(value,True): raise RuntimeError('unsafe worker parent')\n credentials=pathlib.Path('/etc/orbit/swamp-worker')\n if credentials.exists() or credentials.is_symlink():\n  if not safe(str(credentials),True) or stat.S_IMODE(credentials.lstat().st_mode)!=0o700: raise RuntimeError('unsafe credentials')\n  for name in ['enrollment.token','server.token']:\n   token=credentials/name\n   if token.exists() or token.is_symlink():\n    if not safe(str(token)) or stat.S_IMODE(token.lstat().st_mode)!=0o600: raise RuntimeError('unsafe credential')\n checker=pathlib.Path('/usr/local/libexec/orbit-node-worker-check')\n if checker.exists() or checker.is_symlink(): safe(str(checker))\nprint(json.dumps({'ready':True,'worker_present':worker,'observer_present':observer,'artifacts_present':observer or binary or directory or worker}))\n"
-              remote = 'sudo -n /usr/bin/python3 -c ' + shlex.quote(program) + ' ' + str(node)
-              result = subprocess.run(command + [remote], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          view = json.loads(result.stdout)
-          if set(view) != {'ready', 'worker_present', 'observer_present', 'artifacts_present'} or any(type(v) is not bool for v in view.values()) or not view['ready']:
-              raise SystemExit('node.removal_metadata_invalid')
-          print(json.dumps(view))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.verify_node_identity }}"
         timeout: 120000
-        env: &id002
+        env:
           ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
           ORBIT_TARGET_HOST: ${{ inputs.target.host }}
           ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
@@ -185,12 +125,16 @@ jobs:
           ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
             }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
   - name: retirement-view
     target: ${{ "orbit-node-" + string(inputs.executor_node_id) }}
-    labels: *id001
+    labels:
+      node: ${{ string(inputs.executor_node_id) }}
     dependsOn:
     - step: verify-node-identity
       condition:
@@ -213,55 +157,22 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              result = subprocess.run(command + ['sudo -n /usr/bin/systemctl disable orbit-node-worker.service'], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.disable_worker }}"
         timeout: 120000
-        env: *id002
+        env:
+          ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
+          ORBIT_TARGET_HOST: ${{ inputs.target.host }}
+          ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
+          ORBIT_TARGET_USER: ${{ inputs.target.user }}
+          ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
+          ORBIT_TARGET_KEY: ${{ inputs.host_key }}
+          ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+          ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -283,55 +194,22 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              result = subprocess.run(command + ['sudo -n /usr/bin/systemctl stop orbit-node-worker.service'], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.stop_worker }}"
         timeout: 120000
-        env: *id002
+        env:
+          ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
+          ORBIT_TARGET_HOST: ${{ inputs.target.host }}
+          ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
+          ORBIT_TARGET_USER: ${{ inputs.target.user }}
+          ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
+          ORBIT_TARGET_KEY: ${{ inputs.host_key }}
+          ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+          ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -359,55 +237,22 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              result = subprocess.run(command + ['sudo -n /usr/bin/systemctl is-active orbit-node-worker.service'], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode in (3, 4)
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.verify_worker_inactive }}"
         timeout: 120000
-        env: *id002
+        env:
+          ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
+          ORBIT_TARGET_HOST: ${{ inputs.target.host }}
+          ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
+          ORBIT_TARGET_USER: ${{ inputs.target.user }}
+          ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
+          ORBIT_TARGET_KEY: ${{ inputs.host_key }}
+          ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+          ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -441,55 +286,22 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              result = subprocess.run(command + ['sudo -n /usr/bin/systemctl stop orbit-agent.service'], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.stop_observer }}"
         timeout: 120000
-        env: *id002
+        env:
+          ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
+          ORBIT_TARGET_HOST: ${{ inputs.target.host }}
+          ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
+          ORBIT_TARGET_USER: ${{ inputs.target.user }}
+          ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
+          ORBIT_TARGET_KEY: ${{ inputs.host_key }}
+          ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+          ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -529,55 +341,22 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              result = subprocess.run(command + ['sudo -n /usr/bin/systemctl disable orbit-agent.service'], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.disable_observer }}"
         timeout: 120000
-        env: *id002
+        env:
+          ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
+          ORBIT_TARGET_HOST: ${{ inputs.target.host }}
+          ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
+          ORBIT_TARGET_USER: ${{ inputs.target.user }}
+          ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
+          ORBIT_TARGET_KEY: ${{ inputs.host_key }}
+          ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+          ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -623,55 +402,22 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              result = subprocess.run(command + ['sudo -n /usr/bin/systemctl is-active orbit-agent.service'], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode in (3, 4)
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.verify_observer_inactive }}"
         timeout: 120000
-        env: *id002
+        env:
+          ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
+          ORBIT_TARGET_HOST: ${{ inputs.target.host }}
+          ORBIT_TARGET_PORT: ${{ string(inputs.target.port) }}
+          ORBIT_TARGET_USER: ${{ inputs.target.user }}
+          ORBIT_TARGET_NODE: ${{ string(inputs.target.node_id) }}
+          ORBIT_TARGET_KEY: ${{ inputs.host_key }}
+          ORBIT_TARGET_FINGERPRINT: ${{ inputs.target.fingerprint }}
+          ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -723,54 +469,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              import shlex
-              remote = 'sudo -n /usr/bin/python3 -c ' + shlex.quote("import os,pathlib,shutil,stat,sys\nfor value in ['/etc/systemd/system/orbit-agent.service','/usr/local/bin/orbit-agent','/etc/systemd/system/orbit-node-worker.service','/usr/local/libexec/orbit-node-worker-check']:\n p=pathlib.Path(value)\n try: s=p.lstat()\n except FileNotFoundError: continue\n if stat.S_ISLNK(s.st_mode) or s.st_uid!=0 or not stat.S_ISREG(s.st_mode) or s.st_mode&0o022: raise RuntimeError('unsafe artifact')\nfor value in ['/etc/orbit/agent','/etc/orbit/swamp-worker']:\n p=pathlib.Path(value)\n if p.exists() or p.is_symlink():\n  s=p.lstat()\n  if stat.S_ISLNK(s.st_mode) or s.st_uid!=0 or not stat.S_ISDIR(s.st_mode) or s.st_mode&0o022: raise RuntimeError('unsafe directory')\nfor value in ['/etc/systemd/system/orbit-agent.service','/usr/local/bin/orbit-agent','/etc/systemd/system/orbit-node-worker.service','/usr/local/libexec/orbit-node-worker-check']:\n pathlib.Path(value).unlink(missing_ok=True)\nfor value in ['/etc/orbit/agent','/etc/orbit/swamp-worker','/var/lib/orbit-node-worker']:\n p=pathlib.Path(value)\n if p.exists(): shutil.rmtree(p)\n")
-              result = subprocess.run(command + [remote], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.remove_artifacts }}"
         timeout: 120000
         env:
           ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
@@ -783,6 +482,9 @@ jobs:
           ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
             }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -840,53 +542,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              remote = 'sudo -n /usr/bin/systemctl daemon-reload'
-              result = subprocess.run(command + [remote], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.reload_systemd }}"
         timeout: 120000
         env:
           ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
@@ -899,6 +555,9 @@ jobs:
           ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
             }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded
@@ -962,53 +621,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          set -eu
-          exec /usr/bin/python3 - <<'PY_ACTION'
-          import base64
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          host = os.environ['ORBIT_TARGET_HOST']
-          user = os.environ['ORBIT_TARGET_USER']
-          port = int(os.environ['ORBIT_TARGET_PORT'])
-          node = int(os.environ['ORBIT_TARGET_NODE'])
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,253}', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535 or node <= 0:
-              raise SystemExit('node.removal_target_invalid')
-          fields = os.environ['ORBIT_TARGET_KEY'].split()
-          if len(fields) != 2 or fields[0] not in {'ssh-ed25519','ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521'}:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(fields[1], validate=True)).digest()).decode().rstrip('=')
-          if fingerprint != os.environ['ORBIT_TARGET_FINGERPRINT']:
-              raise SystemExit('node.ssh_host_key_mismatch')
-          if node == int(os.environ['ORBIT_EXECUTOR_NODE']):
-              raise SystemExit('node.removal_executor_invalid')
-          identity = os.environ.pop('ORBIT_SSH_IDENTITY')
-          with tempfile.TemporaryDirectory(prefix='orbit-removal-') as directory:
-              key = Path(directory) / 'identity'
-              known = Path(directory) / 'known_hosts'
-              for path, value in [(key, identity), (known, 'orbit-removal-target ' + ' '.join(fields) + '\n')]:
-                  with open(path, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
-                      stream.write(value)
-              command = [
-                  '/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                  '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(known),
-                  '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'HostKeyAlias=orbit-removal-target',
-                  '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ControlMaster=no',
-                  '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR',
-                  '-i', str(key), '-p', str(port), '--', user + '@' + host,
-              ]
-              remote = 'sudo -n /usr/bin/systemctl reset-failed orbit-agent.service'
-              result = subprocess.run(command + [remote], capture_output=True, check=False, env=dict(os.environ))
-              accepted = result.returncode == 0
-          if not accepted:
-              raise SystemExit('node.removal_retirement_uncertain')
-          print(json.dumps({'ready': True}))
-          PY_ACTION
+          exec /usr/bin/python3 "${{ steps.assets.outputs.reset_observer_failure }}"
         timeout: 120000
         env:
           ORBIT_EXECUTOR_NODE: ${{ string(inputs.executor_node_id) }}
@@ -1021,6 +634,9 @@ jobs:
           ORBIT_SSH_IDENTITY: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
             }}
     dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
     - step: verify-admitted-target
       condition:
         type: succeeded

@@ -1,0 +1,24 @@
+manifestVersion: 1
+name: "@nckrtl/node-removal-retirement-scripts"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: One-action host retirement through the admitted off-worker SSH boundary.
+behaviors:
+  - operations/node-removal/retirement_assets.ts
+  - operations/node-removal/retirement_view.ts
+additionalFiles:
+  - scripts/disable_observer.py
+  - scripts/disable_worker.py
+  - scripts/inspect_host.py
+  - scripts/reload_systemd.py
+  - scripts/remove_artifacts.py
+  - scripts/remove_host_artifacts.py
+  - scripts/reset_observer_failure.py
+  - scripts/ssh_common.py
+  - scripts/stop_observer.py
+  - scripts/stop_worker.py
+  - scripts/verify_admitted_target.py
+  - scripts/verify_node_identity.py
+  - scripts/verify_observer_inactive.py
+  - scripts/verify_worker_inactive.py

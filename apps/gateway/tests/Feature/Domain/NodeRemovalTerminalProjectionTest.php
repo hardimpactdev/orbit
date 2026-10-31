@@ -21,7 +21,7 @@ it('projects only the terminal restoration decision and leaves uncertain members
     $operation = Operation::query()->create(['kind' => 'node.remove', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
         'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => $run], 'input' => $input]);
     $projection = app(NodeRemovalProjection::class);
-    expect($projection->input($operation))->toBe($input['_removal']);
+    expect($projection->input($operation))->toBe(['intent' => $input['_removal'], 'execution_secrets' => []]);
 
     $projection->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00Z', 'finished_at' => '2026-10-31T08:00:01Z',
         'error_code' => 'node.removal_failed', 'result' => ['schema_version' => 1, 'node_id' => $node->id, 'removed' => false,

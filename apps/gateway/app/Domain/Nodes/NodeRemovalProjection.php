@@ -16,7 +16,8 @@ final readonly class NodeRemovalProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        return ValidatedData::object($operation->input['_removal']);
+        return ['intent' => ValidatedData::object($operation->input['_removal']),
+            'execution_secrets' => $operation->input['execution_secrets'] ?? []];
     }
 
     public function apply(Operation $operation, array $data): Operation

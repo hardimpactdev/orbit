@@ -20,13 +20,62 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
+
+it('copies only the existing retirement identity into the shared vault and records names only', function (bool $refused): void {
+    FleetFixtures::bind();
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-start-token', 'swamp.ca_path' => '/public/root.pem']);
+    $caller = $this->markAsGateway(FleetFixtures::node('removal-copy-root'));
+    $node = FleetFixtures::node('removal-copy-target');
+    $value = 'synthetic-retirement-'.bin2hex(random_bytes(32));
+    $path = tempnam(sys_get_temp_dir(), 'removal-copy-');
+    File::put($path, $value);
+    $this->beforeApplicationDestroyed(static fn (): bool => unlink($path));
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->once()->andReturn($path);
+    app()->instance(SshKeyProvider::class, $keys);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->andReturnUsing(function (ProcessInvocation $invocation) use ($refused, $value, $caller): CommandResult {
+        expect(stream_get_contents($invocation->protectedInput->stream()))->toBe($value);
+        expect($invocation->arguments)->toContain('vault', 'put', 'orbit-control-inputs', 'bootstrap-identity-node-'.$caller->id);
+        expect(json_encode($invocation->arguments, JSON_THROW_ON_ERROR))->not->toContain($value);
+
+        return new CommandResult($refused ? 1 : 0, '{}', '', 1, false);
+    });
+    app()->instance(ProcessRunner::class, $runner);
+
+    if ($refused) {
+        expect(fn () => app(RemoveNodeAction::class)->start($node, $caller))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('swamp.vault_sync_unavailable'));
+        expect($socket->sent)->toBeEmpty();
+        expect(Operation::query()->count())->toBe(0);
+        expect($node->fresh()->status)->toBe(LifecycleStatus::Active);
+
+        return;
+    }
+
+    $operation = app(RemoveNodeAction::class)->start($node, $caller);
+    $references = ['bootstrap_identity' => ['vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-'.$caller->id]];
+    expect($operation->input['execution_secrets'])->toBe($references);
+    expect(app(NodeRemovalProjection::class)->input($operation))->toBe([
+        'intent' => $operation->input['_removal'], 'execution_secrets' => $references,
+    ]);
+    expect(json_encode($operation->input, JSON_THROW_ON_ERROR))->not->toContain($value)->not->toContain($path);
+    expect($socket->sent)->toHaveCount(1);
+})->with([false, true]);
 
 it('records one native removal intent through the public endpoint without executing cleanup', function (): void {
     FleetFixtures::bind();

@@ -14,12 +14,15 @@ use App\Domain\Nodes\NodeRoleMetricsInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 
 /** Validate public intent and capture immutable participants. No reachability or Node execution. */
 final readonly class AdmitNodeRemovalOperationAction
@@ -82,6 +85,12 @@ final readonly class AdmitNodeRemovalOperationAction
                 $input['private_bindings']['metrics_runtime'] = ['owner_node_id' => $metricsOwner, 'read_node_ids' => [$metricsOwner], 'write_node_ids' => []];
             }
             $input = NodeRemovalEnvironmentSource::bind($input, $executor->id);
+            $input['execution_secrets'] = [];
+            if (! $offline && $execution['retirement'] !== null) {
+                $input['execution_secrets']['bootstrap_identity'] = app(SwampCommandStep::class)->executionCopy(
+                    'orbit-control-inputs', 'bootstrap-identity-node-'.$executor->id,
+                    File::get(app(SshKeyProvider::class)->privateKeyPath()));
+            }
             $input['_removal'] = app(NodeRemovalIntent::class)->capture($node, $executor, $input);
 
             return $this->operations->execute('node.remove', 'node', $node->id, $executor->id, $input, 'operator', $requestId);
