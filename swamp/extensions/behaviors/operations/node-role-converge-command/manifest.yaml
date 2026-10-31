@@ -1,0 +1,12 @@
+manifestVersion: 1
+name: "@nckrtl/node-role-converge-command"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public one-action role convergence assets for official SSH from Node209.
+behaviors:
+  - operations/node-role-converge-command/assets.ts
+additionalFiles:
+  - scripts/storage.py
+  - scripts/directory.py
+  - scripts/ci_resource.py
