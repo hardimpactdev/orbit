@@ -6,7 +6,6 @@ use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Gateway\GatewayQueue;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -17,7 +16,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\DatabaseConnection;
@@ -34,7 +33,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Psr\Log\NullLogger;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\FakeSwampEventSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 /** @return list<Event> */
@@ -254,7 +255,7 @@ describe(GatewayHorizon::class, function (): void {
             ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
 
-    it('projects the native Horizon terminal result onto its Process', function (string $status): void {
+    it('projects Horizon terminal results with no Horizon queue consumer', function (string $status): void {
         $admitted = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
         $operation = Operation::query()->findOrFail($admitted['operation_id']);
         $result = $status === 'succeeded' ? ['ready' => true, 'state' => 'active', 'process_id' => $operation->target_id] : [];
@@ -267,8 +268,21 @@ describe(GatewayHorizon::class, function (): void {
             ]]]],
         ];
         $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
-        $selector = app(DirectOperation::class)->definition($operation->kind)['terminal_result'];
-        app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+        config(['queue.default' => 'gateway']);
+        $native = new FakeSwampEventSocket;
+        $subscriber = new SwampRunSubscriber($native, new NullLogger);
+        $subscriber->pass();
+        $requestId = $native->sent[0]['id'];
+        $native->push(
+            ['type' => 'run.attached', 'id' => $requestId, 'payload' => ['runId' => $runId, 'kind' => 'workflow-run', 'lastSeq' => 0]],
+            ['type' => 'event', 'id' => $requestId, 'event' => ['kind' => 'completed', 'runId' => $runId, 'seq' => 1,
+                'run' => ['id' => $runId, 'workflowName' => 'operation-process-horizon-handoff', 'status' => $status]]],
+        );
+
+        $subscriber->pass();
+        $subscriber->close();
+
+        expect(DB::table('jobs')->count())->toBe(0);
         expect($this->socket->sent)->toHaveCount(2)
             ->and($this->socket->sent[1]['type'])->toBe('workflow.history.get');
         $horizon = Process::query()->findOrFail($operation->target_id);
