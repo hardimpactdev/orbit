@@ -8,12 +8,9 @@ vaults:
 jobs:
 - name: checks
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   steps:
   - name: assets
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -22,7 +19,6 @@ jobs:
       inputs: {}
   - name: read-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -37,7 +33,7 @@ jobs:
           ORBIT_PENDING_CHECK: ${{ self.check.attributes.input_json }}
           ORBIT_GITHUB_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
             }}
-    forEach: &id002
+    forEach: &id001
       item: check
       in: ${{ data.query('modelType == "@nckrtl/task-check-data" && specName == "pending" && tags.task_check == "pending" && attributes.pending == true')
         }}
@@ -47,7 +43,6 @@ jobs:
         type: succeeded
   - name: ci-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -56,22 +51,20 @@ jobs:
       inputs:
         pending: ${{ self.check.attributes }}
         reading: ${{ steps["read-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout }}
-    forEach: *id002
+    forEach: *id001
     dependsOn:
     - step: read-${{ self.check.attributes.inputs.operation_id }}
       condition:
         type: succeeded
   - name: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels:
-      node: '209'
-    forEach: *id002
+    forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
       methodName: exec
-      globalArgs: &id003
+      globalArgs: &id002
         name: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
         transport:
           kind: ssh
@@ -91,7 +84,7 @@ jobs:
         - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
     dependsOn:
     - step: ci-${{ self.check.attributes.inputs.operation_id }}
-      condition: &id004
+      condition: &id003
         type: or
         conditions:
         - type: succeeded
@@ -100,15 +93,13 @@ jobs:
       != "succeeded" }}
   - name: copy_assets-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels:
-      node: '209'
-    forEach: *id002
+    forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
       methodName: copy
-      globalArgs: *id003
+      globalArgs: *id002
       inputs:
         hosts: name:target
         src: ${{ steps.assets.outputs.directory }}
@@ -117,20 +108,18 @@ jobs:
         recursive: true
     dependsOn:
     - step: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
-      condition: *id004
+      condition: *id003
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
   - name: snapshot-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels:
-      node: '209'
-    forEach: *id002
+    forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id003
+      globalArgs: *id002
       inputs:
         hosts: name:target
         argv:
@@ -140,15 +129,13 @@ jobs:
         stdin: ${{ self.check.attributes.inputs_json }}
     dependsOn:
     - step: copy_assets-${{ self.check.attributes.inputs.operation_id }}
-      condition: *id004
+      condition: *id003
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
     allowFailure: true
   - name: observed-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels:
-      node: '209'
-    forEach: *id002
+    forEach: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -165,15 +152,13 @@ jobs:
         type: always
   - name: cleanup_remote-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels:
-      node: '209'
-    forEach: *id002
+    forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id003
+      globalArgs: *id002
       inputs:
         hosts: name:target
         argv:
@@ -190,7 +175,6 @@ jobs:
     allowFailure: true
   - name: settle-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -198,14 +182,35 @@ jobs:
       methodName: settle
       inputs:
         value: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs }}
-    forEach: *id002
+    forEach: *id001
     dependsOn:
     - step: observed-${{ self.check.attributes.inputs.operation_id }}
       condition:
         type: succeeded
+  - name: revoke_read-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    forEach: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-check-revoke-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.assets.outputs.directory + "/publish_revoke.py" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
+            }}
+    dependsOn:
+    - step: settle-${{ self.check.attributes.inputs.operation_id }}
+      condition:
+        type: succeeded
+    guard: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs.pending }}
+    allowFailure: true
   - name: collect
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -222,7 +227,6 @@ jobs:
         type: always
   - name: result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell

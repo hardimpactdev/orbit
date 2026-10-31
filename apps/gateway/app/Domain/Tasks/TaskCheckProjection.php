@@ -22,6 +22,7 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
         $serialize = static fn (array $step): array => [...$step, 'input_json' => json_encode($step, JSON_THROW_ON_ERROR)];
         $intent['setup_steps'] = array_map($serialize, array_map(ValidatedData::object(...), is_array($intent['setup']) ? $intent['setup'] : []));
         $intent['command_deliverables'] = array_map($serialize, array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command')));
+        $intent['execution_references_json'] = json_encode($operation->input['execution_secrets'] === [] ? (object) [] : $operation->input['execution_secrets'], JSON_THROW_ON_ERROR);
         $intent['project_command_json'] = json_encode(['command' => $intent['command']], JSON_THROW_ON_ERROR);
 
         return ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']];
@@ -30,23 +31,13 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
     public function apply(Operation $operation, array $data): Operation
     {
         return DB::transaction(function () use ($operation, $data): Operation {
-            $terminal = $operation->status->terminal();
-            if ($terminal) {
+            if ($operation->status->terminal()) {
                 return $operation;
             }
             $result = ValidatedData::object($data['result'] ?? []);
             $ci = is_array($result['ci'] ?? null) ? $result['ci'] : [];
             $pending = ($data['status'] ?? null) === 'succeeded' && ($result['pending'] ?? null) === true && in_array($ci['state'] ?? null, ['pending', 'missing'], true);
-            if (! $terminal && $operation->cancel_requested_at !== null && ($pending || ($operation->result['pending'] ?? false) === true)) {
-                $data['status'] = 'cancelled';
-                $result['pending'] = false;
-                $pending = false;
-            }
-            if ($pending) {
-                $data['status'] = 'running';
-                unset($data['finished_at']);
-            }
-            if (! $terminal && ($operation->result['pending'] ?? false) === true && ! $pending && ($data['status'] ?? null) !== 'cancelled') {
+            if (($operation->result['pending'] ?? false) === true && ($data['status'] ?? null) !== 'cancelled') {
                 $previous = $operation->result;
                 foreach (['check_id', 'commit', 'head', 'tree'] as $field) {
                     if (($result[$field] ?? null) !== ($previous[$field] ?? null)) {
@@ -65,12 +56,21 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
                     throw new ResourceOperationException('tasks.check_identity_mismatch', 'The scheduled result belongs to another admitted check.', 409);
                 }
             }
+            if ($operation->cancel_requested_at !== null && ($pending || ($operation->result['pending'] ?? false) === true)) {
+                $data['status'] = 'cancelled';
+                $result['pending'] = false;
+                $pending = false;
+            }
+            if ($pending) {
+                $data['status'] = 'running';
+                unset($data['finished_at']);
+            }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            if (! $terminal && ($projected->status->terminal() || $pending)) {
+            if ($projected->status->terminal() || $pending) {
                 $check = TaskCheck::query()->findOrFail(ValidatedData::integer($operation->input['check_id']));
                 $ci = is_array($result['ci'] ?? null) ? $result['ci'] : [];
                 $check->update([
-                    'status' => $pending ? 'running' : ($projected->status->value === 'cancelled' ? 'cancelled' : ($result['outcome'] ?? 'failed')),
+                    'status' => $pending ? 'running' : ($projected->status->value === 'cancelled' ? 'cancelled' : ($projected->status->value === 'failed' ? 'failed' : ($result['outcome'] ?? 'failed'))),
                     'head_before' => $result['head_before'] ?? '', 'tree_before' => $result['tree_before'] ?? '',
                     'head_after' => $result['head'] ?? null, 'tree_after' => $result['tree'] ?? null,
                     'exit_code' => $result['exit_code'] ?? null, 'changed_paths' => $result['changed_paths'] ?? [],

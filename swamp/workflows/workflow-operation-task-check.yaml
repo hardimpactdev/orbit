@@ -49,12 +49,9 @@ inputs:
 jobs:
 - name: check
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   steps:
   - name: prepare
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -66,7 +63,6 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
   - name: prepare_remote
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -78,7 +74,7 @@ jobs:
         - mkdir
         - -p
         - ${{ "/tmp/orbit-task-check-" + run.id }}
-      globalArgs: &id002
+      globalArgs: &id001
         name: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
         transport:
           kind: ssh
@@ -96,7 +92,6 @@ jobs:
         type: succeeded
   - name: copy_assets
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -108,14 +103,13 @@ jobs:
         dst: ${{ "/tmp/orbit-task-check-" + run.id + "/" }}
         recursive: true
         direction: to
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: prepare_remote
       condition:
         type: succeeded
   - name: validate
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -128,14 +122,13 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_validate.py" }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: copy_assets
       condition:
         type: succeeded
   - name: validation
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -149,7 +142,6 @@ jobs:
         type: succeeded
   - name: original
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -162,7 +154,7 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: validation
       condition:
@@ -170,7 +162,6 @@ jobs:
     guard: ${{ !has(steps.validation.outputs.valid) || !steps.validation.outputs.valid }}
   - name: setup-${{ self._index }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -186,7 +177,7 @@ jobs:
         stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: ${{ self.setup.timeout_seconds }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: original
       condition:
@@ -195,11 +186,10 @@ jobs:
       item: setup
       in: ${{ inputs.intent.setup_steps }}
     concurrency: 1
-    guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-" +
-      string(self._index - 1)].outputs.exitCode != 0) }}
+    guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-"
+      + string(self._index - 1)].outputs.exitCode != 0) }}
   - name: setup_result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -208,6 +198,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         steps: ${{ steps }}
+        validation: ${{ steps.validation.outputs }}
     dependsOn:
     - step: setup-${{ self._index }}
       condition:
@@ -217,7 +208,6 @@ jobs:
         type: always
   - name: before
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -230,14 +220,13 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: setup_result
       condition:
         type: succeeded
   - name: project
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -253,7 +242,7 @@ jobs:
         stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: 3600
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: before
       condition:
@@ -261,7 +250,6 @@ jobs:
     guard: ${{ !steps.setup_result.outputs.passed || inputs.intent.command == null }}
   - name: diff
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -275,7 +263,7 @@ jobs:
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_diff.py" }}
         - '${{ has(steps.before) && has(steps.before.outputs) && has(steps.before.outputs.stdout) ? steps.before.outputs.stdout : "{}" }}'
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: project
       condition:
@@ -285,7 +273,6 @@ jobs:
         type: succeeded
   - name: base_prepare-${{ self._index }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -300,20 +287,36 @@ jobs:
         - ${{ self.deliverable.input_json }}
         - ${{ string(self._index) }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: diff
       condition:
         type: succeeded
-    forEach: &id003
+    forEach: &id002
       item: deliverable
       in: ${{ inputs.intent.command_deliverables }}
     concurrency: 1
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
       != 0) }}
+  - name: base_ready-${{ self._index }}
+    target: orbit-node-209
+    forEach: *id002
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-base-ready-" + string(inputs.operation_id) }}
+      methodName: decode
+      inputs:
+        value: '${{ "base_prepare-" + string(self._index) in steps && "outputs" in steps["base_prepare-" + string(self._index)] && "stdout" in steps["base_prepare-"
+          + string(self._index)].outputs ? steps["base_prepare-" + string(self._index)].outputs.stdout : "{}" }}'
+    dependsOn:
+    - step: base_prepare-${{ self._index }}
+      condition:
+        type: always
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
+      != 0) }}
   - name: base-${{ self._index }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -330,18 +333,21 @@ jobs:
         stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: 600
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
-    - step: base_prepare-${{ self._index }}
+    - step: base_ready-${{ self._index }}
       condition:
-        type: always
-    forEach: *id003
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    forEach: *id002
     concurrency: 1
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
-      != 0) }}
+      != 0) || !("base_ready-" + string(self._index) in steps) || !("outputs" in steps["base_ready-" + string(self._index)]) || !("checkout_path" in steps["base_ready-"
+      + string(self._index)].outputs) }}
   - name: deliverable-${{ self._index }}
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -357,17 +363,16 @@ jobs:
         stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: 3600
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: base-${{ self._index }}
       condition:
         type: always
-    forEach: *id003
+    forEach: *id002
     concurrency: 1
     guard: ${{ !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
   - name: after
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -380,7 +385,7 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: deliverable-${{ self._index }}
       condition:
@@ -390,7 +395,6 @@ jobs:
         type: always
   - name: changed
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -405,14 +409,13 @@ jobs:
         - '${{ has(steps.before) && has(steps.before.outputs) && has(steps.before.outputs.stdout) ? steps.before.outputs.stdout : "{}" }}'
         - '${{ has(steps.after) && has(steps.after.outputs) && has(steps.after.outputs.stdout) ? steps.after.outputs.stdout : "{}" }}'
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: after
       condition:
         type: succeeded
   - name: local
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -427,7 +430,6 @@ jobs:
         type: succeeded
   - name: commit
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -441,15 +443,14 @@ jobs:
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_commit.py" }}
         - ${{ steps.local.outputs.result_json }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: local
       condition:
         type: succeeded
-    guard: ${{ steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
+    guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
   - name: candidate
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -468,7 +469,6 @@ jobs:
         type: succeeded
   - name: export
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -481,15 +481,15 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/publish_export.py" }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: candidate
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed" || steps.candidate.outputs.result.commit == null }}
+    guard: ${{ has(steps.candidate.outputs.result.error_code) || inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed"
+      || steps.candidate.outputs.result.commit == null }}
   - name: prepare_local
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -507,7 +507,6 @@ jobs:
         type: succeeded
   - name: copy_bundle
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -518,14 +517,13 @@ jobs:
         src: ${{ "/tmp/orbit-task-check-" + run.id + "/candidate.bundle" }}
         dst: ${{ "/tmp/orbit-task-check-" + run.id + "-control/candidate.bundle" }}
         direction: from
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: prepare_local
       condition:
         type: succeeded
   - name: import
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -545,7 +543,6 @@ jobs:
         type: succeeded
   - name: import_result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -557,9 +554,42 @@ jobs:
     - step: import
       condition:
         type: succeeded
+  - name: mint_github
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-check-mint-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/check_github_mint.py" }}
+          ORBIT_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_EXECUTION_REFERENCES: ${{ inputs.intent.execution_references_json }}
+    dependsOn:
+    - step: import_result
+      condition:
+        type: succeeded
+    guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
+  - name: mint_result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-mint-result-" + string(inputs.operation_id) }}
+      methodName: decode
+      inputs:
+        value: ${{ steps.mint_github.outputs.stdout }}
+    dependsOn:
+    - step: mint_github
+      condition:
+        type: succeeded
   - name: push
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -575,13 +605,32 @@ jobs:
           ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-check-" + run.id + "-control" }}
           ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
     dependsOn:
-    - step: import_result
+    - step: mint_result
       condition:
         type: succeeded
-    guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
+    guard: ${{ !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
+  - name: revoke_write
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-check-revoke-write-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_revoke.py" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+    dependsOn:
+    - step: push
+      condition:
+        type: always
+    guard: ${{ !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
+    allowFailure: true
   - name: pushed_snapshot
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -594,14 +643,13 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
         stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: push
       condition:
         type: succeeded
   - name: finish
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -613,6 +661,8 @@ jobs:
         push: '${{ has(steps.push) && has(steps.push.outputs) && has(steps.push.outputs.stdout) ? steps.push.outputs.stdout : "{}" }}'
         imported: '${{ has(steps.import) && has(steps.import.outputs) && has(steps.import.outputs.stdout) ? steps.import.outputs.stdout : "{}" }}'
         after: '${{ has(steps.pushed_snapshot) && has(steps.pushed_snapshot.outputs) && has(steps.pushed_snapshot.outputs.stdout) ? steps.pushed_snapshot.outputs.stdout
+          : "{}" }}'
+        mint: '${{ has(steps.mint_github) && has(steps.mint_github.outputs) && has(steps.mint_github.outputs.stdout) ? steps.mint_github.outputs.stdout
           : "{}" }}'
     dependsOn:
     - step: candidate
@@ -627,9 +677,11 @@ jobs:
     - step: import
       condition:
         type: always
+    - step: mint_github
+      condition:
+        type: always
   - name: pending
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -649,7 +701,6 @@ jobs:
     guard: ${{ !steps.finish.outputs.pending }}
   - name: result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -670,7 +721,6 @@ jobs:
         type: succeeded
   - name: outcome
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -688,7 +738,6 @@ jobs:
         type: succeeded
   - name: cleanup_remote
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -701,7 +750,7 @@ jobs:
         - -rf
         - --
         - ${{ "/tmp/orbit-task-check-" + run.id }}
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: outcome
       condition:
@@ -709,7 +758,6 @@ jobs:
     allowFailure: true
   - name: cleanup_local
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell

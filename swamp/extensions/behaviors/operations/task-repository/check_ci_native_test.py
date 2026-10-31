@@ -34,11 +34,58 @@ class NativeCheckCI(NativePublication):
         self.inputs["execution_secrets"] = {}
         for name, level in [("github_token", "write"), ("checks_token", "read")]:
             key = "task-check-" + level + "-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-            self.cli("vault", "put", "orbit-control-inputs", key, input=TOKEN)
             self.inputs["execution_secrets"][name] = {
                 "vault": "orbit-control-inputs",
                 "key": key,
             }
+        intent["execution_references_json"] = json.dumps(
+            self.inputs["execution_secrets"]
+        )
+        self.server.mint_copies = self.inputs["execution_secrets"]
+        self.server.mints = 0
+
+        def publish_copies():
+            for reference in self.server.mint_copies.values():
+                self.cli(
+                    "vault", "put", reference["vault"], reference["key"], input=TOKEN
+                )
+
+        self.server.publish_copies = publish_copies
+        previous_post = self.server.RequestHandlerClass.do_POST
+
+        def mint_reply(handler):
+            if handler.path.endswith("/github-token"):
+                import json
+
+                handler.rfile.read(int(handler.headers.get("Content-Length", 0)))
+                handler.server.publish_copies()
+                handler.server.mints += 1
+                handler.send_response(200)
+                handler.end_headers()
+                handler.wfile.write(
+                    json.dumps(
+                        {"data": {"execution_secrets": handler.server.mint_copies}}
+                    ).encode()
+                )
+            else:
+                previous_post(handler)
+
+        self.server.RequestHandlerClass = type(
+            "MintFixture", (self.server.RequestHandlerClass,), {"do_POST": mint_reply}
+        )
+        # Only fixture transport changes the canonical Gateway origin/CA.
+        shim = self.repo / "tools/sitecustomize.py"
+        original = shim.read_text().replace(
+            "import subprocess,urllib.request", "import subprocess,urllib.request,ssl"
+        )
+        original = original.replace(
+            "  request.full_url=request.full_url.replace",
+            "  request.full_url=request.full_url.replace('https://gateway.orbit','http://127.0.0.1:"
+            + str(self.server.server_port)
+            + "')\n  request.full_url=request.full_url.replace",
+        )
+        original += "\noriginal_context=ssl.create_default_context\ndef context(*a,**kw):\n kw.pop('cafile',None)\n return original_context(*a,**kw)\nssl.create_default_context=context\n"
+        shim.write_text(original)
         self.flow = self.copy_flow("workflow-operation-task-check.yaml")
         self.flow["name"] = "task-check-fixture"
         (self.repo / "workflows/workflow-check-fixture.yaml").write_text(
@@ -112,15 +159,20 @@ class NativeCheckCI(NativePublication):
     def test_native_pending_check_reads_once_each_tick_and_stops_when_settled(self):
         root, admitted = self.execute("task-check-fixture", self.inputs)
         self.assertTrue(admitted["pending"])
+        self.assertEqual(self.server.mints, 1)
         self.inputs["intent"]["commit"] = admitted["commit"]
         self.reading()
         _, pending = self.execute("task-check-ci")
         self.assertEqual(len(pending["checks"]), 1)
         self.assertTrue(pending["checks"][0]["result"]["pending"])
-        self.assertEqual(len(self.server.calls), 1)
+        self.assertEqual(
+            len([call for call in self.server.calls if call[0] == "GET"]), 1
+        )
         self.reading("completed", "success")
         _, completed = self.execute("task-check-ci")
-        self.assertEqual(len(self.server.calls), 2)
+        self.assertEqual(
+            len([call for call in self.server.calls if call[0] == "GET"]), 2
+        )
         self.assertEqual(len(completed["checks"]), 1)
         row = completed["checks"][0]
         self.assertEqual(row["root_run_id"], root["id"])
@@ -130,7 +182,9 @@ class NativeCheckCI(NativePublication):
         self.assertNotIn("summary", json.dumps(completed))
         _, idle = self.execute("task-check-ci")
         self.assertEqual(idle, {"checks": []})
-        self.assertEqual(len(self.server.calls), 2)
+        self.assertEqual(
+            len([call for call in self.server.calls if call[0] == "GET"]), 2
+        )
 
 
 if __name__ == "__main__":

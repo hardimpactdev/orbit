@@ -33,3 +33,4 @@ additionalFiles:
 - scripts/check_commit.py
 - scripts/check_ci_caches.sh
 - scripts/check_ci_read.py
+- scripts/check_github_mint.py

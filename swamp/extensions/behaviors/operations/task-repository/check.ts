@@ -64,6 +64,18 @@ export function localResult(
         after,
         project,
         ...input.setup.map((_, i) => get("setup-" + i)),
+        get("diff"),
+        get("changed"),
+        ...input.deliverables.filter((item) => item.type === "command").flatMap(
+            (
+                _,
+                i,
+            ) => [
+                get("base_prepare-" + i),
+                get("base-" + i),
+                get("deliverable-" + i),
+            ],
+        ),
     ];
     const error = all.find((item) => typeof item.error_code === "string");
     if (error) return { ...error, check_id: input.check_id };
@@ -168,7 +180,7 @@ export function ciResult(
         Date.parse(observedAt) - Date.parse(String(pending.pushed_at)) >=
             600000;
     const expired =
-        Date.parse(observedAt) - Date.parse(String(pending.admitted_at)) >=
+        Date.parse(observedAt) - Date.parse(String(pending.pushed_at)) >=
             55 * 60 * 1000;
     const terminal = read.state === "passed" || read.fault !== null ||
         missingExpired || expired;
@@ -210,10 +222,13 @@ export function finish(args: Record<string, unknown>) {
             result_json: JSON.stringify(local),
         };
     }
-    let error_code = push.error_code ?? imported.error_code;
+    const minted = ObjectValue.parse(JSON.parse(String(args.mint)));
+    let error_code = minted.error_code ?? push.error_code ??
+        imported.error_code;
     if (
-        typeof local.commit !== "string" || after.head !== local.commit ||
-        after.tree !== local.tree
+        !error_code &&
+        (typeof local.commit !== "string" || after.head !== local.commit ||
+            after.tree !== local.tree)
     ) error_code = "tasks.head_moved";
     if (!error_code && push.pushed !== true) error_code = "tasks.push_failed";
     const pushed_at = new Date().toISOString();
@@ -327,10 +342,17 @@ export const behavior = {
             execute: (args: Record<string, unknown>, ctx: Context) =>
                 output(
                     ctx,
-                    setupResult(
-                        CheckInput.parse(args.intent),
-                        ObjectValue.parse(args.steps),
-                    ),
+                    ObjectValue.parse(args.validation).valid === true
+                        ? setupResult(
+                            CheckInput.parse(args.intent),
+                            ObjectValue.parse(args.steps),
+                        )
+                        : {
+                            passed: false,
+                            exit_code: 255,
+                            failed_step: "validation",
+                            output: "",
+                        },
                 ),
         },
         local: {

@@ -27,6 +27,9 @@ def commit():
         }
     if snapshot(root) != {"head": checked["head"], "tree": checked["tree"]}:
         return {"changed": True}
+    git(root, "add", "--all")
+    if git(root, "write-tree") != checked["tree"]:
+        return {"changed": True}
     env = {
         **os.environ,
         "GIT_AUTHOR_NAME": "Orbit",

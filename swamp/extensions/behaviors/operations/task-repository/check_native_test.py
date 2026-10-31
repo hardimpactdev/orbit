@@ -45,6 +45,9 @@ class NativeCheck(NativeRepository):
             for x in intent["deliverables"]
             if x["type"] == "command"
         ]
+        intent["execution_references_json"] = json.dumps(
+            self.inputs["execution_secrets"]
+        )
         intent["project_command_json"] = json.dumps({"command": intent["command"]})
         flow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-task-check.yaml").read_text()
@@ -115,6 +118,44 @@ class NativeCheck(NativeRepository):
         self.assertEqual(result["outcome"], "failed")
         self.assertEqual(result["failed_step"], "failure")
         self.assertFalse((self.workspace / "should-not-run").exists())
+
+    def test_invalid_overlay_never_runs_a_project_command(self):
+        self.inputs["intent"].update(
+            command="touch should-not-run",
+            deliverables=[
+                {
+                    "id": "bad",
+                    "type": "command",
+                    "command": "true",
+                    "directory": ".",
+                    "paths": ["../code"],
+                    "fails_on_base": True,
+                }
+            ],
+        )
+        _, result = self.execute_check(success=False)
+        self.assertEqual(result["error_code"], "tasks.deliverable_invalid")
+        self.assertFalse((self.workspace / "should-not-run").exists())
+
+    def test_missing_base_cannot_count_as_a_reproduced_failure(self):
+        self.inputs["intent"].update(
+            phase="handoff",
+            base="f" * 40,
+            deliverables=[
+                {
+                    "id": "bad",
+                    "type": "command",
+                    "command": "true",
+                    "directory": ".",
+                    "paths": [],
+                    "fails_on_base": True,
+                }
+            ],
+        )
+        before = self.git("rev-parse", "HEAD")
+        _, result = self.execute_check(success=False)
+        self.assertIn("error_code", result)
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
 
     def test_mutating_check_cannot_create_a_candidate(self):
         self.inputs["intent"].update(phase="handoff", command="printf moved > code")

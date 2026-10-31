@@ -88,3 +88,15 @@ Deno.test("a committed candidate must keep the checked tree", () => {
         "changed",
     );
 });
+
+Deno.test("the hosted CI window starts at push after long local execution", () => {
+    const longLocal = {
+        ...pending,
+        admitted_at: "2026-10-31T20:00:00Z",
+        pushed_at: "2026-10-31T22:00:00Z",
+    };
+    const value = ciResult(longLocal, {
+        runs: [{ ...run, status: "in_progress", conclusion: null }],
+    }, "2026-10-31T22:01:00Z");
+    assertEquals(value.pending, true);
+});

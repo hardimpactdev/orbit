@@ -142,7 +142,7 @@ it('supplies names-only vault credentials and full check intent without a privat
         ->and($public['execution_secrets']['checks_token']['vault'])->toBe('orbit-control-inputs')
         ->and(json_encode($public))->not->toContain('synthetic-check-read')->not->toContain('synthetic-check-write')
         ->and(app(DirectOperation::class)->definition('tasks.check'))->not->toHaveKey('private_material')
-        ->and(count($this->socket->sent))->toBe(3);
+        ->and(count($this->socket->sent))->toBe(1);
 });
 
 it('leaves CI admission nonterminal with its original binding and rejects a different scheduled candidate', function (): void {
@@ -167,4 +167,68 @@ it('leaves CI admission nonterminal with its original binding and rejects a diff
     expect($operation->refresh()->status->value)->toBe('succeeded')
         ->and($operation->state['swamp_run_id'])->toBe($this->run)
         ->and(app(TaskCheckedCandidate::class)->eligible($group, TaskCheck::findOrFail($operation->input['check_id'])))->toBeTrue();
+});
+
+it('applies requested cancellation on the next valid pending observation without changing native binding', function (): void {
+    [$group, $task] = native_check_group();
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $operation = native_check_start($group, $task, 'handoff');
+    $result = ['group_id' => $group->id, 'subtask' => $task->id, 'phase' => 'handoff', 'pending' => true, 'outcome' => 'passed', 'check_id' => $operation->input['check_id'],
+        'commit' => str_repeat('a', 40), 'head' => str_repeat('b', 40), 'tree' => str_repeat('c', 40),
+        'ci' => ['repository' => 'acme/turn', 'state' => 'pending', 'fault' => null, 'branch' => 'task-'.$group->id.'-handoff', 'commit' => str_repeat('a', 40), 'check_name' => 'Required checks']];
+    native_check_finish($operation, $result);
+    $operation->refresh()->update(['cancel_requested_at' => now()]);
+    $data = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00Z', 'finished_at' => now()->toISOString(), 'result' => $result];
+    app(TaskCheckProjection::class)->apply($operation, $data);
+    expect($operation->refresh()->status->value)->toBe('cancelled')
+        ->and($operation->state['swamp_run_id'])->toBe($this->run)
+        ->and($operation->result['ci']['state'])->toBe('pending')
+        ->and(TaskCheck::findOrFail($operation->input['check_id'])->status->value)->toBe('cancelled');
+    $before = $operation->result;
+    $data['result']['ci']['state'] = 'passed';
+    app(TaskCheckProjection::class)->apply($operation, $data);
+    expect($operation->refresh()->result)->toBe($before);
+});
+
+it('rejects mismatched pending observations before applying requested cancellation', function (bool $cancel): void {
+    [$group, $task] = native_check_group();
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $operation = native_check_start($group, $task, 'handoff');
+    $sha = str_repeat('a', 40);
+    $result = ['group_id' => $group->id, 'subtask' => $task->id, 'phase' => 'handoff', 'pending' => true,
+        'outcome' => 'passed', 'check_id' => $operation->input['check_id'], 'commit' => $sha,
+        'head' => str_repeat('b', 40), 'tree' => str_repeat('c', 40),
+        'ci' => ['repository' => 'acme/turn', 'state' => 'pending', 'fault' => null, 'branch' => 'task-'.$group->id.'-handoff',
+            'commit' => $sha, 'check_name' => 'Required checks']];
+    native_check_finish($operation, $result);
+    $operation->refresh();
+    if ($cancel) {
+        $operation->update(['cancel_requested_at' => now()]);
+    }
+    $before = $operation->result;
+    $data = ['run_id' => $this->run, 'status' => 'succeeded', 'result' => [...$result, 'commit' => str_repeat('d', 40)]];
+    expect(fn () => app(TaskCheckProjection::class)->apply($operation, $data))->toThrow(ResourceOperationException::class, 'another checked candidate');
+    $data['result'] = $result;
+    $data['result']['ci']['repository'] = 'other/repository';
+    expect(fn () => app(TaskCheckProjection::class)->apply($operation, $data))->toThrow(ResourceOperationException::class, 'another admitted check');
+    expect($operation->refresh()->status->value)->toBe('running')->and($operation->result)->toBe($before)
+        ->and($operation->state['swamp_run_id'])->toBe($this->run)
+        ->and(TaskCheck::findOrFail($operation->input['check_id'])->status->value)->toBe('running');
+})->with([false, true]);
+
+it('mints fresh scoped execution copies through the existing mint endpoint after the candidate step', function (): void {
+    [$group, $task] = native_check_group();
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $operation = native_check_start($group, $task, 'handoff');
+    expect(count($this->socket->sent))->toBe(1);
+    $control = Node::query()->forceCreate(['id' => 209, 'name' => 'control-209', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209']);
+    $this->withServerVariables(['REMOTE_ADDR' => $control->wireguard_ip]);
+    $response = $this->postJson('/api/v1/direct-operations/'.$operation->id.'/github-token', ['run_id' => $this->run])->assertOk();
+    $response->assertJsonPath('data.execution_secrets', $operation->input['execution_secrets'])->assertJsonMissingPath('data.github.token');
+    expect($response->getContent())->not->toContain('synthetic-check-read')->not->toContain('synthetic-check-write')
+        ->and(count($this->socket->sent))->toBe(3);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/github-token', ['run_id' => $this->run, 'repository' => 'other/repo'])->assertUnprocessable();
+    $operation->update(['cancel_requested_at' => now()]);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/github-token', ['run_id' => $this->run])->assertForbidden();
+    expect(count($this->socket->sent))->toBe(3);
 });
