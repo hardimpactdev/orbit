@@ -531,6 +531,12 @@ The handoff also installs the [fleet rollout units](#units). A failure there onl
 
 Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider. Use the guarded [Docker provider migration](/reference/docker-provider-migration) in a separate maintenance window; fallback requires explicit approval with `--fallback`.
 
+The Caddy handoff submits the normal `route.caddy_converge` native root on the
+Gateway Node worker. Its report records `caddy.outcome: submitted` and
+`caddy.operation_id`; the Operation records publication success or failure.
+The handoff performs no agent publication or Gateway wait loop. Release smoke
+still checks the live HTTPS response.
+
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
 ##### Gateway Node agent

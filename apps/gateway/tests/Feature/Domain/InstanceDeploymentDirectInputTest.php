@@ -6,7 +6,6 @@ use App\Domain\Instances\Deployment\InstanceDeploymentDirectInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\DevelopmentDeployStep;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\ProjectDevelopmentDeployStep;
 
@@ -17,7 +16,7 @@ beforeEach(function (): void {
         'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $this->instance->id,
         'node_id' => $this->instance->node_id, 'status' => OperationStatus::Queued,
         'triggered_by' => 'operator',
-        'input' => ['agent_sha256' => str_repeat('d', 64), 'instance_id' => $this->instance->id,
+        'input' => ['platform' => 'linux', 'architecture' => 'amd64', 'instance_id' => $this->instance->id,
             'deployment' => app(InstanceDeploymentIntent::class)->snapshot($this->instance)],
     ]);
 });
@@ -34,32 +33,24 @@ it('returns the bound safe deployment input without private commands or environm
         ->and(json_encode($input))->not->toContain('private deploy command', 'private deployment token');
 });
 
-it('refuses changed deployment placement identity list and account before an effect', function (string $change): void {
-    match ($change) {
-        'node' => $this->operation->update(['node_id' => null]),
-        'kind' => $this->operation->update(['kind' => 'instance.rollback']),
-        'project' => $this->instance->project->update(['repository_url' => 'https://github.com/example/changed.git']),
-        'home' => $this->instance->update(['checkout_path' => '/changed/checkout']),
-        'node account' => $this->instance->node->update(['user' => 'changed']),
-        'command' => ProjectDevelopmentDeployStep::query()->where('project_id', $this->instance->project_id)->update(['command' => 'changed command']),
-        'timeout' => ProjectDevelopmentDeployStep::query()->where('project_id', $this->instance->project_id)->update(['timeout_seconds' => 61]),
-        'required' => ProjectDevelopmentDeployStep::query()->where('project_id', $this->instance->project_id)->update(['required' => false]),
-    };
-    expect(fn () => app(InstanceDeploymentDirectInput::class)->input($this->operation->fresh()))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.identity_changed'));
-})->with(['node', 'kind', 'project', 'home', 'node account', 'command', 'timeout', 'required']);
-
-it('accepts map key order without weakening ordered step bindings', function (): void {
-    $input = $this->operation->input;
-    $input['deployment'] = array_reverse($input['deployment'], true);
-    $this->operation->update(['input' => $input]);
-    expect(app(InstanceDeploymentDirectInput::class)->input($this->operation)['deployment']['steps'][0]['name'])->toBe('install');
+it('keeps admitted accounts and programs immutable while Swamp owns fresh runtime checks', function (): void {
+    $before = app(InstanceDeploymentDirectInput::class)->input($this->operation);
+    $this->instance->project->update(['repository_url' => 'https://github.com/example/changed.git']);
+    $this->instance->node->update(['user' => 'changed']);
+    $this->instance->update(['checkout_path' => '/changed/checkout']);
+    ProjectDevelopmentDeployStep::query()->where('project_id', $this->instance->project_id)->update(['command' => 'changed command', 'timeout_seconds' => 61]);
+    expect(app(InstanceDeploymentDirectInput::class)->input($this->operation->fresh()))->toBe($before)
+        ->and($before)->not->toHaveKey('agent_sha256')
+        ->and($before['node_id'])->toBe($this->instance->node_id)
+        ->and($before['platform'])->toBe('linux')->and($before['architecture'])->toBe('amd64');
 });
 
-it('refuses a missing or malformed admitted agent pin before exposing executable input', function (?string $pin): void {
+it('publishes captured parent runtime intent without protected descriptor fields', function (): void {
     $input = $this->operation->input;
-    $input['agent_sha256'] = $pin;
+    $input['runtime_definitions'] = ['processes' => [], 'schedules' => [], 'restart' => []];
+    $input['definitions_material'] = ['$secret' => 'instance.deployment', 'id' => $this->instance->id];
     $this->operation->update(['input' => $input]);
-    expect(fn () => app(InstanceDeploymentDirectInput::class)->input($this->operation))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.identity_changed'));
-})->with([null, 'not-a-delivery-digest']);
+    $safe = app(InstanceDeploymentDirectInput::class)->input($this->operation);
+    expect($safe['runtime_definitions'])->toBe($input['runtime_definitions'])
+        ->and($safe)->not->toHaveKey('definitions_material');
+});

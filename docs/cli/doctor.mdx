@@ -11,7 +11,7 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
-Doctor is one command. The Gateway admits stored intent and starts one native Swamp run. Placed read-only steps inspect each Node and return one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state. The tool family also reports [informational package discoveries](#informational-package-discoveries).
+Doctor is one command. The Gateway admits stored intent and starts one native Swamp run. Swamp runs native domain reads on each admitted Node. It reads continuous health, drift, and metrics observations through the Gateway and returns one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state. The tool family also reports [informational package discoveries](#informational-package-discoveries).
 
 ## Commands
 
@@ -57,13 +57,11 @@ Doctor selects only Nodes that the caller may address through an access grant. T
 
 ### How Swamp inspects
 
-Private Route projections use the read-only `doctor.inspect-private-route` agent command. Rust checks the live Caddyfile, certificate files, system DNS answer, firewall state, and Laravel URL. The Gateway admits the expected Route and returns only match results; environment contents never leave the Node. Router checks use the same command with the expected upstream addresses. The read-only `doctor.inspect-application-urls` command checks the environment of each directory served by a Route with a web root in one call, using the same URL parser. Directories without a regular `artisan` file need no Laravel URL check. Custom proxy Routes use `doctor.inspect-custom-proxy` for the live site, certificate files, DNS answer, and a bounded connection to the configured loopback upstream. Public proxy DNS checks use `doctor.resolve-route-dns`.
+Swamp reads files, package inventories, Git metadata, Route configuration, schedules, DNS answers, and database state with native readers on the exact admitted Node. It never launches orbit-agent commands. Root-owned files use passwordless `sudo`. Private material stays inside the read callback; only bounded match results leave the Node.
 
-The Gateway calls `doctor.inspect-node` once through the agent runner before it runs the family probes. The command reads platform and address state through native OS APIs, deduplicates the root and home filesystems, and returns typed disk counters. It executes no shell. Linux reads the observer files and service state; macOS checks only the enrolled account and its home volume. The observation holds reachability, platform, architecture, and whether the WireGuard address is present. For managed Linux Nodes, it also holds the [Node agent](/reference/node-agent#doctor) binary, unit, state, and checksums, plus free space and free inodes on the filesystem holding the Orbit home or root. macOS inspection uses native platform and tunnel checks. A missing Linux agent, systemd unit, exporter, or Linux disk path is not drift and not unverifiable. macOS does check free space on the enrolled account's home volume, as [node.disk_low](#what-each-family-checks) describes.
+Doctor reads the continuous observer’s unit and Docker snapshots from the Gateway cache through the shared Operation input. Missing or stale snapshots are unverifiable and cannot clear prior findings. Swamp performs native identity, file, filesystem, service, and restart-counter reads that the frozen observer does not publish. Native domain reads still run when continuous observations are unavailable.
 
-A failed SSH command makes the Node unreachable, and the `node` family reports `node.ssh_unreachable`. A malformed or truncated observation makes the `node` family report `node.inspection_failed` instead. In both cases the other families treat the Node as unreachable.
-
-Database-only checks still run: Node and role lifecycle, role conflicts, Route status, and database connections. Each other family with resources on that Node reports one `*.node_unreachable` issue instead of its checks. The `role` family does this only when the Node has an active role. The `route` family does this only when the Node serves a custom proxy Route. The tool family does this when the Node has a Tool row or an Instance with a recorded vp environment. An unreachable Node does not run the inventory scan, so it has no `tool.inventory_scan` issue. With neither kind of record, the tool family reports nothing.
+A missing worker produces an unverifiable report for that Node. Database-only checks still run for Node and role lifecycle, role conflicts, Route status, and database connections. Other families with resources report `*.node_unreachable`. An unreachable Node does not run the package inventory scan.
 
 For a nested Laravel root such as `apps/site/public`, Doctor uses the same [application directory](/reference/projects#application-directory) as the runtime. It checks that app's environment, cached APP_URL, PHP-FPM working directory, and production release `.env` link; Git identity and checkout-layout checks still cover the whole repository. Doctor does not infer a different app directory from discovered files.
 
@@ -71,9 +69,7 @@ On `app-prod`, the expected `pool.conf` also holds the pool of each directory th
 
 Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git. Doctor does not use a checkout's hooks or custom filesystem monitor while checking repository identity and source metadata. It leaves the stored Git configuration unchanged.
 
-Role package, service, and Caddy version observations use `doctor.inspect-role-runtime`. The agent shares the Docker CE prerequisite rule with role convergence: all three packages, the executable, and the running Docker service must be present before Docker CE satisfies `docker.io`.
-
-Swamp places each inspection on the exact `orbit-node-N` worker with its matching Node label. Checks that read root-owned files run through passwordless `sudo` on that Node. Doctor calls observer commands only. It never calls an agent action command. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
+Role package, service, and Caddy version checks use native reads. Docker CE satisfies `docker.io` only when its three prerequisite packages, executable, and running service are present.
 
 Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, `database_server`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.
 

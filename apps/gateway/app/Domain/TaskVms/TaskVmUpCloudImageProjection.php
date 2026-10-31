@@ -6,7 +6,6 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -90,18 +89,14 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
                 }
             }
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'upcloud-image-build');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $status === OperationStatus::Running) {
                 $build->forceFill(['resources' => [...$build->resources, ...ValidatedData::object($result['resources'] ?? []),
                     ...(($result['promoted'] ?? false) === true ? ['promoted' => true] : [])],
                     'template_uuid' => $result['template_uuid'] ?? $build->template_uuid])->save();
             }
             if (! $terminal && $status->terminal()) {
-                app(TaskVmUpCloudImageCompletion::class)->complete($projected, match ($status) {
-                    OperationStatus::Succeeded => OperationOutcome::succeeded($result),
-                    OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
-                    default => OperationOutcome::cancelled(),
-                });
+                $this->finish($projected, $status, $code);
             }
 
             return $projected;
@@ -127,5 +122,13 @@ final readonly class TaskVmUpCloudImageProjection implements DirectOperationProj
         }
 
         return ! array_key_exists('promoted', $result) || ($result['promoted'] === true && $result['phase'] === 'promote' && $build->template_uuid !== null);
+    }
+
+    private function finish(Operation $operation, OperationStatus $status, ?string $errorCode): void
+    {
+        UpCloudTaskVmImageBuild::query()->whereKey($operation->target_id)->where('state', 'running')->update([
+            'state' => $status === OperationStatus::Succeeded ? 'succeeded' : 'failed', 'finished_at' => now(),
+            'failure' => $status === OperationStatus::Succeeded ? null : json_encode(['phase' => 'operation', 'exit_code' => null, 'stderr' => $errorCode ?? 'operation.cancelled'], JSON_THROW_ON_ERROR),
+        ]);
     }
 }
