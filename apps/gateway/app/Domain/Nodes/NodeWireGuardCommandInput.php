@@ -16,8 +16,12 @@ final readonly class NodeWireGuardCommandInput
     /** Capture before changing the context Node's admitted identity or status.
      * @return array<string,mixed>
      */
-    public function capture(Node $context, ?string $prospectiveAddress = null): array
+    public function capture(Node $context, ?string $prospectiveAddress = null, ?string $prospectiveName = null): array
     {
+        $name = $prospectiveName ?? $context->name;
+        if ($prospectiveName !== null && preg_match('/\A[A-Za-z0-9_-]{1,63}\z/D', $prospectiveName) !== 1) {
+            throw new ResourceOperationException('node.name_invalid', 'The admitted Node name is invalid.', 422);
+        }
         $bound = app(NodeWireGuardInput::class)->capture($context);
         $hub = Node::query()->findOrFail($bound['hub_id']);
         $settings = app(VpnSettings::class);
@@ -34,7 +38,7 @@ final readonly class NodeWireGuardCommandInput
 
         return ['schema_version' => 1, 'hub_id' => $hub->id, 'hub_address' => $hub->wireguard_ip.'/'.$subnet->prefixLength(),
             'port' => (int) $settings->port(), 'context_node_id' => $context->id, 'inventory' => $inventory, 'before' => $before,
-            'desired' => ['node_id' => $context->id, 'name' => $context->name, 'address' => $address, 'public_key' => $context->wireguard_public_key]];
+            'desired' => ['node_id' => $context->id, 'name' => $name, 'address' => $address, 'public_key' => $context->wireguard_public_key]];
     }
 
     /** Full public standalone intent. Unknown fresh host peers are retained, never guessed stale.

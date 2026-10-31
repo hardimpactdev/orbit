@@ -1,6 +1,6 @@
 # Parent-callable hub peer mutation
 
-`NodeWireGuardCommandInput::capture(actualContext, prospectiveAddress?)` records the full public inventory, the exact prior peer or absence, and the desired context before a parent changes its identity. It works while removal records Removing. The optional address is an admitted candidate; the name always comes from the actual Node. Do not pass an identity-substituted clone. A prepared native public key can replace only this context's key.
+`NodeWireGuardCommandInput::capture(actualContext, prospectiveAddress?, prospectiveName?)` records the full public inventory, the exact prior peer or absence, and the desired context before a parent changes its identity. It works while removal records Removing. The optional address and name are admitted candidate fields. The exact prior peer still comes from the actual Node and its stored identity. Do not pass an identity-substituted clone. A prepared native public key can replace only this context's key.
 
 `@nckrtl/node-hub-command.read({intent, mode, prepared_peer?})` validates that public capture and reads the shipped `hub_peer.py`. Modes are publish, remove, restore-publish and restore-remove. Compensation reverses the same captured before/after pair; it makes no Gateway request and needs no restoration flag. The metadata substitutes only public JSON into a fixed data constant in the script. No secret is part of the script, its arguments or its outputs.
 
