@@ -17,7 +17,6 @@ export const intent = () =>
     build_id: 7,
     attempt: 1,
     host_node_id: 13,
-    artifact_node_id: 14,
     agent_sha256: "a".repeat(64),
     identity: "sha256:" + "b".repeat(64),
     generation: 1,
@@ -197,7 +196,7 @@ Deno.test("image intent refuses a recipe with different agent or Pi pins", () =>
   assertThrows(() =>
     ImageIntent.parse({
       ...input,
-      pi_artifact: { path: "/home/orbit/sandbox-artifacts/pi", sha256: fp },
+      pi_artifact: { sha256: fp },
     })
   );
 });

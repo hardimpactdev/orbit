@@ -2,18 +2,18 @@
 
 `task_vm.image_build` directly starts `operation-task-vm-image-build` (UUID
 `878a384f-8b8a-4066-bd17-dcad8eac3e86`). One root places admission and image
-steps at the exact admitted build host, and publishes the pinned public Pi
-artifact from the admitted Gateway worker as native file data. Recipe, smoke,
-seed finalization, promotion and pruning are native steps. It has no claim,
-lease, keyed receipt, child Operation, Gateway observation loop or polling
-registration. The Gateway projects bounded phase/fingerprint results and the
-terminal build state. Rollback is a revert of the paired cutover commits. The
-former image helper kinds, including `task_vm.image_finish_seed`, have no
-independent caller or registration: seed finalization is a step of this root.
-The read-only `image.owner` check runs as the image's pinned `orbit` UID and GID
-1000. Root commands and mutation supervision start as root; setting `SUDO_USER`
-does not change a read command's effective identity. The retained paths below
-apply to other Task VM kinds, including UpCloud images.
+steps at the exact admitted build host, which downloads the pinned Pi artifact
+through the shared private-material read and verifies its digest before guest
+use. Recipe, smoke, seed finalization, promotion and pruning are native steps.
+It has no claim, lease, keyed receipt, child Operation, Gateway observation loop
+or polling registration. The Gateway projects bounded phase/fingerprint results
+and the terminal build state. Rollback is a revert of the paired cutover
+commits. The former image helper kinds, including `task_vm.image_finish_seed`,
+have no independent caller or registration: seed finalization is a step of this
+root. The read-only `image.owner` check runs as the image's pinned `orbit` UID
+and GID 1000. Root commands and mutation supervision start as root; setting
+`SUDO_USER` does not change a read command's effective identity. The retained
+paths below apply to other Task VM kinds, including UpCloud images.
 
 The Gateway records VM, runtime, image and host sweep intent. This family drives
 their effects through fixed Operations. Discovery dispatches a kind and worker;

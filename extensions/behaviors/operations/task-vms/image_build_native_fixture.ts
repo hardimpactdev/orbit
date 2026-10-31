@@ -6,6 +6,37 @@ async function save(state: Record<string, unknown>) {
 export async function fixtureHttp(method: string, path: string, raw?: unknown) {
   const state = JSON.parse(await Deno.readTextFile(file));
   state.calls.push(path);
+  if (method === "GET" && path.includes("/private-material")) {
+    await save(state);
+    const bytes = new TextEncoder().encode(
+      Deno.env.get("ORBIT_TEST_PI_ARTIFACT") ?? "",
+    );
+    if (path.includes("&artifact=pi_artifact_file")) {
+      return {
+        status: 200,
+        body: state.corruptArtifact
+          ? bytes.map((byte, index) => index === 0 ? byte ^ 1 : byte)
+          : bytes,
+      };
+    }
+    const run = new URL(path, "https://gateway.test").searchParams.get(
+      "run_id",
+    );
+    return {
+      status: 200,
+      body: {
+        data: {
+          pi_artifact_file: {
+            path:
+              `/api/v1/direct-operations/7/private-material?run_id=${run}&artifact=pi_artifact_file`,
+            sha256: state.operation.input.pi_artifact.sha256,
+            bytes: bytes.length,
+            max_bytes: 268435456,
+          },
+        },
+      },
+    };
+  }
   if (method === "POST") {
     const body = raw as Record<string, unknown>;
     state.operation.status = body.status;

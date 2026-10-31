@@ -1,9 +1,10 @@
-"""Native image DAG and file-data proof. No VM, sudo, token or fleet mutation."""
+"""Native image DAG and bounded artifact-reference proof. No VM, sudo, token or fleet mutation."""
 import hashlib
 import json
 from pathlib import Path
 import sys
 import unittest
+import uuid
 import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -14,33 +15,32 @@ from native_harness import NativeTestCase
 class ImageBuildNative(NativeTestCase):
     def setUp(self):
         super().setUp()
+        artifact_text = 'image-artifact-' + uuid.uuid4().hex
+        self.native_env['ORBIT_TEST_PI_ARTIFACT'] = artifact_text
+        self.secrets = (artifact_text,)
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/task-vms')
         module = self.repo / 'extensions/behaviors/operations/task-vms/image_build_direct.ts'
         module.write_text('import {fixtureHttp, fixtureHost, fixtureGuest} from "./image_build_native_fixture.ts";\n' + module.read_text().replace('...imageBuildDirect()', '...imageBuildDirect(() => fixtureHttp, fixtureHost, fixtureGuest)'))
         workflow = ROOT / 'workflows/workflow-operation-task-vm-image-build.yaml'
         source = yaml.safe_load(workflow.read_text())
-        self.assertEqual(source['jobs'][2]['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
-        self.assertIn('artifact_target', source['jobs'][1]['target'])
-        self.assertIn('artifact_label', source['jobs'][1]['labels']['node'])
+        self.assertEqual(source['jobs'][1]['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
+        self.assertEqual([job['name'] for job in source['jobs']], ['admission', 'build', 'admission-failed'])
         for job in source['jobs']:
             self.assertIn('node', job.pop('labels'))
             job.pop('target')
         (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(source, sort_keys=False))
-        artifact = self.repo / 'sandbox-artifacts' / 'pi'
-        artifact.parent.mkdir()
-        artifact.write_bytes(b'public pinned binary')
-        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        digest = hashlib.sha256(artifact_text.encode()).hexdigest()
         self.state = {'calls': [], 'actions': [], 'guest': [], 'artifactDelivered': False,
             'operation': {'id': 7, 'kind': 'task_vm.image_build', 'node_id': 13, 'status': 'queued',
                 'cancel_requested': False, 'result': None, 'input': {
-                    'build_id': 7, 'attempt': 1, 'host_node_id': 13, 'artifact_node_id': 14,
+                    'build_id': 7, 'attempt': 1, 'host_node_id': 13,
                     'agent_sha256': 'a' * 64, 'identity': 'sha256:' + 'b' * 64, 'generation': 1,
                     'project': 'orbit-tasks', 'name': 'tvm-image-7', 'cidr': '10.251.77.0/24',
                     'pool': 'orbit-tasks', 'network': 'orbittask0', 'cpus': 2, 'memory': '4GiB', 'disk': '45GiB',
                     'source': 'ubuntu-26.04-vm', 'candidate_alias': 'candidate-7', 'base_alias': 'orbit-task-base',
                     'gateway_public_key': 'public-key', 'certificate': 'public-root',
                     'recipe': {'identity': 'sha256:' + 'b' * 64, 'agent_sha256': 'a' * 64, 'pi_sha256': digest},
-                    'pi_artifact': {'path': str(artifact), 'sha256': digest},
+                    'pi_artifact': {'sha256': digest},
                     'prune': {'project': 'orbit-tasks', 'operation': {'kind': 'prune', 'pool': 'orbit-tasks',
                         'obsolete_aliases': [], 'retired_aliases': [], 'protected_fingerprints': []}},
                 }}}
@@ -58,7 +58,7 @@ class ImageBuildNative(NativeTestCase):
             '--input', 'node_id=13', '--input', 'kind=task_vm.image_build', success=success)
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
-    def test_full_dag_delivers_native_file_and_promotes_only_after_smoke_and_seed(self):
+    def test_full_dag_fetches_pinned_private_artifact_and_promotes_only_after_smoke_and_seed(self):
         self.run_workflow()
         saved = self.read()
         self.assertTrue(saved['artifactDelivered'])
@@ -86,15 +86,14 @@ class ImageBuildNative(NativeTestCase):
         self.assertEqual(self.read()['actions'], actions)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
-    def test_bad_artifact_fails_before_any_host_action(self):
-        self.state['operation']['input']['pi_artifact']['sha256'] = 'd' * 64
-        recipe = json.loads(self.state['operation']['input']['recipe'])
-        recipe['pi_sha256'] = 'd' * 64
-        self.state['operation']['input']['recipe'] = json.dumps(recipe)
+    def test_corrupt_download_never_reaches_guest_upload_or_promotion(self):
+        self.state['corruptArtifact'] = True
         self.save()
         self.run_workflow(success=False)
-        self.assertEqual(self.read()['actions'], [])
-        self.assertEqual(self.read()['operation']['status'], 'failed')
+        saved = self.read()
+        self.assertEqual(saved['operation']['status'], 'failed')
+        self.assertFalse(saved['artifactDelivered'])
+        self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote' for call in saved['actions']))
 
 
 if __name__ == '__main__':

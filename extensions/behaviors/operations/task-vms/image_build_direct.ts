@@ -3,7 +3,7 @@ import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../../operation-runner/mod.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
-import { digest, incusGuest } from "./image_guest.ts";
+import { incusGuest } from "./image_guest.ts";
 import { recipePhases as phases } from "./images.ts";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -29,7 +29,6 @@ const StoredImageIntent = z.object({
   build_id: z.number().int().positive(),
   attempt: z.number().int().positive(),
   host_node_id: z.number().int().positive(),
-  artifact_node_id: z.number().int().positive(),
   agent_sha256: hash,
   identity: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   generation: z.number().int().positive(),
@@ -48,7 +47,6 @@ const StoredImageIntent = z.object({
   certificate: z.string(),
   recipe: object,
   pi_artifact: z.object({
-    path: z.string().regex(/^\/[^\0]+\/sandbox-artifacts\/[a-zA-Z0-9._-]+$/),
     sha256: hash,
   }).strict().nullable(),
   prune: object,
@@ -281,25 +279,12 @@ type Handle = { name: string };
 type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
-  modelType: string;
-  modelId: string;
   readResource(name: string): Promise<Record<string, unknown> | null>;
   writeResource(
     spec: string,
     name: string,
     data: Record<string, unknown>,
   ): Promise<Handle>;
-  createFileWriter(
-    spec: string,
-    name: string,
-  ): { writeAll(bytes: Uint8Array): Promise<Handle> };
-  dataRepository: {
-    getContent(
-      type: string,
-      id: string,
-      name: string,
-    ): Promise<Uint8Array | null>;
-  };
 };
 export function imageBuildDirect(
   makeHttp = (ctx: Context) =>
@@ -333,19 +318,9 @@ export function imageBuildDirect(
   };
   return {
     type: "@nckrtl/task-vm-image-build",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
-      intent: {
-        description: "Safe immutable image input",
-        schema: z.object({
-          input: StoredImageIntent,
-          artifact_target: z.string().regex(/^orbit-node-[1-9][0-9]*$/),
-          artifact_label: z.string().regex(/^[1-9][0-9]*$/),
-        }),
-        lifetime: "1d",
-        garbageCollection: 1,
-      },
       boot: {
         description: "Native builder boot identity",
         schema: z.object({ boot_id: z.string().uuid() }),
@@ -355,14 +330,6 @@ export function imageBuildDirect(
       publication: {
         description: "Native published image",
         schema: z.object({ fingerprint: hash }),
-        lifetime: "1d",
-        garbageCollection: 1,
-      },
-    },
-    files: {
-      artifact: {
-        description: "Public digest-pinned Pi binary",
-        contentType: "application/octet-stream",
         lifetime: "1d",
         garbageCollection: 1,
       },
@@ -388,67 +355,8 @@ export function imageBuildDirect(
         description: "Read the exact admitted image attempt",
         arguments: Args,
         execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-          const current = await read(args, ctx);
-          const input = current.input;
-          return {
-            dataHandles: [
-              await ctx.writeResource("intent", "intent", {
-                input,
-                artifact_target: `orbit-node-${input.artifact_node_id}`,
-                artifact_label: String(input.artifact_node_id),
-              }),
-            ],
-          };
-        },
-      },
-      artifact: {
-        description: "Publish the admitted Pi binary from the Gateway worker",
-        arguments: z.object({}),
-        execute: async (_args: Record<string, never>, ctx: Context) => {
-          const input = z.object({ input: ImageIntent }).parse(
-            await ctx.readResource("intent"),
-          ).input;
-          if (input.pi_artifact === null) return {};
-          const path = input.pi_artifact.path;
-          let parent = "";
-          for (const part of path.split("/").filter(Boolean)) {
-            if (part === "." || part === "..") {
-              throw new Error("Unsafe artifact path");
-            }
-            parent += "/" + part;
-            const info = await Deno.lstat(parent);
-            if (
-              info.isSymlink ||
-              (parent === path ? !info.isFile : !info.isDirectory)
-            ) {
-              throw new Error("Unsafe artifact path");
-            }
-          }
-          const file = await Deno.open(path, { read: true });
-          let bytes: Uint8Array;
-          try {
-            const info = await file.stat();
-            if (info.size < 1 || info.size > 268435456) {
-              throw new Error("Invalid artifact size");
-            }
-            bytes = new Uint8Array(info.size);
-            let offset = 0;
-            while (offset < bytes.length) {
-              const count = await file.read(bytes.subarray(offset));
-              if (count === null) throw new Error("Incomplete artifact");
-              offset += count;
-            }
-          } finally {
-            file.close();
-          }
-          if (await digest(bytes) !== input.pi_artifact.sha256) {
-            throw new Error("Invalid artifact digest");
-          }
-          return {
-            dataHandles: [
-              await ctx.createFileWriter("artifact", "pi").writeAll(bytes),
-            ],
-          };
+          await read(args, ctx);
+          return {};
         },
       },
       step: {
@@ -484,15 +392,11 @@ export function imageBuildDirect(
                   input.name + (smoke ? "-smoke" : ""),
                   input.agent_sha256,
                 ),
-              async () => {
-                const bytes = await ctx.dataRepository.getContent(
-                  ctx.modelType,
-                  ctx.modelId,
-                  "pi",
-                );
-                if (!bytes) throw new Error("Missing native Pi artifact");
-                return bytes;
-              },
+              () =>
+                api.artifact(
+                  "pi_artifact_file",
+                  hash.parse(input.pi_artifact?.sha256),
+                ),
               boot ? z.string().uuid().parse(boot.boot_id) : null,
             );
             executing = false;

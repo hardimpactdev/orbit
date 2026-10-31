@@ -14,24 +14,9 @@ jobs:
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: admit
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}
-- name: artifact
-  dependsOn:
-  - job: admission
-    condition: {type: succeeded}
-  target: ${{ data.latest("task-vm-image-build-" + run.id, "intent").attributes.artifact_target }}
-  labels: {node: '${{ data.latest("task-vm-image-build-" + run.id, "intent").attributes.artifact_label }}'}
-  steps:
-  - name: publish-pi
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + run.id }}
-      methodName: artifact
-      inputs: {}
 - name: build
   dependsOn:
-  - job: artifact
+  - job: admission
     condition: {type: succeeded}
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
@@ -232,21 +217,6 @@ jobs:
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: admission-failed-project
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: ${{ "task-vm-image-build-" + run.id }}
-      methodName: failure
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}
-- name: artifact-failed
-  dependsOn:
-  - job: artifact
-    condition: {type: failed}
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: {node: '${{ string(inputs.node_id) }}'}
-  steps:
-  - name: artifact-failed-project
     writes: true
     task:
       type: behavior
