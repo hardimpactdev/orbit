@@ -1,8 +1,5 @@
 name: Swamp shape
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_call:
     secrets:
       SWAMP_API_KEY:
