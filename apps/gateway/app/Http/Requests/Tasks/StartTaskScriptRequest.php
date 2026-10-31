@@ -24,7 +24,14 @@ final class StartTaskScriptRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['subtask', 'script', 'args']);
+            $payload = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['subtask', 'script', 'args']);
+            foreach (is_array($payload['args'] ?? null) ? $payload['args'] : [] as $argument) {
+                if (is_string($argument) && str_contains($argument, "\0")) {
+                    throw ValidationException::withMessages(['args' => ['Script arguments must not contain null bytes.']]);
+                }
+            }
+
+            return $payload;
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }

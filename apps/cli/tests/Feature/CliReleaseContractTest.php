@@ -140,8 +140,6 @@ function cli_release_assets(string $root, string $version): array
         cli_release_repo_root().'/bin/orbit-cli-release-assets',
         $version,
         $root.'/artifacts',
-        $root.'/agent-delivery',
-        'https://github.com/hardimpactdev/orbit/releases/download/cli-v'.$version,
         $root.'/release',
     ], $root);
 }
@@ -224,7 +222,7 @@ describe('CLI release version', function (): void {
 });
 
 describe('CLI release assets', function (): void {
-    it('names each binary for its platform, adds the tested agent with its release URLs, and writes sorted SHA256SUMS', function (): void {
+    it('publishes only CLI binaries with sorted SHA256SUMS', function (): void {
         $root = cli_release_artifacts();
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
@@ -232,9 +230,6 @@ describe('CLI release assets', function (): void {
         $names = [
             'orbit-0.4681.0-linux-x86_64',
             'orbit-0.4681.0-macos-arm64',
-            'orbit-agent-linux-x86_64',
-            'orbit-agent-macos-aarch64',
-            'orbit-agent-macos-x86_64',
         ];
         $expectedSums = implode('', array_map(
             static fn (string $name): string => hash_file('sha256', $root.'/release/'.$name)."  {$name}\n",
@@ -243,23 +238,14 @@ describe('CLI release assets', function (): void {
         $files = array_map(basename(...), File::files($root.'/release'));
         sort($files);
 
-        $manifest = json_decode(File::get($root.'/release/manifest.json'), true);
-
         expect($exitCode)->toBe(0, $stderr)
-            ->and($files)->toBe(['SHA256SUMS', 'manifest.json', ...$names])
+            ->and($files)->toBe(['SHA256SUMS', ...$names])
             ->and(File::get($root.'/release/SHA256SUMS'))->toBe($expectedSums)
             ->and(File::get($root.'/release/orbit-0.4681.0-macos-arm64'))->toBe(File::get($root.'/artifacts/orbit-macos-arm64/mac-arm'))
-            ->and(File::get($root.'/release/orbit-agent-macos-x86_64'))->toBe(File::get($root.'/agent-delivery/orbit-agent-macos-x86_64'))
-            ->and(fileperms($root.'/release/orbit-0.4681.0-linux-x86_64') & 0777)->toBe(0755)
-            ->and($manifest['commit'])->toBe(str_repeat('a', 40))
-            ->and($manifest['artifacts']['linux-x86_64'])->toBe([
-                'path' => 'orbit-agent-linux-x86_64',
-                'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-linux-x86_64'),
-                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-agent-linux-x86_64',
-            ]);
+            ->and(fileperms($root.'/release/orbit-0.4681.0-linux-x86_64') & 0777)->toBe(0755);
     });
 
-    it('refuses an agent binary that does not match its tested digest or platform', function (string $fault): void {
+    it('publishes CLI independently of missing or changed agent artifacts', function (string $fault): void {
         $root = cli_release_artifacts();
         match ($fault) {
             'digest' => File::append($root.'/agent-delivery/orbit-agent-linux-x86_64', 'changed'),
@@ -269,13 +255,9 @@ describe('CLI release assets', function (): void {
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
 
-        expect($exitCode)->toBe(1)
-            ->and($stderr)->toContain(match ($fault) {
-                'digest' => 'does not match its tested digest',
-                'platform' => 'is not a macos-x86_64 executable',
-                'missing' => 'missing binary',
-            })
-            ->and($root.'/release')->not->toBeDirectory();
+        expect($exitCode)->toBe(0, $stderr)
+            ->and($root.'/release/manifest.json')->not->toBeFile()
+            ->and(glob($root.'/release/orbit-agent-*'))->toBe([]);
     })->with(['digest', 'platform', 'missing']);
 
     it('refuses a binary built for another platform', function (): void {
@@ -289,7 +271,7 @@ describe('CLI release assets', function (): void {
             ->and($root.'/release')->not->toBeDirectory();
     });
 
-    it('refuses an agent delivery that names a Linux arm64 binary', function (): void {
+    it('ignores platform entries in an unrelated agent delivery', function (): void {
         $root = cli_release_artifacts();
         cli_release_fake_binary($root.'/agent-delivery/orbit-agent-linux-aarch64', 'linux-aarch64');
         $manifest = json_decode(File::get($root.'/agent-delivery/manifest.json'), true);
@@ -299,9 +281,8 @@ describe('CLI release assets', function (): void {
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
 
-        expect($exitCode)->toBe(1)
-            ->and($stderr)->toContain('the agent manifest does not name exactly linux-x86_64 macos-aarch64 macos-x86_64')
-            ->and($root.'/release')->not->toBeDirectory();
+        expect($exitCode)->toBe(0, $stderr)
+            ->and(glob($root.'/release/orbit-agent-*'))->toBe([]);
     });
 
     it('refuses a missing binary', function (): void {
@@ -358,7 +339,7 @@ describe('CLI release workflow', function (): void {
             ->and($workflow)->toContain('bin/orbit-cli-release-version --on-main origin/main "$REQUESTED_COMMIT"')
             ->and($workflow)->toContain('bin/orbit-cli-release-version --tag --on-main origin/main "$REQUESTED_COMMIT"')
             ->and($workflow)->toContain('uses: ./.github/workflows/orbit-cli-binary.yml')
-            ->and($workflow)->toContain('bin/orbit-cli-release-assets "$VERSION" artifacts agent-delivery "https://github.com/${REPOSITORY}/releases/download/${TAG}" release')
+            ->and($workflow)->toContain('bin/orbit-cli-release-assets "$VERSION" artifacts release')
             ->and($workflow)->toContain('--latest=false')
             ->and($workflow)->toContain('Published releases are never replaced.')
             ->and(substr_count($workflow, 'contents: write'))->toBe(1)
@@ -472,8 +453,7 @@ describe('CLI release workflow', function (): void {
     it('names the missing provenance bundle when the release of the commit exists without it', function (bool $withBundle, int $exitCode, string $output): void {
         $bin = (string) cli_release_temp('orbit-cli-release-bin');
         File::ensureDirectoryExists($bin);
-        $names = ['SHA256SUMS', 'manifest.json', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64',
-            'orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64', ...($withBundle ? ['provenance.sigstore.json'] : [])];
+        $names = ['SHA256SUMS', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64', ...($withBundle ? ['provenance.sigstore.json'] : [])];
         File::put($bin.'/release.json', json_encode(['assets' => array_map(static fn (string $name): array => ['name' => $name], $names)]));
         File::put($bin.'/gh', "#!/bin/sh\ncase \"\$2\" in\n  */releases/tags/*) cat '{$bin}/release.json' ;;\n  *) echo \"\$COMMIT\" ;;\nesac\n");
         chmod($bin.'/gh', 0755);
@@ -511,13 +491,13 @@ describe('CLI release workflow', function (): void {
         ])
             ->and($steps['Add the provenance bundle']['env'])->toBe(['BUNDLE' => '${{ steps.attest.outputs.bundle-path }}'])
             ->and($steps['Add the provenance bundle']['run'])->toBe('install -m 0644 "$BUNDLE" release/provenance.sigstore.json')
-            // The subjects are the nine prepared files, and the bundle joins them before the one release create.
+            // The subjects are the three prepared CLI files, and the bundle joins them before the one release create.
             ->and($order('Prepare release assets'))->toBeLessThan($order('Attest the release files'))
             ->and($order('Attest the release files'))->toBeLessThan($order('Add the provenance bundle'))
             ->and($order('Add the provenance bundle'))->toBeLessThan($order('Publish GitHub release'))
             ->and($steps['Publish GitHub release']['run'])->toContain('gh release create "$TAG" release/*')
             ->and($steps['Verify the published release']['run'])->toContain('cmp verify/provenance.sigstore.json release/provenance.sigstore.json')
-            ->and(array_column($jobs['resolve']['steps'], 'run', 'name')['Check for an existing release'])->toContain('SHA256SUMS manifest.json provenance.sigstore.json');
+            ->and(array_column($jobs['resolve']['steps'], 'run', 'name')['Check for an existing release'])->toContain('SHA256SUMS provenance.sigstore.json');
     });
 });
 
