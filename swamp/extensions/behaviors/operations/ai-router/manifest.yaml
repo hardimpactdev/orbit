@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: '@nckrtl/ai-router-source-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Fixed collector source retirement action.
+behaviors:
+  - operations/ai-router/source_input.ts
+additionalFiles:
+  - scripts/remove_source.py
