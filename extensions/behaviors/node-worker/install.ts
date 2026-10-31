@@ -20,9 +20,9 @@ export type WorkerCredentials = {
   server_token: string;
 };
 export const Swamp = {
-  version: "20261028.205235.0-sha.1602a617",
-  sha256: "38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3",
-  bytes: 403378168,
+  version: "20261031.063736.0-sha.e459d219",
+  sha256: "bfd72a112412ce48d4c11e8e80a35caefa811683146f7e30795d498382b20768",
+  bytes: 405875640,
   headroom: 256 * 1024 * 1024,
 };
 const binary = "/usr/local/bin/swamp";

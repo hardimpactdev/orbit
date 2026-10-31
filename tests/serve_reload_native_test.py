@@ -1,4 +1,4 @@
-"""Pinned native reload contract; isolated loopback server and no admitted effects."""
+"""Native reload contract; isolated loopback server and no admitted effects."""
 import json
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ from native_harness import NativeTestCase
 
 @unittest.skipUnless(os.environ.get('SWAMP_BIN'), 'requires the pinned native Swamp binary')
 class ServeReloadNativeTest(NativeTestCase):
-    def test_reload_keeps_pid_and_refreshes_local_behavior_before_next_run(self):
+    def test_reload_reconciles_externally_indexed_local_behavior_without_a_run(self):
         self.native_env = {
             'SWAMP_HOME': str(self.repo / 'home'),
             'SWAMP_CONFIG_DIR': os.environ.get('SWAMP_CONFIG_DIR', str(Path.home() / '.config/swamp')),
@@ -21,7 +21,7 @@ class ServeReloadNativeTest(NativeTestCase):
         }
         # No production retention, credentials, schedules or server connection.
         (self.repo / '.swamp.yaml').write_text(
-            'swampVersion: 20261028.205235.0-sha.1602a617\n'
+            'swampVersion: 20261031.063736.0-sha.e459d219\n'
             'repoId: 0ef253a3-8e75-4c0e-a680-e31936096a45\n'
             'telemetryDisabled: true\n')
         source = self.repo / 'extensions/behaviors/probe.ts'
@@ -84,16 +84,16 @@ class ServeReloadNativeTest(NativeTestCase):
         source.write_text(behavior('2026.10.30.2'))
         definition.write_text(workflow('After reload'))
         (source.parent / 'new.ts').write_text(behavior('2026.10.30.1').replace('@nckrtl/reload-probe', '@nckrtl/reload-added'))
+        # A second CLI indexes the edited files before serve reloads. The old
+        # process compared against that advanced catalog and kept warm validators.
+        indexed = json.loads(self.cli('model', 'type', 'describe', '@nckrtl/reload-probe').stdout)
+        self.assertEqual(indexed['version'], '2026.10.30.2')
         response = json.loads(self.cli('serve', 'reload', *endpoint).stdout)
         self.assertTrue(response['success'])
         self.assertEqual(response['errors'], [])
         visible = json.loads(self.cli('workflow', 'get', 'reload-probe', *endpoint).stdout)
         self.assertEqual(visible['description'], 'After reload')
-        # Pinned reload refreshes pulled extensions, not repo-local model metadata.
-        self.assertEqual(describe()['version'], '2026.10.30.1')
-        # Only this disposable fixture exercises run dependency construction. The
-        # missing workflow refuses before admission; no step or user effect runs.
-        self.cli('workflow', 'run', 'nonexistent-reload-probe', *endpoint, success=False)
+        # Reload itself must refresh metadata; no workflow run forces freshness.
         self.assertEqual(describe()['version'], '2026.10.30.2')
         added = json.loads(self.cli('model', 'type', 'describe', '@nckrtl/reload-added', *endpoint).stdout)
         self.assertEqual(added['version'], '2026.10.30.1')
