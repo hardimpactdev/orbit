@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -36,7 +36,7 @@ beforeEach(function (): void {
         public function definitions(): array
         {
             return array_diff_key(array_fill_keys(['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision', 'task_vm.destroy'],
-                ['workflow' => 'operation-test-hub', 'projection' => TaskVmEnrollmentProjection::class,
+                ['workflow' => 'operation-test-hub', 'projection' => NodeNetworkProjection::class,
                     'private_material' => ['configuration' => 'node.vpn_configuration']]), $this->known);
         }
     };
@@ -113,6 +113,7 @@ it('preserves exact destroyed TaskVM guest exclusion without expanding standalon
 });
 
 it('serves hub SSH material only to the immutable Gateway reader through the shared private endpoint', function (): void {
+    $this->operation->kind = 'task_vm.destroy';
     $keys = Mockery::mock(SshKeyProvider::class);
     $keys->shouldReceive('privateKeyPath')->once()->andReturn('/private/gateway-identity');
     app()->instance(SshKeyProvider::class, $keys);
