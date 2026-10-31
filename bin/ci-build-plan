@@ -12,6 +12,8 @@ def select(paths, main=False):
     jobs = dict.fromkeys(JOBS, False)
     agent = False
     for path in paths:
+        if not path:
+            continue
         if '/' not in path and path.endswith(('.md', '.mdx')):
             jobs['docs'] = True
             continue

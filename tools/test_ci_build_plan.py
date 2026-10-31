@@ -27,6 +27,10 @@ class BuildPlanTest(unittest.TestCase):
     def test_main_always_supplies_the_web_artifact(self):
         self.assertEqual({'docs', 'web'}, self.selected(['docs/reference/ci.md'], main=True))
 
+    def test_an_empty_diff_selects_no_builds_except_main_web(self):
+        self.assertEqual(set(), self.selected(['']))
+        self.assertEqual({'web'}, self.selected([], main=True))
+
     def test_shared_ci_changes_run_all_builds(self):
         self.assertEqual(set(plan.JOBS), self.selected(['.github/workflows/ci.yml']))
         self.assertEqual(set(plan.JOBS), self.selected(['bin/ci-build-plan']))
