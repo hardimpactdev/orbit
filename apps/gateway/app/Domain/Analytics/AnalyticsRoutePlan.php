@@ -140,15 +140,20 @@ final readonly class AnalyticsRoutePlan
 
     /** Fresh caller-scoped cleanup after the parent restores and publishes stored state.
      *
-     * @param  Plan  $plan
+     * @param  array<string,mixed>  $plan
      * @return list<Leaf>
      */
     public function cleanupForNode(array $plan, int $nodeId): array
     {
+        $raw = $plan['cleanup'] ?? null;
+        if (! is_array($raw) || ! array_is_list($raw)) {
+            throw new ResourceOperationException('analytics.plan_invalid', 'The stored tracking cleanup must be a leaf list.', 422);
+        }
+        $cleanup = array_map(static fn (mixed $leaf): array => AnalyticsTrackingIntent::decodeLeaf(ValidatedData::object($leaf)), $raw);
         $node = Node::query()->findOrFail($nodeId);
         $sites = app(DevelopmentSiteRepository::class)->forNode($node);
 
-        return array_values(array_filter($plan['cleanup'], static fn (array $leaf): bool => $leaf['node_id'] === $nodeId
+        return array_values(array_filter($cleanup, static fn (array $leaf): bool => $leaf['node_id'] === $nodeId
             && ! $sites->contains(static fn ($site): bool => $site->loadsCertificate($leaf['scope']))));
     }
 

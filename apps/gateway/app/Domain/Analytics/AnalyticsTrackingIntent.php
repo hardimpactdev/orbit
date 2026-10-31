@@ -211,8 +211,8 @@ final readonly class AnalyticsTrackingIntent
         }
 
         return ['publish' => ValidatedData::integerList($plan['publish']), 'remove' => ValidatedData::integerList($plan['remove']),
-            'snapshot' => $this->objects($plan['snapshot']), 'certificates' => array_map($this->leaf(...), $this->objects($plan['certificates'])),
-            'cleanup' => array_map($this->leaf(...), $this->objects($plan['cleanup'])),
+            'snapshot' => $this->objects($plan['snapshot']), 'certificates' => array_map(self::decodeLeaf(...), $this->objects($plan['certificates'])),
+            'cleanup' => array_map(self::decodeLeaf(...), $this->objects($plan['cleanup'])),
             'caddy_node_ids' => ValidatedData::integerList($plan['caddy_node_ids']), 'dns_node_ids' => ValidatedData::integerList($plan['dns_node_ids']),
             'router_node_ids' => ValidatedData::integerList($plan['router_node_ids']), 'ingress_node_ids' => ValidatedData::integerList($plan['ingress_node_ids']),
             'public_verify_node_ids' => ValidatedData::integerList($plan['public_verify_node_ids']), 'firewall_node_ids' => ValidatedData::integerList($plan['firewall_node_ids']),
@@ -232,7 +232,7 @@ final readonly class AnalyticsTrackingIntent
     /** @param array<string,mixed> $leaf
      * @return Leaf
      */
-    private function leaf(array $leaf): array
+    public static function decodeLeaf(array $leaf): array
     {
         return ['node_id' => ValidatedData::integer($leaf['node_id']), 'route_id' => ValidatedData::integer($leaf['route_id']),
             'user' => ValidatedData::string($leaf['user']),
