@@ -3,11 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
+use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRenameResult;
 use App\Domain\Instances\InstanceTransferDiscardProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.sync_environment' => [
+        'workflow' => 'operation-instance-environment',
+        'projection' => NativeInstanceEnvironmentProjection::class,
+        'private_material' => ['environment_material' => 'instance.environment_sync'],
+    ],
+    'instance.register' => ['workflow' => 'operation-instance-register', 'projection' => InstanceRegisterResult::class],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',

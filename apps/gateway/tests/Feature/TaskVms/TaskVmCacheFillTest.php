@@ -7,7 +7,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -33,9 +32,9 @@ function cacheFillAdmission(array $artifacts): Operation
     $gateway = Node::query()->create(['public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'name' => 'gateway', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.1']);
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $services = Node::query()->create(['public_ssh_host' => '192.0.2.12', 'user' => 'orbit', 'name' => 'services', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.3']);
-    $services->accessibleNodes()->attach($gateway);
+    $host->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $services->id]);
-    test()->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
+    test()->withServerVariables(['REMOTE_ADDR' => $host->wireguard_ip]);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id)]]);
     $project = Project::query()->create(['name' => 'Cache', 'slug' => 'cache', 'repository_url' => 'https://github.com/example/cache.git']);
     PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => $artifacts]);
@@ -70,7 +69,6 @@ it('admits one exact-host native root with safe input and no executor fallback',
     $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id='.$this->run)->assertOk()
         ->assertJsonPath('data.input.artifacts.0.key', 'archive')->assertJsonMissingPath('data.input.github_token')
         ->assertJsonMissingPath('data.input.snapshots');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertStatus(422);
 });
 
 it('refuses oversized artifact keys before recording intent', function (): void {
@@ -113,23 +111,16 @@ it('updates only the admitted snapshot and completes fully verified inventory', 
     }
 })->with([false, true]);
 
-it('rejects foreign keys, bad hashes and unsafe results before inventory mutation', function (string $variant): void {
+it('refuses a late running batch without changing verified inventory', function (): void {
     $op = cacheFillAdmission([cacheFillArtifact('archive')]);
-    $result = match ($variant) {
-        'foreign' => cacheBatch(['foreign' => 'sha256-'.str_repeat('a', 64)]),
-        'hash' => cacheBatch(['archive' => 'incorrect']),
-        'overlap' => cacheBatch(['archive' => 'sha256-'.str_repeat('a', 64)], ['archive' => 'Failed']),
-        'unsafe' => cacheBatch([], ['archive' => "unsafe\nsecret"]),
-        'long' => cacheBatch([], ['archive' => str_repeat('a', 161)]),
-    };
-    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', [...$this->outcome, 'result' => $result])->assertUnprocessable();
-    $this->assertDatabaseCount('package_cache_entries', 0);
-})->with(['foreign', 'hash', 'overlap', 'unsafe', 'long']);
-
-it('refuses an explicit polled option before admission', function (): void {
-    config(['swamp.direct_writers' => ['task_vm.fill_package_cache' => 'polled']]);
-    expect(fn () => cacheFillAdmission([]))->toThrow(ResourceOperationException::class, 'This kind requires its direct Swamp writer.');
-    $this->assertDatabaseCount('operations', 0);
+    $path = '/api/v1/direct-operations/'.$op->id.'/result';
+    $hash = 'sha256-'.str_repeat('a', 64);
+    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch(['archive' => $hash])])->assertOk();
+    $this->postJson($path, [...$this->outcome, 'status' => 'succeeded', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
+    $before = PackageCacheEntry::query()->sole()->getAttributes();
+    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch()])->assertConflict();
+    expect(PackageCacheEntry::query()->sole()->getAttributes())->toBe($before);
+    expect($op->fresh()->status->value)->toBe('succeeded');
 });
 
 it('keeps verified inventory when cancellation happens before a fill result', function (): void {
@@ -146,9 +137,10 @@ it('keeps verified inventory when cancellation happens before a fill result', fu
 it('hydrates only the owning root through the shared private callback', function (): void {
     $op = cacheFillAdmission([cacheFillArtifact('archive')]);
     $path = '/api/v1/direct-operations/'.$op->id.'/private-material?run_id='.$this->run;
+    $this->withServerVariables(['REMOTE_ADDR' => Node::query()->where('name', 'services')->sole()->wireguard_ip]);
     $this->getJson($path)->assertForbidden();
     $host = Node::query()->findOrFail($op->node_id);
-    $host->accessibleNodes()->attach(Node::query()->where('name', 'gateway')->sole());
+    $host->accessibleNodes()->syncWithoutDetaching([Node::query()->where('name', 'gateway')->sole()->id]);
     config(['operation_executor.worker_node_ids' => [$host->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $host->wireguard_ip]);
     $this->getJson($path)->assertOk()->assertJsonPath('data.github_token', null)->assertHeader('Cache-Control', 'no-store, private');

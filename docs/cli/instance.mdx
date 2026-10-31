@@ -184,35 +184,32 @@ Authentication, access and missing-record errors retain the shared API error con
 
 ## orbit instance:register
 
-Adopt the current Git checkout or worktree as a managed Instance of an existing Project. Run it on the app-dev Node that holds the source.
+Adopt an existing Git checkout in place. Run it on the app-dev Node that holds the source.
 
 ```bash
-orbit instance:register [options]
+orbit instance:register --project=ID [options]
 ```
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--path=PATH` | the current directory | Existing Git checkout or worktree. |
-| `--include-worktrees` | off | Adopt the checkout and every linked worktree as one preflighted set. |
-| `--project=ID` | resolved from the origin | Existing numeric Project ID. |
-| `--name=NAME` | inferred | Instance name. `default`, or a name that equals the Project `default_branch`, means the default development source. |
-| `--root=PATH` | the Project root | Relative web-root override for this Instance. |
-| `--domain=HOST` | generated | Explicit Route domain for the primary source. |
-| `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
-| `--setup` | off | Run the Project setup steps after adoption. A failed step leaves the Instance and the checkout in place. |
+| `--path=PATH` | the current directory | Checkout already at `<apps-root>/<project-slug>/<name>`. |
+| `--project=ID` | required | Existing numeric Project ID, with no Route. |
+| `--name=NAME` | directory name | Instance name; an explicit Project default branch name becomes `default`. |
+| `--root=PATH` | the Project root | Valid relative root override. |
+| `--yes` | off | Confirm source ownership transfer without prompting. |
+| `--include-worktrees` | off | Currently unavailable. |
+| `--domain=HOST` | none | Currently unavailable. |
+| `--setup` | off | Currently unavailable. |
 
-The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The Gateway finds the Project by repository identity, checks the source on the caller's Node, moves it into its managed path, and provisions it as `instance:create` does. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
+The CLI refuses a directory outside Git and an origin with credentials before sending a request. Swamp independently checks the source and adopts it in place. Admission returns an Operation; its successful native result activates the Instance. Registration never creates a Project. Run [`project:create`](/cli/project#orbit-projectcreate) first.
 
-When `--name` equals the Project default branch, Orbit registers the source as `default`, under the usual [identity rules](/domains/applications#register-an-existing-checkout). The final Operation result carries `name_converted_from` with the requested name, or null without a conversion, as it does for `instance:create`.
+Project inference, relocation, linked worktrees, setup, domain requests and web-serving Projects return `operation.kind_unavailable` before reservation. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
-Registration never creates a Project. When no Project owns the repository, it fails with `instance.project_missing`. Run [`project:create`](/cli/project#orbit-projectcreate) first.
-
-In a terminal, the CLI asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. Cancellation leaves the source unchanged.
+In a terminal, the CLI asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`.
 
 ```bash
-cd ~/apps/acme
-orbit instance:register
-orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --yes --json
+cd /fast/apps/acme/feature
+orbit instance:register --project=12 --name=feature --yes --json
 ```
 
 ## orbit instance:list
