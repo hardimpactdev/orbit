@@ -198,3 +198,27 @@ it('refuses malformed or unowned hub restoration before selecting another privat
         expect(NodeWireGuardInput::bound($operation))->toBeNull();
     }
 })->with(['missing', 'hub', 'executor', 'context', 'pin', 'excluded', 'kind', 'terminal', 'removing']);
+
+it('uses the same fresh restore view for an exact Gateway-rooted Node enrollment', function (): void {
+    $context = FleetFixtures::node('restore-enrollment-peer');
+    $snapshot = app(NodeWireGuardInput::class)->captureForTaskVm($context, $this->gateway);
+    $operation = $this->operation;
+    $operation->kind = 'node.add';
+    $operation->target_type = 'node';
+    $operation->target_id = $context->id;
+    $input = $operation->input;
+    $input['_wireguard'] = $snapshot;
+    $input['_wireguard_restore'] = NodeWireGuardInput::restorationSnapshot($snapshot);
+    $input['_enrollment'] = ['node_id' => $context->id, 'executor_node_id' => $this->gateway->id];
+    $input['participant_node_ids'][] = $context->id;
+    $operation->input = $input;
+    $operation->save();
+    expect(NodeWireGuardInput::bound($operation))->toBe($snapshot);
+    NodeWireGuardInput::beginRestoration($operation);
+    expect(NodeWireGuardInput::bound($operation->fresh()))->toBe($snapshot);
+    expect($operation->fresh()->input)->toBe($input);
+    expect($operation->fresh()->state['node_wireguard_restoring'])->toBeTrue();
+    $input['_enrollment']['executor_node_id'] = $this->hub->id;
+    $operation->input = $input;
+    expect(NodeWireGuardInput::bound($operation))->toBeNull();
+});
