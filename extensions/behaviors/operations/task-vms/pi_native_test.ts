@@ -5,6 +5,7 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import type { SystemCommand, SystemTransport } from "../node/system_command.ts";
 import { type PiCommand, piNative } from "./pi_native.ts";
+import { uploadTaskVmPiArtifact } from "./pi_delivery.ts";
 
 const fixtureProgram = String.raw`
 import json, os, pathlib, sys, types
@@ -91,12 +92,66 @@ async function fixture() {
   return {
     root,
     commands,
+    transport,
     wrongOwner: () => uidOffset++,
     call: (name: PiCommand, input: Record<string, unknown>) =>
       piNative(name, input, transport),
     clean: () => Deno.remove(root, { recursive: true }),
   };
 }
+
+Deno.test("parent Pi upload and install publish the pinned binary through the native transport", async () => {
+  const f = await fixture();
+  try {
+    const material = {
+      artifact: (field: string, sha256: string) => {
+        assertEquals(field, "pi_artifact_file");
+        assertEquals(sha256, pin);
+        return Promise.resolve(bytes);
+      },
+    };
+    assertEquals(
+      await uploadTaskVmPiArtifact(
+        { sha256: pin },
+        async () => {},
+        material,
+        f.transport,
+      ),
+      { uploaded: true, sha256: pin },
+    );
+    assertEquals(
+      await f.call("pi.install-artifact", { user: "orbit", sha256: pin }),
+      { changed: true },
+    );
+    assertEquals(
+      await f.call("pi.inspect-artifact", { user: "orbit", sha256: pin }),
+      { current: true },
+    );
+    assertEquals(
+      await Deno.readFile(f.root + "/home/.local/bin/pi-server"),
+      bytes,
+    );
+    assertEquals(
+      await uploadTaskVmPiArtifact(
+        { sha256: pin },
+        async () => {},
+        material,
+        f.transport,
+      ),
+      { uploaded: true, sha256: pin },
+    );
+    assertEquals(
+      await f.call("pi.install-artifact", { user: "orbit", sha256: pin }),
+      { changed: false },
+    );
+    for (const call of f.commands) {
+      assertEquals(call.command, "/usr/bin/sudo");
+      assertEquals(call.args.includes("orbit-agent"), false);
+    }
+  } finally {
+    await f.clean();
+  }
+});
 
 Deno.test("Pi native chunk replay, digest publication and install are idempotent", async () => {
   const f = await fixture();

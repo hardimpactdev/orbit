@@ -1,9 +1,13 @@
+import type { NodeCommand } from "../../node-worker/command.ts";
+import { run } from "../_lib/node-commands.ts";
+
 /** Internal transport for code-owned programs. Never accept command source from an intent. */
 export type SystemCommand = {
   command: string;
   args: readonly string[];
   stdin?: string;
   timeoutMs: number;
+  maxOutputBytes?: number;
 };
 export type SystemOutput = { success: boolean; stdout: string };
 export type SystemTransport = (
@@ -11,65 +15,33 @@ export type SystemTransport = (
   signal?: AbortSignal,
 ) => Promise<SystemOutput>;
 
-/** Once a mutation starts, the caller reconciles its outcome before observing cancellation. */
+/** The shared runner verifies local placement before executing system commands. */
 export const localSystemCommand: SystemTransport = async (input, signal) => {
   signal?.throwIfAborted();
-  const timeout = AbortSignal.timeout(input.timeoutMs);
-  const child = new Deno.Command(input.command, {
-    args: [...input.args],
-    stdin: input.stdin === undefined ? "null" : "piped",
-    stdout: "piped",
-    stderr: "null",
-    signal: timeout,
-  }).spawn();
-  let finished = false;
+  const maxOutputBytes = input.maxOutputBytes ?? 65536;
+  if (
+    !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1 ||
+    maxOutputBytes > 64 * 1024 * 1024
+  ) {
+    throw new Error(
+      "System command output bound must be between 1 byte and 64 MiB",
+    );
+  }
   try {
-    // Drain output while writing input: either pipe can exceed the kernel buffer.
-    const writing = (async () => {
-      if (input.stdin === undefined) return;
-      const writer = child.stdin.getWriter();
-      try {
-        await writer.write(new TextEncoder().encode(input.stdin));
-        await writer.close();
-      } finally {
-        writer.releaseLock();
-      }
-    })();
-    const reading = (async () => {
-      const chunks: Uint8Array[] = [];
-      let length = 0;
-      for await (const chunk of child.stdout) {
-        length += chunk.length;
-        if (length > 65536) {
-          throw new Error("System command output exceeded its bound");
-        }
-        chunks.push(chunk);
-      }
-      const bytes = new Uint8Array(length);
-      let offset = 0;
-      for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.length;
-      }
-      return bytes;
-    })();
-    const [, bytes, status] = await Promise.all([
-      writing,
-      reading,
-      child.status,
-    ]);
-    timeout.throwIfAborted();
-    finished = true;
-    return { success: status.success, stdout: new TextDecoder().decode(bytes) };
+    const result = await run(
+      [input.command, ...input.args],
+      input.stdin === undefined
+        ? undefined
+        : new TextEncoder().encode(input.stdin),
+      "node",
+      { deadlineMs: input.timeoutMs, maxOutputBytes },
+    );
+    return {
+      success: result.success,
+      stdout: new TextDecoder().decode(result.stdout),
+    };
   } catch {
     throw new Error("The system command has no confirmed outcome");
-  } finally {
-    if (!finished) {
-      try {
-        child.kill("SIGTERM");
-      } catch { /* Already exited. */ }
-      await child.status.catch(() => {});
-    }
   }
 };
 
@@ -85,5 +57,29 @@ export function systemArguments(
       stdin,
       timeoutMs: 420000,
     }, signal);
+  };
+}
+
+/** Adapt the parent-bound transport for the worker installer; custody stays in its callback. */
+export function nodeWorkerCommand(
+  invoke: SystemTransport,
+  signal?: AbortSignal,
+): NodeCommand {
+  return async (argv, stdin, asUser, options = {}) => {
+    if (asUser !== "root" || argv.length === 0) {
+      throw new Error("swamp.node_worker_invalid");
+    }
+    const result = await invoke({
+      command: "/usr/bin/sudo",
+      args: ["-n", "--", ...argv],
+      stdin: stdin === undefined ? undefined : new TextDecoder().decode(stdin),
+      timeoutMs: options.deadlineMs ?? 660000,
+      maxOutputBytes: options.maxOutputBytes,
+    }, options.signal ?? signal);
+    return {
+      success: result.success,
+      code: result.success ? 0 : 1,
+      stdout: new TextEncoder().encode(result.stdout),
+    };
   };
 }
