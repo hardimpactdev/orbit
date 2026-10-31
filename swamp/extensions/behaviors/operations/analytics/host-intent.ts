@@ -85,13 +85,13 @@ export const behavior = {
             description: "Admitted public Router certificate intent",
             schema: z.object({ intent: CertificateLeaf }),
             lifetime: "infinite",
-            garbageCollection: 1,
+            garbageCollection: 10,
         },
         request: {
             description: "Public CSR or current-leaf observation",
             schema: PublicRequest,
             lifetime: "infinite",
-            garbageCollection: 1,
+            garbageCollection: 10,
         },
     },
     methods: {

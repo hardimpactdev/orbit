@@ -231,3 +231,13 @@ The pure output method parses one canonical request command result. It returns t
 The enable workflow fans out to `analytics-host-prepare` for each admitted leaf. Each child validates the public intent, resolves the canonical certificate script asset, runs one request command and decodes its public result. All four steps target the same admitted Node. The canonical script owns key creation and current-certificate checks; metadata and the command share the same physical worker.
 
 The parent reads each child's `prepared` output for signing and publication. This replaces the enable workflow's request-time Gateway read and TypeScript effect wrapper. The remaining enable steps and generic Route helper still use their existing implementations. The parent continues to own signing, publication and terminal projection; no child Operation is created.
+
+
+The official extension review checked Swamp core command/workflow support and
+`@swamp/cfgmgmt/certificate` at upstream commit
+`d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. Its `check` and `apply` methods
+deploy an existing `certContent` and required `keyContent`; they do not generate
+a leaf key or return a CSR. Host preparation therefore uses core command execution
+with the certificate owner's shipped request action. It adds no transport,
+supervisor or certificate deployment mechanism. Publication remains a separate
+owner action and must use official features where they fit.
