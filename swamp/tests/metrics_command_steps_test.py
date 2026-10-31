@@ -169,6 +169,45 @@ class ExporterFiles(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(foreign.read_text(), "preserve")
 
+    def test_runtime_publication_refuses_writable_owned_marker_directory(self):
+        base = self.root / "etc/orbit/metrics"
+        base.mkdir(parents=True)
+        (base / ".orbit-owner").write_text("metrics\n")
+        target = base / "prometheus.yml"
+        target.write_text("preserve")
+        base.chmod(0o777)
+        result = self.run_action(
+            "publish-runtime-files",
+            {
+                "ORBIT_RUNTIME_FILE": json.dumps(
+                    {
+                        "path": "/etc/orbit/metrics/prometheus.yml",
+                        "content": "replacement",
+                    }
+                )
+            },
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(target.read_text(), "preserve")
+
+    def test_binary_publication_refuses_existing_foreign_artifact(self):
+        for name in ["cadvisor", "fpm-exporter"]:
+            with self.subTest(name=name):
+                target = self.root / ("usr/local/bin/orbit-" + name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("foreign artifact")
+                (self.root / "run").mkdir(exist_ok=True)
+                stage = "cadvisor" if name == "cadvisor" else "fpm"
+                (self.root / ("run/orbit-metrics-" + stage + "-6080")).write_text(
+                    "download placeholder"
+                )
+                result = self.run_action(
+                    "publish-" + name + "-binary", {"ORBIT_OPERATION_ID": "6080"}
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("binary_ownership_drift", result.stderr)
+                self.assertEqual(target.read_text(), "foreign artifact")
+
 
 class NativeBindings(unittest.TestCase):
     def test_inspection_never_reads_its_own_output_before_execution(self):
@@ -190,6 +229,38 @@ class NativeBindings(unittest.TestCase):
                     if name != "ORBIT_ACTION_SCRIPT":
                         self.assertIn(name, line, (job["name"], name))
                 self.assertNotIn("--preserve-env=ALL", line)
+
+    def test_runtime_preflight_is_an_ancestor_of_each_runtime_mutation(self):
+        workflow = yaml.safe_load(WORKFLOW.read_text())
+        graph = {
+            j["name"]: [d["job"] for d in j.get("dependsOn", [])]
+            for j in workflow["jobs"]
+        }
+
+        def ancestors(name):
+            result = set()
+            queue = list(graph[name])
+            while queue:
+                parent = queue.pop()
+                if parent not in result:
+                    result.add(parent)
+                    queue.extend(graph[parent])
+            return result
+
+        for mutation in [
+            "publish-runtime-files",
+            "publish-grafana-password",
+            "create-runtime-volume",
+        ]:
+            self.assertTrue(
+                {
+                    "inspect-runtime-container",
+                    "check-runtime-recovery",
+                    "inspect-runtime-files",
+                }
+                <= ancestors(mutation),
+                mutation,
+            )
 
 
 class DockerHealthEvents(unittest.TestCase):

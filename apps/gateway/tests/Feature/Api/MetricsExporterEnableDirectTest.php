@@ -15,14 +15,12 @@ afterEach(function (): void {
     $this->fixture->close();
 });
 
-it('records enabling the exporter and the complete desired fleet as one root', function (): void {
-    $operation = app(AdmitMetricsExporterPreferenceAction::class)->execute(13, ExporterPreference::Enabled);
-    expect($operation->kind)->toBe('metrics.exporter_enable')->and($operation->node_id)->toBe(9)
-        ->and($operation->target_id)->toBe(9)->and($operation->input['exporter_node_id'])->toBe(13)
-        ->and($this->fixture->preference())->toBe(ExporterPreference::Enabled)
-        ->and(array_column($operation->input['metrics_fleet']['fleet'], 'node_id'))->toBe([1, 9, 13, 18])
-        ->and(array_column($operation->input['metrics_fleet']['fleet'], 'selected', 'node_id')[13])->toBeTrue()
-        ->and(Operation::query()->count())->toBe(1);
+it('refuses unported exporter enabling without changing preference or starting a legacy root', function (): void {
+    expect(fn () => app(AdmitMetricsExporterPreferenceAction::class)->execute(13, ExporterPreference::Enabled))
+        ->toThrow(ResourceOperationException::class, 'This kind has no native Swamp workflow.');
+    expect($this->fixture->preference())->toBe(null)
+        ->and(Operation::query()->count())->toBe(0)
+        ->and($this->fixture->socket->sent)->toBe([]);
 });
 
 it('refuses a missing Metrics assignment before recording an exporter preference', function (): void {
@@ -46,9 +44,9 @@ it('rolls the preference back when the complete capture cannot be recorded', fun
     expect($this->fixture->preference())->toBeNull()->and(Operation::query()->count())->toBe(0);
 });
 
-it('returns 202 with the parent Operation from the existing exporter enable endpoint', function (): void {
+it('returns kind_unavailable from the exporter endpoint until its new shape lands', function (): void {
     $this->markAsGateway($this->fixture->metrics);
-    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->metrics->wireguard_ip])
-        ->putJson('/api/v1/metrics/exporters/13')->assertStatus(202)->assertJsonPath('data.kind', 'metrics.exporter_enable');
-    expect(Operation::query()->findOrFail($response->json('data.id'))->input['exporter_node_id'])->toBe(13);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->metrics->wireguard_ip])
+        ->putJson('/api/v1/metrics/exporters/13')->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+    expect($this->fixture->preference())->toBe(null)->and(Operation::query()->count())->toBe(0);
 });
