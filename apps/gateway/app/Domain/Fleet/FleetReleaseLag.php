@@ -21,7 +21,6 @@ final readonly class FleetReleaseLag
     public function __construct(
         private DesiredFleetState $desired,
         private FleetRolloutMembership $membership,
-        private NodeFootprint $footprint,
         private AgentReportedVersions $versions,
         private AgentDelivery $delivery,
         private bool $enabled,
@@ -36,8 +35,7 @@ final readonly class FleetReleaseLag
         $reported = $this->versions->get($node->id)['version'] ?? null;
 
         return ($reported !== null && $reported !== $this->delivery->reportedVersion($node))
-            || ($row->cli_version !== null && $state->cli->isAvailable() && $row->cli_version !== $state->cli->version)
-            || $this->footprint->drifted($node);
+            || ($row->cli_version !== null && $state->cli->isAvailable() && $row->cli_version !== $state->cli->version);
     }
 
     /**
