@@ -25,3 +25,20 @@ jobs:
             node_id: "${{ inputs.node_id }}"
             kind: "${{ inputs.kind }}"
             run_id: "${{ run.id }}"
+  - name: native-failure
+    dependsOn:
+      - job: github
+        condition: { type: failed }
+    steps:
+      - name: report
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: "${{ 'recipe-pr-failure-' + run.id }}"
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

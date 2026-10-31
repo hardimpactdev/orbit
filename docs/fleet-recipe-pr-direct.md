@@ -24,7 +24,7 @@ The expected-old-head update protects refresh pushes: after a successful push,
 the old admitted head is absent and retry makes no second reachable ref update.
 
 Closed date or pin PRs remain closed. Retirement rechecks App ownership and head
-before closing an obsolete snapshot PR. GitHub uncertainty fails the native run
+before closing an obsolete snapshot PR. GitHub uncertainty records `operation.native_outcome_unknown` and fails the native run
 for inspection; there is no Gateway execution cache, retry timer or receipt.
 
 One stable behavior identity serializes GitHub actions on the admitted Gateway
@@ -32,15 +32,17 @@ Node worker, with matching target and Node label. The approved shared private
 reader mints only for that authenticated Node and exact bound run. This is
 control-plane GitHub work and does not install or converge another Node.
 
-The maintenance producer reads candidates every five minutes, only when the
-Gateway reports the direct writer. It rotates retire, refresh and merge actions
+The maintenance producer reads candidates every five minutes when the
+Gateway reports the family ready. It rotates retire, refresh and merge actions
 so each runs at most every fifteen minutes. Daily opens use one Gateway intent
 key per date, variant and serving recipe revision. They retain no Swamp
 admission receipt and poll no Operation status. A deployment mismatch projects
 `fleet.recipe_pending_deployment` before any GitHub write; a new serving recipe
 revision allows a fresh intent. Unknown mutation outcomes fail natively for
 inspection before recovery. A committed terminal projection prevents native
-resume from minting or executing again.
+resume from minting or executing again. A separate failed-dependency job reports
+root failure through the shared failure endpoint if the family behavior cannot
+start; it preserves an existing terminal result.
 
 Existing PR actions use stable Gateway intent keys derived from their relevant
 observations. Retirement wakes for recipe or candidate-set changes, refresh for
@@ -64,6 +66,6 @@ uncertain writes, and scans all retained files for credential bytes. This is
 fixture evidence, not a live Gateway, GitHub or worker canary.
 
 The owning conversion includes the writer switch and removal of its old Gateway
-execution and tests. Merge first, canary immediately after release, and revert
-on failure, as PLAN requires.
+execution and tests. Merge on green, verify live after the normal hot reload, and fix forward,
+as PLAN requires.
 Work on this branch is not live takeover evidence.

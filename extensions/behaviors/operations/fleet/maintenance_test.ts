@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import type { Context } from "../../operation-runner/mod.ts";
+import type { MaintenanceContext as Context } from "./maintenance.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { maintenance } from "./maintenance.ts";
 

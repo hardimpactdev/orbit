@@ -1,11 +1,11 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../../automatic-deploy/gateway.ts";
-import { Globals } from "../../../operation-runner/mod.ts";
 import {
   DirectArgs,
   type DirectIntent,
   directOperation,
   GatewayOperation,
+  Globals,
 } from "../../_lib/direct.ts";
 import { OpenPlan, type OpenPlanStore, RecipePrAction } from "./actions.ts";
 import { RecipeGitHub } from "./api.ts";

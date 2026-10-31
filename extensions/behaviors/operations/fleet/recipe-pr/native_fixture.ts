@@ -65,6 +65,16 @@ export const fixtureHttp: Http = async (method, path, raw, key) => {
       },
     };
   }
+  if (method === "POST" && path.endsWith("/failure")) {
+    if (
+      !["succeeded", "failed", "cancelled"].includes(state.operation.status)
+    ) {
+      state.operation.status = "failed";
+      state.operation.error_code = "operation.native_failed";
+    }
+    await save(state);
+    return { status: 200, body: { data: state.operation } };
+  }
   if (method === "POST") {
     state.operation.status = body!.status;
     state.operation.result = body!.result ?? null;

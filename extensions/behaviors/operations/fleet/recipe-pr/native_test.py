@@ -21,11 +21,16 @@ class RecipePrNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         behaviors = self.repo / 'extensions/behaviors'
-        for family in ['automatic-deploy', 'operation-runner', 'operations/_lib']:
+        for family in ['automatic-deploy', 'operations/_lib']:
             shutil.copytree(ROOT / 'extensions/behaviors' / family, behaviors / family)
         destination = behaviors / 'operations/fleet/recipe-pr'
         shutil.copytree(FAMILY, destination)
         shutil.copy(ROOT / 'extensions/behaviors/operations/fleet/maintenance.ts', destination.parent / 'maintenance.ts')
+        failure = behaviors / 'operations/failure.ts'
+        shutil.copy(ROOT / 'extensions/behaviors/operations/failure.ts', failure)
+        failure.write_text('import {fixtureHttp} from "./fleet/recipe-pr/native_fixture.ts";\n' +
+            failure.read_text().replace('export const behavior = nativeFailure();',
+                                       'export const behavior = nativeFailure(() => fixtureHttp);'))
         direct = destination / 'direct.ts'
         original = 'export const behavior = recipePr();'
         self.assertIn(original, direct.read_text())
@@ -81,6 +86,19 @@ class RecipePrNative(NativeTestCase):
         self.assertEqual(state['operation']['result']['url'], 'https://github.com/hardimpactdev/orbit/pull/999')
         self.scan()
 
+    def test_family_refusal_reports_same_root_without_mint_or_effect(self):
+        direct = self.repo / 'extensions/behaviors/operations/fleet/recipe-pr/direct.ts'
+        direct.write_text(direct.read_text().replace(
+            'const gateway = makeGateway(makeHttp(ctx), args);',
+            'throw new Error("Family refused before start");\nconst gateway = makeGateway(makeHttp(ctx), args);'))
+        self.run_workflow(success=False)
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'failed')
+        self.assertEqual(state['operation']['error_code'], 'operation.native_failed')
+        self.assertEqual((state['mints'], state['writes']), (0, 0))
+        self.assertEqual(len([call for call in state['calls'] if call['path'].endswith('/failure')]), 1)
+        self.scan()
+
     def test_lost_committed_projection_resumes_without_mint_or_effect(self):
         self.state['loseProjection'] = True
         self.save()
@@ -123,16 +141,17 @@ class RecipePrNative(NativeTestCase):
         self.assertEqual((state['mints'], state['writes'], state['revokes']), (1, 0, 1))
         self.scan()
 
-    def test_uncertain_write_keeps_native_failure_redacted_without_false_terminal(self):
+    def test_uncertain_write_records_unknown_outcome_without_repeating_effects(self):
         self.state['mode'] = 'uncertain-write'
         self.save()
         self.run_workflow(success=False)
         state = self.read()
-        self.assertEqual(state['operation']['status'], 'running')
+        self.assertEqual(state['operation']['status'], 'failed')
+        self.assertEqual(state['operation']['result'], {'error_code': 'operation.native_outcome_unknown'})
         self.assertEqual((state['mints'], state['writes'], state['revokes']), (1, 1, 1))
         self.scan()
 
-    def test_retry_retains_candidate_after_lost_create_and_25_hour_date_gc(self):
+    def test_unknown_create_retains_candidate_but_terminal_resume_never_repeats_writes(self):
         self.state['mode'] = 'artifacts-lost-create'
         self.state['operation']['input']['variant'] = 'artifacts'
         self.save()
@@ -153,11 +172,12 @@ class RecipePrNative(NativeTestCase):
         state['root'] = root
         self.state = state
         self.save()
-        self.cli('workflow', 'resume', 'operation-fleet-recipe-pr', '--run', root)
+        self.cli('workflow', 'resume', 'operation-fleet-recipe-pr', '--run', root, success=False)
         state = self.read()
         self.assertEqual((state['candidateReads'], len(state['pulls']), state['writes']), (1, 1, 3))
-        self.assertEqual(state['operation']['status'], 'succeeded')
-        self.assertEqual((state['mints'], state['revokes']), (2, 2))
+        self.assertEqual(state['operation']['status'], 'failed')
+        self.assertEqual(state['operation']['result'], {'error_code': 'operation.native_outcome_unknown'})
+        self.assertEqual((state['mints'], state['revokes']), (1, 1))
         self.scan()
 
     def test_maintenance_reuses_gateway_intent_across_fresh_native_processes(self):
@@ -169,7 +189,7 @@ class RecipePrNative(NativeTestCase):
         (self.repo / 'extensions/behaviors/producer-proof.ts').write_text('''
 import {z} from "npm:zod@4.4.3";
 import {maintenance} from "./operations/fleet/maintenance.ts";
-import type {Context} from "./operation-runner/mod.ts";
+import type {MaintenanceContext as Context} from "./operations/fleet/maintenance.ts";
 import {fixtureHttp} from "./operations/fleet/recipe-pr/native_fixture.ts";
 export const behavior = {type:"@nckrtl/recipe-producer-proof",version:"2026.10.30.1",globalArguments:z.object({}),
  methods:{execute:{description:"Exercise the production producer in a disposable native process",

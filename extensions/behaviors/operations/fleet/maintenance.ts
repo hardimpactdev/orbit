@@ -1,5 +1,16 @@
 import { z } from "npm:zod@4.4.3";
-import { type Context } from "../../operation-runner/mod.ts";
+import type { Globals } from "../_lib/direct.ts";
+
+export type MaintenanceContext = {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+  readResource(name: string): Promise<Record<string, unknown> | null>;
+  writeResource(
+    spec: string,
+    name: string,
+    value: Record<string, unknown>,
+  ): Promise<{ name: string }>;
+};
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 const Terminal = new Set(["succeeded", "failed", "cancelled"]);
@@ -17,7 +28,7 @@ const Admission = z.object({
 export const MaintenanceIntent = Admission;
 export async function maintenance(
   args: { tick: string },
-  ctx: Context,
+  ctx: MaintenanceContext,
   http: Http,
   at = new Date(),
 ) {

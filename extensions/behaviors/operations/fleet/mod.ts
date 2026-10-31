@@ -1,11 +1,15 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { type Context, Globals } from "../../operation-runner/mod.ts";
-import { maintenance, MaintenanceIntent } from "./maintenance.ts";
+import { Globals } from "../_lib/direct.ts";
+import {
+  maintenance,
+  type MaintenanceContext,
+  MaintenanceIntent,
+} from "./maintenance.ts";
 
 /** Scheduled admission only. Each admitted Operation starts its native workflow. */
 export function fleet(
-  makeHttp = (ctx: Context) =>
+  makeHttp = (ctx: MaintenanceContext) =>
     gatewayHttp(
       ctx.globalArgs.gatewayUrl,
       ctx.globalArgs.caFile,
@@ -31,7 +35,7 @@ export function fleet(
         description:
           "Admit scheduled recipe, DNS and ordered rollout Operations",
         arguments: z.object({ tick: z.string().min(1) }),
-        execute: (args: { tick: string }, ctx: Context) =>
+        execute: (args: { tick: string }, ctx: MaintenanceContext) =>
           maintenance(args, ctx, makeHttp(ctx)),
       },
     },
