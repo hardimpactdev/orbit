@@ -8,8 +8,8 @@ pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
 mod caddy_certificate;
+mod caddy_observation;
 mod caddy_package;
-mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
 mod cli_update;
@@ -81,6 +81,7 @@ mod php_profile;
 pub mod php_runtime;
 mod php_shared;
 pub mod pi_artifact;
+pub mod pi_runtime;
 pub mod plausible;
 pub mod processes;
 pub mod production;
@@ -88,7 +89,6 @@ pub mod production_home;
 pub mod project_source;
 pub mod recipe;
 pub mod recipe_delivery;
-pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
@@ -218,7 +218,10 @@ pub fn all() -> Vec<Entry> {
         entry::<image_recipe::lifecycle::Begin>(),
         entry::<image_recipe::lifecycle::Retry>(),
         entry::<image_recipe::verify::Verify>(),
+        entry::<pi_artifact::Receive>(),
+        entry::<pi_artifact::Install>(),
         entry::<pi_artifact::Inspect>(),
+        entry::<pi_runtime::Configure>(),
         entry::<swamp_worker::Start>(),
         entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),
@@ -297,9 +300,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
         entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
-        entry::<registration::InspectRegistrationSource>(),
-        entry::<registration::RelocateRegistrationSource>(),
-        entry::<registration::LaravelRegistrationReceipt>(),
         entry::<production::PrepareRelease>(),
         entry::<production::ActivateRelease>(),
         entry::<production::InspectRelease>(),
@@ -346,9 +346,8 @@ pub fn all() -> Vec<Entry> {
         entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
-        entry::<caddy_publication::Publish>(),
-        entry::<caddy_publication::CheckAddresses>(),
-        entry::<caddy_publication::ReadLive>(),
+        entry::<caddy_observation::CheckAddresses>(),
+        entry::<caddy_observation::ReadLive>(),
         entry::<doctor_node::InspectNode>(),
         entry::<doctor_project::InspectProject>(),
         entry::<doctor_project::InspectDevelopmentSource>(),
