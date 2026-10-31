@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\Nodes\NodeBootstrapIntent;
+use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationConnectionSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\Node;
 use App\Models\Operation;
 
 /** Resolves the existing Gateway SSH identity inside the protected run boundary. */
@@ -29,9 +30,12 @@ final readonly class NodeBootstrapSshIdentitySource implements OperationConnecti
 
     public function ownerId(Operation $operation): ?int
     {
-        return in_array($operation->kind, ['node.add', 'node.bootstrap_probe', 'node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect', 'node.network_converge', 'node.network_rollback'], true)
-            && $operation->target_id === $operation->node_id
-            && Node::query()->whereKey($operation->node_id)->exists() ? $operation->node_id : null;
+        if (! app(NodeBootstrapIntent::class)->owns($operation)) {
+            return null;
+        }
+        $owner = app(DirectOperationPrivateBindings::class)->ownerNode($operation, 'bootstrap_identity');
+
+        return $owner === $operation->target_id ? $owner : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
