@@ -1029,3 +1029,26 @@ Deno.test("HTTP source relocation rejects changed definitions, imports, retained
     "The actual base must preserve the immutable declarations",
   );
 });
+
+Deno.test("HTTP move proof follows the unchanged caller body and distinguishes local assertions from module loaders", () => {
+  const { head, proof } = moveSource();
+  const { caller } = PROXY_HTTP_MOVE;
+  const added = "extensions/behaviors/assertions.ts";
+  for (
+    const source of [
+      'const require=(ok:unknown)=>{if(!ok)throw new Error("refused")}; require(condition);',
+      "function require(ok:unknown): asserts ok {if(!ok)failure();} require(condition);",
+    ]
+  ) assert(proof(new Map([...head, [added, source]])));
+  for (
+    const source of [
+      "const require=(path:string)=>import(path); require(name);",
+      'import {createRequire} from "node:module"; const load=createRequire(import.meta.url); load(name);',
+      'const load=await import("node:module");',
+      'require("./operations/_lib/"+"node-proxy-http.ts");',
+    ]
+  ) assertEquals(proof(new Map([...head, [added, source]])), undefined);
+  const changedCaller = head.get(caller)!.replace("if (proxy)", "if (true)");
+  assert(changedCaller !== head.get(caller));
+  assertEquals(proof(new Map([...head, [caller, changedCaller]])), undefined);
+});
