@@ -67,7 +67,7 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toBeLessThan(strpos(haystack: $unit, needle: 'EnvironmentFile='));
 });
 
-it('omits EnvironmentFile for a Node Process without an environment file', function (): void {
+it('uses only its private generation when a Node Process has no application environment file', function (): void {
     $process = new Process([
         'name' => 'log-shipper',
         'runtime_config' => [
@@ -94,7 +94,7 @@ it('omits EnvironmentFile for a Node Process without an environment file', funct
         ->toContain('X-Orbit-Process-ID=9')
         ->toContain('User=orbit')
         ->toContain('WorkingDirectory=/home/orbit')
-        ->not->toContain('EnvironmentFile=');
+        ->not->toContain('EnvironmentFile=-')->toMatch('#EnvironmentFile=/etc/orbit/processes/[0-9]+/[a-f0-9]{64}\.env#');
 });
 
 it('maps common restart policies to valid systemd values', function (string $policy, string $expected): void {
@@ -242,21 +242,20 @@ it('projects a persisted systemd environment map after the environment file', fu
 
     $unit = new SystemdProcessRenderer()->render($process, $target);
 
-    expect($unit)
-        ->toContain('Environment=AI_ROUTER_CACHE_HOST=10.44.0.8')
-        ->toContain('Environment=CACHE_URL=http://127.0.0.1:4848')
-        ->toContain('Environment=CACHE_PORT=4848')
-        ->toContain('Environment=SERVICE_URL=http://127.0.0.1:4747')
-        ->toContain('Environment=SERVICE_PORT=4747')
-        ->toContain('Environment=AI_ROUTER_MANAGEMENT_KEY=management\\x20key')
-        ->toContain('Environment=AI_ROUTER_READ_TOKEN=read-token')
+    expect($unit)->not->toContain('management key')->not->toContain('read-token')
         ->toContain('ExecStart="/usr/bin/python3" "/var/lib/orbit/ai-router/collector.py"')
-        ->not->toContain('EnvironmentFile=')
-        ->not->toContain('/usr/bin/env')
-        ->not->toContain('AI_ROUTER_MANAGEMENT_KEY=management key');
+        ->not->toContain('/usr/bin/env');
+    expect(new SystemdProcessRenderer()->environmentContent($process, $target))
+        ->toContain('AI_ROUTER_CACHE_HOST="10.44.0.8"')
+        ->toContain('CACHE_URL="http://127.0.0.1:4848"')
+        ->toContain('CACHE_PORT="4848"')
+        ->toContain('SERVICE_URL="http://127.0.0.1:4747"')
+        ->toContain('SERVICE_PORT="4747"')
+        ->toContain('AI_ROUTER_MANAGEMENT_KEY="management key"')
+        ->toContain('AI_ROUTER_READ_TOKEN="read-token"');
+    expect(strpos($unit, 'Environment=NODE_USE_SYSTEM_CA=1'))
+        ->toBeLessThan(strpos($unit, 'EnvironmentFile='));
 
-    expect(strpos(haystack: $unit, needle: 'Environment=NODE_USE_SYSTEM_CA=1'))
-        ->toBeLessThan(strpos(haystack: $unit, needle: 'Environment=AI_ROUTER_CACHE_HOST='));
 });
 
 it('rejects unsafe systemd environment input from persisted configuration', function (array $environment): void {
@@ -390,8 +389,24 @@ it('projects the assigned ssr port as ORBIT_SSR_PORT and INERTIA_SSR_URL and add
         ->not->toContain('13719');
 
     $instance->ssr_port = null;
-    expect(new SystemdProcessRenderer()->render($process, $target))
-        ->toContain('Environment=INERTIA_SSR_URL=http://127.0.0.1:13719')
-        ->toContain('Environment=ORBIT_SSR_PORT=13719')
+    expect(new SystemdProcessRenderer()->environmentContent($process, $target))
+        ->toContain('INERTIA_SSR_URL="http://127.0.0.1:13719"')
+        ->toContain('ORBIT_SSR_PORT="13719"')
         ->not->toContain('13721');
 })->with(['with a Route' => ['recall-task-a.test'], 'without a Route' => [null]]);
+
+it('keeps managed secrets out of the public unit and references a content-addressed private generation', function (): void {
+    $process = new Process(['name' => 'worker', 'working_directory' => '/home/orbit', 'restart_policy' => 'never',
+        'runtime_config' => ['command' => ['/usr/bin/sleep', '60'], 'environment' => ['TOKEN' => 'my-private-value']]]);
+    $process->id = 9;
+    $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: '/home/orbit');
+    $renderer = new SystemdProcessRenderer;
+
+    $unit = $renderer->render($process, $target);
+
+    expect($unit)->not->toContain('my-private-value')->not->toContain('Environment=TOKEN=')
+        ->toMatch('#EnvironmentFile=/etc/orbit/processes/9/[a-f0-9]{64}\.env#');
+    expect($renderer->environmentContent($process, $target))->toBe("# Orbit Process 9\nTOKEN=\"my-private-value\"\n");
+    $process->runtime_config = ['command' => ['/usr/bin/sleep', '60'], 'environment' => ['TOKEN' => 'replacement-value']];
+    expect($renderer->render($process, $target))->not->toBe($unit)->not->toContain('replacement-value');
+});

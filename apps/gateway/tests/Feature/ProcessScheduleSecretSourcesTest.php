@@ -107,7 +107,8 @@ it('binds private unit installation to its rendered digest and installing kind',
     $this->operation->input = ['process_id' => $this->process->id, 'runtime' => 'systemd', 'content_hash' => hash('sha256', $content)];
     $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
     $resolved = $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']);
-    expect($resolved['input']['installation'])->toBe(['runtime' => 'systemd', 'content' => $content])
+    expect($resolved['input']['installation'])->toBe(['runtime' => 'systemd', 'content' => $content,
+        'environment' => app(SystemdProcessRenderer::class)->environmentContent($this->process, $target)])
         ->and($resolved['values'])->toContain('private-unit-value');
     $this->operation->kind = 'process.start';
     expect(fn () => $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']))->toThrow(ResourceOperationException::class);
