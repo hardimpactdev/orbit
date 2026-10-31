@@ -58,11 +58,11 @@ it('selects a production home only on the registered Node and at a path boundary
     ])->assertCreated();
     config(['swamp.run_token' => 'fake.token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-read', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-read', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     $response = $this->getJson('/api/v1/database-connections/production-file/tables')->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect(app(DatabaseReadProjection::class)->input($operation)['owner'])->toBe($sudo ? 'orbit-app-82' : 'orbit');
+    expect(app(DatabaseReadProjection::class)->input($operation)['intent']['owner'])->toBe($sudo ? 'orbit-app-82' : 'orbit');
 })->with([
     'production home' => ['/home/orbit-app-82/shared/database.sqlite', true, true],
     'same path on another Node' => ['/home/orbit-app-82/shared/database.sqlite', false, false],

@@ -750,20 +750,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/database/read.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/read.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/server_close.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -796,7 +782,7 @@
     {
       "file": "extensions/behaviors/operations/database/sqlite_program.ts",
       "rule": "inline-script",
-      "count": 514,
+      "count": 465,
       "evidence": []
     },
     {
