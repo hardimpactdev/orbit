@@ -8,7 +8,7 @@ use SensitiveParameter;
 
 /**
  * The model route of task VMs ([Compute drivers](/reference/compute-drivers#configure-task-vms)). The extension that runs
- * the model router binds it, so core never sees the router's management key or anchor key.
+ * the model router binds it. Router credentials cross only the declared private-material boundary.
  */
 interface ModelKeyIssuer
 {
@@ -20,6 +20,12 @@ interface ModelKeyIssuer
 
     /** The origin that Pi on a task VM calls, such as `http://10.44.0.3:8317`. */
     public function origin(): string;
+
+    /** The Node that owns the existing model-router credentials. */
+    public function ownerNodeId(): int;
+
+    /** @return array{management_key:string,anchor_key:string} Private material only; Swamp changes the router. */
+    public function privateMaterial(string $origin, int $ownerNodeId): array;
 
     /** Registers a group key at the origin. A key that is already registered stays. */
     public function issue(string $origin, #[SensitiveParameter] string $key): void;
