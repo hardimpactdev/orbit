@@ -1,5 +1,5 @@
 # deno-fmt-ignore-file
-# Generated: deno run --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
+# Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
 id: daace7ba-223f-47b6-9452-7c0da7cf384e
 name: operation-node-converge-direct
 description: One exact-Node native root; generated from the shared footprint chain.
