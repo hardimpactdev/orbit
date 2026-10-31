@@ -586,4 +586,3 @@ Both paths require the recorded native run ID, an unfinished direct Operation, a
 A direct family may implement `DirectOperationPublicView` to supply fresh public input to another Node in the same native run. The existing direct-operation GET authenticates the peer, requires the exact recorded root run and an unfinished parent, then asks the family to prove that this Node owns an immutable admitted target.
 
 The view returns the truthful parent identity and only that caller's public input. It omits the parent result and sets `Cache-Control: no-store`. A participant gains no POST, primitive or private-material authority. The native step fetches this view inside its canonical per-Node publication lock; queued work never carries an old whole-Node configuration.
-
