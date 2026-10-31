@@ -18,7 +18,7 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 ## Execution
 
-Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the named agent commands and records their receipts. Only a proven completion changes the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
+Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
@@ -310,7 +310,7 @@ Task VM runtime preparation may admit one `process.create` child using only `{pr
 A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the exact recorded restart plan after each keyed Process child has proven success. An empty selection returns an empty list. A failed or unproven child prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
 
 
-The runtime family reads target receipts before remote effects. A lost restart reply is recovered from its original keyed receipt. A proven pre-start refusal leaves the same key available; an uncertain restart stays pending until its receipt is known. Process completion requires a recorded `process.runtime_ready` check, which verifies every required agent step and any Caddy child. This check changes no Node state. Instance composition waits for each recorded runtime child before its own ready step.
+Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Unconverted Instance composition still waits for its recorded runtime children before its own ready step.
 
 ## Direct Process controls
 
@@ -357,3 +357,7 @@ Ordinary Process creation records one direct intent and uses the same native roo
 Process creation through HTTP and MCP always admits the direct `process.create` intent, including executor Nodes. Admission returns HTTP 202 and leaves installation and completion to the native root. Record-only composition uses `RecordProcessIntentAction` inside its owning transaction and performs no runtime work.
 
 Four internal callers still require synchronous bootstrap completion: AI Router clears source activation and completes credential cutover; Plausible waits for container health before publication; Task VM preparation marks Pi ready for work; Gateway release handoff starts Horizon before release verification. These callers use closed bootstrap methods for their fixed Node Process names, runtimes, and commands. They cannot install arbitrary Processes. The next Process PR removes these temporary bootstrap methods together with their completion dependencies.
+
+### Native Process update
+
+Ordinary Process update records the changed definition and starts one native installation run. It preserves omitted fields, validates route listeners, and retains the prior desired state. The native steps prepare Vite traffic when needed, publish Caddy in the same root, remove its admitted artifact from the previous runtime, install the private definition and check readiness. The Gateway projects the final bounded result. Its last leaf Process executor, readiness command and receipt checks are removed, along with the old per-field private sources. The fixed `process.installation` callback supplies the admitted definition. Executor-Node recovery keeps its synchronous update path. Rollback is a revert PR.

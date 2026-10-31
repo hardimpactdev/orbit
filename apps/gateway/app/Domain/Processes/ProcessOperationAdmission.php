@@ -34,7 +34,7 @@ final readonly class ProcessOperationAdmission
 
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            if ($verb === 'create') {
+            if (in_array($verb, ['create', 'update'], true)) {
                 $input['installation'] = ['$secret' => 'process.installation', 'id' => $process->id];
             }
             $nodeId = ValidatedData::integer($input['node_id']);
@@ -80,13 +80,9 @@ final readonly class ProcessOperationAdmission
         if (in_array($verb, ['create', 'update'], true)) {
             if ($systemd) {
                 $content = $this->systemd->render($process, $target, $target->certificateScope === null ? null : $this->accounts->resolve($target->node));
-                $input += ['unit' => $name, 'content' => ['$secret' => 'process.unit_content', 'id' => $process->id],
-                    'content_hash' => hash('sha256', $content), 'activation_pending' => $process->systemd_activation_pending];
+                $input += ['content_hash' => hash('sha256', $content), 'activation_pending' => $process->systemd_activation_pending];
             } else {
-                $definition = $this->docker->containerInput($process, $target);
-                $definition['environment'] = ['$secret' => 'process.environment', 'id' => $process->id];
-                $definition['command'] = ['$secret' => 'process.command', 'id' => $process->id];
-                $input += ['container' => $name, 'spec' => $this->docker->specHash($process, $target), ...$definition];
+                $input['spec'] = $this->docker->specHash($process, $target);
             }
             if ($process->retired_runtime !== null) {
                 $retired = clone $process;

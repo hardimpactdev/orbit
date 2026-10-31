@@ -20,35 +20,35 @@ beforeEach(function (): void {
         'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment' => ['PASSWORD' => 'owned-runtime-value']]]);
     $target = app(ProcessTargetResolver::class)->forInstallation($this->process);
     $this->operation = new Operation(['kind' => 'process.create', 'target_type' => 'process', 'target_id' => $this->process->id,
-        'node_id' => $this->node->id, 'input' => ['process_id' => $this->process->id,
+        'node_id' => $this->node->id, 'input' => ['process_id' => $this->process->id, 'runtime' => 'docker',
             'spec' => app(DockerProcessRenderer::class)->specHash($this->process, $target)]]);
     $this->secrets = app(OperationSecrets::class);
 });
 
-it('hydrates only a recorded Process reference with masks for individual values', function (): void {
-    $input = ['environment' => ['$secret' => 'process.environment', 'id' => $this->process->id]];
-    $hydrated = $this->secrets->hydrate($this->operation, 'install', $input, ['environment' => 'process.environment']);
-    expect($hydrated['input']['environment'])->toBe(['PASSWORD' => 'owned-runtime-value']);
+it('hydrates only an admitted installation reference with masks for individual values', function (): void {
+    $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
+    $hydrated = $this->secrets->hydrate($this->operation, 'install', $input, ['installation' => 'process.installation']);
+    expect($hydrated['input']['installation']['definition']['environment'])->toBe(['PASSWORD' => 'owned-runtime-value']);
     expect($hydrated['values'])->toContain('owned-runtime-value');
     expect($this->secrets->redact(['echo' => 'owned-runtime-value'], $hydrated['values']))->toBe(['echo' => '[REDACTED]']);
-    expect($input['environment'])->toBe(['$secret' => 'process.environment', 'id' => $this->process->id]);
+    expect($input['installation'])->toBe(['$secret' => 'process.installation', 'id' => $this->process->id]);
 });
 
 it('refuses another target type and a Process changed after admission', function (): void {
-    $input = ['environment' => ['$secret' => 'process.environment', 'id' => $this->process->id]];
+    $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
     $this->operation->target_type = 'node';
-    expect(fn () => $this->secrets->hydrate($this->operation, 'install', $input, ['environment' => 'process.environment']))->toThrow(ResourceOperationException::class);
+    expect(fn () => $this->secrets->hydrate($this->operation, 'install', $input, ['installation' => 'process.installation']))->toThrow(ResourceOperationException::class);
     $this->operation->target_type = 'process';
     $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => ['PASSWORD' => 'changed-runtime-value']]]);
-    expect(fn () => $this->secrets->hydrate($this->operation, 'install', $input, ['environment' => 'process.environment']))->toThrow(ResourceOperationException::class);
+    expect(fn () => $this->secrets->hydrate($this->operation, 'install', $input, ['installation' => 'process.installation']))->toThrow(ResourceOperationException::class);
 });
 
 it('preserves an empty environment as an object through protected hydration', function (): void {
     $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => []]]);
-    $this->operation->input = ['process_id' => $this->process->id,
+    $this->operation->input = ['process_id' => $this->process->id, 'runtime' => 'docker',
         'spec' => app(DockerProcessRenderer::class)->specHash($this->process, app(ProcessTargetResolver::class)->forInstallation($this->process))];
-    $hydrated = $this->secrets->hydrate($this->operation, 'install', ['environment' => ['$secret' => 'process.environment', 'id' => $this->process->id]], ['environment' => 'process.environment']);
-    expect($hydrated['input']['environment'])->toBeObject();
+    $hydrated = $this->secrets->hydrate($this->operation, 'install', ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]], ['installation' => 'process.installation']);
+    expect($hydrated['input']['installation']['definition']['environment'])->toBeObject();
 });
 
 it('binds a Schedule UUID to its actual numeric owner and recorded Node', function (): void {
@@ -69,7 +69,8 @@ it('binds a Schedule UUID to its actual numeric owner and recorded Node', functi
     expect(fn () => $this->secrets->hydrate($operation, 'install', $input, ['command' => 'schedule.command']))->toThrow(ResourceOperationException::class);
 });
 
-it('hydrates the whole admitted Docker installation without putting private bytes in its reference', function (): void {
+it('hydrates the whole admitted Docker installation without putting private bytes in its reference', function (string $kind): void {
+    $this->operation->kind = $kind;
     $this->operation->input = [...$this->operation->input, 'runtime' => 'docker'];
     $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
     $hydrated = $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']);
@@ -78,7 +79,7 @@ it('hydrates the whole admitted Docker installation without putting private byte
         'definition' => app(DockerProcessRenderer::class)->containerInput($this->process, app(ProcessTargetResolver::class)->forInstallation($this->process)),
     ])->and($hydrated['values'])->toContain('owned-runtime-value')
         ->and(json_encode($input))->not->toContain('owned-runtime-value');
-});
+})->with(['process.create', 'process.update']);
 
 it('refuses private installation material for another owner Node runtime or changed definition', function (): void {
     $original = [...$this->operation->input, 'runtime' => 'docker'];

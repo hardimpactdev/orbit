@@ -7,13 +7,10 @@ namespace App\Domain\Processes;
 use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -31,9 +28,6 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
                 'error_code' => $outcome->errorCode, 'failed_step' => $operation->steps()->where('status', 'failed')->value('name')]);
 
             return;
-        }
-        if (! DirectOperation::owns($operation)) {
-            $this->assertEffects($operation);
         }
         if ($operation->kind === 'process.destroy') {
             if (! $operation->input['preserve_record']) {
@@ -53,60 +47,5 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
         $this->statuses->remember($process, ValidatedData::string($outcome->result['state'] ?? 'unknown'));
         $this->broadcaster->broadcast(($operation->input['created'] ?? false) ? RecordEventType::ProcessCreated : RecordEventType::ProcessStatus,
             $process->id, ProcessData::fromModel($process, ValidatedData::string($outcome->result['state'] ?? 'unknown'))->toArray());
-    }
-
-    public function assertEffects(Operation $operation, bool $requireStatus = true): void
-    {
-        $verb = substr($operation->kind, strlen('process.'));
-        $required = match ($verb) {
-            'update' => $operation->input['runtime'] === 'docker'
-                ? ['process-converge-container' => 'process.converge-container']
-                : ['process-stage-unit' => 'process.stage-unit'],
-            default => throw new ResourceOperationException('operation.execution_forbidden', 'The kind has no polled Process executor.', 422),
-        };
-        if ($requireStatus) {
-            $required['process-status'] = 'process.status';
-        }
-        if (isset($operation->input['retired_runtime'])) {
-            $required['process-remove-retired'] = 'process.remove';
-        }
-        if (isset($operation->input['directory'])) {
-            $required['process-check-release'] = 'process.check-release';
-        }
-        $steps = ValidatedData::object($operation->state['steps'] ?? []);
-        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
-        $staged = $steps['process-stage-unit'] ?? null;
-        if (is_array($staged)) {
-            $settled = $operation->input['desired'] === 'running' ? ($staged['state'] ?? null) === 'active' : ($staged['state'] ?? null) === 'inactive';
-            if (($staged['staged'] ?? null) !== false || $operation->input['activation_pending'] || ! $settled) {
-                $required['process-activate-unit'] = 'process.activate-unit';
-            }
-        }
-        if (isset($operation->input['vite_plan'])) {
-            $required += ['vite-suspend' => 'vite.set-traffic', 'vite-environment' => 'vite.set-traffic'];
-            app(OperationChildren::class)->requireSucceeded($operation, 'vite-caddy');
-            if ($operation->input['desired'] === 'running') {
-                $ready = array_find(array_keys($steps), static fn ($key): bool => str_starts_with($key, 'vite-ready-') && is_array($steps[$key]) && ($steps[$key]['ready'] ?? false) === true && ($steps[$key]['owned'] ?? false) === true);
-                if ($ready === null) {
-                    throw new ResourceOperationException('operation.completion_unproven', 'An owned Vite listener must be proven ready.', 409);
-                }
-                $required[$ready] = 'vite.check-listener';
-            }
-        }
-        $release = $steps['process-check-release'] ?? null;
-        $activation = $steps['process-activate-unit'] ?? null;
-        if ((isset($operation->input['directory']) && (! is_array($release) || ($release['available'] ?? null) !== true))
-            || (is_array($activation) && ($activation['backup_left'] ?? false) === true)) {
-            throw new ResourceOperationException('operation.completion_unproven', 'The runtime receipt does not prove a settled Process.', 409);
-        }
-        foreach ($required as $step => $command) {
-            $run = $runs[$step] ?? null;
-            $result = $steps[$step] ?? null;
-            if (! is_array($run) || $run['transport'] !== 'agent' || $run['name'] !== $command
-                || ! is_array($result) || $run['result'] !== $result || isset($result['error_code'])
-                || ! $operation->steps()->where('name', $step)->where('status', 'succeeded')->exists()) {
-                throw new ResourceOperationException('operation.completion_unproven', 'A successful Process effect receipt is required.', 409);
-            }
-        }
     }
 }
