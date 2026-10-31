@@ -1,12 +1,10 @@
 type: '@nckrtl/certificates'
-typeVersion: 2026.10.31.4
+typeVersion: 2026.10.31.5
 id: d4700f5a-b730-4291-a1e7-86428a8afea7
 name: orbit-certificate-signing
 version: 1
 tags: {}
-globalArguments:
-  gatewayUrl: https://gateway.orbit
-  caFile: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+globalArguments: {}
 methods: {}
 reports:
   skip: ["@swamp/method-summary"]
