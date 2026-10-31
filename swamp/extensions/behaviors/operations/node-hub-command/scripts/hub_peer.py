@@ -198,16 +198,23 @@ def render(text, action):
 
 
 def command(args):
+    options = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.DEVNULL,
+        "env": {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
+        "timeout": 30,
+        "check": False,
+    }
     try:
-        result = subprocess.run(
-            args,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
-            timeout=30,
-            check=False,
-        )
+        if args[0] == "/usr/bin/wg-quick":
+            result = subprocess.run(["/usr/bin/wg-quick", *args[1:]], **options)
+        elif args[0] == "/usr/bin/wg":
+            result = subprocess.run(["/usr/bin/wg", *args[1:]], **options)
+        elif args[0] == "/usr/bin/systemctl":
+            result = subprocess.run(["/usr/bin/systemctl", *args[1:]], **options)
+        else:
+            raise Refusal("wireguard.hub_config_invalid")
     except (OSError, subprocess.TimeoutExpired):
         raise Refusal("wireguard.hub_start_failed") from None
     if result.returncode or len(result.stdout) > LIMIT:

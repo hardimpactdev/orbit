@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -9,8 +10,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from native_harness import NativeTestCase
+from native_harness import ROOT, NativeTestCase
 
 
 class HubRemoteSerialization(NativeTestCase):
@@ -18,6 +21,9 @@ class HubRemoteSerialization(NativeTestCase):
 
     def test_two_served_parent_runs_cannot_overlap_the_same_hub(self):
         root = self.repo
+        model = Path('models/command/shell/wireguard-hub-1.yaml')
+        (root / model).parent.mkdir(parents=True)
+        shutil.copy(ROOT / model, root / model)
         cli_binary = os.environ.get("SWAMP_BIN", "swamp")
         command = root / "context_mutation.py"
         command.write_text("""import os
@@ -34,28 +40,30 @@ finally:busy.rmdir()
 print('{"projected":true}')
 """)
         os.mkfifo(root / "release", 0o600)
-        step = {
-            "name": "mutate",
-            "target": "orbit-node-1",
-            "labels": {"node": "1"},
-            "writes": True,
-            "task": {
-                "type": "behavior",
-                "behaviorType": "command/shell",
-                "behaviorName": "wireguard-hub-1",
-                "methodName": "execute",
-                "inputs": {
-                    "run": "/usr/bin/python3 " + str(command),
-                    "env": {"ORBIT_SLOT": "${{ inputs.slot }}"},
-                },
-            },
+        production = yaml.safe_load(
+            (ROOT / "workflows/workflow-node-hub-peer-mutation.yaml").read_text()
+        )
+        step = next(
+            value for value in production["jobs"][0]["steps"]
+            if value["name"] == "mutate"
+        )
+        # Retain production placement, executing model and writes policy. Only
+        # replace the privileged action/metadata with a harmless overlap probe.
+        step.pop("dependsOn")
+        step["task"]["inputs"] = {
+            "run": "/usr/bin/python3 " + str(command),
+            "env": {"ORBIT_SLOT": "${{ inputs.slot }}"},
         }
         workflow = {
             "id": "2a709157-1b38-41c4-bf10-88b4be314cdd",
             "name": "hub-parent",
             "inputs": {
-                "properties": {"slot": {"type": "string"}},
-                "required": ["slot"],
+                "properties": {
+                    "slot": {"type": "string"},
+                    "operation_id": {"type": "integer"},
+                    "intent": {"type": "object"},
+                },
+                "required": ["slot", "operation_id", "intent"],
             },
             "jobs": [{"name": "hub", "steps": [step]}],
         }
@@ -192,6 +200,8 @@ print('{"projected":true}')
                     "hub-parent",
                     "--input",
                     "slot=first",
+                    "--input", "operation_id:json=101",
+                    "--input", 'intent:json={"hub_id":1}',
                     "--detach",
                     *flags,
                 )
@@ -202,6 +212,8 @@ print('{"projected":true}')
                     "hub-parent",
                     "--input",
                     "slot=second",
+                    "--input", "operation_id:json=102",
+                    "--input", 'intent:json={"hub_id":1}',
                     "--detach",
                     *flags,
                 )

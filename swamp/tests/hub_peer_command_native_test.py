@@ -1,18 +1,24 @@
 """Official native asset execution and stable executing-model serialization, scratch only."""
 import json
 import os
-from pathlib import Path
 import re
+import shutil
 import sys
+from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tests'))
-from native_harness import NativeTestCase
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from native_harness import ROOT, NativeTestCase
 
 
 class HubCommands(NativeTestCase):
+    def setUp(self):
+        super().setUp()
+        model = Path('models/command/shell/wireguard-hub-1.yaml')
+        (self.repo / model).parent.mkdir(parents=True)
+        shutil.copy(ROOT / model, self.repo / model)
+
     def test_shipped_asset_removes_only_context_and_returns_public_result(self):
         self.copy_behaviors('operations/node-hub-command')
         script = self.repo / 'extensions/behaviors/operations/node-hub-command/scripts/hub_peer.py'
@@ -31,8 +37,8 @@ class HubCommands(NativeTestCase):
         source = 'import sys\n' + source
         tool = self.repo / 'host-tool.py'
         tool.write_text("import pathlib,sys\nif sys.argv[1]=='/usr/bin/wg-quick':print(pathlib.Path(sys.argv[-1]).read_text())\n")
-        source, n = re.subn(r'(subprocess.run\(\s*)args,', r'\1[sys.executable, ' + repr(str(tool)) + ', *args],', source)
-        self.assertEqual(n, 1)
+        source, n = re.subn(r'(subprocess.run\(\s*\[)', r'\1sys.executable, ' + repr(str(tool)) + ', ', source)
+        self.assertEqual(n, 3)
         script.write_text(source)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-node-hub-peer-mutation.yaml').read_text())
         for job in workflow['jobs']:
