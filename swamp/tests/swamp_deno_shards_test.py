@@ -33,20 +33,18 @@ class DenoShards(unittest.TestCase):
             root = Path(scratch)
             files = root / "extensions/behaviors/operations"
             files.mkdir(parents=True)
-            for group, directory in enumerate((files, files / "database", files / "process-commands")):
-                directory.mkdir(exist_ok=True)
-                for index in range(9):
-                    identifier = group * 9 + index
-                    name = f"{index:02}_test.ts"
-                    if group == 1 and index < 5:
-                        name = ("local_sql_effect_test.ts", "read_effect_test.ts", "server-create-effects/mysql_test.ts",
-                                "create_effect_test.ts", "write_effect_test.ts")[index]
-                    (directory / name).parent.mkdir(exist_ok=True)
-                    (directory / name).write_text(
+            groups = ((".", 9), ("database", 9), ("process-commands", 9),
+                      ("database/local-sql-effects", 2), ("database/read-effects", 2),
+                      ("database/create-effects", 3), ("database/write-effects", 3),
+                      ("database/server-create-effects", 3))
+            identifier = 0
+            for path, count in groups:
+                directory = files / path
+                directory.mkdir(parents=True, exist_ok=True)
+                for index in range(count):
+                    (directory / f"{index:02}_test.ts").write_text(
                         f'Deno.test("module {identifier}", () => console.log("COVERED_FILE_{identifier}"));\n')
-            for identifier, driver in enumerate(("pgsql", "redis"), start=27):
-                (files / "database/server-create-effects" / f"{driver}_test.ts").write_text(
-                    f'Deno.test("module {identifier}", () => console.log("COVERED_FILE_{identifier}"));\n')
+                    identifier += 1
             binary = root / "bin"
             binary.mkdir()
             (binary / "deno").symlink_to(shutil.which(DENO))
@@ -64,7 +62,7 @@ class DenoShards(unittest.TestCase):
                 result = run(shard)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 covered.extend(int(value) for value in re.findall(r"COVERED_FILE_(\d+)", result.stdout))
-            self.assertCountEqual(covered, range(29))
+            self.assertCountEqual(covered, range(identifier))
             (files / "00_test.ts").write_text('Deno.test("real failure", () => { throw new Error("expected"); });\n')
             self.assertNotEqual(run(shards[0]).returncode, 0)
 

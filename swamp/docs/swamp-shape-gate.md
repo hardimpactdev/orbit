@@ -175,13 +175,12 @@ retained Gateway client and therefore keeps that dependency in the shape audit.
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow splits every Operations test file
 across ten parallel jobs with Deno's native `--shard` and directory flags.
-Four general shards exclude four slow database effect files
-(`local_sql_effect_test.ts`, `read_effect_test.ts`, `create_effect_test.ts`,
-`write_effect_test.ts`) plus `server-create-effects/` and `process-commands/`.
-Each effect file and each directory has its own job. The server-create cases use
-separate native test modules for MySQL, PostgreSQL and Redis, so `--parallel`
-runs their unchanged effects concurrently. New files enter the general shards
-automatically, or their assigned directory job.
+Four general shards exclude the database effect directories (`local-sql-effects/`,
+`read-effects/`, `create-effects/`, `write-effects/`, `server-create-effects/`)
+and `process-commands/`. Each excluded directory has its own job. The database
+engine cases use separate native test modules, so `--parallel` runs their
+unchanged effects concurrently. New files enter the general shards automatically,
+or their assigned directory job.
 Each shard keeps `--parallel -A` and `DENO_JOBS=4`, runs the same
 prerequisite checks and receives no validation credentials. All shards run even
 when one fails. The single `Swamp Deno tests` aggregate always runs on

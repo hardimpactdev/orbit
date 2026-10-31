@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { pdoRead, readDatabase } from "./read.ts";
 import { pdoWrite } from "./write.ts";
 
-for (const driver of ["mysql", "pgsql"] as const) {
+export function registerReadEffect(driver: "mysql" | "pgsql") {
   Deno.test({
     name:
       `native read-only ${driver} queries and metadata preserve row values and refuse mutation`,

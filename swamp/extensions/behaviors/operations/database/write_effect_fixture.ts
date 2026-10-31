@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { pdoWrite, writeDatabase } from "./write.ts";
 
-for (const driver of ["mysql", "pgsql"] as const) {
+export function registerWriteEffect(driver: "mysql" | "pgsql") {
   Deno.test({
     name: `fixed PDO applies private ${driver} writes on a disposable server`,
     fn: async () => {
@@ -102,36 +102,38 @@ for (const driver of ["mysql", "pgsql"] as const) {
   });
 }
 
-Deno.test({
-  name: "SQLite writes use the admitted account on a disposable owner file",
-  fn: async () => {
-    const dir = await Deno.makeTempDir({ prefix: "database-write-sqlite-" });
-    try {
-      const path = `${dir}/proof.sqlite`;
-      await Deno.writeTextFile(path, "", { mode: 0o600 });
-      const ownerReply = await new Deno.Command("id", {
-        args: ["-un"],
-        stdout: "piped",
-      }).output();
-      if (!ownerReply.success) throw new Error("Fixture owner unavailable");
-      const owner = new TextDecoder().decode(ownerReply.stdout).trim();
-      const result = await writeDatabase(
-        { driver: "sqlite", owner, path },
-        (use) =>
-          use({
-            password: "",
-            username: null,
-            dsn: "",
-            sql: "CREATE TABLE private_sqlite_sentinel(id integer)",
-          }),
-      );
-      assertEquals(result, {
-        backend: "active",
-        row_count: 0,
-        truncated: false,
-      });
-    } finally {
-      await Deno.remove(dir, { recursive: true });
-    }
-  },
-});
+export function registerSqliteWriteEffect() {
+  Deno.test({
+    name: "SQLite writes use the admitted account on a disposable owner file",
+    fn: async () => {
+      const dir = await Deno.makeTempDir({ prefix: "database-write-sqlite-" });
+      try {
+        const path = `${dir}/proof.sqlite`;
+        await Deno.writeTextFile(path, "", { mode: 0o600 });
+        const ownerReply = await new Deno.Command("id", {
+          args: ["-un"],
+          stdout: "piped",
+        }).output();
+        if (!ownerReply.success) throw new Error("Fixture owner unavailable");
+        const owner = new TextDecoder().decode(ownerReply.stdout).trim();
+        const result = await writeDatabase(
+          { driver: "sqlite", owner, path },
+          (use) =>
+            use({
+              password: "",
+              username: null,
+              dsn: "",
+              sql: "CREATE TABLE private_sqlite_sentinel(id integer)",
+            }),
+        );
+        assertEquals(result, {
+          backend: "active",
+          row_count: 0,
+          truncated: false,
+        });
+      } finally {
+        await Deno.remove(dir, { recursive: true });
+      }
+    },
+  });
+}
