@@ -99,6 +99,7 @@ it('retains the existing store exact pairing-set and issue/link preconditions', 
 });
 
 it('rejects extra selectors, undeclared fields and foreign references', function (): void {
+    $this->getJson($this->path.'/private-material?run_id='.$this->run.'&artifact=environment')->assertUnprocessable();
     $this->getJson($this->path.'/private-material?run_id='.$this->run.'&source=conn.environment')->assertUnprocessable();
     $this->postJson($this->path.'/secret-output', [...$this->output, 'store' => 'foreign.store'])->assertUnprocessable()->assertHeader('Cache-Control', 'no-store, private');
     $this->postJson($this->path.'/secret-output', ['run_id' => $this->run, 'outputs' => ['foreign' => 'shared-output-sentinel']])->assertUnprocessable();

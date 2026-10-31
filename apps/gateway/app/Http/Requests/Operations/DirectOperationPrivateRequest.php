@@ -25,7 +25,7 @@ final class DirectOperationPrivateRequest extends DirectOperationRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if (array_diff(array_keys($this->all()), ['run_id', 'outputs']) !== []) {
+            if (array_diff(array_keys($this->all()), ['run_id', 'outputs', 'artifact']) !== []) {
                 $validator->errors()->add('request', 'Unexpected request fields.');
             }
         }];
@@ -48,6 +48,7 @@ final class DirectOperationPrivateRequest extends DirectOperationRequest
     public function rules(): array
     {
         return ['run_id' => ['required', 'uuid'],
+            'artifact' => [$this->isMethod('GET') ? 'sometimes' : 'prohibited', 'string', 'regex:/\A[a-z][a-z0-9_]{0,63}\z/D'],
             'outputs' => [$this->route()?->getActionMethod() === 'secretOutput' ? 'required' : 'prohibited', 'array', 'min:1', 'max:64'],
         ];
     }
