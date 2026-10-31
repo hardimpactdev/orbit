@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseCleanupProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
+use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
 use App\Domain\DatabaseServers\DatabaseWriteProjection;
 
-return ['database.write' => [
+return ['database_server.destroy' => [
+    'workflow' => 'operation-database-server-destroy',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'database_server_destroy_writer',
+    'projection' => DatabaseServerDestroyProjection::class,
+], 'database.write' => [
     'workflow' => 'operation-database-write',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'database_write_writer',

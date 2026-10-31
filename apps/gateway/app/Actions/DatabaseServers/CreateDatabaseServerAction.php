@@ -183,6 +183,9 @@ final readonly class CreateDatabaseServerAction
                     ->first();
 
                 if ($existing instanceof DatabaseServer) {
+                    if ($existing->status === LifecycleStatus::Removing) {
+                        throw new ResourceOperationException('database.server_removing', 'The server has an unfinished removal intent.', 409);
+                    }
                     if (
                         $existing->node_id !== $node->id
                         || $existing->driver !== $data->driver
