@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\Nodes\NodeEnrollmentPrivateOwner;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationAttemptLease;
@@ -26,11 +27,14 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['node'];
+        return ['node', 'task_vm', 'task_group'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
+        if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
+            return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'secret_hash');
+        }
         if ($operation->kind === 'node.role_add') {
             return NodeRoleDirectInput::ownerId($operation);
         }

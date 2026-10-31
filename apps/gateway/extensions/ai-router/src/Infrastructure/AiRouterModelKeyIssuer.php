@@ -14,18 +14,15 @@ use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\TaskVmModelKeys;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
-use SensitiveParameter;
 
-/** Issues task VM model keys at the CLIProxyAPI of the ai-router extension, with its management key and one anchor key. */
+/** Supplies existing task VM model-router material from the CLIProxyAPI of the ai-router extension, with its management key and one anchor key. */
 final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
 {
     public function __construct(
         private TaskVmSettings $settings,
         private AiRouterState $proxy,
         private SettingRepository $gatewaySettings,
-        private TaskVmModelKeys $keys,
     ) {}
 
     public function assertReady(): void
@@ -50,14 +47,18 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
         return $origin;
     }
 
-    public function issue(string $origin, #[SensitiveParameter] string $key): void
+    public function ownerNodeId(): int
     {
-        $this->keys->ensure($origin, $this->managementKey(), $this->anchor($origin), $key);
+        return $this->proxy->nodeId() ?? throw new TaskVmException(TaskVmError::ModelKeyFailed, 'The model router has no owning Node.', 409);
     }
 
-    public function revoke(string $origin, #[SensitiveParameter] string $key): void
+    public function privateMaterial(string $origin, int $ownerNodeId): array
     {
-        $this->keys->revoke($origin, $this->managementKey(), $this->anchor($origin), $key);
+        if ($ownerNodeId !== $this->ownerNodeId()) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The admitted Node does not own these model-router credentials.', 422);
+        }
+
+        return ['management_key' => $this->managementKey(), 'anchor_key' => $this->anchor($origin)];
     }
 
     private function managementKey(): string
