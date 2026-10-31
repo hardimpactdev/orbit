@@ -8,7 +8,7 @@ covers:
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
-  - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
+  - .github/{workflows/*.yml,actions/{php,no-sudo,ci-scope}/action.yml}
   - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
 ---
 
@@ -92,9 +92,11 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
-`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit.
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
 
-Pull request scope detection fetches only the event commit and its comparison base. A PR without changes under `apps/agent` starts no agent build or delivery work; main still compares the published source tree to detect an unpublished agent change from an earlier merge.
+Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection fetches only the event commit and its comparison base. A PR without changes under `apps/agent` starts no agent build or delivery work; main still compares the published source tree to detect an unpublished agent change from an earlier merge.
+
+CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
 Installed Gateway runtime and CLI build dependencies use lock-based caches. Composer install and its current lifecycle scripts always rerun, including contract generation and autoload discovery. Download caches restore across lockfile changes. Source, generated contracts and release binaries are never restored as dependency caches.
 

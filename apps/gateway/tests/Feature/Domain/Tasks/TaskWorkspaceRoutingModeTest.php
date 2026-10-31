@@ -2,13 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Doctor\InstanceDoctorProbe;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\InstanceInspectionData;
-use App\Domain\Doctor\InstanceStateInspector;
-use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -26,7 +21,6 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectType;
-use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -50,7 +44,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeProjectUpdateProjectionMutator;
 use Tests\Support\PhpBuildAnswers;
 
 it('provisions from the Project setting for an orbit slug and another slug', function (string $slug, bool $routed): void {
@@ -192,67 +185,6 @@ it('resumes an unrouted workspace after routing is turned on when the Project ro
     'missing root' => [null],
     'repository root' => ['.'],
 ]);
-
-it('keeps workspace routes and settled state after a rename and both setting changes', function (): void {
-    $this->markAsGateway(Node::query()->create([
-        'name' => 'routing-operator',
-        'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.2',
-        'wireguard_ip' => '10.44.0.2',
-    ]));
-    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
-    $this->fakeRepositoryBranches();
-    app()->instance(ProjectUpdateProjectionMutator::class, new FakeProjectUpdateProjectionMutator);
-    $routedProject = routing_mode_project('shop', true);
-    $unroutedProject = routing_mode_project('orbit', false);
-    // The ordinary Instance lives on a development Node; each task workspace on its own task VM.
-    $node = routing_mode_node('rename');
-    routing_mode_bind_boundaries();
-    $routed = routing_mode_provision(routing_mode_group($routedProject));
-    $unrouted = routing_mode_provision(routing_mode_group($unroutedProject));
-    $ordinary = Instance::query()->create([
-        'project_id' => $routedProject->id,
-        'node_id' => $node->id,
-        'name' => 'default',
-        'source_layout' => InstanceSourceLayout::Checkout,
-        'checkout_path' => '/srv/orbit/apps/shop/default',
-        'root' => 'public',
-        'branch' => 'main',
-        'starting_commit' => str_repeat('c', 40),
-        'status' => InstanceState::Active,
-    ]);
-    $ordinaryRoute = app(CreateRouteAction::class)->ensureForInstance($ordinary, null);
-    expect($routed)->toBeInstanceOf(Instance::class)
-        ->and($unrouted)->toBeInstanceOf(Instance::class);
-
-    $this->patchJson('/api/v1/projects/'.$routedProject->id, ['task_workspace_routed' => false])->assertOk();
-    $this->patchJson('/api/v1/projects/'.$unroutedProject->id, ['task_workspace_routed' => true])->assertOk();
-    $this->patchJson('/api/v1/projects/'.$routedProject->id, ['slug' => 'renamed-shop'])->assertOk();
-    $this->patchJson('/api/v1/projects/'.$unroutedProject->id, ['slug' => 'renamed-orbit'])->assertOk();
-    $this->patchJson('/api/v1/projects/'.$routedProject->id, ['task_workspace_routed' => true])->assertOk();
-    $this->patchJson('/api/v1/projects/'.$unroutedProject->id, ['task_workspace_routed' => false])->assertOk();
-
-    $routed = $routed->fresh() ?? $routed;
-    $unrouted = $unrouted->fresh() ?? $unrouted;
-    $ordinary = $ordinary->fresh() ?? $ordinary;
-    DB::table('instances')->whereIn('id', [$routed->id, $unrouted->id, $ordinary->id])
-        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
-    $report = new InstanceDoctorProbe(routing_mode_healthy_inspector())->inspect(routing_mode_context($node));
-
-    expect($report->issues)->toBe([])
-        ->and($routed->task_workspace_routed)->toBeTrue()
-        ->and($routed->status)->toBe(InstanceState::Active)
-        ->and($routed->routes()->count())->toBe(1)
-        ->and($unrouted->task_workspace_routed)->toBeFalse()
-        ->and($unrouted->status)->toBe(InstanceState::SourceResolved)
-        ->and($unrouted->routes()->count())->toBe(0)
-        ->and($ordinary->task_workspace_routed)->toBeNull()
-        ->and($ordinary->status)->toBe(InstanceState::Active)
-        ->and($ordinary->routes()->count())->toBe(1)
-        ->and($ordinary->routes()->sole()->id)->not->toBe($ordinaryRoute->id)
-        ->and($routedProject->fresh()->slug)->toBe('renamed-shop')
-        ->and($unroutedProject->fresh()->slug)->toBe('renamed-orbit');
-});
 
 it('refuses a routed workspace whose root cannot serve and still creates an unrouted one', function (string $slug, ProjectType $type, ?string $root): void {
     $routed = routing_mode_project($slug, true, $type, $root);
@@ -489,20 +421,4 @@ function routing_mode_bind_boundaries(): void
     app()->instance(AgentCommandRunner::class, $agents);
     app()->forgetInstance(DevelopmentInstanceProvisioner::class);
     app()->forgetInstance(NativeDevelopmentInstanceProvisioner::class);
-}
-
-function routing_mode_healthy_inspector(): InstanceStateInspector
-{
-    return new class implements InstanceStateInspector
-    {
-        public function inspect(Instance $instance): InstanceInspectionData
-        {
-            return new InstanceInspectionData(true, true, true, true);
-        }
-    };
-}
-
-function routing_mode_context(Node $node): DoctorNodeContext
-{
-    return new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true));
 }

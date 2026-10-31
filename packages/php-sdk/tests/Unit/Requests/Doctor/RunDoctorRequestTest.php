@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
-use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -17,9 +17,8 @@ it('uses the exact Doctor JSON transport contract', function (
     $mockClient = new MockClient([
         RunDoctorRequest::class => MockResponse::make([
             'data' => [
-                'healthy' => true,
-                'nodes' => [],
-                'summary' => ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0],
+                'id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7,
+                'status' => 'queued', 'sequence' => 1, 'result' => null,
             ],
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
         ]),
@@ -41,7 +40,7 @@ it('uses the exact Doctor JSON transport contract', function (
         ->and((string) $pendingRequest?->body()->__toString())
         ->toBe($expectedBody)
         ->and($response)
-        ->toBeInstanceOf(DoctorReportResponse::class);
+        ->toBeInstanceOf(OperationResponse::class);
 })->with([
     'no filters' => [null, null, '{}'],
     'node only' => [41, null, '{"node_id":41}'],

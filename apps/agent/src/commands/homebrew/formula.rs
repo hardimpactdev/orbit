@@ -13,17 +13,9 @@ pub struct CandidateOutput {
     version: Option<String>,
 }
 #[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
-pub struct Done {}
-#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct AdoptionOutput {
     installed_version: Option<String>,
     block: Option<Block>,
-}
-#[derive(Clone, Copy)]
-enum Operation {
-    Install,
-    Update,
-    Remove,
 }
 fn validate(input: &Input, platform: Platform, mutation: bool, needs_bottle: bool) -> Result<()> {
     if !valid_package(&input.package)
@@ -138,34 +130,6 @@ fn candidate(
     Ok(CandidateOutput {
         version: stable.map(String::from),
     })
-}
-fn mutate(
-    host: &mut impl recipe::Host,
-    scope: &homebrew_scope::Output,
-    platform: Platform,
-    input: &Input,
-    operation: Operation,
-) -> Result<Done> {
-    let needs_bottle = !matches!(operation, Operation::Remove);
-    validate(input, platform, true, needs_bottle)?;
-    if needs_bottle && candidate(host, scope, platform, input)?.version.is_none() {
-        return Err(Error::Candidate {});
-    }
-    let coordinate = format!("homebrew/core/{}", input.package);
-    let args = match operation {
-        Operation::Install => vec!["install", "--formula", "--force-bottle", &coordinate],
-        Operation::Update => vec!["upgrade", "--formula", "--force-bottle", &coordinate],
-        Operation::Remove => vec!["uninstall", "--formula", &coordinate],
-    };
-    let mut call = brew_invocation(
-        &scope.prefix,
-        &scope.home,
-        needs_bottle && platform == Platform::Macos,
-        &args,
-    )?;
-    call.timeout = Duration::from_secs(900);
-    execute(host, &call, 1_048_576)?;
-    Ok(Done {})
 }
 pub struct Candidate;
 pub(super) fn kegs(formula: &Value) -> Result<(bool, Option<String>)> {
@@ -321,60 +285,5 @@ impl Command for Candidate {
         )
     }
 }
-macro_rules! mutation {
-    ($name:ident, $wire:literal, $summary:literal, $operation:ident) => {
-        pub struct $name;
-        impl Command for $name {
-            const NAME: &'static str = $wire;
-            const SUMMARY: &'static str = $summary;
-            const MUTATES: bool = true;
-            const TIMEOUT: Duration = Duration::from_secs(900);
-            type Input = Input;
-            type Output = Done;
-            type Error = Error;
-            fn privilege(_: Platform) -> Option<Privilege> {
-                Some(Privilege::Account)
-            }
-            fn target(_: &Input) -> Option<String> {
-                Some("tools:homebrew".into())
-            }
-            fn run(input: Input, context: &Context) -> Result<Done> {
-                validate(
-                    &input,
-                    context.platform,
-                    true,
-                    !matches!(Operation::$operation, Operation::Remove),
-                )?;
-                let scope = homebrew_scope::Inspect::run(homebrew_scope::Empty {}, context)?;
-                mutate(
-                    &mut recipe::Native(context),
-                    &scope,
-                    context.platform,
-                    &input,
-                    Operation::$operation,
-                )
-            }
-        }
-    };
-}
-mutation!(
-    Install,
-    "tool.homebrew-formula-install",
-    "Install one verified Core bottle.",
-    Install
-);
-mutation!(
-    Update,
-    "tool.homebrew-formula-update",
-    "Upgrade one verified Core bottle without unpinning it.",
-    Update
-);
-mutation!(
-    Remove,
-    "tool.homebrew-formula-remove",
-    "Remove exactly one unprotected Core formula.",
-    Remove
-);
-
 #[cfg(test)]
 mod tests;

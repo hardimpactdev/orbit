@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Doctor;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -35,9 +35,9 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
         return ['Content-Type' => 'application/json'];
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): DoctorReportResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return DoctorReportResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
     protected function defaultBody(): string

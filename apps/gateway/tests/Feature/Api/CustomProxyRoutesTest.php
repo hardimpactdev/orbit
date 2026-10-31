@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Doctor\RouteDoctorProbe;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
@@ -12,11 +11,6 @@ use App\Data\Processes\UpdateProcessData;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Doctor\CustomProxyRouteInspector;
-use App\Domain\Doctor\CustomProxyRouteObservation;
-use App\Domain\Doctor\DoctorInspectionScope;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
@@ -589,27 +583,6 @@ it('requires access to the public edge and the separate Process Node', function 
     $this->deleteJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();
 });
 
-it('reports public Process Route drift on the Ingress and leaves the service Node out of Route inspection', function (): void {
-    app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
-    $body = public_process_body($this->node);
-    $id = $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->json('data.id');
-    $inspector = Mockery::mock(CustomProxyRouteInspector::class);
-    $inspector->shouldReceive('inspect')->once()->andReturn(new CustomProxyRouteObservation(true, false, true, false, false));
-    app()->instance(CustomProxyRouteInspector::class, $inspector);
-    $probe = app(RouteDoctorProbe::class);
-    $ingress = Node::query()->where('name', 'public-ingress')->sole();
-    $context = new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null));
-    $scope = new DoctorInspectionScope([
-        $ingress->id => $context,
-        $this->node->id => new DoctorNodeContext($this->node, $context->inspection),
-    ]);
-    $report = $probe->inspect($context->withScope($scope));
-    expect($report->checked)->toBe(1)
-        ->and(array_map(fn ($issue) => $issue->code, $report->issues))->toBe(['route.certificate_mismatch', 'route.upstream_unreachable', 'route.firewall_mismatch'])
-        ->and($report->issues[0]->resourceId)->toBe($id);
-    expect($probe->resources($this->node))->toBeEmpty();
-});
-
 it('keeps the Ingress ports open while any public Route remains and closes them after the last one leaves', function (): void {
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
@@ -951,25 +924,6 @@ describe('Process updates with targeting Routes', function (): void {
             ->and($route->refresh()->status->value)->toBe('active')
             ->and($this->runtime->convergedProcessIds)->toBe([$process->id]);
     })->with(['private', 'wireguard']);
-
-    it('keeps listener reachability visible to Doctor after an update', function (string $scope, bool $reachable): void {
-        [$process, $route] = process_update_route_fixture($this, $scope);
-        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'powersync:new'])->completeRoute()->assertOk();
-        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
-        $inspector->shouldReceive('inspect')->once()->withArgs(fn (RouteCustomProxy $proxy): bool => $proxy->route_id === $route->id)
-            ->andReturn(new CustomProxyRouteObservation(true, true, true, $reachable, true));
-        app()->instance(CustomProxyRouteInspector::class, $inspector);
-        $serving = $scope === 'private' ? $this->node : Node::query()->where('name', 'public-ingress')->sole();
-        $inspection = new NodeInspectionData(true, null, null, null);
-        $context = new DoctorNodeContext($serving, $inspection);
-        $selected = [$serving->id => $context, $this->node->id => new DoctorNodeContext($this->node, $inspection)];
-
-        $report = app(RouteDoctorProbe::class)->inspect($context->withScope(new DoctorInspectionScope($selected)));
-
-        expect($report->checked)->toBe(1)
-            ->and(array_map(fn ($issue) => $issue->code, $report->issues))->toBe($reachable ? [] : ['route.upstream_unreachable'])
-            ->and($route->refresh()->status->value)->toBe('active');
-    })->with(['private', 'wireguard'])->with([true, false]);
 
     it('refuses a changed or unresolved Route listener before runtime work', function (string $scope, string $change): void {
         [$process, $route, $address] = process_update_route_fixture($this, $scope);

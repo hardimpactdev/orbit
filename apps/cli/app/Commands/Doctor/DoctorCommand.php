@@ -9,8 +9,13 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
+use App\Support\Operations\OperationFollower;
+use InvalidArgumentException;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DoctorCommand extends GatewayCommand
 {
@@ -45,14 +50,39 @@ final class DoctorCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $report = $this->sendWithProgress(
+        $report = null;
+        $this->sendWithProgress(
             $connector,
             new RunDoctorRequest($nodeId, $families),
-            DoctorReportResponse::class,
+            OperationResponse::class,
             ['Verify registered state', 'Verifying registered state', 'Verified registered state'],
-            static fn (DoctorReportResponse $response): ProgressState => $response->healthy
-                ? ProgressState::Success
-                : ProgressState::Warning,
+            function (OperationResponse $operation) use ($connector, &$report): ProgressState {
+                $follower = new OperationFollower(
+                    fn (int $sequence): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operation->id, $sequence), OperationResponse::class),
+                    null,
+                );
+                try {
+                    while (! $operation->terminal()) {
+                        $operation = $follower->next($operation);
+                    }
+                } finally {
+                    $follower->close();
+                }
+                if (! $operation->succeeded()) {
+                    throw new GatewayApiException('Doctor inspection did not complete.', $operation->errorCode ?? 'doctor.inspection_failed', requestId: $operation->requestId);
+                }
+                try {
+                    $data = $operation->result['report'] ?? null;
+                    if (! is_array($data)) {
+                        throw new InvalidArgumentException('Missing Doctor report.');
+                    }
+                    $report = DoctorReportResponse::fromGatewayData($data, $operation->requestId);
+                } catch (InvalidArgumentException $exception) {
+                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', previous: $exception, requestId: $operation->requestId);
+                }
+
+                return $report->healthy ? ProgressState::Success : ProgressState::Warning;
+            },
         );
         if (! $report instanceof DoctorReportResponse) {
             return self::FAILURE;
