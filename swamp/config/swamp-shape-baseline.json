@@ -1415,7 +1415,7 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
       "rule": "gateway-http",
-      "count": 2,
+      "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
@@ -1423,7 +1423,7 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
       "rule": "private-material",
-      "count": 2,
+      "count": 1,
       "evidence": []
     },
     {

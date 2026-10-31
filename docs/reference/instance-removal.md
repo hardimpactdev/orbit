@@ -41,6 +41,8 @@ The native model `route-publication-node-<node-id>` serializes a publication met
 
 ## Retry and ownership
 
+Publication checks, source verification and finalization share one private Git-material reader. Each invocation keeps credentials inside its callback. Finalization retains its own bounded refusal code.
+
 The Gateway marks the member set Removing in the same SQLite IMMEDIATE transaction that captures database ownership. Database saves refuse additions, ownership changes and attachments involving a Removing owner. An owned database targeted by another Instance refuses removal.
 
 A failed native run records `failed_step` and retains its removal intent. A retry reuses the accepted source origin, worktree inventory and database artifacts. It does not infer success from an absent result or delete rows before native success. A forced retry may reconcile an already absent checkout only after the local command proves that the exact path is absent and has no symlink replacement.
