@@ -65,6 +65,9 @@ final class EnableInstanceAnalyticsRequest extends FormRequest
                 if (array_diff($required, array_keys($fields)) !== [] || array_diff(array_keys($fields), [...$required, 'custom_props']) !== []) {
                     $validator->errors()->add("goals.{$index}.goal", 'Supply only the fields required by this goal type.');
                 }
+                if (isset($fields['custom_props']) && is_array($fields['custom_props']) && (array_is_list($fields['custom_props']) || in_array('', array_keys($fields['custom_props']), true))) {
+                    $validator->errors()->add("goals.{$index}.goal.custom_props", 'Goal properties must be an object with named keys.');
+                }
                 foreach ($fields as $value) {
                     if (is_string($value) && preg_match('/[\\r\\n\\x00]/', $value) === 1) {
                         $validator->errors()->add("goals.{$index}.goal", 'Goal text must contain no control characters.');
@@ -96,7 +99,15 @@ final class EnableInstanceAnalyticsRequest extends FormRequest
     /** @return list<array<string,mixed>> */
     public function goals(): array
     {
-        return array_values(array_map(ValidatedData::object(...), $this->array('goals')));
+        return array_values(array_map(static function (mixed $value): array {
+            $goal = ValidatedData::object($value);
+            $fields = ValidatedData::object($goal['goal'] ?? []);
+            if (($fields['custom_props'] ?? null) === []) {
+                unset($fields['custom_props']);
+            }
+
+            return [...$goal, 'goal' => $fields];
+        }, $this->array('goals')));
     }
 
     /** @return list<string> The normalised hosts, in request order. */

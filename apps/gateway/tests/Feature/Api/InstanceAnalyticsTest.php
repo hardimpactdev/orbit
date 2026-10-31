@@ -183,10 +183,18 @@ describe('instance:analytics:enable', function (): void {
         'duplicate' => [['hosts' => ['stats.shop.example.com', 'Stats.Shop.Example.Com.']]],
         'invalid host' => [['hosts' => ['https://stats.shop.example.com']]],
         'timezone' => [['timezone' => 'Invalid/Timezone']],
+        'empty property name' => [['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup', 'custom_props' => ['' => 'paid']]]]]],
+        'list properties' => [['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup', 'custom_props' => ['paid']]]]]],
         'missing event' => [['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => []]]]],
         'missing currency' => [['goals' => [['goal_type' => 'Goal.Revenue', 'goal' => ['event_name' => 'Sale']]]]],
         'foreign field' => [['goals' => [['goal_type' => 'Goal.Pageview', 'goal' => ['path' => '/', 'event_name' => 'x']]]]],
     ]);
+
+    it('normalizes empty goal properties to an absent object field before native admission', function (): void {
+        analytics_intent_socket();
+        $id = $this->postJson($this->url, ['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup', 'custom_props' => []]]]])->assertAccepted()->json('data.id');
+        expect(Operation::query()->findOrFail($id)->input['site']['goals'])->toBe([['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup']]]);
+    });
 
     it('refuses changed Instance ownership or authoritative placement at projection time', function (string $change): void {
         $operation = analytics_intent_start($this);
@@ -400,4 +408,20 @@ describe('analytics native participant boundary', function (): void {
         $this->postJson($this->path.'/primitive', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'])
             ->assertOk()->assertJsonPath('data.certificate_bundle_base64', base64_encode('[]'));
     });
+});
+
+it('keeps the root lifecycle readable after its own publication ownership changes', function (): void {
+    $this->analytics->update(['cluster_id' => $this->cluster->id, 'lan_ip' => '10.10.0.40']);
+    $this->router->roles()->where('role', RoleName::Router)->update(['node_id' => $this->analytics->id]);
+    $operation = analytics_intent_start($this);
+    config(['dependency_detection.services_node_id' => $this->analytics->id]);
+    $this->analytics->accessibleNodes()->attach($this->gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->analytics->wireguard_ip]);
+    $this->appRoute->update(['publication' => RoutePublication::Private]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()
+        ->assertJsonPath('data.status', 'running')->assertJsonMissingPath('data.input.caddy_publication');
+    expect(fn () => app(AnalyticsIntentProjection::class)->publicInput($operation, $this->analytics->id))->toThrow(ResourceOperationException::class);
+    $this->postJson($path.'/result', analytics_intent_result('failed', ['error_code' => 'analytics.change_failed'], 'analytics.change_failed'))
+        ->assertOk()->assertJsonPath('data.status', 'failed');
 });

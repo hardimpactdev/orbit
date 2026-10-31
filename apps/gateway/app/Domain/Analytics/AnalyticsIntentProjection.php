@@ -40,8 +40,19 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
     {
         $plan = $this->tracking->plan($operation);
 
-        return in_array($operation->node_id, [...ValidatedData::integerList($plan['caddy_node_ids']), ...ValidatedData::integerList($plan['dns_node_ids'])], true)
-            ? $this->publicInput($operation, $operation->node_id) : [];
+        if (! in_array($operation->node_id, [...$plan['caddy_node_ids'], ...$plan['dns_node_ids']], true)) {
+            return [];
+        }
+        try {
+            return $this->publicInput($operation, $operation->node_id);
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'analytics.tracking_changed') {
+                throw $exception;
+            }
+
+            // The root must remain readable so Swamp can project the publication failure.
+            return [];
+        }
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
