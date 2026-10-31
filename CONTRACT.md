@@ -9,7 +9,7 @@ Nick's 2026-10-31 Big Switch is the governing contract. Kit is removed; an unpor
 3. **DAG:** create one `operation-<family>-<verb>` workflow with inputs `operation_id`, `kind`, `node_id`. Pass native `run.id` as `run_id` to each method. The workflow owns preparation, effects, retries, cancellation and failure handling. Compose lower actions as native steps, never child Operations. Every placed step uses exact `orbit-node-N` plus `labels.node: string(N)` for its admitted Node. No fallback worker.
 4. **Private material:** use declared `private_material` / `secret_outputs` and `GatewayOperation.withPrivateMaterial` / `storeSecretOutput`. Keep values inside the effect callback. Existing sources and fixed wire serialization remain authoritative. Raw secrets never enter workflow inputs, outputs, logs or resources. Own-Node private access remains the default. Cross-Node custody requires the shared declared-participant interface; do not relax guards or create a family relay while that interface is being completed.
 5. **Projection:** implement `DirectOperationProjection::input(Operation): array` with safe admitted input and `apply(Operation, array): Operation` with only the bounded domain writes. Use `DirectOperation::project(Operation, callbackData, safeResult)` to record native status/result. Do not re-run Swamp's validation, verify stages/receipts, check runtime proofs or call an effect. No step receipts are recorded in the Gateway.
-6. **Finish:** delete the old executor, child/receipt/completion contracts and polled registrations for this parent. Run focused tests and a disposable dev canary. Auto-merge on green. Only a NEW secret/credential type requires your own Opus review. Swamp hot-reloads every merge; do not wait for evidence receipts or user approval.
+6. **Finish:** delete the old executor, child/receipt/completion contracts and polled registrations for this parent. Run system commands in Swamp itself; orbit-agent only observes health, drift and metrics. Delete matching agent action commands in the owning family PR. Run focused tests and a disposable dev canary. Auto-merge on green. Only a NEW secret/credential type requires your own Opus review. Swamp hot-reloads every merge; do not wait for evidence receipts or user approval.
 
 ```php
 return [
@@ -30,6 +30,8 @@ return [
 - `POST .../{operation}/result` records `run_id`, native `status`, timestamps, bounded `result`, and optional `error_code`.
 - The shared layer checks caller authority and the bound root UUID. It does not revalidate native work. Public `operation:list`, `operation:show` and `operation:cancel` remain. Executor/claim/run/step/child/receipt APIs do not.
 
+`POST .../{operation}/failure` accepts only `run_id` from the exact root Node and records fixed `operation.native_failed` without family projection. A separate root-placed failed-dependency job calls `@nckrtl/operation-failure` v2026.10.31.1 `report` with the four direct arguments. This covers upstream behavior rejection. Pinned Swamp does not provide a durable terminal outbox; delivery failure still needs native retry and must not be claimed crash-safe.
+
 `directOperation` reads the intent before the family action. A recorded cancellation skips the action and projects cancellation. A workflow must also project an engine-level failure that occurs before a behavior can callback; this is shared native failure handling, not a Gateway poller.
 
 ## Multi-Node public and private steps
@@ -47,3 +49,8 @@ The certificate primitive POST stays `run_id`-only. The root records public `res
 Lane 16 owns `StartOperationAction`, `StartSwampRun`, `DirectOperation*`, the private boundary and Kit deletion. Family owners own declarations, admission payloads, native workflows and minimal domain projections. Node-role owners own `NodeFootprintProjection` and `NodeConvergeProjection`; lane 16 will not rewrite them. TaskVM enrollment's issuer-to-host private handoff is shared work, not a reason to retain Kit.
 
 Report only: merged PR, dev-canary Operation ID, Gateway net lines.
+
+
+## Submission failures
+
+`StartSwampRun` makes one synchronous submission after the intent commits. It reserves RUNNING under a row lock before opening the socket, then binds the native root. Configuration/connect failures and explicit refusal record terminal errors. A lost send/reply records `swamp.start_uncertain`; this is not a no-effect claim. Replay returns the same record without history recovery or resubmission. Native callbacks preserve terminal outcomes.

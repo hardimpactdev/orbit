@@ -13,6 +13,7 @@ runs:
         extensions: bcmath, curl, dom, intl, mbstring, pcntl, pdo_sqlite, zip
         coverage: ${{ inputs.coverage }}
         tools: composer:2.10.3
+    # Each lock graph can seed another graph's immutable package downloads.
     - name: Locate Composer download cache
       id: composer-cache
       shell: bash
@@ -27,6 +28,7 @@ runs:
       with:
         path: ${{ steps.composer-cache.outputs.path }}
         key: composer-${{ runner.os }}-${{ runner.arch }}-${{ steps.composer-cache.outputs.version }}-${{ hashFiles('**/composer.lock') }}
+        restore-keys: composer-${{ runner.os }}-${{ runner.arch }}-${{ steps.composer-cache.outputs.version }}-
 
     # The stock action saves after the job's installs, and only main produces trusted download entries.
     - name: Cache Composer downloads on main
@@ -35,3 +37,4 @@ runs:
       with:
         path: ${{ steps.composer-cache.outputs.path }}
         key: composer-${{ runner.os }}-${{ runner.arch }}-${{ steps.composer-cache.outputs.version }}-${{ hashFiles('**/composer.lock') }}
+        restore-keys: composer-${{ runner.os }}-${{ runner.arch }}-${{ steps.composer-cache.outputs.version }}-

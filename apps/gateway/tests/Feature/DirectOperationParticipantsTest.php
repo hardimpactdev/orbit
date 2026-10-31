@@ -21,6 +21,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /** Synthetic family exercises the shared HTTP contract without a family-specific relay. */
@@ -45,7 +46,7 @@ final class ParticipantProjection implements DirectOperationProjection, DirectOp
 
     public function apply(Operation $operation, array $data): Operation
     {
-        return app(DirectOperation::class)->project($operation, $data, ['applied' => true], 'native');
+        return app(DirectOperation::class)->project($operation, $data, ['applied' => true]);
     }
 }
 
@@ -289,5 +290,35 @@ describe('fixed primitive transport', function (): void {
         $this->postJson($fixture->path.'/primitive', ['run_id' => '20e8138a-cf7f-4c6c-85fd-ff561b575ac8'])->assertConflict();
         $this->withServerVariables(['REMOTE_ADDR' => $fixture->issuer->wireguard_ip])->postJson($fixture->path.'/primitive', ['run_id' => $fixture->run])->assertForbidden();
         expect($fixture->primitive->calls)->toBe(0);
+    });
+});
+
+describe('native failure callback', function (): void {
+    it('records a fixed failure without family projection or Gateway steps and replays idempotently', function (): void {
+        $fixture = participantIntent($this);
+        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk()->assertJsonPath('data.status', 'failed');
+        $operation = $fixture->operation->refresh();
+        expect($operation->error_code)->toBe('operation.native_failed');
+        expect($operation->result)->toBe([]);
+        expect(Schema::hasTable('operation_steps'))->toBeFalse();
+        $sequence = $operation->sequence;
+        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk();
+        expect($operation->refresh()->sequence)->toBe($sequence);
+        Http::assertNothingSent();
+    });
+
+    it('refuses foreign participants, mismatched runs and caller-supplied diagnostics', function (): void {
+        $fixture = participantIntent($this);
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->host->wireguard_ip])->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertForbidden();
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->root->wireguard_ip])->postJson($fixture->path.'/failure', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92677'])->assertConflict();
+        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run, 'error_code' => 'private.secret'])->assertUnprocessable();
+        expect($fixture->operation->refresh()->status)->toBe(OperationStatus::Queued);
+    });
+
+    it('preserves a committed native success when failure delivery arrives late', function (): void {
+        $fixture = participantIntent($this);
+        $fixture->operation->update(['status' => OperationStatus::Succeeded, 'result' => ['ready' => true]]);
+        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk()->assertJsonPath('data.status', 'succeeded');
+        expect($fixture->operation->refresh()->result)->toBe(['ready' => true]);
     });
 });
