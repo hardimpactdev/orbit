@@ -649,9 +649,9 @@ The supervised fixture sends a Unix datagram after execution, including its proc
 
 ## Releases
 
-The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds or reuses the [delivery](#delivery) in CI and uploads it as the `agent-delivery` artifact. An unchanged agent, including a docs-only commit, reuses the last published binaries. Reused bytes keep their original agent source commit and digests.
+The frozen agent remains in the published `cli-v0.7261.0` release. CI builds no agent and copies no agent into future releases. [Gateway preparation](/reference/gateway-recovery#prepare-a-release) verifies that fixed delivery independently of the Gateway commit's publication. New [CLI releases](/reference/cli-binaries#published-releases) contain only CLI assets.
 
-After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its manifest digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.
+The frozen release retains these agent assets:
 
 | Asset | Contents |
 | --- | --- |
@@ -660,7 +660,7 @@ After main's required checks pass, the Orbit CLI Release workflow downloads that
 | `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
 | `manifest.json` | The delivery manifest, with each binary's URL in this release |
 
-The release's `SHA256SUMS` lists the agent binaries with the CLI binaries, and its `provenance.sigstore.json` [signs](/reference/cli-binaries#provenance) the manifest and `SHA256SUMS` with the other files. A Gateway release of a commit waits for that commit's release, because [prepare](/reference/gateway-recovery#prepare-a-release) takes the agent from it.
+The frozen release's `SHA256SUMS` and `provenance.sigstore.json` authenticate those bytes. A Gateway commit needs no new agent release.
 
 ## Limits
 
