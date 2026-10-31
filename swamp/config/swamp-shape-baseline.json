@@ -848,15 +848,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/failure.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "POST /failure"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/firewall/direct.ts",
       "rule": "gateway-http",
       "count": 1,

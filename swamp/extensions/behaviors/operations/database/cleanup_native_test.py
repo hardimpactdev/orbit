@@ -14,9 +14,6 @@ from native_harness import NativeTestCase
 class DatabaseCleanupNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text('import { fixtureHttp } from "./database/cleanup_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         module = self.repo / 'extensions/behaviors/operations/database/cleanup.ts'
         module.write_text('import {fixtureHttp, fixtureLocal} from "./cleanup_native_fixture.ts";\n' + module.read_text().replace('export const behavior = cleanup();', 'export const behavior = cleanup(() => fixtureHttp, fixtureLocal);'))

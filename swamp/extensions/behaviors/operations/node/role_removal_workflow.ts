@@ -112,25 +112,6 @@ export function roleRemovalWorkflow() {
       task: task("fail"),
     }],
   });
-  jobs.push({
-    name: "failure_callback",
-    dependsOn: jobs.map((j) => dep(String(j.name), "always")),
-    steps: [{
-      name: "report_failure",
-      guard: expr(
-        "has(steps.source_complete) && has(steps.source_complete.outputs) && steps.source_complete.outputs.ready",
-      ),
-      task: {
-        type: "behavior",
-        behaviorType: "@nckrtl/operation-failure",
-        behaviorName: expr(
-          '"operation-failure-node-" + string(inputs.node_id)',
-        ),
-        methodName: "report",
-        inputs: args,
-      },
-    }],
-  });
   return {
     id: "837c361c-493f-416a-b660-9bd77426d9e3",
     name: "operation-node-role-remove-direct",

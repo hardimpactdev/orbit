@@ -17,9 +17,6 @@ class CacheNative(NativeTestCase):
         self.native_env["ORBIT_CACHE_TEST_TOKEN"] = token
         self.secrets = (token,)
         self.copy_behaviors("automatic-deploy", "operation-runner", "operations/task-vms", "operations/_lib")
-        failure = self.repo / "extensions/behaviors/operations/failure.ts"
-        shutil.copy(ROOT / "extensions/behaviors/operations/failure.ts", failure)
-        failure.write_text('import {fixtureHttp} from "./task-vms/cache_fill_native_fixture.ts";\n'+failure.read_text().replace("export const behavior = nativeFailure();", "export const behavior = nativeFailure(() => fixtureHttp);"))
         module = self.repo / "extensions/behaviors/operations/task-vms/cache_fill_direct.ts"
         source = module.read_text().replace("export const behavior = cacheFillDirect();", """
 const fixture = cacheFillDirect(() => fixtureHttp, fixtureAction);
@@ -31,7 +28,7 @@ return await fixture.methods.execute.execute(...args);
 """)
         module.write_text('import {fixtureHttp,fixtureAction,engineRefused} from "./cache_fill_native_fixture.ts";\n'+source)
         workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-task-vm-cache-fill.yaml").read_text())
-        self.assertEqual([j["name"] for j in workflow["jobs"]], ["fill", "failure"])
+        self.assertEqual([j["name"] for j in workflow["jobs"]], ["fill"])
         for job in workflow["jobs"]:
             self.assertEqual(job.pop("target"), '${{ "orbit-node-" + string(inputs.node_id) }}')
             self.assertEqual(job.pop("labels"), {"node": '${{ string(inputs.node_id) }}'})

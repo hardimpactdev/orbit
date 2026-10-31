@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Operations\FailNativeOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\DirectOperationPublicView;
@@ -44,14 +43,6 @@ final class DirectOperationsController extends Controller
     public function result(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
     {
         return $this->respond($request, $this->operation($direct->projection($operation)->apply($operation, $request->validated())));
-    }
-
-    /** Native failed-dependency callback: bounded failure only, no domain effects or material. */
-    public function failure(DirectOperationRequest $request, Operation $operation, FailNativeOperationAction $failure): JsonResponse
-    {
-        $operation = $failure->execute($operation, ValidatedData::string($request->validated('run_id')));
-
-        return $this->respond($request, ['id' => $operation->id, 'status' => $operation->status->value])->header('Cache-Control', 'no-store');
     }
 
     public function privateMaterial(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse|BinaryFileResponse

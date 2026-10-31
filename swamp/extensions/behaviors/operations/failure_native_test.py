@@ -1,71 +1,60 @@
-"""Real pinned DAG failure reporting; no network, credentials or fleet effects."""
+"""Native root failure is retained without a step-side Gateway callback."""
+
 import json
-from pathlib import Path
 import sys
 import unittest
-ROOT=Path(__file__).resolve().parents[3]
-sys.path.insert(0,str(ROOT/'tests'))
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "tests"))
 from native_harness import NativeTestCase
+
 
 class NativeFailureTest(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy','operations/_lib')
-        behavior=self.repo/'extensions/behaviors/operations';behavior.mkdir(exist_ok=True)
-        source=(ROOT/'extensions/behaviors/operations/failure.ts').read_text()
-        fixture='''async function fixtureHttp(method: string,path: string,body?: unknown) {
- const calls=JSON.parse(await Deno.readTextFile('calls.json'));calls.push({method,path,body});
- await Deno.writeTextFile('calls.json',JSON.stringify(calls));
- return {status:200,body:{data:{status:'failed'}}};
-}
-'''
-        (behavior/'failure.ts').write_text(source.replace('export const behavior = nativeFailure();',fixture+'export const behavior = nativeFailure(() => fixtureHttp);'))
-        (self.repo/'calls.json').write_text('[]')
-        (behavior/'fixture-failure.ts').write_text("import {z} from 'npm:zod@4.4.3';export const behavior={type:'@fixture/rejected',version:'2026.10.31.1',methods:{execute:{description:'Reject before effect',arguments:z.object({}),execute:()=>{throw new Error('fixture pre-effect failure');}}}};")
-        workflow='''id: 40bb011c-5ff5-444c-a7af-a0c55a9b6409
-name: native-failure-fixture
-inputs:
-  properties:
-    operation_id: {type: integer}
-    node_id: {type: integer}
-    kind: {type: string}
-  required: [operation_id,node_id,kind]
-jobs:
-  - name: effect
-    steps:
-      - name: rejected-before-dispatch
-        task:
-          type: behavior
-          behaviorType: '@fixture/rejected'
-          behaviorName: missing
-          methodName: execute
-          inputs: {}
-  - name: terminal-failure
-    dependsOn:
-      - job: effect
-        condition: {type: failed}
-    steps:
-      - name: report
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/operation-failure'
-          behaviorName: root-failure
-          methodName: report
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'
-'''
-        (self.repo/'workflows/workflow-native-failure-fixture.yaml').write_text(workflow)
+        behavior = self.repo / "extensions/behaviors"
+        behavior.mkdir(parents=True)
+        (behavior / "rejected.ts").write_text(
+            "import {z} from 'npm:zod@4.4.3';"
+            "export const behavior={type:'@nckrtl/tool-direct',version:'2026.11.01.1',"
+            "methods:{apply:{description:'Refuse before the first effect',"
+            "arguments:z.object({}).passthrough(),execute:()=>{"
+            "throw new Error('fixture pre-effect failure');}}}};"
+        )
+        flow = yaml.safe_load(
+            (ROOT / "workflows/workflow-operation-tool-install-direct.yaml").read_text()
+        )
+        for job in flow["jobs"]:
+            job.pop("target", None)
+            job.pop("labels", None)
+        (self.repo / "workflows/workflow-failure.yaml").write_text(
+            yaml.safe_dump(flow, sort_keys=False)
+        )
 
-    def test_rejected_family_before_behavior_still_reports_same_root(self):
-        run=self.cli('workflow','run','native-failure-fixture','--input','operation_id=71','--input','node_id=9','--input','kind=sample.apply',success=False)
-        calls=json.loads((self.repo/'calls.json').read_text())
-        self.assertEqual(len(calls),1,run.stdout+run.stderr)
-        self.assertEqual(calls[0]['path'],'/api/v1/direct-operations/71/failure')
-        self.assertEqual(calls[0]['method'],'POST')
-        self.assertEqual(list(calls[0]['body']),['run_id'])
-        self.assertEqual(len(calls[0]['body']['run_id']),36)
+    def test_failed_family_retains_exact_native_root_without_a_failure_reporter(self):
+        reply = self.cli(
+            "workflow",
+            "run",
+            "operation-tool-install-direct",
+            "--stdin",
+            input=json.dumps(
+                {"operation_id": 71, "node_id": 209, "kind": "tool.install"}
+            ),
+            success=False,
+        )
+        run = json.loads(reply.stdout)
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        self.assertEqual(history["status"], "failed")
+        self.assertEqual(
+            history["inputs"],
+            {"operation_id": 71, "node_id": 209, "kind": "tool.install"},
+        )
+        self.assertEqual([job["name"] for job in history["jobs"]], ["tools"])
+        self.assertEqual(history["jobs"][0]["steps"][0]["status"], "failed")
 
-if __name__=='__main__':unittest.main()
+
+if __name__ == "__main__":
+    unittest.main()

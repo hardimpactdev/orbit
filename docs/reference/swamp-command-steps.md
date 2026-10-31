@@ -78,3 +78,7 @@ Node 209 hosts Serve and all Swamp workers. Converted Node effects use official 
 `SwampSshExecutionInput::identity()` returns the public control Node ID, existing 209 identity-file locator and approved public key. Bootstrap can read this before a target has a pinned identity; its parent owns first contact. `forNode(Node)` adds the public `target` fields (`name`, `host`, `user`, `port`, `host_keys`) from the stored target account, WireGuard address and complete host key. It refuses incomplete targets. The capture reads no private key, makes no connection and changes no account or access edge. Families compose the official native `task.globalArgs.name`, `transport` and `hosts` from this one capture.
 
 The descriptor does not prove that a target currently authorizes the existing key. Lane 21 owns that coverage proof and worker retirement. Do not assume fleet-wide SSH `AcceptEnv` or sudo `env_keep`. Public Process control arguments can use official `exec.argv`; secret values must use a documented official delivery method and stay out of argv.
+
+### Native failure observation
+
+Workflows have no Gateway failure-report step. The shared terminal subscriber and history reader handle native failure. A failed or interrupted run without selected public output records `operation.native_failed`. A family that needs a specific public error code writes it in its result step stdout. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.

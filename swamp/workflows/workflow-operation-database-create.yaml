@@ -56,21 +56,3 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
         outcome: ${{ steps.apply.outputs.outcome }}
-  - name: failure-apply
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    dependsOn:
-    - step: apply
-      condition:
-        type: failed
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}

@@ -22,10 +22,8 @@ class ResumeNative(NativeTestCase):
         module.write_text('import {fixtureHttp, fixtureAction} from "./resume_native_fixture.ts";\n' +
                           module.read_text().replace("export const behavior = nativeResume();",
                           "export const behavior = nativeResume(() => fixtureHttp, fixtureAction);"))
-        failure=self.repo/"extensions/behaviors/operations/failure.ts"
-        failure.write_text('import {fixtureHttp} from "./task-vms/resume_native_fixture.ts";\n'+(ROOT/"extensions/behaviors/operations/failure.ts").read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
         source = yaml.safe_load((ROOT / "workflows/workflow-operation-task-vm-resume.yaml").read_text())
-        self.assertEqual([job["name"] for job in source["jobs"]], ["admission", "provider", "guest", "pi", "projection", "failure"])
+        self.assertEqual([job["name"] for job in source["jobs"]], ["admission", "provider", "guest", "pi", "projection"])
         for job in source["jobs"]:
             if job["name"] != "guest":
                 self.assertEqual(job.pop("target"), '${{ "orbit-node-" + string(inputs.node_id) }}')

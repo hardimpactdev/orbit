@@ -18,9 +18,6 @@ class EnvironmentNative(NativeTestCase):
         root.write_text('import {fixtureHttp, fixtureSync, fixtureRefresh} from "./fixtures/native.ts";\n' + root.read_text().replace(
             'export const behavior = environmentRoot();',
             'export const behavior = environmentRoot(() => fixtureHttp, fixtureSync, fixtureRefresh);'))
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./instance-environment/fixtures/native.ts";\n' + failure.read_text().replace(
-            'nativeFailure();', 'nativeFailure(() => fixtureHttp);'))
         source = ROOT / 'workflows/workflow-operation-instance-environment.yaml'
         workflow = yaml.safe_load(source.read_text())
         for job in workflow['jobs']:

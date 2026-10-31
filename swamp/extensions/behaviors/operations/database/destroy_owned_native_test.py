@@ -11,9 +11,6 @@ from native_harness import NativeTestCase
 class DatabaseDestroyOwnedNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text('import { fixtureHttp } from "./database/destroy_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         for module, factory, replace in [('destroy.ts', 'databaseDestroy', '...databaseDestroy()'), ('destroy_owned.ts', 'databaseDestroyOwned', '...databaseDestroyOwned()')]:
             path = self.repo / 'extensions/behaviors/operations/database' / module

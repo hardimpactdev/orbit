@@ -17,9 +17,6 @@ class DirectToolNative(NativeTestCase):
         super().setUp()
         behavior = self.repo / 'extensions/behaviors'
         self.copy_behaviors('automatic-deploy', 'operations/tools', 'operations/_lib')
-        failure = behavior / 'operations/failure.ts'
-        shutil.copy(ROOT / 'extensions/behaviors/operations/failure.ts', failure)
-        failure.write_text('import {fixtureHttp} from "./tools/direct_native_fixture.ts";\n' + failure.read_text().replace('nativeFailure();', 'nativeFailure(() => fixtureHttp);'))
         direct = behavior / 'operations/tools/direct.ts'
         direct.write_text('import {fixtureHttp, fixtureTool, engineRefused} from "./direct_native_fixture.ts";\n' + direct.read_text().replace('export const behavior = { ...directTool(), type: "@nckrtl/tool-direct" };', '''
 const fixture = directTool(() => fixtureHttp, fixtureTool);
@@ -33,7 +30,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
             source = ROOT / 'workflows' / filename
             # Remove exact placement only in this disposable native fixture.
             workflow = yaml.safe_load(source.read_text())
-            self.assertEqual([job['name'] for job in workflow['jobs']], ['tools', 'failure'])
+            self.assertEqual([job['name'] for job in workflow['jobs']], ['tools'])
             for job in workflow['jobs']:
                 self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
                 self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
@@ -89,7 +86,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
             self.assertEqual(self.read()['effects'],1)
             self.assertEqual(self.read()['operation']['status'],'failed')
 
-    def test_engine_failure_before_first_callback_closes_each_kind_without_effects(self):
+    def test_engine_failure_keeps_native_evidence_without_a_gateway_callback(self):
         self.state['engineRefused'] = True
         for kind in ('tool.install','tool.update','tool.remove','tool.adopt','tool.manager_converge'):
             self.state['operation']['kind'] = kind
@@ -98,10 +95,12 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
             self.save()
             self.run_workflow(success=False)
             state = self.read()
-            self.assertEqual(state['operation']['status'], 'failed')
-            self.assertEqual(state['operation']['error_code'], 'operation.native_failed')
-            self.assertEqual(state['operation']['result'], {})
-            self.assertEqual(state['calls'], ['/api/v1/direct-operations/17/failure'])
+            self.assertEqual(state['operation']['status'], 'queued')
+            self.assertIsNone(state['operation'].get('error_code'))
+            self.assertIsNone(state['operation']['result'])
+            self.assertEqual(state['calls'], [])
+            history = json.loads(self.cli('workflow', 'history', 'get', self.run_id).stdout)
+            self.assertEqual(history['status'], 'failed')
             self.assertEqual(state['effects'], 0)
             self.assertEqual(state['commands'], [])
 

@@ -23,8 +23,6 @@ class TransferNative(NativeTestCase):
         module.write_text('import {transferHttp,transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime,fixtureSqlite} from "./transfer_native_fixture.ts";\n'+module.read_text().replace('transferRoot();','transferRoot((_ctx,args)=>transferHttp(args),transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime,fixtureSqlite);'))
         for file,kind in [('routes/publication.ts','@nckrtl/route-publication'),('certificates/mod.ts','@nckrtl/certificates')]:
             (self.repo/'extensions/behaviors/operations'/file).write_text('import {fixtureSharedBehavior} from "../instance-lifecycle/transfer_native_fixture.ts";\nexport const behavior = { ...fixtureSharedBehavior("'+kind+'"), type: "'+kind+'" };\n')
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {transferHttp} from "./instance-lifecycle/transfer_native_fixture.ts";\n'+failure.read_text().replace('nativeFailure();','nativeFailure(()=>transferHttp({operation_id:7,kind:"instance.transfer",node_id:9,run_id:""}));'))
         target={'route_id' :1,'mode':'targets','binding_only':False,'noop':False,'recover_forward':False,
                 'prepared':[],'workloads':[],'staging_certificates':[],'live_certificates':[],
                 'certificates':[],'staging_removals':[],'node_ids':[9,17,209],

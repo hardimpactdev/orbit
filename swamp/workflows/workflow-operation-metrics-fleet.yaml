@@ -201,18 +201,3 @@ jobs:
       inputs:
         <<: *root_args
         steps: ${{ steps }}
-
-- name: capture_failure
-  dependsOn:
-  - {job: admission, condition: {type: failed}}
-  steps:
-  - name: report_capture_failure
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: {node: '${{ string(inputs.node_id) }}'}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "operation-failure-node-" + string(inputs.node_id) }}
-      methodName: report
-      inputs:
-        <<: *root_args

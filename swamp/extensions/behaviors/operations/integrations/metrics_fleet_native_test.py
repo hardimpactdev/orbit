@@ -15,8 +15,6 @@ class MetricsFleetNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/routes')
-        failure_source = (ROOT / 'extensions/behaviors/operations/failure.ts').read_text()
-        (self.repo / 'extensions/behaviors/operations/failure.ts').write_text('import { http } from \"./integrations/metrics_fleet_native_fixture.ts\";\n'.replace('\\\"', '\"') + failure_source.replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => http);'))
         (self.repo / '.swamp.yaml').write_text((self.repo / '.swamp.yaml').read_text() + '\ntrustedCollectives: [nckrtl]\n')
         target = self.repo / 'extensions/behaviors/operations/integrations'
         target.mkdir()

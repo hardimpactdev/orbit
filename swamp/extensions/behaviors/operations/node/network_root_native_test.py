@@ -33,9 +33,6 @@ class NetworkNative(NativeTestCase):
         module = node / 'wireguard_direct.ts'
         module.write_text('import {fixtureHttp,fixtureSystem} from "./network_root_native_fixture.ts";\n' + module.read_text().replace(
             'export const behavior = nodeWireGuard();', 'export const behavior = nodeWireGuard(undefined, () => fixtureHttp, fixtureSystem);'))
-        failure = (ROOT / 'extensions/behaviors/operations/failure.ts').read_text()
-        (ops / 'failure.ts').write_text('import {fixtureHttp} from "./node/network_root_native_fixture.ts";\n' + failure.replace(
-            'export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.key = 'A' * 43 + '='
         self.hub = {'schema_version': 1, 'executor_node_id': 1, 'hub_id': 1, 'context_node_id': 13, 'excluded_node_id': None, 'agent_sha256': 'a' * 64}
         self.network = {'schema_version': 1, 'node_id': 13, 'agent_sha256': 'a' * 64, 'hub_id': 1, 'existing_key': None, 'architecture': 'x86_64',

@@ -21,8 +21,6 @@ class RecipeDirectNative(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/node', 'operations/fleet', 'operations/tools', 'operations/routes', 'operations/certificates', 'node-worker')
         module = self.repo / 'extensions/behaviors/operations/fleet/recipe_direct.ts'
         module.write_text('import {fixtureAction,fixtureHttp,fixtureNow} from "./recipe_direct_native_fixture.ts";\n'+module.read_text().replace('export const behavior = recipeDirect();','export const behavior = recipeDirect(fixtureAction, () => fixtureHttp, fixtureNow);'))
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./fleet/recipe_direct_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.source=ROOT / 'workflows/workflow-operation-fleet-recipe-direct.yaml'
         text='\n'.join(line for line in self.source.read_text().splitlines() if not re.match(r'^\s*(?:target|labels|node):',line))+'\n'
         (self.repo/'workflows'/self.source.name).write_text(text)

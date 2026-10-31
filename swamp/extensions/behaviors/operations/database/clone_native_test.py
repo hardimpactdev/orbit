@@ -22,9 +22,6 @@ from native_harness import NativeTestCase
 class CloneNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text((ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => gatewayHttp(Deno.env.get("CLONE_FIXTURE_URL")!, Deno.env.get("CLONE_FIXTURE_CA")!));'))
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         self.password = 'clone-private-' + secrets.token_hex(16)
         self.secrets = (self.password, base64.b64encode(self.password.encode()).decode())

@@ -28,9 +28,6 @@ class CloneNative(NativeTestCase):
         module.write_text('import {cloneHttp, cloneInvoke} from "./clone_native_fixture.ts";\n' +
                           module.read_text().replace('provisioningRoot("instance.clone")',
                               'provisioningRoot("instance.clone", () => cloneHttp, cloneInvoke)'))
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {cloneHttp} from "./instance-lifecycle/clone_native_fixture.ts";\n' +
-                           failure.read_text().replace('nativeFailure();', 'nativeFailure(() => cloneHttp);'))
         self.state_file = self.repo / 'provisioning-fixture.json'
         checkout = '/home/orbit-app-1/releases/initial'
         plan = {'instance_id': 11, 'project_id': 1, 'node_id': 9, 'node_user': 'orbit',

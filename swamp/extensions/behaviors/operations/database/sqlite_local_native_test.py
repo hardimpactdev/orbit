@@ -19,9 +19,6 @@ class SqliteLocalNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('operations/_lib')
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text((ROOT / 'extensions/behaviors/operations/failure.ts').read_text())
         folder = self.repo / 'extensions/behaviors/operations/database'
         folder.mkdir(parents=True)
         for name in ('sqlite_actions.ts', 'sqlite_local.ts', 'sqlite_program.ts'):

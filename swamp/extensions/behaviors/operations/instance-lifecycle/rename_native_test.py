@@ -19,7 +19,6 @@ class NativeRename(NativeTestCase):
         target.mkdir(parents=True)
         for name in ('rename_root.ts', 'source_identity.ts', 'source_system.ts', 'rename_native_fixture.ts'):
             (target / name).write_bytes((ROOT / family / name).read_bytes())
-        (self.repo / 'extensions/behaviors/operations/failure.ts').write_bytes((ROOT / 'extensions/behaviors/operations/failure.ts').read_bytes())
         module = target / 'rename_root.ts'
         module.write_text('import {fixtureHttp,fixtureInspect} from "./rename_native_fixture.ts";\n' + module.read_text().replace('renameRoot();', 'renameRoot(() => fixtureHttp, fixtureInspect);'))
         source = ROOT / 'workflows/workflow-operation-instance-rename.yaml'

@@ -20,10 +20,6 @@ class HubNative(NativeTestCase):
         self.secrets = (base64.b64encode(uuid.uuid4().bytes + uuid.uuid4().bytes).decode(),)
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
         self.copy_behaviors('operations/node-bootstrap')
-        failure = (ROOT / 'extensions/behaviors/operations/failure.ts').read_text()
-        (self.repo / 'extensions/behaviors/operations/failure.ts').write_text(
-            'import {fixtureHttp} from "./node/wireguard_direct_native_fixture.ts";\n' +
-            failure.replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         routes = self.repo / 'extensions/behaviors/operations/routes'
         routes.mkdir()
         for name in ['firewall-local.ts', 'firewall-program.ts', 'local-program.ts', 'router-lan.ts']:

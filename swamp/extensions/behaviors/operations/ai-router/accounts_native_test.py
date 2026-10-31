@@ -81,9 +81,7 @@ class AccountsNative(NativeTestCase):
  return {status:response.status,body:await response.json()};
 };
 export const behavior = {''').replace('...aiRouterAccounts(),', '...aiRouterAccounts(() => http),'))
-        failure = (ROOT / 'extensions/behaviors/operations/failure.ts').read_text()
         # The normal root method reports its failure; this fixture does not inject a second host action.
-        (self.repo / 'extensions/behaviors/operations/failure.ts').write_text(failure)
         self.native_env = {'ACCOUNT_NATIVE_ORIGIN': origin}
         workflow = ROOT / 'workflows/workflow-operation-ai-router-account-update.yaml'
         self.workflow = workflow

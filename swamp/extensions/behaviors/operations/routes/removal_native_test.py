@@ -25,8 +25,6 @@ class RemovalNative(NativeTestCase):
         module.write_text('import {fixtureHttp, actions, fixtureReady, event} from "./removal_native_fixture.ts";\n' + module.read_text().replace('export const behavior = removal();', 'export const behavior = removal(() => fixtureHttp, actions); behavior.methods.ready.execute = fixtureReady; behavior.methods.prepareRuntime.execute = () => event("prepareRuntime"); behavior.methods.synchronizeEnvironment.execute = () => event("synchronizeEnvironment");'))
         (route / 'publication.ts').write_text('import { fixtureBehavior } from "./removal_native_fixture.ts"; export const behavior = fixtureBehavior("@nckrtl/route-publication", ["publishDns", "publishCaddy", "publishPhp"]);')
         (route / 'convergence.ts').write_text('import { fixtureBehavior } from "./removal_native_fixture.ts"; export const behavior = fixtureBehavior("@nckrtl/route-convergence", ["prepareRuntime"]);')
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./routes/removal_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         source = yaml.safe_load((ROOT / 'workflows/workflow-operation-route-removal.yaml').read_text())
         source.pop('target'); source.pop('labels')
         for job in source['jobs']:
