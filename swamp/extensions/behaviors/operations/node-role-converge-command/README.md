@@ -34,3 +34,21 @@ role readiness. Footprint and CLI failures retain the existing follow-up policy.
 The owning root consumes lane 11's separate account, Caddy package and OS
 package exports unchanged. Route and integration actions use their canonical
 native suppliers.
+
+`NodeRoleConvergeInput::capture` composes the merged
+`NativeNodeRolePublicationInput` supplier. It captures the final footprint in
+the same prospective certificate render context, then closes that context.
+The immutable publication rows retain actual `before` and prospective `after`
+snapshots. Null Caddy, PHP or DNS components have no admitted duty and receive
+no child action. The capture stores full pinned SSH descriptors for every
+effect participant and lists209 as the executor. It performs no host action or
+serving-state write.
+
+`rolePublicationSteps(name, intentExpr, mode, dependency?, activeExpr?)` composes
+the canonical Route PHP, Caddy and DNS children. Its fan-out lists depend only
+on immutable intent; native guards evaluate readiness after dependencies finish.
+Restoration retains the candidate Caddy sites through the canonical private DNS
+grace child, then withdraws them. The existing Route contribution result proves
+every expected child completed. Empty duties count as zero; a skipped or failed
+required child cannot count as success. Native tests cover empty, DNS-only and
+Caddy-only duties, failed forward publication and independent restoration.
