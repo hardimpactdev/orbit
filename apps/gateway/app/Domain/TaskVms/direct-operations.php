@@ -21,8 +21,6 @@ return array_fill_keys(TaskVmIncusProjection::Kinds, [
     'projection' => TaskVmLifecycleIntentProjection::class,
 ], 'task_vm.fill_package_cache' => [
     'workflow' => 'operation-task-vm-cache-fill',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'task_vm_cache_fill_writer',
     'projection' => TaskVmPackageCacheProjection::class,
     'private_material' => ['github_token' => 'task_vm.package_cache_github'],
 ], 'task_vm.image_build' => [

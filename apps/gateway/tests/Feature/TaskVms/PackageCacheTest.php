@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\ObservePackageCacheAction;
-use App\Domain\TaskVms\TaskVmException;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\ComposerPackageCache;
 use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Jobs\TaskVms\FillTaskVmPackageCache;
@@ -17,8 +17,6 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
-use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
@@ -139,42 +137,12 @@ it('lists current Project usage with verified hashes and removes usage when a lo
     $this->artisan('task-vms:package-cache-usage acme/demo 1.0.0')->expectsOutput('{"projects":[],"cached":[]}')->assertSuccessful();
 });
 
-it('requests a fixed read-only mount before seeding the selected guest inventory', function (): void {
+it('refuses Gateway workspace cache execution before any agent action', function (): void {
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
-    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux', 'architecture' => 'x86_64']);
-    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
-    $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'private']);
-    $artifacts = [['manager' => 'npm', 'package' => 'left-pad', 'version' => '1.3.0', 'url' => 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz', 'integrity' => null, 'key' => 'selected']];
-    PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => $artifacts]);
-    $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', ['hashes' => [], 'failures' => []])->answer('incus.package-cache', ['ready' => true]);
-    $guests = new FakeGuestAgentCommandRunner;
-    $cache = new TaskVmPackageCache($agents, $guests);
+    $vm = TaskVm::query()->create(['provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130']);
+    $before = $vm->fresh()->getAttributes();
 
-    $cache->prepare($vm, $project);
-
-    expect($agents->commands())->toBe(['package-cache.host', 'incus.package-cache'])
-        ->and($agents->calls[0]['input'])->toBe(['operation' => 'initialize'])
-        ->and($agents->calls[1]['input'])->toBe(['project' => 'orbit-tasks', 'name' => 'tvm-77'])
-        ->and($guests->calls[0]['command'])->toBe('package-cache.seed')
-        ->and($guests->calls[0]['guest']->name)->toBe('tvm-77')
-        ->and($guests->calls[0]['input'])->toBe(['artifacts' => $artifacts]);
-    $agents->refuse('incus.package-cache', 'task_vm.package_cache_mount_invalid');
-    expect(fn () => $cache->prepare($vm, $project))->toThrow(function (TaskVmException $error): void {
-        expect($error->errorCode)->toBe('task_vm.package_cache_mount_invalid');
-    });
-    expect($guests->calls)->toHaveCount(1);
+    expect(fn () => app(TaskVmPackageCache::class)->prepare($vm, $project))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
+    expect($vm->fresh()->getAttributes())->toBe($before);
 });
-
-it('stops before guest seeding when the mount does not confirm completion', function (array $result): void {
-    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
-    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux']);
-    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
-    $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'private']);
-    $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', ['hashes' => [], 'failures' => []])->answerMalformed('incus.package-cache', $result);
-    $guests = new FakeGuestAgentCommandRunner;
-
-    expect(fn () => new TaskVmPackageCache($agents, $guests)->prepare($vm, $project))->toThrow(function (TaskVmException $error): void {
-        expect($error->errorCode)->toBe('task_vm.package_cache_invalid_result');
-    });
-    expect($guests->calls)->toBe([]);
-})->with(['missing' => [[]], 'false' => [['ready' => false]], 'mistyped' => [['ready' => 'true']]]);
