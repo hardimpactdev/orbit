@@ -3,6 +3,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\GatewayWorkflowGrantCheck;
 use App\Domain\Operations\OperationRegistryCheck;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -12,7 +14,10 @@ try {
     $app = require __DIR__.'/../apps/gateway/bootstrap/app.php';
     $app->make(Kernel::class)->bootstrap();
     $count = $app->make(OperationRegistryCheck::class)->execute();
+    $policy = json_decode(file_get_contents(__DIR__.'/../swamp/config/gateway-workflow-grants.json'), true, flags: JSON_THROW_ON_ERROR);
+    $workflows = (new GatewayWorkflowGrantCheck)->execute($app->make(DirectOperation::class)->definitions(), $policy);
     fwrite(STDOUT, "Operation registry valid: {$count} kinds.\n");
+    fwrite(STDOUT, "GATEWAY-WORKFLOW-GRANTS workflows={$workflows} principal=user:orbit-gateway policy=intended\n");
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception::class.': '.$exception->getMessage()."\n");
     exit(1);

@@ -34,6 +34,24 @@ separately in the JSON report. This is not a general permission
 to transfer allowances on rename. The support lower must reach the comparison
 base before the extraction, so the frozen checker enforces the same contract.
 
+## Gateway workflow grant intent
+
+The required Gateway boot check compares the loaded `DirectOperation` registry,
+including extension contributions, with `config/gateway-workflow-grants.json`.
+Each declared workflow needs one exact entry for `user:orbit-gateway` with both
+`run` and `read`. Missing actions or workflows fail CI. Wildcards, other
+principals or actions, duplicate entries and retired declaration entries fail.
+Update the declaration and expected policy together. The check also runs when
+only this manifest changes; other Swamp-only changes keep their existing scope.
+
+This manifest is intended source policy, seeded from owner-approved public grant
+metadata and reconciled against current declarations. It is not evidence that a
+live grant is installed. In particular, historical run-only grants do not prove
+read access. Before Gateway uptake, the live grant owner must verify the exact
+registered workflow and the installed Gateway principal with native
+`access.can-i`. CI reads source files only; it never applies grants, contacts
+Swamp access APIs or handles Swamp credentials.
+
 ## Review checklist
 
 - Before adding a mechanism, check [Swamp core](https://swamp-club.com/manual) and the [official extensions](https://github.com/swamp-club/swamp-extensions), including ssh, vault, datastore, git, container-image, cfgmgmt and workflows. Use the provided feature and its defaults when it fits. A PR that adds a mechanism must name what it checked and explain why it does not fit.
