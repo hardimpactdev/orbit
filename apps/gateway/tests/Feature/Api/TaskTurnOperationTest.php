@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 
@@ -62,6 +63,7 @@ it('admits one native Pi session without sending a Pi or agent command', functio
     $input = app(TaskTurnProjection::class)->input($operation);
     expect($input['intent']['prompt'])->toBe($body['prompt'])
         ->and($input['execution_secrets']['pi_token']['vault'])->toBe('orbit-control-inputs')
+        ->and($input['execution_secrets']['pi_token']['key'])->toBe('task-vm-pi-token-'.TaskVm::forGroup($group)->id)
         ->and(json_encode($input))->not->toContain(TEST_TASK_VM_PI_TOKEN)
         ->and($input['intent'])->not->toHaveKey('execution_secrets');
     expect($this->socket->sent[0]['payload']['inputs'])->toBe([...$input,

@@ -87,7 +87,7 @@ final readonly class TaskTurnIntent
             if (! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
                 throw new ResourceOperationException('tasks.pi_credential_unavailable', 'The task VM Pi credential is unavailable.', 409);
             }
-            $piToken = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-vm.'.$vm->id.'.pi-token', $vm->pi_token);
+            $piToken = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token);
             $thread ??= AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
                 'driver' => 'pi', 'runtime_key' => 'node:'.$instance->node_id, 'external_id' => (string) Str::uuid(),

@@ -213,7 +213,7 @@ class TurnNativeDag(unittest.TestCase):
 
         cli('vault', 'create', 'local_encryption', 'orbit-control-inputs', '--config', json.dumps({
             'base_dir': str(native / 'vault-data'), 'key_file': str(native / 'vault-key'), 'auto_generate': True}))
-        cli('vault', 'put', 'orbit-control-inputs', 'task-vm.5.pi-token', input=TOKEN)
+        cli('vault', 'put', 'orbit-control-inputs', 'task-vm-pi-token-5', input=TOKEN)
         self.value.update(prompt='Implement the fixture task', model='orbit-task-vm/gpt-6.1-sol',
                           effort='high', pi_host='127.0.0.1', pi_port=server.server_port)
         original = PiHandler.do_POST
@@ -226,7 +226,7 @@ class TurnNativeDag(unittest.TestCase):
         PiHandler.do_POST = write_receipt
         self.addCleanup(setattr, PiHandler, 'do_POST', original)
         args = {'operation_id': 15, 'node_id': 30, 'kind': 'tasks.turn', 'intent': self.value,
-                'execution_secrets': {'pi_token': {'vault': 'orbit-control-inputs', 'key': 'task-vm.5.pi-token'}}}
+                'execution_secrets': {'pi_token': {'vault': 'orbit-control-inputs', 'key': 'task-vm-pi-token-5'}}}
         cli('workflow', 'validate', 'operation-task-turn')
         run = cli('workflow', 'run', 'operation-task-turn', '--input', json.dumps(args))
         self.assertEqual(run['status'], 'succeeded')
