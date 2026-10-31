@@ -8,7 +8,7 @@ globalArguments:
   transport:
     kind: ssh
     user: orbit
-    identityFile: /etc/orbit/node-proxy/id_ed25519
+    identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
     hostKeys:
     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG
   hosts:

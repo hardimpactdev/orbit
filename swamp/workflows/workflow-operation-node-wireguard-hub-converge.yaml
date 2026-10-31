@@ -53,13 +53,19 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: wireguard-hub-1
+      behaviorName: ${{ "wireguard-hub-" + string(inputs.intent.hub_id) }}
       methodName: script
       inputs:
-        hosts: hub
+        hosts: name:hub
         interpreter: python3
         sudo: true
         script: ${{ steps.assets.outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.intent.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.intent.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.intent.hub_id)].input.globalArguments.hosts
+          }}
   - name: terminal
     target: orbit-node-209
     labels:
@@ -74,5 +80,4 @@ jobs:
       behaviorName: ${{ "wireguard-hub-terminal-" + string(inputs.intent.hub_id) }}
       methodName: terminal
       inputs:
-        stdout: ${{ data.latest("wireguard-hub-" + string(inputs.intent.hub_id), "run-script-hub").attributes.stdout
-          }}
+        stdout: ${{ steps["publish_command"].outputs.stdout }}

@@ -353,7 +353,6 @@ export function nodeRemovalWorkflow() {
                 operation_id: { type: "integer", minimum: 1 },
                 node_id: { type: "integer", minimum: 1 },
                 kind: { type: "string", enum: ["node.remove"] },
-                hub_command: { type: ["object", "null"] },
                 execution_secrets: {
                     type: "object",
                     additionalProperties: false,

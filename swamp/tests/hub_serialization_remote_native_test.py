@@ -56,6 +56,7 @@ print('{"projected":true}')
         step.pop("dependsOn")
         step["task"]["behaviorType"] = "command/shell"
         step["task"]["methodName"] = "execute"
+        step["task"].pop("globalArgs", None)
         step["task"]["inputs"] = {
             "run": "/usr/bin/python3 " + str(command),
             "env": {"ORBIT_SLOT": "${{ inputs.slot }}"},

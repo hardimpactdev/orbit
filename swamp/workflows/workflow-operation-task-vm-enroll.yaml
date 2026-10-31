@@ -176,10 +176,16 @@ jobs:
       behaviorName: ${{ "wireguard-hub-" + string(inputs._hub_command.hub_id) }}
       methodName: script
       inputs:
-        hosts: hub
+        hosts: name:hub
         interpreter: python3
         sudo: true
         script: ${{ steps["publish-hub_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs._hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs._hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs._hub_command.hub_id)].input.globalArguments.hosts
+          }}
   - name: publish-hub
     target: orbit-node-209
     labels:
@@ -196,8 +202,7 @@ jobs:
       methodName: result
       inputs:
         hub_id: ${{ inputs._hub_command.hub_id }}
-        stdout: ${{ data.latest("wireguard-hub-" + string(inputs._hub_command.hub_id),
-          "run-script-hub").attributes.stdout }}
+        stdout: ${{ steps["publish-hub_command"].outputs.stdout }}
   - name: hub-published
     dependsOn:
     - step: publish-hub

@@ -138,10 +138,16 @@ jobs:
       behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
       methodName: script
       inputs:
-        hosts: hub
+        hosts: name:hub
         interpreter: python3
         sudo: true
         script: ${{ steps["hub_publish_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
     guard: ${{ !steps.admit.outputs.ready }}
   - name: hub_publish
     target: orbit-node-209
@@ -159,8 +165,7 @@ jobs:
       methodName: result
       inputs:
         hub_id: ${{ inputs.hub_command.hub_id }}
-        stdout: ${{ data.latest("wireguard-hub-" + string(inputs.hub_command.hub_id),
-          "run-script-hub").attributes.stdout }}
+        stdout: ${{ steps["hub_publish_command"].outputs.stdout }}
     guard: ${{ !steps.admit.outputs.ready }}
 - name: peer_publish
   dependsOn:
@@ -339,10 +344,16 @@ jobs:
       behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
       methodName: script
       inputs:
-        hosts: hub
+        hosts: name:hub
         interpreter: python3
         sudo: true
         script: ${{ steps["restore_hub_peer_key_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
     guard: ${{ !steps.recover_peer_key.outputs.restore_hub }}
   - name: restore_hub_peer_key
     target: orbit-node-209
@@ -360,8 +371,7 @@ jobs:
       methodName: result
       inputs:
         hub_id: ${{ inputs.hub_command.hub_id }}
-        stdout: ${{ data.latest("wireguard-hub-" + string(inputs.hub_command.hub_id),
-          "run-script-hub").attributes.stdout }}
+        stdout: ${{ steps["restore_hub_peer_key_command"].outputs.stdout }}
     guard: ${{ !steps.recover_peer_key.outputs.restore_hub }}
 - name: failure_peer_key
   dependsOn:
@@ -452,10 +462,16 @@ jobs:
       behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
       methodName: script
       inputs:
-        hosts: hub
+        hosts: name:hub
         interpreter: python3
         sudo: true
         script: ${{ steps["restore_hub_hub_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
     guard: ${{ !steps.recover_hub.outputs.restore_hub }}
   - name: restore_hub_hub
     target: orbit-node-209
@@ -473,8 +489,7 @@ jobs:
       methodName: result
       inputs:
         hub_id: ${{ inputs.hub_command.hub_id }}
-        stdout: ${{ data.latest("wireguard-hub-" + string(inputs.hub_command.hub_id),
-          "run-script-hub").attributes.stdout }}
+        stdout: ${{ steps["restore_hub_hub_command"].outputs.stdout }}
     guard: ${{ !steps.recover_hub.outputs.restore_hub }}
 - name: failure_hub
   dependsOn:
@@ -565,10 +580,16 @@ jobs:
       behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
       methodName: script
       inputs:
-        hosts: hub
+        hosts: name:hub
         interpreter: python3
         sudo: true
         script: ${{ steps["restore_hub_peer_publish_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
     guard: ${{ !steps.recover_peer_publish.outputs.restore_hub }}
   - name: restore_hub_peer_publish
     target: orbit-node-209
@@ -586,8 +607,7 @@ jobs:
       methodName: result
       inputs:
         hub_id: ${{ inputs.hub_command.hub_id }}
-        stdout: ${{ data.latest("wireguard-hub-" + string(inputs.hub_command.hub_id),
-          "run-script-hub").attributes.stdout }}
+        stdout: ${{ steps["restore_hub_peer_publish_command"].outputs.stdout }}
     guard: ${{ !steps.recover_peer_publish.outputs.restore_hub }}
 - name: failure_peer_publish
   dependsOn:

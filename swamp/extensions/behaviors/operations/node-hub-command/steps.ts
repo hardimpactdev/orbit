@@ -1,6 +1,15 @@
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
 const placement = { target: "orbit-node-209", labels: { node: "209" } };
+export function hubSshGlobals(intent: string): Fields {
+    const model = 'model["wireguard-hub-" + string(' + intent +
+        ".hub_id)].input.globalArguments";
+    return {
+        name: expr('"wireguard-hub-" + string(' + intent + ".hub_id)"),
+        transport: expr(model + ".transport"),
+        hosts: expr(model + ".hosts"),
+    };
+}
 export function hubPeerSteps(
     name: string,
     intent: string,
@@ -37,8 +46,9 @@ export function hubPeerSteps(
                 '"wireguard-hub-" + string(' + intent + ".hub_id)",
             ),
             methodName: "script",
+            globalArgs: hubSshGlobals(intent),
             inputs: {
-                hosts: "hub",
+                hosts: "name:hub",
                 interpreter: "python3",
                 sudo: true,
                 script: expr('steps["' + assets + '"].outputs.script_body'),
@@ -58,8 +68,7 @@ export function hubPeerSteps(
             inputs: {
                 hub_id: expr(intent + ".hub_id"),
                 stdout: expr(
-                    'data.latest("wireguard-hub-" + string(' + intent +
-                        '.hub_id), "run-script-hub").attributes.stdout',
+                    'steps["' + command + '"].outputs.stdout',
                 ),
             },
         },

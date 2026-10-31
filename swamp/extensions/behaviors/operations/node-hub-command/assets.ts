@@ -115,30 +115,52 @@ const Assets = z.object({
     action_json: z.string().max(524288),
     script_body: z.string().max(1048576),
 }).strict();
+const Readiness = z.object({
+    schema_version: z.literal(1),
+    hub_id: Id,
+    status: z.literal("succeeded"),
+    projected: z.literal(true),
+}).strict();
+const Terminal = z.object({ stdout: z.string() }).strict();
+type OutputContext = {
+    writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
+};
 export const behavior = {
     type: "@nckrtl/node-hub-command",
     version: "2026.10.31.1",
     resources: {
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
+        readiness: { schema: Readiness, lifetime: "1d", garbageCollection: 10 },
+        terminal: { schema: Terminal, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
         terminal: {
             description:
                 "Expose the public official SSH stdout for the shared terminal projector",
             arguments: z.object({ stdout: z.string().max(65536) }).strict(),
-            execute: async (args: { stdout: string }) => ({
-                stdout: JSON.stringify(
-                    PublicResult.parse(JSON.parse(args.stdout)),
-                ),
-            }),
+            execute: async (args: { stdout: string }, ctx: OutputContext) => {
+                const result = {
+                    stdout: JSON.stringify(
+                        PublicResult.parse(JSON.parse(args.stdout)),
+                    ),
+                };
+                await ctx.writeResource("terminal", "terminal", result);
+                return result;
+            },
         },
         result: {
             description:
                 "Project one fixed command stdout as public hub readiness only",
             arguments: z.object({ hub_id: Id, stdout: z.string().max(65536) })
                 .strict(),
-            execute: async (args: { hub_id: number; stdout: string }) =>
-                hubPeerResult(args.hub_id, args.stdout),
+            execute: async (
+                args: { hub_id: number; stdout: string },
+                ctx: OutputContext,
+            ) => {
+                const result = hubPeerResult(args.hub_id, args.stdout);
+                await ctx.writeResource("readiness", "readiness", result);
+                return result;
+            },
         },
         inventory: {
             description:

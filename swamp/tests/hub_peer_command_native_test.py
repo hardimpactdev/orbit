@@ -54,6 +54,7 @@ class HubCommands(NativeTestCase):
                     step['dependsOn'] = [{'step': 'assets', 'condition': {'type': 'succeeded'}}]
                     step['task']['behaviorType'] = 'command/shell'
                     step['task']['methodName'] = 'execute'
+                    step['task'].pop('globalArgs', None)
                     step['task']['inputs'] = {'run': 'printf %s "$ORBIT_PUBLIC_SCRIPT" | /usr/bin/python3 -', 'env': {'ORBIT_PUBLIC_SCRIPT': '${{ steps.assets.outputs.script_body }}'}}
         (self.repo / 'workflows/workflow-node-hub-peer-mutation.yaml').write_text(json.dumps(workflow))
         peer = {'node_id': 2, 'name': 'guest', 'address': '10.44.0.2', 'public_key': key}
