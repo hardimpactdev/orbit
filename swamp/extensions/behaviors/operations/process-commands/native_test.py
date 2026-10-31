@@ -18,7 +18,7 @@ harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
 
-class NativeProcessComponents(harness.NativeTestCase):
+class NativeProcessFixture(harness.NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/process-commands")
@@ -152,6 +152,7 @@ class NativeProcessComponents(harness.NativeTestCase):
                     pass
         self.fail("Native run result missing")
 
+class NativeProcessComponents(NativeProcessFixture):
     def test_delivered_control_stops_then_verifies_without_boot_policy_mutation(self):
         run = self.run_components()
         self.assertEqual(run["status"], "succeeded")

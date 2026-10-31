@@ -14,6 +14,7 @@ ROOT_GID = 0
 SYSTEMCTL = "/usr/bin/systemctl"
 DOCKER = "/usr/bin/docker"
 SOCKET = "--host=unix:///var/run/docker.sock"
+SLOTS = ("canonical", "candidate", "rollback-running", "rollback-stopped", "failed")
 STATES = {
     "active",
     "reloading",
@@ -59,12 +60,27 @@ def control_input():
         raise Refused("process.invalid")
     if type(value.get("on_demand")) is not bool:
         raise Refused("process.invalid")
+    slot = value.get("slot", "canonical")
+    if slot not in SLOTS or runtime == "systemd" and slot != "canonical":
+        raise Refused("process.invalid")
+    expected = value.get("expected_spec")
+    if expected is not None and (
+        runtime != "docker"
+        or not isinstance(expected, str)
+        or not re.fullmatch("[a-f0-9]{64}", expected)
+    ):
+        raise Refused("process.invalid")
     return value
+
+
+def artifact_name(value):
+    slot = value.get("slot", "canonical")
+    return value["name"] + ("" if slot == "canonical" else "-" + slot)
 
 
 def observe(value):
     """Return bounded public state only; unit content and container configuration stay local."""
-    name = value["name"]
+    name = artifact_name(value)
     if value["runtime"] == "systemd":
         try:
             fd = os.open(UNITS / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -124,6 +140,8 @@ def observe(value):
         "[a-z][a-z_-]{0,63}", state
     ):
         raise Refused("process.status_failed")
+    if value.get("expected_spec") is not None and value["expected_spec"] != spec:
+        raise Refused("process.spec_changed")
     return {"present": True, "state": state, "spec": spec}
 
 

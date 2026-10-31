@@ -2,7 +2,16 @@
 
 import os
 
-from process_common import DOCKER, SOCKET, SYSTEMCTL, Refused, command, main, owned
+from process_common import (
+    DOCKER,
+    SOCKET,
+    SYSTEMCTL,
+    Refused,
+    artifact_name,
+    command,
+    main,
+    owned,
+)
 
 
 def control(value):
@@ -13,7 +22,7 @@ def control(value):
     argv = (
         [SYSTEMCTL, operation, value["name"]]
         if value["runtime"] == "systemd"
-        else [DOCKER, SOCKET, "container", operation, value["name"]]
+        else [DOCKER, SOCKET, "container", operation, artifact_name(value)]
     )
     if command(argv).returncode:
         raise Refused(f"process.{operation}_failed")

@@ -12,3 +12,21 @@ additionalFiles:
   - scripts/control.py
   - scripts/enable.py
   - scripts/verify.py
+  - scripts/unit_files.py
+  - scripts/docker_files.py
+  - scripts/check_release.py
+  - scripts/publish_environment.py
+  - scripts/stage_unit.py
+  - scripts/validate_unit.py
+  - scripts/backup_unit.py
+  - scripts/publish_unit.py
+  - scripts/reload_units.py
+  - scripts/restore_unit.py
+  - scripts/remove_unit.py
+  - scripts/remove_environment.py
+  - scripts/pull_image.py
+  - scripts/create_container.py
+  - scripts/rename_container.py
+  - scripts/remove_container.py
+  - scripts/cleanup_checkpoint.py
+  - scripts/check_health.py

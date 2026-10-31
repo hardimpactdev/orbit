@@ -1,4 +1,8 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
+import {
+    assertEquals,
+    assertRejects,
+    assertThrows,
+} from "jsr:@std/assert@1.0.14";
 import { behavior } from "./assets.ts";
 
 const control = {
@@ -20,7 +24,39 @@ Deno.test("Process metadata resolves shipped files and serializes only public in
     assertEquals(result.control_script, "/native-cache/scripts/control.py");
     assertEquals(JSON.parse(result.control_json), control);
     assertEquals(result.installation_json, "null");
+    assertEquals(
+        result.stage_unit_script,
+        "/native-cache/scripts/stage_unit.py",
+    );
+    assertEquals(
+        result.create_container_script,
+        "/native-cache/scripts/create_container.py",
+    );
     assertEquals(writes, [result]);
+});
+Deno.test("typed command results support native state and publication guards without diagnostics", async () => {
+    const ctx = { writeResource: () => Promise.resolve({}) };
+    assertEquals(
+        await behavior.methods.decode.execute({
+            stdout: '{"present":true,"state":"running","spec":"' +
+                "a".repeat(64) + '"}',
+        }, ctx),
+        { present: true, state: "running", spec: "a".repeat(64) },
+    );
+    assertEquals(
+        await behavior.methods.decode.execute({
+            stdout: '{"ready":true,"previous_hash":null}',
+        }, ctx),
+        { ready: true, previous_hash: null },
+    );
+    await assertRejects(
+        () =>
+            behavior.methods.decode.execute({
+                stdout: '{"ready":true,"environment":"private-sentinel"}',
+            }, ctx),
+        Error,
+        "Invalid public Process command result",
+    );
 });
 Deno.test("public metadata refuses private payload and mismatched member identity", () => {
     assertThrows(() =>
