@@ -77,8 +77,8 @@ jobs:
         hosts:
         - name: target
           address: ${{ inputs.intent.bootstrap.target.host }}
-          transport: '${{ size(inputs.intent.bootstrap.target.host_keys) > 0 ? {"hostKeys": inputs.intent.bootstrap.target.host_keys}
-            : {"hostKeyPolicy": "tofu"} }}'
+          transport:
+            hostKeys: ${{ inputs.intent.bootstrap.target.host_keys }}
       inputs:
         hosts: name:target
         argv:

@@ -30,7 +30,7 @@ The server protocol works on official e459 even though its CLI refuses remote st
 
 ### Probe workflow
 
-`node.bootstrap_probe` uses official `@swamp/ssh` package `2026.10.23.1`. Its `exec` method observes the platform and architecture; `collect-host-public-key` records the host key. The extension receives `identityContent` from a native vault expression and owns its default SSH agent, connection and output handling. Stored public host keys select the official pinned policy; a first contact without a stored public key uses official trust on first use. Orbit adds no SSH launcher, key scanner or transport wrapper.
+`node.bootstrap_probe` uses official `@swamp/ssh` package `2026.10.23.1`. Its `exec` method observes the platform and architecture; `collect-host-public-key` records the host key. The extension receives `identityContent` from a native vault expression and owns its default SSH agent, connection and output handling. The admitted stored public host keys select the official pinned policy. A probe without those keys fails native validation; it does not select trust on first use. Orbit adds no SSH launcher, key scanner or transport wrapper.
 
 The Gateway stores only `execution_secrets.bootstrap_identity = {vault, key}` beside immutable public intent. Its fixed key is `bootstrap-identity-node-<Gateway ID>` in `orbit-control-inputs`. Admission synchronizes the existing SSH identity before creating work. The exact Gateway worker executes the two official methods. One pure TypeScript result step translates the native public observations into the existing projection result; it makes no process or Gateway call.
 

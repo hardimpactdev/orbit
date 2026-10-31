@@ -1,5 +1,6 @@
 """Official SSH methods on a native remote worker; no Gateway or host effects."""
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -115,6 +116,16 @@ class BootstrapScriptNativeTest(NativeTestCase):
                 evidence = os.environ.get('BOOTSTRAP_NATIVE_EVIDENCE')
                 if evidence:
                     Path(evidence).write_text(json.dumps(history, indent=2) + '\n')
+                # The admitted probe requires stored pins; no TOFU selection.
+                unpinned = copy.deepcopy(public)
+                unpinned['operation_id'] = 7003
+                unpinned['intent']['bootstrap']['target']['host_keys'] = []
+                rejected = reply(self.cli('workflow', 'run', 'operation-node-bootstrap-probe',
+                                         '--input', json.dumps(unpinned), *flags, success=False).stdout)
+                self.assertEqual(rejected['status'], 'failed')
+                rejected_history = reply(self.cli('workflow', 'history', 'get', rejected['id'], *flags).stdout)
+                self.assertEqual(rejected_history['jobs'][0]['steps'][0]['status'], 'failed')
+                self.assertEqual(rejected_history['jobs'][0]['steps'][-1]['status'], 'skipped')
                 # A failed official command stops the subsequent observations/result.
                 public['operation_id'] = 7002
                 failure_marker.touch()
