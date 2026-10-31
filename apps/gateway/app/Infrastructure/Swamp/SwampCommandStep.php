@@ -91,6 +91,9 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         $status = $run['status'] === 'interrupted' ? 'failed' : $run['status'];
+        if ($status === 'failed' && $result === []) {
+            $result = ['error_code' => 'operation.native_failed'];
+        }
 
         return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
