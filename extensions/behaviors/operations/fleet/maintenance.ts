@@ -268,22 +268,24 @@ export async function maintenance(
           node_id: z.number(),
           attempts: z.number(),
           finished_at: z.string().nullable().optional(),
-          running: z.boolean(),
         }),
       ).default([]),
     }).parse(await request("GET", "/api/v1/fleet/rollout/plan"));
-    // Pending Nodes precede catch-up retries; a busy or unreachable Node does not starve later ones.
-    const target = rollout.targets.filter((t) =>
-      !t.running && (t.attempts === 0 || !t.finished_at ||
-        new Date(t.finished_at).getTime() <= at.getTime() - 300_000)
-    ).sort((a, b) =>
-      a.attempts - b.attempts
-    )[0];
-    if (target) {
+    if (
+      !["running", "completed"].includes(rollout.status) || !rollout.rollout
+    ) return;
+    const targets = rollout.targets.filter((target) =>
+      target.attempts === 0 || !target.finished_at ||
+      new Date(target.finished_at).getTime() <= at.getTime() - 300_000
+    );
+    if (targets.length) {
       await admit(
-        `rollout-${rollout.rollout}-${target.node_id}`,
-        `/api/v1/fleet/nodes/${target.node_id}/rollout`,
-        { rollout_id: rollout.rollout },
+        `rollout-${rollout.rollout}`,
+        "/api/v1/fleet/rollout",
+        {
+          rollout_id: rollout.rollout,
+          node_ids: targets.map((target) => target.node_id),
+        },
         true,
       );
     }

@@ -118,7 +118,7 @@ Deno.test("a failed PR read does not block ordered recipe or rollout admissions"
     errors: ["fleet.github_unavailable"],
   });
   assertEquals(f.writes("/api/v1/fleet/nodes/2/recipe").length, 1);
-  assertEquals(f.writes("/api/v1/fleet/nodes/3/rollout").length, 1);
+  assertEquals(f.writes("/api/v1/fleet/rollout").length, 1);
 });
 Deno.test("snapshot opens start at 03:00 Amsterdam in winter and summer", async () => {
   for (
@@ -152,7 +152,7 @@ Deno.test("daily opens use Gateway intent idempotency and retain no Swamp admiss
     false,
   );
   assertEquals(f.writes("/api/v1/fleet/nodes/2/recipe").length, 1);
-  assertEquals(f.writes("/api/v1/fleet/nodes/3/rollout").length, 2);
+  assertEquals(f.writes("/api/v1/fleet/rollout").length, 2);
 });
 
 Deno.test("catch-up visits retain five-minute spacing", async () => {
@@ -160,9 +160,9 @@ Deno.test("catch-up visits retain five-minute spacing", async () => {
   f.targets[0].attempts = 1;
   f.targets[0].finished_at = "2026-10-28T02:00:00Z";
   await f.tick("2026-10-28T02:04:00Z");
-  assertEquals(f.writes("/api/v1/fleet/nodes/3/rollout").length, 0);
+  assertEquals(f.writes("/api/v1/fleet/rollout").length, 0);
   await f.tick("2026-10-28T02:05:00Z");
-  assertEquals(f.writes("/api/v1/fleet/nodes/3/rollout").length, 1);
+  assertEquals(f.writes("/api/v1/fleet/rollout").length, 1);
 });
 
 Deno.test("unchanged peer DNS admits exactly 24 hourly Operations across a full day", async () => {
@@ -235,8 +235,8 @@ Deno.test("rollout admission needs no window field and leaves the maintenance wi
   const f = new MaintenanceFixture();
   await f.tick("2026-10-28T12:00:00Z");
   assertEquals(
-    f.writes("/api/v1/fleet/nodes/3/rollout").map((call) => call.body),
-    [{ rollout_id: 5 }],
+    f.writes("/api/v1/fleet/rollout").map((call) => call.body),
+    [{ rollout_id: 5, node_ids: [3] }],
   );
 });
 
@@ -388,4 +388,19 @@ Deno.test("a newer candidate base change wakes an older candidate retirement", a
       .length,
     2,
   );
+});
+
+Deno.test("one rollout admission captures every ready Node in fleet order", async () => {
+  const f = new MaintenanceFixture();
+  f.targets.push({
+    node_id: 4,
+    attempts: 0,
+    running: false,
+    finished_at: null,
+  });
+  await f.tick();
+  assertEquals(f.writes("/api/v1/fleet/rollout").map((call) => call.body), [{
+    rollout_id: 5,
+    node_ids: [3, 4],
+  }]);
 });
