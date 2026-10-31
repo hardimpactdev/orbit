@@ -286,7 +286,11 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 `database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. A never-active adopted server is record-only: durable create history must prove adoption and no earlier successful or active creation. In that case removal preserves the operator's Process, container and volume. Admission marks the server as removing, so new database creation refuses an inactive server. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
 
-`database:server:destroy` records one intent and starts `operation-database-server-destroy`. The owning Node removes only the admitted Process containers through the canonical native Process action with sudo. Its named data volume stays intact. A server without a Process uses a native no-op step. The Gateway validates that no connections remain and deletes the Server and Process records only after a successful native result. There is no Gateway execution relay or child Operation. Rollback reverts the cutover PR.
+`database:server:destroy` starts `operation-database-server-destroy` with the public Process identity and target SSH metadata. All steps run on 209 and reach the server Node through official SSH. Native fan-out inspects every container slot before any stop or removal. One shared native child stops and removes each present owned container through the shared Process scripts. The named data volume stays intact.
+
+A server without a Process, or a record-only adoption cleanup, uses no remote action. The shared terminal subscriber deletes the Server and Process records only after native success; record-only cleanup preserves the operator Process. Steps make no Gateway calls and need no database credentials. Rollback reverts the cutover PR.
+
+After correcting a failed action, an authorized operator can use native `swamp workflow resume operation-database-server-destroy --run <run-id> --from prepared` to inspect all slots again before continuing. Already absent containers stay absent. Resuming only terminal delivery preserves completed effects.
 
 A new Valkey server with the slug of a removed one finds the old volume. It writes a new ACL file there, so the old users are gone, but the old keys stay.
 

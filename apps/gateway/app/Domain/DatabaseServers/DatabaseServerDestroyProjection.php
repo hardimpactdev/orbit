@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -28,20 +29,22 @@ final readonly class DatabaseServerDestroyProjection implements DirectOperationP
             $this->invalid();
         }
 
-        return ['process_id' => $recordOnly ? null : $id, 'container' => $recordOnly ? null : $container];
+        $node = Node::query()->findOrFail($operation->node_id);
+
+        return ['intent' => ['process_id' => $recordOnly ? null : $id, 'container' => $recordOnly ? null : $container,
+            'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
+                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]], 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
-        $status = ValidatedData::string($data['status']);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        if (($status === 'succeeded' && ($result !== ['backend' => 'absent'] || $code !== null))
-            || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
-            || ($status === 'failed' && ($result !== ['error_code' => $code]
-                || ! in_array($code, ['agent.version_mismatch', 'process.invalid', 'process.name_collision', 'process.converge_failed', 'process.remove_failed'], true)))) {
-            throw new ResourceOperationException('operation.result_invalid', 'Server removal needs its bounded Swamp result.', 422);
+        $raw = ValidatedData::object($data['result'] ?? []);
+        $result = ($raw['backend'] ?? null) === 'absent' ? ['backend' => 'absent'] : [];
+        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
+            $result['error_code'] = $raw['error_code'];
         }
+        $status = ValidatedData::string($data['status']);
 
         return DB::transaction(function () use ($operation, $data, $result, $status): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

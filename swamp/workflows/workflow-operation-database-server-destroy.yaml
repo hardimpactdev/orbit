@@ -1,12 +1,11 @@
 id: 2fb743f6-7bd7-4d0a-8a61-168d30da8a44
 name: operation-database-server-destroy
-description: Remove only the admitted database Process; preserve its data volume.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Inspect all admitted Process slots, then remove them over official SSH without deleting data
+  volumes.
 writes: true
 vaults: []
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -18,59 +17,278 @@ inputs:
       type: string
       enum:
       - database_server.destroy
+    intent:
+      type: object
+      properties:
+        ssh:
+          type: object
+      required:
+      - process_id
+      - container
+      - ssh
+      additionalProperties: true
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-- name: server
+- name: prepare
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  dependsOn: []
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    guard: ${{ inputs.intent.process_id == null }}
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-server-destroy'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.node_id) }}
-      methodName: apply
+      behaviorType: '@nckrtl/process-command-assets'
+      behaviorName: ${{ "db-destroy-process-" + run.id }}
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
+        control:
+          process_id: ${{ inputs.intent.process_id }}
+          runtime: docker
+          name: ${{ inputs.intent.container }}
+          vite: null
+          on_demand: false
+  - name: controls
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-server-destroy-metadata'
+      behaviorName: ${{ "db-destroy-" + run.id }}
+      methodName: controls
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: directory
+    target: orbit-node-209
+    labels: *id001
+    guard: ${{ inputs.intent.process_id == null }}
+    allowFailure: true
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      globalArgs: &id002
+        name: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - ${{ "/tmp/orbit-database-server-destroy-" + string(inputs.operation_id) }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: copy
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
-    - step: apply
+    - step: directory
       condition:
         type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-server-destroy'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.node_id) }}
-      methodName: project
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
-  - name: failure-apply
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    dependsOn:
-    - step: apply
+    - step: assets
       condition:
-        type: failed
+        type: succeeded
+    guard: ${{ inputs.intent.process_id == null }}
+    allowFailure: true
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: copy
+      inputs:
+        hosts: name:server
+        src: ${{ steps.assets.outputs.scripts_directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-server-destroy-" + string(inputs.operation_id) + "/process/" }}
+        direction: to
+        recursive: true
+  - name: prepared
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: controls
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: copy
+      condition:
+        type: always
+    writes: false
+    task:
+      type: assert
+      expr: inputs.intent.process_id == null || (steps.directory.outputs.exitCode == 0 && steps.copy.status
+        == "succeeded")
+      severity: high
+      message: Database Process command files unavailable.
+- name: inspect
+  target: orbit-node-209
+  labels: *id001
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  - name: inspect-${{ self.member.slot }}
+    target: orbit-node-209
+    labels: *id001
+    forEach:
+      item: member
+      in: ${{ steps.controls.outputs.controls }}
+    allowFailure: true
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + self.member.control }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-database-server-destroy-" + string(inputs.operation_id) + "/process/inspect.py"
+          }}
+        okExitCodes:
+        - 0
+        - 1
+- name: plan
+  target: orbit-node-209
+  labels: *id001
+  dependsOn:
+  - job: inspect
+    condition:
+      type: always
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  - name: plan
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-server-destroy-metadata'
+      behaviorName: ${{ "db-destroy-" + run.id }}
+      methodName: plan
+      inputs:
+        controls: ${{ steps.controls.outputs.controls }}
+        steps: ${{ steps }}
+  - name: checked
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    writes: false
+    task:
+      type: assert
+      expr: steps.plan.outputs.exitCode == 0
+      severity: high
+      message: Database Process ownership inspection refused.
+- name: remove
+  target: orbit-node-209
+  labels: *id001
+  dependsOn:
+  - job: plan
+    condition:
+      type: succeeded
+  steps:
+  - name: remove-${{ self.member.slot }}
+    target: orbit-node-209
+    labels: *id001
+    forEach:
+      item: member
+      in: ${{ steps.plan.outputs.controls }}
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: database-server-remove-container
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: {}
+        member: ${{ self.member }}
+- name: result
+  target: orbit-node-209
+  labels: *id001
+  dependsOn:
+  - job: prepare
+    condition:
+      type: always
+  - job: inspect
+    condition:
+      type: always
+  - job: plan
+    condition:
+      type: always
+  - job: remove
+    condition:
+      type: always
+  steps:
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-server-destroy-metadata'
+      behaviorName: ${{ "db-destroy-" + run.id }}
+      methodName: result
+      inputs:
+        completed: ${{ has(steps.checked) && steps.checked.status == "succeeded" }}
+        steps: ${{ steps }}
+        expected: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.controls.map(c,
+          "remove-" + c.slot) : [] }}'
+  - name: accept_result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    writes: false
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: Database Process removal did not complete.
