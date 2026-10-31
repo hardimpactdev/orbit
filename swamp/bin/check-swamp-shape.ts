@@ -1400,22 +1400,29 @@ export function analyzeTs(
   return result;
 }
 
-/** Public vault/key descriptors are references, including closed named containers. */
+/** Public vault/key descriptors are references, including named and homogeneous maps. */
 export function referenceOnlySchema(raw: unknown): boolean {
   const schema = object(raw),
     properties = object(schema.properties),
     keys = Object.keys(properties);
   if (
-    schema.type !== "object" || schema.additionalProperties !== false ||
+    schema.type !== "object" ||
     Object.keys(object(schema.patternProperties)).length > 0
   ) return false;
   if (!keys.length) {
-    return (schema.properties === undefined ||
-      schema.properties !== null && typeof schema.properties === "object" &&
+    const empty = (schema.properties === undefined ||
+      schema.properties !== null &&
+        typeof schema.properties === "object" &&
         !Array.isArray(schema.properties)) &&
       (schema.required === undefined ||
         Array.isArray(schema.required) && !schema.required.length);
+    const valueSchema = object(schema.additionalProperties);
+    return empty && (schema.additionalProperties === false ||
+      Object.keys(object(valueSchema.properties)).sort().join() ===
+            "key,vault" &&
+        referenceOnlySchema(valueSchema));
   }
+  if (schema.additionalProperties !== false) return false;
   const required = schema.required;
   if (
     !Array.isArray(required) || keys.some((key) => !required.includes(key))

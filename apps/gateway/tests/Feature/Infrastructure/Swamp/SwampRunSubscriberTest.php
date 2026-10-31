@@ -291,7 +291,7 @@ it('retains an interrupted attach until bound history becomes terminal without r
 
     expect($operation->fresh()->status)->toBe(OperationStatus::Failed);
     expect($operation->fresh()->error_code)->toBe('operation.native_failed');
-    expect($operation->fresh()->result)->toBe([]);
+    expect($operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
     expect($operation->fresh()->state['swamp_run_id'])->toBe($request['payload']['runId']);
     expect(array_column($history->sent, 'type'))->toBe(['workflow.history.get', 'workflow.history.get']);
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach']);

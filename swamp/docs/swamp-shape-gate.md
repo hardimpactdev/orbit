@@ -79,7 +79,12 @@ The gate implements Nick's migration policy using these manual references:
   with `vault.get`. Command steps use whole `task.inputs.env` values; the official
   SSH extension also accepts its native secret inputs described below. Argv,
   shell concatenation and workflow inputs cannot carry them. An explicitly
-  closed empty `execution_secrets` object carries no values. SourceControl's
+  closed empty `execution_secrets` object carries no values. A dynamic descriptor
+  map uses `type: object` with `additionalProperties` set to a closed `{vault,key}`
+  descriptor: both fields are required strings, `vault` has an explicit enum,
+  and `key` has a pattern. The map needs no fixed field list or cardinality cap;
+  every value still carries only public reference names. Loose values and secret
+  bytes remain forbidden. SourceControl's
   `repository_identity` is the established public host/org/repo identifier; this
   exact field name is public, unlike SSH or bootstrap identity material.
 - The official cfgmgmt `nodeIdentityFile` connection input is a public file path,
