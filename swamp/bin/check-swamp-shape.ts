@@ -1,6 +1,8 @@
+import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
+import { nodeCommandLaunch } from "./node-command-launch.ts";
 
 export const SCHEMA = 1;
 export const BASELINE = "config/swamp-shape-baseline.json";
@@ -8,9 +10,13 @@ export const INVENTORY = "config/agent-command-kinds.json";
 const secretName =
   /(?:secret|password|passwd|credential|private.?key|api.?key|token|identity)/i;
 const referenceName = /(?:key|id|ref|name|hash|digest|public|count|field)s?$/i;
+// SourceControl's normalized host/org/repo identifier contains no authentication material.
+const publicIdentifiers = new Set(["repository_identity"]);
 const secret = (name: string) =>
-  /^(?:api|private|access|secret)[_-]?key$/i.test(name) ||
-  secretName.test(name) && !referenceName.test(name);
+  !publicIdentifiers.has(name) && (
+    /^(?:api|private|access|secret)[_-]?key$/i.test(name) ||
+    secretName.test(name) && !referenceName.test(name)
+  );
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v)
     ? v as Record<string, unknown>
@@ -33,6 +39,8 @@ type Analysis = {
   findings: Finding[];
   imports: string[];
   types: string[];
+  workflowNames: string[];
+  workflowRefs: string[];
   inlineLines: number;
   loops: number;
   agentActions: number;
@@ -42,6 +50,8 @@ const empty = (): Analysis => ({
   findings: [],
   imports: [],
   types: [],
+  workflowNames: [],
+  workflowRefs: [],
   inlineLines: 0,
   loops: 0,
   agentActions: 0,
@@ -63,6 +73,478 @@ const shell =
   /#!.*\b(?:ba|da|z|k)?sh\b|(?:^|\n)\s*(?:set\s+-|sudo\s|systemctl\s|apt-get\s|export\s+[A-Z_]+=)|\b(?:then|fi|esac)\s*(?:\n|$)/;
 const lines = (s: string) => s.trim() ? s.trim().split(/\r?\n/).length : 0;
 
+// These are the only execution primitives a Swamp step may call.
+export const GATEWAY_PRIMITIVES = [
+  "/api/v1/direct-operations/{operation_id}/github-token",
+  "/api/v1/direct-operations/{operation_id}/certificates/sign",
+] as const;
+export function isGatewayPrimitive(
+  method: string | undefined,
+  url: string | undefined,
+): boolean {
+  if (method !== "POST" || !url || /[?#\\]/.test(url)) return false;
+  const path = url.replace(/^<gateway-origin>/, "").replace(
+    /^https?:\/\/[^/]+/,
+    "",
+  );
+  return GATEWAY_PRIMITIVES.some((route) => {
+    const pattern = route.split("{operation_id}").map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    ).join("(?:[1-9][0-9]*|\\{operation_id\\})");
+    return new RegExp(`^${pattern}$`).test(path);
+  });
+}
+
+export function gatewayShellFindings(file: string, source: string): Finding[] {
+  const findings: Finding[] = [];
+  const gatewayContext = /gateway|\/api\/v1\//i.test(source);
+  for (const line of source.replace(/\\\r?\n/g, " ").split("\n")) {
+    if (/^\s*#/.test(line) || !/\b(?:curl|wget)\s/.test(line)) continue;
+    const urls = [...line.matchAll(/https?:\/\/[^\s'"`]+/g)].map((match) =>
+      match[0]
+    );
+    const gatewayUrls = urls.filter((url) => /gateway|\/api\/v1\//i.test(url));
+    if (!gatewayUrls.length && (!gatewayContext || urls.length)) continue;
+    const method =
+      /(?:-X\s*|--request(?:=|\s+))['"]?([A-Z]+)/.exec(line)?.[1] ??
+        "GET";
+    const targets = gatewayUrls.length ? gatewayUrls : [undefined];
+    for (const url of targets) {
+      if (!isGatewayPrimitive(method, url)) {
+        findings.push({
+          file,
+          rule: "gateway-http",
+          count: 1,
+          line: 1,
+          evidence: [`${method} ${url ?? "<unknown>"}`],
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+type PythonNode = ReturnType<typeof pythonParser.parse>["topNode"];
+const quoteShellWord = (value: string) =>
+  "'" + value.replaceAll("'", "'\\''") + "'";
+export function agentPythonFindings(
+  file: string,
+  source: string,
+  inventory: Record<string, string>,
+  depth = 0,
+): Finding[] {
+  const root = pythonParser.parse(source).topNode;
+  const bindings = new Map<string, PythonNode>(),
+    aliases = new Map<string, string>();
+  const children = (node: PythonNode) => {
+    const out: PythonNode[] = [];
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      out.push(child);
+    }
+    return out;
+  };
+  const text = (node: PythonNode) => source.slice(node.from, node.to);
+  const visit = (node: PythonNode, fn: (node: PythonNode) => void) => {
+    fn(node);
+    for (const child of children(node)) visit(child, fn);
+  };
+  visit(root, (node) => {
+    if (
+      node.name === "AssignStatement" &&
+      node.firstChild?.name === "VariableName" && node.lastChild
+    ) bindings.set(text(node.firstChild), node.lastChild);
+    if (node.name === "ImportStatement") {
+      const statement = text(node);
+      const imported = /^from\s+([\w.]+)\s+import\s+(\w+)(?:\s+as\s+(\w+))?/
+        .exec(statement);
+      const module = /^import\s+([\w.]+)\s+as\s+(\w+)/.exec(statement);
+      if (imported) {
+        aliases.set(
+          imported[3] ?? imported[2],
+          imported[1] + "." + imported[2],
+        );
+      }
+      if (module) aliases.set(module[2], module[1]);
+    }
+  });
+  const name = (node: PythonNode) => {
+    const raw = text(node), first = /^[A-Za-z_]\w*/.exec(raw)?.[0];
+    return first && aliases.has(first)
+      ? aliases.get(first) + raw.slice(first.length)
+      : raw;
+  };
+  const argumentsOf = (node: PythonNode) =>
+    children(node).find((child) => child.name === "ArgList");
+  const expressions = (node: PythonNode) =>
+    children(node).filter((child) =>
+      !/[()[\],]/.test(child.name) && child.name !== "AssignOp"
+    );
+  const value = (
+    node: PythonNode | undefined,
+    seen = new Set<string>(),
+  ): string | string[] | undefined => {
+    if (!node) return;
+    if (
+      node.name === "VariableName" && bindings.has(text(node)) &&
+      !seen.has(text(node))
+    ) return value(bindings.get(text(node)), new Set([...seen, text(node)]));
+    if (node.name === "String") {
+      const raw = text(node),
+        match = /^([rRuUbB]*)(["']{1,3})([\s\S]*)\2$/.exec(raw);
+      if (!match) return;
+      return /r/i.test(match[1])
+        ? match[3]
+        : match[3].replace(/\\([\\'"nt])/g, (_, c) =>
+          c === "n" ? "\n" : c === "t" ? "\t" : c);
+    }
+    if (["ArrayExpression", "TupleExpression"].includes(node.name)) {
+      return expressions(node).flatMap((child) => {
+        const v = value(child, seen);
+        return child.name === "StarredExpression" && Array.isArray(v)
+          ? v
+          : [typeof v === "string" ? v : "<dynamic>"];
+      });
+    }
+    if (node.name === "BinaryExpression") {
+      const parts = children(node),
+        left = value(parts[0], seen),
+        right = value(parts.at(-1), seen);
+      if (Array.isArray(left) && Array.isArray(right)) {
+        return [...left, ...right];
+      }
+      if (typeof left === "string" || typeof right === "string") {
+        return (left ?? "<dynamic>") + String(right ?? "<dynamic>");
+      }
+    }
+    if (
+      node.name === "CallExpression" && node.firstChild &&
+      name(node.firstChild) === "shlex.quote"
+    ) {
+      const args = argumentsOf(node),
+        v = args ? value(expressions(args)[0], seen) : undefined;
+      if (typeof v === "string") return quoteShellWord(v);
+    }
+  };
+  const findings: Finding[] = [];
+  visit(root, (node) => {
+    if (node.name !== "CallExpression" || !node.firstChild) return;
+    let called = name(node.firstChild);
+    if (bindings.has(called)) called = name(bindings.get(called)!);
+    if (
+      !/^(?:subprocess\.(?:run|Popen|call|check_call|check_output)|os\.(?:system|execv|execve|popen))$/
+        .test(called)
+    ) return;
+    const args = argumentsOf(node),
+      argv = args ? value(expressions(args)[0]) : undefined;
+    if (typeof argv === "string") {
+      findings.push(
+        ...agentShellFindings(file, argv, inventory, depth + 1, true),
+      );
+    } else if (Array.isArray(argv)) {
+      findings.push(
+        ...agentShellFindings(
+          file,
+          argv.map(quoteShellWord).join(" "),
+          inventory,
+          depth + 1,
+          true,
+        ),
+      );
+    } else if (/\borbit-agent\b/.test(source)) {
+      findings.push({
+        file,
+        rule: "agent-dynamic",
+        count: 1,
+        line: 1,
+        evidence: [],
+      });
+    }
+  });
+  return findings;
+}
+
+// Parse executable positions, not service names, artifact arguments or heredoc data.
+export function agentShellFindings(
+  file: string,
+  source: string,
+  inventory: Record<string, string> = {},
+  depth = 0,
+  controlCommands = false,
+): Finding[] {
+  if (depth > 8) {
+    return [{
+      file,
+      rule: "agent-dynamic",
+      count: 1,
+      line: 1,
+      evidence: [],
+    }];
+  }
+  const visible: string[] = [],
+    nested: string[] = [],
+    heredocFindings: Finding[] = [];
+  const documents: { tag: string; language: string; body: string[] }[] = [];
+  for (const line of source.split("\n")) {
+    if (documents.length) {
+      const doc = documents[0];
+      if (line.trim() === doc.tag) {
+        if (doc.language === "python") {
+          heredocFindings.push(
+            ...agentPythonFindings(
+              file,
+              doc.body.join("\n"),
+              inventory,
+              depth + 1,
+            ),
+          );
+        }
+        if (doc.language === "shell") nested.push(doc.body.join("\n"));
+        documents.shift();
+      } else doc.body.push(line);
+      continue;
+    }
+    visible.push(line);
+    for (const match of line.matchAll(/<<-?\s*['"]?([A-Za-z_]\w*)['"]?/g)) {
+      documents.push({
+        tag: match[1],
+        language: /\bpython[0-9.]*\b/.test(line)
+          ? "python"
+          : /\b(?:bash|sh|dash|zsh)\b/.test(line)
+          ? "shell"
+          : "data",
+        body: [],
+      });
+    }
+  }
+  const text = visible.join("\n"), commands: string[][] = [];
+  let words: string[] = [], word = "", quote = "";
+  const finish = () => {
+    if (word) words.push(word);
+    word = "";
+  };
+  const command = () => {
+    finish();
+    if (words.length) commands.push(words);
+    words = [];
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\" && quote !== "'") {
+      if (text[i + 1] !== "\n") word += text[++i] ?? "";
+      else i++;
+      continue;
+    }
+    if (quote !== "'" && ch === "`") {
+      let end = i + 1;
+      while (
+        end < text.length && (text[end] !== "`" || text[end - 1] === "\\")
+      ) end++;
+      nested.push(text.slice(i + 1, end));
+      word += "<substitution>";
+      i = end;
+      continue;
+    }
+    if (quote !== "'" && ch === "$" && text[i + 1] === "(") {
+      let end = i + 2, level = 1;
+      while (end < text.length && level) {
+        if (text[end] === "(") level++;
+        if (text[end] === ")") level--;
+        end++;
+      }
+      nested.push(text.slice(i + 2, end - 1));
+      word += "<substitution>";
+      i = end - 1;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = "";
+      else word += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === "#" && !word) {
+      while (i < text.length && text[i] !== "\n") i++;
+      command();
+      continue;
+    }
+    if ("\n;&|()".includes(ch)) {
+      command();
+      continue;
+    }
+    if (/\s/.test(ch)) finish();
+    else word += ch;
+  }
+  command();
+  const shellBindings = new Map<string, string>();
+  for (const argv of commands) {
+    for (const arg of argv[0] === "alias" ? argv.slice(1) : argv) {
+      const match = /^([A-Za-z_]\w*)=(.*)$/.exec(arg);
+      if (!match) break;
+      shellBindings.set(
+        match[1],
+        shellBindings.has(match[1]) ? "<dynamic>" : match[2],
+      );
+    }
+  }
+  const findings: Finding[] = [
+    ...heredocFindings,
+    ...nested.flatMap((body) =>
+      agentShellFindings(file, body, inventory, depth + 1, controlCommands)
+    ),
+  ];
+  const executable = (argv: string[], level: number): void => {
+    if (!argv.length || level > 8) return;
+    while (
+      argv.length &&
+      (/^[A-Za-z_]\w*=/.test(argv[0]) ||
+        ["exec", "command", "then", "do", "if", "!", "{", "time"]
+          .includes(argv[0]))
+    ) argv = argv.slice(1);
+    if (!argv.length) return;
+    const variable = /^\$\{?([A-Za-z_]\w*)\}?$/.exec(argv[0]);
+    if (variable || shellBindings.has(argv[0])) {
+      const key = variable?.[1] ?? argv[0];
+      const resolved = shellBindings.get(key);
+      if (!resolved || resolved === "<dynamic>") {
+        if (/\borbit-agent\b/.test(source)) {
+          findings.push({
+            file,
+            rule: "agent-dynamic",
+            count: 1,
+            line: 1,
+            evidence: [],
+          });
+        }
+        return;
+      }
+      argv = [resolved, ...argv.slice(1)];
+    }
+    const binary = argv[0]?.split("/").at(-1);
+    if (
+      controlCommands &&
+      ["sleep", "usleep", "flock", "lockfile"].includes(binary ?? "")
+    ) {
+      findings.push({
+        file,
+        rule: "custom-control",
+        count: 1,
+        line: 1,
+        evidence: [binary!],
+      });
+    }
+    if (binary === "eval") {
+      const body = argv.slice(1).map((arg) =>
+        arg.replace(
+          /^\$\{?([A-Za-z_]\w*)\}?$/,
+          (_, key) => shellBindings.get(key) ?? "<dynamic>",
+        )
+      ).join(" ");
+      findings.push(
+        ...agentShellFindings(
+          file,
+          body,
+          inventory,
+          depth + 1,
+          controlCommands,
+        ),
+      );
+      return;
+    }
+    if (["sudo", "env"].includes(binary ?? "")) {
+      let i = 1;
+      while (
+        i < argv.length &&
+        (argv[i].startsWith("-") || /^[A-Za-z_]\w*=/.test(argv[i]))
+      ) {
+        const option = argv[i++];
+        if (binary === "env" && ["-S", "--split-string"].includes(option)) {
+          findings.push(
+            ...agentShellFindings(
+              file,
+              argv.slice(i).join(" "),
+              inventory,
+              depth + 1,
+              controlCommands,
+            ),
+          );
+          return;
+        }
+        if (
+          (binary === "sudo"
+            ? ["-u", "-g", "-h", "-p", "-C", "--user", "--group", "--chdir"]
+            : ["-u", "--unset", "-C", "--chdir"]).includes(option)
+        ) i++;
+      }
+      executable(argv.slice(i), level + 1);
+      return;
+    }
+    if (["sh", "bash", "dash", "zsh"].includes(binary ?? "")) {
+      const i = argv.findIndex((arg) => /^-[a-z]*c[a-z]*$/.test(arg));
+      if (i >= 0 && argv[i + 1]) {
+        findings.push(
+          ...agentShellFindings(
+            file,
+            argv[i + 1],
+            inventory,
+            depth + 1,
+            controlCommands,
+          ),
+        );
+      }
+      return;
+    }
+    if (binary === "ssh") {
+      let i = 1;
+      while (i < argv.length && argv[i].startsWith("-")) {
+        const option = argv[i++];
+        if (
+          ["-i", "-p", "-o", "-F", "-l", "-J", "-S", "-W"].includes(
+            option,
+          )
+        ) i++;
+      }
+      if (argv[i] === "--") i++;
+      findings.push(
+        ...agentShellFindings(
+          file,
+          argv.slice(i + 1).join(" "),
+          inventory,
+          depth + 1,
+          controlCommands,
+        ),
+      );
+      return;
+    }
+    if (/^python[0-9.]*$/.test(binary ?? "")) {
+      const i = argv.indexOf("-c");
+      if (i >= 0 && argv[i + 1]) {
+        findings.push(
+          ...agentPythonFindings(file, argv[i + 1], inventory, depth + 1),
+        );
+      }
+      return;
+    }
+    if (binary !== "orbit-agent") return;
+    if (["--version", "--help", "-V", "-h"].includes(argv[1])) return;
+    const target = argv[1] === "command" ? argv[2] : undefined;
+    if (target && inventory[target] === "observer") return;
+    findings.push({
+      file,
+      rule: target && inventory[target] === "action"
+        ? "agent-action"
+        : "agent-dynamic",
+      count: 1,
+      line: 1,
+      evidence: target && inventory[target] === "action" ? [target] : [],
+    });
+  };
+  for (const argv of commands) executable(argv, 0);
+  return findings;
+}
+
 export function analyzeTs(
   file: string,
   source: string,
@@ -70,20 +552,12 @@ export function analyzeTs(
   agentWrappers = new Set<string>(),
 ): Analysis {
   const result = empty();
-  const root = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  if (
-    file.startsWith("extensions/behaviors/") &&
-    /\bGatewayOperation\b|makeHttp|gatewayHttp|gatewayRequest|directOperation|withPrivateMaterial|\/api\/v1\/operations/
-      .test(source)
-  ) {
-    result.findings.push({
-      file,
-      rule: "gateway-http",
-      count: 1,
-      line: 1,
-      evidence: [],
-    });
-  }
+  const root = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+  );
   const bindings = new Map<string, ts.Expression>();
   const aliases = new Map<string, string>();
   const scripts = new Map<number, string>();
@@ -95,6 +569,7 @@ export function analyzeTs(
     "system",
     "output",
     "runLocalProgram",
+    "localCommand",
     "localSystemCommand",
     "runNodeCommand",
     "exec",
@@ -121,7 +596,8 @@ export function analyzeTs(
       file,
       rule,
       count,
-      line: root.getLineAndCharacterOfPosition(node.getStart(root)).line + 1,
+      line: root.getLineAndCharacterOfPosition(node.getStart(root)).line +
+        1,
       evidence,
     });
   };
@@ -136,7 +612,8 @@ export function analyzeTs(
       node.initializer
     ) bindings.set(node.name.text, node.initializer);
     if (
-      ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier)
     ) {
       const module = node.moduleSpecifier.text;
       if (module.startsWith(".")) {
@@ -169,7 +646,8 @@ export function analyzeTs(
       );
     }
     if (
-      ts.isPropertyAssignment(node) && node.name.getText(root) === "type" &&
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(root) === "type" &&
       ts.isStringLiteral(node.initializer) &&
       node.initializer.text.startsWith("@")
     ) result.types.push(node.initializer.text);
@@ -185,7 +663,9 @@ export function analyzeTs(
     seen = new Set<string>(),
   ): string | undefined => {
     if (!node) return;
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    if (
+      ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+    ) {
       return node.text;
     }
     if (ts.isTemplateExpression(node)) {
@@ -194,7 +674,9 @@ export function analyzeTs(
           (value(s.expression, seen) ?? "<dynamic>") + s.literal.text
         ).join("");
     }
-    if (ts.isTaggedTemplateExpression(node)) return value(node.template, seen);
+    if (ts.isTaggedTemplateExpression(node)) {
+      return value(node.template, seen);
+    }
     if (
       ts.isParenthesizedExpression(node) || ts.isAsExpression(node) ||
       ts.isNonNullExpression(node)
@@ -217,7 +699,9 @@ export function analyzeTs(
       node.expression.name.text === "join"
     ) {
       let array: ts.Node = node.expression.expression;
-      if (ts.isIdentifier(array)) array = bindings.get(array.text) ?? array;
+      if (ts.isIdentifier(array)) {
+        array = bindings.get(array.text) ?? array;
+      }
       if (ts.isArrayLiteralExpression(array)) {
         const parts = array.elements.map((e) => value(e, seen));
         if (parts.every((x) => x !== undefined)) {
@@ -226,8 +710,169 @@ export function analyzeTs(
       }
     }
   };
+  // Endpoint exceptions apply to concrete calls, never to an entire client or file.
+  const gatewayValue = (
+    node: ts.Node | undefined,
+    seen = new Set<string>(),
+  ): string | undefined => {
+    if (!node) return;
+    if (
+      ts.isIdentifier(node) && bindings.has(node.text) &&
+      !seen.has(node.text)
+    ) {
+      return gatewayValue(
+        bindings.get(node.text),
+        new Set([...seen, node.text]),
+      );
+    }
+    if (
+      /^(?:[\w]+\.)*(?:gatewayUrl|gateway_url)$/.test(node.getText(root))
+    ) {
+      return "<gateway-origin>";
+    }
+    if (
+      /^(?:[\w]+\.)*(?:operation_id|operationId)$/.test(
+        node.getText(root),
+      )
+    ) {
+      return "{operation_id}";
+    }
+    if (ts.isTemplateExpression(node)) {
+      const spans = node.templateSpans.map((span) =>
+        gatewayValue(span.expression, seen)
+      );
+      if (spans.some((span) => span === undefined)) return;
+      return node.head.text +
+        node.templateSpans.map((span, i) => spans[i] + span.literal.text).join(
+          "",
+        );
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      const left = gatewayValue(node.left, seen),
+        right = gatewayValue(node.right, seen);
+      return left === undefined || right === undefined
+        ? undefined
+        : left + right;
+    }
+    if (ts.isNewExpression(node) && name(node.expression) === "URL") {
+      return gatewayValue(node.arguments?.[0], seen);
+    }
+    return value(node, seen);
+  };
+  const legacyGatewayMarker =
+    /\bGatewayOperation\b|makeHttp|gatewayHttp|gatewayRequest|directOperation|withPrivateMaterial|\/api\/v1\/operations/
+      .test(source);
+  const gatewayMarker =
+    /\bGatewayOperation\b|GatewayClient|makeHttp|gatewayHttp|gatewayRequest|directOperation|withPrivateMaterial|gatewayUrl|gateway_url|gateway\.orbit|\/api\/v1\//
+      .test(source);
+  const gatewayCalls: { node: ts.Node; method?: string; path?: string }[] = [];
+  visit(root, (node) => {
+    if (!ts.isCallExpression(node)) return;
+    let target: ts.Expression = node.expression;
+    const seen = new Set<string>();
+    while (
+      ts.isIdentifier(target) && bindings.has(target.text) &&
+      !seen.has(target.text)
+    ) {
+      seen.add(target.text);
+      target = bindings.get(target.text)!;
+    }
+    while (
+      ts.isParenthesizedExpression(target) || ts.isAsExpression(target) ||
+      ts.isNonNullExpression(target)
+    ) target = target.expression;
+    const called = ts.isElementAccessExpression(target)
+        ? (value(target.argumentExpression) ?? "")
+        : name(target),
+      args = [...node.arguments];
+    const property = (
+      node: ts.Node | undefined,
+      key: string,
+    ): ts.Expression | undefined => {
+      if (node && ts.isIdentifier(node)) node = bindings.get(node.text);
+      if (
+        !node || !ts.isObjectLiteralExpression(node) ||
+        node.properties.some((p) => ts.isSpreadAssignment(p))
+      ) return;
+      const matches = node.properties.filter((p) =>
+        ts.isPropertyAssignment(p) &&
+        p.name.getText(root).replace(/^['"]|['"]$/g, "") === key
+      );
+      const entry = matches.length === 1 ? matches[0] : undefined;
+      return entry && ts.isPropertyAssignment(entry)
+        ? entry.initializer
+        : undefined;
+    };
+    let method: string | undefined,
+      path: string | undefined,
+      request = false;
+    if (called === "fetch") {
+      request = true;
+      path = gatewayValue(args[0]);
+      method = args[1] ? value(property(args[1], "method")) : "GET";
+    } else if (
+      /^(?:http|gatewayHttp|gatewayRequest|proxyGatewayRequest)$/.test(
+        called ?? "",
+      )
+    ) {
+      request = true;
+      method = value(args[0]);
+      path = gatewayValue(args[1]);
+    } else if (
+      ts.isPropertyAccessExpression(target) &&
+      /^(?:get|post|put|patch|delete|call|request|read|result|failure|fail|primitive|report|withPrivateMaterial)$/
+        .test(called) &&
+      /http|gateway|client|^g$/i.test(target.expression.getText(root))
+    ) {
+      request = true;
+      if (["call", "request"].includes(called)) {
+        method = value(args[0]);
+        path = gatewayValue(args[1]);
+      } else if (/^(?:get|post|put|patch|delete)$/.test(called)) {
+        method = called.toUpperCase();
+        path = gatewayValue(args[0]);
+      }
+    }
+    const knownExternal = path && /^https?:\/\//.test(path) &&
+      !/gateway|\/api\/v1\//i.test(path);
+    if (
+      request && !knownExternal &&
+      (gatewayMarker || /\/api\/v1\//.test(path ?? ""))
+    ) {
+      gatewayCalls.push({ node, method, path });
+    }
+  });
+  const forbiddenGateway = gatewayCalls.filter((call) =>
+    !isGatewayPrimitive(call.method, call.path)
+  );
+  if (
+    file.startsWith("extensions/behaviors/") &&
+    (forbiddenGateway.length ||
+      /\bGatewayOperation\b|GatewayClient|directOperation|withPrivateMaterial/
+        .test(source) ||
+      (legacyGatewayMarker ||
+          gatewayMarker &&
+            /\bfetch\b|\/api\/v1\/|gateway\.orbit/.test(source)) &&
+        !gatewayCalls.length)
+  ) {
+    const denied = forbiddenGateway.map((call) =>
+      `${call.method ?? "<unknown>"} ${call.path ?? "<unknown>"}`
+    );
+    result.findings.push({
+      file,
+      rule: "gateway-http",
+      count: Math.max(1, forbiddenGateway.length),
+      line: 1,
+      evidence: [...new Set(denied)].sort(),
+    });
+  }
   const strings = (node: ts.Node): string[] => {
-    const out: string[] = [], pending = [node], visited = new Set<ts.Node>();
+    const out: string[] = [],
+      pending = [node],
+      visited = new Set<ts.Node>();
     while (pending.length && visited.size < 10000) {
       const current = pending.pop()!;
       if (visited.has(current)) continue;
@@ -253,7 +898,8 @@ export function analyzeTs(
     if (seen.has(node)) return [];
     seen.add(node);
     if (
-      ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
       ts.isTemplateExpression(node)
     ) return [node];
     if (ts.isIdentifier(node)) {
@@ -327,7 +973,8 @@ export function analyzeTs(
       secret(node.name.text)
     ) return true;
     if (
-      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      (ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node)) &&
       /vault\.get\s*\(|private-material/.test(node.text)
     ) return true;
     let found = false;
@@ -353,7 +1000,9 @@ export function analyzeTs(
     ) return agentExpression(expression.expression, seen);
     if (ts.isElementAccessExpression(expression)) {
       let array: ts.Expression = expression.expression;
-      if (ts.isIdentifier(array)) array = bindings.get(array.text) ?? array;
+      if (ts.isIdentifier(array)) {
+        array = bindings.get(array.text) ?? array;
+      }
       return ts.isArrayLiteralExpression(array) &&
         array.elements.some((item) =>
           ts.isExpression(item) && agentExpression(item, seen)
@@ -381,7 +1030,8 @@ export function analyzeTs(
         let callsAgent = false;
         visit(node.body, (item) => {
           if (
-            ts.isCallExpression(item) && agentNames.has(name(item.expression))
+            ts.isCallExpression(item) &&
+            agentNames.has(name(item.expression))
           ) callsAgent = true;
         });
         if (callsAgent) agentNames.add(node.name.text);
@@ -395,7 +1045,8 @@ export function analyzeTs(
         // Count maximal constructed strings once; identifiers merely reference the same program.
         if (
           !ts.isIdentifier(node) &&
-          !(ts.isExpression(node.parent) && value(node.parent)?.includes(text))
+          !(ts.isExpression(node.parent) &&
+            value(node.parent)?.includes(text))
         ) script(node, text);
       }
     }
@@ -414,7 +1065,8 @@ export function analyzeTs(
       }
     }
     if (!(ts.isCallExpression(node) || ts.isNewExpression(node))) return;
-    const called = name(node.expression), args = [...(node.arguments ?? [])];
+    const called = name(node.expression),
+      args = [...(node.arguments ?? [])];
     if (
       /^(?:setTimeout|setInterval|sleep|delay|backoff|retry|poll|acquireLock|flock)$/i
         .test(called)
@@ -423,19 +1075,95 @@ export function analyzeTs(
       result.loops++;
     }
     if (
-      /withPrivateMaterial|privateMaterial|readPrivateMaterial/.test(called)
+      /withPrivateMaterial|privateMaterial|readPrivateMaterial/.test(
+        called,
+      )
     ) add(node, "private-material");
     if (
-      /writeResource|writeFile|appendFile|log|info|error|debug/.test(called) &&
+      /writeResource|writeFile|appendFile|log|info|error|debug/.test(
+        called,
+      ) &&
       args.some((arg) => tainted(arg))
     ) add(node, "secret-output");
     const texts = args.flatMap((arg) => strings(arg));
     if (texts.some((t) => t.includes("/private-material"))) {
       add(node, "private-material");
     }
+    const sink = sinks.has(called) ||
+      /(?:Command|spawn|execFile|execSync)$/.test(called);
+    const literalAgentCalls: Finding[] = [];
+    if (sink && args[0]) {
+      let command = value(args[0]);
+      let complete: string[] | undefined;
+      if (ts.isArrayLiteralExpression(args[0])) {
+        complete = args[0].elements.map((item) => value(item) ?? "<dynamic>");
+      }
+      if (ts.isObjectLiteralExpression(args[0])) {
+        const commandField = args[0].properties.find((p) =>
+          ts.isPropertyAssignment(p) &&
+          p.name.getText(root) === "command"
+        );
+        if (commandField && ts.isPropertyAssignment(commandField)) {
+          command = value(commandField.initializer);
+        }
+      }
+      let argv: ts.Node | undefined = args[1];
+      if (argv && ts.isObjectLiteralExpression(argv)) {
+        argv = argv.properties.find((p) =>
+          ts.isPropertyAssignment(p) &&
+          p.name.getText(root) === "args"
+        );
+        if (argv && ts.isPropertyAssignment(argv)) {
+          argv = argv.initializer;
+        }
+      }
+      if (argv && ts.isIdentifier(argv)) argv = bindings.get(argv.text);
+      if (complete) command = complete[0];
+      const tail = complete
+        ? complete.slice(1)
+        : argv && ts.isArrayLiteralExpression(argv)
+        ? argv.elements.map((item) => value(item) ?? "<dynamic>")
+        : [];
+      if (command) {
+        literalAgentCalls.push(...agentShellFindings(
+          file,
+          tail.length
+            ? [command, ...tail].map((part) => quoteShellWord(part))
+              .join(" ")
+            : command,
+          inventory,
+        ));
+      }
+    }
+    if (sink && !literalAgentCalls.length) {
+      for (const arg of args) {
+        visit(arg, (child) => {
+          if (!ts.isArrayLiteralExpression(child)) return;
+          const argv = child.elements.map((item) => value(item) ?? "<dynamic>");
+          const index = argv.findIndex((item) =>
+            item.split("/").at(-1) === "orbit-agent"
+          );
+          if (index >= 0 && argv[index + 1] === "command") {
+            literalAgentCalls.push(
+              ...agentShellFindings(
+                file,
+                argv.slice(index).map((part) => quoteShellWord(part)).join(" "),
+                inventory,
+              ),
+            );
+          }
+        });
+      }
+    }
     const isAgent = agentExpression(node.expression) ||
-      agentNames.has(called) ||
-      texts.some((t) => /(?:^|\/)orbit-agent(?:$|\s)/.test(t));
+      agentNames.has(called);
+    result.findings.push(...literalAgentCalls);
+    result.agentActions += literalAgentCalls.filter((f) =>
+      f.rule === "agent-action"
+    ).length;
+    result.unknown ||= literalAgentCalls.some((f) =>
+      f.rule === "agent-dynamic"
+    );
     if (isAgent) {
       const targets = [...new Set(texts.filter((t) => t in inventory))];
       const actions = targets.filter((t) => inventory[t] !== "observer");
@@ -448,8 +1176,6 @@ export function analyzeTs(
         result.unknown = true;
       }
     }
-    const sink = sinks.has(called) ||
-      /(?:Command|spawn|execFile|execSync)$/.test(called);
     if (sink) {
       const binaries = texts.filter((t) =>
         /^\/?(?:[\w.-]+\/)*(?:sudo|python[\d.]*|sh|bash|systemctl|git|curl|apt-get|docker|incus|flock|sleep|orbit-agent|[a-z][\w.-]*)$/
@@ -473,7 +1199,9 @@ export function analyzeTs(
           for (const prop of arg.properties) {
             if (
               ts.isPropertyAssignment(prop) &&
-              /^(?:args|argv|run|command)$/.test(prop.name.getText(root)) &&
+              /^(?:args|argv|run|command)$/.test(
+                prop.name.getText(root),
+              ) &&
               tainted(prop.initializer)
             ) add(prop, "secret-argv");
           }
@@ -483,7 +1211,8 @@ export function analyzeTs(
         for (const arg of args) {
           for (const text of strings(arg)) {
             if (
-              lines(text) > 1 && (python.test(text) || shell.test(text))
+              lines(text) > 1 &&
+              (python.test(text) || shell.test(text))
             ) {
               script(arg, text);
             }
@@ -520,11 +1249,14 @@ export function analyzeTs(
     ) add(root, "secret-argv");
   }
   for (const text of scriptLeaves.values()) {
+    result.findings.push(...gatewayShellFindings(file, text));
     const controlSites = text.match(
       /\b(?:while\s+(?:True|true|:)|time\.sleep\s*\(|sleep\s+\d|flock\s*\(|LOCK_EX|O_EXCL|lockfile|for\s+\w*(?:attempt|retry)\w*\s+in)/g,
     ) ?? [];
     if (controlSites.length) {
-      add(root, "custom-control", controlSites.length, ["embedded-control"]);
+      add(root, "custom-control", controlSites.length, [
+        "embedded-control",
+      ]);
       result.loops += controlSites.length;
     }
   }
@@ -541,10 +1273,19 @@ export function referenceOnlySchema(raw: unknown): boolean {
     keys = Object.keys(properties);
   if (
     schema.type !== "object" || schema.additionalProperties !== false ||
-    !keys.length
+    Object.keys(object(schema.patternProperties)).length > 0
   ) return false;
+  if (!keys.length) {
+    return (schema.properties === undefined ||
+      schema.properties !== null && typeof schema.properties === "object" &&
+        !Array.isArray(schema.properties)) &&
+      (schema.required === undefined ||
+        Array.isArray(schema.required) && !schema.required.length);
+  }
   const required = schema.required;
-  if (!Array.isArray(required) || keys.some((key) => !required.includes(key))) {
+  if (
+    !Array.isArray(required) || keys.some((key) => !required.includes(key))
+  ) {
     return false;
   }
   if (keys.length === 2 && keys.includes("vault") && keys.includes("key")) {
@@ -557,7 +1298,17 @@ export function referenceOnlySchema(raw: unknown): boolean {
   return Object.values(properties).every(referenceOnlySchema);
 }
 
-export function analyzeYaml(file: string, source: string): Analysis {
+function pythonHeredocs(source: string) {
+  return [...source.matchAll(
+    /(?:python[\d.]*[^\n]*<<[\t ]*['"]?(\w+)['"]?[^\n]*\n)([\s\S]*?)\n\1(?:\n|$)/g,
+  )];
+}
+
+export function analyzeYaml(
+  file: string,
+  source: string,
+  inventory: Record<string, string> = {},
+): Analysis {
   const result = empty();
   const add = (rule: string, evidence: string[] = [], count = 1) =>
     result.findings.push({ file, rule, count, line: 1, evidence });
@@ -580,7 +1331,9 @@ export function analyzeYaml(file: string, source: string): Analysis {
       if (
         /vault\.get\s*\(/.test(value) &&
         !(envValue &&
-          /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(value) &&
+          /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
+            value,
+          ) &&
           !/\}\}[\s\S]*\$\{\{|\)\s*\+/.test(value))
       ) add("vault-placement");
       if (
@@ -593,7 +1346,9 @@ export function analyzeYaml(file: string, source: string): Analysis {
       if (/private-material|withPrivateMaterial/.test(value)) {
         add("private-material");
       }
-      if (/set\s+-(?:\w*x\w*|o\s+xtrace)\b/.test(value)) add("secret-xtrace");
+      if (/set\s+-(?:\w*x\w*|o\s+xtrace)\b/.test(value)) {
+        add("secret-xtrace");
+      }
       if (
         (path.at(-1) === "run" || path.includes("argv") ||
           path.includes("args")) &&
@@ -601,9 +1356,12 @@ export function analyzeYaml(file: string, source: string): Analysis {
           .test(value)
       ) add("secret-argv");
       if (path.at(-1) === "run") {
-        const scripts =
-          value.match(/(?:^|[\s"'])scripts\/[A-Za-z0-9_./-]+\.(?:py|sh)\b/g) ??
-            [];
+        const action = nodeCommandLaunch(value)?.action ?? value;
+        result.findings.push(...gatewayShellFindings(file, action));
+        const scripts = action.match(
+          /(?:^|[\s"'])scripts\/[A-Za-z0-9_./-]+\.(?:py|sh)\b/g,
+        ) ??
+          [];
         for (const script of scripts) {
           result.imports.push(script.trim().replace(/^["']/, ""));
         }
@@ -613,19 +1371,36 @@ export function analyzeYaml(file: string, source: string): Analysis {
         }
         if (
           /(?:&&|\|\||;)[ \t]*(?:sudo|systemctl|apt|curl|docker|python|bash|sh)\b/
-            .test(value)
+            .test(action)
         ) add("multi-action");
-        const controlsFound = value.match(
+        // The Python AST helper owns controls inside these same extracted bodies.
+        // Do not count a tool transaction lock again as a shell token.
+        let shellControls = action;
+        for (const block of pythonHeredocs(action).reverse()) {
+          const start = block.index! + block[0].indexOf("\n") + 1;
+          shellControls = shellControls.slice(0, start) +
+            block[2].replace(/[^\n]/g, " ") +
+            shellControls.slice(start + block[2].length);
+        }
+        const controlsFound = shellControls.match(
           /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
         ) ?? [];
         for (const _ of controlsFound) {
           add("custom-control");
           result.loops++;
         }
-        if (/\borbit-agent\b/.test(value)) {
-          add("agent-action");
-          result.agentActions++;
-        }
+        const agentFindings = agentShellFindings(
+          file,
+          action,
+          inventory,
+        );
+        result.findings.push(...agentFindings);
+        result.agentActions += agentFindings.filter((f) =>
+          f.rule === "agent-action"
+        ).length;
+        result.unknown ||= agentFindings.some((f) =>
+          f.rule === "agent-dynamic"
+        );
       }
       return;
     }
@@ -635,7 +1410,8 @@ export function analyzeYaml(file: string, source: string): Analysis {
     }
     for (const [key, item] of Object.entries(object(value))) {
       if (
-        path[0] === "inputs" && path.at(-1) === "properties" && secret(key) &&
+        path[0] === "inputs" && path.at(-1) === "properties" &&
+        secret(key) &&
         !referenceOnlySchema(item)
       ) {
         add("secret-input");
@@ -649,6 +1425,9 @@ export function analyzeYaml(file: string, source: string): Analysis {
   };
   walk(data, []);
   if (file.startsWith("workflows/")) {
+    result.workflowNames = [data.id, data.name].filter((
+      value,
+    ): value is string => typeof value === "string" && value.length > 0);
     if (!Array.isArray(data.jobs) || !data.jobs.length) {
       add("unknown-workflow");
       result.unknown = true;
@@ -662,7 +1441,13 @@ export function analyzeYaml(file: string, source: string): Analysis {
       for (const rawStep of Array.isArray(job.steps) ? job.steps : []) {
         const task = object(object(rawStep).task);
         if (
-          !["behavior", "model_method", "workflow", "manual_approval", "assert"]
+          ![
+            "behavior",
+            "model_method",
+            "workflow",
+            "manual_approval",
+            "assert",
+          ]
             .includes(
               String(task.type),
             )
@@ -683,8 +1468,16 @@ export function analyzeYaml(file: string, source: string): Analysis {
           result.unknown = true;
         }
         if (task.type === "workflow") {
-          add("unknown-nested-workflow");
-          result.unknown = true;
+          if (
+            typeof task.workflowIdOrName === "string" &&
+            task.workflowIdOrName.length > 0 &&
+            !/\$\{\{|\}\}/.test(task.workflowIdOrName)
+          ) {
+            result.workflowRefs.push(task.workflowIdOrName);
+          } else {
+            add("unknown-nested-workflow");
+            result.unknown = true;
+          }
         }
       }
     }
@@ -692,11 +1485,19 @@ export function analyzeYaml(file: string, source: string): Analysis {
   return result;
 }
 
-export function analyzeScript(file: string, source: string): Analysis {
+export function analyzeScript(
+  file: string,
+  source: string,
+  inventory: Record<string, string> = {},
+): Analysis {
   const result = empty();
-  if (file.endsWith(".py")) return result; // Python is parsed by the AST helper, never regexed as executable text.
+  if (file.endsWith(".py")) {
+    result.findings.push(...agentPythonFindings(file, source, inventory));
+    return result;
+  } // Python is parsed by the AST helper, never regexed as executable text.
   const add = (rule: string, count = 1) =>
     result.findings.push({ file, rule, count, line: 1, evidence: [] });
+  result.findings.push(...gatewayShellFindings(file, source));
   const withoutComments = source.split("\n").filter((l) => !/^\s*#/.test(l))
     .join("\n");
   if (/set\s+-(?:\w*x\w*|o\s+xtrace)\b/.test(withoutComments)) {
@@ -713,11 +1514,11 @@ export function analyzeScript(file: string, source: string): Analysis {
     add("custom-control", controlsFound.length);
     result.loops += controlsFound.length;
   }
-  const agents = withoutComments.match(/\borbit-agent\b/g) ?? [];
-  if (agents.length) {
-    add("agent-action", agents.length);
-    result.agentActions += agents.length;
-  }
+  const agentFindings = agentShellFindings(file, source, inventory);
+  result.findings.push(...agentFindings);
+  result.agentActions +=
+    agentFindings.filter((f) => f.rule === "agent-action").length;
+  result.unknown ||= agentFindings.some((f) => f.rule === "agent-dynamic");
   return result;
 }
 
@@ -728,7 +1529,8 @@ export function aggregate(findings: Finding[]): Entry[] {
     const entry = rows.get(key) ??
       { file: f.file, rule: f.rule, count: 0, evidence: [] };
     entry.count += f.count;
-    entry.evidence = [...new Set([...entry.evidence, ...f.evidence])].sort();
+    entry.evidence = [...new Set([...entry.evidence, ...f.evidence])]
+      .sort();
     rows.set(key, entry);
   }
   return [...rows.values()].sort((a, b) =>
@@ -759,7 +1561,11 @@ export function ratchet(
       if (
         !prior || entry.count > prior.count ||
         entry.evidence.some((x) => !prior.evidence.includes(x))
-      ) errors.push(`Baseline may only shrink: ${entry.file} ${entry.rule}`);
+      ) {
+        errors.push(
+          `Baseline may only shrink: ${entry.file} ${entry.rule}`,
+        );
+      }
     }
   }
   if (allowed.size !== baseline.entries.length) {
@@ -873,8 +1679,17 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
   }
   return sources;
 }
+/** Inspect Python inside the validated remote action, not its local transport envelope. */
+export function inlinePythonScripts(run: string): string[] {
+  return pythonHeredocs(nodeCommandLaunch(run)?.action ?? run).map((block) =>
+    block[2]
+  );
+}
+
 let pythonAnalyzer = "bin/swamp-shape-python.py";
-async function toolFindings(sources: Map<string, string>): Promise<Finding[]> {
+async function toolFindings(
+  sources: Map<string, string>,
+): Promise<Finding[]> {
   const files: [string, string, string][] = [...sources].filter(([file]) =>
     /\.(?:py|sh)$/.test(file)
   ).map(([file, text]) => [file, text, file.endsWith(".sh") ? "sh" : "py"]);
@@ -893,13 +1708,20 @@ async function toolFindings(sources: Map<string, string>): Promise<Finding[]> {
         }
         for (const [key, item] of Object.entries(object(value))) {
           if (key === "run" && typeof item === "string") {
-            const shell = item.replace(/\$\{\{[\s\S]*?\}\}/g, "shape_value");
+            const shell = item.replace(
+              /\$\{\{[\s\S]*?\}\}/g,
+              "shape_value",
+            );
             files.push([file, shell, "sh"]);
-            for (
-              const block of shell.matchAll(
-                /(?:python[\d.]*[^\n]*<<[\t ]*['"]?(\w+)['"]?[^\n]*\n)([\s\S]*?)\n\1(?:\n|$)/g,
-              )
-            ) files.push([file, block[2], "py"]);
+            const proxy = nodeCommandLaunch(item);
+            if (proxy) files.push([file, proxy.action, "sh"]);
+            for (const program of inlinePythonScripts(item)) {
+              files.push([
+                file,
+                program.replace(/\$\{\{[\s\S]*?\}\}/g, "shape_value"),
+                "py",
+              ]);
+            }
           } else walk(item);
         }
       };
@@ -913,15 +1735,21 @@ async function toolFindings(sources: Map<string, string>): Promise<Finding[]> {
       const [file, source, language] = files[cursor++];
       const shell = language === "sh";
       if (!shell) {
-        const python = await run(["python3", pythonAnalyzer], source);
-        if (!python.success) throw new Error("Python source analysis failed");
+        const python = await run([
+          "python3",
+          pythonAnalyzer,
+          JSON.stringify(GATEWAY_PRIMITIVES),
+        ], source);
+        if (!python.success) {
+          throw new Error("Python source analysis failed");
+        }
         for (const item of JSON.parse(python.text)) {
           findings.push({
             file,
             rule: item.rule,
             count: item.count,
             line: item.line,
-            evidence: [],
+            evidence: item.evidence ?? [],
           });
         }
       }
@@ -970,7 +1798,12 @@ export function analyze(
   const wrappers = new Set<string>();
   for (const [file, source] of sources) {
     if (!file.endsWith(".ts") || !/node-agent/.test(source)) continue;
-    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const ast = ts.createSourceFile(
+      file,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+    );
     const aliases = new Set(["runNodeAgent", "agentLaunch"]);
     const walk = (node: ts.Node) => {
       if (
@@ -983,7 +1816,8 @@ export function analyze(
         let calls = false;
         const inspect = (child: ts.Node) => {
           if (
-            ts.isCallExpression(child) && ts.isIdentifier(child.expression) &&
+            ts.isCallExpression(child) &&
+            ts.isIdentifier(child.expression) &&
             aliases.has(child.expression.text)
           ) calls = true;
           ts.forEachChild(child, inspect);
@@ -1002,14 +1836,38 @@ export function analyze(
         /\.[cm]?tsx?$/.test(file)
           ? analyzeTs(file, source, inventory, wrappers)
           : /\.ya?ml$/.test(file)
-          ? analyzeYaml(file, source)
-          : analyzeScript(file, source),
+          ? analyzeYaml(file, source, inventory)
+          : analyzeScript(file, source, inventory),
       );
+    }
+  }
+  const workflows = new Map<string, string[]>();
+  for (const [file, a] of analyses) {
+    for (const name of a.workflowNames) {
+      workflows.set(name, [...new Set([...(workflows.get(name) ?? []), file])]);
+    }
+  }
+  for (const [file, a] of analyses) {
+    for (const reference of a.workflowRefs) {
+      const matches = workflows.get(reference) ?? [];
+      if (matches.length === 1) a.imports.push(matches[0]);
+      else {
+        a.unknown = true;
+        a.findings.push({
+          file,
+          rule: "unknown-nested-workflow",
+          count: 1,
+          line: 1,
+          evidence: [reference],
+        });
+      }
     }
   }
   for (const [file, a] of analyses) {
     for (const dependency of a.imports) {
-      if (/\.(?:ts|py|sh)$/.test(dependency) && !analyses.has(dependency)) {
+      if (
+        /\.(?:ts|py|sh)$/.test(dependency) && !analyses.has(dependency)
+      ) {
         a.unknown = true;
         a.findings.push({
           file,
@@ -1067,11 +1925,6 @@ export function workflowCoverage(analyses: Map<string, Analysis>) {
       total++;
       const queue = [file], seen = new Set<string>();
       let uncertain = a.unknown, findings = false;
-      for (const type of a.types) {
-        const files = types.get(type);
-        if (!files) uncertain = true;
-        else queue.push(...files);
-      }
       while (queue.length) {
         const current = queue.pop()!;
         if (seen.has(current)) continue;
@@ -1083,6 +1936,11 @@ export function workflowCoverage(analyses: Map<string, Analysis>) {
         }
         findings ||= node.findings.length > 0;
         uncertain ||= node.unknown;
+        for (const type of node.types) {
+          const files = types.get(type);
+          if (!files) uncertain = true;
+          else queue.push(...files);
+        }
         for (const dependency of node.imports) queue.push(dependency);
       }
       if (uncertain) unknown++;
@@ -1100,7 +1958,8 @@ if (import.meta.main) {
       return i < 0 ? undefined : Deno.args[i + 1];
     };
     pythonAnalyzer = option("--python-analyzer") ?? pythonAnalyzer;
-    gitPrefix = (await run(["git", "rev-parse", "--show-prefix"])).text.trim();
+    gitPrefix = (await run(["git", "rev-parse", "--show-prefix"])).text
+      .trim();
     const baseRef = option("--base") ?? "origin/main";
     const base = await filesAt(baseRef), head = await filesAt();
     const inventory = JSON.parse(head.get(INVENTORY) ?? "{}");
@@ -1113,11 +1972,22 @@ if (import.meta.main) {
         !["action", "observer"].includes(String(kind)) ||
         kind === "observer" && Object.keys(oldInventory).length > 0 &&
           oldInventory[command] !== kind
-      ) throw new Error("Agent inventory cannot expand observation permission");
+      ) {
+        throw new Error(
+          "Agent inventory cannot expand observation permission",
+        );
+      }
     }
     const analyses = analyze(head, inventory);
     const external = await toolFindings(head);
-    for (const f of external) analyses.get(f.file)?.findings.push(f);
+    for (const f of external) {
+      const analysis = analyses.get(f.file);
+      analysis?.findings.push(f);
+      if (
+        analysis &&
+        (f.rule === "agent-dynamic" || f.rule.startsWith("unknown-"))
+      ) analysis.unknown = true;
+    }
     const entries = aggregate(
       [...analyses.values()].flatMap((a) => a.findings),
     );
@@ -1128,9 +1998,10 @@ if (import.meta.main) {
       prior = {
         schema: SCHEMA,
         entries: aggregate(
-          [...baseAnalyses.values()].flatMap((a) => a.findings).concat(
-            await toolFindings(base),
-          ),
+          [...baseAnalyses.values()].flatMap((a) => a.findings)
+            .concat(
+              await toolFindings(base),
+            ),
         ),
       };
     }
@@ -1141,16 +2012,23 @@ if (import.meta.main) {
       );
       const reduced = entries.map((e) => ({
         ...e,
-        count: Math.min(e.count, caps.get(`${e.file}\0${e.rule}`)?.count ?? 0),
+        count: Math.min(
+          e.count,
+          caps.get(`${e.file}\0${e.rule}`)?.count ?? 0,
+        ),
         evidence: e.evidence.filter((x) =>
           caps.get(`${e.file}\0${e.rule}`)?.evidence.includes(x)
         ),
       })).filter((e) => e.count > 0);
       await Deno.writeTextFile(
         BASELINE,
-        JSON.stringify({ schema: SCHEMA, entries: reduced }, null, 2) + "\n",
+        JSON.stringify({ schema: SCHEMA, entries: reduced }, null, 2) +
+          "\n",
       );
-      head.set(BASELINE, JSON.stringify({ schema: SCHEMA, entries: reduced }));
+      head.set(
+        BASELINE,
+        JSON.stringify({ schema: SCHEMA, entries: reduced }),
+      );
     }
     const baseline: Baseline = JSON.parse(head.get(BASELINE) ?? "null");
     if (!baseline || !Array.isArray(baseline.entries)) {
@@ -1194,11 +2072,13 @@ if (import.meta.main) {
         grandfathered: "file_rule_entries",
       },
       inline_script_lines: values.reduce((n, a) => n + a.inlineLines, 0),
-      custom_loops: entries.filter((e) => e.rule === "custom-control").reduce(
-        (n, e) => n + e.count,
-        0,
-      ),
-      agent_action_calls: values.reduce((n, a) => n + a.agentActions, 0),
+      custom_loops: entries.filter((e) => e.rule === "custom-control")
+        .reduce(
+          (n, e) => n + e.count,
+          0,
+        ),
+      agent_action_calls: entries.filter((e) => e.rule === "agent-action")
+        .reduce((n, e) => n + e.count, 0),
       agent_unknown_calls: entries.filter((e) => e.rule === "agent-dynamic")
         .reduce((n, e) => n + e.count, 0),
       workflows: coverage,

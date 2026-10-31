@@ -1,9 +1,45 @@
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { dirname, resolve } from "node:path";
+import { nodeCommandLaunch, safeNodeEnv } from "./node-command-launch.ts";
 
 type Map = Record<string, unknown>;
 const object = (v: unknown): Map =>
   v && typeof v === "object" && !Array.isArray(v) ? v as Map : {};
+// Official builtin shells execute on the physical worker. Dynamic selectors
+// must prove that their required public Node input cannot select a proxy.
+function nativeShellStaysOnNode(workflow: Map, target: unknown): boolean {
+  if (typeof target !== "string") return false;
+  const literal = /^orbit-node-([1-9][0-9]*)$/.exec(target);
+  if (literal) return !["1", "18"].includes(literal[1]);
+  const constant = /^\$\{\{ "orbit-node-" \+ string\(([1-9][0-9]*)\) \}\}$/
+    .exec(target);
+  if (constant) {
+    return Number.isSafeInteger(Number(constant[1])) &&
+      !["1", "18"].includes(constant[1]);
+  }
+  const expression =
+    /^\$\{\{ "orbit-node-" \+ string\(inputs\.([a-z_]+)\) \}\}$/.exec(
+      target,
+    );
+  if (!expression) return false;
+  const inputs = object(workflow.inputs), name = expression[1];
+  const schema = object(object(inputs.properties)[name]);
+  if (
+    !Array.isArray(inputs.required) || !inputs.required.includes(name) ||
+    schema.type !== "integer"
+  ) return false;
+  if (Array.isArray(schema.enum)) {
+    return schema.enum.length > 0 &&
+      schema.enum.every((v) =>
+        Number.isSafeInteger(v) && Number(v) > 0 &&
+        ![1, 18].includes(Number(v))
+      );
+  }
+  const negated = object(schema.not), excluded = negated.enum;
+  return Object.keys(negated).length === 1 && Array.isArray(excluded) &&
+    excluded.includes(1) &&
+    excluded.includes(18);
+}
 async function files(root: string): Promise<string[]> {
   const found: string[] = [];
   for await (const entry of Deno.readDir(root)) {
@@ -84,7 +120,9 @@ async function reviewed(path: string) {
     )
   ) {
     const dependency = match[1];
-    if (/^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)) {
+    if (
+      /^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)
+    ) {
       errors.push(
         `Node host APIs must use the shared command runner or local refusal: ${path}`,
       );
@@ -116,7 +154,7 @@ async function reviewed(path: string) {
 for (const path of await files(`${root}/workflows`)) {
   if (!path.endsWith(".yaml")) continue;
   const workflow = object(parse(await Deno.readTextFile(path)));
-  const walk = async (value: Map, inherited: Map) => {
+  const walk = async (value: Map, inherited: Map, siblings: Map[] = []) => {
     const placement = {
       ...inherited,
       ...Object.fromEntries(
@@ -141,13 +179,16 @@ for (const path of await files(`${root}/workflows`)) {
         );
       }
       if (typeof placement.target === "string") {
-        const literal = /^orbit-node-([1-9][0-9]*)$/.exec(placement.target);
+        const literal = /^orbit-node-([1-9][0-9]*)$/.exec(
+          placement.target,
+        );
         const expression = placement.target.includes("orbit-node-")
           ? /string\((.+)\)\s*\}\}$/s.exec(placement.target)
           : null;
         if (
           literal && labels.node !== literal[1] ||
-          expression && labels.node !== "${{ string(" + expression[1] + ") }}"
+          expression &&
+            labels.node !== "${{ string(" + expression[1] + ") }}"
         ) errors.push(`Node target and label disagree: ${path}`);
       }
     }
@@ -158,7 +199,8 @@ for (const path of await files(`${root}/workflows`)) {
         [task.expr, value.guard].some((v) =>
           typeof v === "string" && v.includes("(")
         ) ||
-        typeof task.message === "string" && task.message.includes("${{"))
+        typeof task.message === "string" &&
+          task.message.includes("${{"))
     ) {
       errors.push(
         `Node assertions must use data-only predicates and static messages: ${path}`,
@@ -170,7 +212,94 @@ for (const path of await files(`${root}/workflows`)) {
     ) {
       const type = task.behaviorType ?? task.modelType ??
         models.get(String(task.modelIdOrName));
-      if (typeof type !== "string" || !sources.has(type)) {
+      if (type === "command/shell") {
+        if (task.type !== "behavior" || task.methodName !== "execute") {
+          errors.push(
+            `Native shell steps must use command/shell.execute: ${path}`,
+          );
+        }
+        const launch = nodeCommandLaunch(object(task.inputs).run);
+        const assets = siblings.find((step) => step.name === launch?.assetStep);
+        const assetTask = object(assets?.task);
+        const assetPlacement = {
+          ...inherited,
+          ...Object.fromEntries(
+            ["target", "labels"].filter((k) => k in (assets ?? {}))
+              .map((
+                k,
+              ) => [k, assets![k]]),
+          ),
+        };
+        const depends = Array.isArray(value.dependsOn)
+          ? value.dependsOn.map(object)
+          : [];
+        const environment = object(object(task.inputs).env);
+        const allowedEnv = new Set([
+          "ORBIT_EFFECT_NODE_ID",
+          ...(launch?.env ?? []),
+        ]);
+        const safeEnvironment = Object.keys(environment).every((name) =>
+          allowedEnv.has(name) && safeNodeEnv(name) && (
+            launch?.secretEnv.includes(name)
+              ? typeof environment[name] === "string" &&
+                /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
+                  String(environment[name]),
+                )
+              : !String(environment[name]).includes("vault.get")
+          )
+        ) && [...allowedEnv].every((name) =>
+          name in environment
+        );
+        let safeActionAsset = !launch?.actionAsset;
+        if (launch?.actionAsset) {
+          const binding = launch.actionAsset;
+          const step = siblings.find((s) => s.name === binding.step);
+          const task = object(step?.task);
+          const source = sources.get(String(task.behaviorType));
+          const code = source ? await Deno.readTextFile(source) : "";
+          const field = new RegExp(
+            "\\b" + binding.field +
+              ":\\s*[A-Za-z_][A-Za-z0-9_]*\\.extensionFile\\([\"']scripts/[A-Za-z0-9_/-]+\\.py[\"']\\)",
+          );
+          const effectPlacement = {
+            ...inherited,
+            ...Object.fromEntries(
+              ["target", "labels"].filter((k) => k in (step ?? {})).map(
+                (k) => [k, step![k]],
+              ),
+            ),
+          };
+          safeActionAsset = task.type === "behavior" &&
+            task.methodName === "read" &&
+            effectPlacement.target === placement.target &&
+            object(effectPlacement.labels).node === labels.node &&
+            field.test(code) && depends.some((d) =>
+              d.step === binding.step &&
+              object(d.condition).type === "succeeded"
+            );
+          if (source) await reviewed(source);
+        }
+        const shared = launch && safeEnvironment && safeActionAsset &&
+          assetTask.type === "behavior" &&
+          assetTask.behaviorType === "@nckrtl/node-command-assets" &&
+          assetTask.methodName === "read" &&
+          assetPlacement.target === placement.target &&
+          object(assetPlacement.labels).node === labels.node &&
+          object(object(task.inputs).env).ORBIT_EFFECT_NODE_ID ===
+            labels.node &&
+          depends.some((d) =>
+            d.step === launch.assetStep &&
+            object(d.condition).type === "succeeded"
+          );
+        if (
+          !shared &&
+          !nativeShellStaysOnNode(workflow, placement.target)
+        ) {
+          errors.push(
+            `Builtin shell has no supported logical proxy transport: ${path}`,
+          );
+        }
+      } else if (typeof type !== "string" || !sources.has(type)) {
         errors.push(
           `Node workers may run only reviewed local behaviors, not third-party extensions: ${path} (${
             String(type)
@@ -181,7 +310,13 @@ for (const path of await files(`${root}/workflows`)) {
     for (const key of ["jobs", "steps"]) {
       for (
         const child of Array.isArray(value[key]) ? value[key] as unknown[] : []
-      ) await walk(object(child), placement);
+      ) {
+        await walk(
+          object(child),
+          placement,
+          key === "steps" ? (value.steps as unknown[]).map(object) : [],
+        );
+      }
     }
   };
   await walk(workflow, {});

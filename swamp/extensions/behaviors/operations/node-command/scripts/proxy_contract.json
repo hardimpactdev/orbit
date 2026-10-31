@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "cgroup_pattern": "^0::/system\\.slice/orbit-node-proxy-worker-([1-9][0-9]*)\\.service(?:/[^\\n]*)?$",
+  "targets": {
+    "1": {
+      "node_id": 1,
+      "host": "10.44.0.1",
+      "user": "orbit",
+      "host_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG",
+      "host_fingerprint": "SHA256:TP06RDL2oMgX8CDMhbQMVPkTgBz5oH7PDMb2QcpY8CE"
+    },
+    "18": {
+      "node_id": 18,
+      "host": "10.44.0.13",
+      "user": "orbit",
+      "host_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKTqizm/h9dgo7Zab5NUC1RlLprBkRoUPrKQkF/b+DjF",
+      "host_fingerprint": "SHA256:teBody6WhmcYgLEXTTI2m3TqyfNnRxgEx7tCbsg7mwA"
+    }
+  }
+}

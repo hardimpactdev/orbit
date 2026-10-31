@@ -1,5 +1,5 @@
 # deno-fmt-ignore-file
-# Generated: deno run --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
+# Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
 id: 837c361c-493f-416a-b660-9bd77426d9e3
 name: operation-node-role-remove-direct
 description: One native role withdrawal using the shared placed publication and source chain.
