@@ -19,6 +19,14 @@ The current native admission refuses VM placements, SQLite copies and Instances 
 
 Each additional Route with a web root must be active and have no domain or placement change. A public web-root Route cannot move across Clusters. The Route family captures the complete primary and web-root inventory and reserves any replacement primary during admission.
 
+## Command workflow inputs
+
+The family input projection returns separate `intent` and `execution_secrets` maps. Intent contains the recorded source and destination placement, Route inventory and public Process descriptors for both placements. It excludes private bindings, material values and secret resolver instructions. Execution secrets contain only vault and key names. The shared input builder supplies the authoritative Operation ID, kind and root Node ID.
+
+The internal workflows capture files, materialize checkouts and retire source checkouts. Every command step declares its Node and uses public outputs between actions. A standalone checkout retains its Git directory, including local branches, tags and configuration. A linked worktree uses separate bundle, index and staged-object actions to become an independent checkout. Destination publication retains its directory identity, so a lost command reply can be resumed without replacing an unrelated checkout.
+
+These command components do not register a second public transfer kind or supply an archive relay. The owning parent controls source pause, private archive delivery, Route publication and retirement order. The [Swamp shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md) owns the shared execution-copy and terminal-result contracts.
+
 ## Source and archive
 
 The destination worker checks readiness before the source is captured. The source worker archives the checkout into a private native file resource. The destination streams that resource and verifies its byte count and SHA-256 before publishing the checkout. Archive bytes never enter the Gateway, workflow arguments or JSON results. The archive limit is 1 TiB.

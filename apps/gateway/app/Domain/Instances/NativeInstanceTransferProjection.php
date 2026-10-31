@@ -35,7 +35,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
     public function input(Operation $operation): array
     {
-        return $this->publicInput($operation, ValidatedData::integer($operation->node_id));
+        return ['intent' => app(InstanceTransferWorkflowInput::class)->input($operation),
+            'execution_secrets' => ValidatedData::object($operation->input['execution_secrets'] ?? [])];
     }
 
     public function publicInput(Operation $operation, int $callerNodeId): array

@@ -1,0 +1,71 @@
+id: 95eae7c8-3f79-4ac6-a740-6351d3b097a8
+name: instance-transfer-retire-checkout
+description: Remove only the exact captured source checkout after the parent verifies destination publication.
+writes: true
+inputs:
+  properties:
+    node_id:
+      type: integer
+      minimum: 1
+    source_proof:
+      type: string
+  required:
+    - node_id
+    - source_proof
+  additionalProperties: false
+jobs:
+  - name: retire
+    steps:
+      - name: remove-source-checkout
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-retire-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import shutil
+              import stat
+              import subprocess
+              from pathlib import Path
+
+              proof = json.loads(os.environ["SOURCE_PROOF"])
+              raw = proof["path"]
+              if not raw.startswith("/") or any(ord(c) <= 32 or ord(c) == 127 for c in raw) or any(p in ("", ".", "..") for p in raw.split("/")[1:]):
+                  raise SystemExit("instance.transfer_path_unproven")
+              path = Path(raw)
+              if not os.path.lexists(path):
+                  print('{"removed":true}')
+                  raise SystemExit(0)
+              info = path.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or str(path) != str(path.resolve(strict=True)) or (info.st_dev, info.st_ino) != (proof["device"], proof["inode"]):
+                  raise SystemExit("instance.transfer_path_unproven")
+              entry = path / ".git"
+              info = entry.lstat()
+              layout = "checkout" if stat.S_ISDIR(info.st_mode) else "worktree" if stat.S_ISREG(info.st_mode) else "invalid"
+              if layout != proof["layout"]:
+                  raise SystemExit("instance.transfer_path_unproven")
+              command = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(path)]
+              env = {"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+              common = subprocess.check_output(command + ["rev-parse", "--path-format=absolute", "--git-common-dir"], env=env, stderr=subprocess.DEVNULL).decode().rstrip("\n")
+              if common != proof["common"]:
+                  raise SystemExit("instance.transfer_path_unproven")
+              if layout == "worktree":
+                  subprocess.run(command + ["worktree", "remove", "--force", "--force", "--", str(path)], env=env,
+                                 check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              else:
+                  inventory = subprocess.check_output(command + ["worktree", "list", "--porcelain"], env=env, stderr=subprocess.DEVNULL).decode()
+                  if sum(line.startswith("worktree ") for line in inventory.splitlines()) != 1:
+                      raise SystemExit("instance.transfer_shared_checkout")
+                  shutil.rmtree(path)
+              print('{"removed":true}')
+              PYTHON
+            env:
+              SOURCE_PROOF: ${{ inputs.source_proof }}

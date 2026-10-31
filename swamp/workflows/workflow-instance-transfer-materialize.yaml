@@ -1,0 +1,611 @@
+id: a79f2326-2b78-4a55-a4dd-93fa69da78ae
+name: instance-transfer-materialize
+description: Materialize a verified private archive already delivered to the destination by the canonical
+  artifact transport.
+writes: true
+inputs:
+  properties:
+    node_id:
+      type: integer
+      minimum: 1
+    destination:
+      type: string
+    root:
+      type: string
+    environment:
+      type: string
+    archive_path:
+      type: string
+    archive_bytes:
+      type: integer
+      minimum: 1
+      maximum: 1099511627776
+    archive_sha256:
+      type: string
+      pattern: ^[a-f0-9]{64}$
+    source_proof:
+      type: string
+    layout:
+      type: string
+      enum:
+        - checkout
+        - worktree
+  required:
+    - node_id
+    - destination
+    - root
+    - environment
+    - archive_path
+    - archive_bytes
+    - archive_sha256
+    - source_proof
+    - layout
+  additionalProperties: false
+jobs:
+  - name: materialize
+    steps:
+      - name: verify-incoming-archive
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m0-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import hashlib
+              import os
+              import re
+              import stat
+              from pathlib import Path
+
+              path = Path(os.environ["ARCHIVE_PATH"])
+              info = path.lstat()
+              expected_bytes = int(os.environ["ARCHIVE_BYTES"])
+              expected_digest = os.environ["ARCHIVE_SHA256"]
+              if not 0 < expected_bytes <= 2**40 or not re.fullmatch(r"[a-f0-9]{64}", expected_digest):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size != expected_bytes:
+                  raise SystemExit("instance.transfer_archive_invalid")
+              with path.open("rb") as archive:
+                  digest = hashlib.file_digest(archive, "sha256").hexdigest()
+              if digest != expected_digest:
+                  raise SystemExit("instance.transfer_archive_invalid")
+              print('{"verified":true}')
+              PYTHON
+            env:
+              ARCHIVE_PATH: ${{ inputs.archive_path }}
+              ARCHIVE_BYTES: ${{ string(inputs.archive_bytes) }}
+              ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+      - name: prepare-destination-staging
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m1-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import shutil
+              import tempfile
+              from pathlib import Path
+
+              root_raw = os.environ["DESTINATION_ROOT"]
+              path_raw = os.environ["DESTINATION_PATH"]
+              for value in (root_raw, path_raw):
+                  if not value.startswith("/") or any(ord(c) <= 32 or ord(c) == 127 for c in value) or any(p in ("", ".", "..") for p in value.split("/")[1:]):
+                      raise SystemExit("instance.transfer_destination_invalid")
+              root, path = Path(root_raw), Path(path_raw)
+              if str(root) != str(root.resolve(strict=True)) or not root.is_dir() or not path.is_relative_to(root) or path == root:
+                  raise SystemExit("instance.transfer_destination_invalid")
+              for parent in path.parents:
+                  if parent.exists() and (not parent.is_dir() or parent.is_symlink() or str(parent) != str(parent.resolve(strict=True))):
+                      raise SystemExit("instance.transfer_destination_invalid")
+              if os.path.lexists(path):
+                  raise SystemExit("instance.transfer_destination_exists")
+              size = int(os.environ["ARCHIVE_BYTES"])
+              if not 0 < size <= 2**40 or shutil.disk_usage(root).free < size * 2 + 64 * 1024 * 1024:
+                  raise SystemExit("instance.transfer_disk_full")
+              os.umask(0o077)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              print(tempfile.mkdtemp(prefix=".orbit-transfer-", dir=path.parent), end="")
+              PYTHON
+            env:
+              DESTINATION_PATH: ${{ inputs.destination }}
+              DESTINATION_ROOT: ${{ inputs.root }}
+              ARCHIVE_BYTES: ${{ string(inputs.archive_bytes) }}
+        dependsOn:
+          - step: verify-incoming-archive
+            condition:
+              type: succeeded
+      - name: extract-checkout-files
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m2-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import stat
+              import tarfile
+              from pathlib import Path
+
+              staging = Path(os.environ["DESTINATION_STAGING"])
+              info = staging.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700 or str(staging) != str(staging.resolve(strict=True)):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              with tarfile.open(os.environ["ARCHIVE_PATH"], "r:") as archive:
+                  for member in archive:
+                      parts = Path(member.name).parts
+                      if parts and parts[0] == ".git" and os.environ["SOURCE_LAYOUT"] != "checkout":
+                          raise SystemExit("instance.transfer_archive_invalid")
+                      archive.extract(member, staging, filter="data")
+              names = ("checkout.bundle", "checkout.index", "checkout.pack") if os.environ["SOURCE_LAYOUT"] == "worktree" else ("checkout.index",)
+              if not all((staging / name).is_file() and not (staging / name).is_symlink() for name in names):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              if os.environ["SOURCE_LAYOUT"] == "checkout" and (not (staging / ".git").is_dir() or (staging / ".git").is_symlink()):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              PYTHON
+            env:
+              ARCHIVE_PATH: ${{ inputs.archive_path }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+              SOURCE_LAYOUT: ${{ inputs.layout }}
+        dependsOn:
+          - step: prepare-destination-staging
+            condition:
+              type: succeeded
+      - name: initialize-independent-checkout
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m3-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+                /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false init --quiet -- "$DESTINATION_STAGING"
+            env:
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: extract-checkout-files
+            condition:
+              type: succeeded
+        guard: ${{ inputs.layout != 'worktree' }}
+      - name: fetch-committed-history
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m4-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+                /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.file.allow=always \
+                -C "$DESTINATION_STAGING" fetch --quiet -- "$DESTINATION_STAGING/checkout.bundle" HEAD
+            env:
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: extract-checkout-files
+            condition:
+              type: succeeded
+          - step: initialize-independent-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: ${{ inputs.layout != 'worktree' }}
+      - name: import-staged-objects
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m5-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+                /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$DESTINATION_STAGING" \
+                index-pack --stdin < "$DESTINATION_STAGING/checkout.pack" > /dev/null
+            env:
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: extract-checkout-files
+            condition:
+              type: succeeded
+          - step: initialize-independent-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: fetch-committed-history
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: ${{ inputs.layout != 'worktree' }}
+      - name: restore-branch
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m6-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import re
+              import subprocess
+
+              proof = json.loads(os.environ["SOURCE_PROOF"])
+              head, branch = proof["head"], proof["branch"]
+              if not re.fullmatch(r"[a-f0-9]{40}(?:[a-f0-9]{24})?", head):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              command = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", os.environ["DESTINATION_STAGING"]]
+              env = {"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+              if branch is None:
+                  args = ["update-ref", "--no-deref", "HEAD", head]
+              else:
+                  subprocess.run(command + ["check-ref-format", "--branch", branch], env=env,
+                                 check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  args = ["symbolic-ref", "HEAD", "refs/heads/" + branch]
+              subprocess.run(command + args, env=env, check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              PYTHON
+            env:
+              SOURCE_PROOF: ${{ inputs.source_proof }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: extract-checkout-files
+            condition:
+              type: succeeded
+          - step: initialize-independent-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: fetch-committed-history
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: import-staged-objects
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: ${{ inputs.layout != 'worktree' }}
+      - name: restore-commit
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m7-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import re
+              import subprocess
+
+              proof = json.loads(os.environ["SOURCE_PROOF"])
+              head = proof["head"]
+              if not re.fullmatch(r"[a-f0-9]{40}(?:[a-f0-9]{24})?", head):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", os.environ["DESTINATION_STAGING"], "update-ref", "HEAD", head],
+                             env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"},
+                             check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              PYTHON
+            env:
+              SOURCE_PROOF: ${{ inputs.source_proof }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: extract-checkout-files
+            condition:
+              type: succeeded
+          - step: initialize-independent-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: fetch-committed-history
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: import-staged-objects
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: restore-branch
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: ${{ inputs.layout != 'worktree' }}
+      - name: restore-index
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m8-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import shutil
+              from pathlib import Path
+
+              staging = Path(os.environ["DESTINATION_STAGING"])
+              shutil.copyfile(staging / "checkout.index", staging / ".git/index")
+              os.chmod(staging / ".git/index", 0o600)
+              PYTHON
+            env:
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: extract-checkout-files
+            condition:
+              type: succeeded
+          - step: initialize-independent-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: fetch-committed-history
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: import-staged-objects
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: restore-branch
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: restore-commit
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+      - name: restore-origin
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m9-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import subprocess
+              from urllib.parse import urlsplit
+
+              origin = json.loads(os.environ["SOURCE_PROOF"])["repository"]
+              if origin.startswith("git@") and ":" in origin:
+                  valid = True
+              else:
+                  uri = urlsplit(origin)
+                  valid = uri.scheme in ("https", "ssh") and bool(uri.hostname) and not uri.password and not (uri.scheme == "https" and uri.username)
+              if not valid or any(ord(c) <= 32 or ord(c) == 127 for c in origin):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", os.environ["DESTINATION_STAGING"], "config", "remote.origin.url", origin],
+                             check=True, env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"},
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              PYTHON
+            env:
+              SOURCE_PROOF: ${{ inputs.source_proof }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: restore-index
+            condition:
+              type: succeeded
+      - name: remove-transfer-metadata
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m10-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              from pathlib import Path
+
+              staging = Path(os.environ["DESTINATION_STAGING"])
+              for name in ("checkout.bundle", "checkout.pack", "checkout.index"):
+                  (staging / name).unlink(missing_ok=True)
+              PYTHON
+            env:
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: restore-origin
+            condition:
+              type: succeeded
+      - name: protect-environment-file
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m11-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import stat
+              from pathlib import Path
+
+              checkout = Path(os.environ["DESTINATION_PATH"])
+              environment = Path(os.environ["ENVIRONMENT_PATH"])
+              if not environment.is_relative_to(checkout):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              path = Path(os.environ["DESTINATION_STAGING"]) / environment.relative_to(checkout)
+              if os.path.lexists(path):
+                  info = path.lstat()
+                  if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                      raise SystemExit("instance.transfer_archive_invalid")
+                  os.chmod(path, 0o600)
+              PYTHON
+            env:
+              DESTINATION_PATH: ${{ inputs.destination }}
+              ENVIRONMENT_PATH: ${{ inputs.environment }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: remove-transfer-metadata
+            condition:
+              type: succeeded
+      - name: verify-restored-checkout
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-mverify-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import stat
+              import subprocess
+              from pathlib import Path
+
+              staging = Path(os.environ["DESTINATION_STAGING"])
+              info = staging.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or str(staging) != str(staging.resolve(strict=True)):
+                  raise SystemExit("instance.transfer_destination_invalid")
+              proof = json.loads(os.environ["SOURCE_PROOF"])
+              command = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(staging)]
+              env = {"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+              head = subprocess.check_output(command + ["rev-parse", "--verify", "HEAD^{commit}"], env=env, stderr=subprocess.DEVNULL).decode().strip()
+              branch = subprocess.check_output(command + ["rev-parse", "--abbrev-ref", "HEAD"], env=env, stderr=subprocess.DEVNULL).decode().strip()
+              if head != proof["head"] or (None if branch == "HEAD" else branch) != proof["branch"]:
+                  raise SystemExit("instance.transfer_archive_invalid")
+              print(json.dumps({"path": os.environ["DESTINATION_PATH"], "device": info.st_dev, "inode": info.st_ino}))
+              PYTHON
+            env:
+              DESTINATION_PATH: ${{ inputs.destination }}
+              SOURCE_PROOF: ${{ inputs.source_proof }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+        dependsOn:
+          - step: protect-environment-file
+            condition:
+              type: succeeded
+      - name: publish-checkout
+        target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        labels:
+          node: ${{ string(inputs.node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-m12-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import stat
+              from pathlib import Path
+
+              staging = Path(os.environ["DESTINATION_STAGING"])
+              path = Path(os.environ["DESTINATION_PATH"])
+              proof = json.loads(os.environ["DESTINATION_PROOF"])
+              if proof["path"] != str(path) or path.parent != staging.parent or path.parent != path.parent.resolve(strict=True):
+                  raise SystemExit("instance.transfer_destination_invalid")
+
+              def matches(candidate):
+                  info = candidate.lstat()
+                  return stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and (info.st_dev, info.st_ino) == (proof["device"], proof["inode"])
+
+              if os.path.lexists(path):
+                  if os.path.lexists(staging) or not matches(path):
+                      raise SystemExit("instance.transfer_destination_exists")
+              else:
+                  if not matches(staging):
+                      raise SystemExit("instance.transfer_destination_invalid")
+                  os.rename(staging, path)
+              print(json.dumps({"materialized": True, **proof}))
+              PYTHON
+            env:
+              DESTINATION_PATH: ${{ inputs.destination }}
+              DESTINATION_STAGING: ${{ steps['prepare-destination-staging'].outputs.stdout }}
+              DESTINATION_PROOF: ${{ steps['verify-restored-checkout'].outputs.stdout }}
+        dependsOn:
+          - step: verify-restored-checkout
+            condition:
+              type: succeeded

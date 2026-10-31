@@ -143,6 +143,32 @@ it('rejects unimplemented SQLite composition before reserving a transfer', funct
     expect(Operation::query()->count())->toBe(0);
 });
 
+it('supplies the complete recorded public workflow intent without resolving private material or reading current placement', function (): void {
+    native_transfer_process($this);
+    $this->destination->update(['settings' => ['apps' => ['path' => '/srv']]]);
+    $operation = native_transfer_operation($this);
+    $plan = app(NativeInstanceTransferIntent::class)->capture($this->transfer);
+    $plan['source']['private_value'] = 'must-not-enter-native-history';
+    $operation->update(['input' => [...$operation->input, 'direct_transfer' => $plan,
+        'source_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $this->instance->id],
+        'source_route_environment' => 'must-not-enter-native-history',
+        'execution_secrets' => ['source_installations' => ['vault' => 'execution', 'key' => 'private-ref']]]]);
+    $this->instance->update(['node_id' => $this->destination->id, 'checkout_path' => '/unrelated/current/path']);
+
+    $envelope = app(NativeInstanceTransferProjection::class)->input($operation);
+    $input = $envelope['intent'];
+
+    expect($input['direct_transfer']['source']['source'])->toBe('/srv/native')
+        ->and($input['direct_transfer']['destination']['destination'])->toBe('/srv/new-native')
+        ->and($input['direct_transfer']['cutover'])->toBeFalse()
+        ->and($input['process_runtime']['source']['node_id'])->toBe($this->node->id)
+        ->and($input['process_runtime']['destination']['node_id'])->toBe($this->destination->id)
+        ->and($input['process_runtime']['source']['members'][0]['id'])->toBe(Process::query()->sole()->id)
+        ->and($input['route_transfer']['participant_node_ids'])->toContain($this->node->id, $this->destination->id);
+    expect(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain('must-not-enter-native-history', 'transfer-private-value', '$secret', 'private_bindings', 'execution_secrets', 'private-ref');
+    expect($envelope['execution_secrets'])->toBe(['source_installations' => ['vault' => 'execution', 'key' => 'private-ref']]);
+});
+
 it('records a DB-only native transfer and scopes URL material to its own Node', function (): void {
     $this->transfer->delete();
     $this->instance->update(['status' => 'active', 'provisioning_step' => 'active']);

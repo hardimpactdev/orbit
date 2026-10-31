@@ -1,0 +1,610 @@
+id: 28a788ac-7e86-423a-b69c-79ad3f0a22d2
+name: instance-transfer-capture
+description: Inspect transfer participants and capture source files locally for the canonical private
+  artifact transport.
+writes: true
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+        - instance.transfer
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+      properties:
+        direct_transfer:
+          type: object
+          additionalProperties: false
+          properties:
+            transfer_id:
+              type: string
+              format: uuid
+            instance_id:
+              type: integer
+              minimum: 1
+            source_node_id:
+              type: integer
+              minimum: 1
+            destination_node_id:
+              type: integer
+              minimum: 1
+            source:
+              type: object
+              additionalProperties: false
+              properties:
+                source:
+                  type: string
+                  minLength: 2
+                  maxLength: 4096
+                  pattern: ^/(?:[^\s/\x00-\x1f\x7f]+/)*[^\s/\x00-\x1f\x7f]+$
+                user:
+                  type: string
+                  pattern: ^[a-z_][a-z0-9_-]{0,31}$
+                layout:
+                  type: string
+                  enum:
+                    - checkout
+                    - worktree
+                repository_identity:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+                branch:
+                  type: string
+                  maxLength: 255
+              required:
+                - source
+                - user
+                - layout
+                - repository_identity
+                - branch
+            destination:
+              type: object
+              additionalProperties: false
+              properties:
+                destination:
+                  type: string
+                  minLength: 2
+                  maxLength: 4096
+                  pattern: ^/(?:[^\s/\x00-\x1f\x7f]+/)*[^\s/\x00-\x1f\x7f]+$
+                root:
+                  type: string
+                  minLength: 2
+                  maxLength: 4096
+                  pattern: ^/(?:[^\s/\x00-\x1f\x7f]+/)*[^\s/\x00-\x1f\x7f]+$
+                environment:
+                  type: string
+                  minLength: 2
+                  maxLength: 4096
+                  pattern: ^/(?:[^\s/\x00-\x1f\x7f]+/)*[^\s/\x00-\x1f\x7f]+$
+                user:
+                  type: string
+                  pattern: ^[a-z_][a-z0-9_-]{0,31}$
+              required:
+                - destination
+                - root
+                - environment
+                - user
+            cutover:
+              type: boolean
+            completed:
+              type: boolean
+          required:
+            - transfer_id
+            - instance_id
+            - source_node_id
+            - destination_node_id
+            - source
+            - destination
+            - cutover
+            - completed
+        process_runtime:
+          type: object
+        route_transfer:
+          type: object
+      required:
+        - direct_transfer
+        - process_runtime
+        - route_transfer
+      additionalProperties: false
+  required:
+    - operation_id
+    - kind
+    - node_id
+    - intent
+jobs:
+  - name: inspect-participants
+    steps:
+      - name: inspect-source-account
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s0-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import pwd
+              import re
+
+              user = os.environ["EXPECTED_USER"]
+              if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
+                  raise SystemExit("instance.transfer_source_owner_invalid")
+              account = pwd.getpwnam(user)
+              if account.pw_uid == 0 or account.pw_uid != os.getuid():
+                  raise SystemExit("instance.transfer_source_owner_invalid")
+              print(json.dumps({"user": user, "uid": account.pw_uid, "gid": account.pw_gid}))
+              PYTHON
+            env:
+              EXPECTED_USER: ${{ inputs.intent.direct_transfer.source.user }}
+      - name: inspect-source-checkout
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s1-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import subprocess
+              from pathlib import Path
+              from urllib.parse import urlsplit
+
+              raw_path = os.environ["SOURCE_PATH"]
+              if not raw_path.startswith("/") or any(ord(c) <= 32 or ord(c) == 127 for c in raw_path) or any(p in ("", ".", "..") for p in raw_path.split("/")[1:]):
+                  raise SystemExit("instance.transfer_source_invalid")
+              path = Path(raw_path)
+              if str(path) != str(path.resolve(strict=True)) or path.is_symlink():
+                  raise SystemExit("instance.transfer_source_invalid")
+              info = path.stat()
+              if not path.is_dir() or info.st_uid != os.getuid():
+                  raise SystemExit("instance.transfer_source_owner_invalid")
+
+              def git(*args):
+                  result = subprocess.run(
+                      ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(path), *args],
+                      check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                      stderr=subprocess.DEVNULL,
+                      env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"},
+                  )
+                  return result.stdout.decode().rstrip("\n")
+
+              if git("rev-parse", "--show-toplevel") != str(path):
+                  raise SystemExit("instance.transfer_source_invalid")
+              origin = git("remote", "get-url", "origin")
+              if origin.startswith("git@") and ":" in origin:
+                  identity = origin[4:].replace(":", "/", 1)
+              else:
+                  uri = urlsplit(origin)
+                  if uri.scheme not in ("https", "ssh") or not uri.hostname or uri.password or (uri.scheme == "https" and uri.username):
+                      raise SystemExit("instance.transfer_source_invalid")
+                  identity = uri.hostname + "/" + uri.path.lstrip("/")
+              identity = identity.removesuffix(".git").rstrip("/")
+              if identity != os.environ["SOURCE_REPOSITORY"]:
+                  raise SystemExit("instance.source_identity_invalid")
+              entry = path / ".git"
+              if entry.is_symlink() or ("checkout" if entry.is_dir() else "worktree" if entry.is_file() else "invalid") != os.environ["SOURCE_LAYOUT"]:
+                  raise SystemExit("instance.transfer_source_invalid")
+              branch = git("rev-parse", "--abbrev-ref", "HEAD")
+              branch = None if branch == "HEAD" else branch
+              if branch != (os.environ["SOURCE_BRANCH"] or None):
+                  raise SystemExit("instance.source_branch_mismatch")
+              if entry.is_dir():
+                  inventory = git("worktree", "list", "--porcelain")
+                  if sum(line.startswith("worktree ") for line in inventory.splitlines()) != 1:
+                      raise SystemExit("instance.transfer_shared_checkout")
+              common = git("rev-parse", "--path-format=absolute", "--git-common-dir")
+              print(json.dumps({"path": str(path), "device": info.st_dev, "inode": info.st_ino,
+                                "head": git("rev-parse", "--verify", "HEAD^{commit}"), "branch": branch,
+                                "layout": os.environ["SOURCE_LAYOUT"], "common": common, "repository": origin}))
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              SOURCE_REPOSITORY: ${{ inputs.intent.direct_transfer.source.repository_identity }}
+              SOURCE_LAYOUT: ${{ inputs.intent.direct_transfer.source.layout }}
+              SOURCE_BRANCH: '${{ inputs.intent.direct_transfer.source.branch == null ? "" : inputs.intent.direct_transfer.source.branch
+                }}'
+        dependsOn:
+          - step: inspect-source-account
+            condition:
+              type: succeeded
+      - name: inspect-destination-account
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.destination_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.destination_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s2-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              import pwd
+              import re
+
+              user = os.environ["EXPECTED_USER"]
+              if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
+                  raise SystemExit("instance.transfer_source_owner_invalid")
+              account = pwd.getpwnam(user)
+              if account.pw_uid == 0 or account.pw_uid != os.getuid():
+                  raise SystemExit("instance.transfer_source_owner_invalid")
+              print(json.dumps({"user": user, "uid": account.pw_uid, "gid": account.pw_gid}))
+              PYTHON
+            env:
+              EXPECTED_USER: ${{ inputs.intent.direct_transfer.destination.user }}
+      - name: check-destination-path
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.destination_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.destination_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s3-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import json
+              import os
+              from pathlib import Path
+
+              values = [os.environ["DESTINATION_ROOT"], os.environ["DESTINATION_PATH"]]
+              for value in values:
+                  if not value.startswith("/") or any(ord(c) <= 32 or ord(c) == 127 for c in value) or any(p in ("", ".", "..") for p in value.split("/")[1:]):
+                      raise SystemExit("instance.transfer_destination_invalid")
+              root, path = map(Path, values)
+              if not root.is_absolute() or str(root) != str(root.resolve(strict=True)) or not path.is_relative_to(root) or path == root:
+                  raise SystemExit("instance.transfer_destination_invalid")
+              for parent in (root, *path.parents):
+                  if parent.exists() and (parent.is_symlink() or str(parent) != str(parent.resolve(strict=True))):
+                      raise SystemExit("instance.transfer_destination_invalid")
+              if os.path.lexists(path):
+                  raise SystemExit("instance.transfer_destination_exists")
+              print(json.dumps({"ready": True}))
+              PYTHON
+            env:
+              DESTINATION_ROOT: ${{ inputs.intent.direct_transfer.destination.root }}
+              DESTINATION_PATH: ${{ inputs.intent.direct_transfer.destination.destination }}
+        dependsOn:
+          - step: inspect-destination-account
+            condition:
+              type: succeeded
+  - name: capture-source
+    dependsOn:
+      - job: inspect-participants
+        condition:
+          type: succeeded
+    steps:
+      - name: prepare-source-scratch
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s4-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import tempfile
+              import uuid
+
+              run_id = os.environ["NATIVE_RUN_ID"]
+              if str(uuid.UUID(run_id)) != run_id:
+                  raise SystemExit("instance.transfer_archive_invalid")
+              os.umask(0o077)
+              path = tempfile.mkdtemp(prefix="orbit-transfer-" + run_id + "-")
+              print(path, end="")
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+      - name: bundle-source-commits
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s5-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import stat
+              import subprocess
+              from pathlib import Path
+
+              scratch = Path(os.environ["SCRATCH_PATH"])
+              info = scratch.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700 or str(scratch) != str(scratch.resolve(strict=True)):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              subprocess.run(
+                  ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", os.environ["SOURCE_PATH"], "bundle", "create", str(scratch / "checkout.bundle"), "HEAD"],
+                  check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                  env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"},
+              )
+              os.chmod(scratch / "checkout.bundle", 0o600)
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+        dependsOn:
+          - step: prepare-source-scratch
+            condition:
+              type: succeeded
+        guard: ${{ inputs.intent.direct_transfer.source.layout != 'worktree' }}
+      - name: save-source-index
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s6-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import shutil
+              import stat
+              import subprocess
+              from pathlib import Path
+
+              scratch = Path(os.environ["SCRATCH_PATH"])
+              info = scratch.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700 or str(scratch) != str(scratch.resolve(strict=True)):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              index = subprocess.check_output(
+                  ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", os.environ["SOURCE_PATH"], "rev-parse", "--path-format=absolute", "--git-path", "index"],
+                  stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                  env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"},
+              ).decode().rstrip("\n")
+              source = Path(index)
+              info = source.lstat()
+              if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                  raise SystemExit("instance.transfer_source_invalid")
+              with source.open("rb") as original, (scratch / "checkout.index").open("xb") as saved:
+                  os.fchmod(saved.fileno(), 0o600)
+                  shutil.copyfileobj(original, saved)
+                  saved.flush()
+                  os.fsync(saved.fileno())
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+        dependsOn:
+          - step: bundle-source-commits
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: prepare-source-scratch
+            condition:
+              type: succeeded
+      - name: expand-saved-index
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s7-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_INDEX_FILE="$SCRATCH_PATH/checkout.index" \
+                /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$SOURCE_PATH" \
+                update-index --no-split-index
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+        dependsOn:
+          - step: save-source-index
+            condition:
+              type: succeeded
+      - name: pack-staged-objects
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s8-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import re
+              import stat
+              import subprocess
+              from pathlib import Path
+
+              scratch = Path(os.environ["SCRATCH_PATH"])
+              info = scratch.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700 or str(scratch) != str(scratch.resolve(strict=True)):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              command = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", os.environ["SOURCE_PATH"]]
+              env = {"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_INDEX_FILE": str(scratch / "checkout.index")}
+              entries = subprocess.check_output(command + ["ls-files", "--stage", "-z"], env=env, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              objects = set()
+              for entry in entries.split(b"\0"):
+                  if not entry:
+                      continue
+                  match = re.match(rb"^[0-7]{6} ([a-f0-9]{40}(?:[a-f0-9]{24})?) [0-3]\t", entry)
+                  if not match:
+                      raise SystemExit("instance.transfer_archive_invalid")
+                  oid = match[1]
+                  if oid.strip(b"0"):
+                      objects.add(oid)
+              with (scratch / "checkout.pack").open("xb") as target:
+                  os.fchmod(target.fileno(), 0o600)
+                  subprocess.run(command + ["pack-objects", "--stdout", "--revs"], env=env,
+                                 input=b"\n".join(sorted(objects)) + b"\n", stdout=target,
+                                 stderr=subprocess.DEVNULL, check=True)
+                  target.flush()
+                  os.fsync(target.fileno())
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+        dependsOn:
+          - step: expand-saved-index
+            condition:
+              type: succeeded
+        guard: ${{ inputs.intent.direct_transfer.source.layout != 'worktree' }}
+      - name: archive-source-files
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s9-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import stat
+              import subprocess
+              from pathlib import Path
+
+              scratch = Path(os.environ["SCRATCH_PATH"])
+              info = scratch.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700 or str(scratch) != str(scratch.resolve(strict=True)):
+                  raise SystemExit("instance.transfer_archive_invalid")
+              source = Path(os.environ["SOURCE_PATH"])
+              names = ("checkout.bundle", "checkout.index", "checkout.pack") if os.environ["SOURCE_LAYOUT"] == "worktree" else ("checkout.index",)
+              for name in names:
+                  if os.path.lexists(source / name):
+                      raise SystemExit("instance.transfer_archive_invalid")
+              archive = scratch / "source.tar"
+              with archive.open("xb") as target:
+                  os.fchmod(target.fileno(), 0o600)
+                  subprocess.run(["/usr/bin/tar", "--create", "--file", "-", "--directory", str(source),
+                                  *(["--no-wildcards", "--anchored", "--exclude=./.git"] if os.environ["SOURCE_LAYOUT"] == "worktree" else []), "--", "."],
+                                 check=True, stdin=subprocess.DEVNULL, stdout=target, stderr=subprocess.DEVNULL)
+                  target.flush()
+                  os.fsync(target.fileno())
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+              SOURCE_LAYOUT: ${{ inputs.intent.direct_transfer.source.layout }}
+        dependsOn:
+          - step: pack-staged-objects
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: expand-saved-index
+            condition:
+              type: succeeded
+      - name: append-git-state
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s10-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import os
+              import subprocess
+              from pathlib import Path
+
+              scratch = Path(os.environ["SCRATCH_PATH"])
+              names = ["checkout.bundle", "checkout.index", "checkout.pack"] if os.environ["SOURCE_LAYOUT"] == "worktree" else ["checkout.index"]
+              subprocess.run(["/usr/bin/tar", "--append", "--file", str(scratch / "source.tar"), "--directory", str(scratch), "--", *names],
+                             check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+              SOURCE_LAYOUT: ${{ inputs.intent.direct_transfer.source.layout }}
+        dependsOn:
+          - step: archive-source-files
+            condition:
+              type: succeeded
+      - name: digest-source-archive
+        target: ${{ "orbit-node-" + string(inputs.intent.direct_transfer.source_node_id) }}
+        labels:
+          node: ${{ string(inputs.intent.direct_transfer.source_node_id) }}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "xfer-s11-" + run.id }}
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              python3 - <<'PYTHON'
+              import hashlib
+              import json
+              import os
+              import stat
+              from pathlib import Path
+
+              path = Path(os.environ["SCRATCH_PATH"]) / "source.tar"
+              info = path.lstat()
+              if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600 or not 0 < info.st_size <= 2**40:
+                  raise SystemExit("instance.transfer_archive_invalid")
+              with path.open("rb") as archive:
+                  digest = hashlib.file_digest(archive, "sha256").hexdigest()
+              print(json.dumps({"bytes": info.st_size, "sha256": digest}))
+              PYTHON
+            env:
+              SOURCE_PATH: ${{ inputs.intent.direct_transfer.source.source }}
+              NATIVE_RUN_ID: ${{ run.id }}
+              SCRATCH_PATH: ${{ steps['prepare-source-scratch'].outputs.stdout }}
+        dependsOn:
+          - step: append-git-state
+            condition:
+              type: succeeded
