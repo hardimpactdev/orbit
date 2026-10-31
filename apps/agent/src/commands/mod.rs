@@ -8,6 +8,7 @@ pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
 mod caddy_certificate;
+mod caddy_observation;
 mod caddy_package;
 pub mod ci_runner;
 pub mod cli;
@@ -349,6 +350,8 @@ pub fn all() -> Vec<Entry> {
         entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
+        entry::<caddy_observation::CheckAddresses>(),
+        entry::<caddy_observation::ReadLive>(),
         entry::<doctor_node::InspectNode>(),
         entry::<doctor_project::InspectProject>(),
         entry::<doctor_project::InspectDevelopmentSource>(),
