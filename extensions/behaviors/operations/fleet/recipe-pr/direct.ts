@@ -49,7 +49,7 @@ export function recipePr(
 ) {
   return {
     type: "@nckrtl/fleet-recipe-pr",
-    version: "2026.10.30.1",
+    version: "2026.10.31.1",
     globalArguments: Globals,
     resources: {
       open_plan: {
