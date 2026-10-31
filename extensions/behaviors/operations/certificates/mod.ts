@@ -26,6 +26,7 @@ import {
 const Globals = SharedGlobals.extend({
   vaultName: z.string().min(1).optional(),
   secretKey: z.string().min(1).optional(),
+  caAuthority: z.string().meta({ sensitive: true }).optional(),
 });
 const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
@@ -111,7 +112,7 @@ export function certificates(
   });
   return {
     type: "@nckrtl/certificates",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     resources: {
       requests: {

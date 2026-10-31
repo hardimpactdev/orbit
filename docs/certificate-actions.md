@@ -16,6 +16,12 @@ A single-leaf workflow uses `sign` with `leaf` and `request`; it returns the exi
 
 The approved vault entry contains JSON with `certificate` (the public root PEM) and `private_key` (the existing CA key PEM). The method reads it inside the placed step through `context.vaultService`. The fixed OpenSSL program receives it on stdin and uses anonymous Linux memory files. It writes no CA key to disk, arguments, workflow data, resources or logs. Only public certificate bundles leave the step. The signer requires an RSA 4096 CA, an admitted RSA 2048 CSR, matching Node, scope, domain and root digest, and the existing 397-day TLS leaf policy.
 
+The canonical control model also declares `caAuthority` as a sensitive `vault.get`
+reference to that exact entry. Native dispatch uses this reference to admit the
+worker's vault read. Plain vault and key names do not authorize a remote read.
+The reference stays in the control model; parent workflows do not pass CA material
+or add their own custody configuration. Raw Gateway vault reads remain denied.
+
 Lower consumers can import `signCertificateBatch(leaves, flatRequests, {vaultService, vaultName, secretKey}, signal?)` from `certificates/signing.ts`. Parent families should use the canonical model rather than define another CA locator or signing primitive. Live custody migration requires the approved owner and vault identifiers; disposable CA tests need no fleet access.
 
 Leaf and removal intents admit the configured `user`. `home` is optional. The
