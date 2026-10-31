@@ -13,7 +13,7 @@ use LogicException;
 /** One status/result transaction with per-kind domain validation and projection. */
 final readonly class DirectOperationResultProjection implements DirectOperationProjection
 {
-    public function __construct(private DirectOperation $direct, private OperationExecutionContract $contract) {}
+    public function __construct(private DirectOperation $direct) {}
 
     public function input(Operation $operation): array
     {
@@ -28,7 +28,7 @@ final readonly class DirectOperationResultProjection implements DirectOperationP
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             $raw = ValidatedData::object($data['result'] ?? []);
             $result = $this->hook($operation)->validate($operation, $raw, $status);
-            if ($result !== $raw || $this->contract->result($operation, $result) !== $result) {
+            if ($result !== $raw) {
                 throw new ResourceOperationException('operation.result_invalid', 'Only safe domain metadata is accepted.', 422);
             }
             $code = ValidatedData::nullableString($data['error_code'] ?? null);
@@ -37,7 +37,7 @@ final readonly class DirectOperationResultProjection implements DirectOperationP
                 throw new ResourceOperationException('operation.result_invalid', 'The status and refusal code disagree.', 422);
             }
             $terminal = $operation->status->terminal();
-            $projected = $this->direct->project($operation, $data, $result, 'direct-apply');
+            $projected = $this->direct->project($operation, $data, $result);
             if (! $terminal && $status->terminal()) {
                 $this->hook($projected)->complete($projected, match ($status) {
                     OperationStatus::Succeeded => OperationOutcome::succeeded($result),

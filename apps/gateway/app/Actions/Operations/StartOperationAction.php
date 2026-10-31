@@ -16,8 +16,6 @@ final readonly class StartOperationAction
 {
     public function __construct(private OperationStore $store, private OperationIdempotency $idempotency) {}
 
-    public function assertAvailable(): void {}
-
     /** @param array<string,mixed> $input
      * @param  list<string>  $supersedes
      */
