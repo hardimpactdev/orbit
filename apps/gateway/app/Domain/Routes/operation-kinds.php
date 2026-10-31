@@ -7,9 +7,6 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\CaddyOperationCompletion;
 use App\Domain\Routes\ClusterRouterParentExecution;
-use App\Domain\Routes\InstanceRuntimeExecution;
-use App\Domain\Routes\OfflineResidueCompletion;
-use App\Domain\Routes\OfflineResidueExecution;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
 use App\Domain\Routes\RouteParentExecution;
@@ -49,32 +46,6 @@ $definitions = [
         'completion_contract' => ['step' => 'workload-proof', 'transport' => 'gateway', 'name' => 'route.workload', 'result' => ['ready' => true]],
         'result_fields' => ['prepared', 'inspected', 'ready', 'error_code'],
     ],
-
-    'route.offline_residue_clean' => [
-        'executor' => 'swamp', 'completion' => OfflineResidueCompletion::class, 'execution' => OfflineResidueExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'route.offline-residue', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'route-caddy', 'name' => 'caddy.publish', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'route-dns', 'name' => 'route.publish-dns', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'agent', 'name' => 'php.converge-shared-pools', 'input_fields' => [], 'resumable' => true, 'input_values' => [], 'secrets' => ['configurations' => 'route.php_pools']],
-            ['transport' => 'agent', 'name' => 'certificate.remove-leaf', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'agent', 'name' => 'firewall.route-lan', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-        ],
-        'completion_contract' => ['step' => 'offline-residue-proof', 'transport' => 'gateway', 'name' => 'route.offline-residue', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'ready', 'result', 'outcome', 'data.ready', 'data.digest', 'error_code', ['name' => 'removed', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
-    ],
-    ...array_fill_keys(['route.withdraw_instance', 'route.cleanup_instance'], [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => InstanceRuntimeExecution::class,
-        'runs' => [
-            ['transport' => 'gateway', 'name' => 'route.instance-runtime', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'agent', 'name' => 'php.converge-shared-pools', 'input_fields' => [], 'resumable' => true, 'input_values' => [], 'secrets' => ['configurations' => 'route.php_pools']],
-            ['transport' => 'agent', 'name' => 'php.remove-production-runtime', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'route-caddy', 'name' => 'caddy.publish', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-            ['transport' => 'agent', 'name' => 'certificate.remove-leaf', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
-        ],
-        'completion_contract' => ['step' => 'instance-runtime-proof', 'transport' => 'gateway', 'name' => 'route.instance-runtime', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'ready', 'withdrawn', 'result', 'error_code'],
-    ]),
 
     ...array_fill_keys(['route.workload_verify', 'route.public_verify'], [
         'executor' => 'swamp',
