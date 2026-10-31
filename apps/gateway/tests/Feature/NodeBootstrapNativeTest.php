@@ -6,6 +6,7 @@ use App\Actions\Nodes\AdmitNodeBootstrapAction;
 use App\Actions\Nodes\StartNodePhpPackagesAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\NodeBootstrapIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
@@ -112,6 +113,20 @@ it('records empty successful observations without an empty Node write', function
         'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z',
         'result' => []])->assertOk();
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->target->fresh()->user)->toBe('prior');
+});
+
+it('captures stored public host keys for the official SSH pin policy', function (): void {
+    $key = base64_encode(str_repeat('p', 32));
+    $this->target->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $key]);
+    $input = app(NodeBootstrapIntent::class)->input($this->target, 'node.bootstrap_probe');
+
+    expect($input['target']['host_keys'])->toBe(['ssh-ed25519 '.$key]);
+});
+
+it('leaves first contact to the official SSH trust on first use policy', function (): void {
+    $input = app(NodeBootstrapIntent::class)->input($this->target, 'node.bootstrap_probe');
+
+    expect($input['target']['host_keys'])->toBe([]);
 });
 
 it('copies the probe SSH value to its fixed execution key and records names only', function (): void {

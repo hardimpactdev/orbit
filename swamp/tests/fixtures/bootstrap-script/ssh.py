@@ -1,15 +1,17 @@
 #!/usr/bin/python3
-"""Harmless SSH fixture: assert private file custody without printing the key."""
-import hashlib
+"""Harmless binary seam for the UNMODIFIED official SSH extension."""
 import os
-import stat
 import sys
 from pathlib import Path
 
-assert 'ORBIT_BOOTSTRAP_IDENTITY' not in os.environ
-assert sys.argv[-2:] == ['candidate@dev.example', '/usr/bin/uname -sm']
-assert 'StrictHostKeyChecking=yes' in sys.argv
-key = Path(sys.argv[sys.argv.index('-i') + 1])
-assert stat.S_IMODE(key.stat().st_mode) == 0o600
-assert hashlib.sha256(key.read_bytes()).hexdigest() == os.environ['FIXTURE_KEY_SHA256']
-print('Linux x86_64')
+if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv:
+    sys.exit(0)
+command = sys.argv[-1]
+if 'uname' in command:
+    if Path(os.environ['FIXTURE_FAIL_PATH']).exists():
+        sys.exit(1)
+    print('Linux x86_64')
+elif 'cat ' in command:
+    print(os.environ['FIXTURE_PUBLIC_KEY'])
+else:
+    raise AssertionError('Unexpected official SSH command: ' + command)

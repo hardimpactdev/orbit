@@ -1,12 +1,8 @@
 manifestVersion: 1
-name: '@nckrtl/node-bootstrap-scripts'
+name: '@nckrtl/node-bootstrap-probe'
 version: 2026.10.31.1
 visibility: private
 license: MIT
-description: Read-only bootstrap pilot with native script assets.
+description: Public result projection for the official SSH bootstrap probe.
 behaviors:
-  - operations/node-bootstrap/script_assets.ts
-additionalFiles:
-  - scripts/ssh_common.py
-  - scripts/scan_host_key.py
-  - scripts/probe_host.py
+  - operations/node-bootstrap/probe_result.ts
