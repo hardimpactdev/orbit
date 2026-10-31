@@ -121,3 +121,73 @@ Deno.test("cancelled or already terminal SQL intent reads no material and runs n
     assertEquals(outcome.status, terminal ? "succeeded" : "cancelled");
   }
 });
+
+Deno.test("SQL user parent rejects invalid public input before its private read", async () => {
+  for (
+    const extra of [{ password: "private-sentinel" }, { driver: "sqlite" }]
+  ) {
+    const f = new Fixture();
+    Object.assign(f.operation.input, extra);
+    await assertRejects(
+      () => f.behavior.methods.create.execute(args, f.ctx),
+      Error,
+      "database.user_create_outcome_unknown",
+    );
+    assertEquals(
+      f.paths.some((path) => path.includes("private-material")),
+      false,
+    );
+    assertEquals(f.effects, 0);
+    assertEquals(f.output, {});
+  }
+});
+
+Deno.test("SQL user parent refuses cancellation during the private read before SQL", async () => {
+  const f = new Fixture();
+  const controller = new AbortController();
+  const http = f.http;
+  f.http = async (method, path, body) => {
+    const response = await http(method, path, body);
+    if (path.includes("private-material")) controller.abort("private-reason");
+    return response;
+  };
+  await assertRejects(
+    () =>
+      f.behavior.methods.create.execute(args, {
+        ...f.ctx,
+        signal: controller.signal,
+      }),
+    Error,
+    "database.user_create_outcome_unknown",
+  );
+  assertEquals(
+    f.paths.filter((path) => path.includes("private-material")).length,
+    1,
+  );
+  assertEquals(f.effects, 0);
+  assertEquals(f.output, {});
+  assertEquals(f.operation.status, "running");
+});
+
+Deno.test("SQL user parent redacts private read failures without an effect or output", async () => {
+  const f = new Fixture();
+  const http = f.http;
+  f.http = (method, path, body) => {
+    if (path.includes("private-material")) {
+      f.paths.push(path);
+      throw new Error("private-sql-sentinel");
+    }
+    return http(method, path, body);
+  };
+  await assertRejects(
+    () => f.behavior.methods.create.execute(args, f.ctx),
+    Error,
+    "database.user_create_outcome_unknown",
+  );
+  assertEquals(
+    f.paths.filter((path) => path.includes("private-material")).length,
+    1,
+  );
+  assertEquals(f.effects, 0);
+  assertEquals(f.output, {});
+});

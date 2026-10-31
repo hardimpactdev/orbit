@@ -4,7 +4,7 @@ import {
   SqlInput,
   sqlProcess,
 } from "./local_sql.ts";
-import { createUser, type PrivateMaterialUse } from "./user_create_action.ts";
+import { createUser } from "./user_create_action.ts";
 
 const intent = {
   driver: "mysql",
@@ -16,7 +16,7 @@ const intent = {
 const password = "private-root-password-sentinel";
 const sql =
   "CREATE USER proof IDENTIFIED BY 'private-login-password-sentinel';";
-const material: PrivateMaterialUse = (use) => use({ password, sql });
+const material = { password, sql };
 
 Deno.test("SQL user action keeps private material in stdin and drops native SQL output", async () => {
   for (const driver of ["mysql", "pgsql"]) {
@@ -54,7 +54,7 @@ Deno.test("SQL user action keeps private material in stdin and drops native SQL 
   }
 });
 
-Deno.test("SQL user action refuses private public fields and caller-selected executables before material read", async () => {
+Deno.test("SQL user action refuses private public fields and caller-selected executables before SQL", async () => {
   for (
     const invalid of [
       { ...intent, password },
@@ -66,17 +66,17 @@ Deno.test("SQL user action refuses private public fields and caller-selected exe
       { ...intent, agent_sha256: "not-a-digest" },
     ]
   ) {
-    let reads = 0;
+    let effects = 0;
     await assertRejects(
       () =>
-        createUser(invalid, () => {
-          reads++;
-          throw new Error("must not read");
+        createUser(invalid, material, undefined, () => {
+          effects++;
+          throw new Error("must not execute");
         }),
       Error,
       "database.user_create_outcome_unknown",
     );
-    assertEquals(reads, 0);
+    assertEquals(effects, 0);
   }
 });
 
@@ -91,7 +91,7 @@ Deno.test("SQL user action redacts parser, transport and execution failures with
     let calls = 0;
     const error = await assertRejects(
       () =>
-        createUser(intent, (use) => use(raw), undefined, () => {
+        createUser(intent, raw, undefined, () => {
           calls++;
           return Promise.resolve({ output: "" });
         }),
@@ -111,11 +111,6 @@ Deno.test("SQL user action redacts parser, transport and execution failures with
   );
   assertEquals(error.message, "database.user_create_outcome_unknown");
   assertEquals(attempts, 1);
-  const fetchError = await assertRejects(() =>
-    createUser(intent, () => {
-      throw new Error(sql);
-    }), Error);
-  assertEquals(fetchError.message, "database.user_create_outcome_unknown");
 });
 
 Deno.test("SQL user action projects only closed refusals and rejects unexpected output", async () => {
@@ -147,17 +142,20 @@ Deno.test("SQL user action projects only closed refusals and rejects unexpected 
   }
 });
 
-Deno.test("cancelled SQL user action reads no material and starts no effect", async () => {
+Deno.test("cancelled SQL user action starts no effect with resolved material", async () => {
   const controller = new AbortController();
   controller.abort(sql);
-  let reads = 0;
-  const error = await assertRejects(() =>
-    createUser(intent, () => {
-      reads++;
-      throw new Error(password);
-    }, controller.signal), Error);
+  let effects = 0;
+  const error = await assertRejects(
+    () =>
+      createUser(intent, material, controller.signal, () => {
+        effects++;
+        throw new Error(password);
+      }),
+    Error,
+  );
   assertEquals(error.message, "database.user_create_outcome_unknown");
-  assertEquals(reads, 0);
+  assertEquals(effects, 0);
 });
 
 Deno.test("PostgreSQL checks WAL before executing its admitted atomic role SQL without a separate name lookup", async () => {

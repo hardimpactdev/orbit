@@ -853,18 +853,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/user_create_action.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/user_create_action.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/user_create.ts",
       "rule": "gateway-http",
       "count": 3,
