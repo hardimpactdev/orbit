@@ -376,7 +376,7 @@ async function executeProcess(
 ) {
   const verb = kind.slice("process.".length);
   if (
-    !["create", "update"].includes(verb)
+    verb !== "update"
   ) throw new Error("Wrong Process kind");
   if (input.directory) {
     const release = await invoke({

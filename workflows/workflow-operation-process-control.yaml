@@ -8,7 +8,7 @@ inputs:
     node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
-      enum: [process.start, process.stop, process.restart, process.destroy],
+      enum: [process.create, process.start, process.stop, process.restart, process.destroy],
     }
   required: [operation_id, node_id, kind]
 jobs:
@@ -18,7 +18,7 @@ jobs:
     writes: true
     steps:
       - name: control
-        guard: '${{ inputs.kind in ["process.start", "process.restart"] }}'
+        guard: '${{ inputs.kind in ["process.start", "process.restart", "process.create"] }}'
         task:
           type: behavior
           behaviorType: "@nckrtl/process-control"
@@ -89,3 +89,48 @@ jobs:
             run_id: "${{ run.id }}"
             preparation: '${{ data.latest("process-control-node-" + string(inputs.node_id), "start-" + run.id).attributes }}'
             publication_status: '${{ has(steps.caddy) ? steps.caddy.status : "skipped" }}'
+
+      - name: prepare-create
+        guard: '${{ inputs.kind != "process.create" }}'
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/process-control"
+          behaviorName: '${{ "process-control-node-" + string(inputs.node_id) }}'
+          methodName: prepareCreate
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: creation_caddy
+        guard: '${{ !data.latest("process-control-node-" + string(inputs.node_id), "creation-" + run.id).attributes.vite || !data.latest("process-control-node-" + string(inputs.node_id), "creation-" + run.id).attributes.proceed }}'
+        dependsOn: [{ step: prepare-create, condition: { type: succeeded } }]
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/route-publication"
+          behaviorName: '${{ "route-publication-node-" + string(inputs.node_id) }}'
+          methodName: publishCaddy
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: install-create
+        guard: '${{ inputs.kind != "process.create" }}'
+        dependsOn:
+          - step: prepare-create
+            condition: { type: succeeded }
+          - step: creation_caddy
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/process-control"
+          behaviorName: '${{ "process-control-node-" + string(inputs.node_id) }}'
+          methodName: installCreate
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            preparation: '${{ data.latest("process-control-node-" + string(inputs.node_id), "creation-" + run.id).attributes }}'
+            publication_status: '${{ has(steps.creation_caddy) ? steps.creation_caddy.status : "skipped" }}'

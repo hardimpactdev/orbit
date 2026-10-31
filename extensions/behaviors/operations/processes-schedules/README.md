@@ -150,3 +150,33 @@ marker. Non-Vite restart invokes its local restart primitive. The kind leaves
 polled discovery, registration and receipt policy in its owning cutover. Exact
 Node placement and the native root identity are unchanged; the Gateway retains
 only its existing executor recovery exception.
+
+## Native Process installation steps
+
+`installProcess(input, privateMaterial, signal)` in `process-installation.ts`
+installs one admitted systemd or Docker Process on the current Node. A parent
+native DAG can compose it after its traffic preparation and publication steps.
+The action starts no child Operation and projects no parent state.
+
+Safe input binds the Process ID, runtime artifact, desired state, agent digest
+and definition digest. The shared private callback supplies either rendered unit
+content or the complete container definition. The action verifies the admitted
+content/spec digest before cleanup or installation. It removes only the admitted
+retired artifact, stages and conditionally activates the systemd unit, or
+converges the container, then reads bounded runtime status. Private bytes stay
+inside the callback and sudo stdin. Activation recovery stays in the local
+primitive. A stopped production clone remains stopped.
+
+Local installation deadlines match the agent commands: staging uses 60 seconds,
+activation uses 600 seconds and container convergence uses 900 seconds.
+
+This export alone changes no writer. Each owning kind must include its direct
+Gateway switch and obsolete execution deletion, required private-material
+review, and live action canary before claiming completion.
+
+`process.create` uses this installation inside the Process native root after
+Vite preparation and same-root Caddy publication. Its owning Gateway change
+selects direct, removes ordinary admission locking and the old claim/run and
+receipt proof. Legacy discovery and registration no longer include create. The
+final step verifies Vite listener ownership when desired running; it does not
+set an awake marker. Private bytes never enter native inputs or history.

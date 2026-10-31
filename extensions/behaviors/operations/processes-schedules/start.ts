@@ -108,7 +108,58 @@ export function startActions(
     result.error_code === undefined
       ? null
       : { error_code: Code.parse(result.error_code) };
+  const verify = async (
+    admitted: z.infer<typeof StartInput>,
+    signal?: AbortSignal,
+    wake = false,
+  ): Promise<Result> => {
+    StartInput.parse(admitted);
+    const run = call(admitted, signal);
+    const artifact = {
+      process_id: admitted.process_id,
+      runtime: admitted.runtime,
+      name: admitted.name,
+    };
+    if (admitted.vite_plan !== undefined) {
+      let ready = false;
+      for (let check = 0; check < 60; check++) {
+        const listener = await run(
+          "vite.check-listener",
+          admitted.vite_plan.listener,
+        );
+        const error = refusal(listener);
+        if (error) return error;
+        if (listener.owned === true && listener.ready === true) {
+          ready = true;
+          break;
+        }
+        await wait(signal);
+      }
+      if (!ready) {
+        return refusal(
+          await run("process.control", {
+            ...artifact,
+            on_demand: admitted.on_demand,
+            operation: "stop",
+          }),
+        ) ?? { error_code: "vite.not_ready" };
+      }
+      if (wake) {
+        const awake = refusal(
+          await run("vite.set-traffic", admitted.vite_plan.awake),
+        );
+        if (awake) return awake;
+      }
+    }
+    const status = await run("process.status", artifact);
+    return refusal(status) ??
+      {
+        ready: true,
+        state: z.string().regex(/^[a-z][a-z_-]{0,63}$/).parse(status.state),
+      };
+  };
   return {
+    verify,
     prepare: async (
       input: z.infer<typeof StartInput>,
       signal?: AbortSignal,
@@ -173,43 +224,7 @@ export function startActions(
         }),
       );
       if (start) return start;
-      if (admitted.vite_plan !== undefined) {
-        let ready = false;
-        for (let check = 0; check < 60; check++) {
-          const listener = await run(
-            "vite.check-listener",
-            admitted.vite_plan.listener,
-          );
-          const error = refusal(listener);
-          if (error) return error;
-          if (listener.owned === true && listener.ready === true) {
-            ready = true;
-            break;
-          }
-          await wait(signal);
-        }
-        if (!ready) {
-          return refusal(
-            await run("process.control", {
-              ...artifact,
-              on_demand: admitted.on_demand,
-              operation: "stop",
-            }),
-          ) ?? { error_code: "vite.not_ready" };
-        }
-        if (kind === "process.start") {
-          const awake = refusal(
-            await run("vite.set-traffic", admitted.vite_plan.awake),
-          );
-          if (awake) return awake;
-        }
-      }
-      const status = await run("process.status", artifact);
-      return refusal(status) ??
-        {
-          ready: true,
-          state: z.string().regex(/^[a-z][a-z_-]{0,63}$/).parse(status.state),
-        };
+      return await verify(admitted, signal, kind === "process.start");
     },
   };
 }
