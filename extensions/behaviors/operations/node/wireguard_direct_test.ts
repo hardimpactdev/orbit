@@ -272,47 +272,157 @@ Deno.test("cancellation during the hub private read refuses the next effect boun
   assertEquals(effects, 0);
 });
 
-Deno.test("only an active recorded Node removal restoration may ignore cancellation at the shared hub boundary", async () => {
-  for (const approved of [true, false]) {
-    const f = fixture(true);
-    let effects = 0, privateReads = 0;
-    const opArgs = { ...args, kind: "node.remove" };
-    const http: Http = (method, path, body) => {
-      if (path.includes("private-material")) {
-        privateReads++;
-        return f.http(method, path, body);
-      }
-      return Promise.resolve({
-        status: 200,
-        body: {
-          data: {
-            id: 7,
-            node_id: 1,
-            kind: "node.remove",
-            status: "running",
-            cancel_requested: true,
-            result: { restoring: approved },
-            input: { restore_hub: snapshot },
-          },
-        },
-      });
-    };
-    const behavior = nodeWireGuard(
-      undefined,
-      () => http,
-      fakeNetworkSystem(() => {
-        effects++;
-        return Promise.resolve({});
-      }),
-    );
-    const call = () =>
-      behavior.methods.publish.execute(
-        { ...opArgs, snapshot, restoring: true },
-        { ...f.ctx, signal: AbortSignal.abort() },
-      );
-    if (approved) assertEquals((await call()).status, "succeeded");
-    else await assertRejects(call);
-    assertEquals(effects, approved ? 1 : 0);
-    assertEquals(privateReads, approved ? 1 : 0);
+function restorationFixture(kind = "node.add") {
+  const f = fixture();
+  const remote = { ...snapshot, executor_node_id: 14 };
+  const current = {
+    id: args.operation_id,
+    node_id: 14,
+    kind,
+    status: "running",
+    cancel_requested: true,
+  };
+  const privateValue = {
+    ...material,
+    snapshot: remote,
+    connection: {
+      target: {
+        node_id: 1,
+        host: "vpn.example.test",
+        port: 22,
+        user: "orbit",
+        fingerprint: "SHA256:" + "A".repeat(43),
+      },
+      identity: "/private/existing-key",
+    },
+  };
+  const control = { beforePrivate: () => {} };
+  const reads: string[] = [];
+  const signals: (AbortSignal | undefined)[] = [];
+  const http: Http = (_method, path) => {
+    reads.push(path);
+    if (path.includes("private-material")) control.beforePrivate();
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: path.includes("private-material")
+          ? { configuration: privateValue }
+          : current,
+      },
+    });
+  };
+  const behavior = nodeWireGuard(
+    undefined,
+    () => http,
+    () => Promise.reject(new Error("must not run locally")),
+    (
+      _target,
+      _identity,
+      _environment,
+      _argv,
+      _stdin,
+      _timeout,
+      _upload,
+      signal,
+    ) => {
+      signals.push(signal);
+      return Promise.resolve("{}");
+    },
+  );
+  return {
+    ...f,
+    current,
+    control,
+    privateValue,
+    reads,
+    signals,
+    behavior,
+    args: { ...args, kind, node_id: 14, snapshot: remote },
+    ctx: {
+      ...f.ctx,
+      signal: AbortSignal.abort(),
+      createCelEnvironment: () => {
+        throw new Error("unused fixture");
+      },
+    },
+  };
+}
+
+Deno.test("shared hub recovery restores the selected view despite cancellation and an aborted signal", async () => {
+  for (const kind of ["node.add", "node.remove", "task_vm.destroy"]) {
+    const f = restorationFixture(kind);
+    const result = await f.behavior.methods.publish.execute({
+      ...f.args,
+      recovery: true,
+    }, f.ctx);
+    assertEquals(result.status, "succeeded");
+    assertEquals(f.signals, [undefined]);
+    assertEquals(f.reads.length, 3);
+    assertEquals(f.reads.every((path) => path.includes(args.run_id)), true);
+    assertEquals(f.current.status, "running");
+    assertEquals(f.current.cancel_requested, true);
+    assertEquals(JSON.stringify(f.resources).includes(privateKey), false);
   }
+});
+
+Deno.test("shared hub publication defaults to cancellation refusal even for a restoration-capable parent", async () => {
+  const f = restorationFixture();
+  await assertRejects(
+    () => f.behavior.methods.publish.execute(f.args, f.ctx),
+  );
+  assertEquals(f.reads, []);
+  assertEquals(f.signals, []);
+});
+
+Deno.test("hub recovery retains fresh root checks before private reads and again before SSH", async () => {
+  const changes = [
+    (f: ReturnType<typeof restorationFixture>) => {
+      f.current.id++;
+    },
+    (f: ReturnType<typeof restorationFixture>) => {
+      f.current.node_id++;
+    },
+    (f: ReturnType<typeof restorationFixture>) => {
+      f.current.kind = "node.remove";
+    },
+    (f: ReturnType<typeof restorationFixture>) => {
+      f.current.status = "failed";
+    },
+  ];
+  for (const late of [false, true]) {
+    for (const change of changes) {
+      const f = restorationFixture();
+      if (late) f.control.beforePrivate = () => change(f);
+      else change(f);
+      await assertRejects(
+        () =>
+          f.behavior.methods.publish.execute(
+            { ...f.args, recovery: true },
+            f.ctx,
+          ),
+      );
+      assertEquals(f.signals, []);
+      assertEquals(
+        f.reads.some((path) => path.includes("private-material")),
+        late,
+      );
+      assertEquals(f.resources, []);
+    }
+  }
+});
+
+Deno.test("hub recovery refuses a snapshot that differs from the source-selected restoration", async () => {
+  const f = restorationFixture();
+  await assertRejects(
+    () =>
+      f.behavior.methods.publish.execute({
+        ...f.args,
+        snapshot: { ...f.args.snapshot, excluded_node_id: 13 },
+        recovery: true,
+      }, f.ctx),
+    Error,
+    "Private material callback failed",
+  );
+  assertEquals(f.signals, []);
+  assertEquals(f.resources, []);
 });

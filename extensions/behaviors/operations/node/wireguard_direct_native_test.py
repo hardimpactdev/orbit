@@ -167,6 +167,29 @@ class HubNative(NativeTestCase):
         self.assertEqual(self.effects, 0)
         self.assertEqual(self.ssh_effects, 0)
 
+    def test_cancelled_enrollment_restores_hub_by_pinned_ssh_without_settling_parent(self):
+        self.mode = 'ssh'
+        self.snapshot.update(executor_node_id=14, excluded_node_id=None)
+        self.operation.update(node_id=14, kind='node.add', status='running', cancel_requested=True)
+        path = self.repo / 'workflows/workflow-operation-node-wireguard-hub-converge.yaml'
+        workflow = json.loads(path.read_text())
+        workflow['inputs']['properties']['kind']['enum'] = ['node.add']
+        publish = workflow['jobs'][0]['steps'][1]
+        publish.pop('guard')
+        publish.pop('dependsOn')
+        publish['task']['behaviorName'] = 'wireguard-hub-1'
+        publish['task']['inputs'].update(snapshot=self.snapshot, recovery=True)
+        workflow['jobs'] = [{'name': 'restore_hub', 'steps': [publish]}]
+        path.write_text(json.dumps(workflow))
+        self.cli('workflow', 'validate', 'operation-node-wireguard-hub-converge')
+        self.cli('workflow', 'run', 'operation-node-wireguard-hub-converge', '--input', 'operation_id=7',
+                 '--input', 'node_id=14', '--input', 'kind=node.add')
+        self.assertEqual(self.effects, 0)
+        self.assertEqual(self.ssh_effects, 1)
+        self.assertEqual(self.private_reads, 1)
+        self.assertEqual(self.operation['status'], 'running')
+        self.assertTrue(self.operation['cancel_requested'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,7 +18,7 @@ import {
 const Args = DirectArgs.extend({ node_id: z.number().int().positive() });
 const PublishArgs = Args.extend({
   snapshot: HubPublicationInput,
-  restoring: z.boolean().optional(),
+  recovery: z.boolean().optional(),
 });
 const Admission = z.object({
   snapshot: HubPublicationInput,
@@ -50,7 +50,7 @@ export function nodeWireGuard(
 ) {
   return {
     type: "@nckrtl/node-wireguard-direct",
-    version: "2026.10.31.4",
+    version: "2026.10.31.5",
     globalArguments: Globals,
     resources: {
       admission: {
@@ -119,8 +119,7 @@ export function nodeWireGuard(
         execute: async (raw: z.infer<typeof PublishArgs>, ctx: Context) => {
           const args = PublishArgs.parse(raw);
           const gateway = new GatewayOperation(makeHttp(ctx), args);
-          const restoring = args.restoring === true;
-          const signal = restoring ? undefined : ctx.signal;
+          const signal = args.recovery ? undefined : ctx.signal;
           const guard = async () => {
             signal?.throwIfAborted();
             const current = z.object({
@@ -129,24 +128,11 @@ export function nodeWireGuard(
               kind: z.literal(args.kind),
               status: z.string(),
               cancel_requested: z.boolean(),
-              result: z.object({ restoring: z.boolean().optional() }).nullable()
-                .optional(),
-              input: z.unknown().optional(),
             }).parse(await gateway.read(signal));
-            if (restoring) {
-              const input = z.object({ restore_hub: HubPublicationInput })
-                .parse(current.input);
-              if (
-                args.kind !== "node.remove" ||
-                current.result?.restoring !== true ||
-                JSON.stringify(input.restore_hub) !==
-                  JSON.stringify(args.snapshot)
-              ) throw new Error("operation.execution_forbidden");
-            }
-            if (current.cancel_requested && !restoring) {
+            if (!args.recovery && current.cancel_requested) {
               throw new Error("operation.cancelled");
             }
-            if (["succeeded", "failed", "cancelled"].includes(current.status)) {
+            if (!["queued", "running"].includes(current.status)) {
               throw new Error("operation.finished");
             }
           };
