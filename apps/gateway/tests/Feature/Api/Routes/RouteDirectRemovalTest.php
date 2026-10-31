@@ -120,3 +120,13 @@ it('keeps captured rows when cancellation is recorded and rejects a later confli
     expect($operation->fresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($this->route->targets()->count())->toBe(1);
 });
+
+it('refuses a fresh workload view when an Instance moved from its admitted participant', function (): void {
+    $this->route->update(['web_root' => 'docs/public']);
+    $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
+    $this->instance->update(['node_id' => $this->control->id]);
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
+        ->assertConflict()->assertJsonPath('error.code', 'route.workload_moved');
+    expect($this->route->targets()->count())->toBe(1)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
+});
