@@ -1,0 +1,361 @@
+id: 12485736-8b0b-4454-a115-fd41ac6a662f
+name: task-vm-provider-incus
+description: Reusable Incus provider command steps from admitted public intent; no Gateway calls.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.provision
+      - tasks.provision
+    intent:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
+jobs:
+- name: provider
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: input
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-provision-inputs'
+      behaviorName: ${{ "task-vm-provision-inputs-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: observe-vm
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-observe" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" list --format json -- "$name"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+  - name: plan
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-provision-inputs'
+      behaviorName: ${{ "task-vm-provision-inputs-" + string(inputs.operation_id) }}
+      methodName: observation
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps["observe-vm"].outputs.stdout }}
+    dependsOn:
+    - step: observe-vm
+      condition:
+        type: succeeded
+  - name: observe-seed
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-seed-observe" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          pool=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.pool')
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" storage volume list --format json -- "$pool"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.intent.create.topology || steps.plan.outputs.exists }}
+  - name: seed-plan
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-provision-inputs'
+      behaviorName: ${{ "task-vm-provision-inputs-" + string(inputs.operation_id) }}
+      methodName: seed
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps["observe-seed"].outputs.stdout }}
+    dependsOn:
+    - step: observe-seed
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.intent.create.topology || steps.plan.outputs.exists }}
+  - name: clone-seed
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-seed-clone" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          pool=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.pool')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          fingerprint=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.expected_fingerprint')
+          source="orbit-topology-seed-$(printf '%.12s' "$fingerprint")"
+          observed=$(/usr/bin/sudo -n -- /usr/bin/incus --project "$project" storage volume list --format json -- "$pool")
+          if printf '%s' "$observed" | jq -e --arg name "$name-topology-seed" 'any(.[]; .type == "custom" and .name == $name)' >/dev/null; then
+            exit 0
+          fi
+          printf '%s' "$observed" | jq -e --arg name "$source" 'any(.[]; .type == "custom" and .name == $name)' >/dev/null
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" storage volume copy -- "$pool/$source" "$pool/$name-topology-seed"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+    dependsOn:
+    - step: seed-plan
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.intent.create.topology || steps.plan.outputs.exists || steps["seed-plan"].outputs.present
+      }}
+  - name: seed-ready
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    - step: clone-seed
+      condition:
+        type: always
+    task:
+      type: assert
+      expr: '!inputs.intent.create.topology || steps.plan.outputs.exists || "outputs" in steps["seed-plan"] && steps["seed-plan"].outputs.present
+        || "outputs" in steps["clone-seed"] && steps["clone-seed"].outputs.exitCode == 0'
+      message: The admitted topology seed is unavailable
+      severity: high
+  - name: initialize-vm
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-initialize" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          fingerprint=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.expected_fingerprint')
+          cpus=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.cpus')
+          memory=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.memory')
+          disk=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.disk')
+          network=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.create.network')
+          observed=$(/usr/bin/sudo -n -- /usr/bin/incus --project "$project" list --format json -- "$name")
+          if printf '%s' "$observed" | jq -e --arg name "$name" 'map(select(.name == $name)) | length == 1' >/dev/null; then
+            printf '%s' "$observed" | jq -e --arg name "$name" --arg fingerprint "$fingerprint" 'map(select(.name == $name)) | .[0].type == "virtual-machine" and .[0].config["volatile.base_image"] == $fingerprint' >/dev/null
+            exit 0
+          fi
+          printf '%s' "$ORBIT_VM_CONFIG" | /usr/bin/sudo -n -- /usr/bin/incus --project "$project" init --vm --config "limits.cpu=$cpus" --config "limits.memory=$memory" --device "root,size=$disk" --device "eth0,network=$network" --device eth0,security.port_isolation=true -- "$fingerprint" "$name"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_VM_CONFIG: ${{ steps.input.outputs.config_json }}
+    guard: ${{ steps.plan.outputs.exists }}
+    dependsOn:
+    - step: seed-ready
+      condition:
+        type: succeeded
+  - name: read-metadata
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-metadata-read" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" config metadata show -- "$name"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+    dependsOn:
+    - step: seed-ready
+      condition:
+        type: succeeded
+    - step: initialize-vm
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: metadata
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-provision-inputs'
+      behaviorName: ${{ "task-vm-provision-inputs-" + string(inputs.operation_id) }}
+      methodName: metadata
+      inputs:
+        stdout: ${{ steps["read-metadata"].outputs.stdout }}
+    dependsOn:
+    - step: read-metadata
+      condition:
+        type: succeeded
+  - name: write-metadata
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-metadata-write" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          printf '%s' "$ORBIT_VM_METADATA" | /usr/bin/sudo -n -- /usr/bin/incus --project "$project" config metadata edit -- "$name"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_VM_METADATA: ${{ steps.metadata.outputs.metadata_yaml }}
+    dependsOn:
+    - step: metadata
+      condition:
+        type: succeeded
+    guard: ${{ steps.plan.outputs.running }}
+  - name: start-vm
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-start" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          observed=$(/usr/bin/sudo -n -- /usr/bin/incus --project "$project" list --format json -- "$name")
+          if printf '%s' "$observed" | jq -e --arg name "$name" 'map(select(.name == $name)) | length == 1 and .[0].status == "Running"' >/dev/null; then
+            exit 0
+          fi
+          printf '%s' "$observed" | jq -e --arg name "$name" 'map(select(.name == $name)) | length == 1 and .[0].type == "virtual-machine" and .[0].status == "Stopped"' >/dev/null
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" start -- "$name"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+    dependsOn:
+    - step: metadata
+      condition:
+        type: succeeded
+    - step: write-metadata
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.plan.outputs.running }}
+  - name: inspect-created-vm
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-" + string(inputs.intent.task_vm_id) + "-created-observe" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          project=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.project')
+          name=$(printf '%s' "$ORBIT_VM_INTENT" | jq -er '.vm.name')
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" list --format json -- "$name"
+        env:
+          ORBIT_VM_INTENT: ${{ steps.input.outputs.input_json }}
+    dependsOn:
+    - step: metadata
+      condition:
+        type: succeeded
+    - step: write-metadata
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: start-vm
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: provider
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-provision-inputs'
+      behaviorName: ${{ "task-vm-provision-inputs-" + string(inputs.operation_id) }}
+      methodName: provider
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps["inspect-created-vm"].outputs.stdout }}
+    dependsOn:
+    - step: inspect-created-vm
+      condition:
+        type: succeeded
