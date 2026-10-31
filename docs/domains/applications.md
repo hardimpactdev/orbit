@@ -160,20 +160,15 @@ Rename the Git branch in the checkout first, then tell Orbit what is already che
 ```bash
 git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
-orbit instance:rename <instance> --branch=t3code/login-redirect --domain=login-redirect.orbit-website.test
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain` strings; at least one nonempty value is required. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Admission returns an Operation; the CLI follows its native Swamp result. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
 
-For a supplied branch, Orbit reads the checkout locally on its Node. Symbolic `HEAD` must already name that exact branch, or the request returns `instance.branch_not_checked_out` without changing anything. Orbit checks source identity but never contacts origin, changes Git refs, switches the checkout, or renames the branch itself. Dirty or unpublished source is allowed for this recording operation.
+Swamp reads the checkout locally on its Node. Symbolic `HEAD` must already name the supplied branch, or the Operation fails with `instance.branch_not_checked_out`. Swamp checks source identity without contacting origin or changing Git refs. Dirty or unpublished source is allowed.
 
-A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch is a no-op that preserves the existing override. Domain-only rename leaves both branch fields alone. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
+A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch preserves the existing override. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
 
-A supplied domain moves the Instance's own single-target Project Route through [Route replacement](/reference/routes#change-an-instance-route-domain), including a generated Route. Laravel's stored `APP_URL`, `.env`, and cached config follow the new URL. All supplied fields and the domain's availability are checked before mutation. A combined request with a wrong branch or occupied domain changes neither record. The branch record changes only after any requested domain convergence succeeds.
-
-An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response. Incomplete Route replacements follow [Route recovery](/reference/routes#resume-or-refuse-a-change). If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds.
-
-Another lifecycle owner returns `instance.lifecycle_busy`, including contention from the environment owner. A different domain while replacement recovery is incomplete returns `route.domain_change_conflict`. This includes requesting the original domain before or after cutover: the retained replacement owns its destination, so the original domain is not a no-op. That refusal changes neither the recorded branch nor stored or application environment values. Infrastructure failure can leave Route recovery work before or after cutover, so inspect the Route and repeat the same request. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes. [Development branch reconciliation](#development-branch-reconciliation) explains the reasons and alternatives.
+A request containing `domain` returns `operation.kind_unavailable` before admission. Native Route replacement is not available through rename. A repeated idempotency key returns the same Operation. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes.
 
 ## Register an existing checkout
 
