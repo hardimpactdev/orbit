@@ -1,27 +1,15 @@
 # operator
 
-Private maintenance config and schedules for Orbit Project 48. The shared
-Composer/JavaScript extensions perform package operations on the task worker.
-This extension contains no maintenance commands or PR-writing logic.
+Private project configuration lives beside this page in `mod.ts`, `config.ts`
+where present, and `manifest.yaml`. Preserve its repository, package paths,
+check, branch, policy and approval settings. Fixture data records the selected
+configuration; it is not live execution evidence.
 
-Config comes from
-[nckrtl/operator at a27158a0bd0d](https://github.com/nckrtl/operator/tree/a27158a0bd0da86e83af50dd314227fa976f840e)
-and the Gateway's Project settings. The frozen source evidence is in
-tests/fixtures/project-extensions/fleet.json.
+Read the binding [Swamp shape guide](../../../../docs/swamp-shape.md) before
+writing or reviewing execution. Use full non-secret workflow inputs, native
+placed steps and vault references. Existing Gateway-client routines and
+task-driver adapters are grandfathered debt, not templates. The native pilot
+settles dispatch and terminal projection before conversions resume.
 
-Read the config without starting work:
-
-```bash
-swamp behavior run @nckrtl/project-operator configuration project-operator
-```
-
-Schedules use UTC: routine "30 3 * * 1", detection "30 4 * * *". Pause a
-schedule while reconciling active work:
-
-```bash
-swamp workflow schedule pause @nckrtl/project-operator/detect --reason "Reconcile active work" --server wss://swamp.orbit
-```
-
-Deploy with the private orbit-swamp bundle after review and merge. Registry
-publication needs the orchestrator's approval. See docs/project-extensions.md
-for task admission, issue records, skip reasons and live acceptance.
+Keep private distribution and existing access boundaries. Configuration grants
+no authority to publish, start a live run or change production resources.

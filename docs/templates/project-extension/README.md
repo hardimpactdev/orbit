@@ -1,35 +1,16 @@
-# Add a private project extension
+# Add private project configuration
 
-1. Copy these templates to `extensions/behaviors/projects/<slug>/mod.ts` and
-   `manifest.yaml`. Fill every placeholder. Add README and LICENSE files there.
-2. Read the project's package manifests, maintenance paths and setup.
-   Copy its exact paths, check, branch and policy. Use `[]` for an unused
-   ecosystem. Include application paths such as Hauzer's `mobile/` explicitly.
-   Pin every JavaScript path's actual lockfile manager in
-   `worker.jsPackageManagers` (`npm`, `bun` or `pnpm`). Services detection needs
-   that identity even when repository acquisition fails. pnpm inventory is
-   supported; its update targets stay blocked until native planning exists.
-3. Add `{ projectId: <id>, type: '@nckrtl/project-<slug>' }` to the Gateway's
-   `projectExtensions`. Remove its old `dependencyProjects` entry in the same
-   change. The IDs are routing keys; config lives only in the extension.
-4. Run `swamp workflow create project-<slug>-routine --json` and the matching
-   `project-<slug>-detect`. Keep Swamp's assigned IDs. Use Project 20's two
-   workflows as the body template, with the new Project ID. Name them
-   `@nckrtl/project-<slug>/routine` and `@nckrtl/project-<slug>/detect` to meet
-   Swamp's collective packaging rule. Stagger their
-   `trigger.schedule` values. Swamp schedules use UTC.
-   The detect step passes `runId: '${{ run.id }}'` and runs on Services without
-   creating a task group or worker.
-5. Add a fixture for the config copied from the project's setup. Test config
-   resolution, path/policy validation and identical maintenance inputs. Run only
-   the affected tests, with no more than four workers. Validate both workflows
-   and run extension fmt/quality before the PR.
+Copy the `mod.ts` and `manifest.yaml` templates into
+`extensions/behaviors/projects/<slug>/` and fill the typed configuration fields
+from the project's current manifests and settings. Preserve its exact paths,
+package managers, check, branch and policy. Use an empty list for an unused
+ecosystem.
 
-The project extension contains config and schedules. All package-manager work,
-PR text, worker access and factory state stay in shared extensions. Use the
-private repo deployment bundle. Registry publication needs the orchestrator's
-approval. Do not edit the project repository during phase 4.
+Read the binding [Swamp shape guide](../../swamp-shape.md) before authoring any
+execution. Do not copy an existing Gateway-client workflow or a grandfathered
+many-action behavior. Wait for the native pilot's dispatch and secret
+environment syntax before converting a kind.
 
-Release-age exception history belongs in the private project's `exceptions`
-config and Swamp resource. Preserve any existing dates and durations when
-preparing a project. See [exception storage](../../project-maintenance-exceptions.md).
+Keep configuration in the private extension and shared ecosystem policy in the
+shared extensions. Pin dependencies and validate the typed configuration.
+Publication or runtime access still needs its existing authority.

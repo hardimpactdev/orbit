@@ -1,15 +1,19 @@
-# Node209 source and runtime state
+# Swamp source loads
 
-Node209 runs exactly reviewed orbit-swamp main. Keep the Git worktree clean. The source loader refuses any tracked or untracked source drift before touching serve; it never preserves, rebases, or reapplies local source patches. A normal source load fast-forwards main and invokes native `swamp serve reload` without stopping serve. Documentation and tests need only the fast-forward. Startup configuration or native runtime changes require a full restart; the proof names that reason. Every load retains the five-minute rate bound and native health, workflow visibility, worker roster, pause and protected-data checks. Runtime schedules and pause decisions remain native state.
+The platform loader owner publishes reviewed main through the agreed source-load
+procedure. Keep runtime state and environment outside tracked source. Do not
+patch, build in or switch branches in a live checkout.
 
-The2026-10-30 cleanup records the existing adopted model IDs and empty project model definitions in source. The63 locally removed workflow queueTimeout overrides60/120/300 are removed in source so those workflows use the native600-second default. The already-committed operation-task-vm-dispatch60-second bound from#162 is unchanged; it was not a local edit. The former local10-second discovery cadence is dropped; workflows use their committed schedule. Native schedule overrides are not rewritten. Current one-day run/output retention is a measured inode deviation, documented in native-retention.md, and is committed rather than a private marker edit.
+Drain running steps and use native `swamp serve reload`, at most once per five
+minutes. Compare served bundle identities with disk after each reload; an ACK or
+version string alone is not that proof. Preserve runtime configuration, vault
+custody, worker placement and schedule state.
 
-Generated worker enrollment model records, local encryption vault configuration and the retained native scratch-worktree model are runtime state and ignored. Never commit their private values or delete native data, protected receipts, vaults, grants or credentials to clean a source checkout. Python bytecode is disposable.
+Lane 24 imports source history under `swamp/` in `hardimpactdev/orbit`. After
+cutover the loader uses that directory as the Swamp root and records both the
+Orbit commit and Swamp tree identity. The loader owner coordinates mixed
+Gateway/Swamp releases with the sole Gateway release owner.
 
-Transport is cleared only when the same post-load check can read localhost health on9418, configured Gateway HTTPS with its CA, authenticated configured Gateway WSS workflow metadata and a bounded native history query. A health200 alone does not prove WSS or dispatch. Record timings and the serve invocation with the result. On2026-10-30 workers lost ping responses without a serve restart, and localhost plus configured HTTPS timed out; those were native runtime/transport failures, not permission denials. No new Operation or repeated start is a health probe.
-
-Serve runs with `--remote-only` and native scheduled concurrency1. Keep `--hot-reload` enabled: without it SIGHUP shuts the process down. The loader uses acknowledged `swamp serve reload --server ... --token-file ...` with the existing local operator credential. It rejects unsuccessful or partial reloads, preserves PID/invocation and execution flags, and halts on uncertainty. It never substitutes a restart after a failed reload. A required restart uses native drain, a separate100-second recovery safeguard and a stop below120seconds.
-
-Swamp1602a617 reload refreshed pulled extensions and workflow discovery but could leave repository-local validators and memoized dispatch bundles stale after another CLI indexed the changed source. The e459d219 runtime includes upstream PR3523: reload refreshes local sources and reconciles externally indexed catalog changes before refreshing pulled extensions. After each hot reload, compare served and disk versions for changed behaviors and their importing entry points. Source acceptance alone does not prove loaded code freshness. A mismatch joins the next announced restart batch; full restarts occur at most once per hour. See [runtime maintenance](swamp-runtime-maintenance.md).
-
-The Orbit liveness timer is retired. Serve uses plain systemd `Restart=on-failure`; claimable queue age is diagnostic evidence, never a restart trigger. Multiple serve instances on a shared datastore remain a later availability option, separate from keeping user work on workers.
+The binding [Swamp shape guide](swamp-shape.md) governs the loaded workflows.
+This source procedure does not authorize new credentials, a runtime restart or
+another execution path.

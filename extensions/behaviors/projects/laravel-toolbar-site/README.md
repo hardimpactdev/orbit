@@ -1,27 +1,15 @@
 # laravel-toolbar-site
 
-Private maintenance config and schedules for Orbit Project 28. The shared
-Composer/JavaScript extensions perform package operations on the task worker.
-This extension contains no maintenance commands or PR-writing logic.
+Private project configuration lives beside this page in `mod.ts`, `config.ts`
+where present, and `manifest.yaml`. Preserve its repository, package paths,
+check, branch, policy and approval settings. Fixture data records the selected
+configuration; it is not live execution evidence.
 
-Config comes from
-[hardimpactdev/laravel-toolbar-site at 9484e29531e2](https://github.com/hardimpactdev/laravel-toolbar-site/tree/9484e29531e2af920ac92821147f14c490b7ed43)
-and the Gateway's Project settings. The frozen source evidence is in
-tests/fixtures/project-extensions/fleet.json.
+Read the binding [Swamp shape guide](../../../../docs/swamp-shape.md) before
+writing or reviewing execution. Use full non-secret workflow inputs, native
+placed steps and vault references. Existing Gateway-client routines and
+task-driver adapters are grandfathered debt, not templates. The native pilot
+settles dispatch and terminal projection before conversions resume.
 
-Read the config without starting work:
-
-```bash
-swamp behavior run @nckrtl/project-laravel-toolbar-site configuration project-laravel-toolbar-site
-```
-
-Schedules use UTC: routine "10 3 * * 1", detection "10 4 * * *". Pause a
-schedule while reconciling active work:
-
-```bash
-swamp workflow schedule pause @nckrtl/project-laravel-toolbar-site/detect --reason "Reconcile active work" --server wss://swamp.orbit
-```
-
-Deploy with the private orbit-swamp bundle after review and merge. Registry
-publication needs the orchestrator's approval. See docs/project-extensions.md
-for task admission, issue records, skip reasons and live acceptance.
+Keep private distribution and existing access boundaries. Configuration grants
+no authority to publish, start a live run or change production resources.
