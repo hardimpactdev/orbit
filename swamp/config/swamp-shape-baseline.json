@@ -656,6 +656,12 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/certificates/mod.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/certificates/role-actions.ts",
       "rule": "custom-control",
       "count": 3,

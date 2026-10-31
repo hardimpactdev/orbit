@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { DirectArgs, Globals as SharedGlobals } from "../_lib/direct.ts";
+import { DirectArgs } from "../_lib/direct.ts";
 import { certificateActions } from "./actions.ts";
 import { signCertificateBatch, SigningLeaf } from "./signing.ts";
 import { RoleLeaf } from "./role-input.ts";
@@ -14,13 +14,12 @@ import {
   Signed,
 } from "./input.ts";
 
-const Globals = SharedGlobals;
 const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
   target_node_id: z.number().int().positive().optional(),
 });
 type Context = {
-  globalArgs: z.infer<typeof Globals>;
+  globalArgs?: unknown;
   signal?: AbortSignal;
   writeResource: (
     spec: string,
@@ -82,8 +81,7 @@ export function certificates(
   });
   return {
     type: "@nckrtl/certificates",
-    version: "2026.10.31.4",
-    globalArguments: Globals,
+    version: "2026.10.31.5",
     resources: {
       signingInput: {
         schema: z.object({

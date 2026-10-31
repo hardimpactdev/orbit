@@ -95,3 +95,18 @@ Failures skip subsequent actions and are projected from the terminal run; native
 resume is the recovery path. Nodes 1 and 18 remain blocked for builtin shell
 until the shared proxy transport is ready. Existing parent lower methods remain
 owned by their parent rewrites; standalone workflows no longer use them.
+
+The metadata behavior is `@nckrtl/certificate-script-assets`. Call
+`read({node_id, intent})` with a `Leaf`, `Removal`, or `Scope`. It returns
+`input_json` and `request_script`, `publish_script`, `remove_script`, and
+`inspect_script` paths. Pass `input_json` as `ORBIT_CERTIFICATE_INPUT` under
+`task.inputs.env`. The request decoder is `decodeRequest({leaf, stdout})`; its
+`record` output is `{node_id, scope, state, request_base64?}`. Malformed or
+private output produces only `certificate.request_invalid` and no resource.
+
+Removal requires admitted `in_use: false`. Inspection also takes the public
+`ORBIT_CERTIFICATE_EXPECT_PRESENT` variable (`"true"` or `"false"`). A mismatch
+prints `certificate.presence_mismatch` and exits nonzero. Invoke scripts with
+`sudo -n --preserve-env=ORBIT_CERTIFICATE_INPUT /usr/bin/python3 "<cached-path>"`,
+including any other named public variables in the preserve list. Metadata and
+effect steps must use the same physical worker.
