@@ -129,6 +129,12 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
+Legacy Gateway HTTP over proxy Nodes 1/18 lives in
+`operations/_lib/node-proxy-http.ts`. Its retained caller uses pinned SSH curl
+on the effect Node with the caller's CA file and timeout. Command lowers import
+`operations/_lib/node-proxy.ts`, which contains no Gateway HTTP client. This
+separation grants no new use of the legacy client or admission on proxy Nodes.
+
 Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
 with `extensions:read` scope. Only the native workflow-validation step receives
 `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests and main pushes. Shape
