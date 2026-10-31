@@ -9,7 +9,11 @@ use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
-return array_fill_keys(TaskVmIncusProjection::Kinds, [
+return ['task_vm.resume' => [
+    'workflow' => 'operation-task-vm-resume',
+    'projection' => \App\Domain\TaskVms\TaskVmResumeProjection::class,
+    'private_material' => ['credentials' => 'task_vm.resume_credentials'],
+]] + array_fill_keys(TaskVmIncusProjection::Kinds, [
     'workflow' => 'operation-task-vm-incus',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'task_vm_incus_writer',
