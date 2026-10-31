@@ -80,8 +80,12 @@ def base_pool(text, user):
     return "".join(output)
 
 
-def unchanged(host, runtime, snapshot):
+def unchanged(host, runtime, snapshot, pool=True):
+    check(runtime.matches(host), "Instance identity remains current")
+    check(not exists(runtime.receipt(PENDING)), "no deployment generation pending")
     for name, expected in snapshot["hashes"].items():
+        if name == "pool.conf" and not pool:
+            continue
         path = (
             runtime.local
             if name == "local"
@@ -220,7 +224,7 @@ def validate_pool(host, runtime, _data, work):
     return {"validated": True}
 
 
-def publish_pool(host, runtime, _data, work):
+def publish_pool(host, runtime, data, work):
     with runtime_lock(host, runtime.user):
         snapshot = state(host, work)
         if not snapshot["changed"]:
@@ -234,6 +238,10 @@ def publish_pool(host, runtime, _data, work):
             return {"changed": True}
         unchanged(host, runtime, snapshot)
         check(
+            digest(select_pool(data)) == snapshot["desired_hash"],
+            "application release remains current",
+        )
+        check(
             host.active(runtime.service) == snapshot["active"],
             "service state remains current",
         )
@@ -244,6 +252,8 @@ def publish_pool(host, runtime, _data, work):
         )
         desired = (work / "pool.conf").read_bytes()
         check(digest(desired) == snapshot["desired_hash"], "validated pool unchanged")
+        snapshot["phase"] = "publishing"
+        save(work, snapshot)
         publish(
             runtime.directory,
             runtime.receipt(METRICS_BACKUP),
@@ -268,6 +278,7 @@ def publish_pool(host, runtime, _data, work):
 def reload_pool(host, runtime, _data, work):
     with runtime_lock(host, runtime.user):
         snapshot = state(host, work)
+        unchanged(host, runtime, snapshot, pool=False)
         if snapshot["changed"] and snapshot["active"]:
             journal_owned(host, runtime, snapshot)
             check(
@@ -279,22 +290,50 @@ def reload_pool(host, runtime, _data, work):
     return {"reloaded": snapshot["changed"] and snapshot["active"]}
 
 
+def clear_journal(host, runtime, snapshot):
+    pending, backup = runtime.receipt(METRICS_PENDING), runtime.receipt(METRICS_BACKUP)
+    if exists(pending):
+        trusted(host, pending, 0o600)
+        expected = (
+            ("active" if snapshot["active"] else "stopped")
+            + " "
+            + snapshot["desired_hash"]
+            + "\n"
+        )
+        check(
+            pending.read_text() == expected, "remaining journal belongs to publication"
+        )
+    if exists(backup):
+        trusted(host, backup, 0o600)
+        check(
+            file_hash(backup) == snapshot["prior_hash"],
+            "remaining backup belongs to publication",
+        )
+    unlink(pending)
+    sync(runtime.directory)
+    unlink(backup)
+
+
 def finish(host, runtime, _data, work):
     with runtime_lock(host, runtime.user):
         snapshot = state(host, work)
+        unchanged(host, runtime, snapshot, pool=False)
         check(
             file_hash(runtime.generated / "pool.conf") == snapshot["desired_hash"],
             "desired pool remains current",
         )
-        if snapshot["changed"]:
+        check(
+            host.active(runtime.service) == snapshot["active"],
+            "service state remains current",
+        )
+        if snapshot["changed"] and snapshot["phase"] != "complete":
             journal_owned(host, runtime, snapshot)
             if snapshot["active"]:
                 confirm(host, runtime, (runtime.generated / "pool.conf").read_bytes())
-            unlink(runtime.receipt(METRICS_PENDING))
-            sync(runtime.directory)
-            unlink(runtime.receipt(METRICS_BACKUP))
         snapshot["phase"] = "complete"
         save(work, snapshot)
+        if snapshot["changed"]:
+            clear_journal(host, runtime, snapshot)
         result = inspect(
             {
                 "user": runtime.user,
@@ -311,7 +350,26 @@ def restore_pool(host, runtime, _data, work):
         return {"restored": False}
     with runtime_lock(host, runtime.user):
         snapshot = state(host, work)
-        if snapshot["phase"] not in ("published", "restoring"):
+        unchanged(host, runtime, snapshot, pool=False)
+        if snapshot["phase"] not in ("publishing", "published", "restoring"):
+            return {"restored": False}
+        if snapshot["phase"] == "publishing" and not exists(
+            runtime.receipt(METRICS_PENDING)
+        ):
+            check(
+                file_hash(runtime.generated / "pool.conf") == snapshot["prior_hash"],
+                "pool unchanged before journal publication",
+            )
+            backup = runtime.receipt(METRICS_BACKUP)
+            if exists(backup):
+                trusted(host, backup, 0o600)
+                check(
+                    file_hash(backup) == snapshot["prior_hash"],
+                    "owned partial journal backup",
+                )
+                unlink(backup)
+            snapshot["phase"] = "restored"
+            save(work, snapshot)
             return {"restored": False}
         journal_owned(host, runtime, snapshot)
         current = file_hash(runtime.generated / "pool.conf")
@@ -336,6 +394,7 @@ def reload_restored(host, runtime, _data, work):
         return {"reloaded": False}
     with runtime_lock(host, runtime.user):
         snapshot = state(host, work)
+        unchanged(host, runtime, snapshot, pool=False)
         if snapshot["phase"] != "restoring":
             return {"reloaded": False}
         journal_owned(host, runtime, snapshot)
@@ -357,6 +416,7 @@ def finish_restore(host, runtime, _data, work):
         return {"restored": False}
     with runtime_lock(host, runtime.user):
         snapshot = state(host, work)
+        unchanged(host, runtime, snapshot, pool=False)
         if snapshot["phase"] != "restoring":
             return {"restored": False}
         journal_owned(host, runtime, snapshot)
@@ -389,7 +449,7 @@ def inspect_pool(host, runtime, _data, _work):
     return {"present": True, "enabled": enabled, "fingerprint": result["fingerprint"]}
 
 
-def cleanup(host, _runtime, _data, work):
+def cleanup(host, runtime, _data, work):
     if not exists(work):
         return {"cleaned": True}
     snapshot = state(host, work)
@@ -397,6 +457,15 @@ def cleanup(host, _runtime, _data, work):
         snapshot["phase"] in ("prepared", "complete", "restored"),
         "publication recovery complete before cleanup",
     )
+    if snapshot["phase"] == "complete":
+        with runtime_lock(host, runtime.user):
+            unchanged(host, runtime, snapshot, pool=False)
+            check(
+                file_hash(runtime.generated / "pool.conf") == snapshot["desired_hash"],
+                "completed pool remains current",
+            )
+            if snapshot["changed"]:
+                clear_journal(host, runtime, snapshot)
     for path in work.iterdir():
         check(
             regular(path) and path.stat().st_uid == host.root_uid,

@@ -102,7 +102,7 @@ jobs:
     - step: stage-result
       condition:
         type: succeeded
-    guard: ${{ !steps["stage-result"].outputs.present || !steps["stage-result"].outputs.changed }}
+    guard: ${{ !steps["stage-result"].outputs.present }}
   - name: publish
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001
@@ -121,7 +121,7 @@ jobs:
     - step: validate
       condition:
         type: succeeded
-    guard: ${{ !steps["stage-result"].outputs.present || !steps["stage-result"].outputs.changed }}
+    guard: ${{ !steps["stage-result"].outputs.present }}
   - name: reload
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001
@@ -140,7 +140,7 @@ jobs:
     - step: publish
       condition:
         type: succeeded
-    guard: ${{ !steps["stage-result"].outputs.present || !steps["stage-result"].outputs.changed }}
+    guard: ${{ !steps["stage-result"].outputs.present }}
   - name: confirm
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001

@@ -186,6 +186,63 @@ Host=FixtureHost
         self.assertEqual(len(json.loads(self.service.read_text())["calls"]), 2)
         self.assertFalse((self.directory / ".metrics-pool.pending").exists())
 
+    def test_unchanged_pool_has_no_reload_and_still_returns_terminal_result(self):
+        configuration = self.runtime["configuration"]
+        configuration["pool"] = "\n".join(
+            line
+            for line in configuration["pool"].split("\n")
+            if not line.startswith("pm.status_")
+        )
+        configuration["initial_pool"] = configuration["pool"]
+        result = self.run_monitor()
+        self.assertIn('"status": "succeeded"', result.stdout)
+        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
+        self.assertFalse(list(self.directory.glob(".metrics-native-*")))
+
+    def test_absent_runtime_is_observed_without_adoption(self):
+        (self.directory / "orbit.identity").unlink()
+        self.run_monitor()
+        self.assertFalse((self.directory / "orbit.identity").exists())
+        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
+
+    def test_private_operator_tuning_never_reaches_native_history(self):
+        local = self.directory / "local.conf"
+        local.write_text(local.read_text() + "; private-operator-sentinel-901f\n")
+        result = self.run_monitor()
+        self.assertNotIn(
+            "private-operator-sentinel-901f", result.stdout + result.stderr
+        )
+        self.assertIn("private-operator-sentinel-901f", local.read_text())
+        self.assertFalse(list(self.directory.glob(".metrics-native-*")))
+
+    def test_foreign_deployment_between_publish_and_reload_is_preserved(self):
+        script = self.repo / "extensions/behaviors" / FAMILY / "scripts/reload.py"
+        script.write_text(
+            "import monitor_common as m\nh,r,d,w=m.context()\n(r.generated/'php-fpm.conf').write_text('foreign main\\n')\nr.receipt(m.PENDING).write_text('foreign deployment\\n')\nraise SystemExit(m.execute(m.reload_pool))\n"
+        )
+        self.run_monitor(success=False)
+        self.assertEqual(
+            (self.directory / "generated/php-fpm.conf").read_text(), "foreign main\n"
+        )
+        self.assertEqual(
+            (self.directory / ".runtime-generation.pending").read_text(),
+            "foreign deployment\n",
+        )
+        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
+
+    def test_interrupted_journal_publication_restores_without_orphan_backup(self):
+        script = self.repo / "extensions/behaviors" / FAMILY / "scripts/publish.py"
+        script.write_text(
+            "import monitor_common as m\noriginal=m.publish\ndef fail(parent,path,value,mode):\n    if path.name==m.METRICS_PENDING: raise OSError('fixture interruption')\n    return original(parent,path,value,mode)\nm.publish=fail\nraise SystemExit(m.execute(m.publish_pool))\n"
+        )
+        self.run_monitor(success=False)
+        self.assertEqual(
+            (self.directory / "generated/pool.conf").read_text(), self.prior
+        )
+        self.assertFalse((self.directory / ".metrics-pool.backup").exists())
+        self.assertFalse((self.directory / ".metrics-pool.pending").exists())
+        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
+
     def test_unrelated_pool_change_refuses_before_publication(self):
         original = self.prior + "[unrelated]\nchdir = /srv/new\n"
         (self.directory / "generated/pool.conf").write_text(original)
