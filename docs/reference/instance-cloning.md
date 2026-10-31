@@ -39,6 +39,8 @@ The request accepts no Project, commit, Unix user, or filesystem path. The candi
 
 ## Candidate and destination
 
+A candidate needs a recorded source profile. An unclassified candidate returns `instance.source_profile_missing` before target reservation; complete native registration or source preparation first.
+
 A candidate is an active development Instance with its recorded checkout, or an active production Instance with a selected release. Swamp verifies its repository, branch, clean working tree, submodules, and committed source. It checks that the commit and target branch exist in the Project repository. Candidate inspection uses the admitted source account and disables Git hooks and filesystem monitors.
 
 The Gateway records placement metadata only. It does not run Git or inspect the candidate during admission. The source worker receives read-only public intent and the declared Git read material. Only the destination worker can project the parent result or read its environment material.

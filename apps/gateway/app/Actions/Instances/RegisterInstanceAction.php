@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\RegisterInstanceData;
 use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -89,7 +90,8 @@ final readonly class RegisterInstanceAction
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'node_id' => $caller->id,
                 'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
                 'checkout' => $instance->checkout_path, 'application' => $instance->applicationDirectory(),
-                'user' => $caller->user,
+                'user' => $caller->user, 'project_type' => $project->type->value,
+                'php_versions' => app(InstancePhpVersionCatalog::class)->versions(),
                 'registration_id' => $instance->registration_request_id,
                 'source_digest' => $instance->registration_source_digest,
             ], 'operator', $requestId);
