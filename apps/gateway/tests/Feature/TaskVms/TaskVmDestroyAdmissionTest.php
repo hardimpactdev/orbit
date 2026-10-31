@@ -37,7 +37,9 @@ function taskVmRetiredFixture(): TaskVm
     $agents->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $agents);
 
-    config(['dependency_detection.services_node_id' => $gateway->id, 'swamp.run_token' => 'fixture.fake']);
+    $host->update(['ssh_host_fingerprint' => 'SHA256:host']);
+    $gateway->update(['ssh_host_fingerprint' => 'SHA256:gateway']);
+    config(['swamp_workers.nodes' => [$host->id, $gateway->id], 'dependency_detection.services_node_id' => $gateway->id, 'swamp.run_token' => 'fixture.fake']);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
         'kind' => 'started', 'workflowName' => 'operation-task-vm-destroy', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];

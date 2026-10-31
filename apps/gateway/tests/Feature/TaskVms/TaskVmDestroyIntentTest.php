@@ -28,7 +28,9 @@ beforeEach(function (): void {
     $this->host = Node::query()->create(['name' => 'destroy-host', 'user' => 'nckrtl', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.13', 'public_ssh_host' => '192.0.2.13']);
     $this->gateway = Node::query()->create(['name' => 'destroy-gateway', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.14', 'public_ssh_host' => '192.0.2.14']);
     $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    config(['dependency_detection.services_node_id' => $this->gateway->id]);
+    $this->host->update(['ssh_host_fingerprint' => 'SHA256:destroy-host']);
+    $this->gateway->update(['ssh_host_fingerprint' => 'SHA256:destroy-gateway']);
+    config(['dependency_detection.services_node_id' => $this->gateway->id, 'swamp_workers.nodes' => [$this->host->id, $this->gateway->id]]);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)]]);
     $this->vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => 'failed', 'host_node_id' => $this->host->id, 'wireguard_ip' => '10.44.0.208', 'pi_token' => 'private-pi-token']);
     $this->vm->update(['name' => 'tvm-'.$this->vm->id]);
@@ -103,10 +105,11 @@ it('preserves unpublished approved work both at admission and after an intent wa
     $operation = $admitted ? savedDestroyIntent() : null;
     TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
 
-    expect(fn () => $operation === null ? app(TaskVmDestroyIntent::class)->capture($this->vm->fresh())
+    expect(fn () => $operation === null ? app(StartTaskVmDestroyAction::class)->execute($this->vm->id)
         : app(TaskVmDestroyIntent::class)->input($operation))->toThrow(ResourceOperationException::class, 'Publish the approved Task work');
     expect($this->vm->fresh()->state->value)->toBe('failed');
     $this->assertModelExists($group);
+    expect(Operation::query()->count())->toBe($admitted ? 1 : 0);
 })->with([false, true]);
 
 it('returns kind unavailable before admission when complete cleanup participants are missing', function (array $changes): void {
@@ -181,7 +184,7 @@ it('rolls back both Node removal and VM finalization with the parent Task projec
 
 it('returns only the canonical public input for the exact admitted cleanup participant', function (): void {
     $this->host->update(['ssh_host_fingerprint' => 'SHA256:destroy-host']);
-    config(['swamp_workers.nodes' => [$this->host->id]]);
+    config(['swamp_workers.nodes' => [$this->host->id, $this->gateway->id]]);
     RouteRemovalResidue::query()->create(['node_id' => $this->host->id, 'route_id' => 987650, 'domain' => 'gone.orbit', 'steps' => ['caddy']]);
     $guest = Node::query()->create(['name' => $this->vm->name, 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
         'status' => LifecycleStatus::Active, 'wireguard_ip' => $this->vm->wireguard_ip, 'public_ssh_host' => '192.0.2.208']);
@@ -205,7 +208,7 @@ it('returns only the canonical public input for the exact admitted cleanup parti
 
 it('refuses a public cleanup view after the captured Node identity changes', function (): void {
     $this->host->update(['ssh_host_fingerprint' => 'SHA256:destroy-host']);
-    config(['swamp_workers.nodes' => [$this->host->id]]);
+    config(['swamp_workers.nodes' => [$this->host->id, $this->gateway->id]]);
     RouteRemovalResidue::query()->create(['node_id' => $this->host->id, 'route_id' => 987650, 'domain' => 'gone.orbit', 'steps' => ['caddy']]);
     $guest = Node::query()->create(['name' => $this->vm->name, 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
         'status' => LifecycleStatus::Active, 'wireguard_ip' => $this->vm->wireguard_ip, 'public_ssh_host' => '192.0.2.208']);
@@ -282,7 +285,7 @@ function destroyHubFixture(): Node
     $hub = Node::query()->create(['name' => 'destroy-hub', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
         'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'ssh_host_fingerprint' => 'SHA256:hub']);
     $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
-    config(['swamp_workers.nodes' => [$hub->id]]);
+    config(['swamp_workers.nodes' => [test()->host->id, test()->gateway->id, $hub->id]]);
 
     return $hub;
 }
@@ -373,7 +376,7 @@ it('restores local participant input when no hub was admitted', function (): voi
     $guest = destroyGuestFixture();
     $this->host->update(['ssh_host_fingerprint' => 'SHA256:destroy-host', 'wireguard_public_key' => base64_encode(str_repeat('h', 32)), 'dns_server_override' => '10.44.0.1']);
     $this->host->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    config(['swamp_workers.nodes' => [$this->host->id]]);
+    config(['swamp_workers.nodes' => [$this->host->id, $this->gateway->id]]);
     $operation = savedDestroyIntent();
     destroyRunningCheckpoint($operation, ['node_cleanup_started' => true]);
 
@@ -384,3 +387,34 @@ it('restores local participant input when no hub was admitted', function (): voi
     expect(app(TaskVmDestroyProjection::class)->input($operation->fresh())['node_cleanup_participant']['network']['router_lan'])->toBeNull();
     expect($operation->fresh()->input['_wireguard'])->toBeNull();
 });
+
+it('refuses a missing actual parent executor before provider effects or admission', function (string $executor): void {
+    $node = $executor === 'host' ? $this->host : $this->gateway;
+    $node->update(['ssh_host_fingerprint' => null]);
+
+    expect(fn () => savedDestroyIntent())->toThrow(ResourceOperationException::class, 'Every required Node cleanup effect');
+
+    expect(Operation::query()->count())->toBe(0);
+    expect($this->vm->fresh()->state->value)->toBe('failed');
+})->with(['host', 'gateway']);
+
+it('refuses uncomposed workspace and Route cleanup before recording or changing any resource', function (string $scope): void {
+    $guest = destroyGuestFixture();
+    $project = Project::query()->create(['name' => 'Retain cleanup scope', 'slug' => 'retained-cleanup-scope',
+        'repository_url' => 'https://github.com/example/retain.git']);
+    if ($scope === 'workspace') {
+        $record = \App\Models\Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id,
+            'name' => 'retained', 'checkout_path' => '/home/orbit/apps/retained', 'root' => 'public', 'branch' => 'main', 'status' => 'source_resolved']);
+    } else {
+        $field = match ($scope) { 'direct' => 'node_id', 'generation' => 'generation_basis_node_id', default => 'transition_node_id' };
+        $record = \App\Models\Route::query()->create(['project_id' => $project->id, 'node_id' => $this->host->id,
+            $field => $guest->id, 'domain' => 'retained.orbit', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    }
+
+    expect(fn () => app(StartTaskVmDestroyAction::class)->execute($this->vm->id))->toThrow(ResourceOperationException::class, 'Same-root workspace and Route cleanup');
+
+    expect(Operation::query()->count())->toBe(0);
+    $this->assertModelExists($record);
+    expect($guest->fresh()->status)->toBe(LifecycleStatus::Active);
+    expect($this->vm->fresh()->state->value)->toBe('failed');
+})->with(['workspace', 'direct', 'generation', 'transition']);

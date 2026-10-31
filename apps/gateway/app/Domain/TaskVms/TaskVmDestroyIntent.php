@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Domain\Nodes\NodeRemovalInput;
+use App\Domain\Nodes\NodeRolePlacement;
 use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -44,10 +44,14 @@ final readonly class TaskVmDestroyIntent
         }
         $routerId = $vm->model_key === null ? null : $this->modelKeys->ownerNodeId();
         $nodeRemoval = $vm->node_id === null ? null : $this->nodes->deletedTaskVm($vm, Node::query()->findOrFail($vm->node_id));
+        $workspaceIds = $this->workspaces($vm);
+        $routeIds = $this->routes($vm);
+        $this->available(['node_removal' => $nodeRemoval, 'workspace_ids' => $workspaceIds, 'route_ids' => $routeIds]);
         $cleanup = $nodeRemoval === null ? null : app(NodeRemovalInput::class)->capture($nodeRemoval, $gateway);
         $nodeRemoval = $cleanup === null ? null : ValidatedData::object($cleanup['snapshot']);
         $cleanupNodeIds = $nodeRemoval === null ? [] : $this->cleanupNodeIds($nodeRemoval);
-        if (Node::query()->whereKey($cleanupNodeIds)->get()->contains(static fn (Node $node): bool => ! app(NodeWorkerRollout::class)->allows($node))
+        $executionNodeIds = array_values(array_unique([$host->id, $gateway->id, $issuerId, ...$cleanupNodeIds]));
+        if (Node::query()->whereKey($executionNodeIds)->get()->contains(static fn (Node $node): bool => ! app(NodeRolePlacement::class)->allows($node))
             || ($cleanup !== null && ($cleanup['metrics_fleet'] !== null || $cleanup['restore_metrics_fleet'] !== null))) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Every required Node cleanup effect needs its native executor and contributor.', 409);
         }
@@ -62,8 +66,8 @@ final readonly class TaskVmDestroyIntent
             'wireguard_ip' => $vm->wireguard_ip, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
             'agent_sha256' => $this->agents->pin($host), 'deadline_at' => now()->addSeconds(1500)->timestamp,
             'worker_stop_required' => (bool) $vm->worker_stop_required, 'model_key_required' => $vm->model_key !== null,
-            'workspace_ids' => $this->workspaces($vm), 'route_ids' => $this->routes($vm),
-            'node_removal' => $nodeRemoval,
+            'workspace_ids' => $workspaceIds, 'route_ids' => $routeIds,
+            'node_removal' => $nodeRemoval, 'proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(),
             '_wireguard' => $wireguard, '_wireguard_restore' => $wireguard === null ? null : NodeWireGuardInput::restorationSnapshot($wireguard),
             'node_placements' => array_map(static fn (int $nodeId): array => ['effect_node_id' => $nodeId, 'execution_node_id' => $nodeId, 'transport' => 'local'], $cleanupNodeIds),
             'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name, 'cidr' => $location->cidr],

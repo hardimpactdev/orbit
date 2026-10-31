@@ -129,7 +129,7 @@ it('serves hub SSH material only to the immutable Gateway reader through the sha
     $operation = $this->operation;
     $this->vm->update(['provider' => 'incus', 'host_node_id' => $this->gateway->id]);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->gateway->id)]]);
-    config(['dependency_detection.services_node_id' => $this->gateway->id, 'swamp_workers.nodes' => [$this->hub->id]]);
+    config(['dependency_detection.services_node_id' => $this->gateway->id, 'swamp_workers.nodes' => [$this->hub->id, $this->gateway->id]]);
     $operation->kind = 'task_vm.destroy';
     $operation->input = app(TaskVmDestroyIntent::class)->capture($this->vm->fresh());
     $operation->save();

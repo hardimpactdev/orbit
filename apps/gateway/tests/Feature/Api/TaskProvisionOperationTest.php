@@ -39,7 +39,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
-use App\Jobs\TaskVms\DestroyTaskVm;
+use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -558,7 +558,7 @@ describe('optional provision worker', function (): void {
         $workspace = $group->refresh()->taskable;
         expect($workspace)->toBeInstanceOf(Instance::class);
         expect($provider->vmCalls)->toBe([]);
-        Queue::fake([DestroyTaskVm::class]);
+        Queue::fake();
 
         $provider->onDestroy = function () use ($agents): void {
             expect($agents->commands())->toBe(['swamp.start-worker', 'swamp.stop-worker']);
@@ -576,7 +576,7 @@ describe('optional provision worker', function (): void {
         expect($destroy->target_id)->toBe($vm->id)
             ->and($destroy->status)->toBe(OperationStatus::Queued)
             ->and(Node::query()->whereKey($node->id)->exists())->toBeTrue();
-        Queue::assertNotPushed(DestroyTaskVm::class);
+        Queue::assertNothingPushed();
     });
     it('clears staged enrollment when a waiting provision is cancelled', function (): void {
         $group = provision_operation_group();
@@ -887,7 +887,7 @@ it('clears cancelled worker enrollment without starting a worker', function (): 
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });
 
-it('leaves worker stop and preservation to Swamp when admitting VM destruction', function (): void {
+it('refuses VM destruction before admission when approved work has not been published', function (): void {
     [$group, $vm] = worker_operation_workspace();
     $vm->update(['worker_stop_required' => true]);
     $group->update(['status' => TaskGroupStatus::Completed]);
@@ -898,14 +898,15 @@ it('leaves worker stop and preservation to Swamp when admitting VM destruction',
     $provider = new RecordingTaskVmProvider;
     app()->instance(TaskVmProvider::class, $provider);
 
-    app()->call([new DestroyTaskVm($vm->id), 'handle']);
+    expect(fn () => app(StartTaskVmDestroyAction::class)->execute($vm->id))
+        ->toThrow(\App\Domain\Shared\ResourceOperationException::class, 'Publish the approved Task work');
 
     expect($agents->commands())->toBe([]);
     expect($vm->fresh()->worker_stop_required)->toBeTrue();
     expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
     expect($group->fresh()->taskable_id)->not->toBeNull();
     expect($provider->calls)->toBe([]);
-    expect(Operation::query()->where('kind', 'task_vm.destroy')->sole()->status)->toBe(OperationStatus::Queued);
+    expect(Operation::query()->where('kind', 'task_vm.destroy')->exists())->toBeFalse();
 });
 
 it('treats raw-token staged credentials as missing without logging their prefix', function (): void {
