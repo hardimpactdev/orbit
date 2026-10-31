@@ -15,7 +15,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, workflow_inputs?: bool, terminal_result?: array{job:string,step:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
+    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
     private array $definitions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
@@ -29,7 +29,7 @@ final readonly class DirectOperation
         foreach ($families as $family) {
             foreach ($family as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'terminal_result', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token', 'result_hook']) !== []
+                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'execution_copies', 'terminal_result', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token', 'result_hook']) !== []
                     || (array_key_exists('workflow_inputs', $definition) && ! is_bool($definition['workflow_inputs']))
                     || ! is_string($definition['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $definition['workflow']) !== 1
                     || ! isset($definition['projection'])
@@ -39,6 +39,14 @@ final readonly class DirectOperation
                     || ! is_string($definition['projection']) || ! is_a($definition['projection'], DirectOperationProjection::class, true)
                     || (isset($definition['primitive']) && (! is_string($definition['primitive']) || ! is_a($definition['primitive'], DirectOperationPrimitive::class, true)))) {
                     throw new LogicException('A direct Operation needs one fixed family declaration.');
+                }
+                if (array_key_exists('execution_copies', $definition)) {
+                    if (! is_array($definition['execution_copies']) || ! array_is_list($definition['execution_copies'])) {
+                        throw new LogicException('Execution copy intents must be a list.');
+                    }
+                    foreach ($definition['execution_copies'] as $copy) {
+                        self::executionCopySignature($copy);
+                    }
                 }
                 if (array_key_exists('terminal_result', $definition)) {
                     $definition['terminal_result'] = self::terminalResult($definition['terminal_result']);
@@ -50,6 +58,18 @@ final readonly class DirectOperation
             }
         }
         $this->definitions = $definitions;
+    }
+
+    public static function executionCopySignature(mixed $copy): string
+    {
+        if (! is_array($copy) || count($copy) !== 2 || ! is_string($copy['vault'] ?? null)
+            || preg_match('/\A[a-z][a-z0-9_-]{0,127}\z/D', $copy['vault']) !== 1
+            || ! is_string($copy['key_pattern'] ?? null) || ! str_starts_with($copy['key_pattern'], '^')
+            || ! str_ends_with($copy['key_pattern'], '$') || @preg_match('~'.$copy['key_pattern'].'~D', '') === false) {
+            throw new LogicException('Execution copy intent needs an exact vault name and an anchored key pattern.');
+        }
+
+        return $copy['vault'].':'.$copy['key_pattern'];
     }
 
     private static function validSecretMap(mixed $map): bool
@@ -97,7 +117,7 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, workflow_inputs?: bool, terminal_result?: array{job:string,step:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
+    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
