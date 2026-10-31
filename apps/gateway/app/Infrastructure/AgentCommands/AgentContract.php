@@ -8,9 +8,8 @@ use JsonException;
 use LogicException;
 
 /**
- * The commands of the pinned agent, read from `apps/agent/contract/commands.json`. Rust writes that file
- * from the compiled commands and a Rust test keeps it current, so the privilege, bound, and error codes
- * live in one place.
+ * The frozen published binary's command contract, captured with `orbit-agent contract`.
+ * Source registry changes cannot change the commands, privileges, or bounds of the deployed pin.
  */
 final class AgentContract
 {
