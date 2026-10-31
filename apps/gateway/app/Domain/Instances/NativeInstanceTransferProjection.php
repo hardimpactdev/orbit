@@ -11,6 +11,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteTransferPlan;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -27,7 +28,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
         if (! in_array($operation->kind, ['instance.transfer', 'instance.transfer_rollback'], true)
-            || ! in_array($callerNodeId, $operation->input['participant_node_ids'] ?? [], true)) {
+            || ! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not an admitted transfer participant.', 403);
         }
     }
@@ -68,6 +69,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                         || $instance->checkout_path !== $transfer->source_path) {
                         throw $this->conflict();
                     }
+                    app(ScheduleTargetUseGuard::class)->assertInstanceStable($instance);
+                    app(NativeInstanceTransferIntent::class)->assertSupported($instance, $transfer->sqlite_source_path);
                     $instance->update(['node_id' => $transfer->destination_node_id, 'name' => $transfer->destination_name,
                         'checkout_path' => $transfer->destination_path, 'source_layout' => InstanceSourceLayout::Checkout,
                         'registration_common_repository_path' => null,
