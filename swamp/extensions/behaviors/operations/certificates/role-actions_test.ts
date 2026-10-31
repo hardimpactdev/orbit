@@ -1,4 +1,8 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+  assertEquals,
+  assertRejects,
+  assertThrows,
+} from "jsr:@std/assert@1.0.19";
 import { certificates } from "./mod.ts";
 import { roleCertificateActions } from "./role-actions.ts";
 import { signCertificateBatch } from "./signing.ts";
@@ -65,22 +69,9 @@ Deno.test("role stages compose in one parent with the canonical signer and publi
   const definition = certificates(
     undefined,
     undefined,
-    async (leaves, requests, custody) => {
+    async (leaves, requests, response) => {
       events.push("sign");
-      return await signCertificateBatch(
-        leaves,
-        requests,
-        custody,
-        undefined,
-        () =>
-          Promise.resolve({
-            certificates: [{
-              node_id: leaf.node_id,
-              scope: leaf.scope,
-              ...signed,
-            }],
-          }),
-      );
+      return await signCertificateBatch(leaves, requests, response);
     },
     actions,
   );
@@ -88,14 +79,6 @@ Deno.test("role stages compose in one parent with the canonical signer and publi
     globalArgs: {
       gatewayUrl: "https://gateway.test",
       caFile: "/fixture/root.pem",
-      vaultName: "fixture",
-      secretKey: "ca",
-    },
-    vaultService: {
-      get: () =>
-        Promise.resolve(
-          JSON.stringify({ certificate: "root", private_key: "fixture" }),
-        ),
     },
     writeResource: (spec: string, _name: string, value: unknown) => {
       resources.push({ spec, value });
@@ -107,6 +90,9 @@ Deno.test("role stages compose in one parent with the canonical signer and publi
     ...root,
     leaf,
     request,
+    native_stdout: JSON.stringify({
+      certificates: [{ node_id: leaf.node_id, scope: leaf.scope, ...signed }],
+    }),
   }, context);
   await definition.methods.rolePublish.execute({
     ...root,
@@ -135,33 +121,14 @@ Deno.test("role stages compose in one parent with the canonical signer and publi
   );
   assertEquals(events, ["request", "sign", "publish"]);
 });
-Deno.test("role signing uses the existing vault locator and exactly one canonical signer call", async () => {
-  let reads = 0;
-  const custody = {
-    vaultName: "disposable",
-    secretKey: "ca",
-    vaultService: {
-      get: () => {
-        reads++;
-        return Promise.resolve(
-          JSON.stringify({ certificate: "root", private_key: "fixture" }),
-        );
-      },
-    },
-  };
+Deno.test("role signing decodes the public Gateway bundle without a custody locator", async () => {
   const result = await signCertificateBatch(
     [leaf],
     [{ node_id: leaf.node_id, scope: leaf.scope, ...request }],
-    custody,
-    undefined,
-    (_program, input) => {
-      assertEquals(input.leaves, [leaf]);
-      return Promise.resolve({
-        certificates: [{ node_id: leaf.node_id, scope: leaf.scope, ...signed }],
-      });
-    },
+    JSON.stringify({
+      certificates: [{ node_id: leaf.node_id, scope: leaf.scope, ...signed }],
+    }),
   );
-  assertEquals(reads, 1);
   assertEquals(result.certificates[0].scope, "role-gateway");
 });
 
@@ -226,48 +193,25 @@ Deno.test("Analytics role fixes its hostname and pair scope before any key or CA
     actions.publish({ ...analytics, domain: "foreign.orbit" }, request, signed)
   );
   assertEquals(effects, 2);
-  const custody = {
-    vaultName: "fixture",
-    secretKey: "ca",
-    vaultService: {
-      get: () =>
-        Promise.resolve(
-          JSON.stringify({ certificate: "fixture", private_key: "fixture" }),
-        ),
-    },
-  };
   const requests = [{
     node_id: analytics.node_id,
     scope: analytics.scope,
     ...request,
   }];
-  const batch = await signCertificateBatch(
-    [analytics],
-    requests,
-    custody,
-    undefined,
-    () =>
-      Promise.resolve({
-        certificates: [{
-          node_id: analytics.node_id,
-          scope: analytics.scope,
-          ...signed,
-        }],
-      }),
-  );
+  const response = JSON.stringify({
+    certificates: [{
+      node_id: analytics.node_id,
+      scope: analytics.scope,
+      ...signed,
+    }],
+  });
+  const batch = await signCertificateBatch([analytics], requests, response);
   assertEquals(batch.certificates[0].scope, "role-analytics");
-  await assertRejects(() =>
+  assertThrows(() =>
     signCertificateBatch(
       [{ ...analytics, domain: "foreign.orbit" }],
       requests,
-      {
-        ...custody,
-        vaultService: {
-          get: () => {
-            throw new Error("must not read CA");
-          },
-        },
-      },
+      response,
     )
   );
 });
