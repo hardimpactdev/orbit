@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceDestroySourceInspection;
+use App\Domain\Instances\InstanceDestroyWorkflowInput;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
@@ -69,6 +70,31 @@ it('captures native facts once and retries failed removal with the exact capture
     $different['members'][0]['source_identity'] = '999:999';
     expect($helper->capture($operation, $different))->toEqual($captured)
         ->and($record->refresh()->source_identity)->toBe('42:73');
+});
+
+it('persists additive native metadata without replacing original facts for the next failed-removal retry', function (): void {
+    $input = app(DirectInstanceDestroyIntent::class)->record(app(StartInstanceDestroyAction::class)->snapshot($this->instance, true));
+    $operation = new Operation(['kind' => 'instance.destroy', 'input' => $input]);
+    $helper = app(InstanceDestroySourceInspection::class);
+    $original = nativeDestroySourceCapture($this->instance);
+    $helper->capture($operation, $original);
+    $expanded = $original;
+    $expanded['members'][0] += ['source' => $this->instance->checkout_path, 'release' => $this->instance->checkout_path,
+        'uid' => 1001, 'gid' => 1001, 'git_admin' => $this->instance->checkout_path.'/.git'];
+    $helper->capture($operation, $expanded);
+    $removal = InstanceRemoval::query()->findOrFail($input['removal_id']);
+    $removal->update(['status' => 'failed', 'failed_step' => 'source_preparation', 'error_code' => 'instance.test_failure']);
+
+    $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
+    $native = app(InstanceDestroyWorkflowInput::class)->forOperation(new Operation([
+        'kind' => 'instance.destroy', 'input' => $retry, 'node_id' => $this->instance->node_id]));
+
+    expect($native['intent']['captured_sources'])->toBe($expanded)
+        ->and($removal->members()->sole()->origin)->toBe($original['members'][0]['origin'])
+        ->and($removal->members()->sole()->worktree_inventory)->toBe($original['members'][0]['worktree_inventory']);
+    $replacement = $expanded;
+    $replacement['members'][0]['origin'] = 'https://github.com/other/replacement.git';
+    expect(fn () => $removal->update(['native_sources' => $replacement]))->toThrow(QueryException::class);
 });
 
 it('rolls back partial member captures when native member IDs do not match the admitted set', function (): void {

@@ -30,9 +30,10 @@ return [
     'instance.register' => ['workflow' => 'operation-instance-register', 'projection' => InstanceRegisterResult::class],
     'instance.destroy' => [
         'workflow' => 'operation-instance-destroy',
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'capture_sources', 'step' => 'inspect-sources'],
         'projection' => InstanceDestroyProjection::class,
         'cancel_guard' => InstanceDestroyCancelGuard::class,
-        'private_material' => ['git_read' => 'instance.lifecycle_git', 'teardown' => 'instance.destroy_teardown', 'php' => 'instance.destroy_php', 'database_material' => 'database.intent'],
     ],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [

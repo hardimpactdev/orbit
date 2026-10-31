@@ -13,6 +13,8 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -28,6 +30,9 @@ use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture.shared.token']);
+    $copies = Mockery::mock(ProcessRunner::class);
+    $copies->shouldReceive('run')->andReturn(new CommandResult(0, '{}', '', 1, false));
+    app()->instance(ProcessRunner::class, $copies);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-destroy', 'runId' => (string) Str::uuid()]]];
     app()->instance(WebSocketClient::class, $socket);
@@ -185,7 +190,9 @@ it('admits managed SQL in the same native parent without source reads or child O
     $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
     $operation = Operation::query()->findOrFail($id);
     expect($operation->input['direct_destroy']['database']['servers'][0]['server_id'])->toBe($server->id)
-        ->and($operation->input['database_material']['$secret'])->toBe('database.intent')
+        ->and($operation->input)->not->toHaveKey('database_material')
+        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets']['database_'.$server->id]['vault'])->toBe('orbit-control-inputs')
+        ->and(json_encode($this->socket->sent[0]))->not->toContain('fixture-private-password', '$secret')
         ->and(json_encode($operation->input))->not->toContain('fixture-private-password')
         ->and(Operation::query()->count())->toBe(1)
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)

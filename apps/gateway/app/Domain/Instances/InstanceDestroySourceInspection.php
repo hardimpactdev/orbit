@@ -31,6 +31,15 @@ final readonly class InstanceDestroySourceInspection
         return DB::transaction(function () use ($input, $inspection): array {
             $removal = InstanceRemoval::query()->lockForUpdate()->findOrFail(ValidatedData::string($input['removal_id']));
             if ($removal->native_sources !== null) {
+                $original = $removal->native_sources;
+                $additions = collect(InstanceLifecycleInput::members($inspection))->keyBy('instance_id');
+                $original['members'] = array_map(static function (array $member) use ($additions): array {
+                    $expanded = $additions->get(ValidatedData::integer($member['instance_id']));
+
+                    return is_array($expanded) ? [...$expanded, ...$member] : $member;
+                }, InstanceLifecycleInput::members($original));
+                $removal->update(['native_sources' => $original]);
+
                 return $this->executable($input);
             }
             $members = InstanceLifecycleInput::members($inspection);

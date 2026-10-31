@@ -1,86 +1,48 @@
-# Read-only publication fence, composed before the first runtime stop.
+# Native alternatives for public and credentialed Git publication checks.
 jobs:
-  - name: check_publication
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: {node: '${{ string(inputs.node_id) }}'}
-    dependsOn: [{job: capture_sources, condition: {type: succeeded}}]
-    steps:
-      - name: published-${{ self.member.instance_id }}
-        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-        labels: {node: '${{ string(inputs.node_id) }}'}
-        forEach: {item: member, in: '${{ steps["captured-inputs"].outputs.members }}'}
-        guard: '${{ !self.member.publication_required }}'
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "irm-p-1-" + run.id + "-" + string(self._index) }}'
-          methodName: execute
-          inputs:
-            run: |
-              set -eu
-              /usr/bin/python3 - <<'PY'
-              import base64
-              import json
-              import os
-              import re
-              import subprocess
-              import sys
-              import tempfile
-
-              from identity import Refusal, require
-
-              try:
-                  value = json.loads(os.environ['ORBIT_REMOVAL_MEMBER'])
-                  capture = value['capture']
-                  origin, commit = capture['origin'], capture['source_commit']
-                  require(re.fullmatch(r'[a-f0-9]{40}(?:[a-f0-9]{24})?', commit))
-                  require(re.match(r'^(?:https://|ssh://|git@|/)', origin))
-                  require(not any(ord(char) < 32 or ord(char) == 127 for char in origin))
-                  private = json.loads(os.environ.pop('ORBIT_GIT_READ'))
-                  environment = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LANG': 'C.UTF-8',
-                                 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
-                                 'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'}
-                  settings = ['core.hooksPath=/dev/null', 'core.fsmonitor=false',
-                              'credential.helper=', 'protocol.ext.allow=never', 'http.followRedirects=false']
-                  token = private.get('github_token')
-                  if token:
-                      require(re.fullmatch(r'[A-Za-z0-9_.-]{1,4096}', token))
-                      authorization = base64.b64encode(('x-access-token:' + token).encode()).decode()
-                      for index, pair in enumerate([
-                          ('http.https://github.com/.extraheader', 'Authorization: Basic ' + authorization),
-                          ('url.https://github.com/.insteadOf', 'git@github.com:'),
-                          ('url.https://github.com/.insteadOf', 'ssh://git@github.com/'),
-                      ]):
-                          environment['GIT_CONFIG_KEY_' + str(index)] = pair[0]
-                          environment['GIT_CONFIG_VALUE_' + str(index)] = pair[1]
-                      environment['GIT_CONFIG_COUNT'] = '3'
-                      settings += ['protocol.allow=never', 'protocol.https.allow=always']
-                  command = ['/usr/bin/git']
-                  for setting in settings:
-                      command += ['-c', setting]
-                  def git(arguments, check=True):
-                      result = subprocess.run(command + arguments, env=environment, stdin=subprocess.DEVNULL,
-                                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
-                      if check:
-                          require(result.returncode == 0, 'instance.unsafe_content')
-                      return result
-                  with tempfile.TemporaryDirectory(prefix='orbit-published-') as scratch:
-                      repository = scratch + '/repository.git'
-                      git(['init', '--bare', '--quiet', repository])
-                      prefix = ['--git-dir=' + repository]
-                      git(prefix + ['remote', 'add', 'origin', origin])
-                      git(prefix + ['fetch', '--quiet', '--no-tags', '--filter=blob:none', 'origin',
-                                    '+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*'])
-                      require(git(prefix + ['cat-file', '-e', commit + '^{commit}'], False).returncode == 0, 'instance.unsafe_content')
-                      refs = git(prefix + ['for-each-ref', '--format=%(refname)', '--contains=' + commit,
-                                           'refs/remotes/origin', 'refs/tags']).stdout
-                      require(bool(refs.strip()), 'instance.unsafe_content')
-                  print(json.dumps({'instance_id': capture['instance_id'], 'published': True}))
-              except (Refusal, OSError, KeyError, ValueError) as error:
-                  print(json.dumps({'error_code': getattr(error, 'code', 'instance.unsafe_content')}))
-                  sys.exit(1)
-              PY
-            env:
-              PYTHONPATH: '${{ steps["public-inputs"].outputs.library }}'
-              ORBIT_REMOVAL_MEMBER: '${{ self.member.input_json }}'
-              ORBIT_GIT_READ: '${{ vault.get(inputs.execution_secrets.git_read.vault, inputs.execution_secrets.git_read.key) }}'
+- name: check_publication
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: capture_sources
+    condition:
+      type: succeeded
+  steps:
+  - name: published-public-${{ self.member.instance_id }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    forEach:
+      item: member
+      in: ${{ steps["captured-inputs"].outputs.members }}
+    guard: ${{ !self.member.publication_required || has(inputs.execution_secrets.git_read) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "irm-public-" + run.id + "-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: /usr/bin/python3 "${{ steps["public-inputs"].outputs.scripts.check_publication }}"
+        env:
+          PYTHONPATH: ${{ steps["public-inputs"].outputs.library }}
+          ORBIT_REMOVAL_MEMBER: ${{ self.member.input_json }}
+  - name: published-private-${{ self.member.instance_id }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    forEach:
+      item: member
+      in: ${{ steps["captured-inputs"].outputs.members }}
+    guard: ${{ !self.member.publication_required || !has(inputs.execution_secrets.git_read) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "irm-private-" + run.id + "-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: /usr/bin/python3 "${{ steps["public-inputs"].outputs.scripts.check_publication }}"
+        env:
+          PYTHONPATH: ${{ steps["public-inputs"].outputs.library }}
+          ORBIT_REMOVAL_MEMBER: ${{ self.member.input_json }}
+          ORBIT_GIT_READ: ${{ vault.get(inputs.execution_secrets.git_read.vault, inputs.execution_secrets.git_read.key) }}

@@ -6,6 +6,7 @@ use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
+use App\Domain\Instances\InstanceDestroyExecutionCopies;
 use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
 use App\Domain\Instances\InstanceDestroyWorkflowInput;
@@ -14,6 +15,9 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -74,7 +78,9 @@ it('passes complete public destroy intent without private-material references or
 
     expect($inputs['operation_id'])->toBe($operation->id)
         ->and($inputs['node_id'])->toBe($this->node->id)
-        ->and($inputs['intent']['members'])->toBe($intent['members'])
+        ->and($inputs['intent']['members'][0]['instance_id'])->toBe($this->instance->id)
+        ->and($inputs['intent']['members'][0]['checkout_path'])->toBe($this->instance->checkout_path)
+        ->and($inputs['intent']['members'][0])->not->toHaveKeys(['source_identity', 'source_digest', 'origin', 'worktree_inventory'])
         ->and($inputs['intent']['direct_destroy']['database'])->toBe($intent['direct_destroy']['database'])
         ->and($inputs['intent']['direct_destroy']['runtime'])->toBe($intent['direct_destroy']['runtime'])
         ->and($inputs['intent']['direct_destroy']['routes'][0])->not->toHaveKey('php')
@@ -93,6 +99,75 @@ it('carries the original native source capture into a retried run', function ():
 
     expect(app(InstanceDestroyWorkflowInput::class)->forOperation($operation)['intent']['captured_sources'])->toBe($capture);
 });
+
+it('gives each admitted SQL server a separate vault reference without exposing its password', function (): void {
+    config(['swamp.run_token' => 'fixture.command-step-token', 'swamp.ca_path' => '/public/root.pem']);
+    $runner = fakeDestroyVaultWriter();
+    app()->instance(ProcessRunner::class, $runner);
+    $other = Node::query()->create(['name' => 'other-sql', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.27']);
+    $servers = [];
+    foreach ([[$this->node, 'mysql', 'fixture-private-a'], [$other, 'pgsql', 'fixture-private-b']] as [$node, $driver, $password]) {
+        $server = DatabaseServer::query()->create(['slug' => 'split-'.$driver, 'node_id' => $node->id,
+            'driver' => $driver, 'tag' => 'test', 'port' => 3306, 'root_password' => $password, 'status' => 'active']);
+        DatabaseConnection::query()->create(['slug' => 'split-'.$driver, 'driver' => $driver,
+            'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
+        $servers[] = $server;
+    }
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $intent]);
+
+    $copies = app(InstanceDestroyExecutionCopies::class)->forOperation($operation);
+
+    expect(array_keys($copies))->toBe(['database_'.$servers[0]->id, 'database_'.$servers[1]->id])
+        ->and($runner->values)->toBe(['fixture-private-a', 'fixture-private-b'])
+        ->and(json_encode($copies))->not->toContain('fixture-private-a', 'fixture-private-b')
+        ->and(json_encode($operation->input))->not->toContain('fixture-private-a', 'fixture-private-b');
+    foreach ($runner->calls as $call) {
+        expect(json_encode($call->arguments))->not->toContain('fixture-private-a', 'fixture-private-b');
+    }
+    app(InstanceDestroyExecutionCopies::class)->forOperation($operation);
+    expect($runner->calls)->toHaveCount(2);
+});
+
+it('pushes each immutable teardown command as a named execution copy', function (): void {
+    config(['swamp.run_token' => 'fixture.command-step-token', 'swamp.ca_path' => '/public/root.pem']);
+    $runner = fakeDestroyVaultWriter();
+    app()->instance(ProcessRunner::class, $runner);
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $snapshot = directDestroyFixture($this->instance);
+    $snapshot['members'][0]['run_teardown'] = true;
+    $intent = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $intent]);
+
+    $copies = app(InstanceDestroyExecutionCopies::class)->forOperation($operation);
+
+    expect(array_keys($copies))->toBe(['teardown_'.$this->instance->id.'_0'])
+        ->and($runner->values)->toBe([$this->command])
+        ->and(json_encode($copies))->not->toContain($this->command)
+        ->and(json_encode($operation->input))->not->toContain($this->command);
+});
+
+function fakeDestroyVaultWriter(): ProcessRunner
+{
+    return new class implements ProcessRunner
+    {
+        public array $calls = [];
+
+        public array $values = [];
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->calls[] = $invocation;
+            $this->values[] = stream_get_contents($invocation->protectedInput->stream());
+
+            return new CommandResult(0, '{}', '', 1, false);
+        }
+    };
+}
 
 it('refuses scripts changed since admission', function (array $change): void {
     $this->step->update($change);
@@ -521,15 +596,15 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
     $this->postJson($path.'/result', $body)->assertOk()->assertJsonPath('data.status', 'succeeded');
 });
 
-it('returns a fresh same-root Caddy render and keeps PHP in the private channel', function (): void {
+it('passes the admitted publication snapshot and vault names in the native start envelope', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
     $operation = new Operation(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $intent]);
     $input = app(InstanceDestroyProjection::class)->input($operation);
-    expect($input['caddy_publication']['node_id'])->toBe($this->node->id)
-        ->and($input['direct_destroy']['routes'][0])->not->toHaveKey('php')
-        ->and($input['withdrawal_publications'][0])->not->toHaveKey('php');
+    expect($input)->toHaveKeys(['intent', 'execution_secrets'])
+        ->and($input['intent']['direct_destroy']['routes'][0]['nodes'][0]['node_id'])->toBe($this->node->id)
+        ->and($input['intent']['direct_destroy']['routes'][0])->not->toHaveKey('php');
 });
 
 it('has exactly one direct destroy dispatch and no executor or child execution contract', function (): void {

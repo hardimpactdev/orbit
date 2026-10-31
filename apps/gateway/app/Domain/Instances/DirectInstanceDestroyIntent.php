@@ -40,7 +40,9 @@ final readonly class DirectInstanceDestroyIntent
      */
     public function record(array $input, bool $parentOwnsRoutes = false): array
     {
-        return DB::transaction(fn (): array => $this->recordIntent($input, $parentOwnsRoutes));
+        return DB::transaction(fn (): array => Arr::except($this->recordIntent($input, $parentOwnsRoutes), [
+            'git_read', 'teardown', 'php', 'database_material', 'private_bindings',
+        ]));
     }
 
     /** @param array<string, mixed> $input
@@ -158,11 +160,7 @@ final readonly class DirectInstanceDestroyIntent
         $databaseNodes = array_values(array_unique(array_column($databases['servers'], 'node_id')));
         $participants = array_values(array_unique([...$nodes, ...$databaseNodes]));
 
-        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $participants, 'environment' => $input['environment'] ?? 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
-            'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
-            'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
-            'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
-            'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => $databaseNodes, 'write_node_ids' => []]],
+        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $participants, 'environment' => $input['environment'] ?? 'development',
             'direct_destroy' => [
                 'node_id' => $node->id, 'node_user' => $node->user, 'members' => $local, 'runtime' => $runtime,
                 'teardown' => $teardown, 'routes' => $withdrawals, 'publication_node_ids' => $nodes,

@@ -122,6 +122,19 @@ def environment_file(path, owner, required):
     return result
 
 
+def owned_unit(unit, marker):
+    require(re.fullmatch(r"orbit-(?:process-[1-9][0-9]*-[a-z0-9-]+\.service|schedule-[a-f0-9-]{36}\.(?:timer|service))", unit))
+    root = "/etc/systemd/system"
+    canonical(root)
+    path = root + "/" + unit
+    value = info(path)
+    if value is None:
+        return False
+    require(value.st_uid == 0 and value.st_gid == 0 and not value.st_mode & 0o022)
+    require(marker in read_regular(path).decode().splitlines())
+    return True
+
+
 def account(member, production):
     user = member["user"]
     require(re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user) and user != "root")
@@ -278,6 +291,36 @@ def quarantine_path(member, capture, removal_id):
     return f"{root}/.orbit-removal-{removal_id}-{member['instance_id']}"
 
 
+def inventory_matches(original, current, intent):
+    """Ignore only admitted worktrees already removed by this removal's steps."""
+    def entries(encoded):
+        raw = base64.b64decode(encoded, validate=True)
+        require(not raw or raw.endswith(b"\0\0"))
+        result = {}
+        for block in raw.split(b"\0\0"):
+            if not block:
+                continue
+            first = block.split(b"\0", 1)[0]
+            require(first.startswith(b"worktree "))
+            path = first[9:].decode()
+            require(path not in result)
+            result[path] = block
+        return result
+    expected, actual = entries(original), entries(current)
+    captures = {row["instance_id"]: row for row in intent["captured_sources"]["members"]}
+    for member in intent["members"]:
+        row = captures[member["instance_id"]]
+        path = row["release"]
+        if path is None or row["environment"] != "development" or info(path) is not None:
+            continue
+        target = quarantine_path(member, row, intent["removal_id"])
+        require(info(target) is None or identity(target) == row["source_identity"])
+        expected.pop(path, None)
+        # Git may still list an absent worktree as prunable until its metadata step.
+        actual.pop(path, None)
+    return expected == actual
+
+
 def verify_source(member, capture, intent, allow_quarantine=False):
     production = capture["environment"] == "production"
     owner = account(member, production)
@@ -297,6 +340,10 @@ def verify_source(member, capture, intent, allow_quarantine=False):
     directory(actual, capture["uid"], capture["gid"])
     if actual == source:
         current = capture_member(member, intent)
-        for field in ["uid", "gid", "source_identity", "release", "release_identity", "source_commit", "origin", "worktree_inventory", "marker"]:
+        for field in ["uid", "gid", "source_identity", "release", "release_identity", "source_commit", "origin", "marker"]:
             require(current[field] == capture[field])
+        if "captured_sources" in intent:
+            require(inventory_matches(capture["worktree_inventory"], current["worktree_inventory"], intent))
+        else:
+            require(current["worktree_inventory"] == capture["worktree_inventory"])
     return {"source_present": capture["release"] is not None}

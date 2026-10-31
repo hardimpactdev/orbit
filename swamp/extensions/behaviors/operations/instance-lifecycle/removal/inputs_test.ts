@@ -9,6 +9,7 @@ const intent = {
     environment: "production" as const,
     members: [{ instance_id: 71 }],
     direct_destroy: {
+        runtime: { processes: [] },
         teardown: [{
             instance_id: 71,
             checkout: "/home/orbit-app-11/current/server/web",
@@ -34,11 +35,14 @@ Deno.test("partial production without a current release skips teardown", async (
     const value = await behavior.methods.capture.execute({
         intent,
         stdout: JSON.stringify({
-            members: [{
-                instance_id: 71,
-                release: null,
-                source: "/home/orbit-app-11",
-            }],
+            source_dispositions: [{ instance_id: 71, teardown_required: true }],
+            source_inspection: {
+                members: [{
+                    instance_id: 71,
+                    release: null,
+                    source: "/home/orbit-app-11",
+                }],
+            },
         }),
     }, ctx);
     assertEquals(value.teardown, []);
@@ -48,11 +52,14 @@ Deno.test("each admitted teardown program is a separate native iteration", async
     const value = await behavior.methods.capture.execute({
         intent,
         stdout: JSON.stringify({
-            members: [{
-                instance_id: 71,
-                release: "/home/orbit-app-11/releases/initial",
-                source: "/home/orbit-app-11",
-            }],
+            source_dispositions: [{ instance_id: 71, teardown_required: true }],
+            source_inspection: {
+                members: [{
+                    instance_id: 71,
+                    release: "/home/orbit-app-11/releases/initial",
+                    source: "/home/orbit-app-11",
+                }],
+            },
         }),
     }, ctx);
     assertEquals(value.teardown.length, 1);
@@ -68,11 +75,17 @@ Deno.test("capture cannot substitute a different member", async () => {
         behavior.methods.capture.execute({
             intent,
             stdout: JSON.stringify({
-                members: [{
-                    instance_id: 72,
-                    release: null,
-                    source: "/home/orbit-app-11",
+                source_dispositions: [{
+                    instance_id: 71,
+                    teardown_required: true,
                 }],
+                source_inspection: {
+                    members: [{
+                        instance_id: 72,
+                        release: null,
+                        source: "/home/orbit-app-11",
+                    }],
+                },
             }),
         }, ctx)
     );

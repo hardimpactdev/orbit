@@ -8,7 +8,6 @@ import io
 import json
 import os
 import pwd
-import re
 import runpy
 import subprocess
 import tempfile
@@ -17,19 +16,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import identity
-import yaml
 
 ROOT = Path(__file__).parent
 
 
 def program(step_name):
-    document = yaml.safe_load((ROOT / "source-steps.yaml").read_text())
-    for job in document["jobs"]:
-        for step in job["steps"]:
-            if step["name"].split("-${{")[0] == step_name:
-                run = step["task"]["inputs"]["run"]
-                return re.search(r"<<'PY'\n(.*?)\nPY(?:\n|$)", run, re.DOTALL).group(1)
-    raise AssertionError(step_name)
+    return (ROOT / (step_name.replace("-", "_") + ".py")).read_text()
 
 
 class RemovalTests(unittest.TestCase):
@@ -179,6 +171,53 @@ class RemovalTests(unittest.TestCase):
         self.assertEqual(capture, before)
         self.assertEqual(capture["origin"], self.intent["repository"])
         self.assertTrue(base64.b64decode(capture["worktree_inventory"]).endswith(b"\0\0"))
+
+    def test_changed_unadmitted_common_checkout_cannot_be_ignored_during_worktree_retry(self):
+        source_root = self.root / 'apps'
+        primary = source_root / 'fixture/main'
+        primary.mkdir(parents=True)
+        self.git('init', '-q', '-b', 'main', str(primary))
+        self.git('-C', str(primary), 'config', 'user.email', 'test@example.invalid')
+        self.git('-C', str(primary), 'config', 'user.name', 'Removal test')
+        self.git('-C', str(primary), 'remote', 'add', 'origin', self.intent['repository'])
+        (primary / 'file').write_text('one')
+        self.git('-C', str(primary), 'add', '.')
+        self.git('-C', str(primary), 'commit', '-qm', 'one')
+        linked = source_root / 'fixture/feature'
+        self.git('-C', str(primary), 'worktree', 'add', '-qb', 'feature', str(linked))
+        member = {**self.member, 'environment': 'development', 'source_root': str(source_root),
+                  'source_layout': 'worktree', 'checkout_path': str(linked), 'branch': 'feature'}
+        intent = {**self.intent, 'force': True, 'members': [member]}
+        capture = identity.capture_member(member, intent)
+        intent['captured_sources'] = {'members': [capture]}
+        (primary / 'file').write_text('two')
+        self.git('-C', str(primary), 'commit', '-am', 'two')
+        with self.assertRaises(identity.Refusal):
+            identity.verify_source(member, capture, intent, allow_quarantine=True)
+        self.assertTrue(linked.is_dir())
+
+    def test_retained_capture_adds_metadata_without_replacing_original_facts(self):
+        self.production()
+        full = identity.capture_member(self.member, self.intent)
+        fields = ['instance_id', 'user', 'group', 'source_root', 'source_digest', 'source_identity',
+                  'source_commit', 'common_repository_path', 'linked_worktree_paths', 'worktree_inventory', 'origin']
+        retained = {key: full[key] for key in fields}
+        retained['source_digest'] = 'a' * 64
+        intent = {**self.intent, 'captured_sources': {'members': [retained]}}
+        output = io.StringIO()
+        with patch.dict(os.environ, {'ORBIT_REMOVAL_INTENT': json.dumps(intent)}), contextlib.redirect_stdout(output):
+            runpy.run_path(str(ROOT / 'inspect_sources.py'), run_name='__main__')
+        result = json.loads(output.getvalue())
+        for key in fields:
+            self.assertEqual(result['source_inspection']['members'][0][key], retained[key])
+        self.assertEqual(result['source_inspection']['members'][0]['source'], full['source'])
+
+    def test_schedule_service_with_a_missing_file_and_loaded_unit_refuses(self):
+        schedule = '1699c2db-8119-4439-a685-7e555f6a0641'
+        loaded = subprocess.CompletedProcess([], 0, b'loaded\n')
+        with patch.dict(os.environ, {'ORBIT_SCHEDULE_ID': schedule}), patch.object(identity, 'owned_unit', return_value=False), patch.object(subprocess, 'run', return_value=loaded) as calls, self.assertRaises(SystemExit):
+            runpy.run_path(str(ROOT / 'stop_schedule_service.py'), run_name='__main__')
+        self.assertEqual(calls.call_count, 1)
 
 
 class AccountTests(unittest.TestCase):

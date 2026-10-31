@@ -5,6 +5,18 @@ visibility: private
 license: MIT
 description: Public input and result shaping for placed Instance removal commands.
 behaviors:
-  - operations/instance-lifecycle/removal/inputs.ts
+- operations/instance-lifecycle/removal/inputs.ts
 additionalFiles:
-  - identity.py
+- identity.py
+- inspect_sources.py
+- quarantine.py
+- delete_tree.py
+- delete_worktree_metadata.py
+- delete_account.py
+- delete_marker.py
+- stop_schedule.py
+- stop_schedule_service.py
+- stop_process.py
+- teardown.py
+- verify_source.py
+- check_publication.py

@@ -9,6 +9,15 @@ const Intent = z.object({
     environment: z.enum(["development", "production"]),
     members: z.array(z.object({ instance_id: Id }).passthrough()).min(1),
     direct_destroy: z.object({
+        runtime: z.object({
+            processes: z.array(
+                z.object({
+                    process_id: Id,
+                    runtime: z.enum(["systemd", "docker"]),
+                    name: z.string(),
+                }).passthrough(),
+            ),
+        }).passthrough(),
         teardown: z.array(z.object({
             instance_id: Id,
             checkout: z.string(),
@@ -60,6 +69,24 @@ export const behavior = {
             ) => {
                 const value = {
                     intent_json: JSON.stringify(args.intent),
+                    scripts: Object.fromEntries(
+                        [
+                            "inspect_sources",
+                            "quarantine",
+                            "delete_tree",
+                            "delete_worktree_metadata",
+                            "delete_account",
+                            "delete_marker",
+                            "stop_schedule",
+                            "stop_schedule_service",
+                            "stop_process",
+                            "teardown",
+                            "verify_source",
+                            "check_publication",
+                        ].map((
+                            name,
+                        ) => [name, ctx.extensionFile(name + ".py")]),
+                    ),
                     library: ctx.extensionFile("identity.py").replace(
                         /\/identity.py$/,
                         "",
@@ -77,11 +104,25 @@ export const behavior = {
                 args: { intent: z.infer<typeof Intent>; stdout: string },
                 ctx: Context,
             ) => {
-                const inspection = Inspected.parse(JSON.parse(args.stdout));
+                const inspection = Inspected.parse(
+                    JSON.parse(args.stdout).source_inspection,
+                );
+                const dispositions = z.array(z.object({
+                    instance_id: Id,
+                    teardown_required: z.boolean(),
+                })).parse(JSON.parse(args.stdout).source_dispositions);
+                const teardownRequired = new Map(
+                    dispositions.map((
+                        row,
+                    ) => [row.instance_id, row.teardown_required]),
+                );
                 const captured = new Map(
                     inspection.members.map((row) => [row.instance_id, row]),
                 );
-                if (captured.size !== args.intent.members.length) {
+                if (
+                    captured.size !== args.intent.members.length ||
+                    teardownRequired.size !== captured.size
+                ) {
                     throw new Error("instance.removal_conflict");
                 }
                 const members = args.intent.members.map((member) => {
@@ -93,7 +134,10 @@ export const behavior = {
                             member.failed_creation !== true &&
                             capture.source_commit !== "",
                         input_json: JSON.stringify({
-                            intent: args.intent,
+                            intent: {
+                                ...args.intent,
+                                captured_sources: inspection,
+                            },
                             member,
                             capture,
                         }),
@@ -105,7 +149,13 @@ export const behavior = {
                         if (!capture) {
                             throw new Error("instance.removal_conflict");
                         }
-                        if (capture.release === null) return [];
+                        if (!teardownRequired.has(member.instance_id)) {
+                            throw new Error("instance.removal_conflict");
+                        }
+                        if (
+                            capture.release === null ||
+                            !teardownRequired.get(member.instance_id)
+                        ) return [];
                         let checkout = member.checkout;
                         const production =
                             args.intent.environment === "production";
@@ -144,7 +194,31 @@ export const behavior = {
                 const value = {
                     source_inspection: inspection,
                     members,
+                    worktrees: members.filter((row) =>
+                        args.intent.members.find((member) =>
+                            member.instance_id === row.instance_id
+                        )?.source_layout === "worktree"
+                    ),
+                    checkouts: members.filter((row) =>
+                        args.intent.members.find((member) =>
+                            member.instance_id === row.instance_id
+                        )?.source_layout !== "worktree"
+                    ),
                     teardown,
+                    process_stops: args.intent.direct_destroy.runtime.processes
+                        .flatMap((process) =>
+                            process.runtime === "docker"
+                                ? [
+                                    "",
+                                    "-candidate",
+                                    "-rollback-running",
+                                    "-rollback-stopped",
+                                ].map((suffix) => ({
+                                    ...process,
+                                    name: process.name + suffix,
+                                }))
+                                : [process]
+                        ),
                 };
                 await ctx.writeResource("capture", "capture", value);
                 return value;
