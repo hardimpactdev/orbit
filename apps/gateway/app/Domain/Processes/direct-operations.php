@@ -11,6 +11,7 @@ $control = [
 ];
 
 return [
+    'process.install_instance_definitions' => ['workflow' => 'operation-process-install-instance-definitions', 'projection' => ProcessInstanceOperation::class, 'private_material' => ['installations' => 'process.instance_installations']],
     'process.restart_instance' => ['workflow' => 'operation-process-restart-instance', 'projection' => ProcessInstanceOperation::class],
     'process.update' => [...$control, 'workflow' => 'operation-process-update', 'private_material' => ['installation' => 'process.installation']],
     'process.create' => [...$control, 'private_material' => ['installation' => 'process.installation']],
