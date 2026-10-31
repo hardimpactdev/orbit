@@ -10,6 +10,7 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsFleetCapture;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -73,6 +74,23 @@ final readonly class AdmitNodeRoleOperationAction
             }
             $firstRole = ! $duringProvisioning && ! $node->roles()->where('status', LifecycleStatus::Active)->exists();
             $metricsBefore = null;
+            if ($role === RoleName::Analytics) {
+                $analytics ??= $this->analytics->find($node);
+                if ($analytics === null) {
+                    throw new ResourceOperationException('analytics.settings_missing', 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.', 422);
+                }
+                $this->analyticsStorage->assert($analytics->postgresProcessId, $analytics->clickhouseProcessId);
+            }
+
+            if ($native) {
+                $this->assign->preflight($node, $role);
+                if (! $converge && $role !== RoleName::Ingress && $node->roles()->where('role', $role)->exists()) {
+                    throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
+                }
+                if (MachineArchitecture::normalize($node->architecture) !== MachineArchitecture::Linux) {
+                    throw new ResourceOperationException('node.architecture_unsupported', 'Native Linux roles require the recorded x86_64 architecture.', 422);
+                }
+            }
             if ($native) {
                 if ($duringProvisioning || $this->idempotency->parent !== null || $firstRole
                     || ! in_array($role, [RoleName::Database, RoleName::CiRunner], true)) {
@@ -89,14 +107,6 @@ final readonly class AdmitNodeRoleOperationAction
                     $metricsBefore = app(MetricsFleetCapture::class)->capture();
                 }
             }
-            if ($role === RoleName::Analytics) {
-                $analytics ??= $this->analytics->find($node);
-                if ($analytics === null) {
-                    throw new ResourceOperationException('analytics.settings_missing', 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.', 422);
-                }
-                $this->analyticsStorage->assert($analytics->postgresProcessId, $analytics->clickhouseProcessId);
-            }
-
             // Take the durable target hold before changing an assignment or its Settings.
             $operation = $this->operations->execute('node.role_add', 'node', $node->id, $node->id,
                 ['role' => $role->value, 'converge' => $converge, ...($native ? ['node_id' => $node->id, 'native_role' => true] : [])],

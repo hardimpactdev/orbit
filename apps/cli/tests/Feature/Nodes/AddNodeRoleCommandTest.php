@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -42,6 +41,7 @@ it('registers the exact node role add command signature surface', function (): v
         ->and(node_role_add_command_options($command))
         ->toBe([
             'converge' => false,
+            'idempotency-key' => null,
             'postgres-process' => null,
             'clickhouse-process' => null,
             'json' => false,
@@ -61,25 +61,6 @@ it('rejects an invalid node id before connector io', function (string $nodeId): 
     'zero' => '0',
     'negative' => '-1',
 ]);
-
-it('resolves a node name through the node list before adding the role', function (): void {
-    $mockClient = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_add_node_payload(id: 7, name: 'app-dev')],
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ]),
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => added_node_role_payload(),
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 201),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => 'app-dev', 'role' => 'app-dev', '--json' => true])
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/nodes/7/roles');
-});
 
 it('rejects an unknown node name before the role request', function (): void {
     $mockClient = MockClient::global([
@@ -106,111 +87,6 @@ it('rejects an empty role before connector io', function (): void {
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
-});
-
-it('sends one node role add request with default converge false as json for HTTP 201', function (): void {
-    $mockClient = MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => added_node_role_payload(),
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 201),
-    ]);
-    $expected = json_encode(added_node_role_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this
-        ->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev', '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
-
-    $request = $mockClient->getLastRequest();
-    $pendingRequest = $mockClient->getLastPendingRequest();
-
-    expect($request)
-        ->toBeInstanceOf(AddNodeRoleRequest::class)
-        ->and($request?->getMethod())
-        ->toBe(Method::POST)
-        ->and($request?->resolveEndpoint())
-        ->toBe('/api/v1/nodes/7/roles')
-        ->and($pendingRequest?->body()->all())
-        ->toBe([
-            'role' => 'app-dev',
-            'converge_existing' => false,
-        ]);
-});
-
-it('sends converge true when requested and accepts HTTP 200 for an existing assignment', function (): void {
-    $mockClient = MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => added_node_role_payload(),
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 200),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev', '--converge' => true, '--json' => true])
-        ->expectsOutput(json_encode(added_node_role_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe([
-            'role' => 'app-dev',
-            'converge_existing' => true,
-        ]);
-});
-
-it('assigns and retries Ingress in JSON and human modes', function (): void {
-    $mockClient = MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => ingress_added_node_role_payload(),
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 200),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => '17', 'role' => 'ingress', '--json' => true])
-        ->expectsOutput(json_encode([
-            ...ingress_added_node_role_payload(),
-            'degradation' => null,
-            'retained_on_node' => [],
-            'follow_up' => null,
-            'request_id' => node_role_add_request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->assertExitCode(0);
-    $this
-        ->artisan('node:role:add', [
-            'node' => '17',
-            'role' => 'ingress',
-            '--converge' => true,
-        ])
-        ->expectsOutput('Role [ingress] added to node [ingress-1] (#17).')
-        ->expectsOutput('Request ID: '.node_role_add_request_id())
-        ->assertExitCode(0);
-
-    $mockClient->assertSentInOrder([
-        static fn (AddNodeRoleRequest $request): bool => $request->body()->all() === [
-            'role' => 'ingress',
-            'converge_existing' => false,
-        ],
-        static fn (AddNodeRoleRequest $request): bool => $request->body()->all() === [
-            'role' => 'ingress',
-            'converge_existing' => true,
-        ],
-    ]);
-});
-
-it('shows deterministic human output for a new node role assignment', function (): void {
-    MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => added_node_role_payload(),
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 201),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev'])
-        ->expectsOutput('Role [app-dev] added to node [app-1] (#7).')
-        ->expectsOutput('Request ID: '.node_role_add_request_id())
-        ->assertExitCode(0);
 });
 
 it('renders gateway-owned node role add failures through the shared boundary', function (): void {
@@ -328,21 +204,6 @@ it('keeps the failed step of a convergence failure without a Caddy build', funct
 });
 
 describe('the analytics role', function (): void {
-    it('sends the two storage Process IDs with the role', function (): void {
-        $mockClient = MockClient::global([
-            AddNodeRoleRequest::class => MockResponse::make([
-                'data' => [...added_node_role_payload(), 'role' => 'analytics'],
-                'meta' => ['request_id' => node_role_add_request_id()],
-            ], 201),
-        ]);
-
-        $this
-            ->artisan('node:role:add', ['node' => '7', 'role' => 'analytics', '--postgres-process' => '41', '--clickhouse-process' => '42', '--json' => true])
-            ->assertExitCode(0);
-
-        expect($mockClient->getLastPendingRequest()?->body()->all())
-            ->toBe(['role' => 'analytics', 'converge_existing' => false, 'postgres_process_id' => 41, 'clickhouse_process_id' => 42]);
-    });
 
     it('refuses a missing or malformed storage Process without prompting when it cannot prompt, and sends nothing', function (array $options): void {
         $mockClient = MockClient::global();
@@ -435,53 +296,6 @@ function node_role_add_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
-
-it('shows deterministic human output for a converged existing node role assignment', function (): void {
-    MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => added_node_role_payload(),
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 200),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev', '--converge' => true])
-        ->expectsOutput('Role [app-dev] added to node [app-1] (#7).')
-        ->expectsOutput('Request ID: '.node_role_add_request_id())
-        ->assertExitCode(0);
-});
-
-it('warns with the follow-up of a convergence step that failed without failing the role', function (): void {
-    $followUp = 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed). '
-        .'The gateway role stays active. Fix the cause, then run `orbit node:role:add app-1 gateway --converge` again.';
-    MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => [...added_node_role_payload(), 'role' => 'gateway', 'follow_up' => $followUp],
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 200),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--converge' => true])
-        ->expectsOutput('Role [gateway] added to node [app-1] (#7).')
-        ->expectsOutputToContain('Warning: The Gateway machine does not route the private domain to Orbit VPN DNS')
-        ->expectsOutput('Request ID: '.node_role_add_request_id())
-        ->assertExitCode(0);
-
-    MockClient::destroyGlobal();
-    MockClient::global([
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => [...added_node_role_payload(), 'role' => 'gateway', 'follow_up' => $followUp],
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ], 200),
-    ]);
-
-    $this
-        ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--converge' => true, '--json' => true])
-        ->expectsOutputToContain('"follow_up":"The Gateway machine does not route the private domain')
-        ->doesntExpectOutputToContain('Warning:')
-        ->assertExitCode(0);
-});
 
 /** @return array<string, mixed> */
 function node_role_add_node_payload(int $id, string $name): array

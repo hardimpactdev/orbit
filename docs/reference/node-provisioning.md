@@ -142,6 +142,10 @@ Each failure names the check or step that stopped the request.
 
 ## CI runner role
 
+Standalone `node:role:add` records a `node.role_add` Operation and returns HTTP 202. One native Swamp DAG runs prerequisites, the role baseline, the optional footprint and CLI follow-ups on the exact Node worker. The Gateway records and projects the assignment; it does not execute these steps. The command follows the Operation.
+
+The admitted native scope is `ci-runner` and `database` on an active, selected Linux Node with an existing active role and recorded agent identity. The Metrics owner compares the complete desired fleet before and after the assignment. A changed Metrics projection, first-role enrollment, or an unsupported publication contribution refuses before the intent commits. The `app-dev` role still needs its canonical publisher on the VPN Node, which has no worker. Enrollment and relocation retain their existing parent composition until their owners replace it. VPN1 and usexit18 are outside the worker rollout.
+
 `orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. Beast can keep its app and database roles. Shark needs only `ci-runner` for CI; removing its existing roles is a separate operator decision.
 
 The role installs Incus, and the agent's `ci-runner.host` prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.

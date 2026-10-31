@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Metrics\MetricsRoleReconcileImpact;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerIntent;
-use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
@@ -23,8 +22,8 @@ use InvalidArgumentException;
 final readonly class NodeRoleDirectInput
 {
     public function __construct(private AgentDelivery $delivery, private RolePrerequisites $prerequisites,
-        private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint, private ToolManagerIntent $managers,
-        private MetricsFleetCapture $metrics, private MetricsRoleReconcileImpact $metricsImpact) {}
+        private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint,
+        private MetricsFleetCapture $metrics, private MetricsRoleReconcileImpact $metricsImpact, private CliConvergePlan $cli) {}
 
     /** @param array<string,mixed>|null $metricsBefore Complete owning capture before recording the role transition.
      * @return array<string,mixed>
@@ -46,20 +45,12 @@ final readonly class NodeRoleDirectInput
         unset($prerequisites['user'], $prerequisites['group'], $prerequisites['home']);
         $footprint = $this->footprint->capture($node, false, false);
         unset($footprint['secret_hash']);
-        $managers = [];
-        if ($role === RoleName::AppDev) {
-            foreach ([ToolManagerName::Vp, ToolManagerName::Composer] as $manager) {
-                $intent = $this->managers->input($node, $manager);
-                $managers[] = ['manager' => $manager->value, 'platform' => $node->platform, 'architecture' => $node->architecture,
-                    'user' => $node->user, 'materialize' => $intent['materialize'] ?? null];
-            }
-        }
 
         return ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
             'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $node->user,
             'prerequisites' => $prerequisites, 'firewall' => $role === RoleName::Database ? null : $this->firewall->converge($node, $role),
-            'managers' => $managers, 'footprint' => $footprint,
-            'metrics_node_id' => $metricsNodeId, 'metrics_impact' => $impact];
+            'managers' => [], 'footprint' => $footprint,
+            'metrics_node_id' => $metricsNodeId, 'metrics_impact' => $impact, 'cli' => $this->cli->input($node)];
     }
 
     /** Canonical read-only ownership check for the role root and its protected hash source. */

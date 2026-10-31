@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Nodes\AddNodeRoleAction;
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\ListNodeRolesAction;
 use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Nodes\NodeRoleAssignmentData;
 use App\Data\Nodes\NodeRoleMutationData;
+use App\Data\Operations\OperationData;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\AddNodeRoleRequest;
 use App\Http\Requests\Nodes\RelocateNodeRoleRequest;
 use App\Http\Requests\Nodes\RemoveNodeRoleRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Http\JsonResponse;
@@ -46,17 +48,19 @@ final class NodeRolesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RoleMutation)]
+    #[StartsOperation('node.role_add')]
     public function store(
         AddNodeRoleRequest $request,
         Node $node,
-        AddNodeRoleAction $action,
+        AdmitNodeRoleOperationAction $action,
         RoleRegistry $registry,
     ): JsonResponse {
         $role = $request->role();
         $this->guardMutable($role, $registry);
 
         try {
-            $result = $action->execute($node, $role, $request->convergeExisting(), $request->analyticsSettings());
+            $result = $action->add($node, $role, $request->convergeExisting(), $request->analyticsSettings(),
+                requestId: $request->attributes->getString('orbit.request_id'), native: true);
         } catch (RoleAssignmentException $exception) {
             throw new NodeRoleValidationException(
                 message: $exception->getMessage(),
@@ -66,10 +70,10 @@ final class NodeRolesController extends Controller
 
         return response()->json(
             [
-                'data' => NodeRoleMutationData::added($node, $result['assignment'], $result['follow_up'])->toArray(),
+                'data' => OperationData::fromModel($result)->toArray(),
                 'meta' => $this->meta($request),
             ],
-            $result['created'] ? 201 : 200,
+            202,
         );
     }
 

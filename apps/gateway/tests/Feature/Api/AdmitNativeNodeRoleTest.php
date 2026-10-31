@@ -3,13 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
-use App\Domain\Nodes\NodeRoleDirectInput;
-use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Nodes\NodeConvergeInput;
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
-use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -24,15 +21,6 @@ beforeEach(function (): void {
     $this->node = FleetFixtures::node('native-role', [RoleName::AppDev]);
     $this->node->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
     config(['swamp_workers.nodes' => [$this->node->id], 'swamp.direct_writers' => ['node.role_add' => 'direct']]);
-    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
-    {
-        public function definitions(): array
-        {
-            return ['node.role_add' => ['workflow' => 'operation-node-role-add-direct', 'writer_config' => 'swamp.direct_writers',
-                'writer_state' => 'node_role_writer', 'writer_scope' => ['parent_operation_id' => null, 'native_role' => true],
-                'projection' => NativeRoleAdmissionOnlyProjection::class]];
-        }
-    }]));
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run', 'install');
     app()->instance(AgentCommandRunner::class, $agents);
@@ -72,7 +60,7 @@ it('refuses unsupported or unplaced role roots before recording an Operation or 
         'parent' => app(OperationIdempotency::class)->parent = new Operation(['id' => 999]),
     };
     $before = Operation::query()->count();
-    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, $role, native: true))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, $role, converge: $reason === 'app-dev-publication', native: true))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
 })->with(['workerless', 'identity', 'app-dev-publication', 'first-role', 'parent']);
 
@@ -85,17 +73,3 @@ it('rolls back the assignment and intent when an applicable footprint contributi
         ->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
 });
-
-/** Admission fixtures never project an execution outcome. The owning root supplies its real projection. */
-final class NativeRoleAdmissionOnlyProjection implements DirectOperationProjection
-{
-    public function input(Operation $operation): array
-    {
-        return NodeRoleDirectInput::bound($operation);
-    }
-
-    public function apply(Operation $operation, array $data): Operation
-    {
-        throw new LogicException('This fixture covers admission only.');
-    }
-}

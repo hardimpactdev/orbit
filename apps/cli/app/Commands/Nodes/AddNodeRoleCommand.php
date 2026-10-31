@@ -4,22 +4,30 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressOutcome;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
-use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 
 final class AddNodeRoleCommand extends NodeCommand
 {
+    use FollowsOperations {
+        writeOperationSummary as private operationSummary;
+    }
+
     #[\Override]
     protected $signature = 'node:role:add
         {node : Node ID or name}
         {role : Role name}
         {--converge : Converge an existing assignment}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--postgres-process= : For the analytics role: ID of its PostgreSQL 16 Process on a database Node}
         {--clickhouse-process= : For the analytics role: ID of its ClickHouse Process on a database Node}
         {--json : Return machine-readable JSON}';
@@ -57,27 +65,30 @@ final class AddNodeRoleCommand extends NodeCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new AddNodeRoleRequest($nodeId, $role, $this->option('converge') === true, ...$storage),
-            NodeRoleMutationResponse::class,
-            ['Add Node role', 'Adding Node role', 'Added Node role'],
-            NodeOutput::mutationState(...),
+            new AddNodeRoleRequest($nodeId, $role, $this->option('converge') === true, $storage[0], $storage[1],
+                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null),
+            OperationResponse::class,
+            ['Add Node role', 'Adding Node role', 'Node role request recorded'],
+            static fn (OperationResponse $response): ProgressOutcome => new ProgressOutcome(ProgressState::Success, 'Node role Operation recorded'),
         );
 
-        if (! $response instanceof NodeRoleMutationResponse) {
+        if (! $response instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
+        $profile = $this->activeGatewayProfile($repository);
 
-            return self::SUCCESS;
+        return $profile === null ? self::FAILURE
+            : $this->followOperation($connector, $profile, $response, 'Add Node role', 'Node role');
+    }
+
+    private function writeOperationSummary(OperationResponse $operation): void
+    {
+        $this->operationSummary($operation);
+        $followUp = $operation->result['follow_up'] ?? null;
+        if (is_string($followUp)) {
+            ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $followUp));
         }
-
-        $this->writeHumanMessage("Role [{$response->role}] added to node [{$response->nodeName}] (#{$response->nodeId}).");
-        ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $response->followUp));
-        $this->writeHumanMessage("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
     }
 
     /**

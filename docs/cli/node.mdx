@@ -275,30 +275,30 @@ Progress uses `Set Node platform`, `Setting Node platform`, and `Set Node platfo
 Add one role to a Node, or converge an existing role again.
 
 ```bash
-orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]
+orbit node:role:add <node> <role> [--converge] [--idempotency-key=KEY] [--postgres-process=ID] [--clickhouse-process=ID] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--converge` | Converge an existing role again. It works for a role that is `active`, `failed` at a `converge:` step, or `provisioning` for more than 11 minutes with no operation holding the Node's role lock. |
+| `--idempotency-key=KEY` | Reuse the same admitted Operation for an exact start retry. |
 | `--postgres-process=ID` | For `analytics` only: the PostgreSQL 16 Process that holds the Plausible accounts. |
 | `--clickhouse-process=ID` | For `analytics` only: the ClickHouse Process that holds the events. |
 
 ```bash
 orbit node:role:add beast database
-orbit node:role:add beast metrics --converge
-orbit node:role:add services analytics --postgres-process=41 --clickhouse-process=42
+orbit node:role:add shark ci-runner --converge --idempotency-key=shark-ci-converge
 ```
 
 `vpn` and `router` fail with `validation.failed` and `Role [ROLE] is protected from generic mutation.` A role that conflicts with one the Node holds fails with `validation.failed` before anything changes. [Role compatibility](/reference/node-provisioning#role-compatibility) lists the pairs. For `analytics`, a terminal lists the Docker Processes that run the right image and asks for each missing option. With `--json` or without a terminal, the command refuses. The [Analytics role](/reference/analytics) page describes that role.
 
-Role operations on one Node run one at a time. A command that waits more than 2 minutes fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`. Run it again.
+Standalone additions return a queued Operation and use the shared Operation follower. JSON contains the Operation and its bounded result. The native rollout currently admits `database` and `ci-runner` on selected Linux Nodes with an existing active role. Other applicable transitions wait for their owning native composition and refuse before recording an intent. See [Native role scope](/reference/node-provisioning#ci-runner-role).
 
-Some steps report a failure without failing the role. The role stays `active`, and `follow_up` in the response names the failure and the retry. The CLI prints it as a warning. The `gateway` role's [private DNS route](/reference/private-dns#the-gateway-machine) reports this way.
+A known footprint or CLI follow-up failure leaves the proven role `active`. The Operation result records it in `follow_up`, and the CLI prints a warning. An uncertain effect leaves the Operation unresolved until its native run reconciles it.
 
 The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the Incus host boundary without creating or registering containers. It cannot share `gateway` or `vpn`. Add it to CI-only hosts and alongside Beast's existing roles through this command.
 
-Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
+Standalone `gateway` addition is outside the native rollout. Use [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
 
 ## orbit node:role:list
 

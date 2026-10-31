@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Actions\Nodes\AddNodeRoleAction;
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Processes\CreateProcessAction;
@@ -44,7 +45,7 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
     app()->instance(MetricsFleetReconciler::class, $fleet);
     $node = $platform === 'macos' ? macos_boundary_node() : ipados_boundary_node();
 
-    expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::AppDev, native: true))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('node.platform_unsupported')
                 ->and($exception->status)->toBe(422);
