@@ -26,7 +26,7 @@ beforeEach(function (): void {
     Queue::fake();
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'process-admission', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'throwaway',
@@ -181,10 +181,12 @@ it('submits complete public stop inputs and waits for native completion before c
     $socket = app(WebSocketClient::class);
     $request = array_last($socket->sent);
     expect($request['payload']['workflowIdOrName'])->toBe('operation-process-stop');
-    expect($request['payload']['inputs']['intent'])->toEqual([
+    expect($request['payload']['inputs']['intent']['control'])->toEqual([
         'process_id' => $process->id, 'runtime' => 'docker',
         'name' => 'orbit-process-'.$process->id.'-throwaway', 'on_demand' => false, 'vite' => null,
     ]);
+    expect($request['payload']['inputs']['intent']['ssh_execution']['target']['user'])->toBe('orbit');
+    expect($request['payload']['inputs']['intent']['ssh_execution']['target'])->toBe(['name' => 'target', 'host' => $this->node->wireguard_ip, 'user' => 'orbit', 'port' => 22, 'host_keys' => ['ssh-ed25519 fixture-public-host-key']]);
     expect($request['payload']['inputs']['execution_secrets'])->toEqual((object) []);
     expect(json_encode($request))->not->toContain('stop-private-value');
     expect($process->refresh()->desired_state->value)->toBe('running');

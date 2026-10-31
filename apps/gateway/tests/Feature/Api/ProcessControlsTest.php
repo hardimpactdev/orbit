@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'process-direct', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']));
+    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'process-direct', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'direct-proof', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '60']], 'desired_state' => 'stopped', 'status' => 'active', 'restart_policy' => 'never']);
@@ -41,7 +42,7 @@ beforeEach(function (): void {
 });
 
 it('exposes only safe admitted Process control input and bypasses old claims', function (): void {
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['intent' => Arr::except($this->input, ['agent_sha256']), 'execution_secrets' => []]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['intent' => ['control' => Arr::except($this->input, ['agent_sha256']), 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($this->node)], 'execution_secrets' => []]);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.stop', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertNotFound();
 });
@@ -141,7 +142,7 @@ it('admits Vite stop and destroy without traffic preparation', function (string 
     expect($operation->input)->not->toHaveKey('vite_plan');
     expect($operation->lock_key)->toBeNull();
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
-        ->assertOk()->assertJsonPath($verb === 'stop' ? 'data.input.intent.vite' : 'data.input.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
+        ->assertOk()->assertJsonPath($verb === 'stop' ? 'data.input.intent.control.vite' : 'data.input.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
 })->with(['stop', 'destroy']);
 
 it('uses one direct start writer for Vite and existing owning admissions', function (): void {
