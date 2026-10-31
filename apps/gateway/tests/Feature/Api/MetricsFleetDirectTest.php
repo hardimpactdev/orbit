@@ -222,4 +222,49 @@ describe('same-root Node parent runtime custody', function (): void {
         expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
         expect(app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey))->toBeNull();
     });
+
+    it('initializes the existing credential type once for its exact provisioning Metrics root', function (string $kind, string $capture): void {
+        app(SettingRepository::class)->delete($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        $this->node->roles()->where('role', 'metrics')->update(['status' => 'provisioning']);
+        app()->instance(MetricsCredentialManager::class, app(NativeMetricsCredentialManager::class));
+        $input = $this->operation->input;
+        unset($input['_role']);
+        $input[$capture] = ['metrics_fleet' => $this->plan];
+        $this->operation->update(['kind' => $kind, 'target_id' => 9, 'node_id' => 9, 'input' => [...$input, 'role' => 'metrics']]);
+        $reader = app(DirectOperationPrivateMaterial::class);
+        $first = $reader->read($this->operation, 9)['metrics_runtime'];
+        $second = $reader->read($this->operation, 9)['metrics_runtime'];
+        $password = app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        expect($password)->toBeString()->toHaveLength(32);
+        expect($second)->toBe($first)
+            ->and($first['runtime']['configuration']['/etc/orbit/metrics/grafana/admin-password'])->toBe($password)
+            ->and($first['verify'])->toBe(['operation' => 'verify', 'password' => $password]);
+        expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()], JSON_THROW_ON_ERROR))->not->toContain($password);
+    })->with([['node.role_add', '_role'], ['node.role_converge', '_role'], ['node.role_relocate', '_relocate']]);
+
+    it('never bootstraps an active misplaced removal or different-role root', function (string $change): void {
+        app(SettingRepository::class)->delete($this->scope, NativeMetricsCredentialManager::ActivePasswordKey);
+        $this->node->roles()->where('role', 'metrics')->update(['status' => $change === 'active' ? 'active' : 'provisioning']);
+        $input = [...$this->operation->input, 'role' => $change === 'role' ? 'app-dev' : 'metrics'];
+        $kind = 'node.role_add';
+        if ($change === 'removal') {
+            $kind = 'node.role_remove';
+            $input['_role_remove'] = $input['_role'];
+            unset($input['_role']);
+        }
+        $this->operation->update(['kind' => $kind, 'target_id' => $change === 'target' ? 14 : 9,
+            'node_id' => $change === 'placement' ? 14 : 9, 'input' => $input]);
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
+        expect(app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey))->toBeNull();
+    })->with(['active', 'role', 'target', 'placement', 'removal']);
+
+    it('keeps an existing provisioning-owner credential and refuses an empty one instead of replacing it', function (): void {
+        $this->node->roles()->where('role', 'metrics')->update(['status' => 'provisioning']);
+        $this->operation->update(['target_id' => 9, 'node_id' => 9, 'input' => [...$this->operation->input, 'role' => 'metrics']]);
+        expect(app(DirectOperationPrivateMaterial::class)->read($this->operation, 9)['metrics_runtime']['verify']['password'])->toBe('existing-parent-private-sentinel');
+        app(SettingRepository::class)->put($this->scope, NativeMetricsCredentialManager::ActivePasswordKey, '', SettingValueProtection::Secret);
+        expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 9))->toThrow(ResourceOperationException::class);
+        expect(app(SettingRepository::class)->get($this->scope, NativeMetricsCredentialManager::ActivePasswordKey))->toBe('');
+    });
+
 });

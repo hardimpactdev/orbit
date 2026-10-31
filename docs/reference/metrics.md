@@ -252,4 +252,8 @@ Node role and removal parents compose the same fleet within their one native roo
 
 Canonical public captures live at `_role.metrics_fleet` (add/converge), `_role_remove.metrics_fleet`, `_relocate.metrics_fleet`, or `_removal.metrics_fleet` (remove/restore).
 
-The source reads only that owner's existing encrypted active password; it never mints or stores a credential for these parents. Swamp consumes the returned `runtime` and `verify` actions inside its private callback on the exact Metrics worker. The root and unrelated participants receive no credential. Parent admission owns the captured desired transition; it is not replaced by the currently active fleet during private hydration.
+Other-role and removal parents read only the Metrics owner's existing encrypted active password. An own-Metrics add, converge or relocate root may initialize a missing password through the existing credential manager only while its captured assignment is provisioning and its target, placed Node and Metrics owner match. Existing credentials are reused, never replaced.
+
+An exact public `input.role=metrics` runs runtime once, then credential verification. Other roles verify first. If verification fails after runtime converged, the runtime stays committed and the fleet is not rolled back. The prior Metrics role-runtime baseline is omitted to prevent double initialization.
+
+Swamp consumes the returned `runtime` and `verify` actions inside its private callback on the exact Metrics worker. The root and unrelated participants receive no credential. Parent admission owns the captured desired transition; it is not replaced by the currently active fleet during private hydration.
