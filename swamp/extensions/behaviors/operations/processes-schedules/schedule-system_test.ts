@@ -39,18 +39,6 @@ input.command_hash = Array.from(
   new Uint8Array(commandBytes),
   (b) => b.toString(16).padStart(2, "0"),
 ).join("");
-const runInput = {
-  id,
-  user: input.user,
-  group: input.group,
-  home: input.home,
-  working_directory: input.working_directory,
-  shell: input.shell,
-  login_shell: input.login_shell,
-  timeout_seconds: input.timeout_seconds,
-  command_hash: input.command_hash,
-  command: privateCommand,
-};
 const target = {
   id,
   user: input.user,
@@ -523,104 +511,9 @@ Deno.test("invalid intent and unavailable execution account refuse without effec
   }
   const f = new Fixture();
   f.unavailable = true;
-  assertEquals(await f.action("schedule.run", runInput), {
+  assertEquals(await f.action("schedule.install"), {
     error_code: "schedule.target_unavailable",
   });
-  assertEquals(
-    f.calls.some((call) => call.program === "/usr/bin/timeout"),
-    false,
-  );
-});
-
-Deno.test("manual native run waits for the command result and keeps source off argv and disk", async () => {
-  const f = new Fixture();
-  let resolveRun: (value: { code: number; stdout: string }) => void = () => {};
-  let entered: () => void = () => {};
-  const ready = new Promise<void>((resolve) => entered = resolve);
-  const completion = new Promise<{ code: number; stdout: string }>((resolve) =>
-    resolveRun = resolve
-  );
-  const run: SystemCommand = async (program, args, stdin, signal, timeout) => {
-    if (args.includes("/usr/bin/timeout")) {
-      assertEquals(args.slice(0, 7), [
-        "-n",
-        "--user",
-        "orbit",
-        "--group",
-        "orbit",
-        "--",
-        "/usr/bin/timeout",
-      ]);
-      assertEquals(args.includes("--chdir=/home/orbit/current"), true);
-      assertEquals(
-        args.includes('"$@" 2>&1 | /usr/bin/systemd-cat --identifier "$0"'),
-        true,
-      );
-      assertEquals(args.includes("pipefail"), true);
-      assertEquals(args.includes(`orbit-schedule-${id}`), true);
-      assertEquals(args.slice(-2), ["/bin/bash", "-s"]);
-      assertEquals(args.join(" ").includes(privateCommand), false);
-      assertEquals(stdin, privateCommand + "\n");
-      assertEquals(timeout, 70_000);
-      assertEquals(signal, undefined);
-      entered();
-      return await completion;
-    }
-    return await f.run(program, args, stdin, signal, timeout);
-  };
-  let settled = false;
-  const action = scheduleSystem("schedule.run", runInput, undefined, run).then(
-    (result) => {
-      settled = true;
-      return result;
-    },
-  );
-  await ready;
-  assertEquals(settled, false);
-  resolveRun({ code: 0, stdout: "private output must not enter result" });
-  assertEquals(await action, {});
-  assertEquals(f.mutations(), []);
-  assertEquals(f.files.has(script), false);
-  assertEquals([f.enabled, f.active], [false, false]);
-});
-
-Deno.test("manual failures and timeouts produce a bounded typed error without private output", async () => {
-  for (const code of [1, 124, 137]) {
-    const f = new Fixture();
-    f.runCode = code;
-    f.runOutput = privateCommand;
-    assertEquals(await f.action("schedule.run", runInput), {
-      error_code: "schedule.run_failed",
-    });
-  }
-  const f = new Fixture();
-  const run: SystemCommand = (program, args, stdin, signal, timeout) =>
-    args.includes("/usr/bin/timeout")
-      ? Promise.reject(new Error(privateCommand))
-      : f.run(program, args, stdin, signal, timeout);
-  assertEquals(await scheduleSystem("schedule.run", runInput, undefined, run), {
-    error_code: "schedule.run_failed",
-  });
-  assertEquals(
-    await f.action("schedule.run", {
-      ...runInput,
-      command_hash: "a".repeat(64),
-    }),
-    { error_code: "schedule.artifact_conflict" },
-  );
-});
-
-Deno.test("stored login shell is explicit and manual runs do not need an installed legacy service", async () => {
-  const f = new Fixture();
-  legacy(f);
-  assertEquals(
-    await f.action("schedule.run", { ...runInput, login_shell: true }),
-    {},
-  );
-  const execution = f.calls.find((call) =>
-    call.program === "/usr/bin/timeout"
-  )!;
-  assertEquals(execution.args.slice(-3), ["/bin/bash", "--login", "-s"]);
   assertEquals(f.mutations(), []);
 });
 
@@ -714,24 +607,6 @@ Deno.test("cancellation after installation starts permits completion and rollbac
     }
     assertEquals([f.enabled, f.active], [false, false]);
   }
-});
-
-Deno.test("cancellation during a native run waits for its confirmed result", async () => {
-  const f = new Fixture();
-  const cancellation = new AbortController();
-  const run: SystemCommand = async (program, args, stdin, signal, timeout) => {
-    signal?.throwIfAborted();
-    if (args.includes("/usr/bin/timeout")) {
-      cancellation.abort();
-      assertEquals(signal, undefined);
-    }
-    return await f.run(program, args, stdin, signal, timeout);
-  };
-  assertEquals(
-    await scheduleSystem("schedule.run", runInput, cancellation.signal, run),
-    {},
-  );
-  assertEquals(cancellation.signal.aborted, true);
 });
 
 Deno.test("cancellation before the first effect refuses without mutation", async () => {

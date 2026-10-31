@@ -9,6 +9,9 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
@@ -24,6 +27,22 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
     {
         if (! $operation->status->terminal() && ! Schedule::query()->whereKey($operation->input['id'])->exists()) {
             throw new ResourceOperationException('schedule.target_unavailable', 'The admitted Schedule no longer exists.', 404);
+        }
+
+        if ($operation->kind === 'schedule.run') {
+            $source = app(ScheduleOperationSecrets::class);
+            $owner = $source->ownerId($operation);
+            if ($owner === null) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The Schedule command does not belong to this target.', 422);
+            }
+            $ssh = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id));
+            $command = $source->resolve($operation, $owner, 'command', 'command');
+
+            return ['intent' => ['schedule' => Arr::only($operation->input, ['id', 'command_hash', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'timeout_seconds']),
+                'ssh_execution' => $ssh],
+                'execution_secrets' => ['command' => app(SwampCommandStep::class)->executionCopy(
+                    'orbit-control-inputs', 'schedule-run-operation-'.$operation->id, ValidatedData::string($command->value),
+                )]];
         }
 
         return Arr::only($operation->input, ['id', 'command_hash', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'calendar', 'timeout_seconds', 'desired', 'cascade']);

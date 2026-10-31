@@ -24,12 +24,6 @@ const PublicInstall = Context.extend({
   desired: z.enum(["enabled", "disabled"]),
 }).strict();
 const Install = PublicInstall.extend({ command: Command.optional() });
-const Run = Context.extend({
-  id: Id,
-  command_hash: Digest,
-  command: Command,
-  timeout_seconds: z.number().int().min(1).max(86400),
-}).strict();
 const Target = z.object({ id: Id, user: Account, working_directory: Path })
   .strict();
 const Remove = z.union([
@@ -39,7 +33,6 @@ const Remove = z.union([
 export type ScheduleCommand =
   | "schedule.install"
   | "schedule.activate"
-  | "schedule.run"
   | "schedule.remove";
 
 class Refused extends Error {
@@ -286,46 +279,6 @@ class Host {
       );
       if (result.code !== 0) refuse("schedule.target_unavailable");
     }
-  }
-  async execute(input: z.infer<typeof Run>) {
-    this.beginMutation();
-    // The fixed pipeline sends business output to journald; pipefail preserves the program result.
-    const result = await this.run(
-      "/usr/bin/sudo",
-      [
-        "-n",
-        "--user",
-        input.user,
-        "--group",
-        input.group,
-        "--",
-        "/usr/bin/timeout",
-        "--signal=TERM",
-        "--kill-after=5",
-        `${input.timeout_seconds}s`,
-        "/usr/bin/env",
-        "-i",
-        `--chdir=${input.working_directory}`,
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        `HOME=${input.home}`,
-        `SHELL=${input.shell}`,
-        `USER=${input.user}`,
-        `LOGNAME=${input.user}`,
-        "/bin/bash",
-        "-o",
-        "pipefail",
-        "-c",
-        '"$@" 2>&1 | /usr/bin/systemd-cat --identifier "$0"',
-        `orbit-schedule-${input.id}`,
-        input.shell,
-        ...(input.login_shell ? ["--login"] : []),
-        "-s",
-      ],
-      input.command + "\n",
-      undefined,
-      (input.timeout_seconds + 10) * 1000,
-    );
-    if (result.code !== 0) refuse("schedule.run_failed");
   }
   async systemctl(...args: string[]) {
     return (await this.system("/usr/bin/systemctl", args, undefined, 45_000))
@@ -630,25 +583,6 @@ async function activate(host: Host, input: z.infer<typeof Target>) {
   }
 }
 
-async function runCommand(host: Host, input: z.infer<typeof Run>) {
-  if (await commandHash(input.command) !== input.command_hash) {
-    refuse("schedule.artifact_conflict");
-  }
-  await host.runnable(
-    input.user,
-    input.working_directory,
-    input.home,
-    input.shell,
-  );
-  await host.group(input.group);
-  try {
-    await host.execute(input);
-  } catch (error) {
-    if (error instanceof Refused) throw error;
-    refuse("schedule.run_failed");
-  }
-}
-
 async function remove(host: Host, input: z.infer<typeof Remove>) {
   await host.inspectDirectories();
   const gid = await host.group(input.group);
@@ -715,9 +649,6 @@ export async function scheduleSystem(
         break;
       case "schedule.activate":
         await activate(host, Target.parse(input));
-        break;
-      case "schedule.run":
-        await runCommand(host, Run.parse(input));
         break;
       case "schedule.remove":
         await remove(host, Remove.parse(input));

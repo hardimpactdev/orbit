@@ -7,6 +7,7 @@ import { certificates } from "./mod.ts";
 import { roleCertificateActions } from "./role-actions.ts";
 import { signCertificateBatch } from "./signing.ts";
 
+const extensionFile = (path: string) => new URL(path, import.meta.url).pathname;
 const leaf = {
   node_id: 9,
   scope: "role-gateway" as const,
@@ -29,7 +30,7 @@ const root = {
 };
 Deno.test("role request and publication never take or return a private key", async () => {
   const calls: Record<string, unknown>[] = [];
-  const actions = roleCertificateActions((_program, input) => {
+  const actions = roleCertificateActions(extensionFile, (_program, input) => {
     calls.push(input);
     return Promise.resolve(
       input.operation === "request" ? request : { applied: true },
@@ -60,7 +61,7 @@ Deno.test("role request and publication never take or return a private key", asy
 Deno.test("role stages compose in one parent with the canonical signer and public resources", async () => {
   const resources: { spec: string; value: unknown }[] = [];
   const events: string[] = [];
-  const actions = roleCertificateActions((_program, input) => {
+  const actions = roleCertificateActions(extensionFile, (_program, input) => {
     events.push(String(input.operation));
     return Promise.resolve(
       input.operation === "request" ? request : { applied: true },
@@ -75,6 +76,7 @@ Deno.test("role stages compose in one parent with the canonical signer and publi
     actions,
   );
   const context = {
+    extensionFile,
     globalArgs: {
       gatewayUrl: "https://gateway.test",
       caFile: "/fixture/root.pem",
@@ -132,7 +134,7 @@ Deno.test("role signing decodes the public Gateway bundle without a custody loca
 });
 
 Deno.test("role native methods fail before dependents when local preparation or publication refuses", async () => {
-  const actions = roleCertificateActions(() =>
+  const actions = roleCertificateActions(extensionFile, () =>
     Promise.resolve({ error_code: "certificate.role_unsafe" })
   );
   const definition = certificates(
@@ -141,6 +143,7 @@ Deno.test("role native methods fail before dependents when local preparation or 
     actions,
   );
   const context = {
+    extensionFile,
     globalArgs: {
       gatewayUrl: "https://gateway.test",
       caFile: "/fixture/root.pem",
@@ -172,7 +175,7 @@ Deno.test("Analytics role fixes its hostname and pair scope before any key or CA
     domain: "analytics.orbit",
   };
   let effects = 0;
-  const actions = roleCertificateActions((_program, input) => {
+  const actions = roleCertificateActions(extensionFile, (_program, input) => {
     effects++;
     assertEquals(input.scope, "role-analytics");
     assertEquals(input.domain, "analytics.orbit");

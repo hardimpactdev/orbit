@@ -35,6 +35,8 @@ Example placed stage step:
 
 Preserve names through sudo; never expand material into argv. Material-consuming scripts remove their vault environment value before launching tools. Scripts return one bounded public JSON object on stdout. Failure exits nonzero and emits only a fixed error_code; stderr and tool output stay private. The same output is available from the built-in shell step without a callback.
 
+For official SSH from209, copy the shipped script directory with the official `copy` method, then invoke a material-consuming script through official `exec` with the public `--material-stdin` option and the whole existing `vault.get` expression in `task.inputs.stdin`. The script reads the same installation JSON directly from stdin, including the existing per-Process batch shape. It does not forward a secret through SSH environment variables. Public control and installation descriptors can use the documented `env` executable in `argv`; they contain no secret values. The core `command/shell` invocation above uses its native vault environment input. These are explicit native invocation modes: malformed stdin never selects the environment input.
+
 ## Systemd actions
 
 | Asset output | Action and public result |

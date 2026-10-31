@@ -8,7 +8,7 @@ import { PlausibleCE, PlausibleRefusal, Site } from "./plausible.ts";
 
 export const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
-  kind: z.enum(["analytics.enable", "analytics.disable"]),
+  kind: z.literal("analytics.enable"),
 });
 const Tracking = z.object({
   certificates: z.array(Leaf),
@@ -97,7 +97,8 @@ export async function begin(args: Intent, gateway: Gateway) {
   const stopped = ["succeeded", "cancelled"].includes(current.status) ||
     current.cancel_requested;
   if (
-    current.cancel_requested && !current.status.match(/^(succeeded|cancelled)$/)
+    current.cancel_requested &&
+    !current.status.match(/^(succeeded|cancelled)$/)
   ) {
     await gateway.project({
       status: "cancelled",
@@ -144,7 +145,11 @@ export async function convergeSite(
             .optional(),
         }),
       }).parse(raw).plausible_credentials;
-      client = new PlausibleCE(current.input.base_url!, credentials, request);
+      client = new PlausibleCE(
+        current.input.base_url!,
+        credentials,
+        request,
+      );
       await client.login();
       await client.converge(current.input.site!);
     } catch (error) {
@@ -158,15 +163,6 @@ export async function convergeSite(
   });
   if (code) throw new Error(code);
   return { ready: true };
-}
-export async function detach(args: Intent, gateway: Gateway) {
-  const current = await owned(args, gateway);
-  if (
-    current.status !== "running" || current.cancel_requested ||
-    current.input.enabled
-  ) throw new Error("analytics.intent_changed");
-  // Retention policy: detach only the Gateway binding, projected after host withdrawal succeeds.
-  return { detached: true };
 }
 export async function publishRecords(args: Intent, gateway: Gateway) {
   const current = await owned(args, gateway);
@@ -202,7 +198,9 @@ export async function dnsGrace(
   if (current.status !== "running" || current.cancel_requested) {
     throw new Error("analytics.intent_changed");
   }
-  if (current.input.tracking?.cleanup_caddy_node_ids.length) await wait(signal);
+  if (current.input.tracking?.cleanup_caddy_node_ids.length) {
+    await wait(signal);
+  }
   const after = await owned(args, gateway);
   if (after.status !== "running" || after.cancel_requested) {
     throw new Error("analytics.intent_changed");
@@ -241,7 +239,7 @@ export async function finish(
       enabled: current.input.enabled,
       domain: current.input.site?.domain ?? null,
       timezone: current.input.site?.timezone ?? null,
-      ...(current.input.enabled ? { readable: true } : { detached: true }),
+      readable: true,
     }
     : { error_code: "analytics.change_failed" };
   await gateway.project({
@@ -264,7 +262,7 @@ export function analyticsLifecycle(
     new GatewayOperation(makeHttp(ctx), args);
   return {
     type: "@nckrtl/analytics-lifecycle",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       plan: { schema: Plan, lifetime: "7d", garbageCollection: 10 },
@@ -290,13 +288,6 @@ export function analyticsLifecycle(
         arguments: Args,
         execute: (args: Intent, ctx: Context) =>
           convergeSite(args, gateway(args, ctx), request),
-      },
-      detach: {
-        description:
-          "Detach analytics intent while retaining provider history and goals",
-        arguments: Args,
-        execute: (args: Intent, ctx: Context) =>
-          detach(args, gateway(args, ctx)),
       },
       publishRecords: {
         description:
@@ -330,8 +321,10 @@ export function analyticsLifecycle(
         description:
           "Project parent success only after all placed effects succeed",
         arguments: Args.extend({ successful: z.boolean() }),
-        execute: (args: Intent & { successful: boolean }, ctx: Context) =>
-          finish(args, args.successful, gateway(args, ctx)),
+        execute: (
+          args: Intent & { successful: boolean },
+          ctx: Context,
+        ) => finish(args, args.successful, gateway(args, ctx)),
       },
     },
   };

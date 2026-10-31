@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\DestroyInstanceAction;
+use App\Domain\Analytics\AnalyticsDisableProjection;
 use App\Domain\Analytics\AnalyticsIntentProjection;
 use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Clusters\ClusterState;
@@ -279,6 +280,11 @@ describe('instance:analytics:enable', function (): void {
 });
 
 describe('instance:analytics:disable', function (): void {
+    beforeEach(function (): void {
+        foreach ([$this->router, $this->ingress] as $node) {
+            $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND']);
+        }
+    });
     it('admits one native parent and removes only its exact observed tracking set on completion', function (): void {
         $other = instance_analytics_extra_instance('other');
         instance_analytics_app_route($other, 'other.example.com', RoutePublication::Public);
@@ -291,7 +297,7 @@ describe('instance:analytics:disable', function (): void {
         expect($operation->input)->not->toHaveKey('plausible_credentials')
             ->and(RouteAnalyticsTracking::query()->count())->toBe(3)
             ->and($operation->input['tracking']['remove'])->toBe([$first->id, $second->id]);
-        $projection = app(AnalyticsIntentProjection::class);
+        $projection = app(AnalyticsDisableProjection::class);
         $projection->apply($operation, analytics_intent_result('running'));
         expect($operation->fresh()->input['tracking']['cleanup'])->toHaveCount(2)
             ->and($first->fresh()->status)->toBe(RouteStatus::Retiring)
@@ -314,7 +320,7 @@ describe('instance:analytics:disable', function (): void {
         $id = $this->deleteJson($this->url)->assertAccepted()->json('data.id');
         $operation = Operation::query()->findOrFail($id);
         expect($operation->node_id)->toBe($this->workload->id);
-        $projection = app(AnalyticsIntentProjection::class);
+        $projection = app(AnalyticsDisableProjection::class);
         $projection->apply($operation, analytics_intent_result('running'));
         expect($operation->fresh()->input['tracking']['dns_node_ids'])->toBe([]);
         $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
