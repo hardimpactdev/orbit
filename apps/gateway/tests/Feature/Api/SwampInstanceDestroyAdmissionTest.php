@@ -57,7 +57,7 @@ beforeEach(function (): void {
 it('admits stored source intent and one native root without Gateway source or account calls', function (bool $force): void {
     $this->withHeader('Idempotency-Key', 'destroy-proof');
     $id = $this->deleteJson($this->path, ['force' => $force])->assertAccepted()
-        ->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.status', 'queued')->json('data.id');
+        ->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.status', 'running')->json('data.id');
     $this->deleteJson($this->path, ['force' => $force])->assertAccepted()->assertJsonPath('data.id', $id);
     $operation = Operation::query()->findOrFail($id);
     expect($operation->node_id)->toBe($this->node->id)->and($operation->target_id)->toBe($this->instance->id)
@@ -89,7 +89,7 @@ it('admits the same native root when retired executor settings name its Node', f
 
     $operationId = $this->deleteJson($this->path, ['force' => true])->assertAccepted()
         ->assertJsonPath('data.kind', 'instance.destroy')
-        ->assertJsonPath('data.status', 'queued')->json('data.id');
+        ->assertJsonPath('data.status', 'running')->json('data.id');
 
     $this->assertModelExists($this->instance);
     $this->assertModelExists($process);
