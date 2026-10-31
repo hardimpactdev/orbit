@@ -103,7 +103,7 @@ Names match `[A-Za-z_][A-Za-z0-9_]*`. Values are strings, including the empty st
 
 ### Private managed values
 
-Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text.
+Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text. A unit with no managed values after derived keys are removed has no managed `EnvironmentFile` reference. In particular, Gateway Horizon starts from its cached application configuration without requiring an empty private environment generation.
 
 ### Runtime environment
 
