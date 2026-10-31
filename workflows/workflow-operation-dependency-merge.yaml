@@ -1,38 +1,27 @@
 id: 92c89a8c-6487-42f5-a70e-d67be3921b28
 name: operation-dependency-merge
-description: Claim a bounded batch of this family on its placed workers.
-autoResume: true
-trigger:
-  schedule: "2 * * * * *"
-reports:
-  skip: ["@swamp/workflow-summary"]
+description: Squash one admitted dependency batch on the admitted Swamp configuration Node.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tasks.dependency_merge] }
+  required: [operation_id, node_id, kind]
+vaults: []
 jobs:
-  - name: discover
+  - name: squash
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
     steps:
-      - name: discover
-        labels: { pool: migration, node: "209" }
+      - name: squash
+        writes: true
         task:
           type: behavior
-          behaviorType: "@nckrtl/operation-discovery"
-          behaviorName: operation-dependency-merge-discovery
-          methodName: discover
-          inputs:
-            family: operation-dependency-merge
-            kinds: ["tasks.dependency_merge"]
-            worker: "${{ run.id }}"
-  - name: execute
-    dependsOn: [{ job: discover, condition: { type: succeeded } }]
-    steps:
-      - name: execute-${{ self.work.kind }}-${{ self.work.slot }}
-        forEach:
-          item: work
-          in: "${{ has(steps.discover.outputs) ? steps.discover.outputs.work : [] }}"
-        labels: { pool: migration, node: "209" }
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/operation-dependency-merge'
-          behaviorName: '${{ "operation-dependency-merge-slot-" + string(self.work.slot) }}'
+          behaviorType: "@nckrtl/operation-dependency-merge"
+          behaviorName: operation-dependency-merge
           methodName: execute
           inputs:
-            kind: '${{ self.work.kind }}'
-            worker: '${{ self.work.worker }}'
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

@@ -14,7 +14,7 @@ class DirectToolNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         behavior = self.repo / 'extensions/behaviors'
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/tools', 'operations/_lib')
+        self.copy_behaviors('automatic-deploy', 'operations/tools', 'operations/_lib')
         direct = behavior / 'operations/tools/direct.ts'
         direct.write_text('import {fixtureHttp, fixtureTool} from "./direct_native_fixture.ts";\n' + direct.read_text().replace('...directTool()', '...directTool(() => fixtureHttp, fixtureTool)'))
         for filename in ('workflow-operation-tool-direct.yaml', 'workflow-operation-tool-install-direct.yaml'):
@@ -84,20 +84,18 @@ class DirectToolNative(NativeTestCase):
         self.assertEqual(self.read()['effects'], 1)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
-    def test_migration_pool_refuses_a_foreign_node_before_dispatch(self):
-        self.cli('workflow','run','operation-tool-direct','--input','operation_id=17','--input','node_id=210','--input','kind=tool.update',success=False)
-        state = self.read()
-        self.assertEqual(state['effects'], 0)
-        self.assertEqual(state['calls'], [])
-
-
-    def test_install_uses_an_admitted_non209_node(self):
-        self.state['operation']['node_id'] = 14
-        self.state['operation']['input']['node_id'] = 14
-        self.save()
-        self.run_workflow()
-        self.assertEqual(self.read()['operation']['status'], 'succeeded')
-        self.assertEqual(self.read()['effects'], 1)
+    def test_each_kind_uses_an_admitted_non209_node(self):
+        for kind in ('tool.install','tool.update','tool.remove','tool.adopt','tool.manager_converge'):
+            self.state['operation']['kind'] = kind
+            self.state['operation']['node_id'] = 14
+            self.state['operation']['input']['node_id'] = 14
+            self.state['operation']['status'] = 'queued'
+            self.state['installed'] = None if kind in ('tool.install','tool.manager_converge') else '1.0.0'
+            self.state['operation']['input']['tool_id'] = None if kind == 'tool.install' else 1
+            self.save()
+            self.run_workflow()
+            self.assertEqual(self.read()['operation']['status'], 'succeeded')
+            self.assertEqual(self.read()['effects'], 0 if kind in ('tool.adopt','tool.manager_converge') else 1)
 
     def test_old_workflow_refuses_install_before_gateway_or_node_work(self):
         self.cli('workflow','run','operation-tool-direct','--input','operation_id=17','--input','node_id=209','--input','kind=tool.install',success=False)

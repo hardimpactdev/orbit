@@ -1,25 +1,59 @@
 # Dependency batch squash admission
 
-All projects remain disabled. The private configuration emits `dependencyAutoMerge: false`; the Gateway's `dependency_merge.projects` map is empty. Enabling follows the nckrtl.com live acceptance on Orbit. Package repos and unclassified monorepos are excluded. Agent-repaired batches use the same automatic gates; feature and unrelated repair PRs remain outside this authority.
+The Gateway admits a Services-owned dependency batch with its successful
+publication, exact repository, PR, head, configured smoke workflow and
+Project-owned secret reference. It records intent, starts one native run on Node
+209, and projects the public result. All existing Project enable switches remain
+disabled by this conversion.
 
-Swamp refreshes project configuration, validates a fresh batch PR observation against its immutable `package-tg-*` target and current owner, and saves admission intent before POST. The Gateway independently verifies Project/host ownership, Services-created task lineage, passed handoff and publication. Its fresh GitHub reads require exact-head `Required checks` and mandatory `Production smoke / smoke` from the policy's exact `smoke_workflow` path, using the latest PR workflow suites. It rechecks immediately before the merge effect.
+Swamp owns operational policy. On every invocation and resume it refreshes the
+private Project switch, obtains the existing scoped installation credentials
+through the shared private-material callback, and reads the same PR first. An
+already-merged exact head supplies recovery without another write. Otherwise the
+current private switch must enable this exact Project/repository/default
+branch/smoke workflow.
 
-`POST /api/v1/task-groups/{group}/dependency-merge`, required Idempotency-Key, strict body `{publish_operation_id:number,head_sha:string}`, returns `202 {data:Operation,meta}`. The key is `dependency-merge.<group>.<head_sha>`. The admitted `tasks.dependency_merge` input binds Project, group, publication, repository, default branch, required smoke workflow path, PR and head, plus `{token:{$secret:"github.dependency_merge",id:project_id}}`.
+Before a new expected-head squash PUT, Swamp requires an open non-draft
+mergeable same-repository PR, the current default branch, complete paginated
+root dependency-file evidence, approved manifest and lock content, every latest
+exact-head PR workflow successful, `Required checks`, and a successful smoke
+check in the configured active workflow's latest suite. It re-reads the PR after
+these checks and refuses changed evidence. The Gateway does not repeat these
+execution checks when minting or projecting.
 
-The generic runner dispatches the family workflow. Its single invocation is `{transport:"gateway",name:"github.dependency-squash",key:"squash",input:Operation.input}`. Gateway hydrates the token from the Project's App installation in memory. The only result is `{merged:true,head_sha:string,merge_sha:string}` or a stable error code. Successful step `squash` and completion must match the proven invocation receipt. No write credential or repo code runs on Services.
+Changed manifests may change only existing dependency constraint values. Build
+instructions, repository settings, dependency names and ordered lists remain
+unchanged. Registry constraints may not introduce a new breaking semver
+boundary; numeric ranges cannot become tags. Composer dev/local/Git constraints
+and npm aliases are refused.
 
-The Gateway run is explicitly resumable. A lost reply reuses the same key, PR and SHA; its command reconciles the merged PR before another write. The command reads the PR first and adopts an already merged exact head; it never chooses a new head. Swamp persists completion intent before posting it. The existing group factory observes merge and handles completion/cleanup. No task state, deploy, access, data or auto-deploy setting changes.
+Only root `composer.json`, `composer.lock`, `package.json`, `package-lock.json`,
+`npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock` and `bun.lock` paths
+qualify, including both rename paths. Removed files, missing pages, duplicates
+and GitHub's 3,000-file boundary are refused. Yarn remains an unsupported lock
+format.
 
-Only root dependency manifests and lockfiles may change: `composer.json`, `composer.lock`, `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`. Gateway pages PR files, checks both rename paths and refuses incomplete or capped evidence. The squash token has Contents write and Pull requests write without Workflows write. Removing or renaming the configured smoke workflow refuses admission. The Gateway records the authenticated creator Node at group creation; a brief marker alone cannot grant batch authority.
+Composer package metadata and executable fields must match fresh Packagist P2
+records. Its closed source/archive maps accept only the documented HTTPS
+registry/GitHub hosts. npm uses the exact installed-name/version registry
+tarball with integrity; pnpm v9 and Bun text locks use implicit registry
+sources. Local, Git, alias and off-registry dependency edges are refused. Every
+installed package must be reachable from the root manifest; JavaScript package
+names must already exist in the base lock. Composer virtual providers must
+already exist in the base lock and cannot replace a formerly real dependency.
+Only top-level breaking version changes block a batch; attested transitive
+updates may cross majors.
 
-Before a new, unproven invocation, Swamp refreshes the private project configuration through `orbit-gateway.dependency_merge_configuration` and requires `dependencyAutoMerge`. Disablement does not discard a proven merge receipt. Run receipts and input fingerprints must store and hash only unhydrated input, including secret references; hydrated tokens stay in Gateway memory and sensitive exception arguments.
+Private material contains four existing installation tokens: repository write
+(including PR reads), contents read, checks read and Actions read. They exist only in the worker callback; no
+token enters arguments, resources, errors, logs or public results. Every token
+is revoked when the callback ends, including failed reads and merges. GitHub
+bodies are bounded, redirects are refused, and credentials go only to fixed
+GitHub API paths. Packagist reads carry no credential.
 
-Changed manifests are fetched at the observed base/head commit SHAs and decoded strictly. Only values in existing Composer `require`/`require-dev` and JavaScript `dependencies`/`devDependencies`/`optionalDependencies`/`peerDependencies` may differ. Names must equal the base keys; constraints must be registry semver ranges or npm dist-tags. URL, alias, local, Git and Composer dev/hash specs refuse admission. Every other key must match, including scripts, repositories, config, autoload, extra, overrides and resolutions. Duplicate keys, invalid JSON and unreadable content refuse admission and execution.
-
-Composer lock archives require HTTPS on `repo.packagist.org`, `api.github.com` or `codeload.github.com`; optional Git source metadata requires HTTPS on `github.com`. JavaScript sources require `registry.npmjs.org` over HTTPS, including implicit npm sources in pnpm and text Bun. Git protocols, local/link sources, credentials and unknown hosts refuse the merge. Supported formats are Composer JSON, npm v2/v3 JSON, pnpm v9 YAML and text Bun v1/v2 JSONC. Yarn and other unsupported formats require the ordinary PR path. Binary `bun.lockb` is excluded from the path allowlist.
-
-Composer package/dist/source entries have closed key lists. Mirrors and transport options are refused; only Packagist's notification URL is accepted. Every package's dist, source, type, autoload, extra and bin must match its selected version's fresh Packagist P2 record. Unreadable or unavailable Packagist metadata refuses the merge. npm requires the exact tarball URL for the installed path name and version, plus integrity. pnpm refuses tarball overrides. Bun requires an implicit registry source and identity matching the package key.
-
-Every head lock package must be reachable from the root manifest. Composer edges use Packagist-attested require, replace and provide maps. JavaScript uses the strict graph readers; npm, pnpm and Bun also refuse package names absent from the base lock. Composer provider resolutions require a provider present in the base lock; a real base package must remain a real package when required in the head. pnpm snapshot edges must be plain versions, never name aliases. Composer lock root keys are closed; aliases and platform overrides are refused. Range-to-dist-tag changes and archive-shaped dist-tags refuse admission.
-
-Any constraint breaking bump or locked top-level breaking crossing returns `dependency_merge.major_bump`. The breaking boundary is the leftmost non-zero semver component: major for 1.x and above, minor for 0.x, patch for 0.0.x. Agent repair never waives it. The PR stays open. Batch development Instances stay active while merge is pending, so a major batch is available for hand-testing. Review parking applies only to work outside these batch targets. An immutable major target is refused by Swamp before POST; the Gateway independently checks the actual manifests and locks.
+Uncertain GitHub responses remain resumable. Resume observes the same PR and
+head before considering another write. Only `{merged:true,head_sha,merge_sha}`
+or a fixed refusal code reaches projection. No polled executor, claim,
+heartbeat, receipt ledger, child Operation or PHP merge path remains. The
+existing task factory observes the merge and owns group completion and cleanup.
+This operation does not deploy or enable a Project.

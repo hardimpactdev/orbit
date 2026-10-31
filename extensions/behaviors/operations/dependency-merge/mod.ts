@@ -1,227 +1,228 @@
-import { callWorkerModel } from "../../_lib/worker_model.ts";
 import { z } from "npm:zod@4.4.3";
+import { callWorkerModel } from "../../_lib/worker_model.ts";
 import { type ProjectConfigContext } from "../../_lib/project_config.ts";
-import { MergeConfiguration } from "./configuration.ts";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { type Context, Executor, Globals } from "../../operation-runner/mod.ts";
-const Result = z.object({
-  merged: z.literal(true),
-  head_sha: z.string().regex(/^[a-f0-9]{40}$/),
-  merge_sha: z.string().regex(/^[a-f0-9]{40}$/),
-}).strict();
-const Completion = z.object({
-  status: z.enum(["succeeded", "failed", "cancelled"]),
-  result: z.record(z.string(), z.unknown()),
-  error_code: z.string().nullable(),
-});
-const Operation = z.object({
-  id: z.number().int().positive(),
+import { Globals } from "../_lib/direct.ts";
+import {
+  DirectArgs,
+  directOperation,
+  GatewayOperation,
+  type Result,
+} from "../_lib/direct.ts";
+import { MergeConfiguration } from "./configuration.ts";
+import { boundedJson } from "./contents.ts";
+import { MergeGitHub } from "./policy.ts";
+import { Refusal, refusalCodes } from "./refusal.ts";
+import { queryWorkerData } from "../../_lib/worker_query.ts";
+
+const Id = z.number().int().positive();
+const Sha = z.string().regex(/^[a-f0-9]{40}$/);
+const Args = DirectArgs.extend({
   kind: z.literal("tasks.dependency_merge"),
-  target_type: z.literal("task_group"),
-  target_id: z.number().int().positive(),
-  input: z.object({
-    project_id: z.number().int().positive(),
-    repository: z.string(),
-    default_branch: z.string(),
-    smoke_workflow: z.string(),
-    group_id: z.number().int().positive(),
-    head_sha: z.string().regex(/^[a-f0-9]{40}$/),
-    token: z.object({
-      $secret: z.literal("github.dependency_merge"),
-      id: z.number().int().positive(),
-    }),
-  }).passthrough(),
-  cancel_requested: z.boolean(),
-  step_results: z.preprocess(
-    (v) => Array.isArray(v) && !v.length ? {} : v,
-    z.record(z.string(), z.unknown()),
-  ),
+  node_id: Id,
 });
+const Input = z.object({
+  node_id: Id,
+  project_id: Id,
+  group_id: Id,
+  publish_operation_id: Id,
+  repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  default_branch: z.string().min(1),
+  smoke_workflow: z.string().min(1),
+  pr_number: Id,
+  head_sha: Sha,
+}).strict();
+const Success = z.object({
+  merged: z.literal(true),
+  head_sha: Sha,
+  merge_sha: Sha,
+}).strict();
+const ResultSchema = z.union([
+  Success,
+  z.object({
+    error_code: z.enum(refusalCodes),
+  }).strict(),
+]);
+type Context = ProjectConfigContext & {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+};
+
+/** GitHub effects stay inside the shared private callback; only exact-head proof leaves it. */
+export async function squash(
+  input: z.infer<typeof Input>,
+  gateway: Pick<GatewayOperation, "withPrivateMaterial">,
+  config: z.infer<typeof MergeConfiguration>,
+  request: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<Result> {
+  let result: Result | undefined;
+  await gateway.withPrivateMaterial(async (material) => {
+    const Token = z.string().min(1).max(2048).regex(/^[A-Za-z0-9_-]+$/);
+    const names = [
+      "write_token",
+      "read_token",
+      "checks_token",
+      "actions_token",
+    ] as const;
+    const raw = material.token;
+    const revoke = async () => {
+      if (!raw || typeof raw !== "object") return;
+      const tokens = new Set(
+        names.map((key) => (raw as Record<string, unknown>)[key]).filter((
+          v,
+        ): v is string => typeof v === "string" && v.length > 0),
+      );
+      for (const token of tokens) {
+        try {
+          const response = await request(
+            "https://api.github.com/installation/token",
+            {
+              method: "DELETE",
+              redirect: "error",
+              signal: AbortSignal.timeout(10000),
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+            },
+          );
+          await response.body?.cancel();
+          if (response.status !== 204) throw new Error();
+        } catch {
+          console.warn("operation.github_token_revoke_failed");
+        }
+      }
+    };
+    try {
+      const credentials = z.object({
+        write_token: Token,
+        read_token: Token,
+        checks_token: Token,
+        actions_token: Token,
+      }).strict().parse(raw);
+      const github = new MergeGitHub(input, credentials, request, signal);
+      try {
+        const pr = await github.pr();
+        if (pr.merged) {
+          result = Success.parse({
+            merged: true,
+            head_sha: input.head_sha,
+            merge_sha: pr.merge_commit_sha,
+          });
+        } else if (
+          !config.enabled || config.projectId !== input.project_id ||
+          config.repository !== input.repository ||
+          config.defaultBranch !== input.default_branch ||
+          config.smokeWorkflow !== input.smoke_workflow
+        ) {
+          result = { error_code: "dependency_merge.disabled" };
+        } else {
+          await github.policy(pr);
+          const merged = await github.call(
+            `${github.path}/pulls/${input.pr_number}/merge`,
+            "write_token",
+            "PUT",
+            { sha: input.head_sha, merge_method: "squash" },
+          );
+          if ([405, 409, 422].includes(merged.status)) {
+            await merged.body?.cancel();
+            result = { error_code: "dependency_merge.merge_refused" };
+          } else {
+            if (!merged.ok) {
+              await merged.body?.cancel();
+              throw new Error("GitHub merge outcome uncertain");
+            }
+            const proof = z.object({ merged: z.literal(true), sha: Sha }).parse(
+              await boundedJson(merged),
+            );
+            result = Success.parse({
+              merged: true,
+              head_sha: input.head_sha,
+              merge_sha: proof.sha,
+            });
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof Refusal)) throw error;
+        result = { error_code: error.code };
+      }
+      const snapshot = JSON.stringify(result);
+      if (
+        Object.values(credentials).some((token) => snapshot.includes(token))
+      ) throw new Error("Private output refused");
+    } finally {
+      await revoke();
+    }
+  });
+  if (!result) throw new Error("Merge outcome unavailable");
+  return result;
+}
+
 export function dependencyMerge(
   makeHttp = (ctx: Context) =>
-    gatewayHttp(
-      ctx.globalArgs.gatewayUrl,
-      ctx.globalArgs.caFile,
-      ctx.signal,
-      120_000,
-    ),
+    gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile, ctx.signal),
+  request: typeof fetch = fetch,
 ) {
   return {
     type: "@nckrtl/operation-dependency-merge",
-    version: "2026.10.30.1",
+    version: "2026.10.31.1",
     globalArguments: Globals,
-    resources: {
-      claim: {
-        description: "First merge claimed by this scheduled invocation",
-        schema: z.object({ operation_id: z.number().int().positive() }),
-        lifetime: "infinite",
-        garbageCollection: 1,
-      },
-      receipt: {
-        description: "Exact-head dependency squash completion intent",
-        schema: Completion,
-        lifetime: "infinite",
-        garbageCollection: 10,
-      },
-    },
     methods: {
       execute: {
-        description: "Request one proven Gateway-owned squash merge",
-        arguments: z.object({
-          kind: z.literal("tasks.dependency_merge"),
-          worker: z.string(),
-        }),
-        execute: async (
-          args: { kind: "tasks.dependency_merge"; worker: string },
-          ctx: Context & ProjectConfigContext,
-        ) => {
-          const executor = new Executor(makeHttp(ctx));
-          const claimName = `claim-${args.worker}`;
-          const savedClaim = await ctx.readResource(claimName);
-          let id: number;
-          if (savedClaim) {
-            id = z.object({ operation_id: z.number().int().positive() }).parse(
-              savedClaim,
-            ).operation_id;
-          } else {
-            const raw = await executor.post("claim", {
-              kind: args.kind,
-              worker: args.worker,
-            });
-            if (raw === null) return { status: "idle" };
-            id = Operation.parse(raw).id;
-            await ctx.writeResource("claim", claimName, { operation_id: id });
-          }
-          const path = String(id), resource = `operation-${path}`;
-          const complete = async (value: z.infer<typeof Completion>) => {
-            const handle = await ctx.writeResource("receipt", resource, value);
-            await executor.post(`${path}/complete`, {
-              worker: args.worker,
-              ...value,
-            });
-            return { dataHandles: [handle], status: value.status };
-          };
-          const saved = await ctx.readResource(resource);
-          if (saved) return await complete(Completion.parse(saved));
-          const op = Operation.parse(
-            await executor.post(`${path}/heartbeat`, { worker: args.worker }),
-          );
-          if (
-            op.id !== id || op.target_id !== op.input.group_id
-          ) throw new Error("Merge operation identity changed");
-          const stored = op.step_results.squash;
-          if (op.cancel_requested && !stored) {
-            return await complete({
-              status: "cancelled",
-              result: {},
-              error_code: null,
-            });
-          }
-          let heartbeatError: unknown;
-          const timer = setInterval(() => {
-            executor.post(`${path}/heartbeat`, { worker: args.worker }).catch(
-              (error) => {
-                heartbeatError = error;
-              },
-            );
-          }, 30_000);
-          try {
-            let result: unknown = stored;
-            if (!result) {
+        description: "Squash one admitted dependency batch at its exact head",
+        arguments: Args,
+        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
+          const gateway = new GatewayOperation(makeHttp(ctx), args);
+          return await directOperation(
+            args,
+            gateway,
+            async (raw) => {
+              const input = Input.parse(raw);
+              if (input.node_id !== args.node_id) {
+                throw new Error(
+                  "Wrong merge Node",
+                );
+              }
               const refreshed = await callWorkerModel(ctx, {
                 modelType: "@nckrtl/orbit-gateway",
                 name: "orbit-gateway",
                 method: "dependency_merge_configuration",
-                arguments: { projectId: op.input.project_id },
+                arguments: { projectId: input.project_id },
               });
               if (!refreshed.ok) {
-                throw new Error("Cannot refresh private merge configuration");
+                throw new Error(
+                  "Cannot refresh private merge configuration",
+                );
               }
-              const rows = await ctx.queryData(
-                `modelName == "orbit-gateway" && name == "dependency-merge-configuration-${op.input.project_id}"`,
+              const rows = await queryWorkerData(
+                ctx,
+                `modelName == "orbit-gateway" && name == "dependency-merge-configuration-${input.project_id}"`,
                 "attributes",
               );
               if (rows.length !== 1) {
-                throw new Error("Cannot read private merge configuration");
-              }
-              const config = MergeConfiguration.parse(rows[0]);
-              if (
-                !config.enabled || config.projectId !== op.input.project_id ||
-                config.repository !== op.input.repository ||
-                config.defaultBranch !== op.input.default_branch ||
-                config.smokeWorkflow !== op.input.smoke_workflow
-              ) {
-                return await complete({
-                  status: "failed",
-                  result: {},
-                  error_code: "dependency_merge.disabled",
-                });
-              }
-              await executor.post(`${path}/step`, {
-                worker: args.worker,
-                key: "squash:start",
-                name: "squash",
-                status: "running",
-              });
-              result = await executor.post(`${path}/run`, {
-                worker: args.worker,
-                key: "squash",
-                transport: "gateway",
-                name: "github.dependency-squash",
-                input: op.input,
-              });
-              if (heartbeatError) throw heartbeatError;
-              const error = z.object({
-                error_code: z.string().regex(/^[a-z0-9_.-]+$/),
-              }).safeParse(result);
-              if (error.success) {
-                await executor.post(`${path}/step`, {
-                  worker: args.worker,
-                  key: "squash:finish",
-                  name: "squash",
-                  status: "failed",
-                  result: {},
-                  error_code: error.data.error_code,
-                });
-                return await complete({
-                  status: error.data.error_code === "operation.cancelled"
-                    ? "cancelled"
-                    : "failed",
-                  result: {},
-                  error_code: error.data.error_code,
-                });
-              }
-              const proof = Result.parse(result);
-              if (proof.head_sha !== op.input.head_sha) {
                 throw new Error(
-                  "Merge receipt head changed",
+                  "Cannot read private merge configuration",
                 );
               }
-              await executor.post(`${path}/step`, {
-                worker: args.worker,
-                key: "squash:finish",
-                name: "squash",
-                status: "succeeded",
-                result: proof,
-              });
-            }
-            const proof = Result.parse(result);
-            if (proof.head_sha !== op.input.head_sha) {
-              throw new Error(
-                "Merge receipt head changed",
+              return await squash(
+                input,
+                gateway,
+                MergeConfiguration.parse(rows[0]),
+                request,
+                ctx.signal,
               );
-            }
-            return await complete({
-              status: "succeeded",
-              result: proof,
-              error_code: null,
-            });
-          } finally {
-            clearInterval(timer);
-          }
+            },
+            (result) => ResultSchema.parse(result),
+            ctx.signal,
+          );
         },
       },
     },
   };
 }
-export const behavior = dependencyMerge();
+export const behavior = {
+  ...dependencyMerge(),
+  type: "@nckrtl/operation-dependency-merge",
+};

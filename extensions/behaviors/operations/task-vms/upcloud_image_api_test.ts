@@ -141,3 +141,56 @@ Deno.test("templatize labels only its returned UUID and promotion retains the ow
     value: input.identity,
   }, ...label()]);
 });
+
+Deno.test("launch accepts null storage tiers in the provider plan inventory", async () => {
+  for (const tier of ["standard", null, undefined]) {
+    const intent = {
+      ...input,
+      source: id(40),
+      gateway_public_key: "ssh-ed25519 AAAA gateway",
+      upcloud: { zone: "nl-ams1", plan: "STARTER-2xCPU-4GB", disk_gb: 80 },
+      progress: { resources: {}, template_uuid: null },
+    } as CloudImage;
+    const keys = {
+      builder: {
+        private: "builder-private",
+        public: "ssh-ed25519 AAAA builder",
+      },
+      smoke: { private: "smoke-private", public: "ssh-ed25519 AAAA smoke" },
+    };
+    let creates = 0;
+    const request: CloudRequest = (method, path, body) => {
+      if (path === "server?label=orbit-task-image") {
+        return Promise.resolve({ servers: { server: [] } });
+      }
+      if (path === "plan") {
+        return Promise.resolve({
+          plans: {
+            plan: [
+              { name: "CLOUDNATIVE-1xCPU-4GB", storage_tier: null },
+              { name: intent.upcloud.plan, storage_tier: tier },
+            ],
+          },
+        });
+      }
+      assertEquals([method, path], ["POST", "server"]);
+      const server = body!.server as {
+        storage_devices: { storage_device: Record<string, unknown>[] };
+      };
+      assertEquals(server.storage_devices.storage_device, [{
+        action: "clone",
+        storage: intent.source,
+        title: intent.name + "-disk",
+        size: 80,
+        ...(tier == null ? {} : { tier }),
+      }]);
+      creates++;
+      return Promise.resolve({ server: { uuid: id(1) } });
+    };
+    assertEquals(
+      await imageCloud(intent, request).launch("builder", keys),
+      id(1),
+    );
+    assertEquals(creates, 1);
+  }
+});

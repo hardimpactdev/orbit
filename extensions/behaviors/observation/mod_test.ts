@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { observation } from "./mod.ts";
-import type { Context } from "../operation-runner/mod.ts";
+import type { Context } from "./contract.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
 
 const runId = "123e4567-e89b-42d3-a456-426614174099";

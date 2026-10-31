@@ -1,8 +1,10 @@
 # Tool operations
 
 The Gateway validates and records `tool.install`, `tool.update`, `tool.remove`,
-`tool.adopt` and `tool.manager_converge` intent. It starts `operation-tool-direct`
-and projects bounded native results into manager and Tool records.
+`tool.adopt` and `tool.manager_converge` intent. It starts `operation-tool-install-direct` for install and
+`operation-tool-direct` for the other writes, then projects bounded native results into manager and Tool records. The sole
+Gateway registration is direct-operations.php; no Kit execution declaration,
+polled writer or Gateway completion proof remains.
 
 Every write uses the exact admitted orbit-node-N worker and matching node
 label, including update, remove, adopt and manager convergence. Swamp runs fixed

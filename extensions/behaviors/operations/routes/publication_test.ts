@@ -248,13 +248,15 @@ Deno.test("same-root Process Caddy step reads current public data without projec
   assertEquals(f.operation.status, "queued");
 });
 
-Deno.test("same-root method refuses foreign payload or ended and cancelled parent before local effects", async () => {
-  for (const variant of ["payload", "parent", "kind", "cancel", "terminal"]) {
+Deno.test("participant method refuses foreign payload or ended and cancelled parent before local effects", async () => {
+  for (
+    const variant of ["payload", "operation", "kind", "cancel", "terminal"]
+  ) {
     const f = new Fixture();
     f.operation.kind = "process.restart";
     f.operation.input = { caddy_publication: { ...payload } };
     if (variant === "payload") f.operation.input.caddy_publication.node_id = 4;
-    if (variant === "parent") f.operation.node_id = 4;
+    if (variant === "operation") f.operation.id = 18;
     if (variant === "kind") f.operation.kind = "process.update";
     if (variant === "cancel") f.operation.cancel_requested = true;
     if (variant === "terminal") f.operation.status = "succeeded";
@@ -271,6 +273,35 @@ Deno.test("same-root method refuses foreign payload or ended and cancelled paren
     );
     assertEquals(effects, 0);
     assertEquals(f.calls.length, 1);
+  }
+});
+
+Deno.test("participant Caddy keeps the truthful root Node and publishes only the placed Node's fresh artifact", async () => {
+  for (const explicitTarget of [false, true]) {
+    const f = new Fixture();
+    f.operation.kind = "metrics.reconcile";
+    f.operation.node_id = 17;
+    f.operation.input = { caddy_publication: { ...payload, node_id: 13 } };
+    const model = publication(() => f.http, (call) => {
+      f.effects.push(call);
+      return Promise.resolve({ result: "published" });
+    });
+    assertEquals(
+      await model.methods.publishCaddy.execute({
+        ...args,
+        kind: "metrics.reconcile",
+        node_id: explicitTarget ? 17 : 13,
+        ...(explicitTarget ? { target_node_id: 13 } : {}),
+      }, ctx),
+      { ready: true, result: "published", version: caddy.version },
+    );
+    assertEquals(f.operation.node_id, 17);
+    assertEquals(f.calls.length, 1);
+    assertEquals(
+      f.calls[0].path,
+      `/api/v1/direct-operations/17?run_id=${args.run_id}`,
+    );
+    assertEquals(f.effects.length, 1);
   }
 });
 

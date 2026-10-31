@@ -1,12 +1,11 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../../operation-runner/mod.ts";
 import {
   DirectArgs,
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { Kind, Result, ToolIntentInput } from "./direct-contract.ts";
+import { Globals, Kind, Result, ToolIntentInput } from "./direct-contract.ts";
 import { toolNode } from "./node.ts";
 import { localTool } from "./local.ts";
 

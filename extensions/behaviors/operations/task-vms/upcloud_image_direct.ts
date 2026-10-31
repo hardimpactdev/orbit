@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { imagePhase } from "./image_phase.ts";
 import { recipePhases } from "./images.ts";
@@ -82,7 +82,7 @@ export function upcloudImageDirect(
   };
   return {
     type: "@nckrtl/task-vm-upcloud-image-build",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     resources: {
       boot: {

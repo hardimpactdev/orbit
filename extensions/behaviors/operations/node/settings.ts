@@ -6,7 +6,7 @@ import {
   GatewayOperation,
 } from "../_lib/direct.ts";
 import { runNodeAgent } from "../_lib/node-agent.ts";
-import { Globals } from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 
 const Path = z.string().regex(/^\/(?:[^/\0\r\n]+\/)*[^/\0\r\n]+$/).refine(
   (path) =>
