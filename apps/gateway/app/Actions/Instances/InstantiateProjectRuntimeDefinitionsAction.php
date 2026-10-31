@@ -101,7 +101,8 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         return $instance->refresh();
     }
 
-    private function capture(int $instanceId): Instance
+    /** Record the production definition copies in the caller's root admission transaction. */
+    public function capture(int $instanceId): Instance
     {
         return DB::transaction(function () use ($instanceId): Instance {
             $instance = Instance::query()

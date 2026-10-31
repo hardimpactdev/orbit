@@ -30,6 +30,7 @@ use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
@@ -216,6 +217,44 @@ it('captures an empty production selection once', function (): void {
         ->and(Process::query()->where('owner_id', $this->target->id)->exists())->toBeFalse()
         ->and($this->processRuntime->converged)->toBeEmpty()
         ->and($this->scheduleRuntime->installed)->toBeEmpty();
+});
+
+it('captures definition records inside the owning transaction without runtime work or admission locks', function (): void {
+    app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
+    $action = orb225_action($this->processRuntime, $this->scheduleRuntime);
+    orb225_process_definition($this->orbitApp, 'root-worker', ['production'], [
+        'runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'],
+    ]);
+    orb225_schedule_definition($this->orbitApp, 'root-timer');
+
+    $captured = DB::transaction(fn () => $action->capture($this->target->id));
+
+    expect($captured->id)->toBe($this->target->id)
+        ->and($captured->runtime_definitions_captured_at)->not->toBeNull()
+        ->and(Process::query()->sole()->desired_state)->toBe(DesiredProcessState::Stopped)
+        ->and(Process::query()->sole()->status)->toBe(LifecycleStatus::Provisioning)
+        ->and(Schedule::query()->sole()->desired_timer_state)->toBe(DesiredTimerState::Disabled)
+        ->and(Schedule::query()->sole()->status)->toBe(LifecycleStatus::Provisioning)
+        ->and($this->processRuntime->converged)->toBeEmpty()
+        ->and($this->scheduleRuntime->installed)->toBeEmpty();
+    $this->assertDatabaseCount('operations', 0);
+});
+
+it('rolls back definition capture with the owning native root transaction', function (): void {
+    orb225_process_definition($this->orbitApp, 'root-worker', ['production'], [
+        'runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'],
+    ]);
+    orb225_schedule_definition($this->orbitApp, 'root-timer');
+
+    expect(fn () => DB::transaction(function (): void {
+        $this->action->capture($this->target->id);
+        throw new RuntimeException('Root admission refused.');
+    }))->toThrow(RuntimeException::class, 'Root admission refused.');
+
+    expect($this->target->refresh()->runtime_definitions_captured_at)->toBeNull();
+    $this->assertDatabaseCount('processes', 0);
+    $this->assertDatabaseCount('schedules', 0);
+    $this->assertDatabaseCount('operations', 0);
 });
 
 it('retries only unfinished captured copies after definitions and completed operator state change', function (): void {
