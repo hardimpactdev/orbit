@@ -28,10 +28,10 @@ export const native: Native = async (args) => {
     args: [
       ...args,
       "--repo-dir",
-      "/home/orbit/apps/orbit-swamp/default",
+      "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp",
       "--json",
     ],
-    cwd: "/home/orbit/apps/orbit-swamp/default",
+    cwd: "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp",
     env: {
       SWAMP_HOME: "/home/orbit/.swamp",
       SWAMP_CONFIG_DIR: "/home/orbit/.config/swamp",
@@ -150,7 +150,7 @@ type Context = {
 };
 export const behavior = {
   type: "@nckrtl/node-worker-lifecycle",
-  version: "2026.10.31.4",
+  version: "2026.10.31.5",
   globalArguments: Globals,
   resources: {
     work: {
