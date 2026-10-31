@@ -8,11 +8,15 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\NativeRouteTransferPlan;
+use App\Domain\Routes\NativeRouteTransferPublication;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicationSites;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -126,4 +130,72 @@ it('exposes only this participant candidate leaf scopes for pre-cutover cleanup'
         ->and($view['route_rollback'])->not->toHaveKey('home')
         ->and($view['route_rollback']['lan_route_ids'])->toBe([]);
     expect($plan->publicInput($operation, $this->node->id)['route_rollback'])->toBeNull();
+});
+
+it('captures prospective complete publications without changing stored placement', function (): void {
+    $this->node->update(['wireguard_ip' => '10.44.0.11']);
+    $this->instance->update(['selected_php_version' => '8.4']);
+    $this->destination->update(['wireguard_ip' => '10.44.0.12']);
+    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $survivorInstance = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
+        'name' => 'survivor', 'checkout_path' => '/srv/survivor', 'branch' => 'main', 'source_is_laravel' => false, 'status' => 'active']);
+    $survivor = Route::query()->create(['project_id' => $this->instance->project_id, 'cluster_id' => $this->cluster->id,
+        'domain' => 'survivor.source.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $survivor->targets()->create(['instance_id' => $survivorInstance->id, 'position' => 0]);
+    $survivor->update(['status' => 'active', 'sites_published' => true]);
+    $plan = app(NativeRouteTransferPlan::class)->capture($this->transfer);
+    $instanceBefore = $this->instance->fresh()->getAttributes();
+    $routesBefore = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
+    $publications = app(NativeRouteTransferPublication::class)->capture($plan, ['instance_id' => $this->instance->id, 'node_id' => $this->destination->id,
+        'target' => ['instance' => ['checkout_path' => $this->transfer->destination_path, 'root' => null, 'source_is_laravel' => false, 'vite_port' => null, 'ssr_port' => null]]]);
+    $rows = collect($publications['nodes'])->keyBy('node_id');
+    $source = $rows[$this->node->id];
+    $destination = $rows[$this->destination->id];
+    expect($source['before']['caddy']['content'])->toContain('native.test')->toContain('survivor.source.test')
+        ->and($source['after']['caddy']['content'])->toContain('survivor.source.test')->not->toContain('https://native.test')
+        ->and($destination['after']['caddy']['content'])->toContain('native.destination.test')->toContain('/srv/new-native')->toContain('extra.test')
+        ->and($destination['before']['caddy']['content'])->not->toContain('native.destination.test')
+        ->and((array) $destination['after']['php']['configurations'])->toHaveKey('8.4')
+        ->and($instanceBefore)->toBe($this->instance->fresh()->getAttributes())
+        ->and($routesBefore)->toBe(Route::query()->orderBy('id')->get()->map->getAttributes()->all())
+        ->and(app(RoutePublicationSites::class)->current())->toBeNull();
+    $normal = app(DevelopmentSiteRepository::class)->all();
+    expect($normal->where('domain', 'native.test')->pluck('nodeId')->all())->toContain($this->node->id)
+        ->and($normal->where('domain', 'native.destination.test'))->toBeEmpty();
+});
+
+it('clears the prospective publication view if canonical rendering throws', function (): void {
+    $view = app(RoutePublicationSites::class);
+    expect(fn () => $view->render(collect(), static fn () => throw new RuntimeException('render failed')))->toThrow(RuntimeException::class)
+        ->and($view->current())->toBeNull();
+});
+
+it('renders the canonical collision-adjusted destination Vite identity instead of its source port', function (): void {
+    $this->node->update(['wireguard_ip' => '10.44.0.11']);
+    $this->destination->update(['wireguard_ip' => '10.44.0.12']);
+    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $this->instance->update(['vite_port' => 5173]);
+    $plan = app(NativeRouteTransferPlan::class)->capture($this->transfer);
+    $batch = ['instance_id' => $this->instance->id, 'node_id' => $this->destination->id,
+        'target' => ['instance' => ['checkout_path' => $this->transfer->destination_path, 'root' => null,
+            'source_is_laravel' => false, 'vite_port' => 5180, 'ssr_port' => 5181]]];
+    $publications = app(NativeRouteTransferPublication::class)->capture($plan, $batch);
+    $destination = collect($publications['nodes'])->firstWhere('node_id', $this->destination->id);
+    expect($destination['after']['caddy']['content'])->toContain('5180')->not->toContain('5173')
+        ->and($this->instance->fresh()->vite_port)->toBe(5173);
+    $batch['node_id'] = $this->node->id;
+    expect(fn () => app(NativeRouteTransferPublication::class)->capture($plan, $batch))->toThrow(ResourceOperationException::class);
+});
+
+it('uses the same staging and secondary placement sites for ordinary and prospective Route rendering', function (): void {
+    $this->node->update(['wireguard_ip' => '10.44.0.11']);
+    $this->destination->update(['wireguard_ip' => '10.44.0.12']);
+    $this->extra->update(['transition_cluster_id' => $this->destinationCluster->id,
+        'replacement_step' => RouteReplacementStep::RouterCertificate]);
+    $repository = app(DevelopmentSiteRepository::class);
+    $route = $this->extra->fresh(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node', 'transitionCluster.routerAssignment.node']);
+    $normal = $repository->all()->where('domain', $route->domain)->values()->all();
+    $prospective = $repository->projectSites($route);
+    expect(json_encode($prospective, JSON_THROW_ON_ERROR))->toBe(json_encode($normal, JSON_THROW_ON_ERROR))
+        ->and(count($prospective))->toBeGreaterThan(1);
 });
