@@ -44,7 +44,7 @@ export function publication(
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     methods: {
       removeLan: {
@@ -121,17 +121,22 @@ export function publication(
       },
       publishCaddy: {
         description:
-          "Read and publish current Caddy data for the same-root admitted Node",
-        arguments: DirectArgs.extend({ node_id: z.number().int().positive() }),
+          "Read and publish fresh Caddy data for an admitted participant Node",
+        arguments: DirectArgs.extend({
+          node_id: z.number().int().positive(),
+          target_node_id: z.number().int().positive().optional(),
+        }),
         execute: async (
-          args: z.infer<typeof DirectArgs> & { node_id: number },
+          args: z.infer<typeof DirectArgs> & {
+            node_id: number;
+            target_node_id?: number;
+          },
           ctx: Context,
         ) => {
           const gateway = new GatewayOperation(makeHttp(ctx), args);
           const current = Parent.parse(await gateway.read(ctx.signal));
           if (
-            current.id !== args.operation_id || current.kind !== args.kind ||
-            current.node_id !== args.node_id
+            current.id !== args.operation_id || current.kind !== args.kind
           ) {
             throw new Error("Caddy parent does not match admitted intent");
           }
@@ -142,7 +147,10 @@ export function publication(
             throw new DirectOperationCancelled({ effectRunning: false });
           }
           const result = await applyCaddy(
-            boundCaddy(current.input.caddy_publication, args.node_id),
+            boundCaddy(
+              current.input.caddy_publication,
+              args.target_node_id ?? args.node_id,
+            ),
             invoke,
             ctx.signal,
           );

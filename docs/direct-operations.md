@@ -198,14 +198,15 @@ The shared helper attempts to revoke the token at the fixed GitHub
 then drops its reference. Revocation is best effort: failure reports only
 `operation.github_token_revoke_failed` and preserves the action's result or
 refusal. A successful GitHub write must not fail because revocation failed. The
-helper also attempts revocation when a private reply contains a token string
-but its grant fails validation. Each adopting family must bound mints per native
-run and make its GitHub writes idempotent. The instance limit does not enforce a
+helper also attempts revocation when a private reply contains a token string but
+its grant fails validation. Each adopting family must bound mints per native run
+and make its GitHub writes idempotent. The instance limit does not enforce a
 run-wide cap across steps or resumed executions. Reconcile an uncertain write
-before retrying it. The expiry check uses the client's injected clock. The helper refuses callback
-results containing the credential and replaces thrown diagnostics with fixed
-codes. Family results remain bounded and secret-free. Native Swamp owns retry
-policy; token minting adds no claim, lease, receipt or retry loop.
+before retrying it. The expiry check uses the client's injected clock. The
+helper refuses callback results containing the credential and replaces thrown
+diagnostics with fixed codes. Family results remain bounded and secret-free.
+Native Swamp owns retry policy; token minting adds no claim, lease, receipt or
+retry loop.
 
 Mint callers match their Operation Node. The shared private reader has no
 control-plane exception: Node209 cannot mint for a Gateway14-owned intent.
@@ -213,3 +214,11 @@ Control-plane consumers must admit the intent on the executing Node. Safe intent
 reads and result projection retain their existing authority. Each successful
 mint records one token-free Gateway Activity containing Operation, run, caller
 Node, repository, permissions and expiry.
+
+The canonical `@nckrtl/route-publication.publishCaddy` method reads fresh public
+input inside its existing Node model lock. An admitted participant may publish
+its own `input.caddy_publication` while the returned parent keeps its root Node.
+The method checks the Operation ID, kind and artifact Node; shared HTTP binds
+the root run and caller. Pass the placed Node as `node_id`, or keep the root
+`node_id` and pass `target_node_id` for the placed Node. The step returns its
+outcome to the native DAG and does not post the parent's result.
