@@ -58,6 +58,8 @@ describe('the Gateway release pipeline from the container', function (): void {
         $adopter = wired(app(AdoptGatewayReleaseAction::class), 'adopter');
 
         expect(app(RollbackGatewayReleaseAction::class))->toBeInstanceOf(RollbackGatewayReleaseAction::class)
+            ->and(wired(wired(app(RollbackGatewayReleaseAction::class), 'promoter'), 'runtime'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
+            ->and(wired(wired(app(DeployGatewayReleaseAction::class), 'promoter'), 'runtime'))->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
             ->and($adopter)->toBeInstanceOf(GatewayReleaseAdopter::class)
             ->and(wired($adopter, 'runtime'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
             ->and(wired($adopter, 'deploy'))->toBeInstanceOf(DeployGatewayReleaseAction::class)
