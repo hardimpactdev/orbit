@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationIdempotency;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
@@ -37,8 +36,8 @@ final class RekeyNodeAgentCommand extends Command
             $identity->key = "node-agent-rekey-{$sourceId}-{$attempt}";
             $identity->fingerprint = hash('sha256', json_encode([$nodeId, $sourceId], JSON_THROW_ON_ERROR));
             $operation = $identity->replay('node.agent_rekey') ?? $operations->execute('node.agent_rekey', 'node', $nodeId, $nodeId,
-                ['_agent_rekey' => [...$hashes->rekeyInput($node, $sourceId), 'agent_sha256' => app(AgentDelivery::class)->pin($node)]],
-                'operator-recovery', null, expectedWriter: 'direct');
+                ['_agent_rekey' => $hashes->rekeyInput($node, $sourceId)],
+                'operator-recovery', null);
         } catch (Throwable) {
             $this->error('Recovery was not admitted. Check its source and request identity.');
 

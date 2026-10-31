@@ -25,18 +25,9 @@ final readonly class NodeAgentRekeyProjection implements DirectOperationProjecti
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $code = $data['error_code'] ?? null;
-        $result = match ($data['status']) {
-            'succeeded' => ['rekeyed' => true, 'restarted' => true],
-            'failed' => ['rekeyed' => false, 'error_code' => $code],
-            default => [],
-        };
-        $raw = ValidatedData::object($data['result'] ?? []);
-        if (count($raw) !== count($result) || array_any($result, static fn ($value, $key) => ($raw[$key] ?? null) !== $value)
-            || ($data['status'] === 'failed' ? ! in_array($code, ['agent.version_mismatch', 'agent.update_busy', 'node.agent_rekey_unavailable'], true) : $code !== null)) {
-            throw new ResourceOperationException('operation.result_invalid', 'Only a bounded native recovery outcome is accepted.', 422);
-        }
+        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []),
+            array_flip(['rekeyed', 'restarted', 'error_code']));
 
-        return app(DirectOperation::class)->project($operation, $data, $result, 'node-agent-rekey');
+        return app(DirectOperation::class)->project($operation, $data, $result);
     }
 }
