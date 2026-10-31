@@ -12,8 +12,14 @@ use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\NodeSshAccessProjection;
 use App\Domain\Nodes\NodeWireGuardHubProjection;
+use App\Domain\Nodes\WorkerKnownHostsProjection;
 
-return ['node.ssh_access_converge' => [
+return ['node.worker_known_hosts' => [
+    'workflow' => 'operation-node-worker-known-hosts',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'known_hosts', 'step' => 'write'],
+    'projection' => WorkerKnownHostsProjection::class,
+], 'node.ssh_access_converge' => [
     'workflow' => 'operation-node-ssh-access-converge',
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']],
     'workflow_inputs' => true,

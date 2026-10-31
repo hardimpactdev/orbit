@@ -24,13 +24,19 @@ The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway s
 
 ## Execution boundary
 
-GitHub App registration and installation refresh execute as native Swamp workflows. The Gateway validates the browser state, records intent, holds the encrypted App key, and projects public state. Its only execution primitive is token minting. Instance and Project dependency pages already read published Swamp resources; they do not start scans or inspect Nodes.
+GitHub App registration and installation refresh run as Gateway jobs on its existing `operations` queue. The Gateway validates the browser state, records the Operation, exchanges the manifest code, keeps the encrypted App key, and reads App metadata. Instance and Project dependency pages read published Swamp resources; they do not start scans or inspect Nodes.
 
-The manifest callback admits one `github.app_register` Operation and returns HTTP 202. Its one-time code is encrypted in the Gateway and is available only through the declared private-material field `registration_code` to the bound Gateway-Node workflow. The native workflow exchanges the code with GitHub. It stores `{app_id, slug, name, owner, owner_type, url, private_key}` through the shared `app_credentials` secret output. The existing App key stays encrypted in `GitHubAppStore`; no code or key enters public input, result, logs or Swamp resources. Replaying the browser callback cannot admit another exchange. The operation result contains only `registered: true`.
+### Registration and metadata
 
-`POST /api/v1/github/app/sync` admits `github.app_sync`. The native workflow reads a newly minted short-lived App JWT through the declared `app_token` private field and lists installations at GitHub. The Gateway signs the JWT locally with its retained App key and makes no upstream request. This exposes a **new credential type to the exact Gateway-Node worker**: an App JWT can exercise App-level GitHub authority during its lifetime. It is not a repository installation token and cannot be narrowed to installation listing by GitHub. This credential boundary requires its own access review before release. The key itself is never exported for refresh.
+The manifest callback admits one `github.app_register` Operation and returns HTTP 202. The code can be used once and stays encrypted in the Gateway. The queued Gateway job exchanges it with GitHub and writes the returned App key directly to the encrypted `GitHubAppStore`. No code, App key, or App JWT enters a Swamp workflow, vault, input, resource, result, or log. Replaying the browser callback cannot admit another exchange. The public Operation result contains only `registered: true`.
 
-App install/show are state-only. They return the last projected installation observation with `installations_status` (`unknown`, `current`, or `stale`) and `observed_at`. An empty list with `unknown` is not evidence of no installations. Observations become stale after five minutes. While registration is admitted and credentials are not stored, show returns `status: pending`. No HTTP request polls or waits for execution. Destroy removes only local App state; GitHub still requires the owner to delete its registration in the browser.
+`POST /api/v1/github/app/sync` admits `github.app_sync` and returns HTTP 202 with the existing Operation response. Its Gateway job signs an App JWT that expires after nine minutes, lists installations, and stores only the public observation. The JWT never leaves the Gateway except in the authenticated request to GitHub. A workflow that needs App metadata receives it as public run inputs captured by the Gateway.
+
+Steps may call only the existing installation-token POST, with a numeric admitted Operation and its fixed repository scope. App registration and sync add no Swamp-to-Gateway primitive, endpoint, permission, generic private-material field, or secret-output path.
+
+The App key and JWT grant App-level authority. An installation token carries narrower repository permissions. Keeping App-level work in the Gateway preserves that distinction and lets native workflows use only the scoped installation-token primitive.
+
+App install/show are state-only. They return the last stored installation observation with `installations_status` (`unknown`, `current`, or `stale`) and `observed_at`. An empty list with `unknown` is not evidence of no installations. Observations become stale after five minutes. While registration is admitted and credentials are not stored, show returns `status: pending`. No HTTP request polls or waits for execution. Destroy removes only local App state; GitHub still requires the owner to delete its registration in the browser.
 
 ## Services dependency credentials
 

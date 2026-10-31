@@ -210,3 +210,12 @@ it('refuses resume admission when its Incus host is inactive', function (): void
     $this->host->update(['status' => LifecycleStatus::Removing]);
     expect(fn () => app(TaskVmResumeIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class);
 });
+
+it('admits a fresh resume after an interrupted Operation releases its target', function (): void {
+    $previous = savedResumeIntent();
+    $previous->update(['status' => OperationStatus::Interrupted, 'lock_key' => null, 'finished_at' => now()]);
+    $admitted = admitNativeResume();
+    expect($admitted->id)->not->toBe($previous->id);
+    expect($admitted->status)->toBe(OperationStatus::Running);
+    expect($previous->fresh()->status)->toBe(OperationStatus::Interrupted);
+});

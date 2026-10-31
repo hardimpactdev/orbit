@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -14,9 +15,13 @@ final readonly class FailNativeOperationAction
 {
     public function __construct(private DirectOperation $direct) {}
 
-    public function execute(Operation $operation, string $runId): Operation
+    public function execute(Operation $operation, string $runId, OperationStatus $status = OperationStatus::Failed): Operation
     {
-        return DB::transaction(function () use ($operation, $runId): Operation {
+        if (! in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)) {
+            throw new \LogicException('A native failure transition requires failed or interrupted history.');
+        }
+
+        return DB::transaction(function () use ($operation, $runId, $status): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($current->kind !== $operation->kind || $current->node_id !== $operation->node_id) {
                 throw new ResourceOperationException('operation.run_mismatch', 'The Operation no longer matches its native binding.', 409);
@@ -27,7 +32,7 @@ final readonly class FailNativeOperationAction
             }
 
             return $this->direct->project($current, [
-                'run_id' => $runId, 'status' => 'failed',
+                'run_id' => $runId, 'status' => $status->value,
                 'started_at' => ($current->started_at ?? $current->created_at ?? now())->toISOString(),
                 'finished_at' => now()->toISOString(), 'error_code' => 'operation.native_failed',
             ], []);

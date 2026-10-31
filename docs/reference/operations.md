@@ -37,7 +37,7 @@ Every operation has the same fields, whatever its kind.
 | `kind` | What runs, `<family>.<verb>`, such as `instance.deploy` |
 | `target_type`, `target_id` | The record the operation changes, such as `instance` and `15` |
 | `input` | Validated operation input. Deploys may include `commit`; automatic admission also binds `caller_node_id`. Rollbacks include `release` |
-| `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled`. The last three are terminal and never change again |
+| `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, `cancelled`, or `interrupted`. The last four are terminal and never change again |
 | `sequence` | A number that grows with every change of the operation or one of its steps |
 | `current_step` | The name of the running or waiting step, or null |
 | `failed_step`, `error_code` | For a failed operation, the step that ended it and its error code. `failed_step` is null when the operation failed outside a step |
@@ -203,7 +203,7 @@ The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([
 
 | Filter | Contract |
 | --- | --- |
-| `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled` |
+| `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, `cancelled`, or `interrupted` |
 | `kind` | Two names joined by `.`, `<family>.<verb>`, such as `instance.deploy`. At most 64 characters |
 | `target_type` | One name, such as `instance`. At most 32 characters |
 | `target_id` | A positive integer |
@@ -561,7 +561,7 @@ The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy
 
 ### Recover a terminal native result
 
-`GET /api/v1/operations/{operation}` makes one bounded native history read for an active direct Operation with a recorded run ID. It queries that exact UUID and checks the workflow name, Operation ID, kind and root Node. Only a native status of failed or interrupted can record `operation.native_failed`, through the same terminal transition as the existing root failure callback. Native success never invents a missing domain result.
+`GET /api/v1/operations/{operation}` makes one bounded native history read for an active direct Operation with a recorded run ID. It queries that exact UUID and checks the workflow name, Operation ID, kind and root Node. Only a native status of failed or interrupted can record `operation.native_failed`, through the same terminal transition as the existing root failure callback. The verified native status is preserved, including interrupted. Native success never invents a missing domain result.
 
 This recovers a lost failure callback after a serve restart or a refused source bundle. Missing history, connection errors, authorization refusals, invalid history and all other native statuses leave recorded status unchanged. The native request runs outside the database transaction; the final write locks and rechecks the original binding and terminal status. Existing terminal results never change. There is no background poller, execution replay, family action or secret hydration. Terminal failure reports the native outcome; it does not prove that every partial Node effect stopped.
 

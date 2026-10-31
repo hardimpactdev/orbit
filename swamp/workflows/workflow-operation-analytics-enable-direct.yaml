@@ -1,7 +1,10 @@
 id: 38e1a160-f17b-4d31-b77c-36dfd78ed570
 name: operation-analytics-enable-direct
-description: Converge Plausible and tracking Routes through one native placed DAG.
+description: Manage one Plausible site then publish captured tracking Routes through official SSH from209.
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -11,633 +14,514 @@ inputs:
       minimum: 1
     kind:
       type: string
-      enum:
-      - analytics.enable
+      const: analytics.enable
+    intent:
+      type: object
+      properties:
+        certificates:
+          type: array
+          items:
+            type: object
+        router:
+          type: array
+          items:
+            type: object
+        probes:
+          type: array
+          items:
+            type: object
+        ingress:
+          type: array
+          items:
+            type: object
+        dns:
+          type: array
+          items:
+            type: object
+        retire:
+          type: array
+          items:
+            type: object
+        cleanup:
+          type: array
+          items:
+            type: object
+        base_url:
+          type: string
+        site:
+          type: object
+        result_json:
+          type: string
+      required:
+      - certificates
+      - router
+      - probes
+      - ingress
+      - dns
+      - retire
+      - cleanup
+      - base_url
+      - site
+      - result_json
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        plausible_credentials:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - plausible_credentials
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
 - name: prepare
-  writes: true
   steps:
-  - name: begin
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: begin
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: site
-  writes: true
-  steps:
-  - name: site
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: site
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    guard: ${{ steps.begin.outputs.stopped }}
-  dependsOn:
-  - job: prepare
-    condition:
-      type: succeeded
-- name: requests
-  writes: true
-  steps:
-  - name: request
-    target: ${{ "orbit-node-" + string(self.item.node_id) }}
-    labels:
-      node: ${{ string(self.item.node_id) }}
-    task:
-      type: workflow
-      workflowIdOrName: analytics-host-prepare
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        leaf: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.certificates }}
-  dependsOn:
-  - job: site
-    condition:
-      type: succeeded
-- name: sign
-  writes: true
-  steps:
-  - name: sign-http-input
+  - name: assets
     target: orbit-node-209
-    labels:
-      node: '209'
-    guard: ${{ steps.begin.outputs.stopped }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: prepareSignBatch
+      behaviorType: '@nckrtl/analytics-site'
+      behaviorName: ${{ "analytics-assets-" + run.id }}
+      methodName: assets
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        leaves: '${{ steps.begin.outputs.tracking.certificates.map(leaf, {"node_id": leaf.node_id, "scope":
-          leaf.scope, "agent_sha256": leaf.agent_sha256, "domain": leaf.domain, "version": leaf.version,
-          "root_hash": leaf.root_hash, "user": leaf.user}) }}'
-        target_node_id: 209
-        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs.prepared]) }}
-  - name: sign-http
+        base_url: ${{ inputs.intent.base_url }}
+        site: ${{ inputs.intent.site }}
+  - name: workspace
     target: orbit-node-209
-    labels:
-      node: '209'
-    guard: ${{ steps.begin.outputs.stopped }}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: orbit-certificate-signing-http
+      behaviorName: ${{ "analytics-workspace-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          #!/bin/sh
-          set -eu
-          /usr/bin/python3 - <<'PYTHON'
-          import json
-          import os
-          import re
-          import ssl
-          import sys
-          import urllib.request
+        run: 'umask 077
 
-
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-
-
-          try:
-              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
-              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
-              if not re.fullmatch(r"[1-9][0-9]*", operation):
-                  raise ValueError("Invalid operation")
-              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
-              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
-                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
-                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
-              else:
-                  raw = [record for batch in raw for record in batch]
-              if len(raw) > 256:
-                  raise ValueError("Too many requests")
-              requests = [record for record in raw if record.get("state") == "request"]
-              if not requests:
-                  print(json.dumps({"certificates": []}))
-                  sys.exit(0)
-              body = {"run_id": run_id, "requests": requests}
-              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
-                  body["restoring"] = True
-              payload = json.dumps(body).encode()
-              url = (
-                  "https://gateway.orbit/api/v1/direct-operations/"
-                  + operation
-                  + "/certificates/sign"
-              )
-              request = urllib.request.Request(
-                  url,
-                  data=payload,
-                  method="POST",
-                  headers={
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                  },
-              )
-              context = ssl.create_default_context(
-                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
-              )
-              opener = urllib.request.build_opener(
-                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
-              )
-              with opener.open(request, timeout=60) as response:
-                  raw_response = response.read(16_777_217)
-                  if len(raw_response) > 16_777_216 or response.status != 200:
-                      raise ValueError("Invalid signing response")
-              result = json.loads(raw_response)["data"]
-              print(json.dumps(result))
-          except Exception:
-              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
-              sys.exit(1)
-          PYTHON
-        env:
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
-          ORBIT_CERTIFICATE_MODE: batch
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["sign-http-input"].outputs.requests_json }}
+          mktemp -d'
     dependsOn:
-    - step: sign-http-input
+    - step: assets
       condition:
         type: succeeded
-  - name: sign
+  - name: login_form
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: signBatch
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-login_form-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        leaves: '${{ steps.begin.outputs.tracking.certificates.map(leaf, {"node_id": leaf.node_id, "scope":
-          leaf.scope, "agent_sha256": leaf.agent_sha256, "domain": leaf.domain, "version": leaf.version,
-          "root_hash": leaf.root_hash, "user": leaf.user}) }}'
-        target_node_id: 209
-        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs.prepared]) }}
-        native_stdout: ${{ steps["sign-http"].outputs.stdout }}
-    guard: ${{ steps.begin.outputs.stopped }}
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.login_form }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
     dependsOn:
-    - step: sign-http
+    - step: workspace
       condition:
         type: succeeded
-  dependsOn:
-  - job: requests
-    condition:
-      type: succeeded
-- name: certificates
-  writes: true
-  steps:
-  - name: certificate
-    target: ${{ "orbit-node-" + string(self.item.node_id) }}
-    labels:
-      node: ${{ string(self.item.node_id) }}
+  - name: login
+    target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/analytics-certificate'
-      behaviorName: ${{ "analytics-cert-node-" + string(self.item.node_id) }}
-      methodName: publish
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-login-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item.node_id }}
-        leaf: ${{ self.item }}
-        signed: ${{ steps.sign.outputs.certificates.filter(c, c.node_id == self.item.node_id && c.scope
-          == self.item.scope) }}
-        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, steps[name].outputs.prepared) }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.certificates }}
-  dependsOn:
-  - job: sign
-    condition:
-      type: succeeded
-- name: records
-  writes: true
-  steps:
-  - name: publish_records
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.login }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
+            }}
+    dependsOn:
+    - step: login_form
+      condition:
+        type: succeeded
+  - name: site_form
+    target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: publishRecords
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-site_form-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    guard: ${{ steps.begin.outputs.stopped }}
-  dependsOn:
-  - job: certificates
-    condition:
-      type: succeeded
-- name: router
-  writes: true
-  steps:
-  - name: router_caddy
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.site_form }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+    dependsOn:
+    - step: login
+      condition:
+        type: succeeded
+  - name: inspect
+    target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.item) }}
-      methodName: publishCaddy
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-inspect-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.router_node_ids }}
-  dependsOn:
-  - job: records
-    condition:
-      type: succeeded
-- name: verify
-  writes: true
-  steps:
-  - name: verify_public
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.inspect }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+    dependsOn:
+    - step: site_form
+      condition:
+        type: succeeded
+  - name: decide
+    target: orbit-node-209
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/analytics-certificate'
-      behaviorName: ${{ "analytics-cert-node-" + string(self.item) }}
-      methodName: verifyPublic
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      behaviorType: '@nckrtl/analytics-site'
+      behaviorName: ${{ "analytics-decision-" + run.id }}
+      methodName: decide
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.public_verify_node_ids }}
-  dependsOn:
-  - job: router
-    condition:
-      type: succeeded
-- name: activate
-  writes: true
-  steps:
-  - name: public_verified
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: publicVerified
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    guard: ${{ steps.begin.outputs.stopped }}
-  dependsOn:
-  - job: verify
-    condition:
-      type: succeeded
-- name: ingress
-  writes: true
-  steps:
-  - name: ingress_caddy
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.item) }}
-      methodName: publishCaddy
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.ingress_node_ids }}
-  dependsOn:
-  - job: activate
-    condition:
-      type: succeeded
-- name: firewall
-  writes: true
-  steps:
-  - name: ingress_firewall
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.item) }}
-      methodName: publishFirewall
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.firewall_node_ids }}
-  dependsOn:
-  - job: ingress
-    condition:
-      type: succeeded
-- name: dns
-  writes: true
-  steps:
-  - name: dns
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.item) }}
-      methodName: publishDns
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.dns_node_ids }}
-  dependsOn:
-  - job: firewall
-    condition:
-      type: succeeded
-- name: grace
-  writes: true
-  steps:
-  - name: dns_grace
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: dnsGrace
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    guard: ${{ steps.begin.outputs.stopped }}
-  dependsOn:
-  - job: dns
-    condition:
-      type: succeeded
-- name: retire
-  writes: true
-  steps:
-  - name: placement_cleanup
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: placementCleanup
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    guard: ${{ steps.begin.outputs.stopped }}
-  dependsOn:
-  - job: grace
-    condition:
-      type: succeeded
-- name: retired_hosts
-  writes: true
-  steps:
-  - name: retired_caddy
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.item) }}
-      methodName: publishCaddy
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.cleanup_caddy_node_ids }}
-  dependsOn:
-  - job: retire
-    condition:
-      type: succeeded
-- name: retired_dns
-  writes: true
-  steps:
-  - name: retired_dns
-    target: ${{ "orbit-node-" + string(self.item) }}
-    labels:
-      node: ${{ string(self.item) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.item) }}
-      methodName: publishDns
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.dns_node_ids }}
-  dependsOn:
-  - job: retired_hosts
-    condition:
-      type: succeeded
-- name: cleanup
-  writes: true
-  steps:
-  - name: cleanup
-    target: ${{ "orbit-node-" + string(self.item.node_id) }}
-    labels:
-      node: ${{ string(self.item.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-certificate'
-      behaviorName: ${{ "analytics-cert-node-" + string(self.item.node_id) }}
-      methodName: remove
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item.node_id }}
-        leaf: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.begin.outputs.tracking.cleanup }}
-  dependsOn:
-  - job: retired_dns
-    condition:
-      type: succeeded
-- name: finish
+        stdout: ${{ steps.inspect.outputs.stdout }}
+- name: site
   dependsOn:
   - job: prepare
     condition:
-      type: always
+      type: succeeded
+  steps:
+  - name: create
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-create-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.create }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+    guard: ${{ steps.decide.outputs.action != "create" }}
+  - name: update
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-update-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.update }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_ANALYTICS_CURRENT_DOMAIN: ${{ steps.decide.outputs.current_domain }}
+    guard: ${{ steps.decide.outputs.action != "update" }}
+- name: goals
+  dependsOn:
   - job: site
     condition:
-      type: always
-  - job: requests
+      type: succeeded
+  steps:
+  - name: goals
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-goals-" + run.id + "-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.goals }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
+            }}
+          ORBIT_ANALYTICS_GOALS: ${{ self.item }}
+    forEach:
+      item: item
+      in: ${{ steps.assets.outputs.goal_batches }}
+- name: verify
+  dependsOn:
+  - job: goals
     condition:
-      type: always
-  - job: sign
-    condition:
-      type: always
-  - job: certificates
-    condition:
-      type: always
-  - job: records
-    condition:
-      type: always
-  - job: router
-    condition:
-      type: always
+      type: succeeded
+  steps:
+  - name: verify
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-verify-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.verify }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+  - name: stats
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-stats-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.stats }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
+            }}
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
+- name: session-cleanup
+  dependsOn:
   - job: verify
     condition:
       type: always
-  - job: activate
-    condition:
-      type: always
-  - job: ingress
-    condition:
-      type: always
-  - job: firewall
-    condition:
-      type: always
-  - job: dns
-    condition:
-      type: always
-  - job: grace
-    condition:
-      type: always
-  - job: retire
-    condition:
-      type: always
-  - job: retired_hosts
-    condition:
-      type: always
-  - job: retired_dns
-    condition:
-      type: always
-  - job: cleanup
-    condition:
-      type: always
-  writes: true
   steps:
-  - name: finish
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+  - name: logout
+    target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/analytics-lifecycle'
-      behaviorName: ${{ "analytics-parent-" + string(inputs.node_id) }}
-      methodName: finish
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-logout-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.logout }}"'
+        env:
+          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+    guard: ${{ !("workspace" in steps) || steps.workspace.status != "succeeded" }}
+  - name: remove-session
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-remove-session-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          rm -rf -- "$ORBIT_ANALYTICS_SESSION"'
+        env:
+          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
+    guard: ${{ !("workspace" in steps) || steps.workspace.status != "succeeded" }}
+    dependsOn:
+    - step: logout
+      condition:
+        type: always
+- name: certificates
+  dependsOn:
+  - job: session-cleanup
+    condition:
+      type: succeeded
+  - job: verify
+    condition:
+      type: succeeded
+  steps:
+  - name: certificates
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-publish
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        successful: ${{ steps.all(name, name == "finish" || steps[name].status == "succeeded") }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+        parent_run_id: ${{ run.id }}
+        restoring: false
+    forEach:
+      item: item
+      in: ${{ inputs.intent.certificates }}
+- name: router
+  dependsOn:
+  - job: certificates
+    condition:
+      type: succeeded
+  steps:
+  - name: router
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+    forEach:
+      item: item
+      in: ${{ inputs.intent.router }}
+- name: probes
+  dependsOn:
+  - job: router
+    condition:
+      type: succeeded
+  steps:
+  - name: probes
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-probe
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+    forEach:
+      item: item
+      in: ${{ inputs.intent.probes }}
+- name: ingress
+  dependsOn:
+  - job: probes
+    condition:
+      type: succeeded
+  steps:
+  - name: ingress
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+    forEach:
+      item: item
+      in: ${{ inputs.intent.ingress }}
+- name: dns
+  dependsOn:
+  - job: ingress
+    condition:
+      type: succeeded
+  steps:
+  - name: dns
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+    forEach:
+      item: item
+      in: ${{ inputs.intent.dns }}
+- name: grace
+  dependsOn:
+  - job: dns
+    condition:
+      type: succeeded
+  steps:
+  - name: grace
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs: {}
+    guard: ${{ inputs.intent.dns.size() == 0 }}
+- name: retire
+  dependsOn:
+  - job: grace
+    condition:
+      type: succeeded
+  steps:
+  - name: retire
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+    forEach:
+      item: item
+      in: ${{ inputs.intent.retire }}
+- name: cleanup
+  dependsOn:
+  - job: retire
+    condition:
+      type: succeeded
+  steps:
+  - name: cleanup
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-remove
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.item }}
+        execution_secrets: {}
+        parent_run_id: ${{ run.id }}
+        restoring: false
+    forEach:
+      item: item
+      in: ${{ inputs.intent.cleanup }}
+- name: finish
+  dependsOn:
+  - job: cleanup
+    condition:
+      type: succeeded
+  steps:
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: printf '%s\n' "$ORBIT_ANALYTICS_RESULT"
+        env:
+          ORBIT_ANALYTICS_RESULT: ${{ inputs.intent.result_json }}

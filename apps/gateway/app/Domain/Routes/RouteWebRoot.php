@@ -91,6 +91,7 @@ final class RouteWebRoot
         $instance->loadMissing('project');
         $default = self::relativeDirectory($instance->root ?? $instance->project->root);
         $webRoots = Route::query()
+            ->when($activating !== null, static fn ($query) => $query->whereKeyNot($activating?->id))
             ->whereNotNull('web_root')
             ->where('status', RouteStatus::Active->value)
             ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))

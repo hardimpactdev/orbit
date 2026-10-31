@@ -12,6 +12,7 @@ use Saloon\Http\Response;
 
 final class SyncGitHubAppRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::POST;
 
     private readonly string $operationKey;

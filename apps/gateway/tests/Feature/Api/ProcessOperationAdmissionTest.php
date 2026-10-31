@@ -194,7 +194,7 @@ it('submits complete public stop inputs and waits for native completion before c
     Queue::assertNothingPushed();
 });
 
-it('projects explicit stop from one terminal history read without a Gateway result callback', function (): void {
+it('projects explicit stop from one terminal history read without a Gateway result callback', function (string $status): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
     $process = Process::query()->sole();
@@ -202,11 +202,11 @@ it('projects explicit stop from one terminal history read without a Gateway resu
     $this->postJson('/api/v1/processes/'.$process->id.'/stop')->assertAccepted();
     $operation = Operation::query()->where('kind', 'process.stop')->sole();
     $runId = $operation->state['swamp_run_id'];
-    $history = ['id' => $runId, 'workflowName' => 'operation-process-stop', 'status' => 'succeeded',
+    $history = ['id' => $runId, 'workflowName' => 'operation-process-stop', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-10-31T18:00:00Z', 'completedAt' => '2026-10-31T18:00:01Z',
         'jobs' => [['name' => 'runtime', 'steps' => [
-            ['name' => 'verify', 'outputs' => ['stdout' => '{"ready":true,"state":"exited"}']],
+            ['name' => 'verify', ...($status === 'succeeded' ? ['outputs' => ['stdout' => '{"ready":true,"state":"exited"}']] : ['status' => 'pending'])],
         ]]],
     ];
     $socket = new FakeRoutePublicationSocket;
@@ -214,13 +214,14 @@ it('projects explicit stop from one terminal history read without a Gateway resu
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.read_token' => 'synthetic-native-reader']);
 
-    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'succeeded'], ['job' => 'runtime', 'step' => 'verify']);
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], ['job' => 'runtime', 'step' => 'verify']);
 
-    expect($terminal->status)->toBe(OperationStatus::Succeeded);
-    expect($terminal->result)->toBe(['ready' => true, 'state' => 'exited']);
-    expect($process->refresh()->desired_state->value)->toBe('stopped');
-    expect($process->status->value)->toBe('active');
+    expect($terminal->status)->toBe(OperationStatus::from($status));
+    expect($terminal->lock_key)->toBeNull();
+    expect($terminal->result)->toBe($status === 'succeeded' ? ['ready' => true, 'state' => 'exited'] : ['error_code' => 'operation.native_failed']);
+    expect($process->refresh()->desired_state->value)->toBe($status === 'succeeded' ? 'stopped' : 'running');
+    expect($process->status->value)->toBe($status === 'succeeded' ? 'active' : 'failed');
     expect($socket->sent)->toHaveCount(1);
     expect($socket->sent[0]['type'])->toBe('workflow.history.get');
     Queue::assertNothingPushed();
-});
+})->with(['succeeded', 'interrupted']);

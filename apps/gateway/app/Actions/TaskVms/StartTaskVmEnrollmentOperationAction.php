@@ -25,7 +25,7 @@ final readonly class StartTaskVmEnrollmentOperationAction
                 return null;
             }
             $existing = Operation::query()->where('kind', 'task_vm.enroll')->where('target_type', 'task_vm')
-                ->where('target_id', $vm->id)->whereNotIn('status', ['failed', 'cancelled'])->latest('id')->first();
+                ->where('target_id', $vm->id)->whereNotIn('status', ['failed', 'cancelled', 'interrupted'])->latest('id')->first();
             if ($existing !== null) {
                 return $existing;
             }

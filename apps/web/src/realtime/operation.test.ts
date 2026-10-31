@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { mergeOperation, type Operation } from "../api/operations";
-import {
-    LIVE_READ_SECONDS,
-    OperationFollow,
-    operationChannel,
-} from "./operation";
+import { LIVE_READ_SECONDS, OperationFollow, operationChannel } from "./operation";
 import type { RealtimeSocket } from "./socket";
 
 const operation = (overrides: Partial<Operation> = {}): Operation => ({
@@ -125,4 +121,16 @@ it("reads on its own schedule when no event arrives: every 15 seconds live, ever
     await vi.advanceTimersByTimeAsync(4000);
     expect(reads).toHaveLength(2);
     polling.stop();
+});
+
+it("stops following an interrupted native Operation", async () => {
+    const { socket, unsubscribed } = fakeSocket();
+    const read = vi.fn(async () => operation({ status: "interrupted", poll_after_seconds: null }));
+    const seen: Operation[] = [];
+    new OperationFollow(42, (next) => seen.push(next), socket, read).start();
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(seen[0]?.status).toBe("interrupted");
+    expect(unsubscribed).toEqual([operationChannel(42)]);
 });

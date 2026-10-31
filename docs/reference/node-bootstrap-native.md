@@ -2,7 +2,9 @@
 title: "Native Node bootstrap"
 description: "Standalone bootstrap intent, native first contact, candidate accounts, and PHP prerequisites."
 covers:
-  - apps/gateway/app/Actions/Nodes/{AdmitNodeBootstrapAction,StartNodePhpPackagesAction}.php
+  - apps/gateway/app/Actions/Nodes/{AdmitNodeBootstrapAction,StartNodePhpPackagesAction,AdmitWorkerKnownHostsAction,RecordNodeSshHostKeyAction}.php
+  - apps/gateway/app/Domain/Nodes/WorkerKnownHosts*.php
+  - apps/gateway/app/Infrastructure/Swamp/SwampWorkerKnownHostsInput.php
   - apps/gateway/app/Domain/Nodes/{NodeBootstrapProjection,NodePhpPackagesInput,NodePhpPackagesProjection,bootstrap-direct-operations}.php
 ---
 
@@ -72,6 +74,17 @@ Core workflow dependencies, vault expressions, method outputs and the existing t
 
 After an authorized one-time scan from209 over the Node's WireGuard address, `POST /api/v1/nodes/{node}/ssh-host-key` records the public `{host,type,value}` result. `host` must equal the Node's stored WireGuard address; `type` is `ssh-ed25519` and `value` is its base64 public key. The Gateway calculates the SHA-256 fingerprint and records the three host-key fields on the Node, then broadcasts its normal update. The response is the updated Node with HTTP200. Normal directed Node access applies.
 
-This path stores a first pin. Repeating the same key returns the existing Node; a different or incomplete existing pin returns `node.ssh_host_key_already_recorded` with HTTP409. It performs no scan, SSH connection, key installation, workflow admission or known-hosts file write. It accepts neither a jump host nor caller-provided fingerprint. The `node.ssh_access_converge` operation then uses the stored full pin. A scan that returned no key supplies nothing to record.
+This path stores a first pin. Repeating the same key returns the existing Node; a different or incomplete existing pin returns `node.ssh_host_key_already_recorded` with HTTP409. Recording a pin admits the shared worker known-hosts publication below. The API performs no scan, SSH connection, key installation or filesystem write. It accepts neither a jump host nor caller-provided fingerprint. The `node.ssh_access_converge` operation then uses the stored full pin. A scan that returned no key supplies nothing to record.
 
 The tracked SSH-access key step runs as the authenticated managed account without sudo. It requires that account to write its own `.ssh/authorized_keys`. Existing directory or file permissions that prevent that write produce a native failure; the step does not request privilege, change another account, or select another identity. Package installation keeps its separate privilege requirements.
+
+
+## Publish worker known-hosts
+
+The Gateway admits `node.worker_known_hosts` after a Node pin is recorded or changed. It captures the complete set of recorded WireGuard addresses and full public host keys through `SwampWorkerKnownHostsInput`; incomplete pins are omitted. New pinned enrollment records and native bootstrap or TaskVM pin observations use the same publisher. An identical pin API repeat reuses an unfinished or identical terminal publication, including a failed publication. It never replays an unchanged failed snapshot.
+
+The fixed `operation-node-worker-known-hosts` workflow runs on209. One shipped script executes locally through Swamp core `command/shell`, without SSH. It resolves the worker account's home from the account database, creates a missing `.ssh` directory with mode0700, and atomically replaces `known_hosts` with mode0600. Identical content and mode preserve the existing file. Failure before replacement leaves the old file intact. Public terminal metadata contains `known_hosts_ready`, `digest`, `changed`, and `path`.
+
+Admissions serialize the public snapshot on the control Node record. One unfinished publication coalesces pin changes; its first terminal projection admits the latest snapshot when its content changed during the run. The pin caller's HTTP idempotency scope stays separate. Swamp owns execution and terminal history; the Gateway adds no host transport, retry loop or worker maintenance.
+
+Official cfgmgmt version `2026.10.27.1` has no host-key connection input or local file target. Its runner known-hosts file must be seeded before its documented `accept-new` connection policy is used. This shared writer supplies that prerequisite from stored pins. Families add no keyscan, first-contact trust, localhost SSH or trust adapter. A source merge or an official SSH own-key proof does not prove this file was seeded: consumers require the successful publication's actual snapshot and Node pin. Native workflow publication, exact Gateway run/read authority, Gateway uptake, current health and execution guards remain separate live gates. The workflow changes no identity, grant or worker unit.

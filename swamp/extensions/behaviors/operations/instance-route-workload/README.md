@@ -1,0 +1,9 @@
+# Route workload preparation
+
+`instance-route-workload` prepares one immutable workload phase. The Route parent supplies `node_id`, `instance_id`, `connection`, `host_keys` and `plan`. `plan` has nullable `source_access`, `served_roots` and `runtime` members. Every step runs on 209; the host actions use the official SSH or cfgmgmt file model. The final `result` requires every nonempty branch to succeed.
+
+The owning admission captures development permissions with the existing `RouteWorkloadInput` policy. Production capture uses `RouteWebRoot::servedApplications`, `InstanceDeploymentIntent::runtimeIntent` and the canonical FPM renderer. `NativeRouteWorkloadPreparation::capture` returns `prepare`, `selected` and `restore` phases. The parent prepares the union before publication and selects the captured final or previous phase afterward. No Node or Instance identity changes during execution.
+
+Official extensions checked: cfgmgmt file manages the existing dedicated pool, and official SSH runs FPM validation followed by service reload. The inspected official systemd model has check/apply/restart but no service reload method. Neither cfgmgmt files/links nor core expresses the existing checkout ACL traversal and its canonical storage-link exception. Access retains the existing development `current` checkout and grants storage access only through its canonical public link. Two small shipped one-action scripts retain that source policy and selected-release environment-link policy. There is no deployment journal, generation tracker, runtime lock, package install, retry or polling mechanism. Package and Instance parent policy remain with their owners.
+
+The local native fixture uses the real official extensions with a disposable SSH executable. Python tests exercise the link and permission policy at the host-command boundary. These tests do not authorize a live target change.

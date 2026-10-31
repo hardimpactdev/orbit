@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseServers;
 
 use App\Domain\DatabaseServers\DatabaseIntentSource;
+use App\Domain\Operations\OperationStatus;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -17,7 +18,7 @@ final readonly class PurgeDatabaseExecutionIntentsAction
         $cutoff = now()->subHours(DatabaseExecutionIntent::RETRY_HOURS);
         $retained = [];
         $operations = Operation::query()->where(function ($query) use ($cutoff): void {
-            $query->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])
+            $query->whereNotIn('status', OperationStatus::terminalValues())
                 ->orWhereNull('finished_at')->orWhere('finished_at', '>=', $cutoff);
         });
         foreach ($operations->cursor() as $operation) {

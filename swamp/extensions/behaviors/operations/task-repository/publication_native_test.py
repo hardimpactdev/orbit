@@ -21,7 +21,7 @@ harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
 
-class NativePublication(harness.NativeTestCase):
+class NativePublicationFixture(harness.NativeTestCase):
     native_timeout = 90
 
     def setUp(self):
@@ -35,6 +35,11 @@ class NativePublication(harness.NativeTestCase):
         tasks = self.repo / "extensions/behaviors/operations/tasks"
         tasks.mkdir(parents=True)
         shutil.copy(ROOT / "extensions/behaviors/operations/tasks/publish.ts", tasks)
+        tasks = self.repo / "extensions/behaviors/operations/tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        for name in ("publish.ts", "check.ts"):
+            shutil.copy(ROOT / "extensions/behaviors/operations/tasks" / name, tasks)
+
         shutil.copy(
             ROOT / "extensions/behaviors/operations/task-repository/input.ts", target
         )
@@ -225,6 +230,8 @@ subprocess.run=run
             )["outputs"]["stdout"]
         )
 
+
+class NativePublication(NativePublicationFixture):
     def test_native_publication_uses_official_ssh_and_records_pr(self):
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")

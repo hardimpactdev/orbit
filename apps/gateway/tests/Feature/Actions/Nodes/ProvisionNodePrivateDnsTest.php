@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
@@ -23,7 +22,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
-use Tests\Support\FakeToolManagerMaterializer;
 
 it('publishes private DNS on the vpn node when node:add reprovisions a split gateway or vpn node', function (string $reprovisioned): void {
     $processes = new ProvisionNodePrivateDnsProcessRunner;
@@ -36,7 +34,6 @@ it('publishes private DNS on the vpn node when node:add reprovisions a split gat
         ClusterRouterDnsSelectionReconciler::class,
         new NativeClusterRouterDnsSelectionReconciler(app(DnsmasqPrivateDnsManager::class)),
     );
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(GatewayPeerProjectionManager::class, new ProvisionNodePrivateDnsPeerProjection);
     app()->instance(NodeConverger::class, new class implements NodeConverger
     {

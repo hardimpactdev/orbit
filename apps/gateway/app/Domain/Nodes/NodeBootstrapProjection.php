@@ -37,7 +37,7 @@ final readonly class NodeBootstrapProjection implements DirectOperationProjectio
                     array_filter(['ssh_host_key_type' => $result['host_type'] ?? null, 'ssh_host_key' => $result['public_key'] ?? null,
                         'ssh_host_fingerprint' => $result['host_key_fingerprint'] ?? null], static fn ($value): bool => $value !== null);
                 if ($changes !== []) {
-                    Node::query()->whereKey($operation->target_id)->update($changes);
+                    Node::query()->findOrFail($operation->target_id)->update($changes);
                 }
             }
 

@@ -19,12 +19,9 @@ vaults: []
 jobs:
 - name: canary
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   steps:
   - name: identity
     target: orbit-node-209
-    labels: *id001
     writes: true
     task:
       type: behavior
@@ -54,7 +51,6 @@ jobs:
         - /usr/bin/hostname
   - name: directory
     target: orbit-node-209
-    labels: *id001
     writes: true
     dependsOn:
     - step: identity
@@ -78,7 +74,6 @@ jobs:
         sudo: true
   - name: write
     target: orbit-node-209
-    labels: *id001
     writes: true
     dependsOn:
     - step: directory
@@ -98,7 +93,6 @@ jobs:
         sudo: true
   - name: read
     target: orbit-node-209
-    labels: *id001
     writes: true
     dependsOn:
     - step: write
@@ -123,7 +117,6 @@ jobs:
           orbit-official-ssh-canary
   - name: remove-file
     target: orbit-node-209
-    labels: *id001
     writes: true
     dependsOn:
     - step: directory
@@ -149,7 +142,6 @@ jobs:
         sudo: true
   - name: remove-directory
     target: orbit-node-209
-    labels: *id001
     writes: true
     dependsOn:
     - step: remove-file

@@ -198,13 +198,15 @@ The fleet does not have to own its public edge. A tracking host mirrors the Inst
 
 ### Native workflows manage sites
 
-Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, Node users and participant Nodes. The placed worker resolves its own account home with local `getent`; the Gateway performs no account lookup. Placed steps reuse the shared Route publication and certificate behaviors. The canonical Gateway sign primitive signs the public CSR for its admitted Operation. The CA private key stays only in the Gateway; each leaf private key stays on its Node.
+Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, SSH connections and Route snapshots. All steps run on Node 209. The Gateway copies its existing Plausible credentials through the shared execution-copy helper; workflow input contains only vault and key names. Command steps resolve that descriptor into their environment. A private temporary cookie jar keeps the session between login, inspection, one site mutation, each goals batch, verification and logout. Credentials, cookies and CSRF tokens never enter outputs. Cleanup removes the temporary session after success or failure.
 
-Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
+To retry a provider failure in the same native run, resume from the `workspace` step so login creates a fresh session. A failure in a later Route child can resume at that failed child without repeating provider work.
 
-The Gateway projects these checkpoints, clears retiring placements and saves the site binding after successful completion. It does not check execution receipts. Only the owning Analytics Node reads the declared protected Plausible credentials. The Project owns its markup.
+The parent composes canonical Route certificate, Caddy, DNS and TLS-probe children through official SSH. The certificate child signs the public CSR with the canonical Gateway primitive. The CA private key stays only in the Gateway; each leaf private key stays on its Node. Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. The workflow publishes the Router, verifies its private TLS endpoint from Ingress, activates the public handler, publishes private DNS and waits for the canonical 31-second grace before withdrawing old placements. The Instance's existing public Route owns the Ingress port rules.
 
-Enable and disable return an accepted Operation. DNS publication keeps the admitted owner; the workflow does not choose another Node or skip DNS. Disable uses official SSH from Node 209 for each admitted host. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
+Only successful terminal projection publishes tracking records, clears retiring placements and saves the site binding. A failure retains the admitted records for diagnosis. Enable and disable return an accepted Operation. Disable preserves the Plausible site and history. Container version updates remain a separate operation and use the existing protected runtime environment source.
+
+Swamp core supplies ordering, commands, vault resolution and recovery. Official SSH and the cfgmgmt actions owned by Routes supply host effects. The official extension catalogue has no Plausible CE management API, so small Python action files call that API directly, one logical action per step. No step reads intent, fetches credentials or projects results through Gateway HTTP.
 
 ### Stats read on the Gateway
 
@@ -214,7 +216,7 @@ The browser never holds the Stats API key, and it cannot ask for another Instanc
 
 Target-only Route changes keep the hostname catalog and require no Analytics lifecycle effect. A Route parent that changes tracking placement or publication uses `AnalyticsRoutePlan::capture()` to admit the current and retiring host Nodes, Router leaves, private DNS owners and Ingress TLS probes. Capture reads stored state, including `node.user`, and omits the home. Leaf `home` is optional; when present the worker checks it against the local account. Capture neither executes work nor changes records.
 
-The parent composes `analyticsRouteActions()` as placed native steps: `hostPrepare` requests a public CSR; `publish` installs and checks the matching public certificate; `remove` and `hostWithdraw` remove an unused leaf and its Route LAN allowance. The same helpers serve enable and disable. The parent retains its kind and run, calls the canonical signer on Node 209, and uses fresh whole-Node Route publication for Caddy, DNS and firewall changes. It withdraws listeners before removing leaves and owns the DNS grace and domain callbacks. These four steps never start child Operations.
+The parent composes `analyticsRouteActions()` as placed native steps: `hostPrepare` requests a public CSR; `publish` installs and checks the matching public certificate; `remove` and `hostWithdraw` remove an unused leaf and its Route LAN allowance. Enable and disable instead compose the canonical Route child workflows described above. The parent retains its kind and run, calls the canonical signer on Node 209, and uses fresh whole-Node Route publication for Caddy, DNS and firewall changes. It withdraws listeners before removing leaves and owns the DNS grace and domain callbacks. These four steps never start child Operations.
 
 `AnalyticsRoutePlan::associated($appRoute)` selects published, non-retiring tracking Routes (the same set the tracking-site renderer serves) through the app Route's target Instances. Each Instance must name that app Route as its `authoritativeRoute()`. The `analyticsTracking` relation exists on the tracking Route, not on the app Route. A secondary app Route owns no tracking host.
 
@@ -225,23 +227,3 @@ The Route parent stores that capture in its immutable input. Its own result proj
 The parent admits the returned union `node_ids`, plus its own root and other effect Nodes. Publish and cleanup must use the union of both host plans, including the previous Ingress when a host changes from public to private. A new private publication plan alone does not list that old public listener.
 
 Rollback plans include candidate Router leaves that do not belong to the original active placement. After restoring stored state and republishing it, the parent builds each fresh participant view with `cleanupForNode($rollbackPlan, $callerNodeId)`. The method accepts the persisted parent plan, decodes its cleanup through the shared Analytics leaf decoder, and filters it against the Node's currently rendered certificate scopes. A scope used by any restored or newly published site is preserved. The native step removes only leaves in that fresh view.
-
-### Public host preparation
-
-The `analytics-host-prepare` native workflow uses one public tracking-leaf schema. The Node and Route IDs bind the scope to `route-<route_id>-router`; the worker resolves an omitted home locally. Requesting a leaf requires its admitted version and public root hash. No credential or CA key is part of this input.
-
-The pure output method parses one canonical request command result. It returns the exact admitted Node ID and scope with either `state: current` or a public CSR encoded as base64. It refuses private keys, extra result fields, malformed CSR envelopes and unbounded error codes before writing a native resource. It performs no host action or Gateway call.
-
-The enable workflow fans out to `analytics-host-prepare` for each admitted leaf. Each child validates the public intent, resolves the canonical certificate script asset, runs one request command and decodes its public result. All four steps target the same admitted Node. The canonical script owns key creation and current-certificate checks; metadata and the command share the same physical worker.
-
-The parent reads each child's `prepared` output for signing and publication. This replaces the enable workflow's request-time Gateway read and TypeScript effect wrapper. The remaining enable steps and generic Route helper still use their existing implementations. The parent continues to own signing, publication and terminal projection; no child Operation is created.
-
-
-The official extension review checked Swamp core command/workflow support and
-`@swamp/cfgmgmt/certificate` at upstream commit
-`d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. Its `check` and `apply` methods
-deploy an existing `certContent` and required `keyContent`; they do not generate
-a leaf key or return a CSR. Host preparation therefore uses core command execution
-with the certificate owner's shipped request action. It adds no transport,
-supervisor or certificate deployment mechanism. Publication remains a separate
-owner action and must use official features where they fit.

@@ -1,0 +1,20 @@
+manifestVersion: 1
+name: "@nckrtl/analytics-site"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public Plausible plan and one-action HTTP script assets.
+behaviors:
+  - operations/analytics-site/mod.ts
+additionalFiles:
+  - scripts/common.py
+  - scripts/login_form.py
+  - scripts/login.py
+  - scripts/site_form.py
+  - scripts/inspect.py
+  - scripts/create.py
+  - scripts/update.py
+  - scripts/verify.py
+  - scripts/goals.py
+  - scripts/stats.py
+  - scripts/logout.py

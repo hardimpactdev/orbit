@@ -130,7 +130,7 @@ it('delivers a large native terminal frame over verified TLS then projects one l
         } while (! $operation->fresh()->status->terminal() && microtime(true) < $deadline);
         $subscriber->close();
 
-        expect($operation->fresh()->status->value)->toBe($status === 'interrupted' ? 'failed' : $status);
+        expect($operation->fresh()->status->value)->toBe($status);
         expect($operation->fresh()->result)->toBe(['ready' => true]);
         expect(array_column($socket->sent, 'type'))->toBe(['run.attach']);
         expect(array_column($history->sent, 'type'))->toBe(['workflow.history.get']);
@@ -186,7 +186,7 @@ it('projects a terminal notice with no Horizon consumer through the one shared h
 
     $subscriber->pass();
 
-    expect($operation->fresh()->status->value)->toBe($status === 'interrupted' ? 'failed' : $status);
+    expect($operation->fresh()->status->value)->toBe($status);
     expect($operation->fresh()->result)->toBe(['ready' => true]);
     expect(array_column($history->sent, 'type'))->toBe(['workflow.history.get']);
     expect(DB::table('jobs')->count())->toBe(0);
@@ -253,7 +253,7 @@ it('leaves refusal and unavailable run locations unchanged without a history req
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach']);
 })->with(['error', 'run.elsewhere']);
 
-it('retains an interrupted attach until bound history becomes terminal without replaying the root', function (): void {
+it('reads interrupted history again only on another native notice without replaying the root', function (): void {
     $operation = nativeSubscriberOperation();
     $clock = (object) ['now' => 100.0];
     $socket = new FakeSwampEventSocket;
@@ -289,7 +289,11 @@ it('retains an interrupted attach until bound history becomes terminal without r
     $clock->now = 105.0;
     $subscriber->pass();
 
-    expect($operation->fresh()->status)->toBe(OperationStatus::Failed);
+    expect($history->sent)->toHaveCount(1);
+    $socket->push(['type' => 'run.interrupted', 'id' => $request['id'], 'payload' => ['runId' => $operation->state['swamp_run_id']]]);
+    $subscriber->pass();
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Interrupted);
     expect($operation->fresh()->error_code)->toBe('operation.native_failed');
     expect($operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
     expect($operation->fresh()->state['swamp_run_id'])->toBe($request['payload']['runId']);
@@ -496,10 +500,13 @@ it('retains a failed terminal delivery without reconnecting or blocking another 
     $subscriber->pass();
     $clock->now = 114.9;
     $subscriber->pass();
-    expect($attempts)->toBe([$operation->id, $other->id, $operation->id]);
+    expect($attempts)->toBe([$operation->id, $other->id]);
 
     Bus::fake([ProjectSwampTerminal::class]);
     $clock->now = 115.0;
+    $subscriber->pass();
+    Bus::assertNothingDispatched();
+    $socket->push(nativeSubscriberFrame($request, $operation));
     $subscriber->pass();
     Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
     $subscriber->close();
@@ -528,7 +535,7 @@ it('backs off repeated unavailable transport handshakes', function (): void {
     expect($attempts)->toBe(3);
 });
 
-it('preserves a retained terminal notice when the transport reconnects', function (): void {
+it('requires a new native notice after a failed delivery and transport reconnect', function (): void {
     $operation = nativeSubscriberOperation();
     $other = nativeSubscriberOperation('b075eb23-7ac4-4487-80d1-57a038a92676');
     $clock = (object) ['now' => 100.0];
@@ -542,10 +549,14 @@ it('preserves a retained terminal notice when the transport reconnects', functio
     $subscriber->close();
     $subscriber->pass();
     expect(array_column(array_column($socket->sent, 'payload'), 'runId'))->toBe([
-        $operation->state['swamp_run_id'], $other->state['swamp_run_id'], $other->state['swamp_run_id'],
+        $operation->state['swamp_run_id'], $other->state['swamp_run_id'], $operation->state['swamp_run_id'], $other->state['swamp_run_id'],
     ]);
     Bus::fake([ProjectSwampTerminal::class]);
     $clock->now = 105.0;
+    $subscriber->pass();
+    Bus::assertNothingDispatched();
+    $newRequest = $socket->sent[2];
+    $socket->push(nativeSubscriberAttached($newRequest), nativeSubscriberFrame($newRequest, $operation));
     $subscriber->pass();
     Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
 });
@@ -567,4 +578,23 @@ it('does not reset reconnect backoff for a handshake followed by immediate disco
     $subscriber->pass();
     $clock->now = 103.0;
     $subscriber->pass();
+});
+
+it('retains run authority for active bound attachments when the separate read credential cannot attach', function (): void {
+    Bus::fake([ProjectSwampTerminal::class]);
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $socket->onSend = static function (array $request) use ($socket, $operation): void {
+        if ($request['type'] !== 'run.attach') {
+            throw new RuntimeException('Bound attachment socket must not perform read discovery.');
+        }
+        if (array_last($socket->endpoints)->bearerToken !== 'private-native-token') {
+            $socket->push(['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'forbidden']]);
+
+            return;
+        }
+        $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
+    };
+    (new SwampRunSubscriber($socket, new NullLogger))->pass();
+    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id);
 });

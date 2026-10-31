@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmResumeIntent;
 use App\Domain\TaskVms\TaskVmState;
@@ -26,7 +27,7 @@ final readonly class StartTaskVmResumeAction
                 return null;
             }
             $existing = Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
-                ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
+                ->whereNotIn('status', OperationStatus::terminalValues())->first();
             if ($existing !== null) {
                 return $existing->kind === 'task_vm.resume' ? $existing
                     : throw new ResourceOperationException('operation.target_busy', 'The earlier VM Operation is still settling.', 409, details: ['operation_id' => $existing->id]);

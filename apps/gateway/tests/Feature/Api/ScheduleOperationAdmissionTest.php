@@ -111,7 +111,7 @@ it('projects the fixed native run result once and preserves disabled timer inten
         ->and($schedule->fresh()->last_run_status?->value)->toBe($status === 'succeeded' ? 'success' : 'error')
         ->and($this->socket->sent)->toHaveCount(4)
         ->and(array_last($this->socket->sent)['type'])->toBe('workflow.history.get');
-})->with([['succeeded', null], ['failed', 'schedule.run_failed']]);
+})->with([['succeeded', null], ['failed', 'schedule.run_failed'], ['interrupted', 'operation.native_failed']]);
 
 it('refuses a command changed after admission before making another execution copy', function (): void {
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
