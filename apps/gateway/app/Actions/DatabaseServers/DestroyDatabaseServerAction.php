@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseServers;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
@@ -25,7 +26,7 @@ final readonly class DestroyDatabaseServerAction
                 throw new ResourceOperationException('database.server_in_use', 'The server still holds databases. Destroy their connections first.', 409);
             }
             $pending = Operation::query()->whereIn('kind', ['database_server.create', 'database_server.destroy'])->where('target_type', 'database_server')
-                ->where('target_id', $server->id)->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->value('kind');
+                ->where('target_id', $server->id)->whereNotIn('status', OperationStatus::terminalValues())->value('kind');
             if ($pending !== null) {
                 throw new ResourceOperationException('database.server_busy', $pending === 'database_server.create'
                     ? 'The server has an unfinished create intent.' : 'The server has an unfinished removal intent.', 409);

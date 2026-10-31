@@ -6,7 +6,7 @@ export type Operation = Omit<Required<components["schemas"]["Operation"]>, "resu
     result: Record<string, unknown> | null;
 };
 
-export const TERMINAL: readonly string[] = ["succeeded", "failed", "cancelled"];
+export const TERMINAL: readonly string[] = ["succeeded", "failed", "cancelled", "interrupted"];
 
 export const isTerminal = (operation: Pick<Operation, "status">): boolean =>
     TERMINAL.includes(operation.status);

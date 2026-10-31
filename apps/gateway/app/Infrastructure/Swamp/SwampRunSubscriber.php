@@ -24,8 +24,6 @@ final class SwampRunSubscriber
     /** @var array<string,int> */
     private array $requests = [];
 
-    private readonly SwampScheduledResults $scheduled;
-
     private float $connectionBackoff = 0.0;
 
     private float $connectedAt = 0.0;
@@ -38,10 +36,9 @@ final class SwampRunSubscriber
     private readonly Closure $clock;
 
     /** @param (Closure():float)|null $clock */
-    public function __construct(private readonly WebSocketClient $socket, private readonly LoggerInterface $log, ?Closure $clock = null)
+    public function __construct(private readonly WebSocketClient $socket, private readonly LoggerInterface $log, ?Closure $clock = null, private readonly ?SwampScheduledResults $scheduled = null)
     {
         $this->clock = $clock ?? static fn (): float => microtime(true);
-        $this->scheduled = new SwampScheduledResults($socket, $log);
     }
 
     /** One snapshot at startup or after the record channel rejoins; never a status poll. */
@@ -86,11 +83,12 @@ final class SwampRunSubscriber
     /** One pass beside the existing Gateway observer's Reverb receive loop. */
     public function pass(): void
     {
+        $this->scheduled?->pass();
         if (! $this->started) {
             $this->recover();
             $this->started = true;
         }
-        if (($this->following === [] && ! $this->scheduled->enabled()) || ($this->clock)() < $this->nextConnection) {
+        if ($this->following === [] || ($this->clock)() < $this->nextConnection) {
             return;
         }
         try {
@@ -104,7 +102,6 @@ final class SwampRunSubscriber
                 $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 0.5);
                 $this->connectedAt = ($this->clock)();
             }
-            $this->scheduled->subscribe();
             foreach ($this->following as $operationId => $entry) {
                 if ($entry['request'] !== null) {
                     continue;
@@ -115,11 +112,8 @@ final class SwampRunSubscriber
                 $this->socket->send(['type' => 'run.attach', 'id' => $id, 'payload' => ['runId' => $entry['run'], 'afterSeq' => 0]]);
             }
             foreach ($this->socket->receive(0.0) as $message) {
-                if (! $this->scheduled->receive($message)) {
-                    $this->receive($message);
-                }
+                $this->receive($message);
             }
-            $this->scheduled->attach();
             if (! $this->socket->isConnected()) {
                 $this->close();
                 $this->scheduleReconnect();
@@ -144,7 +138,6 @@ final class SwampRunSubscriber
     {
         $this->socket->close();
         $this->requests = [];
-        $this->scheduled->disconnected();
         foreach ($this->following as $operationId => $_entry) {
             $this->following[$operationId]['request'] = null;
             $this->following[$operationId]['attached'] = false;

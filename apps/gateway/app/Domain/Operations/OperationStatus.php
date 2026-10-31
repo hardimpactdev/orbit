@@ -15,6 +15,13 @@ enum OperationStatus: string
     case Cancelled = 'cancelled';
     case Interrupted = 'interrupted';
 
+    /** @return list<string> */
+    public static function terminalValues(): array
+    {
+        return array_values(array_map(static fn (self $status): string => $status->value,
+            array_filter(self::cases(), static fn (self $status): bool => $status->terminal())));
+    }
+
     public function terminal(): bool
     {
         return in_array($this, [self::Succeeded, self::Failed, self::Cancelled, self::Interrupted], true);

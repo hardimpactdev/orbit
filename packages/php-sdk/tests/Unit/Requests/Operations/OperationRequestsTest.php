@@ -245,3 +245,11 @@ describe('operation requests', function (): void {
         expect(static fn () => OperationResponse::fromGatewayData(['id' => 'x'], 'r'))->toThrow(InvalidArgumentException::class);
     });
 });
+
+it('preserves an interrupted native Operation as terminal and unsuccessful', function (): void {
+    $response = OperationResponse::fromGatewayData(operation_payload(['status' => 'interrupted', 'poll_after_seconds' => null,
+        'error_code' => 'operation.native_failed']), 'interrupted-proof');
+    expect($response->status)->toBe('interrupted');
+    expect($response->terminal())->toBeTrue();
+    expect($response->succeeded())->toBeFalse();
+});
