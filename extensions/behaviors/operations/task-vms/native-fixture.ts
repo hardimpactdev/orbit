@@ -5,6 +5,12 @@ export async function fixtureHttp(
   body?: unknown,
 ) {
   const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
+  if (path.includes("/private-material?")) {
+    return {
+      status: 200,
+      body: { data: { upcloud_token: Deno.env.get("SWEEP_PRIVATE_FIXTURE") } },
+    };
+  }
   if (path.startsWith(`/api/v1/direct-operations/${state.operation.id}`)) {
     state.directCalls = [...(state.directCalls ?? []), { method, path }];
     if (method === "POST") {
