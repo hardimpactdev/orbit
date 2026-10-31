@@ -171,6 +171,20 @@ class ShapeGate(unittest.TestCase):
             self.assertNotEqual(gate().returncode, 0)
             workflow_path.write_text(workflow_path.read_text().replace("workflow.lock", "orbit-firewall.lock"))
             git("add", ".")
+            # The complete gate must supply tracked sibling source to prove the
+            # parameterized PHP lock, rather than accepting a helper-only probe.
+            scripts = swamp / "extensions/behaviors/php/scripts"
+            scripts.mkdir(parents=True)
+            for name, content in (("runtime_common.py", PHP_RUNTIME), ("monitor_common.py", PHP_ACTIONS), ("stage.py", PHP_ENTRY)):
+                (scripts / name).write_text(content)
+            git("add", ".")
+            checked = gate()
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            runtime_source = scripts / "runtime_common.py"
+            runtime_source.write_text(PHP_RUNTIME.replace("P('/run/lock')", "P('/tmp')"))
+            self.assertNotEqual(gate().returncode, 0)
+            runtime_source.write_text(PHP_RUNTIME)
+            git("add", ".")
             # Renaming cannot move the old file's allowance to a new path.
             source.rename(source.with_name("renamed.ts"))
             source.with_name("renamed.ts").write_text("await delay(10);\n")
@@ -209,6 +223,177 @@ class ShapeGate(unittest.TestCase):
             (swamp / ".swamp.yaml").write_text("repoId: unrelated-repository\n")
             result = subprocess.run(command, cwd=swamp, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
+
+
+PHP_RUNTIME = textwrap.dedent("""\
+    import contextlib
+    import fcntl
+    import os
+    import pathlib
+    import re
+    import stat
+
+    P = pathlib.Path
+    class Refused(Exception):
+        pass
+    def check(value, reason):
+        if not value:
+            raise Refused(reason)
+    def directory(path):
+        return path.is_dir()
+    class Host:
+        def __init__(self):
+            self.locks = P('/run/lock')
+            self.root_uid = self.root_gid = 0
+    class Runtime:
+        def __init__(self, host, data, home=False):
+            self.user = data['user']
+            check(re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', self.user), 'valid account')
+    @contextlib.contextmanager
+    def runtime_lock(h, user):
+        check(directory(h.locks), "lock directory exists")
+        fd = os.open(h.locks / ("orbit-php-" + user + ".lock"),
+                     os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            m = os.fstat(fd)
+            check(stat.S_ISREG(m.st_mode) and m.st_uid == h.root_uid
+                  and m.st_gid == h.root_gid
+                  and stat.S_IMODE(m.st_mode) == 0o600, "trusted runtime lock")
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+""")
+PHP_ACTIONS = textwrap.dedent("""\
+    from runtime_common import Host, Runtime, runtime_lock
+
+
+    def context():
+        data = {'user': 'orbit_app'}
+        host = Host()
+        runtime = Runtime(host, data)
+        return host, runtime, data
+    def stage(host, runtime, data):
+        runtime = Runtime(host, data, True)
+        with runtime_lock(host, runtime.user):
+            pass
+    def execute(action):
+        return action(*context())
+""")
+PHP_ENTRY = "from monitor_common import execute, stage\n\nexecute(stage)\n"
+
+
+class PhpHostTool(unittest.TestCase):
+    def scan(self, runtime=PHP_RUNTIME, actions=PHP_ACTIONS, entry=PHP_ENTRY, context=True):
+        sources = {
+            "runtime_common.py": runtime,
+            "monitor_common.py": actions,
+            "stage.py": entry,
+        }
+        command = ["python3", str(ROOT / "bin/swamp-shape-python.py"), "[]"]
+        if context:
+            command += ["--source-context"]
+        result = subprocess.run(
+            command,
+            input=json.dumps({"source": runtime, "sources": sources})
+            if context
+            else runtime,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_validated_parameterized_host_tool_transaction(self):
+        self.assertEqual(self.scan(), [])
+        # A label/path shape or an absent sibling call graph is not proof.
+        self.assertTrue(self.scan(context=False))
+        self.assertTrue(self.scan(entry=""))
+
+    def test_path_guard_custody_or_acquisition_changes_are_not_proven(self):
+        variants = [
+            PHP_RUNTIME.replace("P('/run/lock')", "P('/tmp')"),
+            PHP_RUNTIME.replace("orbit-php-", "workflow-"),
+            PHP_RUNTIME.replace("[a-z_][a-z0-9_-]{0,31}", ".*"),
+            PHP_RUNTIME.replace("if not value:", "if False:"),
+            PHP_RUNTIME.replace("os.O_NOFOLLOW", "os.O_TRUNC"),
+            PHP_RUNTIME.replace("0o600", "0o666"),
+            PHP_RUNTIME.replace("m.st_uid == h.root_uid", "True"),
+            PHP_RUNTIME.replace("fcntl.flock(fd,", "fcntl.flock(other_fd,"),
+            PHP_RUNTIME.replace(
+                "fcntl.flock(fd,",
+                "fd = os.open('/tmp/workflow.lock', os.O_RDWR)\n        fcntl.flock(fd,",
+            ),
+            PHP_RUNTIME.replace(
+                "    try:\n        m =",
+                '    try:\n        user = "unchecked"\n        m =',
+            ),
+            PHP_RUNTIME + "\nHost.__init__ = lambda self: None\n",
+            PHP_RUNTIME + "\nP = lambda value: pathlib.Path('/tmp')\n",
+            PHP_RUNTIME + "\nfor P in [lambda value: pathlib.Path('/tmp')]:\n    pass\n",
+            PHP_RUNTIME + "\nmodule = pathlib\nmodule.Path = lambda value: '/tmp'\n",
+            PHP_RUNTIME.replace("import re\n", "import fake as re\n"),
+            PHP_RUNTIME.replace("self.user = data['user']", "return\n        self.user = data['user']"),
+            PHP_RUNTIME.replace("class Host:", "@replace\nclass Host:"),
+        ]
+        for runtime in variants:
+            with self.subTest(mutation=runtime):
+                self.assertTrue(
+                    any(
+                        row["rule"] == "custom-control"
+                        for row in self.scan(runtime=runtime)
+                    )
+                )
+
+    def test_mutated_or_untyped_callers_cannot_claim_constructor_provenance(self):
+        for actions in [
+            PHP_ACTIONS.replace("runtime.user):", "'unvalidated'):"),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "runtime = data['runtime']"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)",
+                "for runtime in [data['runtime']]:\n        pass",
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)",
+                "if (runtime := data['runtime']):\n        pass",
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "host = data['host']"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "host.locks = '/tmp'"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "runtime.user += '/unchecked'"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)",
+                "setattr(runtime, 'user', 'unchecked')",
+            ),
+            PHP_ACTIONS.replace(
+                "return host, runtime, data",
+                "host = data['host']\n    return host, runtime, data",
+            ),
+            PHP_ACTIONS.replace(
+                "return host, runtime, data",
+                "for runtime in [data['runtime']]:\n        pass\n    return host, runtime, data",
+            ),
+            PHP_ACTIONS.replace("def context():", "@replace\ndef context():"),
+            PHP_ACTIONS.replace("def execute(action):", "@replace\ndef execute(action):"),
+            PHP_ACTIONS + "\nstage(None, None, {})\n",
+            PHP_ACTIONS + "\nalias = execute\n",
+            PHP_ACTIONS + "\nalias = stage\n",
+            PHP_ACTIONS + "\nalias = context\n",
+        ]:
+            with self.subTest(mutation=actions):
+                self.assertTrue(
+                    any(
+                        row["rule"] == "custom-control"
+                        for row in self.scan(actions=actions)
+                    )
+                )
 
 
 if __name__ == "__main__":

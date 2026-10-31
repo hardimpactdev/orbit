@@ -1851,11 +1851,23 @@ async function toolFindings(
       const [file, source, language] = files[cursor++];
       const shell = language === "sh";
       if (!shell) {
-        const python = await run([
-          "python3",
-          pythonAnalyzer,
-          JSON.stringify(GATEWAY_PRIMITIVES),
-        ], source);
+        const python = await run(
+          [
+            "python3",
+            pythonAnalyzer,
+            JSON.stringify(GATEWAY_PRIMITIVES),
+            "--source-context",
+          ],
+          JSON.stringify({
+            source,
+            sources: Object.fromEntries(
+              [...sources].filter(([path]) =>
+                path.endsWith(".py") &&
+                posix.dirname(path) === posix.dirname(file)
+              ),
+            ),
+          }),
+        );
         if (!python.success) {
           throw new Error("Python source analysis failed");
         }
