@@ -56,6 +56,23 @@ it('hydrates the existing private key for its immutable admitted hub owner', fun
     expect(array_column($value->value['peers'], 'node_id'))->toContain($peer->id);
 });
 
+it('lets only the admitted hub participant read network root status without posting a result', function (): void {
+    [$operation, $peer, $hub, $snapshot] = nativeNetworkFixture();
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $query = '?run_id='.$operation->state['swamp_run_id'];
+    $this->withServerVariables(['REMOTE_ADDR' => $hub->wireguard_ip])
+        ->getJson($path.$query)->assertOk()
+        ->assertJsonPath('data.node_id', $peer->id)
+        ->assertJsonPath('data.kind', 'node.network_converge')
+        ->assertJsonPath('data.input.hub', $snapshot)
+        ->assertJsonMissingPath('data.input.network');
+    $this->postJson($path.'/result', ['run_id' => $operation->state['swamp_run_id'],
+        'status' => 'running', 'started_at' => now()->toISOString(), 'result' => []])->assertForbidden();
+    $foreign = FleetFixtures::node('network-unadmitted');
+    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip])
+        ->getJson($path.$query)->assertForbidden();
+});
+
 it('refuses changed hub authority before private hydration', function (string $case): void {
     [$operation, $peer, $hub, , $source] = nativeNetworkFixture();
     $input = $operation->input;
