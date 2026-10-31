@@ -43,7 +43,7 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
                 $add('vite-stop-unready', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop'], required: false);
             }
         }
-        if ($verb === 'update') {
+        if (in_array($verb, ['create', 'update'], true)) {
             if (isset($input['retired_runtime'])) {
                 $add('process-remove-retired', 'process.remove', ['process_id' => $input['process_id'], 'runtime' => $input['retired_runtime'], 'name' => $input['retired_name'], 'vite' => null]);
             }
@@ -133,7 +133,7 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
     {
         $verb = substr($operation->kind, strlen('process.'));
         $key = match ($verb) {
-            'update' => $operation->input['runtime'] === 'docker' ? 'process-converge-container' : 'process-activate-unit',
+            'create', 'update' => $operation->input['runtime'] === 'docker' ? 'process-converge-container' : 'process-activate-unit',
             default => 'process-'.$verb,
         };
         $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);

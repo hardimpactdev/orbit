@@ -37,7 +37,7 @@ final readonly class NativePlausibleRuntimeLifecycle implements PlausibleRuntime
         $data = PlausibleProcess::data($node, $version, $storage, $secretKeyBase);
 
         try {
-            return $this->add->bootstrapPlausible($data)['process'];
+            return $this->add->execute($data)['process'];
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode !== 'process.name_taken') {
                 throw $exception;
@@ -46,7 +46,7 @@ final readonly class NativePlausibleRuntimeLifecycle implements PlausibleRuntime
 
         $this->remove($node);
 
-        return $this->add->bootstrapPlausible($data)['process'];
+        return $this->add->execute($data)['process'];
     }
 
     public function remove(Node $node): void

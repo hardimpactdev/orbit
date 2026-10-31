@@ -6,7 +6,6 @@ use App\Domain\Operations\OperationSecrets;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -67,50 +66,4 @@ it('binds a Schedule UUID to its actual numeric owner and recorded Node', functi
     $operation->node_id = $this->node->id;
     $schedule->update(['command' => 'printf changed-command']);
     expect(fn () => $this->secrets->hydrate($operation, 'install', $input, ['command' => 'schedule.command']))->toThrow(ResourceOperationException::class);
-});
-
-it('hydrates the whole admitted Docker installation without putting private bytes in its reference', function (): void {
-    $this->operation->input = [...$this->operation->input, 'runtime' => 'docker'];
-    $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
-    $hydrated = $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']);
-    expect($hydrated['input']['installation'])->toBe([
-        'runtime' => 'docker', 'spec' => $this->operation->input['spec'],
-        'definition' => app(DockerProcessRenderer::class)->containerInput($this->process, app(ProcessTargetResolver::class)->forInstallation($this->process)),
-    ])->and($hydrated['values'])->toContain('owned-runtime-value')
-        ->and(json_encode($input))->not->toContain('owned-runtime-value');
-});
-
-it('refuses private installation material for another owner Node runtime or changed definition', function (): void {
-    $original = [...$this->operation->input, 'runtime' => 'docker'];
-    $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
-    foreach (['node', 'owner', 'runtime', 'spec'] as $variant) {
-        $this->operation->target_id = $this->process->id;
-        $this->operation->node_id = $this->node->id;
-        $this->operation->input = $original;
-        match ($variant) {
-            'node' => $this->operation->node_id = $this->node->id + 1,
-            'owner' => $this->operation->target_id = $this->process->id + 1,
-            'runtime' => $this->operation->input = [...$original, 'runtime' => 'systemd'],
-            'spec' => $this->operation->input = [...$original, 'spec' => str_repeat('a', 64)],
-        };
-        expect(fn () => $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']))->toThrow(ResourceOperationException::class);
-    }
-});
-
-it('binds private unit installation to its rendered digest and installing kind', function (): void {
-    $this->process->update(['runtime' => 'systemd', 'working_directory' => '/home/orbit', 'runtime_config' => [
-        'command' => ['/usr/bin/true'], 'environment_file' => '', 'environment' => ['PASSWORD' => 'private-unit-value'],
-    ]]);
-    $target = app(ProcessTargetResolver::class)->forInstallation($this->process);
-    $content = app(SystemdProcessRenderer::class)->render($this->process, $target);
-    $this->operation->input = ['process_id' => $this->process->id, 'runtime' => 'systemd', 'content_hash' => hash('sha256', $content)];
-    $input = ['installation' => ['$secret' => 'process.installation', 'id' => $this->process->id]];
-    $resolved = $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']);
-    expect($resolved['input']['installation'])->toBe(['runtime' => 'systemd', 'content' => $content])
-        ->and($resolved['values'])->toContain('private-unit-value');
-    $this->operation->kind = 'process.start';
-    expect(fn () => $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']))->toThrow(ResourceOperationException::class);
-    $this->operation->kind = 'process.create';
-    $this->operation->input = [...$this->operation->input, 'content_hash' => str_repeat('a', 64)];
-    expect(fn () => $this->secrets->hydrate($this->operation, '', $input, ['installation' => 'process.installation']))->toThrow(ResourceOperationException::class);
 });

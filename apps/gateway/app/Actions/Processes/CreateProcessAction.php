@@ -50,75 +50,69 @@ final readonly class CreateProcessAction
     }
 
     /** @return array{process: Process, created: bool} */
-    public function bootstrapCollector(#[SensitiveParameter] AddProcessData $data): array
+    public function execute(#[SensitiveParameter] AddProcessData $data): array
     {
-        return $this->bootstrap($data, 'ai-router-collector', ProcessRuntime::Systemd, ['/usr/local/bin/orbit-agent', 'service', 'ai-router-collector']);
+        $this->specifications->assertOptions($data);
+        $this->targets->resolve($data->targetType, $data->targetId);
+        $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
+
+        return $this->admissions->run(
+            $ownerIds,
+            fn (): array => $this->executeOwned($data),
+        );
     }
 
     /** @return array{process: Process, created: bool} */
-    public function bootstrapPlausible(#[SensitiveParameter] AddProcessData $data): array
+    private function executeOwned(#[SensitiveParameter] AddProcessData $data): array
     {
-        return $this->bootstrap($data, 'plausible', ProcessRuntime::Docker, ['/usr/local/bin/orbit-agent', 'service', 'plausible']);
-    }
+        $admission = DB::transaction(fn (): array => $this->reserveAdmission($data));
 
-    /** @return array{process: Process, created: bool} */
-    public function bootstrapPi(#[SensitiveParameter] AddProcessData $data): array
-    {
-        if (array_slice($data->command, 1, 1) !== ['serve']) {
-            throw new ResourceOperationException('process.bootstrap_invalid', 'Pi bootstrap requires its server command.', 409);
-        }
+        return $this->lease->run($admission['process'], function (Process $fresh) use ($admission): array {
+            if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
+                throw new ResourceOperationException(
+                    errorCode: 'process.name_taken',
+                    message: "Process [{$fresh->name}] already exists with different configuration.",
+                    status: 409,
+                );
+            }
 
-        return $this->bootstrap($data, 'pi-server', ProcessRuntime::Systemd, $data->command);
-    }
+            $fresh->fill([
+                ...$admission['attributes'],
+                'desired_state' => $fresh->desired_state,
+                'status' => LifecycleStatus::Provisioning,
+                'failed_step' => null,
+                'error_code' => null,
+            ])->save();
 
-    /** @return array{process: Process, created: bool} */
-    public function bootstrapHorizon(#[SensitiveParameter] AddProcessData $data): array
-    {
-        if (array_slice($data->command, 1) !== ['artisan', 'horizon']) {
-            throw new ResourceOperationException('process.bootstrap_invalid', 'Horizon bootstrap requires its server command.', 409);
-        }
+            try {
+                $this->runtime->converge($fresh);
+            } catch (ProcessOperationException $exception) {
+                $fresh->update([
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => $exception->step,
+                    'error_code' => $exception->errorCode,
+                ]);
 
-        return $this->bootstrap($data, 'horizon', ProcessRuntime::Systemd, $data->command);
-    }
+                throw $exception;
+            }
 
-    /**
-     * Only the four fixed bootstrap callers may execute here until their completion transitions move native.
-     *
-     * @param  list<string>  $command
-     * @return array{process: Process, created: bool}
-     */
-    private function bootstrap(#[SensitiveParameter] AddProcessData $data, string $name, ProcessRuntime $runtime, array $command): array
-    {
-        if ($data->targetType !== ProcessTargetType::Node || $data->name !== $name || $data->runtime !== $runtime
-            || $data->command !== $command || $data->user !== null) {
-            throw new ResourceOperationException('process.bootstrap_invalid', 'Bootstrap requires its fixed Node Process specification.', 409);
-        }
+            $fresh->update([
+                'status' => LifecycleStatus::Active,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
 
-        return $this->admissions->run([], function () use ($data): array {
-            $this->specifications->assertOptions($data);
-            $this->targets->resolve($data->targetType, $data->targetId);
-            $admission = DB::transaction(fn (): array => $this->reserveAdmission($data));
+            $fresh = $fresh->refresh();
 
-            return $this->lease->run($admission['process'], function (Process $fresh) use ($admission): array {
-                if (! $this->specifications->matches($fresh, $admission['attributes'])) {
-                    throw new ResourceOperationException('process.name_taken', 'The bootstrap Process specification changed before execution.', 409);
-                }
-                $fresh->update(['status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
-                try {
-                    $this->runtime->converge($fresh);
-                } catch (ProcessOperationException $exception) {
-                    $fresh->update(['status' => LifecycleStatus::Failed, 'failed_step' => $exception->step, 'error_code' => $exception->errorCode]);
-                    throw $exception;
-                }
-                $fresh->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
-                $fresh->refresh();
-                if ($admission['created']) {
-                    $this->broadcaster->broadcast(RecordEventType::ProcessCreated, $fresh->id,
-                        ProcessData::fromModel($fresh, $this->runtime->status($fresh))->toArray());
-                }
+            if ($admission['created']) {
+                $this->broadcaster->broadcast(
+                    RecordEventType::ProcessCreated,
+                    $fresh->id,
+                    ProcessData::fromModel($fresh, $this->runtime->status($fresh))->toArray(),
+                );
+            }
 
-                return ['process' => $fresh, 'created' => $admission['created']];
-            });
+            return ['process' => $fresh, 'created' => $admission['created']];
         });
     }
 
@@ -158,13 +152,19 @@ final readonly class CreateProcessAction
     {
         $this->specifications->assertOptions($data);
         $this->targets->resolve($data->targetType, $data->targetId);
+        $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
-        return DB::transaction(function () use ($data, $caller, $requestId): Operation {
+        return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(function () use ($data, $caller, $requestId): Operation {
             $admission = $this->reserveAdmission($data);
-            $process = $admission['process'];
-            $process->fill($admission['attributes'])->save();
 
-            return app(ProcessOperationAdmission::class)->execute($process, 'create', $admission['created'], caller: $caller, requestId: $requestId);
-        });
+            return $this->lease->run($admission['process'], function (Process $fresh) use ($admission, $caller, $requestId): Operation {
+                if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
+                    throw new ResourceOperationException('process.name_taken', "Process [{$fresh->name}] already exists with different configuration.", 409);
+                }
+                $fresh->fill($admission['attributes'])->save();
+
+                return app(ProcessOperationAdmission::class)->execute($fresh, 'create', $admission['created'], caller: $caller, requestId: $requestId);
+            });
+        }));
     }
 }
