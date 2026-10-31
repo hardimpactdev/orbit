@@ -10,13 +10,15 @@ use InvalidArgumentException;
  * Finds the newest commit of a branch that may be released ([GitHub App](/reference/github-app#find-the-newest-green-commit)).
  *
  * A commit qualifies when the required check run, created by GitHub Actions, completed with
- * `success` for exactly its SHA, it strictly descends from the deployed commit, and it has not
+ * `success` for exactly its SHA, its `Gateway release inputs` check passed, it strictly descends from the deployed commit, and it has not
  * failed a release. Only commits the branch itself pointed at are candidates, so a merged side
  * branch's own commits never ship. There is no answer without a deployed commit: descent from it
  * is what rules out a downgrade, so the first release of a target is deployed by hand.
  */
 interface GreenCommitResolver
 {
+    public const string RELEASE_INPUT_CHECK = 'Gateway release inputs';
+
     /**
      * @param  string  $deployedSha  the full SHA that is live now
      * @param  list<string>  $failedShas  full SHAs that already failed a release

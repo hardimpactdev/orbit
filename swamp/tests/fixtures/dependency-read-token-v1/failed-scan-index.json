@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "publication_id": "11111111-2222-4333-8444-555555555555",
+  "project_id": 20,
+  "repository": "github.com/nckrtl/website",
+  "source_ref": "refs/heads/main",
+  "source_commit": null,
+  "generated_at": "2026-10-28T14:00:01Z",
+  "last_attempt": {
+    "run_id": "failed-source-scan",
+    "started_at": "2026-10-28T14:00:00Z",
+    "finished_at": "2026-10-28T14:00:01Z",
+    "status": "failed",
+    "error_code": "source_refresh_failed"
+  },
+  "sources": [
+    {
+      "path": ".",
+      "ecosystem": "composer",
+      "package_manager": "composer",
+      "last_attempt": {
+        "run_id": "failed-source-scan",
+        "started_at": "2026-10-28T14:00:00Z",
+        "finished_at": "2026-10-28T14:00:01Z",
+        "status": "failed",
+        "error_code": "source_acquisition_failed"
+      },
+      "report": null
+    },
+    {
+      "path": ".",
+      "ecosystem": "npm",
+      "package_manager": "npm",
+      "last_attempt": {
+        "run_id": "failed-source-scan",
+        "started_at": "2026-10-28T14:00:00Z",
+        "finished_at": "2026-10-28T14:00:01Z",
+        "status": "failed",
+        "error_code": "source_acquisition_failed"
+      },
+      "report": null
+    }
+  ],
+  "batch_pr": {
+    "status": "unknown",
+    "checked_at": "2026-10-28T14:00:01Z",
+    "last_success_at": null,
+    "error_code": "token_refused",
+    "value": null
+  }
+}

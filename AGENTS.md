@@ -1,6 +1,8 @@
 # Orbit Monorepo
 
-Orbit contains nine projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
+Orbit contains ten projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
+
+Swamp lives under `swamp/`. Read the binding [Swamp shape guide](swamp/docs/swamp-shape.md) before writing, porting, or reviewing an operation. The guide overrides older contracts and conflicting Recall atoms. Gateway and Swamp changes ship in one Orbit PR. Old-shape conversions stay blocked. Build right-shape changes using the shared native template; live pilot readiness remains separate.
 
 ## Quality bar
 

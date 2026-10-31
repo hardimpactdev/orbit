@@ -19,10 +19,20 @@ use Tests\Feature\GitHub\GreenCommitFixtures;
  * @param  array<string, array<string, mixed>>  $checks
  * @param  list<array<string, mixed>>|null  $commits
  */
-function green_fake(array $checks = [], string $comparison = 'ahead', ?array $commits = null, bool $alignMergeBase = true): void
+function green_fake(array $checks = [], string $comparison = 'ahead', ?array $commits = null, bool $alignMergeBase = true, array $releaseChecks = []): void
 {
-    Http::fake(static function (Request $request) use ($checks, $comparison, $commits, $alignMergeBase) {
+    Http::fake(static function (Request $request) use ($checks, $comparison, $commits, $alignMergeBase, $releaseChecks) {
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
+        if (str_ends_with($path, '/check-runs') && (GreenCommitFixtures::query($request)['check_name'] ?? null) === 'Gateway release inputs') {
+            preg_match('#/commits/([0-9a-f]{40})/check-runs$#', $path, $matches);
+            $sha = $matches[1];
+            $response = $releaseChecks[$sha] ?? GreenCommitFixtures::requiredChecksAs('success', $sha);
+            foreach ($response['check_runs'] as &$run) {
+                $run['name'] = 'Gateway release inputs';
+            }
+
+            return Http::response($response);
+        }
 
         return match (true) {
             $path === '/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 9]),
@@ -48,7 +58,8 @@ function green_resolve(string $deployed, array $failed = [], string $branch = 'm
 
 function green_check_reads(): int
 {
-    return Http::recorded(static fn (Request $request): bool => str_ends_with((string) parse_url($request->url(), PHP_URL_PATH), '/check-runs'))->count();
+    return Http::recorded(static fn (Request $request): bool => str_ends_with((string) parse_url($request->url(), PHP_URL_PATH), '/check-runs')
+        && (GreenCommitFixtures::query($request)['check_name'] ?? null) === 'Required checks')->count();
 }
 
 beforeEach(function (): void {
@@ -58,6 +69,31 @@ beforeEach(function (): void {
 });
 
 describe('GreenCommitResolver', function (): void {
+    it('passes over a green Swamp-only commit whose Gateway release inputs are skipped', function (): void {
+        $runs = GreenCommitFixtures::requiredChecksAs('success', $this->tip);
+        $runs['check_runs'][0]['conclusion'] = 'skipped';
+        green_fake(releaseChecks: [$this->tip => $runs]);
+
+        expect(green_resolve($this->third)?->sha)->toBe($this->second);
+    });
+
+    it('does not require a Gateway release when every newer green commit is Swamp-only', function (): void {
+        $checks = [];
+        foreach ([$this->tip, $this->second] as $sha) {
+            $checks[$sha] = GreenCommitFixtures::requiredChecksAs('success', $sha);
+            $checks[$sha]['check_runs'][0]['conclusion'] = 'skipped';
+        }
+        green_fake(releaseChecks: $checks);
+
+        expect(green_resolve($this->third))->toBeNull();
+    });
+
+    it('does not release without a successful Gateway input selection', function (string $state): void {
+        green_fake(releaseChecks: [$this->tip => GreenCommitFixtures::requiredChecksAs($state, $this->tip)]);
+
+        expect(green_resolve($this->third)?->sha)->toBe($this->second);
+    })->with(['none', 'queued', 'failure']);
+
     it('releases the newest green descendant and proves it with its Required checks run', function (): void {
         green_fake();
 
@@ -221,7 +257,10 @@ describe('GreenCommitResolver', function (): void {
                 str_ends_with($request->url(), '/installation') => Http::response(['id' => 9]),
                 str_contains($request->url(), '/access_tokens') => Http::response(['token' => 'ghs_token'], 201),
                 str_contains($request->url(), '/commits?') => Http::response(GreenCommitFixtures::commits()),
-                str_contains($request->url(), '/check-runs') => Http::response(GreenCommitFixtures::requiredChecks(GreenCommitFixtures::mainShas()[0])),
+                str_contains($request->url(), '/check-runs') => Http::response(array_replace_recursive(
+                    GreenCommitFixtures::requiredChecks(GreenCommitFixtures::mainShas()[0]),
+                    ['check_runs' => [['name' => GreenCommitFixtures::query($request)['check_name']]]],
+                )),
             });
 
         expect(fn () => green_resolve(GreenCommitFixtures::mainShas()[2]))->toThrow(GitHubApiException::class);

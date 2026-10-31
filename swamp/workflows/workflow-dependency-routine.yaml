@@ -1,0 +1,22 @@
+id: a3a8f33b-7430-4053-a392-47c6a674dc03
+name: dependency-routine
+tags: {}
+labels: { pool: migration, node: "209" }
+description: Reconcile the existing per-group owner for one explicitly started routine.
+inputs:
+  properties:
+    workItem: { type: string, description: 'Existing routine work item tg-<group id>' }
+  required: [workItem]
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: tick
+    steps:
+      - name: reconcile
+        task:
+          type: workflow
+          workflowIdOrName: group-supervise
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            factory: dependency-routine
+            preapprovalModel: orbit-driver-routine

@@ -1,0 +1,27 @@
+id: 9c42bead-f036-4bf8-a1ef-e883129af28f
+name: operation-task-park
+description: Park one admitted review VM and project confirmed stopped power in the same Task root.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tasks.park] }
+  required: [operation_id, node_id, kind]
+vaults: []
+jobs:
+  - name: park
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: park
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-park"
+          behaviorName: task-park
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

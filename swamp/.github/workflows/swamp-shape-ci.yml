@@ -1,0 +1,12 @@
+name: Swamp shape
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: Swamp checks
+    uses: ./.github/workflows/swamp-shape.yml
+    secrets: inherit

@@ -1,0 +1,44 @@
+id: 20ae43ef-201b-41e5-a28f-e960afd7e4c4
+name: operation-node-bootstrap-install
+description: Run the admitted node.bootstrap_install intent in one native root.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [node.bootstrap_install] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: bootstrap
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: apply
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-bootstrap-direct"
+          behaviorName: '${{ "node-bootstrap-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: failure
+    dependsOn: [{ job: bootstrap, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: settle-failure
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: '${{ "node-bootstrap-failure-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

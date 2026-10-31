@@ -1,11 +1,11 @@
 ---
 title: "Bun and Rust projects"
-description: "How to install, run, and check the web app, the Pi server, the Node agent, and the desktop app, the four Orbit projects that are not Composer projects."
+description: "How to install, run, and check the web app, the Pi server, the Node agent, and the desktop app, the Orbit projects that are not Composer projects."
 ---
 
 # Bun and Rust projects
 
-Four of Orbit's nine projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
+Five of Orbit's ten projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
 
 | Project | Path | Tooling | Purpose |
 | --- | --- | --- | --- |
@@ -13,10 +13,15 @@ Four of Orbit's nine projects are not Composer projects. This page shows how to 
 | Pi server | `apps/pi-server` | Bun, Vite+ | Runs Pi agent sessions on a Node for task agents |
 | Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
 | Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
+| Swamp | `swamp` | Deno, pinned Swamp runtime | Executes Orbit operations |
 
 `bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app, the Pi server, and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves.
 
-`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these four projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
+`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
+
+## Swamp
+
+Run Swamp commands from `swamp/`. Use the runtime pinned in `.swamp.yaml`. Validate every workflow with `swamp workflow validate --json`, run `DENO_JOBS=4 deno test --parallel --allow-read --allow-env --allow-run --allow-write --allow-net extensions/behaviors/operations`, and run the placement and Swamp-shape checks. Follow the binding [Swamp-shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md) when you design operations. Gateway and Swamp changes ship in one Orbit PR; the old `orbit-swamp` repository is frozen.
 
 ## Prerequisites
 

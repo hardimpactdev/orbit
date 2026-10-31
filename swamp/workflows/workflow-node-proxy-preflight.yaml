@@ -1,0 +1,21 @@
+id: 137a12d7-3751-4eaf-8a82-a708cdc0b9dc
+name: node-proxy-preflight
+description: Read-only runtime attestation before proxy key, authorization and credential effects.
+target: orbit-node-209
+labels: {node: "209"}
+vaults: []
+inputs:
+  type: object
+  properties:
+    expected_sha256: {type: string, default: "", pattern: '^(?:[a-f0-9]{64})?$'}
+jobs:
+  - name: inspect
+    steps:
+      - name: preflight
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-proxy-workers'
+          behaviorName: node-proxy-workers
+          methodName: preflight
+          inputs:
+            expected_sha256: '${{ inputs.expected_sha256 }}'

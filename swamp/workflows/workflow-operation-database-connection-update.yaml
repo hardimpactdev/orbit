@@ -1,0 +1,76 @@
+id: 22d37697-fc3f-4df0-9e26-ad6d0f78c431
+name: operation-database-connection-update
+description: Validate and project one admitted Database connection update.
+target: ${{ "orbit-node-" + string(inputs.node_id) }}
+labels:
+  node: ${{ string(inputs.node_id) }}
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - database.update
+  required:
+  - operation_id
+  - node_id
+  - kind
+jobs:
+- name: server
+  steps:
+  - name: apply
+    dataOutputOverrides:
+    - specName: outcome
+      vary:
+      - run_id
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-connection-update'
+      behaviorName: ${{ "database-connection-update-" + string(inputs.node_id) }}
+      methodName: apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  - name: project
+    dependsOn:
+    - step: apply
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-connection-update'
+      behaviorName: ${{ "database-connection-update-" + string(inputs.node_id) }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        outcome: ${{ steps.apply.outputs.outcome }}
+  - name: failure-apply
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: apply
+      condition:
+        type: failed
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
