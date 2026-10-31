@@ -304,3 +304,41 @@ it('advertises the canonical automatic eligibility for an ambiguous app-dev plus
     NodeRole::query()->create(['node_id' => $instance->node_id, 'role' => RoleName::AppProd, 'status' => 'active']);
     $this->getJson('/api/v1/instances/'.$instance->id)->assertOk()->assertJsonPath('data.auto_deploy.eligible', false);
 });
+
+it('settles a cancelled interrupted native step as failed unknown and releases the shared target hold', function (): void {
+    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this, vp: true);
+    $seed = $instance->fresh()->seed_commit;
+    $operation->update(['lock_key' => 'instance:'.$instance->id, 'cancel_requested_at' => now()]);
+    $this->postJson($path.'/result', $body)->assertOk();
+    $payload['failed_step'] = 'before_activation.install';
+    $payload['step_outcome'] = 'unknown';
+    $terminal = [...$body, 'status' => 'failed', 'error_code' => 'deployment.interrupted',
+        'finished_at' => '2026-10-31T02:01:00.000Z', 'result' => $payload];
+    $this->postJson($path.'/result', $terminal)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.result.failed_step', 'before_activation.install')
+        ->assertJsonPath('data.result.step_outcome', 'unknown');
+    $this->postJson($path.'/result', $terminal)->assertOk();
+    expect($operation->refresh()->lock_key)->toBeNull()->and($operation->error_code)->toBe('deployment.interrupted')
+        ->and($instance->fresh()->seed_commit)->toBe($seed)->and(InstanceDeployment::query()->sole()->status)->toBe('failed')
+        ->and(Operation::query()->count())->toBe(1);
+});
+
+it('refuses unknown step outcome on success cancellation and an unadmitted step', function (string $change): void {
+    [, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this, vp: true);
+    $operation->update(['cancel_requested_at' => now()]);
+    $this->postJson($path.'/result', $body)->assertOk();
+    $payload['failed_step'] = 'before_activation.install';
+    $payload['step_outcome'] = 'unknown';
+    $terminal = [...$body, 'status' => 'failed', 'error_code' => 'deployment.interrupted',
+        'finished_at' => '2026-10-31T02:01:00.000Z'];
+    match ($change) {
+        'success' => $terminal = [...$terminal, 'status' => 'succeeded', 'error_code' => null],
+        'cancelled' => $terminal = [...$terminal, 'status' => 'cancelled', 'error_code' => null],
+        'unadmitted step' => $payload['failed_step'] = 'before_activation.foreign',
+        'phase only' => $payload['failed_step'] = 'before_activation',
+        'known outcome' => $payload['step_outcome'] = 'succeeded',
+        'not requested' => $operation->update(['cancel_requested_at' => null]),
+    };
+    $this->postJson($path.'/result', [...$terminal, 'result' => $payload])->assertUnprocessable();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+})->with(['success', 'cancelled', 'unadmitted step', 'phase only', 'known outcome', 'not requested']);

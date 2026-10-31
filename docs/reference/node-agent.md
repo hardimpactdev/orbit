@@ -169,6 +169,8 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
+`instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
+
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text

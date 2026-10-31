@@ -5255,6 +5255,19 @@
       ]
     },
     {
+      "name": "instance.inspect-deploy-step",
+      "summary": "Prove whether an Operation/run-bound deploy step runner is gone without changing the Node.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "deployment.runner_probe_unconfirmed"
+      ]
+    },
+    {
       "name": "instance.resolve-development-target",
       "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
       "mutates": true,

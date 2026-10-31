@@ -11,12 +11,13 @@ use App\Models\Operation;
 /** Validates bounded native facts and derives history data; performs no execution or receipt lookup. */
 final readonly class InstanceNativeDeploymentResult
 {
-    private function __construct(private DeploymentResult $result, public int $warnings, public string $outputTail = '', public ?string $failedStep = null) {}
+    private function __construct(private DeploymentResult $result, public int $warnings, public string $outputTail = '', public ?string $failedStep = null, public ?string $stepOutcome = null) {}
 
     /** @param array<string,mixed> $payload */
     public static function from(Operation $operation, string $status, ?string $code, array $payload): self
     {
-        $keys = ['instance_id', 'commit', 'release', 'previous', 'selected_release', 'selection_confirmed', 'failed_step', 'warnings', 'output_tail'];
+        $unknown = array_key_exists('step_outcome', $payload);
+        $keys = ['instance_id', 'commit', 'release', 'previous', 'selected_release', 'selection_confirmed', 'failed_step', 'warnings', 'output_tail', ...($unknown ? ['step_outcome'] : [])];
         if ($operation->kind !== 'instance.deploy' || $operation->target_type !== 'instance'
             || count($payload) !== count($keys) || array_diff($keys, array_keys($payload)) !== []
             || ($payload['instance_id'] ?? null) !== $operation->target_id
@@ -44,6 +45,10 @@ final readonly class InstanceNativeDeploymentResult
         if ($step !== null && (! is_string($step) || ! in_array($step, [...$phases, ...$steps], true))) {
             throw self::invalid();
         }
+        if ($unknown && ($payload['step_outcome'] !== 'unknown' || $status !== 'failed' || $code !== 'deployment.interrupted'
+            || $operation->cancel_requested_at === null || ! in_array($step, $steps, true))) {
+            throw self::invalid();
+        }
         if ($status === 'succeeded') {
             if ($commit === null || $step !== null) {
                 throw self::invalid();
@@ -59,7 +64,7 @@ final readonly class InstanceNativeDeploymentResult
         };
 
         return new self(DeploymentResult::failed(null, null, $boundary,
-            $status === 'cancelled' ? 'deployment.cancelled' : $code, commit: $commit), $payload['warnings'], $payload['output_tail'] ?? '', $step);
+            $status === 'cancelled' ? 'deployment.cancelled' : $code, commit: $commit), $payload['warnings'], $payload['output_tail'] ?? '', $step, $unknown ? 'unknown' : null);
     }
 
     public function deployment(): DeploymentResult
@@ -67,12 +72,13 @@ final readonly class InstanceNativeDeploymentResult
         return $this->result;
     }
 
-    /** @return array{deployment_id:int,release:?string,selected_release:?string,commit:?string,output_tail?:string} */
+    /** @return array{deployment_id:int,release:?string,selected_release:?string,commit:?string,output_tail?:string,failed_step?:string,step_outcome?:string} */
     public function publicResult(int $deploymentId): array
     {
         return ['deployment_id' => $deploymentId, 'release' => $this->result->release?->name,
             'selected_release' => $this->result->selectedRelease?->name, 'commit' => $this->result->commit,
-            ...($this->outputTail === '' ? [] : ['output_tail' => $this->outputTail])];
+            ...($this->outputTail === '' ? [] : ['output_tail' => $this->outputTail]),
+            ...($this->stepOutcome === null || $this->failedStep === null ? [] : ['failed_step' => $this->failedStep, 'step_outcome' => $this->stepOutcome])];
     }
 
     private static function invalid(): ResourceOperationException

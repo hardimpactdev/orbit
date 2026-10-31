@@ -713,7 +713,11 @@ Default development checkouts use `operation-instance-deploy-direct`, placed on 
 
 The native run fetches and checks out the admitted commit, prepares Vite+ when required, runs the Project's ordered development deploy steps as the admitted Node account, and verifies the checkout's origin, branch and commit locally. Required failures stop the list and project the runner’s redacted output tail, bounded to 2 KiB. Best-effort failures record a warning and allow later steps. Only verified success advances the Instance seed.
 
-A native checkpoint records each effect before it starts and clears only after its typed result. A restarted invocation never repeats an effect. With no active effect marker it records `deployment.interrupted` and releases the Instance hold; an uncertain active effect keeps the hold until settlement is proven, including when cancellation is requested.
+A native checkpoint records each effect before it starts and clears only after its typed result. A restarted invocation never repeats an effect. With no active effect marker it records `deployment.interrupted` and releases the Instance hold; an uncertain active effect keeps the hold until settlement is proven.
+
+Each Project step also records its admitted name and an Operation/run-bound public runner identity. On operator cancellation after a restart, a read-only probe on the admitted Node must prove that runner is gone before the run records `failed`, `deployment.interrupted`, the saved `failed_step`, and `step_outcome: unknown`. A live runner, missing identity, or inconclusive probe keeps the hold. Recovery never repeats the step or claims it succeeded or was cancelled.
+
+Terminal projection releases the target lock for every direct kind through the shared OperationStore transition.
 
 Git credentials and Vite+ materialization input are delivered through the existing parent private-material callback. Public repositories use a null Git credential. Scripts come from the owning Project command reader and must match their admitted digests and timeouts. Private bytes stay outside workflow inputs, resources and public results. Vite+ records only public runtime pins and checking, active or failed reference state through the same parent result endpoint. Result projection updates records without a Node command or child admission.
 

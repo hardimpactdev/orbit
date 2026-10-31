@@ -17,6 +17,7 @@ pub mod clone_candidate;
 mod composer_global;
 mod composer_scope;
 pub mod database_server;
+pub mod deploy_runner;
 pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
@@ -425,6 +426,7 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),
         entry::<dev_certificates::RemoveLeaf>(),
+        entry::<deploy_runner::Inspect>(),
         entry::<dev_deploy::ResolveTarget>(),
         entry::<dev_deploy::CheckoutDefault>(),
         entry::<dev_deploy::RunLifecycleStep>(),
