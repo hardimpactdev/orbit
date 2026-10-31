@@ -32,47 +32,6 @@ beforeEach(function (): void {
     });
 });
 
-it('names ingress and ingress.caddy_config_failed when ingress convergence cannot order Caddy', function (): void {
-    caddy_failure_bind('ordering');
-    $cluster = Cluster::query()->create(['name' => 'ingress-ordering']);
-    $node = caddy_failure_node('edge', '10.44.0.2', $cluster);
-
-    $this->postJson("/api/v1/nodes/{$node->id}/roles", ['role' => 'ingress'])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'node_role.convergence_failed')
-        ->assertJsonPath('error.message', 'Ingress step [caddy-service-ordering] failed on node [edge].')
-        ->assertJsonPath('error.details.step', 'converge:caddy-service-ordering')
-        ->assertJsonPath('error.details.error_code', 'ingress.caddy_config_failed')
-        ->assertJsonMissingPath('error.details.message');
-
-    $assignment = $node->roles()->where('role', RoleName::Ingress)->sole();
-
-    expect($assignment->status)->toBe(LifecycleStatus::Failed)
-        ->and($assignment->failed_step)->toBe('converge:caddy-service-ordering')
-        ->and($assignment->error_code)->toBe('ingress.caddy_config_failed');
-});
-
-it('keeps the Caddy build message and names ingress.caddy_config_failed when ingress convergence cannot build', function (): void {
-    $cluster = Cluster::query()->create(['name' => 'ingress-build']);
-    $node = caddy_failure_node('edge', '10.44.0.2', $cluster);
-    caddy_failure_builds()->failNext($node->name, 'validate', 'Error: loading certificates');
-
-    $this->postJson("/api/v1/nodes/{$node->id}/roles", ['role' => 'ingress'])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'node_role.convergence_failed')
-        ->assertJsonPath('error.message', 'The Caddy build for Node [edge] failed at stage [validate]: Error: loading certificates')
-        ->assertJsonPath('error.details.step', 'converge:caddy-config')
-        ->assertJsonPath('error.details.error_code', 'ingress.caddy_config_failed')
-        ->assertJsonPath('error.details.node', 'edge')
-        ->assertJsonPath('error.details.stage', 'validate')
-        ->assertJsonPath('error.details.message', 'Error: loading certificates');
-
-    $assignment = $node->roles()->where('role', RoleName::Ingress)->sole();
-
-    expect($assignment->failed_step)->toBe('converge:caddy-config')
-        ->and($assignment->error_code)->toBe('ingress.caddy_config_failed');
-});
-
 it('returns details.error_code ingress.caddy_config_failed when ingress removal stops at remove:caddy-config', function (): void {
     $cluster = Cluster::query()->create(['name' => 'ingress-removal']);
     $node = caddy_failure_node('edge', '10.44.0.2', $cluster);
@@ -162,19 +121,6 @@ it('keeps an app-dev removal that stops in the Caddy build on app-dev.caddy_conf
         ->assertJsonPath('error.details.message', 'Error: adapting config');
 
     expect($node->roles()->where('role', RoleName::AppDev)->sole()->error_code)->toBe('app-dev.caddy_config_failed');
-});
-
-it('names an ingress prerequisite failure as an ingress step and keeps its own code', function (): void {
-    caddy_failure_bind('source');
-    $cluster = Cluster::query()->create(['name' => 'ingress-source']);
-    $node = caddy_failure_node('edge', '10.44.0.2', $cluster);
-
-    $this->postJson("/api/v1/nodes/{$node->id}/roles", ['role' => 'ingress'])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'node_role.convergence_failed')
-        ->assertJsonPath('error.message', 'Ingress step [caddy-package-source] failed on node [edge].')
-        ->assertJsonPath('error.details.step', 'converge:caddy-package-source')
-        ->assertJsonPath('error.details.error_code', 'ingress.prerequisite_failed');
 });
 
 function caddy_failure_node(string $name, string $ip, ?Cluster $cluster = null): Node

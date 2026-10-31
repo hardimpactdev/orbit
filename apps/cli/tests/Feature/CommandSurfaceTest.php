@@ -870,7 +870,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'operation:resume' => [['operation'], ['json' => false]],
         'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'json' => false]],
         'operation:show' => [['operation'], ['json' => false]],
-        'node:role:add' => [['node', 'role'], ['converge' => false, 'postgres-process' => null, 'clickhouse-process' => null, 'json' => false]],
+        'node:role:add' => [['node', 'role'], ['converge' => false, 'idempotency-key' => null, 'postgres-process' => null, 'clickhouse-process' => null, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],
         'node:role:relocate' => [['node', 'role'], ['force' => false, 'from' => null, 'json' => false]],
         'node:role:remove' => [

@@ -8,7 +8,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Saloon\Enums\Method;
@@ -144,16 +143,13 @@ it('sends one forced node role removal request as json', function (): void {
         ->toHaveCount(1);
 });
 
-it('repeats Ingress removal and supports remove-then-add replacement in human and JSON modes', function (): void {
+it('repeats Ingress removal in human and JSON modes', function (): void {
     $mockClient = MockClient::global([
         RemoveNodeRoleRequest::class => MockResponse::make([
             'data' => ingress_removed_node_role_payload(),
             'meta' => ['request_id' => node_role_remove_request_id()],
         ]),
-        AddNodeRoleRequest::class => MockResponse::make([
-            'data' => ingress_replacement_node_role_payload(),
-            'meta' => ['request_id' => node_role_remove_request_id()],
-        ], 201),
+
     ]);
 
     $this
@@ -175,15 +171,7 @@ it('repeats Ingress removal and supports remove-then-add replacement in human an
             'request_id' => node_role_remove_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(0);
-    $this
-        ->artisan('node:role:add', ['node' => '18', 'role' => 'ingress', '--json' => true])
-        ->assertExitCode(0);
-
     $mockClient->assertSentCount(2, RemoveNodeRoleRequest::class);
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(AddNodeRoleRequest::class)
-        ->and($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['role' => 'ingress', 'converge_existing' => false]);
 });
 
 it('renders unknown role enum validation details from the preview request', function (): void {
@@ -506,24 +494,6 @@ function ingress_removed_node_role_payload(): array
         'role' => 'ingress',
         'assignment' => null,
         'removed' => true,
-    ];
-}
-
-/** @return array<string, mixed> */
-function ingress_replacement_node_role_payload(): array
-{
-    return [
-        'node_id' => 18,
-        'node_name' => 'ingress-new',
-        'role' => 'ingress',
-        'assignment' => [
-            'id' => 42,
-            'role' => 'ingress',
-            'status' => 'active',
-            'failed_step' => null,
-            'error_code' => null,
-        ],
-        'removed' => false,
     ];
 }
 

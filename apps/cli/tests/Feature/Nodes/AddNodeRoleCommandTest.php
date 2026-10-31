@@ -244,54 +244,6 @@ function node_role_add_command_options(?SymfonyCommand $command): array
         ->all();
 }
 
-/** @return array<string, mixed> */
-function added_node_role_payload(): array
-{
-    return [
-        'node_id' => 7,
-        'node_name' => 'app-1',
-        'role' => 'app-dev',
-        'assignment' => [
-            'id' => 34,
-            'role' => 'app-dev',
-            'status' => 'active',
-            'failed_step' => null,
-            'error_code' => null,
-        ],
-        'removed' => false,
-    ];
-}
-
-/** @return array<string, mixed> */
-function ingress_added_node_role_payload(): array
-{
-    return [
-        'node_id' => 17,
-        'node_name' => 'ingress-1',
-        'role' => 'ingress',
-        'assignment' => [
-            'id' => 41,
-            'role' => 'ingress',
-            'status' => 'active',
-            'failed_step' => null,
-            'error_code' => null,
-        ],
-        'removed' => false,
-    ];
-}
-
-/** @return array<string, mixed> */
-function added_node_role_expected_json(): array
-{
-    return [
-        ...added_node_role_payload(),
-        'degradation' => null,
-        'retained_on_node' => [],
-        'follow_up' => null,
-        'request_id' => node_role_add_request_id(),
-    ];
-}
-
 function node_role_add_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
