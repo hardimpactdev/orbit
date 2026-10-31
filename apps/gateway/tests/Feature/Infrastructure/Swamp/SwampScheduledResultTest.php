@@ -197,7 +197,12 @@ it('projects a discovered native scheduled result end to end through the existin
     $events = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber($events, new NullLogger);
     $subscriber->pass();
-    $feed = $events->sent[0];
+    $read = $events->sent[0];
+    $events->push(['type' => 'workflow.get', 'id' => $read['id'], 'payload' => ['data' => [
+        'id' => scheduledObservationDeclaration()['workflow_id'], 'name' => 'task-check-ci',
+    ]]]);
+    $subscriber->pass();
+    $feed = array_last($events->sent);
     $events->push(['type' => 'commits.subscribe', 'id' => $feed['id'], 'payload' => ['cursor' => 4, 'head' => 4, 'done' => false,
         'changes' => [['cursor' => 4, 'commit' => ['ops' => [['intent' => ['kind' => 'run.update', 'run' => [
             'workflowId' => scheduledObservationDeclaration()['workflow_id'], 'runId' => $this->scheduled,

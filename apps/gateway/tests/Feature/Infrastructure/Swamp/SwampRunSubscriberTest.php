@@ -153,7 +153,7 @@ it('delivers each terminal frame synchronously for multiple bound streams', func
     $subscriber->pass();
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
     expect($socket->sent[0]['payload'])->toBe(['runId' => $first->state['swamp_run_id'], 'afterSeq' => 0]);
-    expect($socket->endpoints[0]->bearerToken)->toBe('private-native-token');
+    expect($socket->endpoints[0]->bearerToken)->toBe('private-native-read-token');
     expect($socket->endpoints[0]->caPath)->toBe('/public/ca.pem');
     $socket->push(nativeSubscriberAttached($socket->sent[0]), nativeSubscriberAttached($socket->sent[1]),
         nativeSubscriberFrame($socket->sent[0], $first, $status), nativeSubscriberFrame($socket->sent[1], $second, $status));

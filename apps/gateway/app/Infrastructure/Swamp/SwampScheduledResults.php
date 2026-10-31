@@ -20,6 +20,12 @@ final class SwampScheduledResults
 
     private bool $refused = false;
 
+    /** @var array<string,string> request ID => workflow UUID */
+    private array $readRequests = [];
+
+    /** @var array<string,true> */
+    private array $readable = [];
+
     private bool $loaded = false;
 
     private int $cursor = 0;
@@ -58,6 +64,17 @@ final class SwampScheduledResults
             $this->runs = $checkpoint['runs'];
             $this->loaded = true;
         }
+        foreach (app(DirectOperation::class)->scheduledResultDefinitions() as $workflow => $_declaration) {
+            if (isset($this->readable[$workflow]) || in_array($workflow, $this->readRequests, true)) {
+                continue;
+            }
+            $id = bin2hex(random_bytes(16));
+            $this->readRequests[$id] = $workflow;
+            $this->socket->send(['type' => 'workflow.get', 'id' => $id, 'payload' => ['workflowIdOrName' => $workflow]]);
+        }
+        if (count($this->readable) !== count(app(DirectOperation::class)->scheduledResultDefinitions())) {
+            return;
+        }
         $this->feedRequest = bin2hex(random_bytes(16));
         $this->socket->send(['type' => 'commits.subscribe', 'id' => $this->feedRequest, 'payload' => ['cursor' => $this->cursor]]);
         $this->attach();
@@ -65,6 +82,9 @@ final class SwampScheduledResults
 
     public function attach(): void
     {
+        if ($this->feedRequest === null || $this->refused) {
+            return;
+        }
         foreach ($this->runs as $run => $_workflow) {
             if (in_array($run, array_column($this->requests, 'run'), true)) {
                 continue;
@@ -79,12 +99,31 @@ final class SwampScheduledResults
     {
         $this->feedRequest = null;
         $this->requests = [];
+        $this->readRequests = [];
+        $this->readable = [];
     }
 
     /** @param array<string,mixed> $message */
     public function receive(array $message): bool
     {
         $id = $message['id'] ?? null;
+        $workflow = is_string($id) ? ($this->readRequests[$id] ?? null) : null;
+        if ($workflow !== null) {
+            $payload = $message['payload'] ?? null;
+            $definition = is_array($payload) ? ($payload['data'] ?? null) : null;
+            $declared = app(DirectOperation::class)->scheduledResultDefinitions()[$workflow];
+            if (($message['type'] ?? null) !== 'workflow.get' || ! is_array($definition)
+                || ($definition['id'] ?? null) !== $workflow || ($definition['name'] ?? null) !== $declared['workflow']) {
+                $this->refused = true;
+                $this->log->error('The shared read credential cannot verify the declared scheduled workflow.', ['workflow_id' => $workflow]);
+            } else {
+                $this->readable[$workflow] = true;
+                unset($this->readRequests[$id]);
+                $this->subscribe();
+            }
+
+            return true;
+        }
         if (is_string($id) && $id === $this->feedRequest) {
             $this->feed($message);
 

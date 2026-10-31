@@ -97,7 +97,7 @@ final class SwampRunSubscriber
             if (! $this->socket->isConnected()) {
                 $address = config('swamp.address');
                 $ca = config('swamp.ca_path');
-                $token = config('swamp.run_token');
+                $token = config('swamp.read_token');
                 if (! is_string($address) || $address === '' || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
                     return;
                 }
