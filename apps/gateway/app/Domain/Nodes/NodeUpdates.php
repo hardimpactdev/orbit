@@ -86,7 +86,7 @@ final readonly class NodeUpdates
     {
         $visits = FleetRolloutNode::query()
             ->whereExists(static function ($query): void {
-                $query->selectRaw('1')->from('operations')->whereColumn('operations.node_id', 'fleet_rollout_nodes.node_id')
+                $query->selectRaw('1')->from('operations')->whereColumn('operations.target_id', 'fleet_rollout_nodes.fleet_rollout_id')->where('operations.target_type', 'fleet_rollout')
                     ->where('kind', 'fleet.rollout')->whereIn('status', ['queued', 'running', 'waiting']);
             })
             ->whereNotNull('started_at')
