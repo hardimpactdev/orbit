@@ -9,7 +9,7 @@ export class Fixture {
   operation = Operation.parse({
     id: 7,
     node_id: 2,
-    kind: "database.clone",
+    kind: "database.create",
     status: "running",
     cancel_requested: false,
     input: { intent_id: 9, connection_id: 11, driver: "pgsql" },

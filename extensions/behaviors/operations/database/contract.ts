@@ -3,6 +3,7 @@ import { z } from "npm:zod@4.4.3";
 export const Kinds = [
   "database_server.create",
   "database_server.destroy",
+  "database.create",
   "database.destroy",
   "database.write",
   "database.clone",

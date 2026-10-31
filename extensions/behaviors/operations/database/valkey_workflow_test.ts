@@ -18,7 +18,7 @@ async function execute(scenario: Scenario, lostReply = false) {
   const f = new Fixture();
   f.operation.kind = scenario.action === "remove"
     ? "database.destroy"
-    : "database_server.create";
+    : "database.create";
   f.descriptors[0] = {
     ...f.descriptors[0],
     transport: "remote_program",
@@ -65,6 +65,62 @@ async function execute(scenario: Scenario, lostReply = false) {
   return { calls, result, finished: f.finished };
 }
 
+const payload = {
+  username: "queue",
+  hash: "a".repeat(64),
+  patterns: ["queue:*"],
+  allow: ["@list"],
+};
+
+Deno.test({
+  name:
+    "Valkey create enforces final denials and recovers a lost reply without creating twice",
+  ignore: !gateway,
+  fn: async () => {
+    const { calls, finished } = await execute(
+      { action: "create", payload },
+      true,
+    );
+    assertEquals(calls[0].slice(-4), [
+      "-@admin",
+      "-@dangerous",
+      "-function",
+      "-script",
+    ]);
+    assertEquals(calls.at(-1), ["ACL", "SAVE"]);
+    assertEquals(finished!.status, "succeeded");
+  },
+});
+Deno.test({
+  name: "Valkey save failure compensates the new user and fails the workflow",
+  ignore: !gateway,
+  fn: async () => {
+    const { calls, finished } = await execute({
+      action: "create",
+      payload,
+      fail: "save",
+    });
+    assertEquals(calls.at(-1), ["ACL", "DELUSER", "queue"]);
+    assertEquals(finished!.error_code, "database.server_command_failed");
+    assertEquals(finished!.status, "failed");
+  },
+});
+Deno.test({
+  name:
+    "Valkey invalid rules expose only the fixed refusal through workflow completion",
+  ignore: !gateway,
+  fn: async () => {
+    const { finished } = await execute({
+      action: "create",
+      payload,
+      fail: "set",
+    });
+    assertEquals(finished!.error_code, "database.acl_rules_invalid");
+    assertEquals(finished!.result, {
+      error_code: "database.acl_rules_invalid",
+    });
+  },
+});
 Deno.test({
   name:
     "Valkey removal restores a deleted user after save failure and preserves default",

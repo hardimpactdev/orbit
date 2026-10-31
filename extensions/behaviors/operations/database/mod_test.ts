@@ -37,6 +37,15 @@ Deno.test("server initialization finishes readiness and secret removal before co
   );
   assertEquals(f.calls.at(-1)!.path, "/api/v1/operation-executor/7/complete");
 });
+Deno.test("PostgreSQL test pool repair resumes proven members before creating the next", async () => {
+  const f = new Fixture();
+  f.descriptors = ["test-pool-0", "test-pool-1", "database-apply"].map((
+    key,
+  ) => ({ ...f.descriptors[0], key, step: key }));
+  f.operation.step_results["test-pool-0"] = { backend: "active" };
+  await f.execute();
+  assertEquals(f.runs, 2);
+});
 Deno.test("Valkey and SQL refusals finish failed and keep the stable error code", async () => {
   for (
     const code of [
