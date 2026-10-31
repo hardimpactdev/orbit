@@ -181,8 +181,10 @@ orbit cluster:node:remove 3 7 --force
 Set or replace the Cluster Router. The Router must be an active member Node.
 
 ```bash
-orbit cluster:router:set <cluster> <node>
+orbit cluster:router:set <cluster> <node> [--idempotency-key=KEY]
 ```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
@@ -200,8 +202,10 @@ Replacement keeps the current Router active until its replacement is ready, prom
 Clear the Router from a Cluster that is inactive or has no TLD.
 
 ```bash
-orbit cluster:router:unset <cluster> [--force]
+orbit cluster:router:unset <cluster> [--force] [--idempotency-key=KEY]
 ```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
 
 | Option | Meaning |
 | --- | --- |

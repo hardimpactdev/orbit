@@ -19,10 +19,9 @@ use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionsResponse;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseDescribeResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseQueryResponse;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseSchemaResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseTablesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -165,6 +164,19 @@ describe('database connection requests', function (): void {
             ]);
     });
 
+    it('returns the update Operation and forwards its idempotency key', function (): void {
+        $request = new UpdateDatabaseConnectionRequest('app', hasPassword: true, password: DATABASE_CONNECTION_SDK_SECRET, idempotencyKey: 'retry-update');
+        $connector = new GatewayConnector('https://gateway.example.test', '/tmp/orbit-ca.pem');
+        $connector->withMockClient(new MockClient([
+            UpdateDatabaseConnectionRequest::class => MockResponse::make(['data' => [
+                'id' => 7, 'kind' => 'database.update', 'target_type' => 'database_connection', 'target_id' => 4,
+                'status' => 'queued', 'sequence' => 1, 'input' => [], 'result' => null,
+            ], 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 202),
+        ]));
+        expect($request->headers()->get('Idempotency-Key'))->toBe('retry-update')
+            ->and($connector->send($request)->dtoOrFail())->toBeInstanceOf(OperationResponse::class);
+    });
+
     it('omits an absent add prefix and encodes hostname selectors', function (): void {
         $withoutPrefix = new AddInstanceDatabaseRequest(12, 'app');
 
@@ -241,70 +253,18 @@ describe('database connection requests', function (): void {
             ->toBe(['sql' => 'DELETE FROM users', 'write' => true]);
     });
 
-    it('maps inspection envelopes and redacts credential-shaped cells', function (): void {
+    it('maps every inspection start to its native parent Operation', function (): void {
         $requestId = '11111111-1111-4111-8111-111111111111';
-        $mockClient = new MockClient([
-            QueryDatabaseConnectionRequest::class => MockResponse::make([
-                'data' => [
-                    'slug' => 'app',
-                    'driver' => 'mysql',
-                    'write' => false,
-                    'columns' => ['email'],
-                    'rows' => [['email' => 'password='.DATABASE_CONNECTION_SDK_SECRET]],
-                    'row_count' => 1,
-                    'truncated' => false,
-                ],
-                'meta' => ['request_id' => $requestId],
-            ]),
-            ListDatabaseTablesRequest::class => MockResponse::make([
-                'data' => ['slug' => 'app', 'driver' => 'mysql', 'tables' => ['users']],
-                'meta' => ['request_id' => $requestId],
-            ]),
-            ShowDatabaseSchemaRequest::class => MockResponse::make([
-                'data' => [
-                    'slug' => 'app',
-                    'driver' => 'mysql',
-                    'tables' => [[
-                        'name' => 'users',
-                        'columns' => [
-                            ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
-                        ],
-                    ]],
-                ],
-                'meta' => ['request_id' => $requestId],
-            ]),
-            DescribeDatabaseTableRequest::class => MockResponse::make([
-                'data' => [
-                    'slug' => 'app',
-                    'driver' => 'mysql',
-                    'table' => 'users',
-                    'columns' => [
-                        ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
-                    ],
-                ],
-                'meta' => ['request_id' => $requestId],
-            ]),
-        ]);
+        $data = ['id' => 7, 'kind' => 'database.read', 'target_type' => 'database_connection', 'target_id' => 2, 'status' => 'running', 'sequence' => 2, 'input' => ['mode' => 'query'], 'result' => null];
+        $requests = [new QueryDatabaseConnectionRequest('app', 'SELECT 1'), new ListDatabaseTablesRequest('app'), new ShowDatabaseSchemaRequest('app'), new DescribeDatabaseTableRequest('app', 'users')];
+        $mock = new MockClient(array_fill_keys(array_map(static fn ($request): string => $request::class, $requests), MockResponse::make(['data' => $data, 'meta' => ['request_id' => $requestId]], 202)));
         $connector = new GatewayConnector('https://10.44.0.1');
-        $connector->withMockClient($mockClient);
-
-        $query = $connector->send(new QueryDatabaseConnectionRequest('app', 'SELECT 1'))->dto();
-        $tables = $connector->send(new ListDatabaseTablesRequest('app'))->dto();
-        $schema = $connector->send(new ShowDatabaseSchemaRequest('app'))->dto();
-        $describe = $connector->send(new DescribeDatabaseTableRequest('app', 'users'))->dto();
-
-        expect($query)
-            ->toBeInstanceOf(DatabaseQueryResponse::class)
-            ->and($query->rows[0]['email'] ?? null)
-            ->not->toContain(DATABASE_CONNECTION_SDK_SECRET)
-            ->and($tables)
-            ->toBeInstanceOf(DatabaseTablesResponse::class)
-            ->and($schema)
-            ->toBeInstanceOf(DatabaseSchemaResponse::class)
-            ->and($describe)
-            ->toBeInstanceOf(DatabaseDescribeResponse::class)
-            ->and($describe->table)
-            ->toBe('users');
+        $connector->withMockClient($mock);
+        foreach ($requests as $request) {
+            $operation = $connector->send($request)->dto();
+            expect($operation)->toBeInstanceOf(OperationResponse::class)
+                ->and($operation->id)->toBe(7)->and($operation->kind)->toBe('database.read')->and($operation->requestId)->toBe($requestId);
+        }
     });
 
     it('maps item and collection envelopes without exposing a password', function (): void {

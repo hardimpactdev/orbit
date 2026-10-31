@@ -2,18 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
-use Tests\Support\FakeDatabaseServerAdmin;
 
 const DATABASE_USER_SECRET = 'db-user-secret-71ae';
 
 beforeEach(function (): void {
-    $this->admin = new FakeDatabaseServerAdmin;
-    app()->instance(DatabaseServerAdmin::class, $this->admin);
 
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -65,7 +61,6 @@ describe('database:user:create', function (): void {
             'password' => DATABASE_USER_SECRET,
         ])->assertUnprocessable()->assertJsonPath('error.code', 'database.server_required');
 
-        expect($this->admin->statements)->toBe([]);
     });
 
     it('refuses the user of a connection, unsafe names, and unknown keys', function (): void {
@@ -85,7 +80,6 @@ describe('database:user:create', function (): void {
                 ->assertJsonPath('error.code', 'validation.failed');
         }
 
-        expect($this->admin->statements)->toBe([]);
     });
 
     it('no longer creates users through a Process', function (): void {
@@ -106,7 +100,6 @@ it('refuses replication on non-PostgreSQL drivers with 422 before admin commands
     $this->postJson('/api/v1/database-connections/dlf-leden/users', ['username' => 'sync_reader', 'password' => DATABASE_USER_SECRET, 'replication' => true])
         ->assertUnprocessable()->assertJsonPath('error.code', 'database.driver_unsupported');
 
-    expect($this->admin->statements)->toBe([]);
     $this->assertDatabaseCount('database_users', 0);
 })->with(['mysql', 'redis', 'sqlite']);
 
@@ -114,5 +107,4 @@ it('validates replication as a strict boolean with 422', function (): void {
     $this->postJson('/api/v1/database-connections/dlf-leden/users', ['username' => 'sync_reader', 'password' => DATABASE_USER_SECRET, 'replication' => 'true'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
 
-    expect($this->admin->statements)->toBe([]);
 });

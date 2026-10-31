@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\NodeFootprintPlan;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeFootprint;
@@ -13,50 +12,22 @@ use App\Models\Operation;
 use App\Models\RouteRemovalResidue;
 use App\Support\ValidatedData;
 
-/** Records already-validated footprint proof for the owning Node. No host action or dispatch. */
+/** Records native footprint outcomes for the owning Node. No host action or proof reconstruction. */
 final readonly class NodeFootprintProjection
 {
-    /** @param array<string,mixed> $snapshot
-     * @param  array<string,mixed>  $result
-     * @return array<string,array<string,mixed>> Validated entries keyed by artifact name.
+    /** @param array<string,mixed> $result
+     * @return array<string,array<string,mixed>> Native artifact outcomes keyed by name.
      */
-    public function validate(array $snapshot, array $result, OperationStatus $status, ?string $code): array
+    public static function artifacts(array $result): array
     {
         $artifacts = [];
-        if (in_array($status, [OperationStatus::Succeeded, OperationStatus::Failed], true)) {
-            $entries = $result['artifacts'] ?? null;
-            if (! is_array($entries) || ! array_is_list($entries) || count($entries) > 32 || array_diff(array_keys($result), ['artifacts', 'footprint_proven', 'error_code', 'failed_artifact']) !== []) {
-                throw $this->invalid();
-            }
-            $admitted = self::admitted($snapshot);
-            foreach ($entries as $entry) {
-                if (! is_array($entry) || array_diff(array_keys($entry), ['name', 'status', 'reason']) !== []
-                    || ! is_string($entry['name'] ?? null) || ! isset($admitted[$entry['name']]) || isset($artifacts[$entry['name']])
-                    || ! in_array($entry['status'] ?? null, ['applied', 'unchanged', 'skipped'], true)
-                    || ($entry['status'] === 'skipped' && ! in_array($entry['reason'] ?? null, match ($entry['name']) {
-                        'caddy' => ['caddy_render_refused', 'caddy_validate_refused'],
-                        'route-residue' => ['route_residue_cleanup_failed'],
-                        default => [],
-                    }, true))
-                    || ($entry['status'] !== 'skipped' && ($entry['reason'] ?? null) !== null)) {
-                    throw $this->invalid();
-                }
-                $artifacts[$entry['name']] = $entry;
-            }
-            $failed = $result['failed_artifact'] ?? null;
-            if ($failed !== null && (! is_string($failed) || ! isset($admitted[$failed]) || isset($artifacts[$failed]))) {
-                throw $this->invalid();
-            }
-            if ($status === OperationStatus::Succeeded && (($result['footprint_proven'] ?? null) !== true || $code !== null || isset($result['error_code']) || $failed !== null
-                || array_diff(array_keys($admitted), array_keys($artifacts)) !== [])) {
-                throw $this->invalid();
-            }
-            if ($status === OperationStatus::Failed && (($result['footprint_proven'] ?? null) !== false || ! is_string($code) || ($result['error_code'] ?? null) !== $code
-                || preg_match('/\A(?:node|agent|caddy|private_dns|vpn|operation|php|firewall|certificate|swamp)\.[a-z0-9_.-]{1,90}\z/D', $code) !== 1)) {
-                throw $this->invalid();
-            }
-        } elseif ($result !== [] || $code !== null) {
-            throw $this->invalid();
+        $entries = $result['artifacts'] ?? [];
+        if (! is_array($entries)) {
+            throw new \InvalidArgumentException('Native artifacts must be a list.');
+        }
+        foreach ($entries as $raw) {
+            $entry = ValidatedData::object($raw);
+            $artifacts[ValidatedData::string($entry['name'])] = $entry;
         }
 
         return $artifacts;

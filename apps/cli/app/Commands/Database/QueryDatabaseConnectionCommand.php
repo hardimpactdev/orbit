@@ -4,24 +4,21 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
-use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseQueryResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class QueryDatabaseConnectionCommand extends DatabaseCommand
 {
-    use FollowsOperations;
+    use FollowsDatabaseInspections;
 
     #[\Override]
     protected $signature = 'database:query
         {slug : Database connection slug}
         {sql : SQL statement}
         {--write : Allow a write statement}
-        {--idempotency-key= : Reuse a key to retry a write start}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -42,103 +39,18 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        if ($this->option('write') === true) {
-            $profile = $this->activeGatewayProfile($repository);
-            if ($profile === null) {
-                return self::FAILURE;
-            }
-            $operation = $this->send($connector, new QueryDatabaseConnectionRequest($slug, $sql, true,
-                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), OperationResponse::class);
-
-            return $operation instanceof OperationResponse
-                ? $this->followOperation($connector, $profile, $operation, "Run Database statement [{$slug}]", 'Database statement')
-                : self::FAILURE;
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
+            return self::FAILURE;
         }
-
-        $result = $this->sendWithProgress(
-            $connector,
-            new QueryDatabaseConnectionRequest($slug, $sql, false),
-            DatabaseQueryResponse::class,
-            ['Run Database query', 'Running Database query', 'Ran Database query'],
-        );
-
-        if (! $result instanceof DatabaseQueryResponse) {
+        $operation = $this->send($connector, new QueryDatabaseConnectionRequest($slug, $sql, $this->option('write') === true,
+            is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), OperationResponse::class);
+        if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($result->toArray());
-
-            return self::SUCCESS;
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Database query [{$result->slug}].", [
-            'Write permission' => $result->write ? 'yes' : 'no',
-            'Reported row count' => $result->rowCount,
-            'Truncated' => $result->truncated ? 'yes' : 'no',
-            'Request ID' => $result->requestId,
-        ]));
-
-        if ($result->columns === [] && $result->rows === []) {
-            $this->writeHumanMessage(
-                $result->write ? 'Statement completed.' : 'No matching records found.',
-            );
-            $this->writeTruncationWarning($result->truncated);
-
-            return self::SUCCESS;
-        }
-
-        $headers = $result->columns === [] ? ['Result'] : $result->columns;
-        $rows = [];
-
-        foreach ($result->rows as $row) {
-            if ($result->columns === []) {
-                $rows[] = ['ok'];
-
-                continue;
-            }
-
-            $cells = [];
-
-            foreach ($result->columns as $column) {
-                $cells[] = $this->queryCell($row[$column] ?? null);
-            }
-
-            $rows[] = $cells;
-        }
-
-        ConsoleWriter::write(
-            $this->output,
-            $this->humanRenderer()->table($headers, $rows, 'No matching records found.'),
-        );
-        $this->writeTruncationWarning($result->truncated);
-
-        return self::SUCCESS;
-    }
-
-    private function writeTruncationWarning(bool $truncated): void
-    {
-        if (! $truncated) {
-            return;
-        }
-
-        $this->writeHumanMessage('Result truncated at the Gateway row limit. The omitted total is not known.');
-    }
-
-    private function queryCell(bool|float|int|string|null $value): string
-    {
-        if ($value === null) {
-            return 'NULL';
-        }
-
-        if ($value === '') {
-            return '""';
-        }
-
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-
-        return (string) $value;
+        return $this->option('write') === true
+            ? $this->followOperation($connector, $profile, $operation, "Run Database statement [{$slug}]", 'Database statement')
+            : $this->followInspection($connector, $profile, $operation, $slug);
     }
 }

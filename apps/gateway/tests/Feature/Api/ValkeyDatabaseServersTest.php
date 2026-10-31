@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\ValkeyAclUser;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -17,18 +14,13 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Support\Str;
-use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeValkeyAclAgent;
-use Tests\Support\FakeValkeyServerAdmin;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
-    app()->instance(DatabaseServerAdmin::class, new FakeDatabaseServerAdmin);
-    $this->valkey = new FakeValkeyServerAdmin;
-    app()->instance(ValkeyServerAdmin::class, $this->valkey);
     $this->programs = new FakeValkeyAclAgent(app(AgentCommandRunner::class));
     app()->instance(AgentCommandRunner::class, $this->programs);
 
@@ -179,8 +171,6 @@ describe('database:server:create --process --connection', function (): void {
             'port' => 6379,
             'password' => 'queue-secret',
         ]);
-        $this->valkey->passwords['10.44.0.80:6379'] = 'queue-secret';
-        $this->valkey->users['default'] = ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, 'queue-secret');
         $this->adoption = valkey_server_request($this->dbNode, [
             'slug' => 'services-valkey',
             'process_id' => $this->process->id,
@@ -194,7 +184,6 @@ describe('database:server:create --process --connection', function (): void {
         $operation = Operation::query()->findOrFail($response->json('data.id'));
         expect($operation->input['validate_existing'])->toBeTrue();
         expect($this->programs->runs)->toBe([]);
-        expect($this->valkey->calls)->toBe([]);
     });
 
     it('refuses another Process for an adopted slug', function (): void {

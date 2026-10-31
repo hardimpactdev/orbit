@@ -48,7 +48,7 @@ Every command accepts `--json`, and every result includes the request ID. Lists 
 Install one systemd service or Docker container, stopped or started, or record a Project definition.
 
 ```bash
-orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [options]
+orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [--idempotency-key=KEY] [options]
 ```
 
 | Argument | Required | Meaning |
@@ -141,7 +141,7 @@ orbit process:show <name> --project=ID [--json]
 Change only the supplied fields of an installed Process, keeping its ID, name, owner, and desired state. A running Process restarts in place; a stopped Process stays stopped. This is not destroy followed by create. It can interrupt a running service and discard a replaced Docker container's writable layer. It does not delete named volumes or require destructive consent. Back up and migrate container-layer data before updating a stateful container; see [Move data before removing an override](/reference/processes-and-schedules#move-data-before-removing-an-override).
 
 ```bash
-orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--no-restart-on-deploy] [--user=NAME] [--json]
+orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--no-restart-on-deploy] [--user=NAME] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument or option | Default | Meaning |
@@ -187,7 +187,7 @@ orbit process:update queue --project=1 --for=production --command=/usr/bin/php -
 Start an installed Process and store the running desired state.
 
 ```bash
-orbit process:start <process> [--json]
+orbit process:start <process> [--idempotency-key=KEY] [--json]
 ```
 
 A competing operation on the same Instance makes the command wait up to 30 seconds and then return `process.operation_busy`. A competing operation on the same Process returns `process.runtime_lock_failed`.
@@ -197,7 +197,7 @@ A competing operation on the same Instance makes the command wait up to 30 secon
 Stop an installed Process and store the stopped desired state. A hibernation wake leaves a stopped Process stopped.
 
 ```bash
-orbit process:stop <process> [--json]
+orbit process:stop <process> [--idempotency-key=KEY] [--json]
 ```
 
 ## orbit process:restart
@@ -205,7 +205,7 @@ orbit process:stop <process> [--json]
 Restart an installed Process and store the running desired state.
 
 ```bash
-orbit process:restart <process> [--json]
+orbit process:restart <process> [--idempotency-key=KEY] [--json]
 ```
 
 ## orbit process:logs
@@ -256,7 +256,7 @@ orbit process:logs 41 --follow
 Stop and remove the unit or container of one Process, then delete its record. With `--project`, destroy one definition by name.
 
 ```bash
-orbit process:destroy <process> [--project=ID] [--yes] [--json]
+orbit process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |

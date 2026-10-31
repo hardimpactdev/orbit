@@ -11,6 +11,7 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Rules\SupportedPhpVersion;
+use Closure;
 
 /** Pure stored-state render. An empty map still withdraws stale pools on the Node. */
 final readonly class SharedPhpPoolInput
@@ -20,15 +21,31 @@ final readonly class SharedPhpPoolInput
     /** @return array{configurations: object,account_user:string} */
     public function forNode(Node $node): array
     {
+        return [...$this->render($node, static fn (): ManagedUserAccount => new ManagedUserAccount($node->user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__')), 'account_user' => $node->user];
+    }
+
+    /** Pure render with an already admitted account; no Node lookup.
+     * @return array{configurations: object}
+     */
+    public function forAccount(Node $node, ManagedUserAccount $account): array
+    {
+        return $this->render($node, static fn (): ManagedUserAccount => $account);
+    }
+
+    /** @param Closure(): ManagedUserAccount $account
+     * @return array{configurations: object}
+     */
+    private function render(Node $node, Closure $account): array
+    {
         $sites = $this->sites->forNode($node)->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null && ! $site->isProxy() && ! $site->usesDedicatedPhpRuntime());
         $configurations = [];
         foreach ($sites->groupBy('phpVersion') as $version => $members) {
             if (! SupportedPhpVersion::isSupported((string) $version)) {
                 throw new ResourceOperationException('app-dev.php_version_unsupported', 'A stored pool uses an unsupported PHP version.', 409);
             }
-            $configurations[(string) $version] = $this->renderer->render($members->values(), new ManagedUserAccount($node->user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__'));
+            $configurations[(string) $version] = $this->renderer->render($members->values(), $account());
         }
 
-        return ['configurations' => (object) $configurations, 'account_user' => $node->user];
+        return ['configurations' => (object) $configurations];
     }
 }

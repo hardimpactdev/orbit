@@ -32,7 +32,7 @@ beforeEach(function (): void {
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId];
-    $this->agents = new FakeAgentCommandRunner()->answer('instance.copy-sqlite', ['state' => 'cleaned']);
+    $this->agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $this->agents);
 });
 

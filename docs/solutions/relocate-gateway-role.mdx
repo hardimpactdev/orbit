@@ -2,7 +2,7 @@
 title: "Relocate the gateway role"
 description: "Move the Gateway to another Node while vpn and private DNS stay on the original Node."
 covers:
-  - apps/gateway/app/Actions/Nodes/RelocateNodeRoleAction.php
+  - apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php
   - apps/gateway/app/Actions/Nodes/GrantGatewayRoleAccessAction.php
   - apps/gateway/app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php
   - apps/gateway/app/Domain/Gateway/GatewayServingHost.php
@@ -21,6 +21,8 @@ A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in th
 `vpn` never moves. `gateway` is a singleton. Removing it and adding it again would drop the only active Gateway assignment, so the next request would lose its Gateway authority and `gateway.orbit` would leave private DNS. Relocate keeps one active assignment for the whole move.
 
 ## Solution
+
+Role relocation requires its native parent workflow. Until that writer is available, the command returns `operation.kind_unavailable` before effects. The steps below describe the retained placement and identity requirements.
 
 ### Rename first
 

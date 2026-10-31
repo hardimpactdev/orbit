@@ -7,10 +7,12 @@ namespace App\Commands\Database;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseDescribeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DescribeDatabaseTableCommand extends DatabaseCommand
 {
+    use FollowsDatabaseInspections;
+
     #[\Override]
     protected $signature = 'database:describe
         {slug : Database connection slug}
@@ -41,40 +43,14 @@ final class DescribeDatabaseTableCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $result = $this->sendWithProgress(
-            $connector,
-            new DescribeDatabaseTableRequest($slug, $table),
-            DatabaseDescribeResponse::class,
-            ['Describe Database table', 'Loading Database table', 'Loaded Database table'],
-        );
-
-        if (! $result instanceof DatabaseDescribeResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new DescribeDatabaseTableRequest($slug, $table), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($result->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $rows = [];
-
-        foreach ($result->columns as $column) {
-            $rows[] = [
-                $column['name'],
-                $column['type'],
-                $column['nullable'] ? 'yes' : 'no',
-                $this->displayValue($column['default']),
-                $column['primary'] ? 'yes' : 'no',
-            ];
-        }
-
-        return $this->renderInspectionTable(
-            "Database table [{$result->slug}.{$result->table}].",
-            ['Column', 'Type', 'Nullable', 'Default', 'Primary'],
-            $rows,
-            $result->requestId,
-        );
+        return $operation instanceof OperationResponse
+            ? $this->followInspection($connector, $profile, $operation, $slug)
+            : self::FAILURE;
     }
 }

@@ -40,9 +40,9 @@ Every command accepts `--json`, and every result includes the request ID. No out
 Register an existing database, or create a new one on a [Database server](/reference/database-servers#create-a-database-on-a-server). On a Valkey server, `--server` creates an [ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) instead. The Gateway encrypts the password before it writes the row.
 
 ```bash
-orbit database:create <slug> --driver=DRIVER [options]
-orbit database:create <slug> --server=SERVER [--instance=INSTANCE] [--locale=LOCALE]
-orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX]
+orbit database:create <slug> --driver=DRIVER [--idempotency-key=KEY] [options]
+orbit database:create <slug> --server=SERVER [--instance=INSTANCE] [--locale=LOCALE] [--idempotency-key=KEY]
+orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX] [--idempotency-key=KEY]
 ```
 
 | Argument | Required | Meaning |
@@ -140,8 +140,8 @@ Updating a record does not rewrite the keys already stored on attached Instances
 Run a MySQL, PostgreSQL or Valkey server as a Docker Node Process. Orbit generates the admin password and keeps it only in the Gateway.
 
 ```bash
-orbit database:server:create <slug> --node=NODE [--driver=DRIVER] [--tag=TAG] [--port=PORT] [--json]
-orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS --connection=CONNECTION [--tag=TAG] [--json]
+orbit database:server:create <slug> --node=NODE [--driver=DRIVER] [--tag=TAG] [--port=PORT] [--idempotency-key=KEY] [--json]
+orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS --connection=CONNECTION [--tag=TAG] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -186,7 +186,7 @@ orbit database:server:show <slug> [--json]
 Remove a server. The Gateway refuses with `database.server_in_use` while a connection points to it. It keeps the data volume.
 
 ```bash
-orbit database:server:destroy <slug> [--force] [--json]
+orbit database:server:destroy <slug> [--force] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
@@ -198,7 +198,7 @@ orbit database:server:destroy <slug> [--force] [--json]
 Give the user `default` the admin password on an [adopted Valkey server](/reference/database-servers#close-an-adopted-server), so a client without a password gets no access.
 
 ```bash
-orbit database:server:close <slug> [--json]
+orbit database:server:close <slug> [--idempotency-key=KEY] [--json]
 ```
 
 The Gateway refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed runs a readiness check. The command exists only for the adopted Valkey Processes.
@@ -208,7 +208,7 @@ The Gateway refuses with `database.server_in_use` while a connection on the serv
 Add a user to a database on a MySQL or PostgreSQL [server](/reference/database-servers#add-a-user), for example a read-only user in production.
 
 ```bash
-orbit database:user:create <slug> --username=USER --password=SECRET [--read-only] [--replication] [--json]
+orbit database:user:create <slug> --username=USER --password=SECRET [--read-only] [--replication] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -245,7 +245,7 @@ The table shows Username, Privileges, Replication, Created by, and Created. JSON
 Destroy one connection record.
 
 ```bash
-orbit database:destroy <slug> [--force] [--json]
+orbit database:destroy <slug> [--force] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -271,7 +271,7 @@ The Gateway returns `database_connection.required_by_ai_router` (409) while [AI 
 Run one SQL statement against a registered connection. Without `--write`, the Gateway refuses a statement whose leading verb writes. That check reads only the leading verb; see [Inspect a registered connection](/reference/database-connections#inspect-a-registered-connection). The Gateway refuses SQL that is not sent against a stored slug.
 
 ```bash
-orbit database:query <slug> <sql> [--write] [--json]
+orbit database:query <slug> <sql> [--write] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |

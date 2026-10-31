@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $requested_name
  * @property bool $force
  * @property string $inventory_digest
+ * @property array<string,mixed>|null $native_sources
+ * @property array<string,mixed>|null $native_intent
  * @property int $total
  * @property InstanceRemovalStatus $status
  * @property InstanceRemovalStep|null $current_step
@@ -43,6 +45,8 @@ final class InstanceRemoval extends Model
         'force',
         'inventory_digest',
         'total',
+        'native_intent',
+        'native_sources',
         'status',
         'current_step',
         'failed_step',
@@ -60,6 +64,8 @@ final class InstanceRemoval extends Model
     {
         return [
             'force' => 'boolean',
+            'native_intent' => 'array',
+            'native_sources' => 'array',
             'status' => InstanceRemovalStatus::class,
             'current_step' => InstanceRemovalStep::class,
             'failed_step' => InstanceRemovalStep::class,

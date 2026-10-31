@@ -26,8 +26,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = ValidatedData::object($data['result'] ?? []);
-        $artifacts = app(NodeFootprintProjection::class)->validate($this->input($operation), $result, $status,
-            ValidatedData::nullableString($data['error_code'] ?? null));
+        $artifacts = NodeFootprintProjection::artifacts($result);
 
         return DB::transaction(function () use ($operation, $data, $result, $artifacts): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

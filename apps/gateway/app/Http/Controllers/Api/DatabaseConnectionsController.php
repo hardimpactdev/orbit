@@ -18,8 +18,6 @@ use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseConnections\DatabaseUserData;
 use App\Data\Operations\OperationData;
-use App\Domain\DatabaseConnections\DatabaseSchemaTable;
-use App\Domain\DatabaseConnections\DatabaseTableColumn;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -110,17 +108,16 @@ final class DatabaseConnectionsController extends Controller
         ], 202);
     }
 
+    #[StartsOperation('database.update', secretInputs: ['password'])]
     public function update(
         UpdateDatabaseConnectionRequest $request,
         DatabaseConnection $databaseConnection,
         UpdateDatabaseConnectionAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => DatabaseConnectionData::fromModel(
-                $action->execute($databaseConnection, $request->payload()),
-            )->toArray(),
+            'data' => OperationData::fromModel($action->execute($databaseConnection, $request->payload()))->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], 202);
     }
 
     #[StartsOperation('database.destroy')]
@@ -142,81 +139,31 @@ final class DatabaseConnectionsController extends Controller
         ]);
     }
 
-    #[StartsOperation('database.write', secretInputs: ['sql'])]
+    #[StartsOperation('database.read', secretInputs: ['sql'], kindWhenTrue: ['write' => 'database.write'])]
     public function query(
         QueryDatabaseConnectionRequest $request,
         DatabaseConnection $databaseConnection,
         QueryDatabaseConnectionAction $action,
     ): JsonResponse {
-        $result = $action->execute($databaseConnection, $request->sql(), $request->write());
-        if ($result instanceof Operation) {
-            return response()->json(['data' => OperationData::fromModel($result)->toArray(), 'meta' => $this->meta($request)], 202);
-        }
-
-        return response()->json([
-            'data' => [
-                'slug' => $databaseConnection->slug,
-                'driver' => $databaseConnection->driver->value,
-                'write' => $request->write(),
-                'columns' => $result->columns,
-                'rows' => $result->rows,
-                'row_count' => $result->rowCount,
-                'truncated' => $result->truncated,
-            ],
-            'meta' => $this->meta($request),
-        ]);
+        return response()->json(['data' => OperationData::fromModel($action->execute($databaseConnection, $request->sql(), $request->write()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    public function tables(
-        Request $request,
-        DatabaseConnection $databaseConnection,
-        ListDatabaseTablesAction $action,
-    ): JsonResponse {
-        return response()->json([
-            'data' => [
-                'slug' => $databaseConnection->slug,
-                'driver' => $databaseConnection->driver->value,
-                'tables' => $action->execute($databaseConnection),
-            ],
-            'meta' => $this->meta($request),
-        ]);
+    #[StartsOperation('database.read')]
+    public function tables(Request $request, DatabaseConnection $databaseConnection, ListDatabaseTablesAction $action): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($action->execute($databaseConnection))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    public function schema(
-        Request $request,
-        DatabaseConnection $databaseConnection,
-        ShowDatabaseSchemaAction $action,
-    ): JsonResponse {
-        return response()->json([
-            'data' => [
-                'slug' => $databaseConnection->slug,
-                'driver' => $databaseConnection->driver->value,
-                'tables' => array_map(
-                    static fn (DatabaseSchemaTable $table): array => $table->toArray(),
-                    $action->execute($databaseConnection),
-                ),
-            ],
-            'meta' => $this->meta($request),
-        ]);
+    #[StartsOperation('database.read')]
+    public function schema(Request $request, DatabaseConnection $databaseConnection, ShowDatabaseSchemaAction $action): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($action->execute($databaseConnection))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    public function describe(
-        DescribeDatabaseTableRequest $request,
-        DatabaseConnection $databaseConnection,
-        DescribeDatabaseTableAction $action,
-    ): JsonResponse {
-        return response()->json([
-            'data' => [
-                'slug' => $databaseConnection->slug,
-                'driver' => $databaseConnection->driver->value,
-                'table' => $request->table(),
-                'columns' => array_map(
-                    static fn (DatabaseTableColumn $column): array => $column->toArray(),
-                    $action->execute($databaseConnection, $request->table()),
-                ),
-            ],
-            'meta' => $this->meta($request),
-        ]);
+    #[StartsOperation('database.read')]
+    public function describe(DescribeDatabaseTableRequest $request, DatabaseConnection $databaseConnection, DescribeDatabaseTableAction $action): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($action->execute($databaseConnection, $request->table()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** @return array{request_id: string} */
