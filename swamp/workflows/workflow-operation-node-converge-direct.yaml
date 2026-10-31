@@ -1,10 +1,8 @@
-# deno-fmt-ignore-file
-# Generated: deno run --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
 id: daace7ba-223f-47b6-9452-7c0da7cf384e
 name: operation-node-converge-direct
-description: One exact-Node native root; generated from the shared footprint chain.
+description: Apply one complete admitted public footprint through placed native commands.
+vaults: []
 inputs:
-  type: object
   properties:
     operation_id:
       type: integer
@@ -14,103 +12,3170 @@ inputs:
       minimum: 1
     kind:
       type: string
-      enum: [node.converge]
+      enum:
+      - node.converge
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+      properties:
+        secret_hash:
+          type: object
+          additionalProperties: false
+          properties:
+            vault:
+              type: string
+            key:
+              type: string
+          required:
+          - vault
+          - key
   required:
-    - operation_id
-    - node_id
-    - kind
-  additionalProperties: false
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-labels:
-  node: '${{ string(inputs.node_id) }}'
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
 jobs:
-  - name: admission
-    steps:
-      - {name: admit, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: admit, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: agent_install_job
+- name: public_intent
+  steps:
+  - name: prepare
+    writes: true
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: prepare
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        run_id: ${{ run.id }}
+  - name: admitted
     dependsOn:
-      - {job: admission, condition: {type: succeeded}}
-    steps:
-      - {name: agent_install_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: agent-install}}}
-      - {name: agent_install, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: agent_install_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: agent-install, binary_changed: false, cancellation: '${{ steps.agent_install_cancellation.outputs }}'}}}
-      - {name: agent_install_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: agent_install, condition: {type: succeeded}}], task: {type: assert, expr: steps.agent_install.outputs.ok, severity: high, message: The agent-install stage refused its admitted footprint}}
-  - name: caddy_package_job
+    - step: prepare
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: assert
+      expr: steps.prepare.outputs.allowed
+      message: The admitted footprint is unavailable
+      severity: high
+- name: public_parts
+  dependsOn:
+  - job: public_intent
+    condition:
+      type: succeeded
+  steps:
+  - name: part-${{ self.chunk.index }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: &id002
+      node: ${{ string(inputs.node_id) }}
+    forEach:
+      item: chunk
+      in: ${{ steps.prepare.outputs.chunks }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-input-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/python3 -I - "${{ run.id }}" "${{ self.chunk.index }}" <<'ORBIT_PY'
+          import base64
+          import json
+          import os
+          import stat
+          import sys
+          import tempfile
+          import uuid
+
+          root = "/tmp/orbit-node-converge-" + str(uuid.UUID(sys.argv[1]))
+          os.makedirs(root, mode=448, exist_ok=True)
+          metadata = os.lstat(root)
+          if (
+              not stat.S_ISDIR(metadata.st_mode)
+              or metadata.st_uid != os.geteuid()
+              or stat.S_IMODE(metadata.st_mode) != 448
+          ):
+              raise ValueError("unsafe public input directory")
+          index = int(sys.argv[2])
+          if index < 0 or index >= 512:
+              raise ValueError("invalid input part")
+          body = base64.b64decode(os.environ.pop("ORBIT_PUBLIC_PART"), validate=True)
+          if len(body) > 32768:
+              raise ValueError("invalid input part")
+          fd, candidate = tempfile.mkstemp(prefix=".part-", dir=root)
+          try:
+              with os.fdopen(fd, "wb") as output:
+                  output.write(body)
+                  output.flush()
+                  os.fsync(output.fileno())
+              os.replace(candidate, root + "/" + str(index).zfill(4) + ".part")
+          finally:
+              if os.path.exists(candidate):
+                  os.unlink(candidate)
+          print(json.dumps({"ok": True, "index": index}))
+          ORBIT_PY
+        env:
+          ORBIT_PUBLIC_PART: ${{ self.chunk.data }}
+- name: public_payload
+  dependsOn:
+  - job: public_parts
+    condition:
+      type: succeeded
+  steps:
+  - name: assemble
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id002
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-input-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/python3 -I - "${{ run.id }}" "${{ size(steps.prepare.outputs.chunks) }}" "${{ steps.prepare.outputs.sha256 }}" <<'ORBIT_PY'
+          import hashlib
+          import json
+          import os
+          import stat
+          import sys
+          import tempfile
+          import uuid
+
+          root = "/tmp/orbit-node-converge-" + str(uuid.UUID(sys.argv[1]))
+          metadata = os.lstat(root)
+          if (
+              not stat.S_ISDIR(metadata.st_mode)
+              or metadata.st_uid != os.geteuid()
+              or stat.S_IMODE(metadata.st_mode) != 448
+          ):
+              raise ValueError("unsafe public input directory")
+          count = int(sys.argv[2])
+          if count < 1 or count > 512:
+              raise ValueError("invalid input size")
+          fd, candidate = tempfile.mkstemp(prefix=".intent-", dir=root)
+          digest = hashlib.sha256()
+          try:
+              with os.fdopen(fd, "wb") as target:
+                  for index in range(count):
+                      part = os.open(
+                          root + "/" + str(index).zfill(4) + ".part", os.O_RDONLY | os.O_NOFOLLOW
+                      )
+                      with os.fdopen(part, "rb") as source:
+                          body = source.read(32769)
+                      if len(body) > 32768:
+                          raise ValueError("invalid input part")
+                      digest.update(body)
+                      target.write(body)
+                  target.flush()
+                  os.fsync(target.fileno())
+              if digest.hexdigest() != sys.argv[3]:
+                  raise ValueError("public input changed")
+              os.replace(candidate, root + "/intent.json")
+          finally:
+              if os.path.exists(candidate):
+                  os.unlink(candidate)
+          print(json.dumps({"ok": True}))
+          ORBIT_PY
+- name: agent_install_job
+  dependsOn:
+  - job: public_payload
+    condition:
+      type: succeeded
+  steps:
+  - name: agent_install
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "agent" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-agent_install" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import fcntl
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import stat
+          import sys
+          import tempfile
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          MAX_BYTES = 128 * 1024 * 1024
+
+
+          class Refusal(Exception):
+              def __init__(self, code="node.bootstrap_install_failed"):
+                  self.code = code
+
+
+          def valid_url(value):
+              if (
+                  not isinstance(value, str)
+                  or len(value) > 8192
+                  or re.search("[\\x00-\\x20\\x7f\\\\]", value)
+              ):
+                  raise Refusal()
+              try:
+                  u = urllib.parse.urlsplit(value)
+                  if (
+                      u.scheme != "https"
+                      or not u.hostname
+                      or u.username is not None
+                      or (u.password is not None)
+                      or u.fragment
+                  ):
+                      raise Refusal()
+                  u.port
+              except ValueError:
+                  raise Refusal()
+              return value
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          def open_url(url, timeout):
+              opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+              try:
+                  return opener.open(
+                      urllib.request.Request(url, headers={"Accept-Encoding": "identity"}),
+                      timeout=timeout,
+                  )
+              except urllib.error.HTTPError as response:
+                  return response
+
+
+          def download(url, path, pin):
+              end = time.monotonic() + 120
+              for redirect in range(6):
+                  url = valid_url(url)
+                  remaining = end - time.monotonic()
+                  if remaining <= 0:
+                      raise Refusal()
+                  with open_url(url, min(30, remaining)) as response:
+                      if response.status in [301, 302, 303, 307, 308]:
+                          next_url = response.headers.get("Location")
+                          if redirect == 5 or not next_url:
+                              raise Refusal()
+                          url = urllib.parse.urljoin(url, next_url)
+                          continue
+                      if response.status != 200:
+                          raise Refusal()
+                      length = response.headers.get("Content-Length")
+                      if length is not None and (
+                          not re.fullmatch("[0-9]+", length) or int(length) > MAX_BYTES
+                      ):
+                          raise Refusal()
+                      size = 0
+                      digest = hashlib.sha256()
+                      with open(path, "xb") as candidate:
+                          while True:
+                              if time.monotonic() >= end:
+                                  raise Refusal()
+                              chunk = response.read(65536)
+                              if not chunk:
+                                  break
+                              size += len(chunk)
+                              if size > MAX_BYTES:
+                                  raise Refusal()
+                              digest.update(chunk)
+                              candidate.write(chunk)
+                          candidate.flush()
+                          os.fsync(candidate.fileno())
+                      if digest.hexdigest() != pin:
+                          raise Refusal()
+                      return
+              raise Refusal()
+
+
+          def install(i):
+              if (
+                  not isinstance(i, dict)
+                  or set(i) != {"url", "sha256"}
+                  or (not isinstance(i["sha256"], str))
+                  or (not re.fullmatch("[0-9a-f]{64}", i["sha256"]))
+              ):
+                  raise Refusal()
+              if i["url"] is not None:
+                  valid_url(i["url"])
+              if platform.system() != "Linux" or platform.machine() != "x86_64":
+                  raise Refusal("agent.platform_unsupported")
+              current = install_candidate("/usr/local/bin/orbit-agent", i["sha256"])
+              if current == {"replaced": False, "sha256": i["sha256"]}:
+                  return {"changed": False}
+              if i["url"] is None:
+                  raise Refusal("agent.release_unavailable")
+              with tempfile.TemporaryDirectory(prefix="orbit-observer-download-") as directory:
+                  candidate = pathlib.Path(directory) / "observer"
+                  download(i["url"], candidate, i["sha256"])
+                  result = install_candidate(candidate, i["sha256"])
+                  if (
+                      set(result) != {"replaced", "sha256"}
+                      or type(result["replaced"]) is not bool
+                      or result["sha256"] != i["sha256"]
+                  ):
+                      raise Refusal()
+                  return {"changed": result["replaced"]}
+
+
+          P = pathlib.Path
+
+
+          def real(path, directory):
+              s = os.lstat(path)
+              if (
+                  not (stat.S_ISDIR(s.st_mode) if directory else stat.S_ISREG(s.st_mode))
+                  or s.st_uid != 0
+              ):
+                  raise ValueError()
+              if s.st_mode & 18 and (
+                  not (directory and str(path) == "/run/lock" and s.st_mode & stat.S_ISVTX)
+              ):
+                  raise ValueError()
+
+
+          def install_candidate(candidate, pin):
+              i = {"candidate": str(candidate), "sha256": pin}
+              try:
+                  if (
+                      set(i) != set(["candidate", "sha256"])
+                      or len(i["sha256"]) != 64
+                      or any((c not in "0123456789abcdef" for c in i["sha256"]))
+                  ):
+                      raise ValueError()
+                  for path in ["/usr", "/usr/local", "/usr/local/bin", "/run/lock"]:
+                      real(path, True)
+                  source = P(i["candidate"])
+                  s = os.lstat(source)
+                  if not stat.S_ISREG(s.st_mode) or stat.S_ISLNK(s.st_mode):
+                      raise ValueError()
+                  with source.open("rb") as f:
+                      if hashlib.file_digest(f, "sha256").hexdigest() != i["sha256"]:
+                          raise ValueError()
+                  lock = os.open(
+                      "/run/lock/orbit-self-update.lock",
+                      os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
+                      384,
+                  )
+                  try:
+                      s = os.fstat(lock)
+                      if not stat.S_ISREG(s.st_mode) or s.st_uid != 0 or s.st_mode & 18:
+                          raise ValueError()
+                      fcntl.flock(lock, fcntl.LOCK_EX)
+                      target = P("/usr/local/bin/orbit-agent")
+                      changed = True
+                      try:
+                          real(target, False)
+                          with target.open("rb") as f:
+                              changed = (
+                                  hashlib.file_digest(f, "sha256").hexdigest() != i["sha256"]
+                              )
+                      except FileNotFoundError:
+                          pass
+                      if changed:
+                          fd, tmp = tempfile.mkstemp(prefix=".orbit-observer-", dir=target.parent)
+                          try:
+                              os.fchmod(fd, 493)
+                              os.fchown(fd, 0, 0)
+                              with os.fdopen(fd, "wb") as out, source.open("rb") as inp:
+                                  while chunk := inp.read(65536):
+                                      out.write(chunk)
+                                  out.flush()
+                                  os.fsync(out.fileno())
+                              with open(tmp, "rb") as f:
+                                  if hashlib.file_digest(f, "sha256").hexdigest() != i["sha256"]:
+                                      raise ValueError()
+                              os.replace(tmp, target)
+                          finally:
+                              if os.path.exists(tmp):
+                                  os.unlink(tmp)
+                  finally:
+                      os.close(lock)
+                  result = {"replaced": changed, "sha256": i["sha256"]}
+              except Exception:
+                  result = {"error_code": "node.bootstrap_install_failed"}
+              return result
+
+
+          try:
+              output = install(
+                  {"url": intent["payloads"]["agent"]["url"], "sha256": intent["agent_sha256"]}
+              )
+              output["ok"] = "error_code" not in output
+          except Exception:
+              output = {"ok": False, "error_code": "node.agent_install_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: agent_install_ready
     dependsOn:
-      - {job: agent_install_job, condition: {type: succeeded}}
-    steps:
-      - {name: caddy_package_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: caddy-package}}}
-      - {name: caddy_package, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: caddy_package_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: caddy-package, binary_changed: false, cancellation: '${{ steps.caddy_package_cancellation.outputs }}'}}}
-      - {name: caddy_package_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: caddy_package, condition: {type: succeeded}}], task: {type: assert, expr: steps.caddy_package.outputs.ok, severity: high, message: The caddy-package stage refused its admitted footprint}}
-  - name: caddy_job
+    - step: agent_install
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "agent" && a.required) }}
+        names:
+        - agent_install
+        steps: ${{ steps }}
+    writes: true
+- name: caddy_package_job
+  dependsOn:
+  - job: agent_install_job
+    condition:
+      type: succeeded
+  steps:
+  - name: caddy_package
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "caddy-package" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-caddy_package" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          P = pathlib.Path
+          SETTING = P("/etc/sysctl.d/60-orbit-caddy.conf")
+          LEGACY = [
+              P("/usr/share/keyrings/orbit-caddy.gpg"),
+              P("/etc/apt/sources.list.d/orbit-caddy.sources"),
+          ]
+          OS_RELEASE = P("/etc/os-release")
+          DOCKER = P("/usr/bin/docker")
+          COMPOSER = P("/opt/orbit/composer")
+          ROOT_DIRS = [
+              P(p)
+              for p in [
+                  "/etc",
+                  "/etc/sysctl.d",
+                  "/etc/apt",
+                  "/etc/apt/sources.list.d",
+                  "/usr",
+                  "/usr/share",
+                  "/usr/share/keyrings",
+              ]
+          ]
+
+
+          class Refusal(Exception):
+              pass
+
+
+          def run(*args, check=True, env=None):
+              result = subprocess.run(
+                  [str(a) for a in args],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.DEVNULL,
+                  timeout=110,
+                  env={**os.environ, "LC_ALL": "C", **(env or {})},
+              )
+              if check and result.returncode:
+                  raise Refusal("cluster.router_preparation_failed")
+              return result
+
+
+          def preflight(path, directory, uid, gid=None, mode=None):
+              try:
+                  meta = path.lstat()
+              except FileNotFoundError:
+                  return
+              if (
+                  not (stat.S_ISDIR(meta.st_mode) if directory else stat.S_ISREG(meta.st_mode))
+                  or meta.st_uid != uid
+                  or (gid is not None and meta.st_gid != gid)
+                  or (mode is not None and stat.S_IMODE(meta.st_mode) != mode)
+              ):
+                  raise Refusal("role.prerequisite_conflict")
+
+
+          def directory(path, uid, gid):
+              path.mkdir(exist_ok=True)
+              os.chown(path, uid, gid)
+              os.chmod(path, 493)
+
+
+          def version():
+              try:
+                  result = run("caddy", "version", check=False)
+              except FileNotFoundError:
+                  return None
+              if result.returncode == 127:
+                  return None
+              if result.returncode:
+                  raise Refusal("caddy.package_failed")
+              value = result.stdout.decode().split()[0].removeprefix("v")
+              if not re.fullmatch("[0-9]+\\.[0-9]+\\.[0-9]+", value):
+                  raise Refusal("caddy.package_failed")
+              return value
+
+
+          def minimum(current, floor):
+              result = run("dpkg", "--compare-versions", current, "ge", floor, check=False)
+              if result.returncode not in (0, 1):
+                  raise Refusal("caddy.package_failed")
+              return result.returncode == 0
+
+
+          def caddy(data):
+              if not all(
+                  (
+                      re.fullmatch("[0-9]+\\.[0-9]+\\.[0-9]+", data[k])
+                      for k in ["release", "minimum_version"]
+                  )
+              ) or not re.fullmatch("[a-f0-9]{128}", data["amd64_sha512"]):
+                  raise Refusal("caddy.package_invalid")
+              for path in ROOT_DIRS:
+                  if not path.exists():
+                      raise Refusal("caddy.package_unsafe")
+                  preflight(path, True, 0)
+              preflight(SETTING, False, 0, 0, 420)
+              for path in LEGACY:
+                  preflight(path, False, 0)
+              current = version()
+              changed = False
+              with tempfile.TemporaryDirectory(prefix="orbit-caddy-") as work:
+                  package = None
+                  if current is None or not minimum(current, data["minimum_version"]):
+                      if run("dpkg", "--print-architecture").stdout.decode().strip() != "amd64":
+                          raise Refusal("caddy.package_failed")
+                      filename = "caddy_" + data["release"] + "_linux_amd64.deb"
+                      package = P(work) / filename
+                      url = (
+                          "https://github.com/caddyserver/caddy/releases/download/v"
+                          + data["release"]
+                          + "/"
+                          + filename
+                      )
+                      run(
+                          "curl",
+                          "--fail",
+                          "--silent",
+                          "--show-error",
+                          "--location",
+                          "--proto",
+                          "=https",
+                          "--proto-redir",
+                          "=https",
+                          "--tlsv1.2",
+                          "--max-filesize",
+                          "536870912",
+                          "--output",
+                          package,
+                          url,
+                      )
+                      if hashlib.sha512(package.read_bytes()).hexdigest() != data["amd64_sha512"]:
+                          raise Refusal("caddy.package_failed")
+                  body = "net.ipv4.tcp_migrate_req = 1\n"
+                  staged = P(work) / "sysctl.conf"
+                  staged.write_text(body)
+                  run("sysctl", "--quiet", "--load=" + str(staged))
+                  if not SETTING.exists() or SETTING.read_text() != body:
+                      staged = SETTING.with_name(".orbit-caddy-" + str(os.getpid()))
+                      staged.write_text(body)
+                      os.chown(staged, 0, 0)
+                      os.chmod(staged, 420)
+                      os.replace(staged, SETTING)
+                      changed = True
+                  for path in LEGACY:
+                      if path.exists():
+                          path.unlink()
+                          changed = True
+                  if package is not None:
+                      os.chmod(work, 493)
+                      os.chmod(package, 420)
+                      run(
+                          "apt-get",
+                          "-o",
+                          "DPkg::Lock::Timeout=300",
+                          "-o",
+                          "Dpkg::Options::=--force-confold",
+                          "install",
+                          "--yes",
+                          "--no-install-recommends",
+                          "--no-remove",
+                          "--",
+                          package,
+                          env={"DEBIAN_FRONTEND": "noninteractive"},
+                      )
+                      current = version()
+                      changed = True
+              if current is None or not minimum(current, data["minimum_version"]):
+                  raise Refusal("caddy.package_failed")
+              return {"changed": changed, "version": current}
+
+
+          try:
+              output = caddy(intent["payloads"]["caddy-package"])
+              output["ok"] = "error_code" not in output
+          except Exception:
+              output = {"ok": False, "error_code": "caddy.package_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: caddy_package_ready
     dependsOn:
-      - {job: caddy_package_job, condition: {type: succeeded}}
-    steps:
-      - {name: caddy_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: caddy}}}
-      - {name: caddy, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: caddy_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: caddy, binary_changed: false, cancellation: '${{ steps.caddy_cancellation.outputs }}'}}}
-      - {name: caddy_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: caddy, condition: {type: succeeded}}], task: {type: assert, expr: steps.caddy.outputs.ok, severity: high, message: The caddy stage refused its admitted footprint}}
-  - name: peer_dns_job
+    - step: caddy_package
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "caddy-package" && a.required) }}
+        names:
+        - caddy_package
+        steps: ${{ steps }}
+    writes: true
+- name: caddy_job
+  dependsOn:
+  - job: caddy_package_job
+    condition:
+      type: succeeded
+  steps:
+  - name: caddy
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "caddy" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-caddy" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import contextlib
+          import datetime
+          import fcntl
+          import grp
+          import hashlib
+          import ipaddress
+          import json
+          import os
+          import re
+          import shutil
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          ROOT = Path("/etc/caddy")
+          LOCK = Path("/run/lock/orbit/caddy.lock")
+          MARKER = "# Managed by Orbit: Node Caddy build"
+          LIMIT = 4194304
+
+
+          class Refusal(Exception):
+              def __init__(self, stage):
+                  self.stage = stage
+
+
+          @contextlib.contextmanager
+          def publication_lock():
+              LOCK.parent.mkdir(mode=448, parents=True, exist_ok=True)
+              info = LOCK.parent.lstat()
+              if (
+                  not stat.S_ISDIR(info.st_mode)
+                  or info.st_uid != 0
+                  or info.st_gid != 0
+                  or (stat.S_IMODE(info.st_mode) != 448)
+              ):
+                  raise Refusal("lock")
+              fd = os.open(LOCK, os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_WRONLY, 384)
+              try:
+                  info = os.fstat(fd)
+                  if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0:
+                      raise Refusal("lock")
+                  os.fchmod(fd, 384)
+                  fcntl.flock(fd, fcntl.LOCK_EX)
+                  yield
+              finally:
+                  os.close(fd)
+
+
+          def command(program, *args):
+              try:
+                  return subprocess.run(
+                      [program, *map(str, args)],
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.DEVNULL,
+                      timeout=35,
+                      check=False,
+                  )
+              except (OSError, subprocess.TimeoutExpired):
+                  raise Refusal("command")
+
+
+          def service(*args):
+              return command("/usr/bin/systemctl", *args, "caddy").returncode == 0
+
+
+          def digest(data):
+              return hashlib.sha256(data).hexdigest()[:32]
+
+
+          def exists(path):
+              return path.exists() or path.is_symlink()
+
+
+          def remove(path):
+              if path.is_symlink() or path.is_file():
+                  path.unlink()
+              elif path.is_dir():
+                  shutil.rmtree(path)
+              elif exists(path):
+                  raise Refusal("filesystem")
+
+
+          def directory(path, mode, gid):
+              path.mkdir(mode=mode, parents=True, exist_ok=True)
+              if not stat.S_ISDIR(path.lstat().st_mode):
+                  raise Refusal("write")
+              os.chown(path, 0, 0 if mode == 448 else gid)
+              path.chmod(mode)
+
+
+          def reserve_backup():
+              backups = ROOT / "orbit-backups"
+              directory(backups, 448, 0)
+              stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+              for n in range(1, 101):
+                  path = backups / (stamp if n == 1 else stamp + "-" + str(n))
+                  try:
+                      path.mkdir(mode=448)
+                      return path
+                  except FileExistsError:
+                      pass
+              raise Refusal("backup")
+
+
+          def backup(source, whole=False):
+              target = reserve_backup() / (source.name if whole else "Caddyfile")
+              if command("/usr/bin/cp", "-a", "--", source, target).returncode != 0:
+                  raise Refusal("backup")
+
+
+          def digest_matches(path):
+              if (
+                  not re.fullmatch("[a-f0-9]{32}", path.name)
+                  or not (path / "Caddyfile").is_file()
+              ):
+                  return True
+              return digest((path / "Caddyfile").read_bytes()) == path.name
+
+
+          def package_default(path):
+              result = command("/usr/bin/dpkg-query", "-W", "-f=$" + "{Conffiles}\n", "caddy")
+              if result.returncode != 0:
+                  return False
+              expected = next(
+                  (
+                      parts[1]
+                      for line in result.stdout.decode().splitlines()
+                      if len((parts := line.split())) >= 2 and parts[0] == str(path)
+                  ),
+                  None,
+              )
+              return (
+                  expected is not None and hashlib.md5(path.read_bytes()).hexdigest() == expected
+              )
+
+
+          def backup_live(live):
+              if live.is_symlink():
+                  try:
+                      target = live.resolve(strict=True)
+                  except (OSError, RuntimeError):
+                      return
+                  if not target.is_file():
+                      return
+                  managed = target.read_bytes().splitlines()[:1] == [MARKER.encode()]
+                  parent = target.parent
+                  if target.is_relative_to(ROOT / "orbit-versions") and (
+                      not managed
+                      and (parent / "fragments").is_dir()
+                      or (managed and (not digest_matches(parent)))
+                  ):
+                      backup(parent, True)
+                  elif not managed:
+                      backup(target)
+              elif (
+                  live.is_file()
+                  and live.read_bytes().splitlines()[:1] != [MARKER.encode()]
+                  and (not package_default(live))
+              ):
+                  backup(live)
+
+
+          def prune(published):
+              entries = [
+                  p
+                  for p in published.parent.iterdir()
+                  if p != published
+                  and (not p.name.startswith("."))
+                  and (p / "Caddyfile").is_file()
+              ]
+              entries.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)
+              for path in entries[9:]:
+                  try:
+                      if not digest_matches(path):
+                          backup(path, True)
+                      remove(path)
+                  except (OSError, Refusal):
+                      pass
+
+
+          def validate(path):
+              result = command(
+                  "/usr/sbin/runuser",
+                  "-u",
+                  "caddy",
+                  "--",
+                  "/usr/bin/caddy",
+                  "validate",
+                  "--config",
+                  path,
+                  "--adapter",
+                  "caddyfile",
+              )
+              if result.returncode != 0:
+                  raise Refusal("validate")
+
+
+          def publish(value):
+              content, version = (value["content"].encode(), value["version"])
+              if (
+                  len(content) > LIMIT
+                  or content.splitlines()[:1] != [MARKER.encode()]
+                  or digest(content) != version
+              ):
+                  raise Refusal("input")
+              live = ROOT / "Caddyfile"
+              if (
+                  value["unserved"]
+                  and (not Path("/usr/bin/caddy").exists())
+                  and (not service("is-active", "--quiet"))
+              ):
+                  if exists(live) and (not live.is_file() or live.read_bytes() != content):
+                      live.rename(reserve_backup() / "Caddyfile")
+                  return {"result": "unchanged"}
+              release = command("/usr/bin/caddy", "version")
+              match = re.match("v?(\\d+)\\.(\\d+)\\.(\\d+)(?:[-+\\s]|$)", release.stdout.decode())
+              if (
+                  release.returncode != 0
+                  or not match
+                  or tuple(map(int, match.groups())) < (2, 9, 0)
+              ):
+                  raise Refusal("release")
+              addresses = command("/usr/sbin/ip", "-o", "-4", "addr", "show")
+              if addresses.returncode != 0:
+                  raise Refusal("addresses")
+              present = {
+                  line.split()[3].split("/")[0]
+                  for line in addresses.stdout.decode().splitlines()
+                  if len(line.split()) > 3
+              }
+              if any(
+                  (
+                      str(ipaddress.IPv4Address(a)) not in present
+                      for a in value["listen_addresses"]
+                  )
+              ):
+                  raise Refusal("addresses")
+              versions = ROOT / "orbit-versions"
+              published = versions / version
+              if (
+                  live.is_symlink()
+                  and live.resolve() == published / "Caddyfile"
+                  and (live.read_bytes() == content)
+              ):
+                  return {"result": "unchanged"}
+              gid = grp.getgrnam("caddy").gr_gid
+              candidate, replaced = (
+                  versions / ("." + version + ".candidate"),
+                  versions / ("." + version + ".replaced"),
+              )
+              link, previous = (
+                  ROOT / (".Caddyfile.orbit-build-" + version),
+                  ROOT / (".Caddyfile.orbit-previous-" + version),
+              )
+              restore_failed = False
+              try:
+                  directory(versions, 488, gid)
+                  remove(candidate)
+                  directory(candidate, 488, gid)
+                  path = candidate / "Caddyfile"
+                  fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 416)
+                  with os.fdopen(fd, "wb") as file:
+                      file.write(content)
+                      file.flush()
+                      os.fchown(file.fileno(), 0, gid)
+                      os.fchmod(file.fileno(), 416)
+                  validate(path)
+                  backup_live(live)
+                  for path in [link, previous, replaced]:
+                      remove(path)
+                  had_live, had_published = (exists(live), exists(published))
+                  previous_target = os.readlink(live) if live.is_symlink() else None
+                  if had_live and previous_target is None:
+                      shutil.copy2(live, previous)
+                  if had_published:
+                      published.rename(replaced)
+                  try:
+                      candidate.rename(published)
+                      link.symlink_to(published / "Caddyfile")
+                      link.replace(live)
+                      if not service("enable", "--quiet") or not service("reload-or-restart"):
+                          raise Refusal("reload")
+                  except (OSError, Refusal):
+                      try:
+                          remove(published)
+                          if had_published:
+                              replaced.rename(published)
+                          remove(link)
+                          if previous_target is not None:
+                              link.symlink_to(previous_target)
+                              link.replace(live)
+                          elif had_live:
+                              previous.replace(live)
+                          else:
+                              remove(live)
+                      except OSError:
+                          restore_failed = True
+                          raise Refusal("restore")
+                      if had_live:
+                          service("reload" if service("is-active", "--quiet") else "start")
+                      raise Refusal("reload")
+                  remove(replaced)
+                  prune(published)
+                  return {"result": "published"}
+              finally:
+                  for path in [candidate, link] + ([] if restore_failed else [previous]):
+                      try:
+                          remove(path)
+                      except OSError:
+                          pass
+
+
+          try:
+              if intent["payloads"]["caddy"] == {
+                  "error_code": "caddy.render_failed",
+                  "stage": "render",
+              }:
+                  output = {"ok": False, "error_code": "caddy.render_failed", "stage": "render"}
+              else:
+                  with publication_lock():
+                      output = publish(intent["payloads"]["caddy"])
+                  output["ok"] = True
+          except Refusal as error:
+              output = {
+                  "ok": error.stage == "validate",
+                  "error_code": "caddy.publication_invalid"
+                  if error.stage == "input"
+                  else "caddy.publication_failed",
+                  "stage": error.stage,
+              }
+          except Exception:
+              output = {"ok": False, "error_code": "caddy.publication_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: caddy_ready
     dependsOn:
-      - {job: caddy_job, condition: {type: succeeded}}
-    steps:
-      - {name: peer_dns_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: peer-dns}}}
-      - {name: peer_dns, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: peer_dns_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: peer-dns, binary_changed: false, cancellation: '${{ steps.peer_dns_cancellation.outputs }}'}}}
-      - {name: peer_dns_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: peer_dns, condition: {type: succeeded}}], task: {type: assert, expr: steps.peer_dns.outputs.ok, severity: high, message: The peer-dns stage refused its admitted footprint}}
-  - name: private_dns_job
+    - step: caddy
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "caddy" && a.required) }}
+        names:
+        - caddy
+        steps: ${{ steps }}
+    writes: true
+- name: peer_dns_job
+  dependsOn:
+  - job: caddy_job
+    condition:
+      type: succeeded
+  steps:
+  - name: peer_dns
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "peer-dns" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-peer_dns" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import fcntl
+          import hashlib
+          import ipaddress
+          import json
+          import os
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          WG = "/etc/wireguard"
+          LOCK = "/run/lock/orbit-wireguard-peer.lock"
+          ROOT_UID = 0
+          SERVICE = "wg-quick@orbit"
+          TOOLS = {
+              "wg": "/usr/bin/wg",
+              "wg-quick": "/usr/bin/wg-quick",
+              "systemctl": "/usr/bin/systemctl",
+              "resolvectl": "/usr/bin/resolvectl",
+              "networkctl": "/usr/bin/networkctl",
+              "ufw": "/usr/sbin/ufw",
+              "sysctl": "/usr/sbin/sysctl",
+          }
+
+
+          class Refusal(Exception):
+              pass
+
+
+          class Uncertain(Exception):
+              pass
+
+
+          def refuse(code):
+              raise Refusal(code)
+
+
+          def command(name, args=(), data=None, check=True):
+              try:
+                  r = subprocess.run(
+                      [TOOLS[name], *args],
+                      input=data,
+                      text=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.DEVNULL,
+                      timeout=30,
+                  )
+              except Exception:
+                  raise Uncertain()
+              if len(r.stdout) > 1024 * 1024:
+                  raise Uncertain()
+              if check and r.returncode:
+                  raise Uncertain()
+              return r
+
+
+          def read(name, optional=False):
+              p = WG + "/" + name
+              try:
+                  s = os.lstat(p)
+              except FileNotFoundError:
+                  if optional:
+                      return None
+                  raise Uncertain()
+              if not stat.S_ISREG(s.st_mode) or s.st_uid != ROOT_UID or s.st_mode & 63:
+                  raise Uncertain()
+              with open(p, "rb") as f:
+                  b = f.read(1024 * 1024 + 1)
+              if len(b) > 1024 * 1024:
+                  raise Uncertain()
+              return b.decode()
+
+
+          def write(name, value):
+              p = WG + "/" + name
+              if os.path.lexists(p):
+                  s = os.lstat(p)
+                  if not stat.S_ISREG(s.st_mode) or s.st_uid != ROOT_UID or s.st_mode & 63:
+                      raise Uncertain()
+              fd, temp = tempfile.mkstemp(prefix=".orbit-native-", dir=WG)
+              try:
+                  os.fchmod(fd, 384)
+                  with os.fdopen(fd, "w") as f:
+                      f.write(value)
+                      f.flush()
+                      os.fsync(f.fileno())
+                  os.replace(temp, p)
+              finally:
+                  if os.path.exists(temp):
+                      os.unlink(temp)
+
+
+          def remove(name):
+              if read(name, True) is not None:
+                  os.unlink(WG + "/" + name)
+
+
+          def state():
+              return {
+                  "active": command(
+                      "systemctl", ["is-active", "--quiet", SERVICE], check=False
+                  ).returncode
+                  == 0,
+                  "enabled": command(
+                      "systemctl", ["is-enabled", SERVICE], check=False
+                  ).stdout.strip(),
+              }
+
+
+          def set_state(saved):
+              for args in [
+                  ["unmask", SERVICE],
+                  ["unmask", "--runtime", SERVICE],
+                  ["disable", SERVICE],
+                  ["disable", "--runtime", SERVICE],
+              ]:
+                  command("systemctl", args)
+              if saved["enabled"] in ["enabled", "enabled-runtime"]:
+                  command(
+                      "systemctl",
+                      ["enable"]
+                      + (["--runtime"] if saved["enabled"] == "enabled-runtime" else [])
+                      + [SERVICE],
+                  )
+              command("systemctl", ["restart" if saved["active"] else "stop", SERVICE])
+              if saved["enabled"] in ["masked", "masked-runtime"]:
+                  command(
+                      "systemctl",
+                      ["mask"]
+                      + (["--runtime"] if saved["enabled"] == "masked-runtime" else [])
+                      + [SERVICE],
+                  )
+
+
+          def capture_resolver(link):
+              if not re.fullmatch("[A-Za-z0-9_.:+-]+", link):
+                  raise Uncertain()
+              result = {}
+              for key in [
+                  "dns",
+                  "domain",
+                  "default-route",
+                  "llmnr",
+                  "mdns",
+                  "dnssec",
+                  "dnsovertls",
+                  "nta",
+              ]:
+                  value = command("resolvectl", [key, link]).stdout
+                  result[key] = value.split(":", 1)[-1].strip()
+              return result
+
+
+          def apply_resolver(link, settings):
+              for key, value in settings.items():
+                  command("resolvectl", [key, link, *value.split()] if value else [key, link, ""])
+
+
+          def dns_state():
+              text = read("orbit.dns-link", True)
+              if text is None:
+                  return None
+              fields = text.splitlines()
+              if len(fields) < 3 or not re.fullmatch("[A-Za-z0-9_.:+-]+", fields[0]):
+                  raise Uncertain()
+              return {"link": fields[0], "server": fields[1], "domains": fields[2:]}
+
+
+          def snapshot(owner):
+              resolver = dns_state()
+              return {
+                  "owner": owner,
+                  "config": read("orbit.conf", True),
+                  "dns_file": read("orbit.dns-link", True),
+                  "state": state(),
+                  "resolver": resolver,
+                  "resolver_settings": capture_resolver(resolver["link"]) if resolver else None,
+                  "orbit_settings": capture_resolver("orbit") if state()["active"] else None,
+              }
+
+
+          def restore(saved):
+              command("systemctl", ["stop", SERVICE])
+              for key, name in [("config", "orbit.conf"), ("dns_file", "orbit.dns-link")]:
+                  if saved[key] is None:
+                      remove(name)
+                  else:
+                      write(name, saved[key])
+              set_state(saved["state"])
+              if saved.get("resolver"):
+                  apply_resolver(saved["resolver"]["link"], saved["resolver_settings"])
+              if saved.get("orbit_settings"):
+                  apply_resolver("orbit", saved["orbit_settings"])
+              remove(".orbit.native-network-transaction")
+
+
+          def transaction(owner):
+              existing = read(".orbit.native-network-transaction", True)
+              if existing is not None:
+                  saved = json.loads(existing)
+                  if saved.get("owner") != owner:
+                      refuse("wireguard.peer_recovery_pending")
+                  return (saved, True)
+              saved = snapshot(owner)
+              write(".orbit.native-network-transaction", json.dumps(saved, separators=(",", ":")))
+              return (saved, False)
+
+
+          def key():
+              private = read("orbit.key")
+              public = command("wg", ["pubkey"], private).stdout.strip()
+              if not re.fullmatch("[A-Za-z0-9+/]{43}=", public):
+                  raise Uncertain()
+              return (private, public)
+
+
+          def uplink(private, previous):
+              text = command("resolvectl", ["dns"]).stdout
+              for line in text.splitlines():
+                  if not re.match("^(Global|Link [0-9]+ \\([^)]+\\)):", line) or re.match(
+                      "^Link [0-9]+ \\(orbit\\):", line
+                  ):
+                      continue
+                  for value in line.split(":", 1)[-1].split():
+                      value = re.split("[%#]", value)[0]
+                      try:
+                          ip = ipaddress.ip_address(value)
+                      except ValueError:
+                          continue
+                      if (
+                          not ip.is_loopback
+                          and (not ip.is_unspecified)
+                          and (value not in [private, previous])
+                      ):
+                          return True
+              return False
+
+
+          def hook(server, domains):
+              return (
+                  "PostUp = resolvectl dns %i "
+                  + server
+                  + "; resolvectl domain %i "
+                  + " ".join(("\\~" + domain for domain in domains))
+              )
+
+
+          def apply_dns(server, domains, old):
+              command("resolvectl", ["dns", "orbit", server])
+              command("resolvectl", ["domain", "orbit", *["~" + domain for domain in domains]])
+              command("resolvectl", ["default-route", "orbit", "no"])
+              if old and old["link"] != "orbit":
+                  for name in ["dns", "domain"]:
+                      command("resolvectl", [name, old["link"], ""])
+                  command("resolvectl", ["default-route", old["link"], "yes"])
+                  command("networkctl", ["reconfigure", old["link"]])
+                  if not uplink(server, old["server"]):
+                      raise Uncertain()
+              write("orbit.dns-link", "orbit\n" + server + "\n" + "\n".join(domains) + "\n")
+
+
+          def repair_dns(data):
+              if (
+                  not state()["active"]
+                  or command("wg", ["show", "orbit", "public-key"]).stdout.strip()
+                  != data["public_key"]
+              ):
+                  refuse("wireguard.peer_dns_state_unsupported")
+              old = dns_state()
+              if old is None:
+                  refuse("wireguard.peer_dns_state_unsupported")
+              if old["link"] == "orbit" and (not uplink(data["dns_server"], old["server"])):
+                  refuse("wireguard.peer_dns_uplink_missing")
+              owner = (
+                  "dns-"
+                  + hashlib.sha256(
+                      json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+                  ).hexdigest()
+              )
+              saved, resumed = transaction(owner)
+              if resumed:
+                  restore(saved)
+                  saved, _ = transaction(owner)
+              config = read("orbit.conf")
+              lines = config.splitlines()
+              hooks = [
+                  i
+                  for i, line in enumerate(lines)
+                  if re.match("^PostUp\\s*=\\s*resolvectl dns %i ", line)
+              ]
+              if len(hooks) > 1:
+                  refuse("wireguard.peer_dns_state_unsupported")
+              if hooks:
+                  lines[hooks[0]] = hook(data["dns_server"], data["domains"])
+              elif lines.count("[Interface]") == 1:
+                  lines.insert(
+                      lines.index("[Interface]") + 1, hook(data["dns_server"], data["domains"])
+                  )
+              else:
+                  refuse("wireguard.peer_dns_state_unsupported")
+              try:
+                  candidate = "\n".join(lines) + "\n"
+                  write("orbit-candidate.conf", candidate)
+                  if command(
+                      "wg-quick", ["strip", WG + "/orbit-candidate.conf"], check=False
+                  ).returncode:
+                      raise Uncertain()
+                  write("orbit.conf", candidate)
+                  apply_dns(data["dns_server"], data["domains"], old)
+                  remove(".orbit.native-network-transaction")
+                  return {}
+              except Exception:
+                  try:
+                      restore(saved)
+                  except Exception:
+                      raise Uncertain()
+                  refuse("wireguard.peer_dns_apply_failed")
+              finally:
+                  remove("orbit-candidate.conf")
+
+
+          def main():
+              if os.geteuid() != ROOT_UID:
+                  raise Uncertain()
+              if not os.path.exists(WG):
+                  os.mkdir(WG, 448)
+              s = os.lstat(WG)
+              if not stat.S_ISDIR(s.st_mode) or s.st_uid != ROOT_UID or s.st_mode & 63:
+                  raise Uncertain()
+              if any(
+                  (
+                      os.path.lexists(WG + "/" + name)
+                      for name in [
+                          ".orbit.peer-transaction",
+                          ".orbit.conf.rollback",
+                          ".orbit.dns-link.rollback",
+                      ]
+                  )
+              ):
+                  refuse("wireguard.peer_recovery_pending")
+              parent = os.lstat(os.path.dirname(LOCK))
+              if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != ROOT_UID:
+                  raise Uncertain()
+              if parent.st_mode & 18 and (
+                  not (os.path.dirname(LOCK) == "/run/lock" and parent.st_mode & stat.S_ISVTX)
+              ):
+                  raise Uncertain()
+              fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 384)
+              try:
+                  locked = os.fstat(fd)
+                  if (
+                      not stat.S_ISREG(locked.st_mode)
+                      or locked.st_uid != ROOT_UID
+                      or stat.S_IMODE(locked.st_mode) != 384
+                  ):
+                      raise Uncertain()
+                  fcntl.flock(fd, fcntl.LOCK_EX)
+                  return repair_dns(intent["network"]["peer_dns"])
+              finally:
+                  os.close(fd)
+
+
+          try:
+              output = main()
+              output.update(ok=True, changed=True)
+          except Refusal as error:
+              output = {"ok": False, "error_code": str(error)}
+          except Exception:
+              output = {"ok": False, "error_code": "node.footprint_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: peer_dns_ready
     dependsOn:
-      - {job: peer_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: private_dns_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: private-dns}}}
-      - {name: private_dns, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: private_dns_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: private-dns, binary_changed: false, cancellation: '${{ steps.private_dns_cancellation.outputs }}'}}}
-      - {name: private_dns_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: private_dns, condition: {type: succeeded}}], task: {type: assert, expr: steps.private_dns.outputs.ok, severity: high, message: The private-dns stage refused its admitted footprint}}
-  - name: route_residue_job
+    - step: peer_dns
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "peer-dns" && a.required) }}
+        names:
+        - peer_dns
+        steps: ${{ steps }}
+    writes: true
+- name: dns_listener_job
+  dependsOn:
+  - job: peer_dns_job
+    condition:
+      type: succeeded
+  steps:
+  - name: dns_listener
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "private-dns" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-dns_listener" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import hashlib
+          import ipaddress
+          import json
+          import os
+          import shutil
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          ROOT = Path("/var/lib/orbit/private-dns/releases")
+          SERVICE = Path("/etc/systemd/system/orbit-private-dns.service")
+          SOCKET = Path("/etc/systemd/system/orbit-private-dns.socket")
+          TMPFILES = Path("/etc/tmpfiles.d/orbit.conf")
+          UID, GID = (0, 0)
+
+
+          class Invalid(Exception):
+              pass
+
+
+          def current(path, data):
+              try:
+                  m = path.lstat()
+                  return (
+                      stat.S_ISREG(m.st_mode)
+                      and (m.st_uid, m.st_gid, m.st_mode & 4095) == (UID, GID, 420)
+                      and (path.read_bytes() == data)
+                  )
+              except FileNotFoundError:
+                  return False
+
+
+          def replace(path, data, mode=420):
+              fd, candidate = tempfile.mkstemp(prefix=".orbit-footprint-", dir=path.parent)
+              try:
+                  with os.fdopen(fd, "wb") as stream:
+                      stream.write(data)
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                      os.fchmod(stream.fileno(), mode)
+                      os.fchown(stream.fileno(), UID, GID)
+                  os.replace(candidate, path)
+              finally:
+                  if os.path.exists(candidate):
+                      os.unlink(candidate)
+
+
+          def directory(path):
+              if path == path.parent:
+                  return
+              directory(path.parent)
+              try:
+                  m = path.lstat()
+              except FileNotFoundError:
+                  path.mkdir(mode=493)
+                  os.chown(path, UID, GID)
+                  return
+              if not stat.S_ISDIR(m.st_mode) or (m.st_uid, m.st_gid) != (UID, GID):
+                  raise Invalid()
+
+
+          def command(*args):
+              return (
+                  subprocess.run(
+                      args,
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      check=False,
+                  ).returncode
+                  == 0
+              )
+
+
+          def units(release, address):
+              service = (
+                  "[Unit]\nDescription=Orbit private DNS\nAfter=network-online.target wg-quick@orbit.service dnsmasq.service orbit-private-dns.socket\nWants=network-online.target\nRequires=orbit-private-dns.socket\n\n[Service]\nType=simple\nUser=root\nWorkingDirectory="
+                  + release
+                  + '\nExecStart="/usr/bin/php8.5" "'
+                  + release
+                  + '/serve.php" "--listen='
+                  + address
+                  + '" "--port=53" "--catalog=/var/lib/orbit/private-dns/catalog.json" "--upstream=127.0.0.55:53"\nSockets=orbit-private-dns.socket\nKillSignal=SIGTERM\nTimeoutStopSec=5\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n'
+              )
+              socket = (
+                  "[Unit]\nDescription=Orbit private DNS sockets\n\n[Socket]\nListenDatagram="
+                  + address
+                  + ":53\nListenStream="
+                  + address
+                  + ":53\nFreeBind=yes\nService=orbit-private-dns.service\n\n[Install]\nWantedBy=sockets.target\n"
+              )
+              return (service, socket)
+
+
+          def validate(payload):
+              if not isinstance(payload, dict) or set(payload) != {
+                  "release_id",
+                  "files",
+                  "service",
+                  "socket",
+              }:
+                  raise Invalid()
+              rid, files = (payload["release_id"], payload["files"])
+              if (
+                  not isinstance(rid, str)
+                  or len(rid) != 16
+                  or any((c not in "0123456789abcdef" for c in rid))
+                  or (not isinstance(files, list))
+                  or (not 1 <= len(files) <= 128)
+              ):
+                  raise Invalid()
+              identity, manifest, previous, total = ("", "", "", 0)
+              entry = False
+              for f in files:
+                  if not isinstance(f, dict) or set(f) != {"path", "contents", "sha256"}:
+                      raise Invalid()
+                  path, data, digest = (f["path"], f["contents"], f["sha256"])
+                  if not all((isinstance(x, str) for x in (path, data, digest))):
+                      raise Invalid()
+                  total += len(data.encode())
+                  if (
+                      total > 3 * 1024 * 1024
+                      or path <= previous
+                      or "\x00" in path
+                      or (not (path == "serve.php" or path.startswith("app/")))
+                      or (not path.endswith(".php"))
+                      or any((p in ("", "..", ".") for p in path.split("/")))
+                      or (hashlib.sha256(data.encode()).hexdigest() != digest)
+                  ):
+                      raise Invalid()
+                  previous = path
+                  entry |= path == "serve.php"
+                  identity += path + "\x00" + digest + "\n"
+                  manifest += digest + "  " + path + "\n"
+              if not entry or hashlib.sha256(identity.encode()).hexdigest()[:16] != rid:
+                  raise Invalid()
+              try:
+                  address = next(
+                      (
+                          input_line[len("ListenDatagram=") : -3]
+                          for input_line in payload["socket"].splitlines()
+                          if input_line.startswith("ListenDatagram=")
+                          and input_line.endswith(":53")
+                      )
+                  )
+                  address = str(ipaddress.IPv4Address(address))
+              except (ValueError, StopIteration, AttributeError):
+                  raise Invalid()
+              if units("/var/lib/orbit/private-dns/releases/" + rid, address) != (
+                  payload["service"],
+                  payload["socket"],
+              ):
+                  raise Invalid()
+              return manifest.encode()
+
+
+          def previous(path, marker):
+              try:
+                  m = path.lstat()
+              except FileNotFoundError:
+                  return None
+              if not stat.S_ISREG(m.st_mode) or (m.st_uid, m.st_gid) != (UID, GID):
+                  raise Invalid()
+              data = path.read_bytes()
+              if not data.startswith(marker):
+                  raise Invalid()
+              return (data, m.st_mode & 4095)
+
+
+          def restore(path, before):
+              try:
+                  if before is None:
+                      path.unlink(missing_ok=True)
+                  else:
+                      replace(path, *before)
+                  return True
+              except OSError:
+                  return False
+
+
+          def listener(payload):
+              manifest = validate(payload)
+              old_service = previous(SERVICE, b"[Unit]\nDescription=Orbit private DNS\n")
+              old_socket = previous(SOCKET, b"[Unit]\nDescription=Orbit private DNS sockets\n")
+              directory(ROOT)
+              directory(SERVICE.parent)
+              release = ROOT / payload["release_id"]
+              try:
+                  m = release.lstat()
+                  if not stat.S_ISDIR(m.st_mode) or m.st_uid != UID:
+                      raise Invalid()
+              except FileNotFoundError:
+                  pass
+              release_changed = not current(release / ".manifest", manifest) or any(
+                  (
+                      not current(release / f["path"], f["contents"].encode())
+                      for f in payload["files"]
+                  )
+              )
+              changed = (
+                  release_changed
+                  or not current(SERVICE, payload["service"].encode())
+                  or (not current(SOCKET, payload["socket"].encode()))
+              )
+              staged = Path(tempfile.mkdtemp(prefix="." + payload["release_id"] + "-", dir=ROOT))
+              os.chown(staged, UID, GID)
+              backup = ROOT / (staged.name + "-previous")
+              try:
+                  for f in payload["files"]:
+                      path = staged / f["path"]
+                      directory(path.parent)
+                      replace(path, f["contents"].encode())
+                  replace(staged / ".manifest", manifest)
+                  staged_service, staged_socket = (staged / SERVICE.name, staged / SOCKET.name)
+                  replace(staged_service, payload["service"].encode())
+                  replace(staged_socket, payload["socket"].encode())
+                  if not command(
+                      "/usr/bin/php8.5", str(staged / "serve.php"), "--self-test"
+                  ) or not command(
+                      "systemd-analyze", "verify", str(staged_socket), str(staged_service)
+                  ):
+                      raise RuntimeError()
+                  if not changed:
+                      return {"installed": True, "changed": False}
+                  active = command("systemctl", "is-active", "--quiet", SERVICE.name)
+                  staged_service.unlink()
+                  staged_socket.unlink()
+                  if release_changed:
+                      if release.exists():
+                          release.rename(backup)
+                      try:
+                          staged.rename(release)
+                      except OSError:
+                          if backup.exists():
+                              backup.rename(release)
+                          raise
+                  try:
+                      replace(SERVICE, payload["service"].encode())
+                      replace(SOCKET, payload["socket"].encode())
+                      if not command("systemctl", "daemon-reload") or (
+                          active and (not command("systemctl", "restart", SERVICE.name))
+                      ):
+                          raise RuntimeError()
+                  except Exception:
+                      restored = restore(SERVICE, old_service) & restore(SOCKET, old_socket)
+                      if backup.exists():
+                          shutil.rmtree(release)
+                          backup.rename(release)
+                      restored = command("systemctl", "daemon-reload") and restored
+                      restored = (
+                          not active or command("systemctl", "restart", SERVICE.name)
+                      ) and restored
+                      raise RuntimeError()
+                  if backup.exists():
+                      shutil.rmtree(backup)
+                  return {"installed": True, "changed": True}
+              finally:
+                  if staged.exists():
+                      shutil.rmtree(staged)
+
+
+          try:
+              output = listener(intent["payloads"]["private-dns"]["listener"])
+              output["ok"] = "error_code" not in output
+          except Exception:
+              output = {"ok": False, "error_code": "node.private_dns_listener_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: dns_listener_ready
     dependsOn:
-      - {job: private_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: route_residue_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: route-residue}}}
-      - {name: route_residue, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: route_residue_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: route-residue, binary_changed: false, cancellation: '${{ steps.route_residue_cancellation.outputs }}'}}}
-      - {name: route_residue_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: route_residue, condition: {type: succeeded}}], task: {type: assert, expr: steps.route_residue.outputs.ok, severity: high, message: The route-residue stage refused its admitted footprint}}
-  - name: php_runtime_job
+    - step: dns_listener
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "private-dns" && a.required) }}
+        names:
+        - dns_listener
+        steps: ${{ steps }}
+    writes: true
+- name: dns_publish_job
+  dependsOn:
+  - job: dns_listener_job
+    condition:
+      type: succeeded
+  steps:
+  - name: dns_publish
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "private-dns" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-dns_publish" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import fcntl
+          import hashlib
+          import json
+          import os
+          import shutil
+          import socket
+          import struct
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          RECORDS_DIRECTORY = Path("/etc/dnsmasq.d")
+          RECORDS = RECORDS_DIRECTORY / "orbit-records.conf"
+          CONFIGURATION = Path("/etc/dnsmasq.conf")
+          CATALOG = Path("/var/lib/orbit/private-dns/catalog.json")
+          LOCK = Path("/run/lock/orbit-dnsmasq.lock")
+          LISTENER = "orbit-private-dns.service"
+          SOCKET = "orbit-private-dns.socket"
+          SOCKET_UNIT = Path("/etc/systemd/system") / SOCKET
+
+
+          def command(*args):
+              return (
+                  subprocess.run(
+                      args,
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      check=False,
+                  ).returncode
+                  == 0
+              )
+
+
+          def active(unit):
+              return command("systemctl", "is-active", "--quiet", unit)
+
+
+          def answers():
+              endpoint = next(
+                  (
+                      line.split("=", 1)[1]
+                      for line in SOCKET_UNIT.read_text().splitlines()
+                      if line.startswith("ListenDatagram=")
+                  ),
+                  "",
+              )
+              address, port = endpoint.rsplit(":", 1)
+              transaction = os.urandom(2)
+              query = transaction + struct.pack("!HHHHH", 256, 1, 0, 0, 0)
+              query += b"\x0borbit-probe\x07invalid\x00" + struct.pack("!HH", 1, 1)
+              with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+                  client.settimeout(1)
+                  client.connect((address, int(port)))
+                  client.send(query)
+                  response = client.recv(4096)
+              return (
+                  len(response) >= 12 and response[:2] == transaction and bool(response[2] & 128)
+              )
+
+
+          def replace(path, contents, mode=420):
+              fd, temporary = tempfile.mkstemp(prefix=".orbit-dns-", dir=path.parent)
+              try:
+                  with os.fdopen(fd, "wb") as output:
+                      output.write(contents)
+                      output.flush()
+                      os.fsync(output.fileno())
+                      os.fchmod(output.fileno(), mode)
+                  os.replace(temporary, path)
+              finally:
+                  if os.path.exists(temporary):
+                      os.unlink(temporary)
+
+
+          def snapshot(path):
+              if path.is_symlink():
+                  raise ValueError("Managed DNS data must be a regular file")
+              if not path.exists():
+                  return None
+              metadata = path.stat()
+              return (
+                  path.read_bytes(),
+                  metadata.st_mode & 4095,
+                  metadata.st_uid,
+                  metadata.st_gid,
+              )
+
+
+          def restore(path, previous):
+              if previous is None:
+                  path.unlink(missing_ok=True)
+              else:
+                  content, mode, uid, gid = previous
+                  replace(path, content, mode)
+                  os.chown(path, uid, gid)
+
+
+          def publish(payload):
+              records, catalog = (payload["records"].encode(), payload["catalog"].encode())
+              json.loads(catalog)
+              digest = hashlib.sha256(catalog).hexdigest()
+              old_records, old_catalog = (snapshot(RECORDS), snapshot(CATALOG))
+              was_backend, was_listener = (active("dnsmasq"), active(LISTENER))
+              was_socket = active(SOCKET)
+              was_enabled = command("systemctl", "is-enabled", "--quiet", SOCKET)
+              if not SOCKET_UNIT.is_file():
+                  return ("refused", {"error_code": "private_dns.listener_not_ready"})
+              with tempfile.TemporaryDirectory(
+                  prefix="orbit-dns-validate-", dir="/var/tmp"
+              ) as temporary:
+                  temporary = Path(temporary)
+                  fragments = temporary / "fragments"
+                  shutil.copytree(RECORDS_DIRECTORY, fragments)
+                  (fragments / RECORDS.name).write_bytes(records)
+                  configuration = temporary / "dnsmasq.conf"
+                  configuration.write_text(
+                      CONFIGURATION.read_text().replace(str(RECORDS_DIRECTORY), str(fragments))
+                  )
+                  if not command("dnsmasq", "--test", "--conf-file=" + str(configuration)):
+                      return ("refused", {"error_code": "private_dns.validation_failed"})
+                  changed_records = old_records is None or old_records[0] != records
+                  changed_catalog = old_catalog is None or old_catalog[0] != catalog
+                  changed = False
+                  try:
+                      if changed_records:
+                          replace(RECORDS, records)
+                          changed = True
+                      if changed_catalog:
+                          replace(CATALOG, catalog)
+                          changed = True
+                      if changed_records or not was_backend:
+                          if not command("systemctl", "restart", "dnsmasq"):
+                              raise RuntimeError("backend activation failed")
+                      if not was_socket:
+                          if not command("systemctl", "enable", SOCKET) or not command(
+                              "systemctl", "start", SOCKET
+                          ):
+                              raise RuntimeError("socket activation failed")
+                      confirmation = Path(str(CATALOG) + ".loaded")
+                      loaded = confirmation.read_text().strip() if confirmation.exists() else ""
+                      if loaded != digest or not was_listener:
+                          if not command("systemctl", "restart", LISTENER):
+                              raise RuntimeError("listener activation failed")
+                          if (
+                              not confirmation.is_file()
+                              or confirmation.read_text().strip() != digest
+                          ):
+                              raise RuntimeError("listener did not load the admitted catalog")
+                      if not active("dnsmasq") or not active(SOCKET) or (not active(LISTENER)):
+                          raise RuntimeError("DNS services are not active")
+                      if not answers():
+                          raise RuntimeError("listener did not answer")
+                      return ("published", {"ready": True, "digest": digest})
+                  except (OSError, RuntimeError, ValueError):
+                      try:
+                          if changed:
+                              restore(RECORDS, old_records)
+                              restore(CATALOG, old_catalog)
+                          backend = command(
+                              "systemctl", "restart" if was_backend else "stop", "dnsmasq"
+                          )
+                          listener = command(
+                              "systemctl", "restart" if was_listener else "stop", LISTENER
+                          )
+                          restored_socket = was_socket or command("systemctl", "stop", SOCKET)
+                          restored_enabled = was_enabled or command(
+                              "systemctl", "disable", SOCKET
+                          )
+                          if (
+                              not backend
+                              or not listener
+                              or (not restored_socket)
+                              or (not restored_enabled)
+                          ):
+                              return ("refused", {"error_code": "private_dns.recovery_failed"})
+                      except OSError:
+                          return ("refused", {"error_code": "private_dns.recovery_failed"})
+                      return ("refused", {"error_code": "private_dns.activation_failed"})
+
+
+          def main(payload):
+              if os.geteuid() != 0:
+                  return ("refused", {"error_code": "private_dns.root_required"})
+              try:
+                  with LOCK.open("a") as lock:
+                      fcntl.flock(lock, fcntl.LOCK_EX)
+                      return publish(payload)
+              except (OSError, ValueError, KeyError, TypeError):
+                  return ("refused", {"error_code": "private_dns.publication_failed"})
+
+
+          try:
+              state, output = main(intent["payloads"]["private-dns"]["publication"])
+              output["ok"] = state == "published"
+          except Exception:
+              output = {"ok": False, "error_code": "private_dns.publication_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: dns_publish_ready
     dependsOn:
-      - {job: route_residue_job, condition: {type: succeeded}}
-    steps:
-      - {name: php_runtime_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: php-runtime}}}
-      - {name: php_runtime, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: php_runtime_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: php-runtime, binary_changed: false, cancellation: '${{ steps.php_runtime_cancellation.outputs }}'}}}
-      - {name: php_runtime_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: php_runtime, condition: {type: succeeded}}], task: {type: assert, expr: steps.php_runtime.outputs.ok, severity: high, message: The php-runtime stage refused its admitted footprint}}
-  - name: tmpfiles_job
+    - step: dns_publish
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "private-dns" && a.required) }}
+        names:
+        - dns_publish
+        steps: ${{ steps }}
+    writes: true
+- name: dns_verify_job
+  dependsOn:
+  - job: dns_publish_job
+    condition:
+      type: succeeded
+  steps:
+  - name: dns_verify
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "private-dns" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-dns_verify" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import json
+          import os
+          import socket
+          import struct
+          import sys
+          from pathlib import Path
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          RECORDS_DIRECTORY = Path("/etc/dnsmasq.d")
+          RECORDS = RECORDS_DIRECTORY / "orbit-records.conf"
+          CONFIGURATION = Path("/etc/dnsmasq.conf")
+          CATALOG = Path("/var/lib/orbit/private-dns/catalog.json")
+          LOCK = Path("/run/lock/orbit-dnsmasq.lock")
+          LISTENER = "orbit-private-dns.service"
+          SOCKET = "orbit-private-dns.socket"
+          SOCKET_UNIT = Path("/etc/systemd/system") / SOCKET
+
+
+          def answers():
+              endpoint = next(
+                  (
+                      line.split("=", 1)[1]
+                      for line in SOCKET_UNIT.read_text().splitlines()
+                      if line.startswith("ListenDatagram=")
+                  ),
+                  "",
+              )
+              address, port = endpoint.rsplit(":", 1)
+              transaction = os.urandom(2)
+              query = transaction + struct.pack("!HHHHH", 256, 1, 0, 0, 0)
+              query += b"\x0borbit-probe\x07invalid\x00" + struct.pack("!HH", 1, 1)
+              with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+                  client.settimeout(1)
+                  client.connect((address, int(port)))
+                  client.send(query)
+                  response = client.recv(4096)
+              return (
+                  len(response) >= 12 and response[:2] == transaction and bool(response[2] & 128)
+              )
+
+
+          ready = answers()
+          print(
+              json.dumps(
+                  {"ok": True, "ready": True}
+                  if ready
+                  else {"ok": False, "error_code": "private_dns.listener_not_ready"},
+                  separators=(",", ":"),
+              )
+          )
+          ORBIT_PY
+  - name: dns_verify_ready
     dependsOn:
-      - {job: php_runtime_job, condition: {type: succeeded}}
-    steps:
-      - {name: tmpfiles_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: tmpfiles}}}
-      - {name: tmpfiles, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: tmpfiles_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: tmpfiles, binary_changed: false, cancellation: '${{ steps.tmpfiles_cancellation.outputs }}'}}}
-      - {name: tmpfiles_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: tmpfiles, condition: {type: succeeded}}], task: {type: assert, expr: steps.tmpfiles.outputs.ok, severity: high, message: The tmpfiles stage refused its admitted footprint}}
-  - name: agent_job
+    - step: dns_verify
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "private-dns" && a.required) }}
+        names:
+        - dns_verify
+        steps: ${{ steps }}
+    writes: true
+- name: residue_complete_job
+  dependsOn:
+  - job: dns_verify_job
+    condition:
+      type: succeeded
+  steps:
+  - name: residue_complete
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "route-residue" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-residue_complete" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          printf '%s\n' '{"ok":false,"error_code":"operation.kind_unavailable"}'
+          exit 1
+- name: php_runtime_job
+  dependsOn:
+  - job: residue_complete_job
+    condition:
+      type: succeeded
+  steps:
+  - name: php_runtime-${{ self.configuration.version }}
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "php-runtime" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-php_runtime" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" "${{ self.configuration.version }}" <<'ORBIT_PY'
+          import fcntl
+          import json
+          import os
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          ROOT = Path("/")
+          UID, GID = (0, 0)
+
+
+          def path(value):
+              return ROOT / value.lstrip("/")
+
+
+          class Refusal(Exception):
+              def __init__(self, code):
+                  self.code = code
+
+
+          def fail(code):
+              raise Refusal(code)
+
+
+          def version(v):
+              return isinstance(v, str) and re.fullmatch("[0-9]+\\.[0-9]+", v) is not None
+
+
+          def metadata(p, directory=False, required=False):
+              try:
+                  m = p.lstat()
+              except FileNotFoundError:
+                  if required:
+                      fail("php.shared_pool_unsafe")
+                  return None
+              if m.st_uid != UID or not (
+                  stat.S_ISDIR(m.st_mode) if directory else stat.S_ISREG(m.st_mode)
+              ):
+                  fail("php.shared_pool_unsafe")
+              return m
+
+
+          def parents(p):
+              if p == ROOT:
+                  return
+              parents(p.parent)
+              if not p.exists():
+                  p.mkdir(mode=493)
+                  os.chown(p, UID, GID)
+              metadata(p, True, True)
+
+
+          def publish(p, data, mode=420, uid=None, gid=None):
+              parents(p.parent)
+              fd, candidate = tempfile.mkstemp(prefix=".orbit-php-", dir=p.parent)
+              try:
+                  with os.fdopen(fd, "wb") as f:
+                      f.write(data.encode() if isinstance(data, str) else data)
+                      f.flush()
+                      os.fsync(f.fileno())
+                      os.fchmod(f.fileno(), mode)
+                      os.fchown(
+                          f.fileno(), UID if uid is None else uid, GID if gid is None else gid
+                      )
+                  os.replace(candidate, p)
+              finally:
+                  if os.path.exists(candidate):
+                      os.unlink(candidate)
+
+
+          def call(argv, required=True):
+              p = subprocess.run(
+                  argv,
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+                  timeout=60,
+              )
+              if required and p.returncode != 0:
+                  fail("php.shared_pool_failed")
+              return (p.returncode, p.stdout.decode(errors="replace"))
+
+
+          def size(v):
+              m = re.fullmatch("([0-9]+)([KMG]?)", v)
+              if not m:
+                  return None
+              n = int(m[1]) * {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}[m[2]]
+              return n if 0 < n <= 1024**3 else None
+
+
+          def settings(p):
+              if (
+                  not isinstance(p, dict)
+                  or set(p) != {"version", "runtime_ini", "release"}
+                  or (not version(p["version"]))
+                  or (not isinstance(p["runtime_ini"], str))
+                  or (len(p["runtime_ini"].encode()) > 8192)
+              ):
+                  fail("php.runtime_input_invalid")
+              r = p["release"]
+              if (
+                  not isinstance(r, dict)
+                  or set(r) != {"id", "codenames"}
+                  or (not isinstance(r["id"], str))
+                  or (not re.fullmatch("[a-z0-9][a-z0-9+.-]*", r["id"]))
+                  or (not isinstance(r["codenames"], list))
+                  or (not r["codenames"])
+                  or any(
+                      (
+                          not isinstance(c, str) or not re.fullmatch("[a-z0-9][a-z0-9+.-]*", c)
+                          for c in r["codenames"]
+                      )
+                  )
+              ):
+                  fail("php.runtime_input_invalid")
+              result = {}
+              for line in p["runtime_ini"].splitlines():
+                  line = line.strip()
+                  if not line or line.startswith(";"):
+                      continue
+                  if "=" not in line:
+                      fail("php.runtime_input_invalid")
+                  k, v = map(str.strip, line.split("=", 1))
+                  valid = (
+                      size(v) is not None
+                      if k in ("post_max_size", "upload_max_filesize")
+                      else v == "On"
+                      if k == "opcache.enable"
+                      else v == "disable"
+                      if k == "opcache.jit"
+                      else v == "0"
+                      if k == "opcache.jit_buffer_size"
+                      else bool(re.fullmatch("[0-9]+", v)) and 0 < int(v) <= 4294967295
+                      if k
+                      in (
+                          "opcache.memory_consumption",
+                          "opcache.interned_strings_buffer",
+                          "opcache.max_accelerated_files",
+                      )
+                      else False
+                  )
+                  if not valid or k in result:
+                      fail("php.runtime_input_invalid")
+                  result[k] = v
+              if len(result) != 8 or size(result["upload_max_filesize"]) > size(
+                  result["post_max_size"]
+              ):
+                  fail("php.runtime_input_invalid")
+              return result
+
+
+          def fpm_configuration(text):
+              has_global = any(
+                  (input_line.strip() == "[global]" for input_line in text.splitlines())
+              )
+              out = "" if has_global else "[global]\nprocess_control_timeout = 30s\n"
+              global_section = True
+              emitted = not has_global
+              for line in text.splitlines(keepends=True):
+                  trimmed = line.strip()
+                  if trimmed.startswith("["):
+                      global_section = trimmed == "[global]"
+                  if global_section and trimmed == "[global]" and (not emitted):
+                      out += line + "process_control_timeout = 30s\n"
+                      emitted = True
+                      continue
+                  if (
+                      global_section
+                      and "=" in trimmed
+                      and (trimmed.split("=", 1)[0].strip() == "process_control_timeout")
+                  ):
+                      continue
+                  out += line
+              return out
+
+
+          def fpm_units(v):
+              shared = "php" + v + "-fpm.service"
+              result = []
+              if call(["/usr/bin/systemctl", "is-active", "--quiet", shared], False)[0] == 0:
+                  result.append((shared, path("/etc/php/" + v + "/fpm/php-fpm.conf")))
+              listed = call(
+                  [
+                      "/usr/bin/systemctl",
+                      "list-units",
+                      "--type=service",
+                      "--state=active",
+                      "--no-legend",
+                      "--plain",
+                      "orbit-*-php" + v + "-fpm.service",
+                  ],
+                  False,
+              )[1]
+              for line in listed.splitlines():
+                  unit = line.split()[0] if line.split() else ""
+                  if not re.fullmatch(
+                      "orbit-[a-z0-9_-]+-php" + re.escape(v) + "-fpm\\.service", unit
+                  ):
+                      continue
+                  start = call(
+                      ["/usr/bin/systemctl", "show", "-p", "ExecStart", "--value", unit], False
+                  )[1]
+                  m = re.search("--fpm-config\\s+(\\S+)", start)
+                  result.append(
+                      (unit, path(m[1]) if m else path("/__missing_fpm_configuration__"))
+                  )
+              return result
+
+
+          def configure(p):
+              expected = settings(p)
+              release = {}
+              try:
+                  for line in path("/etc/os-release").read_text().splitlines():
+                      if "=" in line:
+                          k, v = line.split("=", 1)
+                          release[k] = v.strip("\"'")
+              except OSError:
+                  pass
+              if (
+                  release.get("ID") != p["release"]["id"]
+                  or release.get("VERSION_CODENAME") not in p["release"]["codenames"]
+              ):
+                  fail("php.runtime_platform_unsupported")
+              v = p["version"]
+              binary = str(path("/usr/sbin/php-fpm" + v))
+              if not Path(binary).exists():
+                  return {"changed": False, "reloaded": False}
+              available = path("/etc/php/" + v + "/mods-available/orbit-runtime.ini")
+              enabled = path("/etc/php/" + v + "/fpm/conf.d/99-orbit-runtime.ini")
+              shared = path("/etc/php/" + v + "/fpm/php-fpm.conf")
+              unit = "php" + v + "-fpm.service"
+              before_file = available.read_bytes() if available.exists() else None
+              before_link = None
+              if enabled.is_symlink():
+                  before_link = os.readlink(enabled)
+              elif enabled.exists():
+                  fail("php.runtime_configuration_failed")
+              metadata(shared, False, True)
+              before_shared = shared.read_text()
+              configuration = fpm_configuration(before_shared)
+              correct = enabled.exists() and enabled.resolve() == available.resolve()
+              changed = (
+                  before_file != p["runtime_ini"].encode()
+                  or not correct
+                  or configuration != before_shared
+              )
+              touched = False
+              masters = {}
+              reloaded = []
+              deferred = []
+              try:
+                  if changed:
+                      touched = True
+                      publish(available, p["runtime_ini"])
+                      publish(shared, configuration)
+                      if not correct:
+                          enabled.unlink(missing_ok=True)
+                          enabled.symlink_to("../../mods-available/orbit-runtime.ini")
+                  info = call([binary, "-i"])[1]
+                  if str(enabled) not in info or any(
+                      (
+                          k + " => " + val + " => " + val
+                          not in [line.strip() for line in info.splitlines()]
+                          for k, val in expected.items()
+                      )
+                  ):
+                      fail("php.runtime_configuration_failed")
+                  if changed:
+                      for name, configuration_path in fpm_units(v):
+                          if name != unit:
+                              metadata(configuration_path, False, True)
+                              previous = configuration_path.read_text()
+                              n = fpm_configuration(previous)
+                              if n != previous:
+                                  masters[configuration_path] = previous
+                                  publish(configuration_path, n)
+                          args = [binary, "-t"] + (
+                              [] if name == unit else ["--fpm-config", str(configuration_path)]
+                          )
+                          if call(args, False)[0] != 0:
+                              deferred.append(name)
+                              continue
+                          reloaded.append((name, args))
+                          call(["/usr/bin/systemctl", "reload", name])
+                  call(["/usr/bin/systemctl", "enable", unit])
+                  call([str(path("/usr/bin/php" + v)), "-v"])
+                  call([binary, "-v"])
+                  if "pcov" in [
+                      line.strip().lower() for line in call([binary, "-m"])[1].splitlines()
+                  ]:
+                      fail("php.runtime_configuration_failed")
+                  call(["/usr/bin/systemctl", "is-enabled", "--quiet", unit])
+                  return {"changed": changed, "reloaded": bool(reloaded), "deferred": deferred}
+              except Exception:
+                  restored = True
+                  if touched:
+                      for file, data in [
+                          (shared, before_shared),
+                          *masters.items(),
+                          (available, before_file),
+                      ]:
+                          try:
+                              if data is None:
+                                  file.unlink(missing_ok=True)
+                              else:
+                                  publish(file, data)
+                          except Exception:
+                              restored = False
+                      try:
+                          enabled.unlink(missing_ok=True)
+                          if before_link is not None:
+                              enabled.symlink_to(before_link)
+                      except Exception:
+                          restored = False
+                      for name, args in reloaded:
+                          try:
+                              if (
+                                  call(args, False)[0] != 0
+                                  or call(["/usr/bin/systemctl", "reload", name], False)[0] != 0
+                              ):
+                                  restored = False
+                          except Exception:
+                              restored = False
+                  return {
+                      "changed": False,
+                      "error_code": "php.runtime_configuration_failed",
+                      "restored": restored,
+                  }
+
+
+          try:
+              selected_version = sys.argv[2]
+              configuration = next(
+                  (
+                      c
+                      for c in intent["payloads"]["php-runtime"]["configurations"]
+                      if c["version"] == selected_version
+                  )
+              )
+              with open("/run/lock/orbit-php-runtime.lock", "a") as held:
+                  fcntl.flock(held, fcntl.LOCK_EX)
+                  output = configure(configuration)
+              output["ok"] = "error_code" not in output
+          except Refusal as error:
+              output = {"ok": False, "error_code": error.code}
+          except Exception:
+              output = {"ok": False, "error_code": "php.runtime_configuration_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+    forEach:
+      item: configuration
+      in: '${{ "php-runtime" in inputs.intent.payloads ? inputs.intent.payloads["php-runtime"].configurations : [] }}'
+- name: php_runtime_verify_job
+  dependsOn:
+  - job: php_runtime_job
+    condition:
+      type: succeeded
+  steps:
+  - name: php_runtime_ready
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "php-runtime" && a.required) }}
+        names: '${{ "php-runtime" in inputs.intent.payloads ? inputs.intent.payloads["php-runtime"].configurations.map(c, "php_runtime-" + c.version) : [] }}'
+        steps: ${{ steps }}
+    writes: true
+- name: tmpfiles_job
+  dependsOn:
+  - job: php_runtime_verify_job
+    condition:
+      type: succeeded
+  steps:
+  - name: tmpfiles
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "tmpfiles" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-tmpfiles" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import json
+          import os
+          import stat
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          ROOT = Path("/var/lib/orbit/private-dns/releases")
+          SERVICE = Path("/etc/systemd/system/orbit-private-dns.service")
+          SOCKET = Path("/etc/systemd/system/orbit-private-dns.socket")
+          TMPFILES = Path("/etc/tmpfiles.d/orbit.conf")
+          UID, GID = (0, 0)
+
+
+          class Invalid(Exception):
+              pass
+
+
+          def current(path, data):
+              try:
+                  m = path.lstat()
+                  return (
+                      stat.S_ISREG(m.st_mode)
+                      and (m.st_uid, m.st_gid, m.st_mode & 4095) == (UID, GID, 420)
+                      and (path.read_bytes() == data)
+                  )
+              except FileNotFoundError:
+                  return False
+
+
+          def replace(path, data, mode=420):
+              fd, candidate = tempfile.mkstemp(prefix=".orbit-footprint-", dir=path.parent)
+              try:
+                  with os.fdopen(fd, "wb") as stream:
+                      stream.write(data)
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                      os.fchmod(stream.fileno(), mode)
+                      os.fchown(stream.fileno(), UID, GID)
+                  os.replace(candidate, path)
+              finally:
+                  if os.path.exists(candidate):
+                      os.unlink(candidate)
+
+
+          def tmpfiles(payload):
+              if not isinstance(payload, dict) or set(payload) != {"rule"}:
+                  raise Invalid()
+              rule = payload["rule"]
+              if (
+                  not isinstance(rule, str)
+                  or not rule
+                  or "\x00" in rule
+                  or any(
+                      (
+                          line
+                          and (not line.startswith(("#", "e /tmp/orbit-", "e /dev/shm/orbit-")))
+                          for line in rule.splitlines()
+                      )
+                  )
+              ):
+                  raise Invalid()
+              data = rule.encode()
+              if current(TMPFILES, data):
+                  return {"changed": False}
+              replace(TMPFILES, data)
+              return {"changed": True}
+
+
+          try:
+              output = tmpfiles(intent["payloads"]["tmpfiles"])
+              output["ok"] = "error_code" not in output
+          except Exception:
+              output = {"ok": False, "error_code": "node.tmpfiles_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+  - name: tmpfiles_ready
     dependsOn:
-      - {job: tmpfiles_job, condition: {type: succeeded}}
-    steps:
-      - {name: agent_cancellation, writes: false, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: observe, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: agent}}}
-      - {name: agent, writes: true, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: agent_cancellation, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: agent, binary_changed: '${{ has(steps.agent_install) && has(steps.agent_install.outputs) ? steps.agent_install.outputs.binary_changed : false }}', cancellation: '${{ steps.agent_cancellation.outputs }}'}}}
-      - {name: agent_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: agent, condition: {type: succeeded}}], task: {type: assert, expr: steps.agent.outputs.ok, severity: high, message: The agent stage refused its admitted footprint}}
-  - name: projection
+    - step: tmpfiles
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "tmpfiles" && a.required) }}
+        names:
+        - tmpfiles
+        steps: ${{ steps }}
+    writes: true
+- name: agent_configure_job
+  dependsOn:
+  - job: tmpfiles_job
+    condition:
+      type: succeeded
+  steps:
+  - name: agent_configure
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "agent" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-agent_configure" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/sudo -n --preserve-env=ORBIT_AGENT_HASH,ORBIT_OBSERVER_RESULT -- /usr/bin/python3 -I - "${{ steps.prepare.outputs.intent_file }}" <<'ORBIT_PY'
+          import fcntl
+          import hashlib
+          import json
+          import os
+          import secrets
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          import tomllib
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              text = source.read(16777217)
+          if len(text) > 16777216:
+              raise ValueError("public intent exceeds limit")
+          intent = json.loads(text)
+          ROOT = "/"
+          UID = 0
+
+
+          class Refusal(Exception):
+              def __init__(self, code):
+                  self.code = code
+
+
+          def refuse(code="agent.configure_failed"):
+              raise Refusal(code)
+
+
+          def path(p):
+              return os.path.join(ROOT, p.lstrip("/"))
+
+
+          def metadata(p, mode=None, directory=False):
+              try:
+                  m = os.lstat(path(p))
+              except FileNotFoundError:
+                  return None
+              if (
+                  stat.S_ISLNK(m.st_mode)
+                  or m.st_uid != UID
+                  or (stat.S_ISDIR(m.st_mode) if directory else stat.S_ISREG(m.st_mode))
+                  is not True
+              ):
+                  refuse()
+              if mode is not None and stat.S_IMODE(m.st_mode) != mode:
+                  refuse()
+              return m
+
+
+          def parents(p):
+              current = ""
+              for part in os.path.dirname(p).split("/"):
+                  if not part:
+                      continue
+                  current += "/" + part
+                  m = metadata(current, directory=True)
+                  if m is None or (
+                      m.st_mode & 18
+                      and (not (current == "/run/lock" and stat.S_IMODE(m.st_mode) == 1023))
+                  ):
+                      refuse()
+
+
+          def read(p):
+              parents(p)
+              m = metadata(p)
+              if m is None:
+                  return None
+              with open(path(p), "rb") as f:
+                  return f.read()
+
+
+          def publish(p, text, mode):
+              parents(p)
+              metadata(p)
+              data = text.encode()
+              if read(p) == data:
+                  os.chmod(path(p), mode)
+                  return False
+              fd, candidate = tempfile.mkstemp(
+                  prefix=".orbit-candidate-", dir=os.path.dirname(path(p))
+              )
+              try:
+                  os.fchmod(fd, mode)
+                  with os.fdopen(fd, "wb") as f:
+                      f.write(data)
+                      f.flush()
+                      os.fsync(f.fileno())
+                  os.replace(candidate, path(p))
+                  d = os.open(os.path.dirname(path(p)), os.O_RDONLY | os.O_DIRECTORY)
+                  try:
+                      os.fsync(d)
+                  finally:
+                      os.close(d)
+              finally:
+                  if os.path.exists(candidate):
+                      os.unlink(candidate)
+              return True
+
+
+          def system(args):
+              if ROOT != "/":
+                  return
+              if subprocess.run(
+                  args,
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  timeout=120,
+              ).returncode:
+                  refuse()
+
+
+          def pin(expected):
+              p = "/usr/local/bin/orbit-agent"
+              parents(p)
+              if metadata(p, 493) is None:
+                  refuse("agent.version_mismatch")
+              with open(path(p), "rb") as f:
+                  digest = hashlib.file_digest(f, "sha256").hexdigest()
+              if digest != expected:
+                  refuse("agent.version_mismatch")
+
+
+          def configure(i):
+              pin(i["agent_sha256"])
+              lock = "/run/lock/orbit-self-update.lock"
+              lockrefusal = (
+                  "node.agent_rekey_unavailable"
+                  if i.get("auth_only")
+                  else "agent.configure_failed"
+              )
+              try:
+                  parents(lock)
+                  fd = os.open(path(lock), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 384)
+              except Exception:
+                  refuse(lockrefusal)
+              with os.fdopen(fd, "r+b") as held:
+                  m = os.fstat(held.fileno())
+                  if not stat.S_ISREG(m.st_mode) or m.st_uid != UID or m.st_mode & 18:
+                      refuse(lockrefusal)
+                  fcntl.flock(held, fcntl.LOCK_EX)
+                  pin(i["agent_sha256"])
+                  try:
+                      cfg = tomllib.loads(i["configuration"])
+                      worker = cfg.get("swamp_worker")
+                  except Exception:
+                      refuse(lockrefusal)
+                  if worker is not None:
+                      if (
+                          not isinstance(worker, dict)
+                          or type(worker.get("node_id")) is not int
+                          or worker["node_id"] < 1
+                          or (not isinstance(worker.get("user"), str))
+                      ):
+                          refuse()
+                      available = [
+                          line.split()
+                          for line in read("/proc/meminfo").decode().splitlines()
+                          if line.startswith("MemAvailable:")
+                      ]
+                      if (
+                          len(available) != 1
+                          or len(available[0]) != 3
+                          or available[0][2] != "kB"
+                          or (int(available[0][1]) * 1024 < 403378168 + 256 * 1024 * 1024)
+                      ):
+                          refuse("swamp.node_worker_memory_low")
+                      if i.get("worker_credentials") is None:
+                          try:
+                              if metadata("/etc/orbit/swamp-worker", 448, True) is None:
+                                  refuse("swamp.node_worker_not_ready")
+                              for name in ["enrollment.token", "server.token"]:
+                                  if metadata("/etc/orbit/swamp-worker/" + name, 384) is None:
+                                      refuse("swamp.node_worker_not_ready")
+                          except Refusal:
+                              refuse("swamp.node_worker_not_ready")
+                  if i.get("auth_only"):
+                      try:
+                          if (
+                              i.get("allow_secret_rotation") is not True
+                              or i.get("worker_credentials") is not None
+                              or type(i.get("node_id")) is not int
+                          ):
+                              refuse()
+                          installedcfg = read("/etc/orbit/agent/config.toml")
+                          if (
+                              installedcfg is None
+                              or metadata("/etc/orbit/agent/config.toml", 420) is None
+                          ):
+                              refuse()
+                          current = tomllib.loads(installedcfg.decode()).get("swamp_worker")
+                          if (
+                              not isinstance(current, dict)
+                              or not isinstance(worker, dict)
+                              or type(current.get("node_id")) is not int
+                              or (current.get("node_id") != i["node_id"])
+                              or (current != worker)
+                          ):
+                              refuse()
+                          for file in [
+                              "/etc/orbit/agent/ca.pem",
+                              "/etc/systemd/system/orbit-agent.service",
+                          ]:
+                              if metadata(file, 420) is None:
+                                  refuse()
+                          if (
+                              metadata("/etc/orbit/agent", 448, True) is None
+                              or metadata("/etc/orbit/agent/secret", 384) is None
+                          ):
+                              refuse()
+                      except Exception:
+                          refuse("node.agent_rekey_unavailable")
+                  installed = read("/etc/orbit/agent/secret")
+                  keep = (
+                      installed is not None
+                      and i["secret_hash"] is not None
+                      and (hashlib.sha256(installed).hexdigest() == i["secret_hash"])
+                  )
+                  if not i["allow_secret_rotation"] and (not keep):
+                      refuse("agent.secret_mismatch")
+                  parents("/etc/orbit/agent")
+                  if metadata("/etc/orbit/agent", directory=True) is None:
+                      os.mkdir(path("/etc/orbit/agent"), 448)
+                  os.chmod(path("/etc/orbit/agent"), 448)
+                  if keep:
+                      metadata("/etc/orbit/agent/secret", 384)
+                      digest = i["secret_hash"]
+                  else:
+                      secret = secrets.token_hex(32)
+                      publish("/etc/orbit/agent/secret", secret, 384)
+                      digest = hashlib.sha256(secret.encode()).hexdigest()
+                  if i.get("auth_only"):
+                      system(["systemctl", "restart", "--no-block", "orbit-agent.service"])
+                      return {
+                          "configured": True,
+                          "secret_hash": digest,
+                          "restarted": True,
+                          "unclosed": [],
+                      }
+                  changed = not keep or i["binary_changed"]
+                  for p, key in [
+                      ("/etc/orbit/agent/config.toml", "configuration"),
+                      ("/etc/orbit/agent/ca.pem", "certificate"),
+                      ("/etc/systemd/system/orbit-agent.service", "unit"),
+                  ]:
+                      changed = publish(p, i[key], 420) or changed
+                  unclosed = []
+                  for checkout in i["checkouts"]:
+                      if os.path.realpath(path(checkout)) != path(checkout) or not os.path.isdir(
+                          path(checkout)
+                      ):
+                          continue
+                      env = os.path.join(path(checkout), ".env")
+                      try:
+                          m = os.lstat(env)
+                          if stat.S_ISREG(m.st_mode):
+                              os.chmod(env, stat.S_IMODE(m.st_mode) & ~7, follow_symlinks=False)
+                      except FileNotFoundError:
+                          pass
+                      except OSError:
+                          unclosed.append(checkout)
+                  system(["systemctl", "daemon-reload"])
+                  system(["systemctl", "enable", "--now", "orbit-agent.service"])
+                  if changed:
+                      system(["systemctl", "restart", "--no-block", "orbit-agent.service"])
+                  return {
+                      "configured": True,
+                      "secret_hash": digest,
+                      "restarted": changed,
+                      "unclosed": unclosed,
+                  }
+
+
+          try:
+              payload = dict(intent["payloads"]["agent"])
+              import pwd
+
+              account = pwd.getpwnam(payload.pop("user"))
+              root = payload.pop("apps_root") or account.pw_dir + "/apps"
+              if not root.startswith("/") or any(
+                  (part in (".", "..") for part in root.split("/"))
+              ):
+                  raise ValueError()
+              payload["checkouts"] = [
+                  path for path in payload["checkouts"] if path.startswith(root + "/")
+              ]
+              payload["unit"] = payload["unit"].replace(
+                  "ProtectHome=yes\n",
+                  "ProtectHome=tmpfs\n"
+                  + (
+                      "BindReadOnlyPaths=-" + root + "\n"
+                      if root.startswith(("/home/", "/root/"))
+                      else ""
+                  ),
+              )
+              payload.pop("url", None)
+              payload.update(
+                  agent_sha256=intent["agent_sha256"],
+                  secret_hash=json.loads(os.environ.pop("ORBIT_AGENT_HASH")),
+                  allow_secret_rotation=False,
+                  binary_changed=json.loads(os.environ.pop("ORBIT_OBSERVER_RESULT")).get(
+                      "changed"
+                  )
+                  is True,
+              )
+              output = configure(payload)
+              output.pop("secret_hash", None)
+              output["ok"] = output.get("configured") is True
+          except Refusal as error:
+              output = {"ok": False, "error_code": error.code}
+          except Exception:
+              output = {"ok": False, "error_code": "agent.configure_failed"}
+          print(json.dumps(output, separators=(",", ":")))
+          ORBIT_PY
+        env:
+          ORBIT_AGENT_HASH: ${{ vault.get(inputs.execution_secrets.secret_hash.vault, inputs.execution_secrets.secret_hash.key) }}
+          ORBIT_OBSERVER_RESULT: ${{ steps.agent_install.outputs.stdout }}
+  - name: agent_configure_ready
     dependsOn:
-      - {job: admission, condition: {type: always}}
-      - {job: agent_install_job, condition: {type: always}}
-      - {job: caddy_package_job, condition: {type: always}}
-      - {job: caddy_job, condition: {type: always}}
-      - {job: peer_dns_job, condition: {type: always}}
-      - {job: private_dns_job, condition: {type: always}}
-      - {job: route_residue_job, condition: {type: always}}
-      - {job: php_runtime_job, condition: {type: always}}
-      - {job: tmpfiles_job, condition: {type: always}}
-      - {job: agent_job, condition: {type: always}}
-    steps:
-      - {name: project, writes: true, guard: '${{ !has(steps.admit) || !has(steps.admit.outputs) }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: project, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', outcomes: '${{ (has(steps.agent_install) && has(steps.agent_install.outputs) ? [steps.agent_install.outputs] : []) + (has(steps.caddy_package) && has(steps.caddy_package.outputs) ? [steps.caddy_package.outputs] : []) + (has(steps.caddy) && has(steps.caddy.outputs) ? [steps.caddy.outputs] : []) + (has(steps.peer_dns) && has(steps.peer_dns.outputs) ? [steps.peer_dns.outputs] : []) + (has(steps.private_dns) && has(steps.private_dns.outputs) ? [steps.private_dns.outputs] : []) + (has(steps.route_residue) && has(steps.route_residue.outputs) ? [steps.route_residue.outputs] : []) + (has(steps.php_runtime) && has(steps.php_runtime.outputs) ? [steps.php_runtime.outputs] : []) + (has(steps.tmpfiles) && has(steps.tmpfiles.outputs) ? [steps.tmpfiles.outputs] : []) + (has(steps.agent) && has(steps.agent.outputs) ? [steps.agent.outputs] : []) }}'}}}
-  - name: admission_failure
+    - step: agent_configure
+      condition:
+        type: always
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: verify
+      inputs:
+        required: ${{ inputs.intent.artifacts.exists(a, a.name == "agent" && a.required) }}
+        names:
+        - agent_configure
+        steps: ${{ steps }}
+    writes: true
+- name: worker_configure_job
+  dependsOn:
+  - job: agent_configure_job
+    condition:
+      type: succeeded
+  steps:
+  - name: worker_configure
+    writes: true
+    guard: ${{ !(inputs.intent.artifacts.exists(a, a.name == "agent" && a.required)) }}
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-action-" + string(inputs.node_id) + "-worker_configure" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          printf '%s\n' '{"ok":false,"error_code":"operation.kind_unavailable"}'
+          exit 1
+- name: projection
+  dependsOn:
+  - job: public_intent
+    condition:
+      type: always
+  - job: public_parts
+    condition:
+      type: always
+  - job: public_payload
+    condition:
+      type: always
+  - job: agent_install_job
+    condition:
+      type: always
+  - job: caddy_package_job
+    condition:
+      type: always
+  - job: caddy_job
+    condition:
+      type: always
+  - job: peer_dns_job
+    condition:
+      type: always
+  - job: dns_listener_job
+    condition:
+      type: always
+  - job: dns_publish_job
+    condition:
+      type: always
+  - job: dns_verify_job
+    condition:
+      type: always
+  - job: residue_complete_job
+    condition:
+      type: always
+  - job: php_runtime_job
+    condition:
+      type: always
+  - job: php_runtime_verify_job
+    condition:
+      type: always
+  - job: tmpfiles_job
+    condition:
+      type: always
+  - job: agent_configure_job
+    condition:
+      type: always
+  - job: worker_configure_job
+    condition:
+      type: always
+  steps:
+  - name: summary
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-converge-native'
+      behaviorName: ${{ "node-converge-native-" + string(inputs.node_id) }}
+      methodName: summarize
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        steps: ${{ steps }}
+        run_id: ${{ run.id }}
+  - name: result
     dependsOn:
-      - {job: admission, condition: {type: failed}}
-    steps:
-      - {name: report_admission_failure, task: {type: behavior, behaviorType: '@nckrtl/operation-failure', behaviorName: '${{ "operation-failure-node-" + string(inputs.node_id) }}', methodName: report, inputs: &ref_0 {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: failure_callback
+    - step: summary
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-result-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          printf '%s\n' "${{ steps.summary.outputs.json }}"
+  - name: cleanup_public_input
+    guard: ${{ !steps.summary.outputs.proven }}
     dependsOn:
-      - {job: projection, condition: {type: failed}}
-    steps:
-      - {name: report_failure, task: {type: behavior, behaviorType: '@nckrtl/operation-failure', behaviorName: '${{ "operation-failure-node-" + string(inputs.node_id) }}', methodName: report, inputs: *ref_0}}
+    - step: result
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "node-converge-input-cleanup-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          exec /usr/bin/python3 -I - "${{ run.id }}" <<'ORBIT_PY'
+          import os
+          import shutil
+          import stat
+          import sys
+          import uuid
+
+          root = "/tmp/orbit-node-converge-" + str(uuid.UUID(sys.argv[1]))
+          info = os.lstat(root)
+          if (
+              not stat.S_ISDIR(info.st_mode)
+              or info.st_uid != os.geteuid()
+              or stat.S_IMODE(info.st_mode) != 448
+          ):
+              raise ValueError("Public input directory custody changed")
+          shutil.rmtree(root)
+          print('{"cleaned":true}')
+          ORBIT_PY
+  - name: complete
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: assert
+      expr: steps.summary.outputs.proven
+      message: The native footprint did not converge
+      severity: high

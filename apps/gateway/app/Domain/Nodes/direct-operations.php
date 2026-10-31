@@ -38,6 +38,8 @@ return ['node.wireguard_hub_converge' => [
     'projection' => NodeSettingsProjection::class,
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge-direct',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'projection', 'step' => 'result'],
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'node_converge_writer',
     'writer_scope' => ['parent_operation_id' => null, 'native_footprint' => true],

@@ -16,6 +16,14 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
+### Native footprint command steps
+
+`node.converge` passes its full admitted public footprint to Swamp. The input contains the artifact digests, required actions, public configuration and peer DNS intent. Agent hash values and staged worker credentials stay outside the public snapshot. The Gateway uses the shared command-step helper to publish an existing hash as an execution copy; the workflow receives only its vault and key names.
+
+Each host action runs in a separate placed command step. Typed metadata methods validate the public snapshot and summarize command outputs. Commands do not read intent or report progress through the Gateway. The final result step prints one public JSON object. The shared terminal handler reads native history and passes that result to the existing footprint projector; projection does not synchronize execution copies again.
+
+The command rewrite remains a draft until canonical worker installation and Route residue cleanup supply their native actions. Their required slots refuse execution. Logical Nodes 1 and 18 also refuse before host actions until the shared native proxy transport is proved. Official remote vault-put stdin and shared terminal subscription remain release dependencies. The existing agent binary is frozen; none of these steps invokes an agent action.
+
 ### Per-Node Swamp worker
 
 The operator selects Linux Nodes through the `ORBIT_SWAMP_WORKER_NODES` JSON array, default `[]`, exposed as `swamp_workers.nodes`. A Node read reports this intent as `swamp_worker_selected`. Update the agent fleet before selecting the first Node: the worker configuration changed from a boolean to a table, and old agents must never receive that table. `node.converge` records the desired footprint in the Gateway; Swamp runs its agent installation and configuration steps.
