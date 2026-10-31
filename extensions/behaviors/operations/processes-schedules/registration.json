@@ -1,5 +1,6 @@
 {
   "kinds": [
+    "process.create",
     "process.update",
     "schedule.create",
     "process.install_instance_definitions",
