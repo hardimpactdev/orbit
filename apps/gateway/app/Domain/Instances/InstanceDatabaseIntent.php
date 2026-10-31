@@ -103,10 +103,7 @@ final readonly class InstanceDatabaseIntent
     public function child(Operation $operation, string $key): array
     {
         $owner = $operation->target_id;
-        $recorded = ValidatedData::object($operation->state['lifecycle_database'] ?? []);
-        $recordedInput = ValidatedData::object($recorded['input'] ?? []);
-        $kind = ($operation->input['database_clone_source_id'] ?? null) !== null
-            ? (($recordedInput['driver'] ?? null) === 'mysql' ? 'database.mysql_clone' : 'database.clone') : 'database.create';
+        $kind = ($operation->input['database_clone_source_id'] ?? null) !== null ? 'database.clone' : 'database.create';
         if ($key !== 'database') {
             if ($operation->kind !== 'instance.destroy' || preg_match('/\Aremove-databases-([1-9][0-9]*)\z/D', $key, $match) !== 1
                 || ! in_array((int) $match[1], array_column(InstanceLifecycleInput::members(app(RemovalLifecycleExecution::class)->intent($operation)), 'instance_id'), true)) {

@@ -59,7 +59,7 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
     {
         $verb = substr($operation->kind, strlen('process.'));
         $required = match ($verb) {
-            'update' => $operation->input['runtime'] === 'docker'
+            'create', 'update' => $operation->input['runtime'] === 'docker'
                 ? ['process-converge-container' => 'process.converge-container']
                 : ['process-stage-unit' => 'process.stage-unit'],
             default => throw new ResourceOperationException('operation.execution_forbidden', 'The kind has no polled Process executor.', 422),

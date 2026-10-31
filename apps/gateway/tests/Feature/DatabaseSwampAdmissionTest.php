@@ -45,8 +45,6 @@ function databaseAdmissionServer(Node $node, string $driver = 'mysql'): Database
 }
 
 beforeEach(function (): void {
-    config(['swamp.run_token' => 'fake.token']);
-    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
     }
@@ -79,8 +77,8 @@ it('records PostgreSQL intent with a protected owner and locale', function (): v
     $connection = DatabaseConnection::query()->sole();
     expect($connection->database_server_id)->toBe($server->id);
     expect($response->getContent())->not->toContain($connection->password, 'SCRAM-SHA-256', $server->root_password);
-    $input = DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply']['input'];
-    expect($input)->toMatchArray(['driver' => 'pgsql', 'locale' => 'C.UTF-8', 'databases' => ['throwaway']])->not->toHaveKey('sql');
+    expect(DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply']['input']['sql'])
+        ->toContain('LOCALE_PROVIDER builtin', 'NOCREATEDB', 'OWNER', 'REVOKE ALL ON DATABASE');
 });
 
 it('admits reader grants without executing SQL or exposing passwords', function (): void {

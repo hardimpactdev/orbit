@@ -32,7 +32,7 @@ beforeEach(function (): void {
     app(AiRouterState::class)->enable($this->node->id, 'cache', 'http://127.0.0.1:8317', 'management', 'read', 'control');
     app()->instance(ProcessRuntimeManager::class, new ProcessesApiFakeRuntimeManager);
     $environment = app(AiRouterCollectorEnvironment::class)->build($this->connection);
-    $this->process = app(CreateProcessAction::class)->bootstrapCollector(AiRouterProcess::data($this->node, $environment))['process'];
+    $this->process = app(CreateProcessAction::class)->execute(AiRouterProcess::data($this->node, $environment))['process'];
     AiRouterProcessSource::query()->create(['process_id' => $this->process->id, 'source_revision' => app(AgentDelivery::class)->pin($this->node), 'activation_pending' => false]);
 });
 

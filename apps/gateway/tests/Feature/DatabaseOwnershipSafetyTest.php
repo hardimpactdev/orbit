@@ -6,21 +6,39 @@ use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
+use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
+use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\DatabaseServers\NativeDatabaseRemovalLock;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
-use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
 require_once __DIR__.'/../Support/DatabaseCreationProofs.php';
 uses(ServerDatabaseFixtures::class);
+
+it('forgets a reserved connection after a proven foreign-name refusal before any effect', function (string $driver): void {
+    $this->prepareServerDatabaseFixtures();
+    $this->server->update(['driver' => $driver]);
+    $operation = app(CreateServerDatabaseAction::class)->execute(new CreateServerDatabaseData('unsafe', $this->server->slug, null), null);
+    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => 'unsafe']);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $executor = app(SwampOperationExecutor::class);
+    $operation = $executor->claim('database.create', 'proof', $this->gateway->id);
+    $step = app(DatabaseOperationExecution::class)->context($operation)['descriptors'][0];
+
+    $result = $executor->run($operation, ['worker' => 'proof', 'key' => $step['key'], 'transport' => $step['transport'], 'name' => $step['name'], 'input' => $step['input']], $this->gateway->id);
+    $executor->complete($operation, ['worker' => 'proof', 'status' => 'failed', 'result' => $result, 'error_code' => 'database.name_conflict'], $this->gateway->id);
+
+    expect(DatabaseConnection::query()->count())->toBe(0);
+    expect($agents->calls)->toHaveCount(1);
+    expect($agents->calls[0]['input']['sql'])->toStartWith('SELECT')->not->toContain('CREATE DATABASE');
+})->with(['mysql', 'pgsql']);
 
 it('refuses removal of a MySQL reservation without a successful per-name create receipt', function (): void {
     $this->prepareServerDatabaseFixtures();
@@ -34,16 +52,46 @@ it('refuses removal of a MySQL reservation without a successful per-name create 
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
 
-it('reuses clone reservation credentials without Gateway inventory or a reset plan', function (): void {
+it('records successful MySQL creation per name and keeps its proof after intent expiry', function (): void {
+    $this->freezeTime();
+    $this->prepareServerDatabaseFixtures();
+    app(CreateServerDatabaseAction::class)->execute(new CreateServerDatabaseData('owned', $this->server->slug, null), null);
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => '']));
+    $executor = app(SwampOperationExecutor::class);
+    $operation = $executor->claim('database.create', 'proof', $this->gateway->id);
+    foreach (app(DatabaseOperationExecution::class)->context($operation)['descriptors'] as $step) {
+        $result = $executor->run($operation, ['worker' => 'proof', 'key' => $step['key'], 'transport' => $step['transport'], 'name' => $step['name'], 'input' => $step['input']], $this->gateway->id);
+        $executor->step($operation, ['worker' => 'proof', 'key' => $step['key'].'.finish', 'name' => $step['step'], 'status' => 'succeeded', 'result' => $result], $this->gateway->id);
+    }
+    $executor->complete($operation, ['worker' => 'proof', 'status' => 'succeeded', 'result' => $result], $this->gateway->id);
+    $connection = DatabaseConnection::query()->sole();
+    expect(app(DatabaseOwnership::class)->mysqlNames($connection))->toBe(['owned']);
+    expect($connection->toArray())->not->toHaveKey('creation_receipts');
+    $this->travel(25)->hours();
+    expect(app(PurgeDatabaseExecutionIntentsAction::class)->execute())->toBe(1);
+
+    $drop = app(DropServerDatabaseAction::class)->prepareMany([$connection])[0];
+
+    expect($drop->kind)->toBe('database.destroy');
+    expect(DatabaseExecutionIntent::recorded($drop->input['intent_id'])->payload['commands']['database-apply']['transport'])->toBe('database_removal');
+});
+
+it('rechecks names on clone reservation reuse and resets only proven names', function (): void {
     $this->prepareServerDatabaseFixtures();
     $action = app(CreateServerDatabaseAction::class);
     $connection = $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null, ['clone_step' => 'recorded']);
+    $first = $action->prepareEmpty($connection);
     $this->admin->rows = ['SCHEMATA' => ['clone_db']];
-    $same = $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null);
-    expect($same->id)->toBe($connection->id);
-    expect($same->password)->toBe($connection->password);
-    expect($this->admin->statements)->toBe([]);
-    $this->assertDatabaseCount('database_execution_intents', 0);
+
+    expect(fn () => $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null))
+        ->toThrow(ResourceOperationException::class, 'already has a database');
+    expect(DatabaseExecutionIntent::recorded($first->input['intent_id'])->payload['commands']['create-database-0']['input']['sql'])
+        ->not->toContain('DROP DATABASE');
+    databaseCreatedProof($connection);
+    $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null);
+    $reset = $action->prepareEmpty($connection);
+    expect(DatabaseExecutionIntent::recorded($reset->input['intent_id'])->payload['commands']['create-database-0']['input']['sql'])
+        ->toContain('DROP DATABASE IF EXISTS `clone_db`');
 });
 
 it('retains lifecycle intents and nested children beyond 24 hours while their recorded parent is active', function (): void {
@@ -60,15 +108,16 @@ it('retains lifecycle intents and nested children beyond 24 hours while their re
     expect(app(PurgeDatabaseExecutionIntentsAction::class)->execute())->toBe(1);
 });
 
-it('refuses clone reservation while a recorded server removal is unfinished', function (): void {
+it('refuses a connection reservation while removal holds the database lock', function (): void {
     $this->prepareServerDatabaseFixtures();
-    Operation::query()->create(['kind' => 'database.destroy', 'target_type' => 'database_server', 'target_id' => $this->server->id, 'node_id' => $this->server->node_id, 'status' => 'running', 'input' => []]);
-    expect(fn () => app(CreateServerDatabaseAction::class)->reserve($this->server, 'clone', 'clone_db', $this->instance, null))
-        ->toThrow(ResourceOperationException::class, 'removal is unfinished');
-    $this->assertDatabaseCount('database_connections', 0);
+    app(DatabaseRemovalLock::class)->run([$this->server->id], function (): void {
+        expect(fn () => app(CreateServerDatabaseAction::class)->reserve($this->server, 'clone', 'clone_db', $this->instance, null))
+            ->toThrow(ResourceOperationException::class, 'Another database removal');
+    });
+    expect(DatabaseConnection::query()->count())->toBe(0);
 });
 
-it('refuses new shared login reservation while a removal intent is dispatched', function (): void {
+it('holds the removal lock through final dispatch so a new shared login reservation cannot interleave', function (): void {
     $this->prepareServerDatabaseFixtures();
     $connection = DatabaseConnection::query()->create(['slug' => 'owned', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'owned', 'username' => 'owned_user']);
@@ -76,7 +125,7 @@ it('refuses new shared login reservation while a removal intent is dispatched', 
     app(DropServerDatabaseAction::class)->execute($connection);
     $agents = new FakeAgentCommandRunner()->answer('database.server-admin', function (): array {
         expect(fn () => app(CreateServerDatabaseAction::class)->reserve($this->server, 'interleaved', 'interleaved', $this->instance, null))
-            ->toThrow(ResourceOperationException::class, 'removal is unfinished');
+            ->toThrow(ResourceOperationException::class, 'Another database removal');
 
         return ['output' => ''];
     });
@@ -103,23 +152,4 @@ it('retains both source and target SQLite intent while an unadmitted lifecycle p
     expect(app(PurgeDatabaseExecutionIntentsAction::class)->execute())->toBe(0);
     expect(DatabaseExecutionIntent::query()->count())->toBe(3);
     expect(DatabaseExecutionIntent::query()->where('parent_operation_id', $parent->id)->count())->toBe(3);
-});
-
-it('refuses clone reservation while synchronous removal owns the server lock and retries after release', function (): void {
-    $this->prepareServerDatabaseFixtures();
-    $directory = config()->string('orbit.home').'/locks/reservation-'.bin2hex(random_bytes(4));
-    $owner = new NativeDatabaseRemovalLock($directory);
-    app()->instance(DatabaseRemovalLock::class, new NativeDatabaseRemovalLock($directory));
-    $action = app(CreateServerDatabaseAction::class);
-    $owner->run([$this->server->id], function () use ($action): void {
-        expect(fn () => $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null))
-            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.server_in_use'));
-        $this->assertDatabaseCount('database_connections', 0);
-        $this->assertDatabaseCount('database_users', 0);
-    });
-    $connection = $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null);
-    expect($connection->database)->toBe('clone_db');
-    $this->assertDatabaseCount('database_connections', 1);
-    $this->assertDatabaseCount('database_users', 1);
-    expect($this->admin->statements)->toBe([]);
 });

@@ -69,23 +69,22 @@ it('runs executor-host mutations synchronously with the original HTTP responses'
         'create' => 2, default => 1
     });
     $this->assertDatabaseCount('operations', 0);
-})->with(['services', 'worker'])->with(['update', 'start', 'restart']);
+})->with(['services', 'worker'])->with(['create', 'update', 'start', 'restart']);
 
-it('creates and replays one direct intent on an executor Node without Gateway convergence', function (string $peer): void {
-    config($peer === 'services'
-        ? ['dependency_detection.services_node_id' => $this->node->id]
-        : ['operation_executor.worker_node_ids' => [$this->node->id]]);
+it('creates and reuses a Services deploy helper without admitting an Operation', function (): void {
+    config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withHeader('Idempotency-Key', 'services-helper');
-    $this->runtime->shouldNotReceive('converge');
+    $this->runtime->shouldReceive('converge')->twice();
+    $this->runtime->shouldReceive('status')->andReturn('active');
     $payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'deploy-helper',
         'runtime' => 'systemd', 'command' => ['/bin/sleep', '300'], 'start' => true];
 
-    $id = $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create')->json('data.id');
-    $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.id', $id);
+    $id = $this->postJson('/api/v1/processes', $payload)->assertCreated()->json('data.id');
+    $this->postJson('/api/v1/processes', $payload)->assertOk()->assertJsonPath('data.id', $id);
 
-    $this->assertDatabaseHas('processes', ['name' => 'deploy-helper', 'status' => 'provisioning']);
-    $this->assertDatabaseCount('operations', 1);
-})->with(['services', 'worker']);
+    $this->assertDatabaseHas('processes', ['id' => $id]);
+    $this->assertDatabaseCount('operations', 0);
+});
 
 it('also protects Instance-owned executor dependencies at child input admission', function (): void {
     $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
