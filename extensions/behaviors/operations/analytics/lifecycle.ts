@@ -2,6 +2,7 @@ import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../../operation-runner/mod.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
+import { Scope } from "../certificates/input.ts";
 import { PlausibleCE, PlausibleRefusal, Site } from "./plausible.ts";
 
 export const Args = DirectArgs.extend({
@@ -13,12 +14,7 @@ export const Leaf = z.object({
   route_id: z.number().int().positive(),
   user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  home: z.string().startsWith("/").max(4096).refine((home) =>
-    !/[\0\r\n]/.test(home) &&
-    home.slice(1).split("/").every((part) =>
-      part !== "" && part !== "." && part !== ".."
-    )
-  ),
+  home: Scope.shape.home,
   in_use: z.literal(false).optional(),
   domain: Site.shape.domain,
   scope: z.string(),

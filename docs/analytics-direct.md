@@ -69,11 +69,14 @@ exposes:
 - `remove(leaf, signal?)` and `hostWithdraw(leaf, signal?)`: remove an admitted
   unused Router leaf, prove its absence, then remove that Route's LAN allowance.
 
-Every leaf carries its exact Node, account home and `route-ID-router` scope. The
-composing parent authenticates a fresh participant view before the local call.
-Sign requests with the canonical `orbit-certificate-signing` step on Node 209.
-No key enters arguments or outputs. Publish or withdraw fresh whole-Node Caddy,
-DNS and firewall state through the canonical Route methods before marking the
-parent complete. Withdraw listeners before calling removal; the parent owns the
-DNS grace and domain callbacks. These helpers make no Gateway calls and never
-project or start another Operation. Enable/disable use these same local helpers.
+Every leaf carries its exact Node, admitted user and `route-ID-router` scope.
+The home is optional: the placed certificate step resolves it with local
+`getent` and checks an explicit home against that account. The Gateway performs
+no account lookup. The composing parent authenticates a fresh participant view
+before the local call. Sign requests with the canonical
+`orbit-certificate-signing` step on Node 209. No key enters arguments or
+outputs. Publish or withdraw fresh whole-Node Caddy, DNS and firewall state
+through the canonical Route methods before marking the parent complete. Withdraw
+listeners before calling removal; the parent owns the DNS grace and domain
+callbacks. These helpers make no Gateway calls and never project or start
+another Operation. Enable/disable use these same local helpers.

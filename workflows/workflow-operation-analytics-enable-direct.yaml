@@ -108,7 +108,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        leaves: '${{ steps.begin.outputs.tracking.certificates.map(leaf, {"node_id": leaf.node_id, "scope": leaf.scope, "home": leaf.home, "agent_sha256": leaf.agent_sha256, "domain": leaf.domain, "version": leaf.version, "root_hash": leaf.root_hash, "user": leaf.user}) }}'
+        leaves: '${{ steps.begin.outputs.tracking.certificates.map(leaf, {"node_id": leaf.node_id, "scope": leaf.scope, "agent_sha256": leaf.agent_sha256, "domain": leaf.domain, "version": leaf.version, "root_hash": leaf.root_hash, "user": leaf.user}) }}'
         target_node_id: 209
         requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs]) }}
     guard: ${{ steps.begin.outputs.stopped }}

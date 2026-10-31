@@ -141,3 +141,18 @@ Deno.test("an aborted parent invokes no tracking host effect", async () => {
   );
   assertEquals(f.calls, []);
 });
+
+Deno.test("all tracking certificate steps accept an admitted user without a Gateway home", async () => {
+  const f = fixture();
+  const { home: _home, ...local } = leaf;
+  const requested = await f.actions.hostPrepare(local);
+  await f.actions.publish(local, [requested], [signed]);
+  await f.actions.hostWithdraw({ ...local, in_use: false });
+  for (
+    const call of f.calls.filter((call) => call.name.startsWith("certificate."))
+  ) {
+    const input = call.input as Record<string, unknown>;
+    assertEquals(input.user, "orbit");
+    assertEquals(input.home, undefined);
+  }
+});

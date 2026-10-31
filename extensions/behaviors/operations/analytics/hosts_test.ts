@@ -126,13 +126,13 @@ Deno.test("foreign participants, homes, scopes and cancellation refuse before lo
   );
   assertEquals(f.calls, []);
 });
-Deno.test("Ingress leaves and missing account homes are not admitted", () => {
+Deno.test("Ingress leaves and unsafe account homes are refused; omitted homes resolve on the worker", () => {
   assertEquals(
     Leaf.safeParse({ ...leaf, scope: "route-1-ingress" }).success,
     false,
   );
   const { home: _home, ...missing } = leaf;
-  assertEquals(Leaf.safeParse(missing).success, false);
+  assertEquals(Leaf.safeParse(missing).success, true);
   assertEquals(
     Leaf.safeParse({ ...leaf, home: "/home/../root" }).success,
     false,
@@ -193,6 +193,7 @@ Deno.test("unused Router removal proves absence before canonical LAN cleanup", a
     node_id: 14,
     scope: leaf.scope,
     home: leaf.home,
+    user: leaf.user,
     agent_sha256: leaf.agent_sha256,
     in_use: false,
   });

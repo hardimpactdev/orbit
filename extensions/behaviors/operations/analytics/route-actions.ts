@@ -17,7 +17,8 @@ function successful<T extends Record<string, unknown>>(result: T): T {
 function scope(leaf: TrackingLeaf) {
   return Scope.parse({
     node_id: leaf.node_id,
-    home: leaf.home,
+    user: leaf.user,
+    ...(leaf.home === undefined ? {} : { home: leaf.home }),
     scope: leaf.scope,
     agent_sha256: leaf.agent_sha256,
   });

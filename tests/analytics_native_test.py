@@ -142,6 +142,8 @@ class AnalyticsFixture(NativeTestCase):
         cert.write_text('import {signCertificateBatch as fixtureSign} from "../analytics/native_effects.ts";\n'+source.replace('...certificates()', '...certificates(undefined, undefined, fixtureSign)'))
         pub = self.repo/'extensions/behaviors/operations/routes/publication.ts'
         source = pub.read_text().replace('CaddyPublication, publishCaddy as applyCaddy','CaddyPublication')
+        # Analytics never calls the Instance-destruction PHP method on this shared model.
+        source = source.replace('import { publishDestroyPhp } from "../instance-lifecycle/destroy_php.ts";', 'const publishDestroyPhp = (..._args: unknown[]): Promise<never> => Promise.reject(new Error("fixture.unexpected_destroy_php"));')
         source = source.replace('DnsPublication, publishPrivateDns, runPrivateDns','DnsPublication, runPrivateDns')
         source = source.replace('new GatewayOperation(makeHttp(ctx), args)', 'new GatewayOperation(participantHttp(ctx, args.target_node_id ?? args.node_id), args)')
         source = source.replace('            makeHttp(ctx),\n            args,', '            participantHttp(ctx, args.target_node_id ?? args.node_id),\n            args,')
@@ -152,7 +154,7 @@ class AnalyticsFixture(NativeTestCase):
     def leaves(self,cleanup=False):
         if self.empty or (self.kind=='analytics.disable' and not cleanup):return []
         route = 2 if cleanup else 1
-        return [{'node_id':14,'route_id':route,'domain':'old.example.test' if cleanup else 'analytics.example.test','scope':f'route-{route}-router','user':'orbit','home':'/home/orbit','agent_sha256':'a'*64,**({'in_use':False} if cleanup else {'version':'b'*16,'root_hash':'c'*64})}]
+        return [{'node_id':14,'route_id':route,'domain':'old.example.test' if cleanup else 'analytics.example.test','scope':f'route-{route}-router','user':'orbit','agent_sha256':'a'*64,**({'in_use':False} if cleanup else {'version':'b'*16,'root_hash':'c'*64})}]
 
 
     def workflow(self):
