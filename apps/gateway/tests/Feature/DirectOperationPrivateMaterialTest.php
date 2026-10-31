@@ -166,7 +166,7 @@ it('requires exact native identity before an unbound private read and keeps the 
     expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('shared-private-admin-sentinel', 'private.fixture.token');
 });
 
-it('refuses a private output when another native run binds after early authorization', function (): void {
+it('refuses a private output when a conflicting binding appears after early authorization', function (mixed $binding): void {
     $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
@@ -177,8 +177,46 @@ it('refuses a private output when another native run binds after early authoriza
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.fixture.token']);
     app(DirectOperation::class)->assertRun($this->operation, $this->run);
-    $this->operation->update(['state' => [...$this->operation->state, 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']]);
+    $this->operation->update(['state' => [...$this->operation->state, 'swamp_run_id' => $binding]]);
     expect(fn () => app(DirectOperationPrivateMaterial::class)->write($this->operation, ['credential' => 'must-not-store'], $this->run))->toThrow(ResourceOperationException::class, 'another Swamp run');
     expect($this->pairing->fresh()->credential)->toBeNull();
     expect($socket->sent)->toHaveCount(1);
+})->with(['foreign' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38', 'empty' => '', 'malformed' => 7]);
+
+it('refuses unbound private transport without prior request proof and never connects', function (bool $write): void {
+    $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.fixture.token']);
+    $before = $this->operation->fresh()->getAttributes();
+    $material = app(DirectOperationPrivateMaterial::class);
+
+    expect(fn () => $write ? $material->write($this->operation, ['credential' => 'must-not-store'], $this->run) : $material->read($this->operation, $this->run))->toThrow(ResourceOperationException::class);
+
+    expect($socket->connections)->toBe([]);
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    expect($this->operation->fresh()->getAttributes())->toBe($before);
+})->with(['read' => false, 'write' => true]);
+
+it('authorizes an unbound private output before its row lock and stores without a second search', function (): void {
+    $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
+    $socket = new FakeRoutePublicationSocket;
+    $level = DB::transactionLevel();
+    $socket->onConnect = static function () use ($level): void {
+        expect(DB::transactionLevel())->toBe($level);
+    };
+    $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
+        'workflowName' => 'operation-private-test', 'runId' => $this->run, 'status' => 'running',
+        'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
+    ]]]]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.fixture.token']);
+    $before = $this->operation->fresh()->getAttributes();
+
+    $this->postJson($this->path.'/secret-output', $this->output)->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+
+    expect($socket->connections)->toBe([15.0]);
+    expect($this->pairing->fresh()->credential)->toBe('shared-output-sentinel');
+    expect($this->operation->fresh()->getAttributes())->toBe($before);
 });

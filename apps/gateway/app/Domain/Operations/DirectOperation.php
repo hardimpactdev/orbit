@@ -108,22 +108,42 @@ final readonly class DirectOperation
             if (($operation->state['swamp_start_key'] ?? null) !== 'operation:'.$operation->id || $workflow === null || ! self::owns($operation)) {
                 throw new ResourceOperationException('operation.run_unbound', 'The Gateway has not recorded the native start identity.', 409);
             }
-            $identity = [$operation->id, $operation->kind, $operation->node_id, $operation->state['swamp_start_key'], $workflow, $runId];
+            $identity = $this->runIdentity($operation, $runId);
             $authority = request()->attributes;
             if ($authority->get('orbit.direct_run_authority') !== $identity) {
                 app(StartSwampRun::class)->verify($operation, $runId);
                 $operation->refresh();
-                $current = [$operation->id, $operation->kind, $operation->node_id, $operation->state['swamp_start_key'] ?? null, $this->definition($operation->kind)['workflow'] ?? null, $runId];
+                $current = $this->runIdentity($operation, $runId);
                 if ($current !== $identity) {
                     throw new ResourceOperationException('operation.run_unverified', 'The admitted run identity changed.', 409);
                 }
                 $authority->set('orbit.direct_run_authority', $identity);
             }
-            $known = $operation->state['swamp_run_id'] ?? $runId;
+        }
+        $this->assertRequestRun($operation, $runId);
+    }
+
+    /** Check existing authority locally, including inside a private-output row lock. */
+    public function assertRequestRun(Operation $operation, string $runId): void
+    {
+        $known = $operation->state['swamp_run_id'] ?? null;
+        if ($known === null) {
+            $identity = $this->runIdentity($operation, $runId);
+            if ($identity[3] !== 'operation:'.$operation->id || $identity[4] === null
+                || request()->attributes->get('orbit.direct_run_authority') !== $identity) {
+                throw new ResourceOperationException('operation.run_unverified', 'This request has no verified native run identity.', 409);
+            }
+            $known = $runId;
         }
         if ($known !== $runId) {
             throw new ResourceOperationException('operation.run_mismatch', 'This status belongs to another Swamp run.', 409);
         }
+    }
+
+    /** @return array{int,string,?int,mixed,?string,string} */
+    private function runIdentity(Operation $operation, string $runId): array
+    {
+        return [$operation->id, $operation->kind, $operation->node_id, $operation->state['swamp_start_key'] ?? null, $this->definition($operation->kind)['workflow'] ?? null, $runId];
     }
 
     public function projection(Operation $operation): DirectOperationProjection

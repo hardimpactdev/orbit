@@ -52,7 +52,7 @@ final readonly class DirectOperationPrivateMaterial
     {
         $operation->refresh();
         $this->direct->projection($operation);
-        $this->direct->assertRun($operation, $runId);
+        $this->direct->assertRequestRun($operation, $runId);
         if ($operation->status->terminal()) {
             throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
         }
