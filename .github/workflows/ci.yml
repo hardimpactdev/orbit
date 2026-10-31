@@ -19,8 +19,6 @@ env:
 
 jobs:
   php:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs)['php']
     name: PHP syntax and Composer
     runs-on: ubuntu-26.04
     steps:
@@ -29,12 +27,19 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: php
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - name: Validate Composer metadata
+        if: steps.scope.outputs.selected == 'true'
         run: git ls-files -z '*composer.json' | xargs -0 -I '{}' composer validate --strict --no-check-publish '{}'
       - name: Check changed PHP syntax
+        if: steps.scope.outputs.selected == 'true'
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
@@ -42,17 +47,14 @@ jobs:
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
 
   cli:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs)['cli']
     name: CLI build
     uses: ./.github/workflows/orbit-cli-binary.yml
     with:
       commit: ${{ github.sha }}
       version: ''
+      changed-only: true
 
   docs:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs)['docs']
     name: Docs build
     runs-on: ubuntu-26.04
     steps:
@@ -60,19 +62,24 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: docs
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - name: Install Docs dependencies
+        if: steps.scope.outputs.selected == 'true'
         run: composer install --working-dir=apps/docs --no-interaction --prefer-dist --no-dev
       - name: Build and check the documentation index
+        if: steps.scope.outputs.selected == 'true'
         run: |
           composer docs-build
           composer docs-lint
 
   api-reference:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs)['api-reference']
     name: Generated contracts
     runs-on: ubuntu-26.04
     steps:
@@ -80,36 +87,45 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: api-reference
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.selected == 'true'
         with:
           bun-version: 1.4.2
       - name: Cache installed PHP dependencies
+        if: steps.scope.outputs.selected == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/gateway/vendor
           key: php-runtime-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.lock', 'packages/php-sdk/composer.json') }}
       - name: Install generator dependencies
+        if: steps.scope.outputs.selected == 'true'
         run: |
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
       - name: Boot and validate Operation kinds
+        if: steps.scope.outputs.selected == 'true'
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: bin/check-operation-kinds
       - name: Check OpenAPI and MCP tools
+        if: steps.scope.outputs.selected == 'true'
         run: |
           bin/docs-openapi --check
           bin/mcp-tools --check
       - name: Generate web schema
+        if: steps.scope.outputs.selected == 'true'
         run: bun run --cwd apps/web types
 
   web:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs)['web']
     name: Web build
     runs-on: ubuntu-26.04
     defaults:
@@ -120,28 +136,39 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: web
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.selected == 'true'
         with:
           node-version-file: .node-version
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.selected == 'true'
         with:
           bun-version: 1.4.2
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - name: Cache installed PHP dependencies
+        if: steps.scope.outputs.selected == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/gateway/vendor
           key: php-runtime-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.lock', 'packages/php-sdk/composer.json') }}
       - name: Build API contracts
+        if: steps.scope.outputs.selected == 'true'
         working-directory: .
         run: composer install --working-dir=apps/gateway --no-dev --no-interaction --prefer-dist
       - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.selected == 'true'
       - name: Build
+        if: steps.scope.outputs.selected == 'true'
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Publish web build
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.scope.outputs.selected == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist-${{ github.sha }}
