@@ -9,9 +9,12 @@ use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Problems\ProblemCollector;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -19,11 +22,37 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /** Records native reports and their fingerprint recovery scope, without executing probes. */
-final readonly class DoctorProjection implements DirectOperationProjection
+final readonly class DoctorProjection implements DirectOperationProjection, DirectOperationPublicView
 {
     public function input(Operation $operation): array
     {
         return array_intersect_key($operation->input, array_flip(['nodes', 'families', 'collect_problems', 'logs', 'participant_node_ids']));
+    }
+
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        app(DirectOperationPrivateBindings::class)->assertParticipant($operation, $callerNodeId);
+        if (! array_any(Arr::array($operation->input, 'nodes'), static fn (mixed $node): bool => is_array($node) && ($node['id'] ?? null) === $callerNodeId)) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'Only an admitted Doctor Node may read its expectations.', 403);
+        }
+    }
+
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        $this->assertPublicParticipant($operation, $callerNodeId);
+        $input = $this->input($operation);
+        $nodes = [];
+        foreach (Arr::array($input, 'nodes') as $value) {
+            $node = ValidatedData::object($value);
+            if ($node['id'] !== $callerNodeId) {
+                $node['resources'] = (object) [];
+            }
+            $nodes[] = $node;
+        }
+        $input['nodes'] = $nodes;
+        unset($input['logs']);
+
+        return $input;
     }
 
     public function apply(Operation $operation, array $data): Operation

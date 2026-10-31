@@ -54,7 +54,7 @@ final readonly class StartDoctorAction
      */
     public function admit(array $nodes, array $families, bool $collect, ?string $requestId = null): Operation
     {
-        $rootId = count($nodes) === 1 && ! $collect ? $nodes[0]->id : $this->access->activeGatewayId();
+        $rootId = ! $collect && $nodes !== [] ? $nodes[0]->id : $this->access->activeGatewayId();
         if ($rootId === null) {
             throw new ResourceOperationException('doctor.gateway_missing', 'Doctor needs the registered Gateway Node.', 503);
         }

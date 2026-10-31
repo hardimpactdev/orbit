@@ -93,6 +93,17 @@ it('keeps Schedule commands private and refuses a changed or foreign specificati
     expect(fn () => $source->resolve($operation, $this->node->id, '', 'schedules'))->toThrow(ResourceOperationException::class);
 });
 
+it('exposes expectations only to their admitted participant and keeps final projection root-only', function (): void {
+    $operation = native_doctor_operation($this->node, false);
+    $operation->input = ['participant_node_ids' => [$this->node->id, $this->caller->id],
+        'nodes' => [['id' => $this->node->id, 'resources' => ['processes' => [['id' => 40]]]], ['id' => $this->caller->id, 'resources' => ['processes' => [['id' => 41]]]]],
+        'logs' => ['log_directory' => '/private/gateway/logs']];
+    $projection = app(DoctorProjection::class);
+    $view = $projection->publicInput($operation, $this->caller->id);
+    expect($view['nodes'][0]['resources'])->toEqual((object) [])->and($view['nodes'][1]['resources'])->toBe(['processes' => [['id' => 41]]])->and($view)->not->toHaveKey('logs');
+    expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
+});
+
 function native_doctor_operation(Node $node, bool $collect): Operation
 {
     return Operation::query()->create(['kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
