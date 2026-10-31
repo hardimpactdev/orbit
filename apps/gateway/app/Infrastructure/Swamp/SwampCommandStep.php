@@ -82,7 +82,7 @@ final readonly class SwampCommandStep
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.
      * @param  array<string,mixed>  $terminalRun
      */
-    public function projectScheduledTerminal(string $workflowId, array $terminalRun): void
+    public function projectScheduledTerminal(string $workflowId, array $terminalRun): bool
     {
         $direct = app(DirectOperation::class);
         $declaration = $direct->scheduledResultDefinitions()[$workflowId] ?? throw $this->unavailable();
@@ -93,8 +93,13 @@ final readonly class SwampCommandStep
         }
         $run = $this->history($runId);
         if (($run['id'] ?? null) !== $runId || ($run['workflowId'] ?? null) !== $workflowId
-            || ($run['workflowName'] ?? null) !== $declaration['workflow'] || isset($run['parentRun'])
-            || ! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)
+            || ($run['workflowName'] ?? null) !== $declaration['workflow'] || isset($run['parentRun'])) {
+            throw $this->unavailable();
+        }
+        if (! isset($terminalRun['status']) && in_array($run['status'] ?? null, ['pending', 'running', 'suspended'], true)) {
+            return false;
+        }
+        if (! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)
             || (isset($terminalRun['status']) && $terminalRun['status'] !== $run['status'])
             || ! is_string($run['startedAt'] ?? null) || ! is_string($run['completedAt'] ?? null)) {
             throw $this->unavailable();
@@ -162,6 +167,8 @@ final readonly class SwampCommandStep
                 ]);
             }
         });
+
+        return true;
     }
 
     /** @param array<string,mixed> $run

@@ -19,6 +19,8 @@ final class FakeSwampEventSocket implements WebSocketClient
 
     public ?\Closure $onConnect = null;
 
+    public ?\Closure $onSend = null;
+
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
     {
         ($this->onConnect ?? static function (): void {})();
@@ -29,6 +31,7 @@ final class FakeSwampEventSocket implements WebSocketClient
     public function send(array $message): void
     {
         $this->sent[] = $message;
+        ($this->onSend ?? static function (): void {})($message);
     }
 
     public function receive(float $timeoutSeconds): array

@@ -6,14 +6,16 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Operations\DirectOperation;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Jobs\Operations\ProjectSwampScheduledTerminal;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-/** Official commit-feed discovery beside bound-root attachments on the shared observer socket. */
+/** Read-only commit-feed discovery owned by the existing shared Gateway observer. */
 final class SwampScheduledResults
 {
     private ?string $feedRequest = null;
@@ -33,10 +35,53 @@ final class SwampScheduledResults
     /** @var array<string,string> run UUID => declared workflow UUID */
     private array $runs = [];
 
-    /** @var array<string,array{run:string,attached:bool}> */
-    private array $requests = [];
+    private float $nextConnection = 0.0;
 
-    public function __construct(private readonly WebSocketClient $socket, private readonly LoggerInterface $log) {}
+    private float $backoff = 0.0;
+
+    private float $connectedAt = 0.0;
+
+    private readonly Closure $clock;
+
+    /** @param (Closure():float)|null $clock */
+    public function __construct(private readonly WebSocketClient $socket, private readonly LoggerInterface $log, ?Closure $clock = null)
+    {
+        $this->clock = $clock ?? static fn (): float => microtime(true);
+    }
+
+    public function pass(): void
+    {
+        if (! $this->enabled() || $this->refused || ($this->clock)() < $this->nextConnection) {
+            return;
+        }
+        try {
+            if (! $this->socket->isConnected()) {
+                $address = config('swamp.address');
+                $ca = config('swamp.ca_path');
+                $token = config('swamp.read_token');
+                if (! is_string($address) || $address === '' || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
+                    return;
+                }
+                $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 0.5);
+                $this->connectedAt = ($this->clock)();
+            }
+            $this->subscribe();
+            foreach ($this->socket->receive(0.0) as $message) {
+                $this->receive($message);
+            }
+            if (! $this->socket->isConnected()) {
+                throw new WebSocketException('The native discovery feed disconnected.');
+            }
+            if (($this->clock)() - $this->connectedAt >= 60.0) {
+                $this->backoff = 0.0;
+            }
+        } catch (Throwable $exception) {
+            $this->log->warning('The shared native discovery connection is unavailable.', ['exception_type' => $exception::class]);
+            $this->close();
+            $this->backoff = min(60.0, max(1.0, $this->backoff * 2));
+            $this->nextConnection = ($this->clock)() + $this->backoff;
+        }
+    }
 
     public function enabled(): bool
     {
@@ -77,28 +122,16 @@ final class SwampScheduledResults
         }
         $this->feedRequest = bin2hex(random_bytes(16));
         $this->socket->send(['type' => 'commits.subscribe', 'id' => $this->feedRequest, 'payload' => ['cursor' => $this->cursor]]);
-        $this->attach();
-    }
-
-    public function attach(): void
-    {
-        if ($this->feedRequest === null || $this->refused) {
-            return;
-        }
-        foreach ($this->runs as $run => $_workflow) {
-            if (in_array($run, array_column($this->requests, 'run'), true)) {
-                continue;
-            }
-            $id = bin2hex(random_bytes(16));
-            $this->requests[$id] = ['run' => $run, 'attached' => false];
-            $this->socket->send(['type' => 'run.attach', 'id' => $id, 'payload' => ['runId' => $run, 'afterSeq' => 0]]);
+        // One startup/rejoin recovery of saved hints; no elapsed-time history retry.
+        foreach ($this->runs as $run => $workflow) {
+            $this->project($workflow, $run);
         }
     }
 
-    public function disconnected(): void
+    public function close(): void
     {
+        $this->socket->close();
         $this->feedRequest = null;
-        $this->requests = [];
         $this->readRequests = [];
         $this->readable = [];
     }
@@ -129,36 +162,8 @@ final class SwampScheduledResults
 
             return true;
         }
-        $entry = is_string($id) ? ($this->requests[$id] ?? null) : null;
-        if ($entry === null) {
-            return false;
-        }
-        $run = $entry['run'];
-        $workflow = $this->runs[$run];
-        $type = $message['type'] ?? null;
-        $payload = $message['payload'] ?? null;
-        $error = is_array($message['error'] ?? null) ? $message['error'] : [];
-        if ($type === 'run.attached' && is_array($payload) && ($payload['runId'] ?? null) === $run
-            && in_array($payload['kind'] ?? null, ['workflow-run', 'workflow-resume'], true)) {
-            $this->requests[$id]['attached'] = true;
-        } elseif (($type === 'run.interrupted' && is_array($payload) && ($payload['runId'] ?? null) === $run)
-            || ($type === 'error' && ($error['code'] ?? null) === 'not_found')) {
-            $this->project($workflow, $run, null, $id);
-        } elseif ($type === 'event' && $entry['attached']) {
-            $event = $message['event'] ?? null;
-            $native = is_array($event) ? ($event['run'] ?? null) : null;
-            $declaration = app(DirectOperation::class)->scheduledResultDefinitions()[$workflow];
-            if (is_array($event) && ! isset($event['parentRunId']) && is_int($event['seq'] ?? null) && $event['seq'] > 0
-                && in_array($event['kind'] ?? null, ['completed', 'cancelled'], true) && is_array($native)
-                && ($native['id'] ?? null) === $run && ($native['workflowName'] ?? null) === $declaration['workflow']
-                && in_array($native['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
-                $this->project($workflow, $run, $native['status'], $id);
-            }
-        } elseif ($type === 'error' || $type === 'run.elsewhere') {
-            $this->log->warning('The scheduled native root attachment was refused.', ['workflow_id' => $workflow, 'run_id' => $run]);
-        }
 
-        return true;
+        return false;
     }
 
     /** @param array<string,mixed> $message */
@@ -182,6 +187,7 @@ final class SwampScheduledResults
             throw new WebSocketException('The native commit feed frame is invalid.');
         }
         $runs = $this->runs;
+        $observed = [];
         $previous = $this->cursor;
         $declarations = app(DirectOperation::class)->scheduledResultDefinitions();
         foreach ($payload['changes'] as $change) {
@@ -204,23 +210,28 @@ final class SwampScheduledResults
                     throw new WebSocketException('The native scheduled run reference is invalid.');
                 }
                 $runs[$ref['runId']] = $ref['workflowId'];
+                $observed[$ref['runId']] = $ref['workflowId'];
             }
         }
         // Cursor and undispatched roots are one checkpoint, so restart cannot skip a discovered result.
         $this->save($payload['cursor'], $runs);
         $this->cursor = $payload['cursor'];
         $this->runs = $runs;
+        foreach ($observed as $run => $workflow) {
+            $this->project($workflow, $run);
+        }
     }
 
-    private function project(string $workflow, string $run, ?string $status, string $request): void
+    private function project(string $workflow, string $run): void
     {
         try {
-            ProjectSwampScheduledTerminal::dispatchSync($workflow, $run, $status);
+            if (ProjectSwampScheduledTerminal::dispatchSync($workflow, $run, null) === false) {
+                return;
+            }
             $remaining = $this->runs;
             unset($remaining[$run]);
             $this->save($this->cursor, $remaining);
             $this->runs = $remaining;
-            unset($this->requests[$request]);
         } catch (Throwable $exception) {
             $this->log->warning('The scheduled native result is unavailable.', ['workflow_id' => $workflow, 'run_id' => $run, 'exception_type' => $exception::class]);
         }

@@ -153,7 +153,7 @@ it('delivers each terminal frame synchronously for multiple bound streams', func
     $subscriber->pass();
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
     expect($socket->sent[0]['payload'])->toBe(['runId' => $first->state['swamp_run_id'], 'afterSeq' => 0]);
-    expect($socket->endpoints[0]->bearerToken)->toBe('private-native-read-token');
+    expect($socket->endpoints[0]->bearerToken)->toBe('private-native-token');
     expect($socket->endpoints[0]->caPath)->toBe('/public/ca.pem');
     $socket->push(nativeSubscriberAttached($socket->sent[0]), nativeSubscriberAttached($socket->sent[1]),
         nativeSubscriberFrame($socket->sent[0], $first, $status), nativeSubscriberFrame($socket->sent[1], $second, $status));
@@ -578,4 +578,23 @@ it('does not reset reconnect backoff for a handshake followed by immediate disco
     $subscriber->pass();
     $clock->now = 103.0;
     $subscriber->pass();
+});
+
+it('retains run authority for active bound attachments when the separate read credential cannot attach', function (): void {
+    Bus::fake([ProjectSwampTerminal::class]);
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $socket->onSend = static function (array $request) use ($socket, $operation): void {
+        if ($request['type'] !== 'run.attach') {
+            throw new RuntimeException('Bound attachment socket must not perform read discovery.');
+        }
+        if (array_last($socket->endpoints)->bearerToken !== 'private-native-token') {
+            $socket->push(['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'forbidden']]);
+
+            return;
+        }
+        $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
+    };
+    (new SwampRunSubscriber($socket, new NullLogger))->pass();
+    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id);
 });
