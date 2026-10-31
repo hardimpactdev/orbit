@@ -191,6 +191,7 @@ jobs:
       jobs: ${{ steps.plan.outputs.jobs }}
       gateway_release: ${{ steps.plan.outputs.gateway_release }}
       swamp_base_ref: ${{ steps.plan.outputs.swamp_base_ref }}
+      swamp_initial_import: ${{ steps.plan.outputs.swamp_initial_import }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -216,6 +217,7 @@ jobs:
     with:
       working-directory: swamp
       base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
+      allow-auth-unavailable: ${{ needs.changes.outputs.swamp_initial_import == 'true' && (github.event.pull_request.number == 2002 || github.ref == 'refs/heads/main') }}
     secrets: inherit
 
   gateway-release:

@@ -46,10 +46,18 @@ class ImportBaseTest(unittest.TestCase):
                 os.chdir(root)
                 # Both the import PR and its first main push compare against the pre-import Orbit base.
                 self.assertEqual(source, plan.swamp_comparison_base(orbit, imported))
+                result = json.loads(subprocess.check_output(
+                    ['python3', loader.path, '--base', orbit, '--head', imported, '--swamp-base'],
+                    cwd=root, timeout=60))
+                self.assertTrue(result['swamp_initial_import'])
                 (root / 'swamp/workflow.yaml').write_text('name: next\n')
                 git('add', '.')
                 git('commit', '-m', 'A later Swamp change')
                 self.assertEqual(imported, plan.swamp_comparison_base(imported, 'HEAD'))
+                result = json.loads(subprocess.check_output(
+                    ['python3', loader.path, '--base', imported, '--swamp-base'],
+                    cwd=root, timeout=60))
+                self.assertFalse(result['swamp_initial_import'])
                 # Ordinary job scopes work with a shallow checkout; only the central selector resolves history.
                 shallow = root / 'shallow'
                 git('clone', '--depth=1', root.as_uri(), str(shallow))

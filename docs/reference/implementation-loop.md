@@ -100,6 +100,8 @@ Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks an
 
 `Gateway release inputs` records whether the whole push includes Orbit inputs; both the Gateway and CLI publisher read that check instead of recomputing the last commit. The initial import ratchets against its retained Swamp source commit, recorded in `swamp/import-source.json`; once the comparison base contains `swamp/`, every run uses its actual Orbit base.
 
+The initial history import, PR #2002 and its first main push, may report workflow validation as **auth unavailable** while credential scope awaits Nick's decision. CI states that validation did not run and records a warning and job summary. This exception requires a comparison base without `swamp/`; later changes fail when validation authentication is absent. Shape, placement and Operation tests remain required throughout. No personal credential is copied into public-repository Actions without approval.
+
 Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
