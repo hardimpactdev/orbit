@@ -196,7 +196,7 @@ it('admits immutable field custody without exporting private material or invokin
     $hub = Node::query()->create(['name' => 'vpn', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
     $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     config()->set('dependency_detection.services_node_id', $issuer->id);
-    app(ModelKeyIssuer::class)->shouldReceive('ownerNodeId')->once()->andReturn($router->id);
+    app(ModelKeyIssuer::class)->shouldReceive('ownerNodeId')->twice()->andReturn($router->id);
     $home = sys_get_temp_dir().'/native-enrollment-'.bin2hex(random_bytes(8));
     mkdir($home.'/wireguard', 0o700, true);
     file_put_contents($home.'/wireguard/private.key', 'PRIVATE-HUB');
@@ -209,10 +209,19 @@ it('admits immutable field custody without exporting private material or invokin
         expect($private['private_bindings']['worker_credentials'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->host_node_id, $issuer->id], 'write_node_ids' => [$issuer->id]]);
         expect($private['private_bindings']['installation'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->node_id], 'write_node_ids' => []]);
         expect($private['private_bindings']['model_router']['owner_node_id'])->toBe($router->id);
+        expect($private['private_bindings']['provider_bootstrap'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [], 'write_node_ids' => []]);
+        expect($private)->not->toHaveKey('provider_bootstrap');
+        expect($private['model_router_node_id'])->toBe($router->id);
+        expect($private['model_origin'])->toBe($intent['runtime']['origin']);
         $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id, 'input' => [...$intent, ...$private]]);
         $public = app(TaskVmEnrollmentProjection::class)->input($operation);
         expect(json_encode($public))->not->toContain('$secret')->not->toContain('PRIVATE-HUB')->not->toContain($vm->fresh()->model_key);
         expect(app(TaskVmEnrollmentIntent::class)->installation($vm)['environment'])->toContain('#');
+        $vm->update(['provider' => 'upcloud', 'host_node_id' => null]);
+        $cloudPrivate = app(TaskVmEnrollmentIntent::class)->privateInput($vm, $intent['execution_node_id'], providerCreate: true);
+        expect($cloudPrivate['provider_bootstrap'])->toBe(['$secret' => 'task_vm.provider_bootstrap', 'id' => $vm->id]);
+        expect($cloudPrivate['private_bindings']['provider_bootstrap'])->toBe(['owner_node_id' => $vm->node_id,
+            'read_node_ids' => [$cloudPrivate['gateway_node_id']], 'write_node_ids' => [$cloudPrivate['gateway_node_id']]]);
         $this->assertDatabaseCount('operations', 0);
     } finally {
         new Filesystem()->deleteDirectory($home);

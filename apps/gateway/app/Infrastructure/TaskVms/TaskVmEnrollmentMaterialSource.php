@@ -72,9 +72,11 @@ final readonly class TaskVmEnrollmentMaterialSource implements OperationSecretSo
             if ($owner === $vm->node_id && $vm->provider->value === 'incus') {
                 return new OperationSecretValue(null);
             }
-            if ($owner !== $vm->node_id || $vm->provider->value !== 'upcloud'
-                || $vm->address === null || $vm->ssh_host_key === null) {
+            if ($owner !== $vm->node_id || $vm->provider->value !== 'upcloud') {
                 $this->refuse();
+            }
+            if ($vm->address === null || $vm->ssh_host_key === null) {
+                return new OperationSecretValue(null);
             }
 
             return new OperationSecretValue(['kind' => 'ssh', 'address' => $vm->address,
@@ -85,9 +87,12 @@ final readonly class TaskVmEnrollmentMaterialSource implements OperationSecretSo
         }
         $node = $vm->node ?? throw new ResourceOperationException('task_vm.not_enrolled', 'The VM has no admitted Node.', 409);
         $vpn = app(VpnConfigurationRepository::class)->forPeer($node);
-        if ($owner !== $vpn->server->id || $node->wireguard_public_key === null || $vpn->server->ssh_host_key_type !== 'ssh-ed25519'
+        if ($owner !== $vpn->server->id || $vpn->server->ssh_host_key_type !== 'ssh-ed25519'
             || $vpn->server->ssh_host_key === null || $vpn->server->wireguard_ip === null) {
             $this->refuse();
+        }
+        if ($node->wireguard_public_key === null) {
+            return new OperationSecretValue(null);
         }
 
         return new OperationSecretValue(['hub' => ['address' => $vpn->server->wireguard_ip,

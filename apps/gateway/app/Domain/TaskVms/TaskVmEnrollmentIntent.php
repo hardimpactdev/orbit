@@ -81,7 +81,7 @@ final readonly class TaskVmEnrollmentIntent
     /** Admitted placement, references and private-field custody for this same native root.
      * @return array<string,mixed>
      */
-    public function privateInput(TaskVm $vm, int $rootNodeId): array
+    public function privateInput(TaskVm $vm, int $rootNodeId, bool $providerCreate = false): array
     {
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'Enrollment requires its reserved guest Node.');
         $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($query) => $query
@@ -105,6 +105,9 @@ final readonly class TaskVmEnrollmentIntent
             'pi_artifact_file' => [$node->id, [$node->id], []],
             'enrollment_network' => [$network->server->id, [$gateway->id], []],
             'first_visit' => [$node->id, [$host->id], []],
+            'provider_bootstrap' => [$node->id,
+                $providerCreate && $vm->provider === TaskVmProviderKind::UpCloud ? [$gateway->id] : [],
+                $providerCreate && $vm->provider === TaskVmProviderKind::UpCloud ? [$gateway->id] : []],
         ] as $field => [$owner, $readers, $writers]) {
             $bindings[$field] = ['owner_node_id' => $owner, 'read_node_ids' => array_values(array_unique($readers)), 'write_node_ids' => $writers];
         }
@@ -116,9 +119,13 @@ final readonly class TaskVmEnrollmentIntent
         }
         $references['secret_hash'] = ['$secret' => 'node.agent_secret_hash', 'id' => $node->id];
         $references['worker_credentials'] = ['$secret' => 'node.worker_credentials', 'id' => $node->id];
+        if ($providerCreate && $vm->provider === TaskVmProviderKind::UpCloud) {
+            $references['provider_bootstrap'] = ['$secret' => 'task_vm.provider_bootstrap', 'id' => $vm->id];
+        }
 
         return [...$references, 'participant_node_ids' => array_values(array_unique([$rootNodeId, $host->id, $gateway->id, $issuer->id, $node->id, $network->server->id, $routerNodeId])),
             'private_bindings' => $bindings, 'gateway_node_id' => $gateway->id, 'issuer_node_id' => $issuer->id,
+            'model_router_node_id' => $routerNodeId, 'model_origin' => $this->keys->origin(),
             'network' => ['server_public_key' => $network->serverPublicKey, 'endpoint' => $network->endpoint,
                 'address' => $network->peerAddress, 'subnet' => $network->subnet, 'dns_server' => $network->dnsServer, 'domains' => [$network->domain]],
             'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256],

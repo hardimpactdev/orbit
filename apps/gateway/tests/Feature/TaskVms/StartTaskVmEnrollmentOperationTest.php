@@ -71,8 +71,8 @@ function standaloneEnrollmentVm(): TaskVm
         {
             return isset($this->known['task_vm.enroll']) ? [] : ['task_vm.enroll' => [
                 'workflow' => 'operation-task-vm-enroll', 'projection' => TaskVmEnrollmentProjection::class,
-                'private_material' => ['installation' => 'task_vm.installation', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit'],
-                'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
+                'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'installation' => 'task_vm.installation', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+                'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
             ]];
         }
     };
