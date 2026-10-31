@@ -12,6 +12,10 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Caddy\Build\CaddyListenerRule;
+use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -142,14 +146,57 @@ it('admits Vite stop and destroy without traffic preparation', function (string 
         ->assertOk()->assertJsonPath('data.input.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
 })->with(['stop', 'destroy']);
 
-it('keeps unconverted controls polled even with a stale direct setting', function (): void {
-    config(['swamp.direct_writers' => ['process.start' => 'direct', 'process.restart' => 'direct']]);
-    expect(app(DirectOperation::class)->writer('process.start', ['vite' => null]))->toBeNull();
+it('uses one direct start writer for Vite and existing owning admissions', function (): void {
+    config(['swamp.direct_writers' => []]);
+    expect(app(DirectOperation::class)->writer('process.start', ['vite' => null]))->toBe('direct');
     expect(app(DirectOperation::class)->writer('process.restart', ['vite' => null]))->toBeNull();
+    expect(app(DirectOperation::class)->writer('process.start', ['vite' => ['instance_id' => 8]]))->toBe('direct');
+    app(OperationIdempotency::class)->parent = $this->operation;
+    expect(app(DirectOperation::class)->writer('process.start', ['vite' => null]))->toBe('direct');
 });
 
 it('projects only a typed native refusal without changing desired state', function (): void {
     $this->postJson($this->path.'/result', [...$this->body, 'status' => 'failed', 'error_code' => 'process.stop_failed', 'result' => ['error_code' => 'process.stop_failed', 'output' => 'private']])->assertOk()->assertJsonPath('data.result', ['error_code' => 'process.stop_failed']);
     expect($this->process->fresh()->desired_state->value)->toBe('stopped');
     expect($this->process->fresh()->error_code)->toBe('process.stop_failed');
+});
+
+it('refreshes same-root public Caddy input on every Vite read without saving the render or exposing private fields', function (): void {
+    $source = Mockery::mock(NodeCaddySiteSource::class);
+    $source->shouldReceive('order')->andReturn(1);
+    $source->shouldReceive('sites')->andReturnUsing(fn (Node $node): array => [new CaddySite(
+        'test', 'current', CaddyListenerRule::WireGuard, ['preview.test'], 443, "preview.test { respond {$node->name} }",
+    )]);
+    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([$source]));
+    $this->operation->update(['kind' => 'process.start', 'input' => [...$this->operation->input, 'vite_plan' => ['admitted' => 'public-plan'], 'command' => 'private-command']]);
+    $original = $this->operation->input;
+    $before = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertDontSee('private-command')->json('data.input');
+    $this->node->update(['name' => 'fresh-vite-port-owner']);
+    $after = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertDontSee('private-command')->json('data.input');
+    expect($after['caddy_publication']['node_id'])->toBe($this->operation->node_id)
+        ->and($after['caddy_publication']['caddy']['content'])->toContain('fresh-vite-port-owner')
+        ->and($after['caddy_publication']['caddy']['version'])->not->toBe($before['caddy_publication']['caddy']['version'])
+        ->and($after['vite_plan'])->toBe(['admitted' => 'public-plan'])
+        ->and($this->operation->fresh()->input)->toBe($original);
+    $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
+});
+
+it('admits native start while an obsolete PHP runtime lease is unavailable', function (): void {
+    config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
+    $lease = Mockery::mock(ProcessRuntimeLease::class);
+    app()->instance(ProcessRuntimeLease::class, $lease);
+    $this->operation->update(['status' => OperationStatus::Succeeded]);
+    $id = $this->postJson('/api/v1/processes/'.$this->process->id.'/start')->assertAccepted()->json('data.id');
+    $admitted = Operation::query()->findOrFail($id);
+    expect($admitted->state['process_control_writer'])->toBe('direct')
+        ->and($admitted->state['swamp_run_id'])->toBe($this->runId)
+        ->and($admitted->lock_key)->toBeNull()
+        ->and($admitted->children()->count())->toBe(0);
+});
+
+it('refuses the removed polled start writer before recording intent', function (): void {
+    config(['swamp.direct_writers' => ['process.start' => 'polled'], 'dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
+    $before = Operation::query()->count();
+    $this->postJson('/api/v1/processes/'.$this->process->id.'/start')->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(Operation::query()->count())->toBe($before)->and($this->socket->sent)->toBe([]);
 });
