@@ -22,21 +22,35 @@ final readonly class NodeNetworkInput
     /** @return array<string,mixed> */
     public function capture(Node $node, bool $rolelessOperator = false): array
     {
+        if (! is_string($node->wireguard_ip)) {
+            throw $this->invalid();
+        }
+
+        return $this->forAdmitted($node, $node->wireguard_ip, $node->wireguard_endpoint_override,
+            $node->dns_server_override, $node->tld, $rolelessOperator);
+    }
+
+    /** Public parent capture from admitted values; prior Node/key identity remains authoritative.
+     * @return array<string,mixed>
+     */
+    public function forAdmitted(Node $node, string $address, ?string $endpointOverride, ?string $dnsOverride,
+        ?string $tld, bool $rolelessOperator = false): array
+    {
         $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();
         $subnet = Ipv4Subnet::from($this->vpn->subnet());
         $publicPath = rtrim(Config::string('orbit.home'), '/').'/wireguard/public.key';
         $publicKey = is_file($publicPath) ? trim((string) file_get_contents($publicPath)) : '';
-        $endpoint = $node->wireguard_endpoint_override ?? $this->vpn->endpoint() ?? WireGuardEndpoint::format($hub->public_ssh_host, (int) $this->vpn->port());
+        $endpoint = $endpointOverride ?? $this->vpn->endpoint() ?? WireGuardEndpoint::format($hub->public_ssh_host, (int) $this->vpn->port());
         if (preg_match('/\A[A-Za-z0-9+\/]{43}=\z/D', $publicKey) !== 1 || ! WireGuardEndpoint::isValid($endpoint)
-            || ! is_string($node->wireguard_ip) || ! $subnet->containsUsableAddress($node->wireguard_ip)
+            || ! $subnet->containsUsableAddress($address)
             || ! is_string($hub->wireguard_ip) || ! $subnet->containsUsableAddress($hub->wireguard_ip)) {
             throw $this->invalid();
         }
         $roleless = $rolelessOperator;
         $snapshot = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
-            'peer' => ['server_public_key' => $publicKey, 'endpoint' => $endpoint, 'address' => $node->wireguard_ip.'/'.$subnet->prefixLength(),
-                'subnet' => $subnet->value(), 'dns_server' => $this->dns->server($node, $hub->wireguard_ip),
-                'domains' => $roleless ? [$this->vpn->domain()] : $this->dns->domains($node),
+            'peer' => ['server_public_key' => $publicKey, 'endpoint' => $endpoint, 'address' => $address.'/'.$subnet->prefixLength(),
+                'subnet' => $subnet->value(), 'dns_server' => $this->dns->serverForOverride($dnsOverride, $hub->wireguard_ip),
+                'domains' => $roleless ? [$this->vpn->domain()] : $this->dns->domainsForAdmittedNode($node, $tld),
                 'operator_dns' => $roleless ? $hub->wireguard_ip : null, 'retain' => $node->wireguard_public_key !== null],
             'trust' => $this->firewall->trust($node)];
 

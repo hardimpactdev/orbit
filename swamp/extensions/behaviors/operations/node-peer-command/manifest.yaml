@@ -1,0 +1,16 @@
+manifestVersion: 1
+name: "@nckrtl/node-peer-command"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public metadata for individually placed existing peer configuration actions.
+behaviors:
+  - operations/node-peer-command/assets.ts
+additionalFiles:
+  - scripts/common.py
+  - scripts/snapshot.py
+  - scripts/prepare_key.py
+  - scripts/publish.py
+  - scripts/record_dns.py
+  - scripts/restore.py
+  - scripts/cleanup.py
