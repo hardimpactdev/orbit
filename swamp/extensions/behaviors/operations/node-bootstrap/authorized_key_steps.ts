@@ -37,7 +37,7 @@ export function authorizedKeySteps(
             inputs: {
                 hosts: "name:target",
                 interpreter: "python3",
-                sudo: true,
+                sudo: false,
                 script: expr('steps["' + asset + '"].outputs.script_body'),
             },
         },

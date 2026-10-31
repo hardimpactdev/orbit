@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -28,7 +29,8 @@ final readonly class CaddySiteCertificates
 
     public function published(int $nodeId, string $site): bool
     {
-        return $this->settings->get($this->scope($nodeId), self::KeyPrefix.$site) !== null;
+        return app(RouteRenderContext::class)->roleCertificatePublished($nodeId, $site)
+            ?? ($this->settings->get($this->scope($nodeId), self::KeyPrefix.$site) !== null);
     }
 
     /**
