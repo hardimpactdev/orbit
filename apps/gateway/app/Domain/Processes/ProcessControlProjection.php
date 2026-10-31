@@ -22,7 +22,11 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        return $this->inputFor($operation->kind, $operation->input, (int) $operation->node_id);
+        $input = $this->inputFor($operation->kind, $operation->input, (int) $operation->node_id);
+
+        return $operation->kind === 'process.stop'
+            ? ['intent' => Arr::except($input, ['agent_sha256']), 'execution_secrets' => []]
+            : $input;
     }
 
     /** @param array<string,mixed> $intent

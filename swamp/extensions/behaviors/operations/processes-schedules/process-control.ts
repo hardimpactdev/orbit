@@ -18,7 +18,7 @@ const Kind = z.enum([
   "process.destroy",
 ]);
 const Args = DirectArgs.extend({
-  kind: Kind,
+  kind: Kind.exclude(["process.stop"]),
   node_id: z.number().int().positive(),
 });
 const State = z.string().regex(/^[a-z][a-z_-]{0,63}$/);

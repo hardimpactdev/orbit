@@ -1,0 +1,140 @@
+id: 983c76da-115e-4629-b5db-80e7762982ac
+name: operation-process-stop
+description: Explicit Process stop from full public intent with separate boot policy, control and verification steps.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - process.stop
+    intent:
+      type: object
+      properties:
+        process_id:
+          type: integer
+          minimum: 1
+        runtime:
+          type: string
+          enum:
+          - systemd
+          - docker
+        name:
+          type: string
+          pattern: ^orbit-process-[1-9][0-9]*-[a-z0-9-]+(?:\.service)?$
+        on_demand:
+          type: boolean
+        vite:
+          default: null
+          enum:
+          - null
+      required:
+      - process_id
+      - runtime
+      - name
+      - on_demand
+      - vite
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: runtime
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/process-command-assets'
+      behaviorName: ${{ "process-stop-assets-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        control: ${{ inputs.intent }}
+  - name: disable
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.runtime != "systemd" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "process-stop-disable-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'sudo -n --preserve-env=ORBIT_PROCESS_CONTROL,ORBIT_PROCESS_ENABLE /usr/bin/python3 "${{ steps.assets.outputs.enable_script
+          }}"
+
+          '
+        env:
+          ORBIT_PROCESS_CONTROL: ${{ steps.assets.outputs.control_json }}
+          ORBIT_PROCESS_ENABLE: disable
+  - name: stop
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    - step: disable
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "process-stop-stop-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'sudo -n --preserve-env=ORBIT_PROCESS_CONTROL,ORBIT_PROCESS_OPERATION /usr/bin/python3 "${{ steps.assets.outputs.control_script
+          }}"
+
+          '
+        env:
+          ORBIT_PROCESS_CONTROL: ${{ steps.assets.outputs.control_json }}
+          ORBIT_PROCESS_OPERATION: stop
+  - name: verify
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    - step: stop
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "process-stop-verify-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'sudo -n --preserve-env=ORBIT_PROCESS_CONTROL,ORBIT_PROCESS_DESIRED /usr/bin/python3 "${{ steps.assets.outputs.verify_script
+          }}"
+
+          '
+        env:
+          ORBIT_PROCESS_CONTROL: ${{ steps.assets.outputs.control_json }}
+          ORBIT_PROCESS_DESIRED: stopped
