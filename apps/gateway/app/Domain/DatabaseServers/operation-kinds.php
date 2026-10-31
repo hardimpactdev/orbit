@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $kinds = ['database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
+    $kinds = ['database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $kinds;
     }
@@ -46,7 +46,6 @@ return (static function (): array {
         'database_server.close' => [$valkey],
         'database.create' => [$sql, $valkey],
         'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
-        'database_user.create' => [$sql],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],
         'database.sqlite_export' => [$sqliteCopy, $seedSource],

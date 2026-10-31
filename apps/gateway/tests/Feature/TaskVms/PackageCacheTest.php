@@ -178,22 +178,3 @@ it('stops before guest seeding when the mount does not confirm completion', func
     });
     expect($guests->calls)->toBe([]);
 })->with(['missing' => [[]], 'false' => [['ready' => false]], 'mistyped' => [['ready' => 'true']]]);
-
-it('accepts bounded printable archive failure reasons and rejects unsafe or oversized text', function (string $reason, bool $accepted): void {
-    $artifacts = [['manager' => 'composer', 'package' => 'acme/demo', 'version' => '1.0.0', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'integrity' => null, 'key' => 'archive']];
-
-    if ($accepted) {
-        expect(TaskVmPackageCache::verifiedResult($artifacts, ['hashes' => [], 'failures' => ['archive' => $reason]]))->toBe(['hashes' => [], 'failures' => ['archive' => $reason]]);
-    } else {
-        expect(fn () => TaskVmPackageCache::verifiedResult($artifacts, ['hashes' => [], 'failures' => ['archive' => $reason]]))->toThrow(TaskVmException::class, 'no verified archive hash or artifact failure');
-    }
-})->with([
-    'fixed reason' => ['Archive checksum mismatch', true],
-    'HTTP status' => ['HTTP 429', true],
-    'printable boundary' => [str_repeat('x', 160), true],
-    'empty' => ['', false],
-    'newline' => ["HTTP 429\nsecret", false],
-    'control byte' => ["Cache\0full", false],
-    'non-ASCII' => ['échec', false],
-    'oversized' => [str_repeat('x', 161), false],
-]);

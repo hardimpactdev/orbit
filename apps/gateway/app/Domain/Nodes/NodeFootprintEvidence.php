@@ -56,6 +56,12 @@ final readonly class NodeFootprintEvidence
 
                 continue;
             }
+            if (($artifact['error_code'] ?? null) === 'operation.kind_unavailable') {
+                $retained = [...$recorded, ...$applied];
+                unset($retained[$name]);
+
+                return $this->result($artifacts, $skipped, $retained, 'operation.kind_unavailable');
+            }
             $specs = ValidatedData::object($snapshot['children'] ?? []);
             $spec = $specs[$name] ?? null;
             if (is_array($spec)) {

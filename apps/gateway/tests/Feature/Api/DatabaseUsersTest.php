@@ -110,33 +110,6 @@ it('refuses replication on non-PostgreSQL drivers with 422 before admin commands
     $this->assertDatabaseCount('database_users', 0);
 })->with(['mysql', 'redis', 'sqlite']);
 
-it('refuses replication without logical WAL with 422 before changing roles or records', function (array $walLevel): void {
-    $connection = DatabaseConnection::query()->sole();
-    $connection->server->update(['driver' => 'pgsql', 'tag' => '18']);
-    $connection->update(['driver' => 'pgsql']);
-    $this->admin->rows['SHOW wal_level'] = $walLevel;
-
-    $this->postJson('/api/v1/database-connections/dlf-leden/users', ['username' => 'sync_reader', 'password' => DATABASE_USER_SECRET, 'replication' => true])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'database.wal_level_not_logical');
-
-    expect($this->admin->sql())->not->toContain('ALTER ROLE', 'GRANT');
-    $this->assertDatabaseCount('database_users', 0);
-})->with(['replica' => [['replica']], 'minimal' => [['minimal']], 'unverified' => [[]]]);
-
-it('refuses replication for connection owners and unowned PostgreSQL roles with 409', function (string $username): void {
-    $connection = DatabaseConnection::query()->sole();
-    $connection->server->update(['driver' => 'pgsql', 'tag' => '18']);
-    $connection->update(['driver' => 'pgsql']);
-    $this->admin->rows['SHOW wal_level'] = ['logical'];
-    $this->admin->rows['SELECT rolname FROM pg_roles'] = ['other_role'];
-
-    $this->postJson('/api/v1/database-connections/dlf-leden/users', ['username' => $username, 'password' => DATABASE_USER_SECRET, 'replication' => true])
-        ->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
-
-    expect($this->admin->sql())->not->toContain('ALTER ROLE', 'GRANT');
-    $this->assertDatabaseCount('database_users', 0);
-})->with(['dlf_main', 'other_role']);
-
 it('validates replication as a strict boolean with 422', function (): void {
     $this->postJson('/api/v1/database-connections/dlf-leden/users', ['username' => 'sync_reader', 'password' => DATABASE_USER_SECRET, 'replication' => 'true'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');

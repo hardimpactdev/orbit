@@ -19,7 +19,7 @@ final readonly class InstanceSetupProjection implements DirectOperationProjectio
     public function input(Operation $operation): array
     {
         if ($operation->status->terminal()) {
-            return array_intersect_key($operation->input, array_flip(['instance_id', 'project_id', 'list', 'execution', 'steps']));
+            return array_intersect_key($operation->input, array_flip(['instance_id', 'project_id', 'environment', 'list', 'execution', 'steps']));
         }
 
         return $this->intent->input($operation);

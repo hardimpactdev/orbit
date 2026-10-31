@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -21,7 +22,8 @@ final readonly class RoutePublicationProjection implements DirectOperationProjec
     {
         app(DirectRoutePublication::class)->assertOperation($operation);
 
-        return [];
+        return $operation->kind === 'route.caddy_converge'
+            ? ['caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id))] : [];
     }
 
     /** @param array<string, mixed> $data */

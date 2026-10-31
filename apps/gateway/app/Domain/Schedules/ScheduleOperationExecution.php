@@ -22,7 +22,6 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
     {
         return match ($verb) {
             'create' => ['id', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'command', 'calendar', 'timeout_seconds', 'desired'],
-            'enable' => ['id', 'user', 'working_directory'],
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Schedule action.', 422),
         };
     }
@@ -31,7 +30,7 @@ final readonly class ScheduleOperationExecution implements OperationFamilyExecut
     {
         $verb = substr($operation->kind, strlen('schedule.'));
         $command = match ($verb) {
-            'create' => 'install', 'enable' => 'activate',
+            'create' => 'install',
             default => throw new ResourceOperationException('operation.execution_forbidden', 'Unknown Schedule action.', 422),
         };
         $key = 'schedule-'.$command;

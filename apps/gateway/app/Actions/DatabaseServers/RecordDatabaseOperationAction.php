@@ -8,7 +8,9 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -34,8 +36,16 @@ final readonly class RecordDatabaseOperationAction
             throw new ResourceOperationException('operation.kind_unavailable', 'This database kind requires its kit execution capabilities.', 503);
         }
 
+        $input = $prepared->input;
+        if ($prepared->kind === 'database_user.create') {
+            $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($prepared->nodeId));
+            foreach (['password', 'sql'] as $parameter) {
+                $input[$parameter] = ['$secret' => 'database.intent', 'id' => $input['intent_id']];
+            }
+        }
+
         return $this->operations->execute($prepared->kind, $prepared->targetType, $prepared->targetId, $prepared->nodeId,
-            $prepared->input, 'operator', request()->attributes->getString('orbit.request_id'));
+            $input, 'operator', request()->attributes->getString('orbit.request_id'));
     }
 
     /** @param array<string, mixed> $input

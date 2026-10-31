@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
@@ -18,11 +19,12 @@ use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeValkeyServerAdmin;
 
 function databaseAdmissionNode($test): Node
 {
-    $node = Node::query()->create(['name' => 'dev-db', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+    $node = Node::query()->create(['name' => 'dev-db', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'amd64',
         'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']);
     NodeRole::query()->create(['node_id' => $node->id, 'role' => 'gateway', 'status' => 'active']);
     $node->accessibleNodes()->attach($node);
@@ -80,6 +82,10 @@ it('records PostgreSQL intent with a protected owner and locale', function (): v
 });
 
 it('admits reader grants without executing SQL or exposing passwords', function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-user-create', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
     $node = databaseAdmissionNode($this);
     $server = databaseAdmissionServer($node);
     DatabaseConnection::query()->create(['slug' => 'throwaway', 'driver' => 'mysql', 'node_id' => $node->id,

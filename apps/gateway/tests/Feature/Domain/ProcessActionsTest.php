@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\ListProcessesAction;
+use App\Actions\Processes\RecordProcessIntentAction;
 use App\Actions\Processes\RestartProcessAction;
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
@@ -34,11 +35,13 @@ use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessActionsFakeRuntimeManager;
@@ -71,6 +74,99 @@ beforeEach(function (): void {
         'status' => InstanceState::Active,
     ]);
 });
+
+it('records a Node Process before parent capture without starting a child or touching its runtime', function (): void {
+    $data = recordOnlyNodeProcessData($this->node);
+    $this->runtime->startUnavailable = true;
+
+    $record = DB::transaction(fn (): array => app(RecordProcessIntentAction::class)->execute(
+        $data,
+        $this->targets->forNodeAdmission($this->node),
+    ));
+
+    $this->assertModelExists($record['process']);
+    expect($record['created'])->toBeTrue();
+    expect($record['process']->owner_id)->toBe($this->node->id)
+        ->and($record['process']->owner_type)->toBe(Node::class)
+        ->and($record['process']->desired_state)->toBe(DesiredProcessState::Running)
+        ->and($record['process']->status)->toBe(LifecycleStatus::Provisioning);
+    expect(Operation::query()->count())->toBe(0);
+    expect($this->runtime->startPreflights)->toBeEmpty();
+    expect($this->runtime->converged)->toBeEmpty();
+});
+
+it('reuses matching Node intent without changing desired state or projecting success', function (): void {
+    $action = app(RecordProcessIntentAction::class);
+    $data = recordOnlyNodeProcessData($this->node);
+    $target = $this->targets->forNodeAdmission($this->node);
+    $first = $action->execute($data, $target);
+    $first['process']->update(['desired_state' => DesiredProcessState::Stopped, 'status' => LifecycleStatus::Failed, 'error_code' => 'process.start_failed']);
+    $original = $first['process']->refresh()->getRawOriginal();
+
+    $second = $action->execute($data, $target);
+
+    expect($second['created'])->toBeFalse();
+    expect($second['process']->id)->toBe($first['process']->id);
+    expect($second['process']->refresh()->getRawOriginal())->toBe($original);
+    expect(Process::query()->count())->toBe(1);
+});
+
+it('refuses a conflicting Process specification without replacing the owned record', function (): void {
+    $action = app(RecordProcessIntentAction::class);
+    $data = recordOnlyNodeProcessData($this->node);
+    $target = $this->targets->forNodeAdmission($this->node);
+    $record = $action->execute($data, $target)['process'];
+    $record->update(['runtime_config' => ['command' => ['/usr/bin/sleep', '100'], 'environment_file' => '']]);
+    $original = $record->refresh()->getRawOriginal();
+
+    expect(fn () => $action->execute($data, $target))->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('process.name_taken');
+    });
+
+    expect($record->refresh()->getRawOriginal())->toBe($original);
+    expect(Process::query()->count())->toBe(1);
+});
+
+it('refuses a record target that differs from its parent-admitted owner', function (): void {
+    $data = recordOnlyNodeProcessData($this->node);
+
+    expect(fn () => app(RecordProcessIntentAction::class)->execute($data, $this->targets->forAdmission($this->instance)))
+        ->toThrow(function (ResourceOperationException $error): void {
+            expect($error->errorCode)->toBe('process.target_unavailable');
+        });
+
+    expect(Process::query()->count())->toBe(0);
+});
+
+it('rolls back a new Process definition when its parent admission fails', function (): void {
+    $data = recordOnlyNodeProcessData($this->node);
+
+    expect(fn () => DB::transaction(function () use ($data): void {
+        app(RecordProcessIntentAction::class)->execute($data, $this->targets->forNodeAdmission($this->node));
+        throw new LogicException('Parent capture refused');
+    }))->toThrow(LogicException::class, 'Parent capture refused');
+
+    expect(Process::query()->count())->toBe(0);
+    expect(Operation::query()->count())->toBe(0);
+});
+
+function recordOnlyNodeProcessData(Node $node): AddProcessData
+{
+    return new AddProcessData(
+        targetType: ProcessTargetType::Node,
+        targetId: $node->id,
+        name: 'collector',
+        runtime: ProcessRuntime::Systemd,
+        command: ['/usr/bin/true'],
+        image: null,
+        workingDirectory: null,
+        environment: [],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'always',
+        start: true,
+    );
+}
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(

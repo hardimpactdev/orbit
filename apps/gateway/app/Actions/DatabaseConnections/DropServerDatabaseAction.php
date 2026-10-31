@@ -7,6 +7,7 @@ namespace App\Actions\DatabaseConnections;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
+use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
@@ -120,9 +121,13 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
+            if ($server->driver !== DatabaseDriver::Redis) {
+                app(DatabaseDestroySafety::class)->assertNames($connection->database === null ? [] : [$connection->database], $connection->test_database === null ? [] : [$connection->test_database]);
+            }
             $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => [], 'owners' => [], 'by_connection' => []];
             $groups[$server->id]['connections'][] = $connection->id;
             $names = $this->databases($connection, $server);
+            app(DatabaseDestroySafety::class)->assertNames($names);
             if ($server->driver === DatabaseDriver::Mysql) {
                 $this->ownership->assertMysqlNames($connection, $names);
             }

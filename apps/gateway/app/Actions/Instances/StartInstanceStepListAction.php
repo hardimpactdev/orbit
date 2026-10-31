@@ -28,13 +28,13 @@ final readonly class StartInstanceStepListAction
     public function appStepAdmission(Instance $instance, LifecyclePhase $phase): array
     {
         $directory = $instance->checkout_path;
-        if ($instance->placedOnAppProd() || preg_match('/\A[a-z_][a-z0-9_-]{0,63}\z/D', $instance->node->user) !== 1 || $instance->node->user === 'root'
+        if (! $instance->placedOnAppDev() || preg_match('/\A[a-z_][a-z0-9_-]{0,63}\z/D', $instance->node->user) !== 1 || $instance->node->user === 'root'
             || preg_match('/\A\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\z/D', $directory) !== 1
             || array_intersect(explode('/', $directory), ['.', '..']) !== []) {
             throw new ResourceOperationException('instance.step_not_admitted', 'The step execution account and checkout must be admitted non-root paths.', 409);
         }
 
-        return ['project_id' => $instance->project_id, 'execution' => [
+        return ['project_id' => $instance->project_id, 'environment' => 'development', 'execution' => [
             'variant' => 'checkout', 'user' => $instance->node->user, 'directory' => $instance->checkout_path,
             'seed_path' => $phase === LifecyclePhase::Setup && $instance->seed_path !== $instance->checkout_path ? ($instance->seed_path ?? '') : '',
             'seed_commit' => $phase === LifecyclePhase::Setup && $instance->seed_path !== $instance->checkout_path ? ($instance->seed_commit ?? '') : '',

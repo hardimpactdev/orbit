@@ -47,6 +47,21 @@ it('keeps Project commands out of admitted setup input and uses one digest rule'
         ->and(json_encode($operation->input))->not->toContain('synthetic-private-script');
 });
 
+it('derives development execution from placement and ignores caller account fields', function (): void {
+    $instance = dev935_instance();
+    $instance->node->update(['user' => 'nckrtl']);
+    $instance->node->accessibleNodes()->attach($instance->node_id);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $response = $this->postJson('/api/v1/instances/'.$instance->id.'/setup', [
+        'environment' => 'production', 'execution' => ['user' => 'root', 'directory' => '/root'],
+    ])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->input['environment'])->toBe('development')
+        ->and($operation->input['execution']['user'])->toBe('nckrtl')
+        ->and($operation->input['execution']['directory'])->toBe($instance->checkout_path)
+        ->and($operation->input['execution']['variant'])->toBe('checkout');
+});
+
 it('refuses a root execution account or unsafe checkout before recording intent', function (string $change): void {
     $instance = dev935_instance();
     if ($change === 'root') {
