@@ -26,8 +26,9 @@ beforeEach(function (): void {
     $this->worker = Node::query()->create(['name' => 'swamp', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.17', 'status' => LifecycleStatus::Active]);
     $this->worker->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->node = Node::query()->forceCreate(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'id' => 209, 'name' => 'private-dev', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
+    $this->node->accessibleNodes()->attach($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->input = ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq', 'version_constraint' => null, 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64'];
     $this->operation = Operation::query()->create(['kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => $this->input]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -35,12 +36,12 @@ beforeEach(function (): void {
     $this->body = ['run_id' => $this->runId, 'started_at' => '2026-10-30T12:00:00.000Z'];
 });
 
-it('returns typed intent without command descriptors and requires the executor peer', function (): void {
+it('returns typed intent only to the exact admitted Node', function (): void {
     $this->operation->update(['input' => [...$this->input, 'version_constraint' => '^1.0', 'constraint_intervals' => [['start' => 'discard']]]]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.manager', 'apt')->assertJsonPath('data.input.user', 'orbit')
         ->assertJsonPath('data.input.version_constraint', '^1.0')->assertJsonMissingPath('data.input.constraint_intervals');
     expect($this->operation->fresh()->state)->toBe(['swamp_run_id' => $this->runId]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
 });
 
@@ -118,12 +119,7 @@ it('refuses first read until Gateway binds its start response and exposes only s
 });
 
 it('allows only the admitted Node among per-Node workers', function (): void {
-    config(['operation_executor.worker_node_ids' => [$this->node->id, $this->worker->id]]);
-    $gateway = Node::query()->where('name', 'gateway')->firstOrFail();
-    $this->node->accessibleNodes()->attach($gateway);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
-    config(['dependency_detection.services_node_id' => null]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
     $this->postJson($this->path.'/result', [...$this->body, 'status' => 'running'])->assertForbidden();
@@ -152,7 +148,7 @@ it('projects exact removal idempotently and keeps manager intent', function (): 
     expect($record->fresh()->status)->toBe(LifecycleStatus::Active);
 });
 
-it('admits direct package and manager intents with immutable account pin and recipe data', function (): void {
+it('admits direct package and manager intents with immutable account and recipe data', function (): void {
     config(['swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
