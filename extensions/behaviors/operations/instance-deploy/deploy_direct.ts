@@ -3,7 +3,12 @@ import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import {
+  type DeploySourceLocal,
+  LocalDeployError,
+  localDeploySource,
+} from "./deploy_local.ts";
+import { inspectDeployRunner } from "./runner_local.ts";
 import {
   AppStep,
   currentProgram,
@@ -50,7 +55,9 @@ type Context = {
 class Refused extends Error {}
 type Ports = {
   http?: (ctx: Context) => Http;
-  invoke?: typeof runNodeAgent;
+  source?: DeploySourceLocal;
+  inspectRunner?: typeof inspectDeployRunner;
+  vp?: Pick<Parameters<typeof prepareDeployVp>[2], "local" | "materialize">;
   run?: typeof sudoAppStep;
   now?: () => number;
 };
@@ -72,6 +79,54 @@ export function deployDirect(ports: Ports = {}) {
       },
     },
     methods: {
+      failure: {
+        description:
+          "Settle a failed root only when its effect checkpoint is inactive",
+        arguments: Args,
+        execute: async (raw: z.infer<typeof Args>, ctx: Context) => {
+          const args = Args.parse(raw);
+          const http = (ports.http ??
+            ((ctx: Context) =>
+              gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile)))(
+              ctx,
+            );
+          const gateway = new GatewayOperation(http, args);
+          const row = z.object({
+            id: z.literal(args.operation_id),
+            kind: z.literal(args.kind),
+            node_id: z.literal(args.node_id),
+            status: z.string(),
+            input: z.object({ instance_id: z.number().int().positive() }),
+          }).parse(await gateway.read());
+          if (["succeeded", "failed", "cancelled"].includes(row.status)) {
+            return { status: row.status };
+          }
+          const stored = await ctx.readResource(
+            `execution-${args.operation_id}-${args.run_id}`,
+          );
+          const checkpoint = stored === null ? null : Checkpoint.parse(stored);
+          if (
+            checkpoint &&
+            (checkpoint.operation_id !== args.operation_id ||
+              checkpoint.run_id !== args.run_id)
+          ) {
+            throw new Error("deployment.identity_changed");
+          }
+          if (checkpoint?.active) return { status: "held" };
+          const at = new Date(now()).toISOString();
+          await gateway.project({
+            status: "failed",
+            started_at: checkpoint?.started_at ?? at,
+            finished_at: at,
+            error_code: "deployment.interrupted",
+            result: {
+              instance_id: row.input.instance_id,
+              failed_step: "native_execution",
+            },
+          });
+          return { status: "failed" };
+        },
+      },
       run: {
         description:
           "Run the admitted deploy on its exact Node in one native run",
@@ -133,14 +188,10 @@ export function deployDirect(ports: Ports = {}) {
               runner: z.literal(runner),
               gone: z.literal(true),
             }).strict().safeParse(
-              await (ports.invoke ?? runNodeAgent)({
-                name: "instance.inspect-deploy-step",
-                input: { runner },
-                pin: input.agent_sha256,
-                sudo: true,
-                mutates: false,
-                deadlineMs: 30000,
-              }, ctx.signal),
+              await (ports.inspectRunner ?? inspectDeployRunner)(
+                runner,
+                ctx.signal,
+              ),
             );
             if (!reply.success) {
               throw new Error("deployment.execution_unconfirmed");
@@ -169,17 +220,6 @@ export function deployDirect(ports: Ports = {}) {
               step,
             });
             effectActive = active;
-          };
-          const invoke: typeof runNodeAgent = async (call, signal) => {
-            if (call.mutates) await mark(true);
-            const reply = await (ports.invoke ?? runNodeAgent)(call, signal);
-            if (
-              call.mutates &&
-              !/execution_(unconfirmed|uncertain)/.test(
-                String(reply.error_code ?? ""),
-              )
-            ) await mark(false);
-            return reply;
           };
           const run: typeof sudoAppStep = async (...parameters) => {
             const [step, script, signal] = parameters;
@@ -240,24 +280,32 @@ export function deployDirect(ports: Ports = {}) {
             }
             return row;
           };
-          const call = async (
-            name: string,
-            data: Record<string, unknown>,
-            sudo: boolean,
-          ) => {
+          const sourceLocal = ports.source ??
+            localDeploySource({ deadline, signal: ctx.signal });
+          const effect = async <T>(use: () => Promise<T>): Promise<T> => {
             await check();
-            const reply = await (ports.invoke ?? runNodeAgent)({
-              name,
-              input: data,
-              pin: input.agent_sha256,
-              sudo,
-              mutates: false,
-              deadlineMs: Math.min(120000, deadline - now()),
-            }, ctx.signal);
-            if ("error_code" in reply) {
-              throw new Refused(Code.parse(reply.error_code));
+            await mark(true);
+            try {
+              const value = await use();
+              await mark(false);
+              return value;
+            } catch (error) {
+              if (error instanceof LocalDeployError) await mark(false);
+              throw error;
             }
-            return reply;
+          };
+          const sourcePorts: DeploySourceLocal = {
+            ...sourceLocal,
+            resolveDevelopment: (...args) =>
+              effect(() => sourceLocal.resolveDevelopment(...args)),
+            checkoutDevelopment: (...args) =>
+              effect(() => sourceLocal.checkoutDevelopment(...args)),
+            prepareRelease: (...args) =>
+              effect(() => sourceLocal.prepareRelease(...args)),
+            activateRelease: (...args) =>
+              effect(() => sourceLocal.activateRelease(...args)),
+            pruneReleases: (...args) =>
+              effect(() => sourceLocal.pruneReleases(...args)),
           };
           try {
             if (interruptedStep !== null) {
@@ -283,7 +331,7 @@ export function deployDirect(ports: Ports = {}) {
               throw new Refused("deployment.projection_pending");
             }
             const source = await prepareDeploySource(input, deadline, {
-              invoke,
+              local: sourcePorts,
               current,
               now,
               git: (use) =>
@@ -310,7 +358,9 @@ export function deployDirect(ports: Ports = {}) {
               await gateway.withPrivateMaterial(async (material) => {
                 outcome = await prepareDeployVp(
                   {
-                    agent_sha256: input.agent_sha256,
+                    node_id: args.node_id,
+                    platform: input.platform!,
+                    architecture: input.architecture!,
                     path: d.home,
                     user: d.node_user,
                     node_user: d.node_user,
@@ -320,7 +370,8 @@ export function deployDirect(ports: Ports = {}) {
                   },
                   deadline,
                   {
-                    invoke,
+                    ...ports.vp,
+                    mutation: effect,
                     current,
                     now,
                     reference: async (pins, status) => {
@@ -385,32 +436,17 @@ export function deployDirect(ports: Ports = {}) {
             }
             result.warnings = commands.warnings;
             phase = "verification";
-            const account = z.object({
-              user: z.literal(d.node_user),
-              uid: z.number().int().positive(),
-              group: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/),
-            }).parse(
-              await call("account.lookup", { user: d.node_user }, false),
-            );
-            const root = d.home.slice(0, d.home.lastIndexOf("/")).replace(
-              /\/[^/]+$/,
-              "",
-            );
-            const checked = z.object({
-              origin: z.literal(d.repository),
-              branch: z.literal(d.branch),
-              commit: z.literal(source.commit),
-            }).parse(
-              await call("instance.inspect-development-source", {
-                repository: d.repository,
-                checkout: d.home,
-                root,
-                user: account.user,
-                group: account.group,
-                verify_origin: true,
-                require_idle: true,
-              }, false),
-            );
+            await check();
+            const checked = z.object({ commit: z.literal(source.commit) })
+              .parse(
+                await sourceLocal.inspectDevelopment({
+                  home: d.home,
+                  repository: d.repository,
+                  branch: d.branch,
+                  instance: input.instance_id,
+                  user: d.node_user,
+                }),
+              );
             result.commit = checked.commit;
           } catch (error) {
             error_code = error instanceof Refused

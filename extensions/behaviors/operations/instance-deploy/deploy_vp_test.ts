@@ -1,12 +1,20 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import type { VpLocal } from "./vp_local.ts";
+type VpCall = {
+  name: string;
+  input: Record<string, unknown>;
+  sudo: boolean;
+  mutates: boolean;
+};
 import type { VpRuntime } from "./vp_requirements.ts";
 import { prepareDeployVp } from "./deploy_vp.ts";
 
 function fixture(installed = true) {
-  const calls: NodeCall[] = [], references: string[] = [];
+  const calls: VpCall[] = [], references: string[] = [];
   const input = {
-    agent_sha256: "a".repeat(64),
+    node_id: 9,
+    platform: "linux" as const,
+    architecture: "amd64" as const,
     path: "/home/orbit/apps/default",
     user: "orbit",
     node_user: "orbit",
@@ -26,7 +34,7 @@ function fixture(installed = true) {
   };
   let inspections = 0;
   const port = {
-    invoke: (call: NodeCall) => {
+    invoke: (call: VpCall) => {
       calls.push(call);
       const results: Record<string, Record<string, unknown>> = {
         "tool.read-vp-project": configuration,
@@ -51,13 +59,39 @@ function fixture(installed = true) {
     },
     now: () => 1000,
   };
-  return { input, port, calls, configuration, references };
+  const modes = {
+    project: "tool.read-vp-project",
+    scope: "tool.inspect-vp-scope",
+    version: "tool.vp-version",
+    inspect: "tool.inspect-vp-store",
+    install: "tool.install-vp-environment",
+    prune: "tool.prune-vp-store",
+  };
+  const local: VpLocal = (mode, data, _options) =>
+    port.invoke({
+      name: modes[mode],
+      input: data,
+      sudo: mode === "project" || mode === "install",
+      mutates: mode === "install",
+    });
+  const native = {
+    ...port,
+    local,
+    materialize: (_name: string, data: Record<string, unknown>) =>
+      port.invoke({
+        name: "tool.materialize-vp",
+        input: data,
+        sudo: true,
+        mutates: true,
+      }),
+  };
+  return { input, port, native, calls, configuration, references };
 }
 
 Deno.test("native deploy Vite+ uses local prerequisites and projects only public runtime pins", async () => {
   for (const installed of [true, false]) {
     const f = fixture(installed);
-    const result = await prepareDeployVp(f.input, 901000, f.port);
+    const result = await prepareDeployVp(f.input, 901000, f.native);
     assertEquals("runtime" in result, true);
     assertEquals(f.references, ["checking", "active"]);
     assertEquals(
@@ -80,7 +114,7 @@ Deno.test("a Project without Vite+ triggers no manager or runtime effects", asyn
   const f = fixture();
   f.configuration.package.dependencies =
     {} as typeof f.configuration.package.dependencies;
-  assertEquals(await prepareDeployVp(f.input, 901000, f.port), {
+  assertEquals(await prepareDeployVp(f.input, 901000, f.native), {
     runtime: null,
   });
   assertEquals(f.calls.map((x) => x.name), ["tool.read-vp-project"]);
@@ -97,7 +131,7 @@ Deno.test("runtime activation requires matching account, compatible manager and 
         : call.name === "tool.inspect-vp-store" && fault === "verify"
         ? Promise.resolve({ installed: [false] })
         : original(call);
-    const result = await prepareDeployVp(f.input, 901000, f.port);
+    const result = await prepareDeployVp(f.input, 901000, f.native);
     assertEquals(result, {
       error_code: fault === "user"
         ? "deployment.identity_changed"
@@ -110,7 +144,7 @@ Deno.test("runtime activation requires matching account, compatible manager and 
 Deno.test("failed checking projection blocks runtime installation and raw failures stay bounded", async () => {
   const f = fixture(false);
   const result = await prepareDeployVp(f.input, 901000, {
-    ...f.port,
+    ...f.native,
     reference: () => {
       throw new Error("private-registry-token");
     },
@@ -124,9 +158,9 @@ Deno.test("failed checking projection blocks runtime installation and raw failur
 
 Deno.test("native deploy Vite+ cancellation prevents the next local effect", async () => {
   const f = fixture(false);
-  f.port.current = () =>
+  f.native.current = () =>
     Promise.resolve({ cancel_requested: f.calls.length > 0 });
-  assertEquals(await prepareDeployVp(f.input, 901000, f.port), {
+  assertEquals(await prepareDeployVp(f.input, 901000, f.native), {
     error_code: "operation.cancelled",
   });
   assertEquals(f.calls.map((x) => x.name), ["tool.read-vp-project"]);
@@ -138,16 +172,12 @@ Deno.test("uncertain runtime mutation stops later calls and keeps its checking r
   ) {
     const f = fixture(false), original = f.port.invoke;
     const attempted: string[] = [];
-    const result = await prepareDeployVp(f.input, 901000, {
-      ...f.port,
-      invoke: (call) => {
-        attempted.push(call.name);
-        if (call.name === mutation) {
-          throw new Error("private uncertain runtime");
-        }
-        return original(call);
-      },
-    });
+    f.port.invoke = (call) => {
+      attempted.push(call.name);
+      if (call.name === mutation) throw new Error("private uncertain runtime");
+      return original(call);
+    };
+    const result = await prepareDeployVp(f.input, 901000, f.native);
     assertEquals(result, { error_code: "deployment.execution_unconfirmed" });
     assertEquals(attempted.at(-1), mutation);
     assertEquals(

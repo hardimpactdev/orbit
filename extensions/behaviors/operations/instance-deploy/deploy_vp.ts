@@ -1,11 +1,15 @@
 import { z } from "npm:zod@4.4.3";
 // @deno-types="npm:@types/semver@7.7.1"
 import { gte, valid } from "npm:semver@7.7.2";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import { localTool } from "../tools/local.ts";
+import { ToolIntentInput } from "../tools/direct-contract.ts";
+import { type VpLocal, vpLocal } from "./vp_local.ts";
 import { vpRequirements, VpRuntime } from "./vp_requirements.ts";
 
 const Input = z.object({
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  node_id: z.number().int().positive(),
+  platform: z.enum(["linux", "macos"]),
+  architecture: z.enum(["amd64", "arm64"]),
   path: z.string().startsWith("/").max(4096),
   user: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/),
   node_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/),
@@ -13,7 +17,9 @@ const Input = z.object({
 }).strict();
 type Input = z.infer<typeof Input>;
 type Port = {
-  invoke?: typeof runNodeAgent;
+  local?: VpLocal;
+  materialize?: typeof localTool;
+  mutation?: <T>(action: () => Promise<T>) => Promise<T>;
   current: () => Promise<{ cancel_requested: boolean }>;
   reference: (
     runtime: VpRuntime,
@@ -32,13 +38,13 @@ export async function prepareDeployVp(
   signal?: AbortSignal,
 ): Promise<Outcome> {
   const input = Input.parse(raw),
-    invoke = port.invoke ?? runNodeAgent,
+    local = port.local ?? vpLocal,
     now = port.now ?? Date.now;
   let environment: VpRuntime | null = null;
   async function call(
-    name: string,
+    mode: Parameters<VpLocal>[0],
     data: Record<string, unknown>,
-    sudo: boolean,
+    account: string,
     mutates = false,
   ) {
     if ((await port.current()).cancel_requested || signal?.aborted) {
@@ -50,14 +56,17 @@ export async function prepareDeployVp(
     }
     let result: Record<string, unknown>;
     try {
-      result = await invoke({
-        name,
-        input: data,
-        pin: input.agent_sha256,
-        sudo,
-        mutates,
-        deadlineMs: Math.min(remaining, 900000),
-      }, signal);
+      const action = () =>
+        local(mode, data, {
+          user: account,
+          platform: input.platform,
+          architecture: input.architecture,
+          deadline,
+          signal,
+        });
+      result = mutates && port.mutation
+        ? await port.mutation(action)
+        : await action();
     } catch {
       throw new Refused(
         mutates
@@ -71,17 +80,44 @@ export async function prepareDeployVp(
     return result;
   }
   try {
-    const configuration = await call("tool.read-vp-project", {
+    const configuration = await call("project", {
       path: input.path,
       user: input.user,
-    }, true);
+    }, input.user);
     environment = vpRequirements(configuration, "/unresolved");
     if (environment === null) return { runtime: null };
     if (input.materialize.user !== input.node_user) {
       throw new Refused("deployment.identity_changed");
     }
-    await call("tool.materialize-vp", input.materialize, true, true);
-    const scope = await call("tool.inspect-vp-scope", {}, false);
+    if ((await port.current()).cancel_requested || signal?.aborted) {
+      throw new Refused("operation.cancelled");
+    }
+    if (deadline <= now()) throw new Refused("deployment.deadline_exceeded");
+    const manager = () =>
+      (port.materialize ?? localTool)(
+        "tool.materialize-vp",
+        input.materialize,
+        ToolIntentInput.parse({
+          node_id: input.node_id,
+          manager: "vp",
+          user: input.node_user,
+          platform: input.platform,
+          architecture: input.architecture,
+        }),
+        signal,
+      );
+    let materialized: Record<string, unknown>;
+    try {
+      materialized = port.mutation
+        ? await port.mutation(manager)
+        : await manager();
+    } catch {
+      throw new Refused("deployment.execution_unconfirmed");
+    }
+    if (typeof materialized.error_code === "string") {
+      throw new Refused(materialized.error_code);
+    }
+    const scope = await call("scope", {}, input.node_user);
     const binary = z.string().startsWith("/").endsWith("/bin/vp").parse(
       scope.binary,
     );
@@ -94,7 +130,7 @@ export async function prepareDeployVp(
       throw new Refused("deployment.vp_store_failed");
     }
     environment = VpRuntime.parse({ ...environment, store });
-    const version = await call("tool.vp-version", {}, false);
+    const version = await call("version", {}, input.node_user);
     const observed = typeof version.version === "string"
       ? valid(version.version.trim().replace(/^vp\s+/, ""))
       : null;
@@ -103,23 +139,23 @@ export async function prepareDeployVp(
     }
     await port.reference(environment, "checking");
     const { vp_version: _version, ...runtime } = environment;
-    const inspected = await call("tool.inspect-vp-store", {
+    const inspected = await call("inspect", {
       environments: [runtime],
-    }, false);
+    }, input.node_user);
     const installed =
       z.object({ installed: z.tuple([z.boolean()]) }).parse(inspected)
         .installed[0];
     if (!installed) {
       const npmrc = z.string().max(1048576).parse(configuration.npmrc);
       await call(
-        "tool.install-vp-environment",
+        "install",
         { environment: runtime, npmrc },
-        true,
+        input.node_user,
         true,
       );
-      const verify = await call("tool.inspect-vp-store", {
+      const verify = await call("inspect", {
         environments: [runtime],
-      }, false);
+      }, input.node_user);
       if (
         !z.object({ installed: z.tuple([z.boolean()]) }).parse(verify)
           .installed[0]

@@ -121,7 +121,7 @@ export function stepRunner(
     name: step.name,
     phase: step.phase,
   });
-  return `orbit-deploy-step:${bound.operation_id}:${bound.run_id}:${admitted.phase}.${admitted.name}`;
+  return `orbit-deploy-step:${bound.operation_id}:${bound.run_id.toLowerCase()}:${admitted.phase}.${admitted.name}`;
 }
 
 /** One workflow-owned sudo step. User, directory and program are never caller-selected argv. */

@@ -26,3 +26,21 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             run_id: '${{ run.id }}'
+  - name: failure
+    dependsOn: [{job: deploy, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels:
+      node: '${{ string(inputs.node_id) }}'
+    writes: true
+    steps:
+      - name: report
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-deploy-direct'
+          behaviorName: '${{ "instance-deploy-node-" + string(inputs.node_id) }}'
+          methodName: failure
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
