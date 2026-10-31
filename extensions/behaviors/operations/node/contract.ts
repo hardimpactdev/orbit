@@ -51,6 +51,7 @@ export const FootprintSnapshot = z.object({
       digest: z.string(),
       required: z.boolean(),
       repair: z.boolean(),
+      error_code: z.literal("operation.kind_unavailable").optional(),
     }),
   ).max(32),
   payloads: z.preprocess(phpObject, z.record(z.string(), ResultObject)),

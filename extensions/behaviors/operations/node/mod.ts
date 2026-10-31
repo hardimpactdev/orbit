@@ -122,7 +122,7 @@ export function node(
 ) {
   return {
     type: "@nckrtl/operation-node",
-    version: "2026.10.29.1",
+    version: "2026.10.31.1",
     globalArguments: Globals,
     resources: {
       assignment: {

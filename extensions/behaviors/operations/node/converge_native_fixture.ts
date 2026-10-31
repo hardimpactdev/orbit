@@ -5,6 +5,27 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
   const file = "native-node.json";
   const state = JSON.parse(await Deno.readTextFile(file));
   const body = (raw ?? {}) as Record<string, unknown>;
+  if (state.operation.kind === "node.converge") {
+    const agent = state.operation.input._footprint.payloads.agent;
+    state.operation.execution_context = {
+      descriptors: agent
+        ? [{
+          key: "footprint-agent",
+          step: "footprint-agent",
+          transport: "agent",
+          name: "agent.configure",
+          input: {
+            ...agent,
+            binary_changed:
+              state.receipts?.["footprint-agent-install"]?.changed ??
+                false,
+          },
+          required: false,
+          resumable: false,
+        }]
+        : [],
+    };
+  }
   let data: unknown = path.startsWith("/api/v1/operations/")
     ? {
       ...state.operation,

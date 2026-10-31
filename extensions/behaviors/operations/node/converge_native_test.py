@@ -1,25 +1,20 @@
 """Exercise the pinned native runner, node workflow and fresh-process recovery."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[4]
-SWAMP = os.environ.get("SWAMP_BIN", shutil.which("swamp") or "swamp")
+sys.path.insert(0, str(ROOT / "tests"))
+from native_harness import NativeTestCase
 
 
-class NodeConvergeWorkflowTest(unittest.TestCase):
+class NodeConvergeWorkflowTest(NativeTestCase):
+    native_timeout = 45
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="node-workflow-")
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / ".swamp.yaml", self.repo)
-        for name in ("automatic-deploy", "operation-runner", "operations/node"):
-            shutil.copytree(ROOT / "extensions/behaviors" / name,
-                            self.repo / "extensions/behaviors" / name)
+        super().setUp()
+        self.copy_behaviors("automatic-deploy", "operation-runner", "operations/node")
         for name, factory, relative in (
             ("operation-runner", "operationDiscovery", "../operations/node/converge_native_fixture.ts"),
             ("operations/node", "node", "./converge_native_fixture.ts"),
@@ -27,7 +22,6 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"{factory}()", f"{factory}(() => fixtureHttp)")
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
-        (self.repo / "workflows").mkdir()
         for name in ("operation-node",):
             source = (ROOT / "workflows" / f"workflow-{name}.yaml").read_text()
             # Process recovery is local; the shipped workflow keeps worker placement.
@@ -54,16 +48,10 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
     def swamp(self, *args, success=True):
         if args[:2] == ("workflow", "resume"):
             args = (*args[:3], "--run", self.last_run_id)
-        result = subprocess.run([SWAMP, *args, "--json"], cwd=self.repo, text=True,
-                                capture_output=True, timeout=45,
-                                env={**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"})
+        result = self.cli(*args, success=success)
         if args[:2] == ("workflow", "run"):
             value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
             self.last_run_id = value.get("id")
-        if success:
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        else:
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
 
@@ -77,6 +65,40 @@ class NodeConvergeWorkflowTest(unittest.TestCase):
         self.state["operation"]["state"] = {"child_intents": [{"key": "footprint-" + name, **intent}
             for name, intent in self.state["operation"]["input"]["_footprint"]["children"].items()]}
         self.state["footprintResult"] = {"footprint_proven": True, "artifacts": [], "skipped": [], "digest": "digest", "changed": False}
+
+
+    def test_protected_agent_recovery_precedes_terminal_unavailable_collector(self):
+        self.footprint()
+        snapshot = self.state["operation"]["input"]["_footprint"]
+        snapshot["artifacts"] = [
+            {"name": "agent", "digest": "agent", "required": True, "repair": False},
+            {"name": "ai-router", "digest": "collector", "required": True, "repair": False,
+             "error_code": "operation.kind_unavailable"},
+            {"name": "tmpfiles", "digest": "tmp", "required": True, "repair": False},
+        ]
+        snapshot["payloads"] = {"agent": {
+            "secret_hash": {"$secret": "node.agent_secret_hash", "id": 2},
+            "worker_credentials": {"$secret": "node.worker_credentials", "id": 2},
+        }}
+        self.state["footprintResult"] = {
+            "footprint_proven": True,
+            "artifacts": [{"name": "agent", "status": "applied", "reason": None}],
+            "skipped": [], "error_code": "operation.kind_unavailable",
+        }
+        self.state["loseRunReplyKey"] = "footprint-agent"
+        self.save()
+        self.swamp("workflow", "run", "operation-node", success=False)
+        self.assertEqual(self.read()["runs"], 2)
+        self.assertEqual(self.read()["completions"], [])
+        self.swamp("workflow", "resume", "operation-node", "--from", "execute")
+        state = self.read()
+        self.assertEqual(state["runs"], 2)
+        self.assertEqual(state["keys"].count("footprint-agent"), 1)
+        self.assertNotIn("footprint-tmpfiles", state["keys"])
+        self.assertEqual(state.get("children", []), [])
+        self.assertEqual(state["operation"]["status"], "failed")
+        self.assertEqual(state["operation"]["error_code"], "operation.kind_unavailable")
+        self.assertEqual(state["operation"]["result"], self.state["footprintResult"])
 
 
     def test_pending_child_releases_parent_worker_and_resumes_in_a_new_process(self):

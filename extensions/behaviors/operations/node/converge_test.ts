@@ -402,3 +402,41 @@ Deno.test("matching PHP runtime digest skips version effects", async () => {
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.runs(), ["node.prepare-footprint", "node.footprint-result"]);
 });
+
+Deno.test("protected agent configuration precedes an unavailable required collector boundary", async () => {
+  const f = new Fixture();
+  f.artifact("agent");
+  f.artifact("ai-router");
+  f.artifact("tmpfiles");
+  Object.assign(f.snapshot.artifacts[1], {
+    error_code: "operation.kind_unavailable",
+  });
+  f.snapshot.payloads.agent = {
+    secret_hash: { $secret: "node.agent_secret_hash", id: 2 },
+    worker_credentials: { $secret: "node.worker_credentials", id: 2 },
+  };
+  f.replies.set("footprint-agent-install", { installed: true, changed: true });
+  f.replies.set("footprint-agent", { restarted: true });
+  f.replies.set("footprint-result", {
+    footprint_proven: true,
+    artifacts: [{ name: "agent", status: "applied", reason: null }],
+    skipped: [],
+    error_code: "operation.kind_unavailable",
+  });
+  assertEquals((await f.execute()).status, "failed");
+  assertEquals(f.runs(), [
+    "node.prepare-footprint",
+    "agent.install",
+    "node.prepare-agent-configuration",
+    "agent.configure",
+    "node.footprint-result",
+  ]);
+  assertEquals(f.childAdmissions, 0);
+  assertEquals(f.completion()?.error_code, "operation.kind_unavailable");
+  assertEquals(f.completion()?.result, {
+    footprint_proven: true,
+    artifacts: [{ name: "agent", status: "applied", reason: null }],
+    skipped: [],
+    error_code: "operation.kind_unavailable",
+  });
+});
