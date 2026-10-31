@@ -206,7 +206,9 @@ Read the normal operation endpoint until it ends. A completed script returns `{ 
 
 Swamp runs the script synchronously on the task VM's exact Node worker. The Gateway does not acquire a workspace lease, dispatch a detached process or poll it. Native history owns step completion and recovery.
 
-The VM keeps an operation-keyed execution marker: a completed replay returns the same bounded result; an interrupted execution is refused as `tasks.script_interrupted` and is never dispatched again under that key. An unavailable tracked executable fails as `tasks.script_unavailable`. Cancellation stops the command process group and waits for it to end before reporting cancellation. A script has a fixed one-hour limit. A new attempt requires a new operation key.
+Script and analysis runs receive their complete public intent from the Gateway. A worker on Node 209 uses official `@swamp/ssh` to reach the VM's admitted WireGuard address and stored SSH host key. Plain task VMs need no Swamp binary or worker. Separate native steps validate the tracked entrypoint, capture workspace snapshots, execute the program and return public evidence. The Gateway records the terminal output through the shared subscriber; execution steps make no Gateway requests.
+
+Swamp owns cancellation and resume. A successful execution step is not repeated when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. The existing one-hour repository execution bound remains; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
 ## Analyze an external group's repository
 

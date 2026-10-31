@@ -1,43 +1,251 @@
 id: 789a2fc8-6c47-4e48-8d49-674455fe1710
 name: operation-task-analyze
-description: Run fixed repository analysis on the task VM worker.
+description: Run the admitted repository analyze on Node 209 through official SSH to the owned task VM.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [tasks.analyze] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.analyze
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: analysis
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: execute
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/task-workspace"
-          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
-          methodName: analyze
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-  - name: failure
-    dependsOn: [{ job: analysis, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: report
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "task-analysis-failure-" + string(inputs.node_id) }}'
-          methodName: report
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: analysis
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-repository-assets'
+      methodName: read
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+      behaviorName: ${{ "task-repository-assets-" + string(inputs.operation_id) }}
+  - name: prepare-assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-task-repository-" + run.id }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: copy-assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.directory }}
+        dst: ${{ "/tmp/orbit-task-repository-" + run.id + "/" }}
+        recursive: true
+        direction: to
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+  - name: inspect
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/inspect.py" }}
+        stdin: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
+  - name: snapshot-before
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+  - name: execute
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/execute_analysis.py" }}
+        - ${{ steps.inspect.outputs.stdout }}
+        - ${{ steps["snapshot-before"].outputs.stdout }}
+        stdin: ${{ steps.assets.outputs.input_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: snapshot-before
+      condition:
+        type: succeeded
+  - name: snapshot-after
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: execute
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_RESULT_SCRIPT"
+
+          '
+        env:
+          ORBIT_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_PREPARED: ${{ steps.inspect.outputs.stdout }}
+          ORBIT_BEFORE: ${{ steps["snapshot-before"].outputs.stdout }}
+          ORBIT_AFTER: ${{ steps["snapshot-after"].outputs.stdout }}
+          ORBIT_EXECUTION: ${{ steps.execute.outputs.stdout }}
+          ORBIT_RESULT_SCRIPT: ${{ steps.assets.outputs.result_script }}
+      behaviorName: ${{ "task-repository-result-" + string(inputs.operation_id) }}
+    dependsOn:
+    - step: snapshot-after
+      condition:
+        type: succeeded
+  - name: cleanup-assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-repository-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-repository-" + run.id }}
+    allowFailure: true
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+  - name: outcome
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 - <<''PYTHON''
+
+          import json
+
+          import os
+
+
+          raise SystemExit(1 if json.loads(os.environ[''ORBIT_RESULT'']).get(''error_code'') else 0)
+
+          PYTHON
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.result.outputs.stdout }}
+      behaviorName: ${{ "task-repository-outcome-" + string(inputs.operation_id) }}
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
