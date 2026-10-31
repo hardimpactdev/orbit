@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
 use App\Actions\Operations\CancelOperationAction;
-use App\Http\Controllers\Api\OperationsController;
+use App\Data\Operations\OperationData;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Operations\EmptyOperationRequest;
@@ -22,7 +22,7 @@ final class ConnOperationsController extends Controller
     {
         $this->assertOwner($request, $operation);
 
-        $data = OperationsController::withSteps($operation, $request->afterSequence(), $operation->caller_node_name);
+        $data = OperationData::fromModel($operation, $operation->caller_node_name)->toArray();
 
         return response()->json(['data' => $data,
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
@@ -32,7 +32,7 @@ final class ConnOperationsController extends Controller
     {
         $this->assertOwner($request, $operation);
 
-        return response()->json(['data' => OperationsController::withSteps($cancel->execute($operation), null, $operation->caller_node_name),
+        return response()->json(['data' => OperationData::fromModel($cancel->execute($operation), $operation->caller_node_name)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
 

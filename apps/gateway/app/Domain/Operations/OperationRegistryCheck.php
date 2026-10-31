@@ -17,7 +17,7 @@ final readonly class OperationRegistryCheck
     {
         $definitions ??= $this->direct->definitions();
         foreach ($definitions as $name => $definition) {
-            if (! $this->container->make($definition['projection']) instanceof DirectOperationProjection) {
+            if (! is_a($definition['projection'], DirectOperationProjection::class, true)) {
                 throw new LogicException("Operation [{$name}] needs a native result projection.");
             }
         }
