@@ -13,8 +13,8 @@ use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
-use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteVerificationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -58,8 +58,8 @@ final readonly class RouteChildAdmission implements OperationChildAdmission
                     : $this->projections->cleanupInstance($instance, $parent->request_id);
             } else {
                 $node = Node::query()->findOrFail(ValidatedData::integer($intent['node_id']));
-                if (in_array($kind, [...RouteOperationProjection::Kinds, ...RouteOperationProjection::LocalKinds], true)) {
-                    $operation = app(StartRouteNodeOperationAction::class)->execute($kind, $node, $input, $parent);
+                if (in_array($kind, RouteVerificationProjection::Kinds, true)) {
+                    $operation = app(StartRouteVerificationAction::class)->execute($kind, $node, $input, $parent);
                 } elseif (in_array($kind, ['route.caddy_converge', 'route.private_dns_publish', 'route.offline_residue_clean'], true)) {
                     if (DirectRoutePublication::handles($kind) && app(DirectOperation::class)->writer($kind) !== 'direct') {
                         throw new ResourceOperationException('operation.kind_unavailable', 'Route publication requires its direct Swamp writer.', 409);
