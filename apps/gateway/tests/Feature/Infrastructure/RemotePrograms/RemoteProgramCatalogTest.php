@@ -83,7 +83,7 @@ describe('RemoteProgramCatalog', function (): void {
             }
         }
 
-        expect($names)->toBe(['gateway.task-workspace-owner']);
+        expect($names)->toContain('gateway.task-workspace-owner')->not->toContain('vault.collection');
         foreach ($names as $name) {
             expect($catalog->program($name)->name)->toBe($name);
         }

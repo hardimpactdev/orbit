@@ -133,3 +133,44 @@ it('refuses the removed setup writer and legacy claim', function (): void {
     $this->assertDatabaseCount('operations', 0);
     Http::assertNothingSent();
 });
+
+it('tears down directly and clears settings and ledger only after proven removal', function (): void {
+    admitDirectVault($this, 'teardown');
+    VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'cipher', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
+    expect(app(DirectOperation::class)->writer('vault.teardown'))->toBe('direct');
+    expect(app(OperationKinds::class)->definition('vault.teardown'))->not->toHaveKeys(['runs', 'completion', 'completion_contract']);
+    expect($this->socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $this->operation->id, 'kind' => 'vault.teardown', 'node_id' => $this->gateway->id]);
+    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertJsonPath('data.configuration.client_secret', 'private-vault-client');
+    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced']]))->assertConflict();
+    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
+    $this->assertDatabaseCount('vault_items', 1);
+    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'absent']]))->assertOk();
+    expect(app(VaultSettings::class)->configuration())->toBeNull();
+    $this->assertDatabaseCount('vault_items', 0);
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
+    Http::assertNothingSent();
+});
+
+it('preserves settings and ledger after a failed direct teardown and forgets its snapshot', function (): void {
+    admitDirectVault($this, 'teardown');
+    VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'cipher', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
+    $projection = directVaultProjection($this, ['error_code' => 'vault.unreachable']);
+    $projection['status'] = 'failed';
+    $projection['error_code'] = 'vault.unreachable';
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
+    $this->assertDatabaseCount('vault_items', 1);
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertConflict();
+    Http::assertNothingSent();
+});
+
+it('refuses the removed teardown writer and legacy claim', function (): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'private-vault-client', 'private-vault-master', 'fixture-device'), 'fixture@example.test', 'org', 'Orbit', 'collection', 'Test'));
+    config(['swamp.direct_writers' => ['vault.teardown' => 'polled']]);
+    $this->deleteJson('/api/v1/vault')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'vault.teardown', 'worker' => 'old-worker'])->assertUnprocessable();
+    $this->assertDatabaseCount('operations', 0);
+    Http::assertNothingSent();
+});
