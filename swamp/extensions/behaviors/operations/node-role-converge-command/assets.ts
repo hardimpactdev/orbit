@@ -6,6 +6,8 @@ const Path = z.string().startsWith("/").max(4096).refine((value) =>
     !value.split("/").some((part) => part === "." || part === "..")
 );
 const Inputs = {
+    observer_identity: z.object({}).strict(),
+    observer_checkout: z.object({ checkout: Path }).strict(),
     storage: z.object({ root: Path, user: Account, group: Account }).strict(),
     account_directory: z.object({
         scope: z.enum([
@@ -52,11 +54,45 @@ const Args = z.object({
         "file",
         "account_directory",
         "composer_manifest",
+        "observer_identity",
+        "observer_checkout",
     ]),
     input: z.record(z.string(), z.unknown()),
 }).strict();
 export type RoleBaselineAction = keyof typeof Inputs;
 const Assets = z.object({ script_body: z.string() }).strict();
+const ObserverFilesInput = z.object({
+    configuration: z.string(),
+    certificate: z.string(),
+    unit: z.string(),
+    apps_root: Path.nullable(),
+    home: Path,
+}).strict();
+const ObserverFiles = z.object({
+    configuration: z.string(),
+    certificate: z.string(),
+    unit: z.string(),
+}).strict();
+const ObserverDelivery = z.object({
+    installed: z.literal(true),
+    changed: z.boolean(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
+/** The same checkout access policy as NodeAgentSshExecutor, resolved from the observed account. */
+export function observerFiles(raw: unknown) {
+    const args = ObserverFilesInput.parse(raw);
+    const root = args.apps_root ?? args.home + "/apps";
+    const access = "ProtectHome=tmpfs" +
+        (root.startsWith("/home/") || root.startsWith("/root/")
+            ? "\nBindReadOnlyPaths=-" + root
+            : "");
+    return ObserverFiles.parse({
+        configuration: args.configuration,
+        certificate: args.certificate,
+        unit: args.unit.replace(/^ProtectHome=yes$/m, access),
+    });
+}
 const Result = z.object({ ready: z.literal(true), changed: z.boolean() })
     .strict();
 type Context = {
@@ -70,9 +106,59 @@ export const behavior = {
     version: "2026.10.31.1",
     resources: {
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
+        observer_files: {
+            schema: ObserverFiles,
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
+        observer_delivery: {
+            schema: ObserverDelivery,
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        observer_delivery: {
+            description:
+                "Prove the canonical observer delivery matches the admitted pin",
+            arguments: z.object({
+                sha256: ObserverDelivery.shape.sha256,
+                stdout: z.string(),
+            }).strict(),
+            execute: async (
+                args: { sha256: string; stdout: string },
+                ctx: Context,
+            ) => {
+                const result = ObserverDelivery.parse(JSON.parse(args.stdout));
+                if (result.sha256 !== args.sha256) {
+                    throw new Error("agent.version_mismatch");
+                }
+                await ctx.writeResource(
+                    "observer_delivery",
+                    "observer_delivery",
+                    result,
+                );
+                return result;
+            },
+        },
+        observer_files: {
+            description:
+                "Resolve public observer templates from the admitted root and observed account",
+            arguments: ObserverFilesInput,
+            execute: async (
+                args: z.infer<typeof ObserverFilesInput>,
+                ctx: Context,
+            ) => {
+                const files = observerFiles(args);
+                await ctx.writeResource(
+                    "observer_files",
+                    "observer_files",
+                    files,
+                );
+                return files;
+            },
+        },
         read: {
             description: "Read one public role baseline action",
             arguments: Args,

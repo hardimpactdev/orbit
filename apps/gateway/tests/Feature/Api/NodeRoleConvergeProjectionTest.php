@@ -143,3 +143,21 @@ it('projects the Analytics runtime contribution from the terminal receipt only',
     expect($process->refresh()->status)->toBe($completed ? LifecycleStatus::Active : LifecycleStatus::Provisioning)
         ->and($assignment->refresh()->status)->toBe(LifecycleStatus::Failed);
 })->with([true, false]);
+
+it('ignores running convergence contributions until the native root terminates', function (): void {
+    [$operation, $assignment, $data] = nativeRoleConvergeProjectionFixture(RoleName::WebSocket);
+    $data['status'] = 'running';
+    $data['finished_at'] = null;
+    $data['result'] = ['target_completed' => true, 'runtime_completed' => true,
+        'footprint' => ['footprint_proven' => false, 'artifacts' => []],
+        'prepare_footprint' => true, 'publication_phase' => [
+            'phase' => 'certificates_published', 'node_id' => $operation->node_id,
+        ]];
+    $before = $assignment->getAttributes();
+
+    app(NodeRoleDirectProjection::class)->apply($operation, $data);
+
+    expect($assignment->refresh()->getAttributes())->toBe($before)
+        ->and(app(CaddySiteCertificates::class)->published($assignment->node_id, 'websocket'))->toBeFalse()
+        ->and($operation->refresh()->state)->not->toHaveKeys(['role_target_completed', 'role_footprint']);
+});

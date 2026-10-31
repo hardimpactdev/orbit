@@ -27,6 +27,49 @@ directory = load("directory")
 file = load("file")
 account_directory = load("account_directory")
 composer_manifest = load("composer_manifest")
+observer_identity = load("observer_identity")
+observer_checkout = load("observer_checkout")
+
+
+class ObserverFilesTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_existing_observer_identity_is_verified_without_replacement_or_private_output(self):
+        secret = self.root / "secret"
+        secret.write_bytes(b"existing-private-identity")
+        expected = __import__("hashlib").sha256(secret.read_bytes()).hexdigest()
+        with patch.object(observer_identity, "SECRET", secret):
+            self.assertEqual(observer_identity.verify(expected), {"ready": True, "changed": False})
+            with self.assertRaises(ValueError):
+                observer_identity.verify("a" * 64)
+        self.assertEqual(secret.read_bytes(), b"existing-private-identity")
+
+    def test_checkout_environment_loses_only_world_permissions(self):
+        environment = self.root / ".env"
+        environment.write_text("existing-private-environment")
+        environment.chmod(0o664)
+        before = self.root.stat()
+        self.assertEqual(observer_checkout.apply({"checkout": str(self.root)}), {"ready": True, "changed": True})
+        self.assertEqual(environment.stat().st_mode & 0o777, 0o660)
+        self.assertEqual(environment.read_text(), "existing-private-environment")
+        self.assertEqual(self.root.stat().st_mode, before.st_mode)
+        self.assertEqual(observer_checkout.apply({"checkout": str(self.root)}), {"ready": True, "changed": False})
+
+    def test_checkout_links_and_missing_environment_are_left_untouched(self):
+        actual = self.root / "actual"
+        actual.mkdir()
+        environment = actual / ".env"
+        environment.write_text("private")
+        environment.chmod(0o644)
+        link = self.root / "link"
+        link.symlink_to(actual, target_is_directory=True)
+        self.assertEqual(observer_checkout.apply({"checkout": str(link)}), {"ready": True, "changed": False})
+        self.assertEqual(environment.stat().st_mode & 0o777, 0o644)
+        environment.unlink()
+        self.assertEqual(observer_checkout.apply({"checkout": str(actual)}), {"ready": True, "changed": False})
 
 
 class PrerequisiteFilesTest(unittest.TestCase):

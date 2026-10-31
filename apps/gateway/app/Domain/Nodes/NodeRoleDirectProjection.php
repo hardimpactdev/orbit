@@ -64,6 +64,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 return $projected;
             }
             if (! $status->terminal()) {
+                if ($operation->kind === 'node.role_converge') {
+                    return $projected;
+                }
                 if (($result['target_completed'] ?? false) === true) {
                     $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
                     $assignment->markConvergenceActive();

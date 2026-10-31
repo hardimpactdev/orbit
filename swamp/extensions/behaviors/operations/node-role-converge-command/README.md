@@ -68,3 +68,10 @@ leaf, and full209 SSH globals. The contribution checks each child's nested
 skipped, missing or mismatched child blocks publication. An empty leaf set
 produces an explicit zero contribution. Certificate completion is recorded only
 by the final Gateway projection.
+
+The observer fragment verifies the existing Node-local secret against its
+execution-copy hash. It preserves that secret, publishes the existing observer
+templates, closes world access to each admitted checkout environment, and
+converges only `orbit-agent.service`. It does not call the old agent configurator
+or worker installer. Observer binary delivery uses the canonical bootstrap
+asset separately. Empty checkout lists retain file-before-service ordering.

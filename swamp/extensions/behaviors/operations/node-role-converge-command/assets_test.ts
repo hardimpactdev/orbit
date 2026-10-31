@@ -117,3 +117,24 @@ Deno.test("private role files consume only the whole execution copy through offi
     assertEquals("env" in inputs, false);
     assertEquals("script" in inputs, false);
 });
+
+Deno.test("observer files retain public templates and resolve only admitted checkout access", async () => {
+    const { observerFiles } = await import("./assets.ts");
+    const args = {
+        configuration: 'gateway_url = "https://gateway.orbit"\n',
+        certificate: "public-ca",
+        unit: "# Managed by Orbit: agent\n[Service]\nProtectHome=yes\n",
+        apps_root: null,
+        home: "/home/orbit",
+    };
+    assertEquals(observerFiles(args), {
+        configuration: args.configuration,
+        certificate: args.certificate,
+        unit:
+            "# Managed by Orbit: agent\n[Service]\nProtectHome=tmpfs\nBindReadOnlyPaths=-/home/orbit/apps\n",
+    });
+    assertEquals(
+        observerFiles({ ...args, apps_root: "/srv/apps" }).unit,
+        "# Managed by Orbit: agent\n[Service]\nProtectHome=tmpfs\n",
+    );
+});

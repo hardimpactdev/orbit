@@ -14,3 +14,5 @@ additionalFiles:
   - scripts/file.py
   - scripts/account_directory.py
   - scripts/composer_manifest.py
+  - scripts/observer_identity.py
+  - scripts/observer_checkout.py
