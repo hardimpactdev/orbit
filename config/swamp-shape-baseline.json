@@ -115,7 +115,7 @@
     {
       "file": "extensions/behaviors/_lib/package_sandbox.ts",
       "rule": "agent-action",
-      "count": 3,
+      "count": 12,
       "evidence": [
         "package.session"
       ]
@@ -123,7 +123,7 @@
     {
       "file": "extensions/behaviors/_lib/package_sandbox.ts",
       "rule": "agent-dynamic",
-      "count": 14,
+      "count": 7,
       "evidence": []
     },
     {
@@ -177,6 +177,12 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/dependency_scanner.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/js-maintenance/_lib/batch.ts",
       "rule": "custom-control",
       "count": 2,
@@ -191,6 +197,12 @@
       "evidence": [
         "lock"
       ]
+    },
+    {
+      "file": "extensions/behaviors/native_host_method.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
     },
     {
       "file": "extensions/behaviors/native_host_method.ts",
@@ -258,6 +270,12 @@
       "file": "extensions/behaviors/node-worker/proxy-runtime.ts",
       "rule": "inline-script",
       "count": 48,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/node-worker/proxy.ts",
+      "rule": "gateway-http",
+      "count": 1,
       "evidence": []
     },
     {
@@ -901,6 +919,12 @@
     },
     {
       "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
+      "rule": "agent-dynamic",
+      "count": 2,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
@@ -923,7 +947,7 @@
     {
       "file": "extensions/behaviors/operations/fleet/recipe_program.ts",
       "rule": "custom-control",
-      "count": 9,
+      "count": 11,
       "evidence": [
         "embedded-control"
       ]
@@ -1197,6 +1221,18 @@
     },
     {
       "file": "extensions/behaviors/operations/instance-environment/sync.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-lifecycle/clone_root.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-lifecycle/create_root.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
@@ -1478,9 +1514,11 @@
     {
       "file": "extensions/behaviors/operations/integrations/metrics_system.ts",
       "rule": "multi-action",
-      "count": 2,
+      "count": 4,
       "evidence": [
         "/usr/bin/rm",
+        "/usr/bin/stat",
+        "/usr/bin/sudo",
         "/usr/bin/test"
       ]
     },
@@ -1553,7 +1591,7 @@
     {
       "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_program.ts",
       "rule": "custom-control",
-      "count": 6,
+      "count": 8,
       "evidence": [
         "embedded-control"
       ]
@@ -1620,7 +1658,7 @@
     {
       "file": "extensions/behaviors/operations/node/bootstrap_program.ts",
       "rule": "custom-control",
-      "count": 6,
+      "count": 8,
       "evidence": [
         "embedded-control"
       ]
@@ -1805,7 +1843,7 @@
     {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "custom-control",
-      "count": 3,
+      "count": 5,
       "evidence": [
         "embedded-control"
       ]
@@ -1876,6 +1914,20 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/node/rekey_local.ts",
+      "rule": "agent-action",
+      "count": 1,
+      "evidence": [
+        "agent.configure"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/node/rekey_local.ts",
+      "rule": "agent-dynamic",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/node/removal_root.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -1899,7 +1951,7 @@
     {
       "file": "extensions/behaviors/operations/node/removal_system.ts",
       "rule": "custom-control",
-      "count": 3,
+      "count": 4,
       "evidence": [
         "embedded-control"
       ]
@@ -1991,6 +2043,21 @@
       "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
       "rule": "private-material",
       "count": 3,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/node/settings.ts",
+      "rule": "agent-action",
+      "count": 2,
+      "evidence": [
+        "account.lookup",
+        "node.prepare-storage-root"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/node/settings.ts",
+      "rule": "agent-dynamic",
+      "count": 2,
       "evidence": []
     },
     {
@@ -2379,18 +2446,15 @@
     {
       "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
       "rule": "inline-script",
-      "count": 46,
+      "count": 35,
       "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
       "rule": "multi-action",
-      "count": 9,
+      "count": 6,
       "evidence": [
-        "/usr/bin/cat",
         "/usr/bin/git",
-        "/usr/bin/install",
-        "/usr/bin/mv",
         "/usr/bin/python3",
         "/usr/bin/readlink",
         "/usr/bin/rm",
@@ -2583,6 +2647,21 @@
     },
     {
       "file": "extensions/behaviors/operations/task-vms/image_build_direct.ts",
+      "rule": "agent-action",
+      "count": 2,
+      "evidence": [
+        "incus.build-topology-seed",
+        "incus.volume"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/image_build_direct.ts",
+      "rule": "agent-dynamic",
+      "count": 2,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/image_build_direct.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
@@ -2610,7 +2689,7 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
       "rule": "agent-dynamic",
-      "count": 3,
+      "count": 5,
       "evidence": []
     },
     {
@@ -2658,7 +2737,7 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_ssh.ts",
       "rule": "agent-action",
-      "count": 2,
+      "count": 10,
       "evidence": [
         "agent.install",
         "image.owner",
@@ -2702,6 +2781,20 @@
     {
       "file": "extensions/behaviors/operations/task-vms/incus_direct.ts",
       "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/incus_local.ts",
+      "rule": "agent-action",
+      "count": 1,
+      "evidence": [
+        "incus.vm"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/incus_local.ts",
+      "rule": "agent-dynamic",
       "count": 1,
       "evidence": []
     },
@@ -2767,6 +2860,20 @@
       "file": "extensions/behaviors/operations/task-vms/native-fixture.ts",
       "rule": "private-material",
       "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/park.ts",
+      "rule": "agent-action",
+      "count": 1,
+      "evidence": [
+        "incus.vm"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/park.ts",
+      "rule": "agent-dynamic",
+      "count": 2,
       "evidence": []
     },
     {
@@ -2855,6 +2962,12 @@
       "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
       "rule": "secret-output",
       "count": 2,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/resume.ts",
+      "rule": "agent-dynamic",
+      "count": 1,
       "evidence": []
     },
     {
@@ -3024,6 +3137,12 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/tasks/mod.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/tasks/provision.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3136,6 +3255,36 @@
     {
       "file": "extensions/behaviors/operations/vault/mod.ts",
       "rule": "secret-argv",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/orbit_driver.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/orbit_gateway.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/orbit_group_run.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/orbit_group_runs.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/orbit_stage.ts",
+      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },

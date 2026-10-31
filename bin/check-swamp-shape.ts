@@ -131,7 +131,8 @@ export function analyzeTs(
   };
   visit(root, (node) => {
     if (
-      ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) &&
+      (ts.isVariableDeclaration(node) || ts.isParameter(node)) &&
+      ts.isIdentifier(node.name) &&
       node.initializer
     ) bindings.set(node.name.text, node.initializer);
     if (
@@ -335,6 +336,38 @@ export function analyzeTs(
     });
     return found;
   };
+  const agentExpression = (
+    expression: ts.Expression,
+    seen = new Set<ts.Node>(),
+  ): boolean => {
+    if (seen.has(expression)) return false;
+    seen.add(expression);
+    if (ts.isIdentifier(expression)) {
+      return agentNames.has(name(expression)) ||
+        (bindings.has(expression.text) &&
+          agentExpression(bindings.get(expression.text)!, seen));
+    }
+    if (
+      ts.isPropertyAccessExpression(expression) &&
+      ["call", "apply", "bind"].includes(expression.name.text)
+    ) return agentExpression(expression.expression, seen);
+    if (ts.isElementAccessExpression(expression)) {
+      let array: ts.Expression = expression.expression;
+      if (ts.isIdentifier(array)) array = bindings.get(array.text) ?? array;
+      return ts.isArrayLiteralExpression(array) &&
+        array.elements.some((item) =>
+          ts.isExpression(item) && agentExpression(item, seen)
+        );
+    }
+    if (ts.isCallExpression(expression)) {
+      return agentExpression(expression.expression, seen);
+    }
+    if (ts.isConditionalExpression(expression)) {
+      return agentExpression(expression.whenTrue, seen) ||
+        agentExpression(expression.whenFalse, seen);
+    }
+    return false;
+  };
   // Resolve const aliases and local wrapper functions, not just imported spellings.
   for (let pass = 0; pass < 4; pass++) {
     for (const [id, expression] of bindings) {
@@ -400,7 +433,8 @@ export function analyzeTs(
     if (texts.some((t) => t.includes("/private-material"))) {
       add(node, "private-material");
     }
-    const isAgent = agentNames.has(called) ||
+    const isAgent = agentExpression(node.expression) ||
+      agentNames.has(called) ||
       texts.some((t) => /(?:^|\/)orbit-agent(?:$|\s)/.test(t));
     if (isAgent) {
       const targets = [...new Set(texts.filter((t) => t in inventory))];
@@ -476,13 +510,7 @@ export function analyzeTs(
       ),
     ];
     for (const match of subprocesses) commands.add(match[1]);
-    const loops = text.match(
-      /\b(?:while\s+(?:True|true|:)|time\.sleep\s*\(|sleep\s+\d|flock\s*\(|LOCK_EX|O_EXCL|lockfile|for\s+\w*(?:attempt|retry)\w*\s+in)\b/g,
-    ) ?? [];
-    if (loops.length) {
-      add(root, "custom-control", loops.length, ["embedded-control"]);
-      result.loops += loops.length;
-    }
+
     if (/set\s+-(?:\w*x\w*|o\s+xtrace)\b/.test(text)) {
       add(root, "secret-xtrace");
     }
@@ -490,6 +518,15 @@ export function analyzeTs(
       /(?:subprocess\.(?:run|Popen|call)|os\.system)[^\n]*(?:password|secret|private_key|token)|\b(?:curl|exec|sudo|python\w*)[^\n]*\$\{?\w*(?:SECRET|TOKEN|PASSWORD|IDENTITY)/i
         .test(text)
     ) add(root, "secret-argv");
+  }
+  for (const text of scriptLeaves.values()) {
+    const controlSites = text.match(
+      /\b(?:while\s+(?:True|true|:)|time\.sleep\s*\(|sleep\s+\d|flock\s*\(|LOCK_EX|O_EXCL|lockfile|for\s+\w*(?:attempt|retry)\w*\s+in)/g,
+    ) ?? [];
+    if (controlSites.length) {
+      add(root, "custom-control", controlSites.length, ["embedded-control"]);
+      result.loops += controlSites.length;
+    }
   }
   if (commands.size > 1) {
     add(root, "multi-action", commands.size, [...commands].sort());
@@ -984,6 +1021,35 @@ export function analyze(
       }
     }
   }
+  for (const [file, a] of analyses) {
+    if (
+      !file.startsWith("extensions/behaviors/") || !a.types.length ||
+      a.findings.some((f) => f.rule === "gateway-http")
+    ) continue;
+    const pending = [...a.imports], seen = new Set<string>();
+    let reachable = false;
+    while (pending.length) {
+      const dependency = pending.pop()!;
+      if (seen.has(dependency)) continue;
+      seen.add(dependency);
+      const child = analyses.get(dependency);
+      if (!child) continue;
+      if (child.findings.some((f) => f.rule === "gateway-http")) {
+        reachable = true;
+        break;
+      }
+      pending.push(...child.imports);
+    }
+    if (reachable) {
+      a.findings.push({
+        file,
+        rule: "gateway-http",
+        count: 1,
+        line: 1,
+        evidence: [],
+      });
+    }
+  }
   return analyses;
 }
 export function workflowCoverage(analyses: Map<string, Analysis>) {
@@ -1123,12 +1189,18 @@ if (import.meta.main) {
         inline_script_lines: "decoded_script_lines_by_source_literal",
         custom_loops: "syntactic_control_sites",
         agent_action_calls: "syntactic_call_sites",
+        agent_unknown_calls: "syntactic_call_sites",
         workflows: "workflow_files",
         grandfathered: "file_rule_entries",
       },
       inline_script_lines: values.reduce((n, a) => n + a.inlineLines, 0),
-      custom_loops: values.reduce((n, a) => n + a.loops, 0),
+      custom_loops: entries.filter((e) => e.rule === "custom-control").reduce(
+        (n, e) => n + e.count,
+        0,
+      ),
       agent_action_calls: values.reduce((n, a) => n + a.agentActions, 0),
+      agent_unknown_calls: entries.filter((e) => e.rule === "agent-dynamic")
+        .reduce((n, e) => n + e.count, 0),
       workflows: coverage,
       grandfathered: entries.length,
       violations: entries,

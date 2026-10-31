@@ -319,3 +319,30 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
     );
   }
 });
+
+Deno.test("agent array, bind and default-parameter wrappers cannot hide new actions", () => {
+  for (
+    const source of [
+      "const calls=[runNodeAgent];calls[0]({name:'cli.install'});",
+      "const act=runNodeAgent.bind(null);act({name:'cli.install'});",
+      "function install(call,invoke=runNodeAgent){return invoke({name:'cli.install'});}",
+    ]
+  ) assert(rules(source).includes("agent-action"), source);
+});
+Deno.test("a new registered step cannot reuse an old Gateway HTTP helper without rule F", () => {
+  const result = analyze(
+    new Map([[
+      "extensions/behaviors/new.ts",
+      "import {read} from './old.ts';export const behavior={type:'@example/new',execute:()=>read()};",
+    ], [
+      "extensions/behaviors/old.ts",
+      "export function read(){return gatewayHttp(url).get('/intent')} backup();",
+    ]]),
+    inventory,
+  );
+  assert(
+    result.get("extensions/behaviors/new.ts")?.findings.some((f) =>
+      f.rule === "gateway-http"
+    ),
+  );
+});

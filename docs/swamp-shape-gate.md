@@ -39,7 +39,9 @@ versioned JSON with its commit and units, plus a `SHAPE-GATE` summary on one lin
 Current PLAN also forbids Gateway HTTP calls from any step, including failure
 reporters. The `gateway-http` rule covers the client and its aliases and imports;
 workflow coverage follows local dependencies, so helper modules and failure jobs
-remain part of the audit. Intent arrives as non-secret workflow inputs, vault
+remain part of the audit. A registered step that reaches a Gateway helper has
+its own file/rule finding, so new steps cannot inherit a historical exception.
+Intent arrives as non-secret workflow inputs, vault
 names and key names identify secrets, and step outputs carry results.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
@@ -67,3 +69,8 @@ This applies to the import PR and its first main push. The checker accepts the
 unprefixed source tree only when that commit is an ancestor and its repository
 identity matches. Subsequent runs compare the actual Orbit base under `swamp/`.
 Lane24 records the import provenance and selects this one-time base.
+
+The scanner reads tracked files. Stage the imported inventory and baseline before
+a local import check. When the preserved source predates the gate, the checker
+derives initial limits from that source; a gate-source comparison base is not
+needed. The import fixtures cover both the PR and its first main push.
