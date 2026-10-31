@@ -25,6 +25,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
@@ -979,11 +980,11 @@ describe('failed VM claims', function (): void {
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
 
-    it('clears the Pi token as soon as deletion removes the VM', function (): void {
+    it('refuses synchronous VM deletion without changing its running state or credentials', function (): void {
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Ready);
 
-        app(DeleteTaskVmAction::class)->execute($vm);
-
-        expect($vm->fresh())->state->toBe(TaskVmState::Destroying)->pi_token->toBeNull();
+        $token = $vm->pi_token;
+        expect(fn () => app(DeleteTaskVmAction::class)->execute($vm))->toThrow(ResourceOperationException::class, 'Task VM removal requires its owning native parent.');
+        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->pi_token->toBe($token);
     });
 });

@@ -14,3 +14,5 @@ The Gateway freezes the VM, provider location, guest Node, worker issuer, model 
 Node cleanup uses `TaskVmNodeRemovalPlan::deletedTaskVm`, placed lower actions and the pure `NodeRemovalRecords` projector. The parent checks that every required action is available before stopping the VM. Node deletion and VM finalization share the parent transaction, and the deletion event is sent after commit. Provider absence alone never proves complete Node cleanup.
 
 Workspace and Route cleanup are not yet composed in this parent. Admission refuses those scopes with `operation.kind_unavailable`. Missing Node cleanup contributors also refuse before provider effects. The VM records and unpublished work remain. No child Operation, executor endpoint or Gateway SSH action supplies a substitute cleanup path.
+
+The old queued destroy job is removed. Ordinary VM admission uses `StartTaskVmDestroyAction`. The synchronous Task workspace deletion entry refuses before effects until its owning Task root composes VM destruction; it cannot start a child or perform provider cleanup in PHP.

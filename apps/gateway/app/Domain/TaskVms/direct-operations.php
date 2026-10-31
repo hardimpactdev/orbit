@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Domain\TaskVms\TaskVmLifecycleIntentProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
+use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
@@ -16,7 +18,7 @@ return ['task_vm.resume' => [
     'private_material' => ['pi_token' => 'task_vm.pi_token', 'upcloud_token' => 'upcloud.api'],
 ], 'task_vm.destroy' => [
     'workflow' => 'operation-task-vm-destroy',
-    'projection' => \App\Domain\TaskVms\TaskVmDestroyProjection::class,
+    'projection' => TaskVmDestroyProjection::class,
     'private_material' => ['upcloud_token' => 'upcloud.api', 'model_key' => 'task_vm.model_key', 'model_router' => 'task_vm.model_router'],
 ], 'task_vm.enroll' => [
     'workflow' => 'operation-task-vm-enroll',
