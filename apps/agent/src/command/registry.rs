@@ -645,6 +645,22 @@ mod tests {
         assert!(WriteUrl::target(&url).is_some());
     }
 
+    /// Each Valkey volume has its own ACL lock.
+    #[test]
+    fn each_valkey_volume_has_its_own_acl_lock() {
+        use crate::commands::valkey_acl::WriteValkeyAcl;
+        let acl = |volume: &str| {
+            WriteValkeyAcl::target(
+                &serde_json::from_value(
+                    json!({"volume": volume, "image": "valkey/valkey:8", "acl": ""}),
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(acl("one").as_deref(), Some("valkey-acl:one"));
+        assert_ne!(acl("one"), acl("two"));
+    }
+
     /// Every input object refuses unknown fields, so a misspelled field fails instead of being ignored.
     #[test]
     fn every_input_object_refuses_unknown_fields() {

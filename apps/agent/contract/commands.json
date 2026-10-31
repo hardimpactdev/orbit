@@ -2575,6 +2575,20 @@
       ]
     },
     {
+      "name": "database.write-valkey-acl",
+      "summary": "Write the ACL file into a Valkey Database server's volume.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "database.valkey_acl_invalid",
+        "database.valkey_acl_failed"
+      ]
+    },
+    {
       "name": "cli.inspect",
       "summary": "Say whether the Orbit CLI on the Node is missing, current, older, or foreign.",
       "mutates": false,
@@ -2968,48 +2982,6 @@
       ]
     },
     {
-      "name": "instance.inspect-registration-source",
-      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.relocate-registration-source",
-      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.laravel-registration-receipt",
-      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
       "name": "instance.prepare-release",
       "summary": "Clone a new production release of a branch and link its environment and shared paths.",
       "mutates": true,
@@ -3309,6 +3281,52 @@
       ]
     },
     {
+      "name": "instance.copy-sqlite",
+      "summary": "Copy, export, install, or remove a development SQLite database.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instance.sqlite_copy_refused",
+        "instance.sqlite_copy_failed"
+      ]
+    },
+    {
+      "name": "instance.read-sqlite-snapshot",
+      "summary": "Stream a verified private SQLite snapshot to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instance.sqlite_transfer_invalid",
+        "instance.sqlite_transfer_refused",
+        "instance.sqlite_transfer_failed"
+      ],
+      "output_max_bytes": 1099511627776
+    },
+    {
+      "name": "instance.receive-sqlite-snapshot",
+      "summary": "Receive a verified SQLite snapshot into its prepared account-owned file.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instance.sqlite_transfer_invalid",
+        "instance.sqlite_transfer_refused",
+        "instance.sqlite_transfer_failed"
+      ],
+      "input_max_bytes": 1099511627776
+    },
+    {
       "name": "database.query-sqlite",
       "summary": "Query an existing SQLite database read-only as its selected owner.",
       "mutates": false,
@@ -3320,6 +3338,50 @@
       "errors": [
         "database.sqlite_unreadable",
         "database.query_failed"
+      ]
+    },
+    {
+      "name": "database.write-sqlite",
+      "summary": "Run an authorized write against an existing SQLite database as its selected owner.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "database.sqlite_unreadable",
+        "database.query_failed"
+      ]
+    },
+    {
+      "name": "instance.prepare-sqlite-seed",
+      "summary": "Take or clean up the source snapshot of a SQLite seed.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instance.sqlite_seed_refused",
+        "instance.sqlite_seed_failed",
+        "instance.sqlite_seed_unconfirmed"
+      ]
+    },
+    {
+      "name": "instance.install-sqlite-seed",
+      "summary": "Prepare, install, or clean up the target of a SQLite seed.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instance.sqlite_seed_refused",
+        "instance.sqlite_seed_failed",
+        "instance.sqlite_seed_unconfirmed"
       ]
     },
     {
@@ -3665,20 +3727,6 @@
       ]
     },
     {
-      "name": "caddy.publish",
-      "summary": "Validate and publish a rendered Node Caddyfile, restoring the previous configuration on reload failure.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "caddy.publication_invalid",
-        "caddy.publication_failed"
-      ]
-    },
-    {
       "name": "caddy.check-addresses",
       "summary": "Check that every Caddy listen address exists on the Node.",
       "mutates": false,
@@ -3688,7 +3736,6 @@
         "macos": null
       },
       "errors": [
-        "caddy.publication_invalid",
         "caddy.publication_failed"
       ]
     },
@@ -3702,7 +3749,6 @@
         "macos": null
       },
       "errors": [
-        "caddy.publication_invalid",
         "caddy.publication_failed"
       ]
     },
@@ -4194,6 +4240,21 @@
       },
       "errors": [
         "project.source_failed"
+      ]
+    },
+    {
+      "name": "database.server-admin",
+      "summary": "Run the admin client of a Database server's container, or copy a database inside it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "database.server_admin_invalid",
+        "database.server_admin_failed",
+        "database.server_not_ready"
       ]
     },
     {

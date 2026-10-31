@@ -8,14 +8,15 @@ pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
 mod caddy_certificate;
+mod caddy_observation;
 mod caddy_package;
-mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
 mod cli_update;
 pub mod clone_candidate;
 mod composer_global;
 mod composer_scope;
+pub mod database_server;
 pub mod deploy_runner;
 pub mod deploy_step;
 pub mod dev_certificates;
@@ -88,12 +89,14 @@ pub mod production_home;
 pub mod project_source;
 pub mod recipe;
 pub mod recipe_delivery;
-pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
 pub mod source;
+pub mod sqlite_copy;
 mod sqlite_query;
+pub mod sqlite_seed;
+pub mod sqlite_transfer;
 mod ssh_host_key;
 pub mod storage_root;
 mod swamp_worker;
@@ -108,6 +111,7 @@ mod tool_output;
 mod tools_apt;
 pub mod topology_evidence;
 pub mod transfer_source;
+pub mod valkey_acl;
 pub mod vite;
 mod vp_global;
 pub mod vp_project;
@@ -273,6 +277,7 @@ pub fn all() -> Vec<Entry> {
         entry::<websocket_runtime::RuntimeActive>(),
         entry::<ci_runner::CiRunnerHost>(),
         entry::<horizon_queue::ReadQueue>(),
+        entry::<valkey_acl::WriteValkeyAcl>(),
         entry::<cli::InspectCli>(),
         entry::<cli::InstallCli>(),
         entry::<cli_update::SelfUpdate>(),
@@ -295,9 +300,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
         entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
-        entry::<registration::InspectRegistrationSource>(),
-        entry::<registration::RelocateRegistrationSource>(),
-        entry::<registration::LaravelRegistrationReceipt>(),
         entry::<production::PrepareRelease>(),
         entry::<production::ActivateRelease>(),
         entry::<production::InspectRelease>(),
@@ -317,7 +319,13 @@ pub fn all() -> Vec<Entry> {
         entry::<laravel::WriteUrl>(),
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
+        entry::<sqlite_copy::CopySqlite>(),
+        entry::<sqlite_transfer::ReadSnapshot>(),
+        entry::<sqlite_transfer::ReceiveSnapshot>(),
         entry::<sqlite_query::Query>(),
+        entry::<sqlite_query::Write>(),
+        entry::<sqlite_seed::PrepareSqliteSeed>(),
+        entry::<sqlite_seed::InstallSqliteSeed>(),
         entry::<transfer_source::TransferSource>(),
         entry::<transfer_source::ReadArchive>(),
         entry::<transfer_source::Materialize>(),
@@ -338,9 +346,8 @@ pub fn all() -> Vec<Entry> {
         entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
-        entry::<caddy_publication::Publish>(),
-        entry::<caddy_publication::CheckAddresses>(),
-        entry::<caddy_publication::ReadLive>(),
+        entry::<caddy_observation::CheckAddresses>(),
+        entry::<caddy_observation::ReadLive>(),
         entry::<doctor_node::InspectNode>(),
         entry::<doctor_project::InspectProject>(),
         entry::<doctor_project::InspectDevelopmentSource>(),
@@ -362,6 +369,7 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_runtime::MetricsCredentials>(),
         entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
+        entry::<database_server::DatabaseServerAdmin>(),
         entry::<hibernation::PrepareDirectories>(),
         entry::<hibernation::MarkHibernation>(),
         entry::<hibernation::ReadHibernationTimes>(),
