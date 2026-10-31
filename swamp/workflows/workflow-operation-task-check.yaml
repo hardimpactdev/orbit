@@ -624,10 +624,10 @@ jobs:
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_revoke.py" }}
           ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
     dependsOn:
-    - step: push
+    - step: finish
       condition:
-        type: always
-    guard: ${{ !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
+        type: succeeded
+    guard: ${{ !steps.finish.outputs.minted }}
     allowFailure: true
   - name: pushed_snapshot
     target: orbit-node-209
@@ -717,7 +717,7 @@ jobs:
     - step: finish
       condition:
         type: succeeded
-    guard: ${{ steps.finish.outputs.pending || !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
+    guard: ${{ steps.finish.outputs.pending || !steps.finish.outputs.minted }}
     allowFailure: true
   - name: result
     target: orbit-node-209

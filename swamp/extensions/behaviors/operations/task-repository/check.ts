@@ -219,6 +219,7 @@ export function finish(args: Record<string, unknown>) {
         return {
             result: local,
             pending: false,
+            minted: false,
             result_json: JSON.stringify(local),
         };
     }
@@ -249,6 +250,7 @@ export function finish(args: Record<string, unknown>) {
         result,
         pending: !error_code,
         pushed_at,
+        minted: minted.minted === true,
         result_json: JSON.stringify({ ...result, pending: !error_code }),
     };
 }
