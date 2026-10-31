@@ -157,6 +157,7 @@ final readonly class CreateServerDatabaseAction
         ?string $createdBy,
         array $attributes = [],
     ): DatabaseConnection {
+        $server = DatabaseServer::query()->with(['node', 'process'])->whereKey($server->id)->lockForUpdate()->firstOrFail();
         $this->assertActive($server);
         app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
         $this->assertHoldsDatabases($server);
@@ -248,7 +249,7 @@ final readonly class CreateServerDatabaseAction
 
     private function server(string $slug): DatabaseServer
     {
-        $server = DatabaseServer::query()->with(['node', 'process'])->where('slug', $slug)->first();
+        $server = DatabaseServer::query()->with(['node', 'process'])->where('slug', $slug)->lockForUpdate()->first();
 
         if (! $server instanceof DatabaseServer) {
             throw new ResourceOperationException(

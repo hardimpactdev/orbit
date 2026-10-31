@@ -34,7 +34,7 @@ For direct kinds, the shared private-material read returns only declared fields 
 
 ## Create a server
 
-`database:server:create` creates the server and its Process in one command.
+`database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent.
 
 ```bash
 orbit database:server:create beast-mysql --node=beast
@@ -286,7 +286,9 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. The server Operation holds its target until removal completes, so another public database Operation cannot start on it. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. Admission marks the server as removing, so new database creation refuses an inactive server. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
+
+`database:server:destroy` records one intent and starts `operation-database-server-destroy`. The owning Node removes only the admitted Process containers through the pinned agent with sudo. Its named data volume stays intact. A server without a Process uses a native no-op step. The Gateway validates that no connections remain and deletes the Server and Process records only after a successful native result. There is no Gateway execution relay or child Operation. Rollback reverts the cutover PR.
 
 A new Valkey server with the slug of a removed one finds the old volume. It writes a new ACL file there, so the old users are gone, but the old keys stay.
 

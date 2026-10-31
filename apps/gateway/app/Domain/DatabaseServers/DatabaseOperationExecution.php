@@ -14,7 +14,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
-use App\Models\DatabaseServer;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -137,9 +136,7 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
                 }
             }
         }
-        if ($operation->kind === 'database_server.destroy' && DatabaseServer::query()->findOrFail($operation->target_id)->databaseConnections()->exists()) {
-            throw new ResourceOperationException('database.server_in_use', 'The server still holds databases.', 409);
-        }
+
     }
 
     public function received(Operation $operation, array $run, array $receipt): array
