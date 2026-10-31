@@ -12,7 +12,6 @@ use App\Domain\Firewall\FirewallPort;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
@@ -30,7 +29,7 @@ final readonly class StoreFirewallRuleAction
             $this->guardLinuxPlatform($node);
             $this->guardRecoverySsh($node, $data);
             $this->guardActionConflict($node, $data);
-            $writer = app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
+            app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
             $rule = FirewallRule::query()->firstOrNew([
                 'node_id' => $node->id,
                 'name' => $data->name,
@@ -63,8 +62,7 @@ final readonly class StoreFirewallRuleAction
                 'rule_id' => $rule->id, 'created' => $created, 'name' => $rule->name, 'action' => $rule->action->value,
                 'source' => $rule->source, 'protocol' => $rule->protocol, 'port' => $rule->port,
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-                ...($writer === 'direct' ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
-            ], 'operator', $requestId, expectedWriter: $writer);
+            ], 'operator', $requestId);
         });
     }
 
