@@ -225,6 +225,102 @@ class ShapeGate(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
 
 
+    def test_source_move_initial_import_uses_older_unprefixed_source_not_gate_witness(self):
+        fixture = json.loads((ROOT / "tests/fixtures/shape/proxy-http-source-move.json").read_text())
+        source_path = "extensions/behaviors/operations/_lib/node-proxy.ts"
+        target_path = source_path.replace("node-proxy.ts", "node-proxy-http.ts")
+        caller_path = "extensions/behaviors/automatic-deploy/gateway.ts"
+        with tempfile.TemporaryDirectory(prefix="shape-move-import-") as scratch:
+            root = Path(scratch)
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            git("init", "--quiet")
+            git("config", "user.email", "shape@example.invalid")
+            git("config", "user.name", "Shape fixture")
+            for name, content in ((source_path, fixture["from"]), (caller_path, fixture["caller"]),
+                                  (source_path.replace("node-proxy.ts", "node-command-process.ts"), "export const commandOutput=()=>{};\n"),
+                                  (".swamp.yaml", "repoId: source-move-fixture\n")):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "retained unprefixed source predating the gate")
+            original = git("rev-parse", "HEAD")
+            (root / "bin").mkdir()
+            (root / "bin/check-swamp-shape.ts").write_text("export {};\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "root source already carrying a gate")
+            gated_base = git("rev-parse", "HEAD")
+            (root / "bin/check-swamp-shape.ts").unlink()
+            (root / "bin").rmdir()
+            (root / "config").mkdir()
+            (root / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
+            git("add", ".")
+            seeded = subprocess.run([DENO,"run","-A",str(ROOT / "bin/check-swamp-shape.ts"),
+                "--base",original,"--write-baseline","--python-analyzer",str(ROOT / "bin/swamp-shape-python.py")],
+                cwd=root, text=True, capture_output=True)
+            self.assertEqual(seeded.returncode, 0, seeded.stderr)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "earlier root source already carrying a ledger")
+            ledger_base = git("rev-parse", "HEAD")
+            (root / ".witness").write_text("immutable code witness\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "later immutable source witness with derived ledger")
+            witness = git("rev-parse", "HEAD")
+            swamp = root / "swamp"
+            swamp.mkdir()
+            for name in ("config", "extensions", ".swamp.yaml"):
+                (root / name).rename(swamp / name)
+            (swamp / "bin").mkdir()
+            for name in ("check-swamp-shape.ts", "swamp-shape-relocations.ts", "swamp-shape-python.py", "swamp_shape_host_tools.py"):
+                (swamp / "bin" / name).write_bytes((ROOT / "bin" / name).read_bytes())
+            helper = swamp / "bin/swamp-shape-relocations.ts"
+            # Only this disposable fixture substitutes its synthetic witness.
+            helper.write_text(helper.read_text().replace(fixture["origin"], witness))
+            git("add", ".")
+            git("commit", "--quiet", "-m", "history-preserving import with protected source proof")
+            imported = git("rev-parse", "HEAD")
+            (swamp / source_path).write_text("export const proxyLaunch=()=>{};\n")
+            (swamp / target_path).write_text(fixture["target"])
+            (swamp / caller_path).write_text(fixture["caller"].replace(
+                'import { proxyGatewayRequest, runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";',
+                'import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";\n'
+                'import { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";'))
+            ledger = swamp / "config/swamp-shape-baseline.json"
+            baseline = json.loads(ledger.read_text())
+            baseline["entries"] = [row for row in baseline["entries"] if row["file"] != source_path]
+            ledger.write_text(json.dumps(baseline))
+            git("add", ".")
+            git("commit", "--quiet", "-m", "exact extraction after protected lower")
+            def check(base, event="pull_request"):
+                return subprocess.run([DENO,"run","-A","bin/check-swamp-shape.ts","--base",base],
+                    cwd=swamp, text=True, capture_output=True, env={**os.environ,"GITHUB_EVENT_NAME":event})
+            for base, event in ((original,"pull_request"),(original,"push"),(imported,"pull_request")):
+                result = check(base,event)
+                self.assertEqual(result.returncode,0,f"{base} {event}: {result.stderr}")
+                report = json.loads(result.stdout.splitlines()[0])
+                self.assertEqual(len(report["relocated_allowances"]),1)
+                self.assertEqual(report["errors"],[])
+            for earlier in (gated_base, ledger_base):
+                self.assertIn("HTTP source move lacks immutable origin ancestry",check(earlier).stderr)
+            # An old prefixed comparison base cannot use the initial import path.
+            git("checkout","--quiet","-b","prefixed-before-origin",original)
+            (root / "swamp").mkdir(exist_ok=True)
+            for name in ("extensions", ".swamp.yaml"):
+                (root / name).rename(root / "swamp" / name)
+            git("add", ".")
+            git("commit","--quiet","-m","unrelated prefixed source before witness")
+            prefixed = git("rev-parse","HEAD")
+            git("checkout","--quiet","-")
+            self.assertIn("HTTP source move lacks immutable origin ancestry",check(prefixed).stderr)
+            # Actual base debt/layout still controls the cap, even on bootstrap.
+            original_source = (swamp / target_path).read_text()
+            (swamp / target_path).write_text(original_source.replace("timeoutMs + 1000","timeoutMs + 2000"))
+            result = check(original)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn("gateway-http 1 exceeds 0",result.stderr)
+
+
 PHP_RUNTIME = textwrap.dedent("""\
     import contextlib
     import fcntl
