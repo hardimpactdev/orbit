@@ -1,0 +1,50 @@
+id: 51049b19-ed9c-4d63-a3d8-f4624b342e50
+name: ai-router-remove-source
+description: Remove one fixed collector source as a step in its owning native lifecycle.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, pattern: '^[a-z][a-z0-9_.-]+$'}
+    intent:
+      type: object
+      properties:
+        target_node_id: {type: integer, minimum: 1}
+        retired: {type: boolean}
+      required: [target_node_id, retired]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: source
+    steps:
+      - name: input
+        target: '${{ "orbit-node-" + string(inputs.intent.target_node_id) }}'
+        labels: {node: '${{ string(inputs.intent.target_node_id) }}'}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ai-router-source-input'
+          behaviorName: '${{ "ai-router-source-input-" + string(inputs.operation_id) }}'
+          methodName: prepare
+          inputs:
+            retired: '${{ inputs.intent.retired }}'
+      - name: remove
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        target: '${{ "orbit-node-" + string(inputs.intent.target_node_id) }}'
+        labels: {node: '${{ string(inputs.intent.target_node_id) }}'}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ai-router-source-remove-" + string(inputs.intent.target_node_id) }}'
+          methodName: execute
+          inputs:
+            run: |
+              set -eu
+              sudo -n --preserve-env=ORBIT_AI_SOURCE_INTENT -- /usr/bin/python3 -I "$ORBIT_AI_SOURCE_SCRIPT"
+            env:
+              ORBIT_AI_SOURCE_SCRIPT: '${{ steps.input.outputs.script }}'
+              ORBIT_AI_SOURCE_INTENT: '${{ steps.input.outputs.intent_json }}'
