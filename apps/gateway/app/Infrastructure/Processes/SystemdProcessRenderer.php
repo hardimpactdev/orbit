@@ -82,7 +82,7 @@ final readonly class SystemdProcessRenderer
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
-            ...$this->managedEnvironmentDirectives($process, is_int($target->instance?->ssr_port)),
+            'EnvironmentFile='.$this->environmentPath($process, $target),
             ...$environmentProjection['directives'],
             ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
@@ -104,26 +104,25 @@ final readonly class SystemdProcessRenderer
         ]);
     }
 
-    /**
-     * @return list<string>
-     */
-    private function managedEnvironmentDirectives(#[SensitiveParameter] Process $process, bool $ssr): array
+    public function environmentPath(Process $process, ProcessTarget $target): string
     {
-        if (! array_key_exists('environment', $process->runtime_config)) {
-            return [];
-        }
+        $this->unitName($process);
 
-        $directives = [];
+        return '/etc/orbit/processes/'.$process->id.'/'.hash('sha256', $this->environmentContent($process, $target)).'.env';
+    }
 
-        foreach ($this->stringMap($process->runtime_config['environment']) as $name => $value) {
-            if ($this->isReservedEnvironmentName($name) || ($ssr && in_array($name, [SsrEndpoint::PORT_KEY, SsrEndpoint::URL_KEY], true))) {
+    public function environmentContent(#[SensitiveParameter] Process $process, ProcessTarget $target): string
+    {
+        $lines = ['# Orbit Process '.$process->id];
+        foreach ($this->stringMap($process->runtime_config['environment'] ?? []) as $name => $value) {
+            if ($this->isReservedEnvironmentName($name)
+                || (is_int($target->instance?->ssr_port) && in_array($name, [SsrEndpoint::PORT_KEY, SsrEndpoint::URL_KEY], true))) {
                 continue;
             }
-
-            $directives[] = 'Environment='.$name.'='.$this->escapeDirectivePath($value);
+            $lines[] = $name.'="'.str_replace(['\\', '"'], ['\\\\', '\\"'], $value).'"';
         }
 
-        return $directives;
+        return implode("\n", $lines)."\n";
     }
 
     private function isReservedEnvironmentName(string $name): bool
