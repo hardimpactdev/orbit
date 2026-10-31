@@ -11,7 +11,6 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
 use App\Support\ValidatedData;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -31,47 +30,6 @@ final readonly class StartSwampRun
         $this->submit($operation, true);
     }
 
-    /** Verify native identity without binding, submitting or changing the Operation. */
-    public function verify(Operation $operation, string $runId): void
-    {
-        $workflow = app(DirectOperation::class)->definition($operation->kind)['workflow'] ?? null;
-        $key = 'operation:'.$operation->id;
-        if ($workflow === null || ($operation->state['swamp_start_key'] ?? null) !== $key) {
-            throw $this->unverified();
-        }
-        $token = config('swamp.run_token');
-        if (! is_string($token) || $token === '') {
-            throw $this->unverified();
-        }
-        $endpoint = new WebSocketEndpoint(ValidatedData::string(config('swamp.address')), 443, 'swamp.orbit', '/', ValidatedData::string(config('swamp.ca_path')), $token);
-        try {
-            $history = $this->request($endpoint, 'workflow.run.search', [
-                'workflow' => $workflow, 'inputs' => ['operation_id' => (string) $operation->id],
-                'tags' => ['orbit_start_key' => $key], 'limit' => 2,
-            ], 'verify');
-        } catch (ResourceOperationException) {
-            throw $this->unverified();
-        }
-        $runs = $history['results'] ?? null;
-        $inputs = ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id];
-        if (! is_array($runs) || ! array_is_list($runs) || count($runs) !== 1 || ($history['total'] ?? null) !== 1) {
-            throw $this->unverified();
-        }
-        $run = $runs[0];
-        if (! is_array($run) || ($run['workflowName'] ?? null) !== $workflow || ($run['runId'] ?? null) !== $runId
-            || ! in_array($run['status'] ?? null, ['pending', 'running', 'suspended', 'succeeded', 'failed', 'cancelled', 'interrupted'], true)
-            || ! is_array($run['tags'] ?? null) || ($run['tags']['orbit_start_key'] ?? null) !== $key
-            || ! is_array($run['inputs'] ?? null) || array_diff_key($inputs, $run['inputs']) !== []
-            || array_replace($inputs, $run['inputs']) !== $inputs) {
-            throw $this->unverified();
-        }
-    }
-
-    private function unverified(): ResourceOperationException
-    {
-        return new ResourceOperationException('operation.run_unverified', 'Swamp did not verify the admitted run identity.', 409);
-    }
-
     private function submit(Operation $operation, bool $historyFirst): void
     {
         $declaration = app(DirectOperation::class)->definition($operation->kind);
@@ -88,10 +46,7 @@ final readonly class StartSwampRun
             throw new ResourceOperationException('swamp.start_unavailable', 'The workflow start credential is not configured.', 503);
         }
         $endpoint = new WebSocketEndpoint(ValidatedData::string(config('swamp.address')), 443, 'swamp.orbit', '/', ValidatedData::string(config('swamp.ca_path')), $token);
-        $key = $operation->state['swamp_start_key'] ?? 'operation:'.$operation->id;
-        if ($key !== 'operation:'.$operation->id) {
-            throw $this->unverified();
-        }
+        $key = 'operation:'.$operation->id;
         $inputs = ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id];
         $payload = ['workflowIdOrName' => $workflow, 'inputs' => $inputs, 'runtimeTags' => ['orbit_start_key' => $key]];
         $started = microtime(true);
@@ -134,13 +89,11 @@ final readonly class StartSwampRun
                     $outcome = 'recovered';
                 }
             }
-            DB::transaction(function () use ($operation, $runId): void {
-                $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-                if (isset($operation->state['swamp_run_id'])) {
-                    app(DirectOperation::class)->assertRun($operation, $runId);
-                }
-                $operation->update(['dispatched_at' => now(), 'state' => [...($operation->state ?? []), 'swamp_run_id' => $runId]]);
-            });
+            $operation->refresh();
+            if (isset($operation->state['swamp_run_id'])) {
+                app(DirectOperation::class)->assertRun($operation, $runId);
+            }
+            $operation->update(['dispatched_at' => now(), 'state' => [...($operation->state ?? []), 'swamp_run_id' => $runId]]);
         } catch (ResourceOperationException $exception) {
             $outcome = $exception->errorCode === 'swamp.start_refused' ? 'refused' : 'uncertain';
             throw $exception;

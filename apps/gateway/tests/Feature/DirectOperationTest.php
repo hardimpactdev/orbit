@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -312,13 +311,20 @@ it('leaves bound terminal running and cancellation-requested intents alone durin
     'cancellation requested' => [fn (): array => ['cancel_requested_at' => now()]],
 ]);
 
-it('commits the direct start tag with admission before any submission and rolls both back together', function (): void {
-    config(['swamp.direct_writers' => ['route.caddy_converge' => 'direct']]);
-    DB::beginTransaction();
-    $op = app(OperationStore::class)->create('route.caddy_converge', 'node_route_projection', $this->operation->node_id, $this->operation->node_id, [], 'test', null);
-    expect($op->fresh()->state['swamp_start_key'])->toBe('operation:'.$op->id);
-    expect($op->state)->not->toHaveKey('swamp_run_id');
-    $id = $op->id;
-    DB::rollBack();
-    expect(Operation::query()->find($id))->toBeNull();
+it('refuses a retained admission tag without native history calls until the start is bound', function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+    $this->operation->update(['state' => ['route_publication_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
+
+    try {
+        app(DirectOperation::class)->assertRun($this->operation, 'a075eb23-7ac4-4487-80d1-57a038a92676');
+        $this->fail('Expected an unbound run refusal');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('operation.run_unbound');
+    }
+
+    expect($socket->sent)->toBe([]);
+    expect($socket->connections)->toBe([]);
+    expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
 });

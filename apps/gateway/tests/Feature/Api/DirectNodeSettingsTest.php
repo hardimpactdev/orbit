@@ -45,13 +45,11 @@ it('keeps the old writer by default', function (): void {
     expect($op->lock_key)->toBe('node:'.$this->node->id);
 });
 
-it('refuses reads without native execution and lets only the Gateway record the binding', function (): void {
+it('binds only the Gateway start response and refuses first reads until bound', function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => $message['type'] === 'workflow.run.search'
-        ? [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 0, 'data' => ['results' => []]]]]
-        : [['type' => 'event', 'id' => $message['id'], 'event' => [
-            'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
-        ]]];
+    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
+    ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.direct_writers' => ['node.settings' => 'direct'], 'swamp.run_token' => 'fake.token']);
     DB::beginTransaction();
@@ -61,8 +59,8 @@ it('refuses reads without native execution and lets only the Gateway record the 
     $this->getJson($path)->assertConflict();
     expect($op->fresh()->state)->not->toHaveKey('swamp_run_id');
     DB::commit();
-    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run.search', 'workflow.run']);
-    expect($socket->sent[1]['payload'])->toBe(['workflowIdOrName' => 'operation-node-settings',
+    expect($socket->sent)->toHaveCount(1);
+    expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-node-settings',
         'inputs' => ['operation_id' => $op->id, 'kind' => 'node.settings', 'node_id' => $this->node->id],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$op->id]]);
     $this->getJson($path)->assertOk()->assertJsonPath('data.input.storage.root', '/srv/new');
