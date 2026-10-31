@@ -217,9 +217,7 @@ jobs:
     with:
       working-directory: swamp
       base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
-      allow-auth-unavailable: ${{ needs.changes.outputs.swamp_initial_import == 'true' && (github.event.pull_request.number == 2002 || github.ref == 'refs/heads/main') }}
-    secrets: inherit
-
+      allow-auth-unavailable: ${{ needs.changes.outputs.swamp_initial_import == 'true' && (github.event_name == 'pull_request' && github.event.pull_request.number == 2002 || github.event_name == 'push' && github.ref == 'refs/heads/main') }}
   gateway-release:
     name: Gateway release inputs
     needs: changes
