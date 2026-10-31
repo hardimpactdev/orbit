@@ -3,8 +3,12 @@
 Every pull request and main push runs `Swamp shape`. Existing violations are
 listed by file and rule in `config/swamp-shape-baseline.json`. Entries and their
 counts may only decrease. Moving code does not transfer an exception. CI also
-runs the base revision's checker, so changing a rule or exclusion does not relax
-that PR's check.
+runs the base revision's checker and dependencies against committed HEAD in
+isolated sparse worktrees. That check derives its own shrink-only baseline from
+immutable base limits; it does not reinterpret the PR's revised baseline under
+old rules. Changing current rules, limits or exclusions cannot admit new debt
+under the frozen rules. Actual debt removal and approved classification fixes do
+not require stale allowances.
 
 The gate implements Nick's migration policy using these manual references:
 
