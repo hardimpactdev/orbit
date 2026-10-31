@@ -118,7 +118,7 @@ jobs:
           echo "publish=false" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build
+    name: Build CLI
     needs: resolve
     if: needs.resolve.outputs.publish == 'true'
     uses: ./.github/workflows/orbit-cli-binary.yml

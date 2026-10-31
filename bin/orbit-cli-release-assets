@@ -79,7 +79,6 @@ for target in "${targets[@]}"; do
     install -m 0755 "${artifact_dir}/${target%%:*}" "${out_dir}/orbit-${version}-${target##*:}"
 done
 
-
 (
     cd "$out_dir"
     LC_ALL=C sha256sum -- orbit-* | LC_ALL=C sort -k 2 > SHA256SUMS
