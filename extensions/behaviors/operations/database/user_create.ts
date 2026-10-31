@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { createUser, UserResult } from "./user_create_action.ts";
 import { runNodeAgent } from "../_lib/node-agent.ts";
