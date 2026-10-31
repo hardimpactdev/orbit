@@ -6,7 +6,7 @@ description: "In progress. Propose one bounded private-output exception for full
 
 # ADR 0240: Bound environment import private output
 
-Propose a store-specific size policy for full Instance environment source. This document changes no runtime limit. The existing [private transport](/reference/operations#private-material-transport) remains unchanged until the implementation receives access review.
+Propose a store-specific size policy for full Instance environment source. This document changes no runtime limit. The existing [private transport](/reference/operations#private-material-transport) remains unchanged until the one-store policy is implemented.
 
 ## Status
 
@@ -24,7 +24,7 @@ The Node reader already limits source files to 1,048,576 bytes. The Gateway's ex
 
 ## Decision
 
-Propose a code-owned exception restricted to the `env.import` kind, its one fixed declared store, one fixed output field and the existing Instance owner checks. Neither a request field nor runtime configuration selects a larger limit. All other stores and aggregate public results retain their current 262,144-byte limits. The old executor continues to extract secret outputs under its current limit.
+Propose a code-owned exception restricted to the `env.import` kind, its one fixed declared store, one fixed output field and the existing Instance owner checks. Neither a request field nor runtime configuration selects a larger limit. All other stores and aggregate public results retain their current 262,144-byte limits.
 
 The fixed store name is `instance.environment.import` and its only output field is `environment`. The field contains exactly `encoding`, `content` and `sha256`: the literal encoding `base64`, canonical base64 of the raw `.env` bytes, and the lowercase SHA-256 hex digest of those same bytes. The Gateway verifies the digest before parsing or storing the source. The store name belongs to the trusted declaration; it is not a caller-selected body field. These names and this object are the orchestrator's default contract for lane1 unless the family identifies a concrete objection. This proposal registers no store.
 
@@ -56,7 +56,7 @@ Resolve the exceptional policy from the admitted kind and its registered store d
 
 ### Required verification
 
-The implementation must test the maximum valid source, one byte over and two bytes over, empty source under existing parser semantics, malformed base64, slash-heavy base64, missing or extra fields, wrong encoding, malformed or mismatched digest and oversized raw bodies. Assert refusal before parser or store calls for every size, digest or wire-shape failure. Repeat the existing default-limit boundary on an unrelated store and the old executor to prove that neither limit changed. Count bytes in non-ASCII source and exercise the actual shipped HTTP serializer.
+The implementation must test the maximum valid source, one byte over and two bytes over, empty source under existing parser semantics, malformed base64, slash-heavy base64, missing or extra fields, wrong encoding, malformed or mismatched digest and oversized raw bodies. Assert refusal before parser or store calls for every size, digest or wire-shape failure. Repeat the existing default-limit boundary on an unrelated store to prove that its limit did not change. Count bytes in non-ASCII source and exercise the actual shipped HTTP serializer.
 
 The implementation must exercise a real private-output HTTP request, a foreign Node and foreign run refusal, exact owner checks and a whole-scratch/log scan using synthetic source. Native fixture success is not a fleet TLS, placement, release or activation proof.
 
@@ -70,11 +70,11 @@ The implementation must exercise a real private-output HTTP request, a foreign N
 
 ## Consequences
 
-This proposal permits full source only for one reviewed store while retaining the existing transport. It does not resolve lost-output-reply import conflicts, atomic record/result projection or bounded private conflict codes. Those remain separate semantic gates. No env-import cutover or canary is authorized by this record.
+This proposal permits full source only for one reviewed store while retaining the existing transport. It does not resolve lost-output-reply import conflicts, atomic record/result projection or bounded private conflict codes. The native family implementation must preserve those semantics. This documentation adds no store or runtime limit.
 
 ## Affects
 
 - Components: apps/gateway
 - ADRs: none.
 - Detail: [Private material transport](/reference/operations#private-material-transport).
-- Verify: the boundary cases and actual HTTP checks above; exact implementation and family source require independent access review before release.
+- Verify: the boundary cases and actual HTTP checks above; use the existing private transport and native family checks.
