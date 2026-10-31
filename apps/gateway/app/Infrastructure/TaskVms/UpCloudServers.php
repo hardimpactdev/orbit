@@ -286,6 +286,35 @@ final readonly class UpCloudServers
         return (string) array_key_first($verified);
     }
 
+    /** Turns the stopped server's disk into a template titled `$title`, and returns the template's UUID once it is online. */
+    public function renameTemplate(string $uuid, string $title, string $recipeIdentity): void
+    {
+        $this->api->request('PUT', "storage/{$uuid}", ['storage' => [
+            'title' => $title,
+            'labels' => [['key' => 'orbit.recipe', 'value' => $recipeIdentity]],
+        ]]);
+    }
+
+    /** Starts one template request; Swamp observes its state. */
+    public function beginTemplate(string $disk, string $title): string
+    {
+        $uuid = data_get($this->api->request('POST', "storage/{$disk}/templatize", ['storage' => ['title' => $title]]), 'storage.uuid');
+
+        return is_string($uuid) && Str::isUuid($uuid) ? $uuid : throw self::invalid($title, 'the template answer has no UUID');
+    }
+
+    public function templateState(string $uuid): ?string
+    {
+        $state = data_get($this->api->request('GET', "storage/{$uuid}", allowMissing: true), 'storage.state');
+
+        return is_string($state) ? $state : null;
+    }
+
+    public function deleteTemplate(string $uuid): void
+    {
+        $this->api->request('DELETE', "storage/{$uuid}", allowMissing: true);
+    }
+
     private static function invalid(string $subject, string $reason): TaskVmException
     {
         return new TaskVmException('task_vm.upcloud_invalid', "UpCloud answered unexpectedly for [{$subject}]: {$reason}.", 502);

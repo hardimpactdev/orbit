@@ -11,6 +11,14 @@ use LogicException;
 /** Family-owned command declarations. Swamp owns execution. */
 final class TaskVmCommandContracts
 {
+    public const array SpecialGuestCommands = ['agent.install-guest', 'pi.upload-guest'];
+
+    public const array GuestCommands = [
+        'guest.cloud-init', 'guest.fingerprint', 'image.owner', 'image.boot', 'image.firewall', 'image.check',
+        'image.trust-ca', 'image.clean', 'image.recipe-marker', 'image.inspect-phase', 'image.start-phase',
+        'image.restart-phase', 'image.verify',
+    ];
+
     /** @return array<string, mixed> */
     public static function agentInput(string $command): array
     {
@@ -20,6 +28,16 @@ final class TaskVmCommandContracts
         }
 
         return ValidatedData::object($input);
+    }
+
+    /** @return array<string, mixed> */
+    public static function guestParameters(string $command): array
+    {
+        return match ($command) {
+            'agent.install-guest' => ['type' => 'object', 'additionalProperties' => false, 'properties' => [], 'required' => []],
+            'pi.upload-guest' => ['type' => 'object', 'additionalProperties' => false, 'properties' => ['artifact' => ['type' => 'string'], 'sha256' => ['type' => 'string', 'pattern' => '^[a-f0-9]{64}$']], 'required' => ['artifact', 'sha256']],
+            default => self::agentInput($command),
+        };
     }
 
     /** @return array<string, array<string, mixed>> */

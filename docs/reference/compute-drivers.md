@@ -1397,11 +1397,11 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp orders UpCloud image cleanup and orphan sweeps. The native sweep uses its Gateway worker and callback-local credential; retained image primitives each submit one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` records one image intent and starts `operation-task-vm-upcloud-image-build` directly. One native Swamp workflow runs its API and guest steps on the admitted Gateway Node's worker. It creates billed servers. The Gateway projects progress, owned server UUIDs and the final template; it creates no child Operations and performs no image actions.
+`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build prints each stage with its time:
 
 | Stage | What it does |
 | --- | --- |
@@ -1430,9 +1430,7 @@ Reconcile raises a recipe-maintenance alert when the current identity has a fail
 
 The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
-The build takes about 20 minutes. Swamp owns dispatch, placed steps, cancellation and recovery. API credentials and generated guest host keys use the shared private-material and encrypted output boundaries. Private bytes stay out of native arguments, resources, reports and command arguments. The worker pins each guest's generated host key before its first SSH connection. It uses the official Swamp SSH library, pinned at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`, with the Gateway's existing managed identity. Pi uses the shared bounded private artifact reference and its admitted SHA-256 pin.
-
-Recipe observation uses the same native evaluator as Incus, including the 1440-second phase budget and 60-second consecutive read outage limit. A failed smoke check prevents promotion. Native recovery resumes the same root; an explicit retry records a new attempt.
+The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 
 ### Sweep UpCloud
 

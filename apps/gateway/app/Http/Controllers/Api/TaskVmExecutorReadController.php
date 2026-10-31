@@ -16,6 +16,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmPreservation;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmUpCloudImageRead;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -25,6 +26,11 @@ use Throwable;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class TaskVmExecutorReadController extends Controller
 {
+    public function upcloudImage(ReadTaskVmExecutorRequest $request, Operation $operation, TaskVmUpCloudImageRead $images, ?string $view = null): JsonResponse
+    {
+        return response()->json(['data' => $images->read($operation, $view), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+    }
+
     public function lifecycle(ReadTaskVmExecutorRequest $request, Operation $operation, TaskVmGuest $guest, TaskVmRuntime $runtime, StartTaskVmRuntimeOperationAction $intent): JsonResponse
     {
         if (! str_starts_with($operation->kind, 'task_vm.')) {

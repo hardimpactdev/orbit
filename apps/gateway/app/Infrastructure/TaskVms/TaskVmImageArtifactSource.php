@@ -10,7 +10,6 @@ use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
-use App\Models\UpCloudTaskVmImageBuild;
 use App\Support\ValidatedData;
 
 final readonly class TaskVmImageArtifactSource implements OperationArtifactSource
@@ -22,16 +21,11 @@ final readonly class TaskVmImageArtifactSource implements OperationArtifactSourc
 
     public function targetTypes(): array
     {
-        return ['task_vm_image', 'task_vm_upcloud_image'];
+        return ['task_vm_image'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
-        if ($operation->kind === 'task_vm.upcloud_image_build' && $operation->target_type === 'task_vm_upcloud_image') {
-            $build = UpCloudTaskVmImageBuild::query()->find($operation->target_id);
-
-            return $build?->id === ($operation->input['build_id'] ?? null) && ($build?->intent['node_id'] ?? null) === $operation->node_id ? $build?->id : null;
-        }
         if ($operation->kind !== 'task_vm.image_build' || $operation->target_type !== 'task_vm_image') {
             return null;
         }
@@ -43,10 +37,6 @@ final readonly class TaskVmImageArtifactSource implements OperationArtifactSourc
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
-        if (($operation->input['pi_artifact'] ?? null) === null && $this->ownerId($operation) === $id) {
-            return new OperationSecretValue(null);
-        }
-
         return new OperationSecretValue($this->artifact($operation, $id)->reference($operation->id,
             ValidatedData::string($operation->state['swamp_run_id'] ?? null), $parameter));
     }

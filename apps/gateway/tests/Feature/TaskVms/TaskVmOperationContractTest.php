@@ -26,6 +26,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
+use App\Infrastructure\TaskVms\TaskVmUpCloudImageCommand;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -79,6 +80,10 @@ function taskVmEffectClaim(Operation $operation): void
 {
     test()->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'vm-workflow'])->assertOk()->assertJsonPath('data.id', $operation->id);
 }
+
+it('keeps keyed receipt enforcement for the retained UpCloud image mutations', function (): void {
+    expect(app(TaskVmUpCloudImageCommand::class)->effectful(new Operation, ['input' => ['action' => 'guest', 'command' => 'image.boot']]))->toBeTrue();
+});
 
 it('records exact Incus intent without a PHP executor or queue', function (string $verb): void {
     Queue::fake();
