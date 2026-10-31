@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
+use App\Domain\DatabaseServers\DatabaseChildAdmission;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
+use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
+use App\Domain\Instances\InstanceDatabaseIntent;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\SwampOperationExecutor;
@@ -48,10 +51,10 @@ it('prepares an Instance-targeted create with protected intent and no execution'
     expect(DatabaseConnection::query()->sole()->owner_instance_id)->toBe($this->instance->id);
     expect(DatabaseConnectionTarget::query()->count())->toBe(0);
     expect(Operation::query()->where('kind', '!=', 'instance.create')->count())->toBe(0);
-    expect($this->admin->sql())->not->toContain('CREATE ', 'DROP ', 'GRANT ');
+    expect($this->admin->statements)->toBe([]);
 });
 
-it('prepares a MySQL clone that resets the target before copying', function (): void {
+it('prepares a typed MySQL clone without create-shaped reset intent or Gateway probes', function (): void {
     $source = databaseChildSource($this->instance);
     $connection = DatabaseConnection::query()->create(['slug' => 'source', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
         'database' => 'source_database', 'username' => 'source_user', 'password' => 'synthetic-source-secret']);
@@ -61,12 +64,13 @@ it('prepares a MySQL clone that resets the target before copying', function (): 
     $intent = DatabaseExecutionIntent::query()->findOrFail($child['input']['intent_id']);
     $commands = $intent->payload['commands'];
 
-    expect($child['kind'])->toBe('database.clone');
+    expect($child['kind'])->toBe('database.mysql_clone');
     expect($intent->target_type)->toBe('instance');
     expect($intent->target_id)->toBe($this->instance->id);
-    expect($commands['create-database-0']['input']['sql'])->toContain('CREATE DATABASE')->not->toContain('DROP DATABASE');
-    expect($commands['database-apply']['input'])->toMatchArray(['operation' => 'copy', 'source' => 'source_database']);
-    expect($commands['database-apply']['resumable'])->toBeFalse();
+    expect($commands)->toHaveCount(1);
+    expect($commands['database-apply']['input'])->toMatchArray(['source_database' => 'source_database', 'driver' => 'mysql']);
+    expect($commands['database-apply']['input'])->not->toHaveKeys(['sql', 'client', 'operation']);
+    expect($child['input']['server_id'])->toBe($this->server->id);
     expect($this->admin->sql())->not->toContain('CREATE ', 'DROP ', 'GRANT ');
 });
 
@@ -213,4 +217,38 @@ it('admits stored removal children on their recorded Node under the owning Insta
     expect(DatabaseConnection::query()->count())->toBe(0);
     expect($parent->fresh()->status->value)->toBe('succeeded');
     expect($parent->fresh()->lock_key)->toBeNull();
+});
+
+it('admits a MySQL clone child through direct start and projects its attachment and ownership', function (): void {
+    $this->dbNode->accessibleNodes()->syncWithoutDetaching([$this->gateway->id]);
+    config(['operation_executor.worker_node_ids' => [$this->dbNode->id]]);
+    $source = databaseChildSource($this->instance);
+    $original = DatabaseConnection::query()->create(['slug' => 'source', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
+        'node_id' => $this->dbNode->id, 'host' => $this->dbNode->wireguard_ip, 'port' => $this->server->port,
+        'database' => 'source_database', 'username' => 'source_user', 'password' => 'source-private', 'owner_instance_id' => $source->id]);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $source->id, 'prefix' => 'DB', 'database_connection_id' => $original->id]);
+    $parent = databasePreparationParent($this->instance);
+    $intent = DB::transaction(fn () => app(PrepareDatabaseChildAction::class)->clone($this->instance, $source, $parent));
+    $parent->update(['input' => ['database_clone_source_id' => $source->id], 'state' => ['lifecycle_database' => [...$intent, 'key' => 'database']]]);
+    expect(app(InstanceDatabaseIntent::class)->child($parent, 'database')['kind'])->toBe('database.mysql_clone');
+    $child = app(DatabaseChildAdmission::class)->admit($parent, $intent);
+    expect($child->kind)->toBe('database.mysql_clone');
+    expect($child->state)->toMatchArray(['database_mysql_clone_writer' => 'direct']);
+    expect($child->attempts)->toBe(0);
+    expect($child->worker)->toBeNull();
+    expect($child->lock_key)->toBeNull();
+    $runId = $child->state['swamp_run_id'];
+    $path = '/api/v1/direct-operations/'.$child->id;
+    $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
+    $safe = $this->getJson($path.'?run_id='.$runId)->assertOk()->json('data.input');
+    expect($safe)->toMatchArray(['source_database' => 'source_database', 'driver' => 'mysql'])->not->toHaveKeys(['sql', 'password', 'payload']);
+    $this->getJson($path.'/private-material?run_id='.$runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+    $this->postJson($path.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['backend' => 'active']])->assertOk();
+    $connection = DatabaseConnection::query()->where('owner_instance_id', $this->instance->id)->sole();
+    expect($connection->clone_step->value)->toBe('complete');
+    expect(DatabaseConnectionTarget::query()->where('instance_id', $this->instance->id)->sole()->database_connection_id)->toBe($connection->id);
+    expect(app(DatabaseOwnership::class)->mysqlNames($connection))->toBe([$connection->database]);
+    expect($original->fresh()->database)->toBe('source_database');
+    expect($this->admin->statements)->toBe([]);
+    $this->getJson($path.'/private-material?run_id='.$runId)->assertConflict();
 });

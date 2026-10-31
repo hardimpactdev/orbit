@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\GitHub;
 
-use App\Domain\GitHub\DependencyReadToken;
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
@@ -17,7 +17,7 @@ final readonly class IssueDependencyReadTokenAction
 {
     public function __construct(private GitHubAppStore $store, private HttpGitHubApi $github) {}
 
-    /** @return array{project: Project, repository: GitHubRepository, credential: DependencyReadToken} */
+    /** @return array{project: Project, repository: GitHubRepository, credential: GitHubAccessToken} */
     public function handle(int $id): array
     {
         $project = Project::query()->find($id);

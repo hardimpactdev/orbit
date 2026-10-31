@@ -6,7 +6,6 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\DependencyMergeCompletion;
 use App\Domain\Tasks\TaskAnalysisOperation;
 use App\Domain\Tasks\TaskCheckOperation;
-use App\Domain\Tasks\TaskParkOperation;
 use App\Domain\Tasks\TaskProvisionOperation;
 use App\Domain\Tasks\TaskPublishOperation;
 use App\Domain\Tasks\TaskScriptOperation;
@@ -31,5 +30,5 @@ return [
     OperationKinds::TasksProvision => TaskProvisionOperation::class,
     OperationKinds::TasksTurn => TaskTurnOperation::class,
     OperationKinds::TasksWorker => TaskWorkerOperation::class,
-    OperationKinds::TasksPark => TaskParkOperation::class,
+    OperationKinds::TasksPark => ['executor' => 'swamp', 'result_fields' => ['group_id', 'task_vm_id', 'instance_id', 'status', 'power', 'error_code']],
 ];

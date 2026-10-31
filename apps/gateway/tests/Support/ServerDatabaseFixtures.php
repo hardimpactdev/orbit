@@ -11,12 +11,14 @@ use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakesEnvironmentSyncInspection;
 
 const SERVER_DATABASE_ROOT_SECRET = 'server-root-secret-5d1e';
@@ -26,6 +28,8 @@ trait ServerDatabaseFixtures
     protected function prepareServerDatabaseFixtures(): void
     {
 
+        config(['swamp.run_token' => 'fake.token']);
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
         $this->admin = new FakeDatabaseServerAdmin;
         app()->instance(DatabaseServerAdmin::class, $this->admin);
         app()->instance(InstanceOperationPreflight::class, new ServerDatabaseEnvironmentAccess);
@@ -35,7 +39,7 @@ trait ServerDatabaseFixtures
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
+            'platform' => 'linux', 'architecture' => 'amd64',
             'public_ssh_host' => '192.0.2.10',
             'user' => 'orbit',
             'tld' => 'orbit',
@@ -47,7 +51,7 @@ trait ServerDatabaseFixtures
         $node = Node::query()->create([
             'name' => 'beast',
             'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
+            'platform' => 'linux', 'architecture' => 'amd64',
             'public_ssh_host' => '192.0.2.80',
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.80',
