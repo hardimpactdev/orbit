@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
-use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
@@ -12,7 +11,9 @@ use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\AgentInvocation;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\AgentCommands\AgentTransport;
 use App\Infrastructure\AgentCommands\AgentTransports;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
@@ -691,15 +692,25 @@ it('rejects binary input missing from a binary command or supplied to a JSON com
     fclose($source);
 });
 
-it('sends receipt masks only as protected transient envelope metadata', function (): void {
-    $metadata = new EffectReceiptMetadata(['receipt-private-original'], ['nonce' => '11111111-1111-4111-8111-111111111111', 'created_at' => 1793224800]);
-    $input = ['operation' => 'restart', 'process_id' => 42, 'runtime' => 'systemd', 'name' => 'orbit-process-42.service', 'on_demand' => false, 'effect_key' => 'op-42.restart'];
-    $transport = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => new stdClass])]);
+it('wires nonempty observation input without retired receipt metadata', function (): void {
+    $input = ['process_ids' => [42]];
+
+    expect(AgentSchemas::wireInput($input))->toEqual((object) $input)
+        ->and(AgentInvocation::wire($input))->toBe([$input, false]);
+});
+
+it('builds an observation command without retired receipt metadata', function (): void {
+    $command = app(AgentInvocation::class)->command(agentRunnerNode(), 'agent.status', []);
+
+    expect($command->arguments)->toBe(['/usr/local/bin/orbit-agent', 'command', 'agent.status']);
+});
+
+it('refuses retired receipt metadata before transport', function (): void {
+    $input = ['__orbit_effect_receipt' => ['effect_key' => 'retired']];
+    $transport = new ScriptedAgentTransport([]);
     $node = agentRunnerNode();
-    expect(agentRunner($transport)->run($node, 'process.control', $metadata->attach($input)))->toBe([]);
-    expect($transport->calls[0]['envelope']['input'])->toBe($input);
-    expect($transport->calls[0]['envelope']['effect_receipt'])->toBe(['redactions' => ['receipt-private-original'], 'booleans' => [], 'nonce' => '11111111-1111-4111-8111-111111111111', 'created_at' => 1793224800]);
-    expect(json_encode($metadata))->not->toContain('receipt-private-original');
-    expect(json_encode($transport->calls[0]['arguments']))->not->toContain('receipt-private-original');
-    expect(json_encode($node->refresh()->toArray()))->not->toContain('receipt-private-original');
+
+    expect(fn () => agentRunner($transport)->run($node, 'agent.status', $input))->toThrow(LogicException::class)
+        ->and(fn () => app(AgentInvocation::class)->command($node, 'agent.status', $input))->toThrow(LogicException::class)
+        ->and($transport->calls)->toBe([]);
 });

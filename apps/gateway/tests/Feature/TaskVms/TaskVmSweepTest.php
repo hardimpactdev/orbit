@@ -2,12 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Doctor\NodeDoctorProbe;
-use App\Actions\Doctor\RunDoctorAction;
-use App\Domain\Doctor\DoctorIssueKind;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\NodeInspectionData;
-use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -27,8 +21,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
-
-use function Pest\Laravel\mock;
 
 /** Answers `incus list` with the scripted instances and deletes from them, per host address. */
 final class TaskVmSweepIncus
@@ -194,69 +186,6 @@ beforeEach(function (): void {
     });
 });
 
-describe('Doctor', function (): void {
-    /** @return list<array{string, string}> code and observed value of the task VM issues */
-    function tvm_sweep_doctor(Node $node): array
-    {
-        $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-
-        return array_values(array_map(
-            static fn ($issue): array => [$issue->code, (string) $issue->observed],
-            array_filter($report->issues, static fn ($issue): bool => str_starts_with($issue->code, 'node.task_vm_')),
-        ));
-    }
-
-    it('reports orphaned and missing task VMs on the host without changing them', function (): void {
-        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $this->incus->instances = ['10.44.0.7' => ['tvm-9999', 'tvm-image-20261010030000-sync-smoke']];
-
-        // Sync smoke still uses the time rule. Doctor reports an old one without changing it.
-        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_orphaned', 'tvm-9999'], ['node.task_vm_missing', 'absent'], ['node.task_vm_stray_instance', 'orbit-tasks/tvm-image-20261010030000-sync-smoke']])
-            ->and($this->incus->instances['10.44.0.7'])->toBe(['tvm-9999', 'tvm-image-20261010030000-sync-smoke'])
-            ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
-    });
-
-    it('reports a missing host project as unverifiable, not every VM as missing', function (): void {
-        tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $this->incus->projectMissing = true;
-
-        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_inspection_failed', 'task_vm.host_command_failed']]);
-    });
-
-    it('does not inspect the Node of a parked task VM and reports it as informational only', function (): void {
-        $vm = tvm_sweep_vm($this->beast, TaskVmState::Parked, '10.44.0.129');
-        $node = tvm_sweep_node('tvm-node', '10.44.0.129');
-        $vm->update(['node_id' => $node->id]);
-        mock(NodeStateInspector::class)->shouldReceive('inspect')->never();
-
-        $report = app(RunDoctorAction::class)->executeForNode($node);
-        $issues = collect($report->nodes[0]->families)->flatMap(static fn ($family): array => $family->issues);
-
-        expect($issues->map(static fn ($issue): array => [$issue->code, $issue->kind])->all())
-            ->toBe([['node.task_vm_parked', DoctorIssueKind::Informational]]);
-
-        $vm->update(['state' => TaskVmState::Ready]);
-        mock(NodeStateInspector::class)->shouldReceive('inspect')->once()->andReturn(new NodeInspectionData(false, null, null, null));
-        $codes = collect(app(RunDoctorAction::class)->executeForNode($node)->nodes[0]->families)->flatMap(static fn ($family): array => $family->issues)->pluck('code');
-        expect($codes)->toContain('node.ssh_unreachable');
-    });
-
-    it('reports an unlisted host as unverifiable', function (): void {
-        $this->incus->failList = true;
-
-        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_inspection_failed', 'task_vm.host_command_failed']]);
-    });
-
-    it('checks no Node that is not a configured host, and nothing while task VMs are not configured', function (): void {
-        $other = tvm_sweep_node('services', '10.44.0.3');
-        expect(tvm_sweep_doctor($other))->toBe([]);
-
-        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off());
-        expect(tvm_sweep_doctor($this->beast))->toBe([])
-            ->and($this->incus->calls)->toBe([]);
-    });
-});
-
 describe('strays', function (): void {
     it('recognizes the CI role project without an operator-owned exception', function (): void {
         TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->beast->id)]]);
@@ -274,15 +203,6 @@ describe('strays', function (): void {
     });
 
     /** @return list<array{string, string}> code and observed value of the stray issues */
-    function tvm_stray_doctor(Node $node, bool $reachable = true): array
-    {
-        $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData($reachable, 'linux', 'x86_64', true)));
-
-        return array_values(array_map(
-            static fn ($issue): array => [$issue->code, (string) $issue->observed],
-            array_filter($report->issues, static fn ($issue): bool => str_starts_with($issue->code, 'node.task_vm_')),
-        ));
-    }
 
     /** A live row of `$state` on `$host` whose group has `$status`, or no group, last changed `$minutes` ago. */
     function tvm_stray_vm(Node $host, TaskVmState $state, ?TaskGroupStatus $status, int $minutes, string $wireguardIp): TaskVm

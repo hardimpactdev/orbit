@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Fleet;
 
-use App\Http\Requests\Operations\ExecutorRequest;
+use Illuminate\Foundation\Http\FormRequest;
 
-final class RecipePrRequest extends ExecutorRequest
+final class RecipePrRequest extends FormRequest
 {
     /** @return array<string, mixed> */
     public function rules(): array

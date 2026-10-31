@@ -19,7 +19,7 @@ beforeEach(function (): void {
     $this->node = toolOperationNode('dev', '10.44.0.3', 209);
     config(['swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     Queue::fake();
@@ -34,7 +34,7 @@ it('admits keyed installs without manager execution or premature Tool ownership'
     $this->postJson('/api/v1/tools', $body)->assertAccepted()->assertJsonPath('data.id', $start->json('data.id'));
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('tool.install')->and($operation->node_id)->toBe($this->node->id)
-        ->and($operation->state['tool_writer'])->toBe('direct')->and($operation->lock_key)->toBeNull()
+        ->and($operation->lock_key)->toBeNull()
         ->and($operation->input['version_constraint'])->toBe('^1.0')->and($operation->input)->not->toHaveKey('constraint_intervals')->and(Tool::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });

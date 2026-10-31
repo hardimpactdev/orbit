@@ -66,8 +66,6 @@ pub struct InventoryOutput {
 pub struct PlanOutput {
     packages: Vec<String>,
 }
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Done {}
 trait Host {
     fn run(&mut self, args: &[&str]) -> Result<incus::Output>;
 }
@@ -301,10 +299,6 @@ fn candidate(host: &mut impl Host, input: CandidateInput) -> Result<CandidateOut
         ),
     })
 }
-fn mutate(host: &mut impl Host, package: &str, op: &str) -> Result<Done> {
-    success(operation(host, package, op, false)?)?;
-    Ok(Done {})
-}
 fn plan(host: &mut impl Host, package: &str) -> Result<PlanOutput> {
     success(operation(host, package, "remove", true)?)?;
     Ok(PlanOutput {
@@ -362,47 +356,6 @@ read_command!(
     Input,
     PlanOutput,
     |input: Input, host: &mut Native<'_>| plan(host, &input.package)
-);
-macro_rules! mutation {
-    ($name:ident,$wire:literal,$summary:literal,$op:literal) => {
-        pub struct $name;
-        impl Command for $name {
-            const NAME: &'static str = $wire;
-            const SUMMARY: &'static str = $summary;
-            const MUTATES: bool = true;
-            const TIMEOUT: Duration = Duration::from_secs(900);
-            type Input = Input;
-            type Output = Done;
-            type Error = Error;
-            fn privilege(platform: Platform) -> Option<Privilege> {
-                super::linux_only(platform, Privilege::Account)
-            }
-            fn target(_: &Input) -> Option<String> {
-                Some("tools:composer".into())
-            }
-            fn run(input: Input, context: &Context) -> Result<Done> {
-                mutate(&mut Native(context), &input.package, $op)
-            }
-        }
-    };
-}
-mutation!(
-    Install,
-    "tool.composer-install",
-    "Add one Composer global root requirement.",
-    "require"
-);
-mutation!(
-    Update,
-    "tool.composer-update",
-    "Update one Composer global root and its dependencies.",
-    "update"
-);
-mutation!(
-    Remove,
-    "tool.composer-remove",
-    "Remove one Composer global root requirement.",
-    "remove"
 );
 #[cfg(test)]
 mod tests;
