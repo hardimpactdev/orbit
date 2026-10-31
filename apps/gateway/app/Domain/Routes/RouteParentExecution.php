@@ -13,7 +13,7 @@ use App\Support\ValidatedData;
 final readonly class RouteParentExecution extends RoutePhaseExecution
 {
     public const array Kinds = ['route.create', 'route.converge', 'route.withdraw', 'route.destroy', 'route.update',
-        'route.target_set', 'route.target_unset', 'route.retire_source'];
+        'route.target_set', 'route.retire_source'];
 
     protected function command(): string
     {

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Fleet\Footprint;
 
 use App\Domain\Fleet\NodeFootprintArtifact;
-use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Models\Node;
 
 /**
@@ -18,7 +16,7 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
 {
     public function __construct(
         private CaddyFootprintArtifact $caddy,
-        private AgentCaddyPackage $package,
+
     ) {}
 
     public function name(): string
@@ -43,20 +41,5 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
             'app/Infrastructure/Nodes/AgentCaddyPackage.php',
             'app/Domain/Nodes/CaddyRelease.php',
         ];
-    }
-
-    public function apply(Node $node): bool
-    {
-        $result = $this->package->install($node);
-
-        if (! $result->succeeded()) {
-            throw new ResourceOperationException(
-                'node.footprint_caddy_package_failed',
-                'The Caddy package step failed: '.trim($result->stderr),
-                502,
-            );
-        }
-
-        return str_contains($result->stdout, AgentCaddyPackage::Changed);
     }
 }

@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Fleet\ConvergeNodeFootprintAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Data\Operations\OperationData;
-use App\Domain\Processes\ProcessSwampSafety;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -20,15 +18,8 @@ final class NodeFootprintsController extends Controller
 {
     #[RequiresNodeAccess(ServingNode::Target)]
     #[StartsOperation('node.converge', secretInputs: ['worker_credentials'])]
-    public function converge(ConvergeNodeFootprintRequest $request, Node $node, StartNodeConvergeAction $action, ConvergeNodeFootprintAction $synchronous, ProcessSwampSafety $safety): JsonResponse
+    public function converge(ConvergeNodeFootprintRequest $request, Node $node, StartNodeConvergeAction $action): JsonResponse
     {
-        if ($request->workerCredentials() === null && $safety->requiresSynchronous($node)) {
-            return response()->json([
-                'data' => $synchronous->execute($node, $request->force())->toArray(),
-                'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-            ]);
-        }
-
         return response()->json([
             'data' => OperationData::fromModel($action->execute($node, $request->force(), requestId: $request->attributes->getString('orbit.request_id'), workerCredentials: $request->workerCredentials()))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
