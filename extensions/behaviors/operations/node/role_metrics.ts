@@ -56,6 +56,53 @@ const Current = z.object({
   cancel_requested: z.boolean(),
   input: Record,
 });
+const EnrollmentMetrics = z.object({
+  schema_version: z.literal(1),
+  node_id: Id,
+  executor_node_id: Id,
+  candidate: z.object({ user: z.string(), wireguard_ip: z.ipv4() }),
+  role_snapshots: z.array(z.object({
+    schema_version: z.literal(1),
+    node_id: Id,
+    assignment_id: Id,
+    role: z.string(),
+    agent_sha256: MetricsMember.shape.agent_sha256,
+    user: z.string(),
+  })).max(256),
+});
+
+/** Select initialization from the owning public view without changing the native root. */
+export function metricsRuntimeInitializes(
+  current: z.infer<typeof Current>,
+  member: z.infer<typeof MetricsMember>,
+): boolean {
+  if (current.kind !== "node.add") {
+    if (current.input.role !== "metrics") return false;
+    if (
+      current.kind === "node.role_remove" || current.node_id !== member.node_id
+    ) throw new Error("metrics.owner_mismatch");
+    return true;
+  }
+  const parsed = EnrollmentMetrics.safeParse(current.input);
+  if (!parsed.success) throw new Error("metrics.owner_mismatch");
+  const enrollment = parsed.data;
+  if (enrollment.executor_node_id !== current.node_id) {
+    throw new Error("metrics.owner_mismatch");
+  }
+  const assignments = enrollment.role_snapshots.filter((s) =>
+    s.role === "metrics"
+  );
+  if (assignments.length === 0) return false;
+  const assignment = assignments[0];
+  if (
+    assignments.length !== 1 || assignment.node_id !== enrollment.node_id ||
+    member.node_id !== enrollment.node_id ||
+    assignment.agent_sha256 !== member.agent_sha256 ||
+    assignment.user !== enrollment.candidate.user ||
+    member.address !== enrollment.candidate.wireguard_ip
+  ) throw new Error("metrics.owner_mismatch");
+  return true;
+}
 type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
@@ -108,7 +155,7 @@ export function roleMetrics(
   };
   return {
     type: "@nckrtl/node-role-metrics",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       output: {
@@ -233,14 +280,11 @@ export function roleMetrics(
               error_code: "operation.cancelled",
             });
           }
-          const initializes = current.input.role === "metrics";
+          const initializes = metricsRuntimeInitializes(current, args.node);
           const plan = RoleMetricsPlan.parse(current.input.metrics_fleet);
           if (
             plan.metrics_node_id !== args.node.node_id ||
-            plan.metrics_address !== args.node.address ||
-            (initializes &&
-              (args.node.node_id !== args.node_id ||
-                args.kind === "node.role_remove"))
+            plan.metrics_address !== args.node.address
           ) {
             throw new Error("metrics.owner_mismatch");
           }
@@ -275,7 +319,7 @@ export function roleMetrics(
                 return verified.verified === true &&
                   verified.error_code === undefined;
               };
-              // A Metrics role root owns initialization. Other roles only update an existing serving runtime.
+              // The captured Metrics assignment owns initialization; other roles update a serving runtime.
               if (!initializes && !await verify()) {
                 result = {
                   ok: false,

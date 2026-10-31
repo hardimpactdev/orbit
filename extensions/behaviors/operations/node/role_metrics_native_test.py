@@ -44,7 +44,8 @@ console.log(JSON.stringify(workflow));'''
         (self.repo / "role-metrics.json").write_text(json.dumps(self.state))
         self.cli("workflow", "validate", "node-role-metrics-fixture")
         self.cli("workflow", "run", "node-role-metrics-fixture", "--input", "operation_id=17",
-                 "--input", "node_id=13", "--input", "kind=" + self.state["operation"]["kind"], success=success)
+                 "--input", "node_id=" + str(self.state["operation"]["node_id"]),
+                 "--input", "kind=" + self.state["operation"]["kind"], success=success)
         log = self.repo / "role-metrics.ndjson"
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
@@ -89,6 +90,21 @@ console.log(JSON.stringify(workflow));'''
     def test_metrics_role_initializes_once_then_verifies_without_baseline_runtime(self):
         self.state["operation"]["input"]["role"] = "metrics"
         self.state["operation"]["input"]["metrics_fleet"].update(metrics_node_id=13, metrics_address="10.44.0.13")
+        calls = self.run_root()
+        phases = [call["phase"] for call in calls]
+        self.assertEqual(phases[-2:], ["runtime", "credentials"])
+        self.assertEqual(phases.count("runtime"), 1)
+        self.assertNotIn("restore", phases)
+
+    def test_enrollment_initializes_guest_metrics_from_gateway_root(self):
+        operation = self.state["operation"]
+        operation.update(kind="node.add", node_id=14)
+        operation["input"].pop("role")
+        operation["input"].update(schema_version=1, node_id=13, executor_node_id=14,
+            candidate={"user": "orbit", "wireguard_ip": "10.44.0.13"}, role_snapshots=[{
+                "schema_version": 1, "node_id": 13, "assignment_id": 27, "role": "metrics",
+                "agent_sha256": "a" * 64, "user": "orbit"}])
+        operation["input"]["metrics_fleet"].update(metrics_node_id=13, metrics_address="10.44.0.13")
         calls = self.run_root()
         phases = [call["phase"] for call in calls]
         self.assertEqual(phases[-2:], ["runtime", "credentials"])

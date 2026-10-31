@@ -288,6 +288,168 @@ Deno.test("own Metrics role initializes once before verifying its existing crede
   );
   assertEquals(order, ["runtime", "verify"]);
 });
+
+function enrollmentFixture() {
+  const f = fixture();
+  f.current.node_id = 14;
+  f.current.kind = "node.add";
+  Reflect.deleteProperty(f.current.input, "role");
+  const enrollment = {
+    schema_version: 1,
+    node_id: 13,
+    executor_node_id: 14,
+    candidate: { user: "orbit", wireguard_ip: "10.44.0.13" },
+    role_snapshots: [{
+      schema_version: 1,
+      node_id: 13,
+      assignment_id: 27,
+      role: "metrics",
+      agent_sha256: "a".repeat(64),
+      user: "orbit",
+    }],
+  };
+  Object.assign(f.current.input, enrollment);
+  f.current.input.metrics_fleet = {
+    metrics_node_id: 13,
+    metrics_address: "10.44.0.13",
+    fleet: [node(13)],
+  };
+  return {
+    ...f,
+    enrollment,
+    args: { ...args, kind: "node.add" as const, node_id: 14 },
+  };
+}
+
+Deno.test("node.add initializes its captured Metrics guest while retaining the Gateway root", async () => {
+  const f = enrollmentFixture();
+  const order: string[] = [];
+  const behavior = roleMetrics(() => f.http, f.local, {
+    runtime: ({ address }) => {
+      assertEquals(address, "10.44.0.13");
+      order.push("runtime");
+      return Promise.resolve({ changed: true });
+    },
+    credential: () => {
+      order.push("verify");
+      return Promise.resolve({ verified: order.includes("runtime") });
+    },
+  });
+  assertEquals(
+    await behavior.methods.runtime.execute(
+      { ...f.args, node: node(13) },
+      f.ctx,
+    ),
+    { ok: true, committed: true },
+  );
+  assertEquals(order, ["runtime", "verify"]);
+  assertEquals(f.current.node_id, 14);
+  assertEquals(f.current.kind, "node.add");
+  assertEquals("role" in f.current.input, false);
+  assertEquals(JSON.stringify(f.resources).includes(f.secret), false);
+});
+
+Deno.test("node.add without a captured Metrics assignment verifies the serving runtime despite a top-level role", async () => {
+  const f = enrollmentFixture();
+  f.enrollment.role_snapshots[0].role = "database";
+  f.current.input.role = "metrics";
+  f.current.input.metrics_fleet = {
+    metrics_node_id: 9,
+    metrics_address: "10.44.0.9",
+    fleet: [node(9), node(13)],
+  };
+  let runtimeCalls = 0;
+  const behavior = roleMetrics(() => f.http, f.local, {
+    credential: () => Promise.resolve({ verified: false }),
+    runtime: () => {
+      runtimeCalls++;
+      return Promise.resolve({ changed: true });
+    },
+  });
+  assertEquals(
+    await behavior.methods.runtime.execute({ ...f.args, node: node(9) }, f.ctx),
+    {
+      ok: false,
+      committed: false,
+      error_code: "metrics.credentials_unverified",
+    },
+  );
+  assertEquals(runtimeCalls, 0);
+});
+
+Deno.test("node.add refuses foreign or incomplete Metrics enrollment bindings before private reads", async () => {
+  const mutations = [
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.schema_version = 2;
+      Object.assign(f.current.input, f.enrollment);
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      Object.assign(f.current.input, { node_id: 99 });
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      Object.assign(f.current.input, { executor_node_id: 99 });
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.candidate.wireguard_ip = "10.44.0.99";
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.candidate.user = "other";
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.role_snapshots[0].node_id = 99;
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.role_snapshots[0].assignment_id = 0;
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.role_snapshots[0].agent_sha256 = "b".repeat(64);
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      f.enrollment.role_snapshots.push({ ...f.enrollment.role_snapshots[0] });
+    },
+    (f: ReturnType<typeof enrollmentFixture>) => {
+      Reflect.deleteProperty(f.current.input, "role_snapshots");
+    },
+  ];
+  for (const mutate of mutations) {
+    const f = enrollmentFixture();
+    mutate(f);
+    await assertRejects(
+      () =>
+        f.behavior.methods.runtime.execute(
+          { ...f.args, node: node(13) },
+          f.ctx,
+        ),
+      Error,
+      "metrics.owner_mismatch",
+    );
+    assertEquals(
+      f.calls.some((call) => call.includes("private-material")),
+      false,
+    );
+    assertEquals(f.resources, []);
+  }
+});
+
+Deno.test("an enrollment snapshot never relaxes a standalone Metrics root's Node binding", async () => {
+  const f = enrollmentFixture();
+  f.current.kind = "node.role_add";
+  f.current.input.role = "metrics";
+  await assertRejects(
+    () =>
+      f.behavior.methods.runtime.execute({
+        ...f.args,
+        kind: "node.role_add",
+        node: node(13),
+      }, f.ctx),
+    Error,
+    "metrics.owner_mismatch",
+  );
+  assertEquals(
+    f.calls.some((call) => call.includes("private-material")),
+    false,
+  );
+});
 Deno.test("own Metrics post-initialization verification failure or late cancellation retains runtime commit", async () => {
   for (const failure of ["refused", "unknown", "cancelled"]) {
     const f = fixture();
