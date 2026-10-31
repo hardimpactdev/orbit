@@ -10,6 +10,8 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
@@ -19,7 +21,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Exposes admitted records and records Swamp's result. It performs no Node work. */
-final readonly class DatabaseCloneProjection implements DirectOperationProjection
+final readonly class DatabaseCloneProjection implements DirectOperationProjection, DirectOperationPublicView
 {
     public function input(Operation $operation): array
     {
@@ -27,6 +29,20 @@ final readonly class DatabaseCloneProjection implements DirectOperationProjectio
         $input = Arr::except($intent->payload['commands']['database-apply']['input'], ['password', 'payload']);
 
         return $input;
+    }
+
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        if (($operation->input['source_node_id'] ?? null) !== $callerNodeId) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'Only the admitted clone source may read this intent.', 403);
+        }
+    }
+
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        $this->assertPublicParticipant($operation, $callerNodeId);
+
+        return $this->input($operation);
     }
 
     public function apply(Operation $operation, array $data): Operation

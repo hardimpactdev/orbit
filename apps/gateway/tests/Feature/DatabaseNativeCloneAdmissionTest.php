@@ -74,4 +74,16 @@ it('records one SQLite clone DAG with immutable source and target participants',
     expect($intent->payload['projection'])->not->toHaveKey('children');
     expect(DatabaseExecutionIntent::query()->count())->toBe(1);
     expect(Operation::query()->count())->toBe(0);
+    if ($crossNode) {
+        $run = 'b588ad1f-cc12-4b9a-b207-1538e4b3964a';
+        $operation = Operation::query()->create(['kind' => $prepared->kind, 'target_type' => 'instance', 'target_id' => $this->instance->id,
+            'node_id' => $prepared->nodeId, 'input' => $prepared->input, 'status' => 'running', 'state' => ['swamp_run_id' => $run]]);
+        $this->withServerVariables(['REMOTE_ADDR' => $source->node->wireguard_ip]);
+        $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)->assertOk()
+            ->assertJsonPath('data.input', $input)->assertJsonPath('data.cancel_requested', false);
+        $operation->update(['cancel_requested_at' => now()]);
+        $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)->assertOk()
+            ->assertJsonPath('data.cancel_requested', true);
+        $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $run])->assertForbidden();
+    }
 })->with([false, true]);
