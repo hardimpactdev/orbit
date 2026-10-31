@@ -46,7 +46,7 @@ final readonly class StartSwampRun
         $endpoint = new WebSocketEndpoint(ValidatedData::string(config('swamp.address')), 443, 'swamp.orbit', '/', ValidatedData::string(config('swamp.ca_path')), $token);
         try {
             $history = $this->request($endpoint, 'workflow.run.search', [
-                'workflow' => $workflow, 'inputs' => ['operation_id' => (string) $operation->id],
+                'workflowIdOrName' => $workflow, 'inputs' => ['operation_id' => (string) $operation->id],
                 'tags' => ['orbit_start_key' => $key], 'limit' => 2,
             ], 'verify');
         } catch (ResourceOperationException) {
@@ -110,7 +110,7 @@ final readonly class StartSwampRun
             }
             if ($runId === null) {
                 $history = $this->request($endpoint, 'workflow.run.search', [
-                    'workflow' => $workflow, 'inputs' => ['operation_id' => (string) $operation->id],
+                    'workflowIdOrName' => $workflow, 'inputs' => ['operation_id' => (string) $operation->id],
                     'tags' => ['orbit_start_key' => $key], 'limit' => 2,
                 ], 'history');
                 $runs = $history['results'] ?? null;

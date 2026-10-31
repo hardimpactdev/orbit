@@ -144,7 +144,7 @@ it('recovers a lost start response from exact native history without resubmissio
         }
 
         expect($request['type'])->toBe('workflow.run.search');
-        expect($request['payload'])->toBe(['workflow' => 'operation-route-publication',
+        expect($request['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
             'inputs' => ['operation_id' => (string) $operation->id],
             'tags' => ['orbit_start_key' => 'operation:'.$operation->id], 'limit' => 2]);
 
@@ -321,4 +321,32 @@ it('commits the direct start tag with admission before any submission and rolls 
     $id = $op->id;
     DB::rollBack();
     expect(Operation::query()->find($id))->toBeNull();
+});
+
+it('verifies an unbound admitted run with one current workflow search and no writes', function (): void {
+    $operation = $this->operation;
+    $operation->update(['state' => [...$operation->state, 'swamp_start_key' => 'operation:'.$operation->id]]);
+    $before = $operation->fresh()->getRawOriginal();
+    $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static function (array $request) use ($operation, $runId): array {
+        expect($request['type'])->toBe('workflow.run.search');
+        expect($request['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
+            'inputs' => ['operation_id' => (string) $operation->id],
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id], 'limit' => 2]);
+
+        return [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
+            'workflowName' => 'operation-route-publication', 'runId' => $runId, 'status' => 'running',
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id],
+            'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
+        ]]]]]];
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    app(StartSwampRun::class)->verify($operation, $runId);
+
+    expect($socket->sent)->toHaveCount(1);
+    expect($socket->closed)->toBeTrue();
+    expect($operation->fresh()->getRawOriginal())->toBe($before);
 });
