@@ -827,3 +827,23 @@ Deno.test("shared proxy heredoc inspects only remote Python programs", () => {
     ["print('remote')"],
   );
 });
+
+Deno.test("canonical proxy envelope preserves remote shell control and agent enforcement", () => {
+  const head =
+    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
+  for (
+    const [body, rule] of [[
+      "while true; do printf bad; done",
+      "custom-control",
+    ], ["orbit-agent command cli.install", "agent-action"]]
+  ) {
+    const run = head + " <<'ORBIT_ACTION'\n" + body + "\nORBIT_ACTION\n";
+    const source = workflow("        run: " + JSON.stringify(run) + "\n");
+    assert(
+      analyzeYaml("workflows/proxy.yaml", source, inventory).findings.some(
+        (f) => f.rule === rule,
+      ),
+      rule,
+    );
+  }
+});

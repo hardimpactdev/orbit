@@ -1356,8 +1356,9 @@ export function analyzeYaml(
           .test(value)
       ) add("secret-argv");
       if (path.at(-1) === "run") {
-        result.findings.push(...gatewayShellFindings(file, value));
-        const scripts = value.match(
+        const action = nodeCommandLaunch(value)?.action ?? value;
+        result.findings.push(...gatewayShellFindings(file, action));
+        const scripts = action.match(
           /(?:^|[\s"'])scripts\/[A-Za-z0-9_./-]+\.(?:py|sh)\b/g,
         ) ??
           [];
@@ -1370,12 +1371,12 @@ export function analyzeYaml(
         }
         if (
           /(?:&&|\|\||;)[ \t]*(?:sudo|systemctl|apt|curl|docker|python|bash|sh)\b/
-            .test(value)
+            .test(action)
         ) add("multi-action");
         // The Python AST helper owns controls inside these same extracted bodies.
         // Do not count a tool transaction lock again as a shell token.
-        let shellControls = value;
-        for (const block of pythonHeredocs(value).reverse()) {
+        let shellControls = action;
+        for (const block of pythonHeredocs(action).reverse()) {
           const start = block.index! + block[0].indexOf("\n") + 1;
           shellControls = shellControls.slice(0, start) +
             block[2].replace(/[^\n]/g, " ") +
@@ -1390,7 +1391,7 @@ export function analyzeYaml(
         }
         const agentFindings = agentShellFindings(
           file,
-          value,
+          action,
           inventory,
         );
         result.findings.push(...agentFindings);
