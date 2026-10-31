@@ -59,7 +59,15 @@ final readonly class DevelopmentSiteRepository
     /** @return Collection<int, DevelopmentSite> */
     public function all(): Collection
     {
-        return app(RoutePublicationSites::class)->current() ?? $this->sites(null);
+        return app(RoutePublicationSites::class)->current() ?? $this->renderAll();
+    }
+
+    /** Rebuild the complete catalog in the current identity scope, without an outer snapshot.
+     * @return Collection<int, DevelopmentSite>
+     */
+    public function renderAll(): Collection
+    {
+        return $this->sites(null);
     }
 
     /** Render an admitted prospective Project Route through the same site policy as stored Routes.
@@ -562,9 +570,9 @@ final readonly class DevelopmentSiteRepository
         bool $publicUpstream = false,
     ): DevelopmentSite {
         $addresses = collect($instances)
-            ->map(static fn (Instance $instance): ?string => is_string($instance->node->lan_ip)
-                && $instance->node->lan_ip !== ''
-                    ? $instance->node->lan_ip
+            ->map(static fn (Instance $instance): ?string => is_string(app(RouteRenderContext::class)->lanIp($instance->node))
+                && app(RouteRenderContext::class)->lanIp($instance->node) !== ''
+                    ? app(RouteRenderContext::class)->lanIp($instance->node)
                     : app(RouteRenderContext::class)->wireguardIp($instance->node))
             ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
             ->values()
@@ -597,9 +605,9 @@ final readonly class DevelopmentSiteRepository
         bool $domainChange = false,
     ): DevelopmentSite {
         $addresses = collect($remote)
-            ->map(static fn (Instance $instance): ?string => is_string($instance->node->lan_ip)
-                && $instance->node->lan_ip !== ''
-                    ? $instance->node->lan_ip
+            ->map(static fn (Instance $instance): ?string => is_string(app(RouteRenderContext::class)->lanIp($instance->node))
+                && app(RouteRenderContext::class)->lanIp($instance->node) !== ''
+                    ? app(RouteRenderContext::class)->lanIp($instance->node)
                     : app(RouteRenderContext::class)->wireguardIp($instance->node))
             ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
             ->values()
@@ -783,7 +791,7 @@ final readonly class DevelopmentSiteRepository
 
         $trusted = $ingress instanceof Node
             ? array_values(array_filter(
-                [$ingress->lan_ip, app(RouteRenderContext::class)->wireguardIp($ingress)],
+                [app(RouteRenderContext::class)->lanIp($ingress), app(RouteRenderContext::class)->wireguardIp($ingress)],
                 static fn (?string $address): bool => is_string($address) && $address !== '',
             ))
             : [];

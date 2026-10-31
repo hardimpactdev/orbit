@@ -94,7 +94,13 @@ final readonly class DevelopmentDnsConfigRenderer
         $gateway = null;
         foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $gatewayStatus) {
             $gateway ??= Node::query()
-                ->where('status', LifecycleStatus::Active->value)
+                ->where(static function (Builder $query): void {
+                    $query->where('status', LifecycleStatus::Active->value);
+                    $candidate = app(RouteRenderContext::class)->enrollment();
+                    if ($candidate !== null) {
+                        $query->orWhereKey($candidate->nodeId);
+                    }
+                })
                 ->where(static fn (Builder $query): Builder => $query->whereNotNull('wireguard_ip')
                     ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0))
                 ->whereHas('roles', static fn (Builder $q): Builder => $q->where('role', RoleName::Gateway->value)->where(

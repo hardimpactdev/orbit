@@ -45,7 +45,7 @@ final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
             throw NodeCaddySiteUnavailable::wireGuardAddressMissing('gateway', $node->name);
         }
 
-        $hostname = "{$node->name}.{$this->vpn->domain()}";
+        $hostname = app(RouteRenderContext::class)->name($node).'.'.$this->vpn->domain();
         $checkout = $this->checkoutPath ?? rtrim(StoredValue::string(config('orbit.gateway_checkout')), '/');
         $webRoot = $this->webRoot ?? StoredValue::string(config('orbit.gateway_web'));
 

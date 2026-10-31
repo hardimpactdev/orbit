@@ -795,3 +795,14 @@ Relocation converges and publishes the target before it withdraws the source. Th
 The owning parent admits role snapshots and private bindings. Inside its private material source, `NodeRoleRuntimeSource::resolveRoleMaterial($snapshot, $nodeId)` validates the assignment, Node, pin and runtime reference before rendering existing credential types. It returns an `OperationSecretValue`; aggregate its in-memory value and redaction strings without serializing protected bytes. The standalone source retains its own Operation ownership and field binding checks.
 
 After checking its admitted publication participant, the parent uses `NodeRolePublicationInput::forPlan($plan, $node)` for fresh Caddy, PHP and private DNS input. The lower renders only duties in that immutable plan. Role removal, relocation source, role, Metrics and proxy metadata stay in the owning public view. These internal lower APIs create no Operation and grant no new private endpoint authority.
+
+
+## Native enrollment source suppliers
+
+The source suppliers accept the actual Node and an immutable `NodeEnrollmentCandidate` with its prospective name, account, platform, architecture, SSH endpoint, WireGuard address, Cluster, TLD, LAN address and DNS overrides. Capture leaves the actual Node unchanged. These suppliers do not implement or switch the complete `node.add` root.
+
+The native lowers run on a worker on209 through official SSH with admitted full host keys. A pending candidate publication must bind to the parent's verified host-key output before an effect. That binding does not collect a key or compare a fingerprint itself. The complete parent owns first contact and the admitted fingerprint check. These lowers install no Swamp binary or worker and mint no token on a target.
+
+The role union selects the recipe's exact tool versions and artifact digests at admission. OS packages use one placed official SSH execution of the fixed APT installer. Application roles additionally use the fixed JavaScript/Vite+ installer and Composer scope preparation. These installers are shipped files. They accept the captured role input and create no Tool operations or Tool rows. They do not import the retained Tool manager dispatcher. The canonical account, Caddy and package lower exports remain available to role parents.
+
+The complete same-root role execution and restoration factory is still pending. Available prerequisite, certificate, publication, observer and Metrics lowers do not by themselves prove a complete role or enrollment. The owning parent must retain snapshots through settlement and prove restoration before reporting rollback success.

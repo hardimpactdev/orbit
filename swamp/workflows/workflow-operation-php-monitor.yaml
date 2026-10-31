@@ -165,14 +165,14 @@ jobs:
       globalArgs: *id001
       inputs:
         hosts: name:target
+        sudo: true
         argv:
-        - env
+        - /usr/bin/env
         - ${{ 'PHP_INI_SCAN_DIR=' + string(steps.input.outputs.scan_dir) }}
-        - ${{ 'ORBIT_PHP_VERSION=' + string(steps.input.outputs.version) }}
-        - ${{ 'ORBIT_PHP_MAIN=' + string(steps.input.outputs.main) }}
-        - /bin/sh
-        - -c
-        - sudo --preserve-env=PHP_INI_SCAN_DIR "/usr/sbin/php-fpm$ORBIT_PHP_VERSION" -t --fpm-config "$ORBIT_PHP_MAIN"
+        - ${{ '/usr/sbin/php-fpm' + string(steps.input.outputs.version) }}
+        - -t
+        - --fpm-config
+        - ${{ steps.input.outputs.main }}
     dependsOn:
     - step: apply-pool
       condition:

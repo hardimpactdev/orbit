@@ -34,8 +34,13 @@ final readonly class PeerDnsPolicy
 
     public function server(Node $node, ?string $vpnAddress = null): string
     {
+        return $this->serverForOverride($node->dns_server_override, $vpnAddress);
+    }
+
+    public function serverForOverride(?string $override, ?string $vpnAddress = null): string
+    {
         $vpnAddress ??= Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn->value))->first()?->wireguard_ip;
-        $address = $node->dns_server_override ?? $this->settings->dnsServer() ?? $vpnAddress;
+        $address = $override ?? $this->settings->dnsServer() ?? $vpnAddress;
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {
             throw new NodeProvisioningException('wireguard-configuration', 'vpn.configuration_invalid', 'The DNS server is invalid.');
         }
@@ -52,6 +57,14 @@ final readonly class PeerDnsPolicy
         return $this->renderDomains($pendingNode, $removing, true);
     }
 
+    /** Same suffix policy with the actual Node's admitted prospective TLD. No model substitution.
+     * @return non-empty-list<string>
+     */
+    public function domainsForAdmittedNode(Node $actual, ?string $tld): array
+    {
+        return $this->renderDomains(null, false, true, ['id' => $actual->id, 'tld' => $tld]);
+    }
+
     public function validateChange(Node|Cluster|Route $pending, bool $removing): void
     {
         $proposed = $this->renderDomains($pending, $removing, false);
@@ -60,13 +73,17 @@ final readonly class PeerDnsPolicy
         }
     }
 
-    /** @return non-empty-list<string> */
-    private function renderDomains(Node|Cluster|Route|null $pendingNode, bool $removing, bool $enforceLimit): array
+    /** @param array{id:int,tld:?string}|null $admittedNode
+     * @return non-empty-list<string>
+     */
+    private function renderDomains(Node|Cluster|Route|null $pendingNode, bool $removing, bool $enforceLimit, ?array $admittedNode = null): array
     {
         $names = [$this->settings->domain(), 'orbit'];
         foreach ([Cluster::class, Node::class, Route::class] as $model) {
             $query = $model::query();
-            if ($pendingNode instanceof $model && $pendingNode->exists) {
+            if ($model === Node::class && $admittedNode !== null) {
+                $query->whereKeyNot($admittedNode['id']);
+            } elseif ($pendingNode instanceof $model && $pendingNode->exists) {
                 $query->whereKeyNot($pendingNode->getKey());
             }
             if ($model === Route::class) {
@@ -80,6 +97,9 @@ final readonly class PeerDnsPolicy
             }
         } elseif (! $removing && $pendingNode !== null) {
             $names[] = $pendingNode->tld;
+        }
+        if ($admittedNode !== null) {
+            $names[] = $admittedNode['tld'];
         }
         $domains = [];
         foreach ($names as $name) {

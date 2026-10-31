@@ -21,7 +21,9 @@ final readonly class SharedPhpPoolInput
     /** @return array{configurations: object,account_user:string} */
     public function forNode(Node $node): array
     {
-        return [...$this->render($node, static fn (): ManagedUserAccount => new ManagedUserAccount($node->user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__')), 'account_user' => $node->user];
+        $user = app(RouteRenderContext::class)->user($node);
+
+        return [...$this->render($node, static fn (): ManagedUserAccount => new ManagedUserAccount($user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__')), 'account_user' => $user];
     }
 
     /** Pure render with an already admitted account; no Node lookup.
