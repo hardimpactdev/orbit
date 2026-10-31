@@ -39,6 +39,7 @@ final readonly class TaskVmProvisionIntent
         $private['private_bindings']['upcloud_token'] = ['owner_node_id' => $host->id, 'read_node_ids' => $vm->provider === TaskVmProviderKind::UpCloud ? [$host->id] : [], 'write_node_ids' => []];
         $enrollment = [...$enrollment, 'network' => $private['network'],
             'gateway_node_id' => $private['gateway_node_id'], 'issuer_node_id' => $private['issuer_node_id'],
+            'model_router_node_id' => $private['model_router_node_id'], 'model_origin' => $private['model_origin'],
             'wireguard_public_key' => $guest->wireguard_public_key];
         $input = [...Arr::except($private, ['network']), 'task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $vm->host_node_id,
             'guest_node_id' => $guest->id, 'enrollment' => $enrollment, 'name' => $vm->name,
@@ -88,7 +89,7 @@ final readonly class TaskVmProvisionIntent
     {
         $vm = $this->owned($operation);
 
-        return [...Arr::except($operation->input, ['upcloud_token', 'installation', 'enrollment_network', 'first_visit', 'model_key', 'model_router', 'pi_token', 'pi_artifact_file', 'pi_artifact', 'secret_hash', 'worker_credentials']),
+        return [...Arr::except($operation->input, ['upcloud_token', 'installation', 'enrollment_network', 'first_visit', 'model_key', 'model_router', 'pi_token', 'pi_artifact_file', 'pi_artifact', 'secret_hash', 'worker_credentials', 'provider_bootstrap']),
             'enrollment' => [...ValidatedData::object($operation->input['enrollment']), 'wireguard_public_key' => $vm->node?->wireguard_public_key],
             'eligible' => $vm->state === TaskVmState::Provisioning];
     }
