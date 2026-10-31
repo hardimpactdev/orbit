@@ -2,25 +2,14 @@ import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../../operation-runner/mod.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
-import { Scope } from "../certificates/input.ts";
+import { Leaf } from "./host-intent.ts";
+export { Leaf } from "./host-intent.ts";
 import { PlausibleCE, PlausibleRefusal, Site } from "./plausible.ts";
 
 export const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
   kind: z.enum(["analytics.enable", "analytics.disable"]),
 });
-export const Leaf = z.object({
-  node_id: z.number().int().positive(),
-  route_id: z.number().int().positive(),
-  user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  home: Scope.shape.home,
-  in_use: z.literal(false).optional(),
-  domain: Site.shape.domain,
-  scope: z.string(),
-  version: z.string().regex(/^[a-f0-9]{16}$/).optional(),
-  root_hash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-}).strict().refine((v) => v.scope === `route-${v.route_id}-router`);
 const Tracking = z.object({
   certificates: z.array(Leaf),
   cleanup: z.array(Leaf),

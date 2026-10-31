@@ -1,22 +1,95 @@
-# Official SSH actions for light Nodes
+# @swamp/ssh for light boxes
 
-VPN1 and usexit18 actions use the official `@swamp/ssh` extension from the normal Node209 control worker. Use package `2026.10.23.1` (model `2026.10.20.1`), pulled with `swamp extension pull @swamp/ssh@2026.10.23.1`. The package is supplied by `swamp-club/swamp-extensions/ssh`; do not vendor or wrap its transport. Core command/shell runs on the executing worker. The official SSH extension supplies the remote execution that light Nodes need.
+Run VPN1 (Node1) and usexit18 (Node18) actions through the official `@swamp/ssh` extension on the normal Node209 control worker. Built-in `command/shell` executes on its worker, so placing it on209 does not execute it on either light box. Use the official extension with its defaults; add no family SSH adapter, wrapper or transport.
 
-Workflow overrides belong under `task.globalArgs`, with the complete `name`, `transport` and `hosts` map. A step-level `globalArgs` is invalid. Use `task.inputs` for method arguments. A stable `behaviorName` keeps native model serialization. `hostKeys` implies the official pinned policy; other transport settings keep the official defaults.
+## Model and placement
 
-The canary keeps its existing workflow UUID. It has separate identity, directory, write, read, remove-file and remove-directory steps. All execute on `orbit-node-209` with the string Node209 label. `exec` receives public argv; `script` sends its body over stdin. Root effects use `sudo: true`. Each run has its own runtime directory. Cleanup follows failed read/write outcomes through native dependencies.
+Use registry package `@swamp/ssh@2026.10.23.1`, model version `2026.10.20.1`. The [official source](https://github.com/swamp-club/swamp-extensions/tree/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh) and the [live canary workflow](../workflows/workflow-node-proxy-canary.yaml) own the API and working example. Normal installation uses `swamp extension pull @swamp/ssh@2026.10.23.1`.
 
-Node209’s `orbit-node-worker.service` loads the approved existing key with `LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519`. Official SSH uses `identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity`. Only Node209 receives this credential. Systemd exposes it to the configured worker account after restart; the source key stays root-owned 0600. Worker-wide read scope is approved. This uses the same key and existing VPN1/usexit18 access edges, with no new vault, grant or key.
+Every step targets `orbit-node-209` with label `node: '209'`. Keep the affected Node in the admitted intent and select its host explicitly. Use the family's stable executing model name for `behaviorName`; the name below is an example, not a deployed administrative model. Stored models put the map under `globalArguments`. Workflow overrides put the **complete** `name`, `transport` and `hosts` map under `task.globalArgs`; `step.globalArgs` is invalid and existing model globals alone do not satisfy native validation of a dynamic model reference.
 
-Script environment uses OpenSSH SendEnv. Remote AcceptEnv and, for root scripts, sudo env_keep must allow each variable. The canary needs neither. Keep secrets out of argv and script bodies; use only the official stdin or documented environment support.
+```yaml
+name: light-box-example
+inputs:
+  type: object
+  properties:
+    node_id: {type: integer, enum: [1, 18]}
+  required: [node_id]
+  additionalProperties: false
+jobs:
+- name: inspect
+  target: orbit-node-209
+  labels: {node: '209'}
+  steps:
+  - name: hostname
+    target: orbit-node-209
+    labels: {node: '209'}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: light-box-example
+      methodName: exec
+      globalArgs: &ssh
+        name: light-box-example
+        transport:
+          kind: ssh
+          user: orbit
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: vpn1
+          address: 10.44.0.1
+          transport:
+            hostKeys:
+            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG
+        - name: usexit18
+          address: 10.44.0.13
+          transport:
+            hostKeys:
+            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKTqizm/h9dgo7Zab5NUC1RlLprBkRoUPrKQkF/b+DjF
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        argv: [/usr/bin/hostname]
+  - name: read-root-file
+    target: orbit-node-209
+    labels: {node: '209'}
+    writes: true
+    dependsOn: [{step: hostname, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: light-box-example
+      methodName: script
+      globalArgs: *ssh
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        sudo: true
+        script: |
+          cat /etc/hostname
+```
 
-## Proxy worker removal plan
+Node209's `orbit-node-worker.service` already loads the approved existing key with `LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519`. The `identityFile` above is the worker-readable systemd credential; do not point the orbit worker at the root-only source file. This is the existing approved209→1/18 key and access edge. No new vault, grant, key, unit change or restart is needed for a family to use it. `hostKeys` selects the official pinned policy. Keep the host pins shown above; do not substitute trust on first use.
 
-1. Publish and prove the official canary on VPN1, then usexit18. Move all remaining family callers to official SSH steps on a normal control worker.
-2. Account for active, queued and paused roots still selecting the old logical Node1/18 workers. Their owners decide when those roots finish or are retired; preserve history and pauses.
-3. After the old selectors have no remaining consumers, stop and disable only the two proxy worker units on209 through the approved owner route. Keep local light-Node workers masked.
-4. Remove the obsolete proxy installer/renewal source and selections, then let the sole issuer retire only their worker credentials. Preserve the approved SSH key and public host keys for official SSH. Do not delete the whole proxy directory.
+## Methods, secrets and results
 
-This is a removal plan, not authorization to stop units, revoke credentials or change key custody. No Serve restart or worker binary upgrade belongs to this migration.
+Use `exec` with `argv` for one command. Add `sudo: true` for root execution; the extension uses noninteractive sudo. For one script action, use `script`: its body travels on stdin to the default `sh -s --`. Set the official `interpreter` field only when the script requires another interpreter. Keep one action per step and use native dependencies, guards and cleanup steps as in the canary.
 
-Apply the rendered Node209 unit in an ordinary maintenance window. Check `gateway-release-auto-status` and announce the worker restart before applying it; never restart during a Gateway release handoff. Verify the worker reconnects and its systemd credential is readable without printing the key. After normal source publication, run VPN1 identity/effect/cleanup first, then usexit18.
+For a tool's stdin, `exec` accepts `inputs.stdin`; the canary's `read` step demonstrates it. Keep secret values out of `argv`, script text and tracing. Use only the official stdin or documented environment support. `inputs.env` uses OpenSSH SendEnv, so the remote server must accept each variable through AcceptEnv; root scripts also require sudoers env_keep. The example needs no environment changes. Do not add a custom secret channel.
+
+The official step exposes `steps.<step>.outputs.stdout`. Native history records the per-host `runResult`, including stdout, stderr and exitCode; check the requested host and actual exit code. Use the shared Gateway terminal projection for family Operations. The direct canaries below created no Gateway Operation and do not prove a role, removal or Metrics parent.
+
+Both live effect-and-cleanup runs succeeded with all six steps exiting0: VPN1 `6e7143ff-83c9-4c2a-8b33-6f9fad369ac3` and usexit18 `afbfc37b-4db5-457a-948d-0377bd510220`. The canary keeps UUID `0f7caec5-264b-42a9-afca-2f30e914c956` and inputs `{node_id: 1|18, effect: boolean}`. It uses a unique runtime directory and separate hostname, mkdir, write, compare, remove-file and remove-directory steps.
+
+## Retirement prerequisite for roles, removal and Metrics
+
+**Keep `orbit-node-proxy-worker-1.service` and `orbit-node-proxy-worker-18.service` running until accepted family callers stop selecting them.** An empty queue, an idle worker or a successful SSH canary does not clear this dependency.
+
+| Owner | Required accepted replacement before unit retirement |
+| --- | --- |
+| Nodes0a: roles, converge and Provision | Replace dynamic logical1/18 worker selections and retire the corresponding parent callers. |
+| Removal13 | Move participant DNS/network/residue and restore actions to official SSH; retain the required VPN1 DNS contributor. |
+| Metrics12 | Move role Metrics and fleet/exporter fan-outs from logical1/18 worker identities to official SSH. |
+
+Each family's port spec carries this prerequisite. Account for active, queued and saved/resumable roots that retain old placement before removing units. Complete native accounting on2026-10-31 found zero suspended runs; that does not migrate accepted dynamic callers or settle roots by itself. Owners supply exact IDs or checkpoint locators for any additional saved placement, or report none known. Preserve terminal history and schedule pauses; do not resume or settle roots merely to clear retirement.
+
+After those prerequisites are complete, the runtime owner stops, disables and removes only the two obsolete proxy worker units and selections. Keep local light-Node workers masked. The sole issuer retires obsolete worker credentials. Preserve the existing SSH key, public pins and Node209 worker credential used above. Do not delete the whole proxy directory. This guide does not authorize DNS changes, new credentials or access edges.

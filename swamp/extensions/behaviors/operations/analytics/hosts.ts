@@ -69,15 +69,6 @@ function successful<T extends Record<string, unknown>>(result: T): T {
   }
   return result;
 }
-export async function requestLeaf(
-  args: z.infer<typeof LocalArgs>,
-  gateway: Pick<GatewayOperation, "read">,
-  actions: Actions = certificateActions(),
-  signal?: AbortSignal,
-) {
-  const leaf = await admitted(args, gateway, "certificates");
-  return await analyticsRouteActions(actions).hostPrepare(leaf, signal);
-}
 export async function publishLeaf(
   args: z.infer<typeof LocalArgs> & {
     signed: z.infer<typeof Signed>[];
@@ -130,26 +121,10 @@ export function analyticsCertificates(
     new GatewayOperation(makeHttp(ctx), args);
   return {
     type: "@nckrtl/analytics-certificate",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
-    resources: {
-      request: { schema: Request, lifetime: "7d", garbageCollection: 10 },
-    },
+    resources: {},
     methods: {
-      request: {
-        description:
-          "Request the admitted Router leaf through the canonical local certificate action",
-        arguments: LocalArgs,
-        execute: async (args: z.infer<typeof LocalArgs>, ctx: Context) => ({
-          dataHandles: [
-            await ctx.writeResource(
-              "request",
-              `${args.run_id}-${args.leaf.scope}`,
-              await requestLeaf(args, gateway(args, ctx), actions, ctx.signal),
-            ),
-          ],
-        }),
-      },
       publish: {
         description:
           "Publish and inspect the admitted Router leaf through canonical certificate actions",
