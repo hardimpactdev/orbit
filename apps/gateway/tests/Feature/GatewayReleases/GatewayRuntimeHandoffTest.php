@@ -7,6 +7,7 @@ use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
@@ -17,6 +18,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -24,14 +26,17 @@ use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
+use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\MonotonicTime;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -149,7 +154,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, FakeAgentCommandRunner, FakeReleaseCleanup, FakeRoutePublicationSocket, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeAgentCommandRunner $agent = null, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null, ?FakeAgentCommandRunner $hooks = null): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeAgentCommandRunner $agent = null, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null, ?FakeAgentCommandRunner $hooks = null, string $caddyfilePath = '/nonexistent-fixture-Caddyfile', ?Closure $swampHealthy = null): array
 {
     $probe = new SchedulerDrainProbe;
     $probe->time = new MonotonicTime;
@@ -208,6 +213,8 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeA
             idleWaitSeconds: 1,
             agent: $agent === null ? null : new GatewayNodeAgentUpdate($agent, app(AgentDelivery::class)),
             horizon: $horizon,
+            caddyfilePath: $caddyfilePath,
+            swampHealthy: $swampHealthy,
         ),
         $schedulerAgents,
         $cleanup,
@@ -218,6 +225,149 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeA
 }
 
 describe('gateway:release:handoff', function (): void {
+    it('completes the real rollback command with serve unreachable when Caddy is unchanged', function (): void {
+        $gateway = handoff_gateway();
+        handoff_scheduler($gateway);
+        $version = app(NodeCaddyfileRenderer::class)->render($gateway)->version;
+        $path = sys_get_temp_dir().'/rollback-caddy-'.bin2hex(random_bytes(8));
+        symlink('/etc/caddy/orbit-versions/'.$version.'/Caddyfile', $path);
+        $pipeline = new GatewayReleasePipeline;
+        try {
+            $previous = substr($pipeline->adopt(), 0, 12);
+            $pipeline->fixture->select($pipeline->fixture->prepared($pipeline->fixture->commit('New current release')));
+            $pipeline->bindLeaves();
+            [$handoff, , , $builds] = runtime_handoff(caddyfilePath: $path);
+            $builds->onConnect = static fn () => throw new RuntimeException('Serve is unreachable.');
+            app()->instance(GatewayRuntimeHandoff::class, $handoff);
+            app()->instance(GatewayReleaseRuntime::class, new class implements GatewayReleaseRuntime
+            {
+                public function handoff(string $id): array
+                {
+                    throw new RuntimeException('The old retained target still requires Swamp.');
+                }
+
+                public function schedule(string $id): array
+                {
+                    throw new RuntimeException('The old retained target must not control rollback recovery.');
+                }
+            });
+
+            $this->artisan('gateway:release:rollback', ['release' => $previous])->assertSuccessful();
+
+            expect($pipeline->fixture->currentId())->toBe($previous)
+                ->and($builds->connections)->toBe([])
+                ->and(GatewayRelease::query()->latest('id')->first())
+                ->toMatchArray(['outcome' => 'verified', 'trigger' => 'rollback'])
+                ->and(Operation::query()->where('kind', 'route.caddy_converge')->count())->toBe(0);
+        } finally {
+            unlink($path);
+            $pipeline->fixture->cleanup();
+        }
+    });
+
+    it('skips the native publication with serve down when the rendered digest is already published', function (): void {
+        $gateway = handoff_gateway();
+        $version = app(NodeCaddyfileRenderer::class)->render($gateway)->version;
+        $path = sys_get_temp_dir().'/handoff-caddy-'.bin2hex(random_bytes(8));
+        symlink('/etc/caddy/orbit-versions/'.$version.'/Caddyfile', $path);
+        try {
+            [$handoff, , , $builds] = runtime_handoff(caddyfilePath: $path);
+            $builds->onConnect = static fn () => throw new RuntimeException('Serve is down.');
+
+            expect($handoff->serve())->toMatchArray(['caddy' => 'unchanged', 'caddy_operation_id' => null])
+                ->and($builds->connections)->toBe([])
+                ->and(Operation::query()->where('kind', 'route.caddy_converge')->count())->toBe(0);
+        } finally {
+            unlink($path);
+        }
+    });
+
+    it('waits for configured TLS health after a connection refusal then submits once after recovery', function (): void {
+        handoff_gateway();
+        Http::fake(['https://swamp.orbit/health' => Http::sequence()->push(['status' => 'starting'], 503)->push(['status' => 'ok'])]);
+        [$handoff, , , $builds, , $probe] = runtime_handoff();
+        $builds->onConnect = static function (int $attempt): void {
+            if ($attempt === 1) {
+                throw new RuntimeException('Serve is down.');
+            }
+        };
+
+        expect($handoff->serve()['caddy'])->toBe('submitted')
+            ->and($builds->connections)->toHaveCount(2)
+            ->and($probe->time->now())->toBe(5_000_000_000.0)
+            ->and(Operation::query()->where('kind', 'route.caddy_converge')->pluck('status')->map->value->all())->toBe(['failed', 'running']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => $request->url() === 'https://swamp.orbit/health'
+            && $request->toPsrRequest()->getHeaderLine('Authorization') === '');
+    });
+
+    it('bounds the release-only health wait to 600 seconds without submitting while serve stays down', function (): void {
+        handoff_gateway();
+        $checks = 0;
+        [$handoff, , , $builds, , $probe] = runtime_handoff(swampHealthy: static function (float $timeout) use (&$checks): bool {
+            $checks++;
+            expect($timeout)->toBeLessThanOrEqual(5);
+
+            return false;
+        });
+        $builds->onConnect = static fn () => throw new RuntimeException('Serve is down.');
+
+        expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_caddy_failed')
+            ->and($probe->time->now())->toBe(600_000_000_000.0)
+            ->and($checks)->toBe(120)
+            ->and($builds->connections)->toHaveCount(1)
+            ->and(Operation::query()->where('kind', 'route.caddy_converge')->count())->toBe(1);
+    });
+
+    it('does not repeat an uncertain admission even if health would be available', function (): void {
+        handoff_gateway();
+        [$handoff, , , $builds, , $probe] = runtime_handoff(swampHealthy: static fn (): never => throw new RuntimeException('Must not probe.'));
+        $builds->reply = static fn (): array => [];
+
+        expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_caddy_failed')
+            ->and($builds->sent)->toHaveCount(1)
+            ->and($probe->time->now())->toBe(0.0);
+    });
+
+    it('does not resubmit when the local run binding fails after Swamp confirms its start', function (): void {
+        handoff_gateway();
+        [$handoff, , , $builds, , $probe] = runtime_handoff(swampHealthy: static fn (): bool => true);
+        $failed = false;
+        Operation::updating(static function (Operation $operation) use (&$failed): void {
+            if (! $failed && $operation->kind === 'route.caddy_converge' && $operation->isDirty('state')
+                && isset($operation->state['swamp_run_id'])) {
+                $failed = true;
+                throw new RuntimeException('Local binding write failed after the native start.');
+            }
+        });
+
+        expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_caddy_failed')
+            ->and($failed)->toBeTrue()
+            ->and($builds->sent)->toHaveCount(1)
+            ->and(Operation::query()->where('kind', 'route.caddy_converge')->sole()->error_code)->toBe('swamp.start_uncertain')
+            ->and($probe->time->now())->toBe(0.0);
+    });
+
+    it('fails a persistent explicit refusal after healthy serve without another recovery cycle', function (): void {
+        handoff_gateway();
+        [$handoff, , , $builds, , $probe] = runtime_handoff(swampHealthy: static fn (): bool => true);
+        $builds->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized', 'message' => 'Denied.']]];
+
+        expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_caddy_failed')
+            ->and($builds->sent)->toHaveCount(2)
+            ->and($probe->time->now())->toBe(0.0);
+    });
+
+    it('does not mistake a submitted publication for a successfully published digest', function (): void {
+        handoff_gateway();
+        [$handoff, , , $builds] = runtime_handoff();
+
+        $handoff->serve();
+        $handoff->serve();
+
+        expect($builds->sent)->toHaveCount(2);
+    });
+
     it('refuses malformed drain observations before forcing a stop or clearing overlap locks', function (array $drain): void {
         handoff_scheduler(handoff_gateway());
         [$handoff, $agents, , , , $probe] = runtime_handoff();
