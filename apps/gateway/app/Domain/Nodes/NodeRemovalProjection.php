@@ -78,7 +78,7 @@ final readonly class NodeRemovalProjection implements DirectOperationProjection,
         $snapshot = ValidatedData::object($operation->input['_node_removal'] ?? []);
         $metrics = is_array($snapshot['metrics'] ?? null) ? $snapshot['metrics'] : [];
 
-        return ['metrics_fleet' => ($operation->result['restoring'] ?? false) === true ? ($input['restore_metrics_fleet'] ?? null) : ($input['metrics_fleet'] ?? null),
+        return ['proxy_node_ids' => $input['proxy_node_ids'] ?? [], 'metrics_fleet' => ($operation->result['restoring'] ?? false) === true ? ($input['restore_metrics_fleet'] ?? null) : ($input['metrics_fleet'] ?? null),
             'metrics_excluded_node_ids' => ($snapshot['offline'] ?? false) ? [$snapshot['node_id']] : [],
             'metrics_runtime_required' => ($metrics['node_id'] ?? null) !== ($snapshot['node_id'] ?? null)];
     }

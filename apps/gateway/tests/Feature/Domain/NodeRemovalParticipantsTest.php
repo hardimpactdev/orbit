@@ -118,3 +118,19 @@ it('returns only admitted effect categories in fresh participant reads', functio
 
     expect($view['network'])->toBeNull()->and($view['residue'])->toBeNull()->and($view['dns'])->toBeNull();
 });
+
+it('admits an approved light-box DNS participant through its exact shared proxy without a new worker', function (): void {
+    FleetFixtures::bind();
+    $hub = FleetFixtures::node('participant-proxy-vpn', [RoleName::Vpn]);
+    $root = FleetFixtures::node('participant-proxy-gateway', [RoleName::Gateway]);
+    $guest = FleetFixtures::node('participant-proxy-departing');
+    config(['swamp_workers.nodes' => [$root->id]]);
+
+    $input = app(NodeRemovalInput::class)->capture(app(NodeRemovalPlan::class)->build($guest, true, true), $root);
+
+    expect($hub->id)->toBe(1);
+    expect($input['proxy_node_ids'])->toBe([$hub->id]);
+    expect($input['unavailable_node_ids'])->toBe([]);
+    expect($input['placements'])->toContain(['effect_node_id' => $hub->id, 'execution_node_id' => $hub->id, 'transport' => 'local']);
+    expect(config('swamp_workers.nodes'))->toBe([$root->id]);
+});
