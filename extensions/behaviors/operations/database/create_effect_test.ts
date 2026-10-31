@@ -2,7 +2,6 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
 import { createDatabase } from "./create.ts";
 
-const enabled = Deno.env.get("DATABASE_CREATE_EFFECT_CANARY") === "1";
 const randomPassword = () =>
   Array.from(
     crypto.getRandomValues(new Uint8Array(40)),
@@ -13,7 +12,6 @@ const randomPassword = () =>
 for (const driver of ["mysql", "pgsql"] as const) {
   Deno.test({
     name: `disposable ${driver} create, replay and foreign ownership refusal`,
-    ignore: !enabled,
     fn: async () => {
       const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
       const container = `orbit-process-999999-database-create-${suffix}`;
@@ -167,7 +165,7 @@ for (const driver of ["mysql", "pgsql"] as const) {
         );
         assertEquals(
           "output" in proof && proof.output,
-          pg ? "proof_sentinel\n" : "",
+          "proof_sentinel\n",
         );
       } finally {
         if (started) {
@@ -189,7 +187,6 @@ for (const driver of ["mysql", "pgsql"] as const) {
 
 Deno.test({
   name: "disposable Valkey ACL create, replay and foreign password refusal",
-  ignore: !enabled,
   fn: async () => {
     const { ValkeyClient } = await import("./valkey_client.ts");
     const container = `orbit-process-999999-database-create-${

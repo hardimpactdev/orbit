@@ -208,7 +208,7 @@ Deno.test("unrecognized typed mutation refusals remain uncertain", async () => {
     false,
   );
   await assertRejects(() => f.run());
-  assertEquals(f.projections.map((body) => body.status), ["running"]);
+  assertEquals(f.projections.map((body) => body.status), ["running", "failed"]);
 });
 
 Deno.test("an unknown mutation response remains uncertain rather than successful or cancelled", async () => {
@@ -216,7 +216,7 @@ Deno.test("an unknown mutation response remains uncertain rather than successful
   f.observed.state = "drift";
   f.repairReply = { unrecognized: true };
   await assertRejects(() => f.run());
-  assertEquals(f.projections.map((body) => body.status), ["running"]);
+  assertEquals(f.projections.map((body) => body.status), ["running", "failed"]);
 });
 
 Deno.test("lost final projection recovers by inspection without another repair", async () => {
@@ -291,6 +291,13 @@ Deno.test("aborted malformed readonly output is safe cancellation but an uncerta
     mutation.controller.abort();
     throw new Error("Uncertain write");
   };
-  await assertRejects(() => mutation.run(), Error, "Uncertain write");
-  assertEquals(mutation.projections.map((body) => body.status), ["running"]);
+  await assertRejects(
+    () => mutation.run(),
+    Error,
+    "operation.native_outcome_unknown",
+  );
+  assertEquals(mutation.projections.map((body) => body.status), [
+    "running",
+    "failed",
+  ]);
 });

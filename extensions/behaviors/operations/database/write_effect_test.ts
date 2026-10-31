@@ -4,7 +4,6 @@ import { pdoWrite, writeDatabase } from "./write.ts";
 for (const driver of ["mysql", "pgsql"] as const) {
   Deno.test({
     name: `fixed PDO applies private ${driver} writes on a disposable server`,
-    ignore: Deno.env.get("DATABASE_WRITE_EFFECT_CANARY") !== "1",
     fn: async () => {
       const name = `orbit-database-write-${crypto.randomUUID()}`;
       const dir = await Deno.makeTempDir({ prefix: "database-write-" });
@@ -105,7 +104,6 @@ for (const driver of ["mysql", "pgsql"] as const) {
 
 Deno.test({
   name: "SQLite writes use the admitted account on a disposable owner file",
-  ignore: Deno.env.get("DATABASE_WRITE_EFFECT_CANARY") !== "1",
   fn: async () => {
     const dir = await Deno.makeTempDir({ prefix: "database-write-sqlite-" });
     try {

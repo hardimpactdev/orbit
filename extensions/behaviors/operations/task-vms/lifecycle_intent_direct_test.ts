@@ -93,7 +93,7 @@ Deno.test("missing or command-shaped intent cannot be acknowledged", async () =>
   const f = new Fixture();
   f.operation.input.task_vm_id = 0;
   await assertRejects(() => f.execute());
-  assertEquals(f.operation.status, "running");
+  assertEquals(f.operation.status, "failed");
 });
 Deno.test("the retired lifecycle intent transport is no longer callable", () => {
   assertThrows(() =>

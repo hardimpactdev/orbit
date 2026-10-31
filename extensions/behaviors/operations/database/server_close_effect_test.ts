@@ -5,7 +5,6 @@ import { ValkeyClient } from "./valkey_client.ts";
 Deno.test({
   name:
     "disposable Valkey closes anonymous login and resumes with its original admin password",
-  ignore: Deno.env.get("DATABASE_VALKEY_EFFECT_CANARY") !== "1",
   fn: async () => {
     const name = `orbit-database-close-test-${crypto.randomUUID()}`;
     const dir = await Deno.makeTempDir({ prefix: "database-close-" });

@@ -33,3 +33,22 @@ Workflow metrics separate clean, baseline-accepted and unknown workflows. A clea
 workflow has known steps and no findings in its own source or reachable local
 behavior dependencies. Static coverage is not a runtime canary. Each run emits
 versioned JSON with its commit and units, plus a `SHAPE-GATE` summary on one line.
+
+Current PLAN also forbids Gateway HTTP calls from any step, including failure
+reporters. The `gateway-http` rule covers the client and its aliases and imports;
+workflow coverage follows local dependencies, so helper modules and failure jobs
+remain part of the audit. Intent arrives as non-secret workflow inputs, vault
+names and key names identify secrets, and step outputs carry results.
+
+The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
+`Swamp Deno tests`. The reusable workflow accepts `working-directory` and
+`base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
+with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
+workflow must validate on the checksum-verified runtime pin. All Operations Deno
+tests run with four workers, including disposable database effect tests.
+
+Runtime validation requires the existing Swamp account credentials. The old
+repo has `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`; Orbit needs an approved transfer
+before the caller can use this workflow. The reusable workflow declares both
+secrets. Pass them with `secrets: inherit` from the approved caller. No credential
+is printed, copied from local config or passed as argv.

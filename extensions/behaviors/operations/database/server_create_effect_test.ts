@@ -3,11 +3,9 @@ import { createServer } from "./server_create.ts";
 import { passwordHash } from "./valkey_policy.ts";
 import { ValkeyClient } from "./valkey_client.ts";
 
-const enabled = Deno.env.get("DATABASE_SERVER_EFFECT_CANARY") === "1";
 for (const driver of ["mysql", "pgsql", "redis"] as const) {
   Deno.test({
     name: `disposable ${driver} server provisions, scrubs secrets and replays`,
-    ignore: !enabled,
     fn: async () => {
       const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
       const container = `orbit-process-999998-server-create-${suffix}`;

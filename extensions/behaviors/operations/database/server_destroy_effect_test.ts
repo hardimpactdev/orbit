@@ -5,7 +5,6 @@ import { localServerRuntime } from "./server_runtime.ts";
 Deno.test({
   name:
     "disposable server destroy removes owned containers, preserves data and replays",
-  ignore: Deno.env.get("DATABASE_SERVER_DESTROY_EFFECT_CANARY") !== "1",
   fn: async () => {
     const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
     const container = `orbit-process-999997-server-destroy-${suffix}`;
