@@ -69,7 +69,6 @@ export function taskVms(
               "task_vm.provision",
               "task_vm.enroll",
               "task_vm.resume",
-              "task_vm.park",
               "task_vm.destroy",
               "task_vm.upcloud_image_build",
             ],
@@ -164,7 +163,6 @@ export function taskVms(
               "task_vm.provision",
               "task_vm.enroll",
               "task_vm.resume",
-              "task_vm.park",
               "task_vm.destroy",
             ].includes(operation.kind)
             ? LifecycleInput.parse(operation.input)

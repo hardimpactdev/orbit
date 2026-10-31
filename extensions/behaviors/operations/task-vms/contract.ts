@@ -159,7 +159,6 @@ for (
   const [verb, action] of Object.entries({
     prepare_enrollment: "prepare-enrollment",
     enroll_node: "enroll",
-    confirm_stopped: "stopped",
     mark_destroying: "destroying",
     forget_workspaces: "forget-workspaces",
     destroy_records: "forget",

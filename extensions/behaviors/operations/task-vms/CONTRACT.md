@@ -230,3 +230,27 @@ no production caller or Gateway admission. Live workspace provisioning still
 uses its retained cache implementation and tests until the owning Tasks root
 cutover. Host cache fills remain separate; this removal does not change their
 discovery or execution.
+
+## Review parking
+
+`tasks.park` is one direct `operation-task-park` run. Its exact host job uses
+`orbit-node-<node_id>` and the matching string `node` label. It accepts only the
+Gateway's frozen group, Project, workspace, VM, provider location and agent
+digest. The optional UpCloud credential remains inside the shared
+private-material callback and fixed provider request client.
+
+The native action reads current eligibility before each new stop and after
+confirmed stopped power. An accepted stop settles before cancellation is
+acknowledged; UpCloud observes the soft stop for 150 seconds before its existing
+hard-stop action, then allows 120 seconds to settle. Incus uses the pinned local
+sudo command and fresh typed `incus.vm-state` observations. Missing, unsettled,
+foreign or still-running power never produces stopped proof. A lost reply is
+reconciled with observation rather than trusted as success.
+
+The Gateway projects the native stopped result under the existing Task group
+execution lock. Admission records intent without changing VM state or topology.
+Success records `parked`, stopped proof and `waiting_for_review` only for a
+still-eligible, exactly owned workspace. Cancellation preserves VM state. A
+bounded failure retains the prior board status and leaves stop proof unknown.
+The removed PHP stop executor and internal `task_vm.park` and
+`task_vm.confirm_stopped` registrations have no alternate dispatcher.

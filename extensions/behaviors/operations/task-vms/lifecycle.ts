@@ -196,17 +196,6 @@ export async function lifecycle(
       await effects.wait();
     }
   }
-  if (kind === "task_vm.park") {
-    const state = await effects.read("lifecycle");
-    if (state.present !== true) throw new ExecutorError("task_vm.vm_missing");
-    if (state.settled !== true) throw new ExecutorError("task_vm.not_settled");
-    if (input.provider === "upcloud") await stopUpCloud(input, effects);
-    else await provider(input, effects, "provider-stop", "stop");
-    await effects.child("confirm-stopped", "task_vm.confirm_stopped", node, {
-      task_vm_id: input.task_vm_id,
-    });
-    return { ready: true };
-  }
   if (kind !== "task_vm.destroy") {
     throw new Error("Unknown task VM lifecycle kind");
   }

@@ -17,7 +17,6 @@
     "task_vm.upcloud_delete",
     "task_vm.prepare_enrollment",
     "task_vm.enroll_node",
-    "task_vm.confirm_stopped",
     "task_vm.mark_destroying",
     "task_vm.forget_workspaces",
     "task_vm.destroy_records",
@@ -50,7 +49,6 @@
     "task_vm.provision",
     "task_vm.enroll",
     "task_vm.resume",
-    "task_vm.park",
     "task_vm.destroy",
     "task_vm.upcloud_image_build"
   ],

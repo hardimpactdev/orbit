@@ -221,30 +221,6 @@ Deno.test("resume starts once and waits for the agent and Pi before confirming r
   assertEquals(effects.waits, 1);
 });
 
-Deno.test("park refuses missing or unsettled power and confirms a stop before success", async () => {
-  for (
-    const [patch, code] of [[{ present: false }, "task_vm.vm_missing"], [{
-      settled: false,
-    }, "task_vm.not_settled"]] as const
-  ) {
-    const effects = new Effects();
-    Object.assign(effects.state, patch);
-    await assertRejects(
-      () => lifecycle("task_vm.park", intent(), effects),
-      ExecutorError,
-      code,
-    );
-    assertEquals(effects.calls.map((call) => call.key), ["lifecycle-intent"]);
-  }
-  const effects = new Effects();
-  await lifecycle("task_vm.park", intent(), effects);
-  assertEquals(effects.calls.map((entry) => entry.key), [
-    "lifecycle-intent",
-    "provider-stop",
-    "confirm-stopped",
-  ]);
-});
-
 Deno.test("destruction waits for preservation or confirmed VM loss before deleting anything", async () => {
   const effects = new Effects();
   Object.assign(effects.state, {
@@ -311,31 +287,6 @@ Deno.test("UpCloud effects use the Gateway and an opaque owner-bound API referen
     node: 1,
     input: { task_vm_id: 5, token: { $secret: "upcloud.api", id: 5 } },
   });
-});
-
-Deno.test("UpCloud park escalates the proven soft stop in Swamp and waits for stopped power", async () => {
-  const effects = new Effects();
-  const admitted = {
-    ...intent(),
-    provider: "upcloud" as const,
-    host_node_id: null,
-    execution_node_id: 1,
-  };
-  effects.receipts.set("provider-stop", {
-    ready: true,
-    effect_finished_at: "2020-01-01T00:00:00Z",
-  });
-  effects.onWait = () => {
-    effects.state.running = false;
-  };
-  await lifecycle("task_vm.park", admitted, effects);
-  assertEquals(effects.calls.map((call) => call.key), [
-    "lifecycle-intent",
-    "provider-hard-stop",
-    "confirm-stopped",
-  ]);
-  assertEquals(effects.calls[1].kind, "task_vm.upcloud_hard_stop");
-  assertEquals(effects.waits, 1);
 });
 
 Deno.test("UpCloud destruction waits for power and confirmed absence before forgetting records", async () => {
