@@ -249,7 +249,8 @@ describe('gateway:release:handoff', function (): void {
         $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
 
         expect($result)->toMatchArray([
-            'caddy' => ['outcome' => 'submitted', 'operation_id' => Operation::query()->where('kind', 'route.caddy_converge')->latest('id')->value('id')],
+            'caddy' => 'submitted',
+            'caddy_operation_id' => Operation::query()->where('kind', 'route.caddy_converge')->latest('id')->value('id'),
             'fpm' => 'unchanged',
             'scheduler' => 'restarted',
             'scheduler_unit' => $unit,
