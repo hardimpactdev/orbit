@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
-use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Fleet\NodeFootprintCapture;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Actions\ConvergeAiRouterAction;
+use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorSnapshot;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
 /** The footprint delegates collector activation to the same owner as setup and the release tick. */
-final readonly class AiRouterFootprintArtifact implements NodeFootprintArtifact
+final readonly class AiRouterFootprintArtifact implements NodeFootprintCapture
 {
     public function __construct(
         private AiRouterState $state,
         private AgentDelivery $delivery,
         private ConvergeAiRouterAction $converge,
+        private AiRouterCollectorSnapshot $snapshot,
     ) {}
 
     public function name(): string
@@ -38,5 +40,10 @@ final readonly class AiRouterFootprintArtifact implements NodeFootprintArtifact
     {
         // A pending cutover belongs to the tick. Both entry points acquire the existing lifecycle lock.
         return $this->converge->execute(force: true, deferCutover: true);
+    }
+
+    public function capture(Node $node): array
+    {
+        return $this->snapshot->capture($node);
     }
 }
