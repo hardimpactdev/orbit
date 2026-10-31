@@ -8,11 +8,13 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
+use InvalidArgumentException;
 use JsonException;
 use SensitiveParameter;
 
@@ -87,6 +89,8 @@ class StoreProcessRequest extends FormRequest
                 'sometimes',
                 Rule::in(['never', 'on-failure', 'always', 'unless-stopped']),
             ],
+            'required_mount_paths' => ['sometimes', 'array', 'list', 'max:64', 'prohibited_unless:runtime,systemd'],
+            'required_mount_paths.*' => ['required', 'string'],
             'start' => ['sometimes', 'boolean'],
             'keep_alive' => ['sometimes', 'boolean'],
             'restart_on_deploy' => ['sometimes', 'boolean'],
@@ -106,7 +110,7 @@ class StoreProcessRequest extends FormRequest
             return $data;
         }
         if (is_array($payload)) {
-            foreach (['user', 'environment'] as $field) {
+            foreach (['user', 'environment', 'required_mount_paths'] as $field) {
                 if (array_key_exists($field, $payload)) {
                     $data[$field] = $payload[$field];
                 }
@@ -122,7 +126,7 @@ class StoreProcessRequest extends FormRequest
         return [
             function (#[SensitiveParameter] Validator $validator): void {
                 if ($this->has('preset')) {
-                    foreach (['runtime', 'command', 'image', 'working_directory', 'environment', 'ports', 'volumes'] as $field) {
+                    foreach (['runtime', 'command', 'image', 'working_directory', 'environment', 'ports', 'volumes', 'required_mount_paths'] as $field) {
                         if ($this->exists($field)) {
                             $validator->errors()->add($field, 'The preset owns this configuration.');
                         }
@@ -134,6 +138,16 @@ class StoreProcessRequest extends FormRequest
                 $this->validateSystemdExecutable($validator);
                 $this->validateEnvironmentNames($validator);
                 $this->validatePorts($validator);
+                if ($this->exists('required_mount_paths')) {
+                    if (! $this->isJson()) {
+                        $validator->errors()->add('required_mount_paths', 'Send literal mount paths in a JSON request.');
+                    }
+                    try {
+                        RequiredMountPaths::parse($validator->getData()['required_mount_paths'] ?? null);
+                    } catch (InvalidArgumentException $error) {
+                        $validator->errors()->add('required_mount_paths', $error->getMessage());
+                    }
+                }
             },
         ];
     }
@@ -175,6 +189,7 @@ class StoreProcessRequest extends FormRequest
             restartOnDeploy: ($validated['restart_on_deploy'] ?? true) === true,
             preset: isset($validated['preset']) ? $this->string('preset')->toString() : null,
             user: is_string($validated['user'] ?? null) ? $validated['user'] : null,
+            requiredMountPaths: RequiredMountPaths::parse($validated['required_mount_paths'] ?? []),
         );
     }
 

@@ -9,6 +9,7 @@ use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
+use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
 use App\Models\Process;
 use InvalidArgumentException;
@@ -42,6 +43,7 @@ final readonly class SystemdProcessRenderer
     public function render(Process $process, ProcessTarget $target, ?ManagedUserAccount $managedAccount = null): string
     {
         $runtimeConfig = $this->runtimeConfig($process);
+        $mountPaths = RequiredMountPaths::parse($runtimeConfig['required_mount_paths'] ?? []);
         $user = $runtimeConfig['user'] ?? $target->user;
         if (! is_string($user) || ! LinuxUserName::isValid($user) || (array_key_exists('user', $runtimeConfig) && ($user === 'root' || $target->instance !== null || isset($runtimeConfig['preset'])))) {
             throw new InvalidArgumentException('A Process user must name a non-root account for a Node systemd Process without a preset.');
@@ -74,6 +76,7 @@ final readonly class SystemdProcessRenderer
             "X-Orbit-Process-ID={$process->id}",
             'After=network-online.target',
             'Wants=network-online.target',
+            ...($mountPaths === [] ? [] : ['RequiresMountsFor='.implode(' ', array_map($this->escapeDirectivePath(...), $mountPaths))]),
             '',
             '[Service]',
             'Type=simple',

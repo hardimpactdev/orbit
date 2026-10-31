@@ -193,6 +193,7 @@ export async function installProcess(
           unit: admitted.name,
           content: installation.content,
           environment: installation.environment,
+          required_mount_paths: admitted.required_mount_paths ?? [],
         });
         if (refused(staged)) return;
         const stage = z.object({
@@ -208,6 +209,7 @@ export async function installProcess(
             unit: admitted.name,
             desired: admitted.desired,
             on_demand: admitted.on_demand,
+            required_mount_paths: admitted.required_mount_paths ?? [],
             change: stage.staged
               ? stage.previous ? "replace" : "create"
               : "reload",
