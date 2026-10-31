@@ -42,10 +42,3 @@ export async function fixtureVerify() {
   await save(state);
   return { ready: true };
 }
-
-export async function fixtureAgent(call: unknown) {
-  const state = await read();
-  state.actions.push(call);
-  await save(state);
-  return state.agentResult;
-}

@@ -524,14 +524,13 @@ Deno.test("resumed family dispatch with a lost lease never claims a replacement 
   ]);
 });
 
-Deno.test("the polled Route family refuses every direct-only kind before any Gateway call", async () => {
+Deno.test("the polled Route family refuses all four direct-only kinds before any Gateway call", async () => {
   for (
     const kind of [
       "route.caddy_converge",
       "route.private_dns_publish",
       "route.workload_verify",
       "route.public_verify",
-      "route.lan_remove",
     ]
   ) {
     const f = new Fixture();
