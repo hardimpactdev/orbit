@@ -11,7 +11,6 @@ use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AgentCommands\AgentBinaryInput;
-use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
@@ -21,7 +20,6 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\Node;
 use App\Models\Project;
 use Closure;
@@ -31,22 +29,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-/**
- * Network Git for task VMs ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). Every Git command that
- * talks to GitHub runs here, on the Gateway, in one bare mirror per Project, so no token reaches a VM. Objects reach
- * a VM's checkout as a pack on the standard input of one command and leave it as a pack on standard output. `$run`
- * runs a command in the VM as the checkout's owner, over the Node's SSH connection or through a builder's host.
- *
- * The VM is untrusted. The Gateway takes only commit IDs and pack data from it, never a path, ref name, or config.
- * Mirror Git runs with the Gateway's own config and the settings in `git()`. A commit ID from the VM only shrinks a
- * pack, and `index-pack --strict` checks every object that comes back, as `transfer.fsckObjects` would for a fetch.
- * Fetches from GitHub skip those checks: an old commit in a real repository can fail them. A pack from a VM is indexed
- * into a quarantine object directory and joins the mirror only after the checks pass.
- *
- * The mirror lock serializes the commands that write the mirror. It covers no work at a VM's pace: a VM sends and
- * receives its packs outside the lock. Mirror commands never collect garbage themselves; {@see collectGarbage()} does,
- * outside the lock.
- */
+/** Mirror reads and pack preparation used by the remaining native provision adapter. */
 final readonly class TaskVmGit
 {
     /** The largest pack that a VM may send back. */
@@ -63,19 +46,14 @@ final readonly class TaskVmGit
 
     private const int LockWaitSeconds = 300;
 
-    /** The automatic garbage collection threshold that {@see collectGarbage()} applies, Git's default. */
-    private const int GcAutoObjects = 6700;
-
     /**
      * @param  list<string>  $protocols  the protocols the mirror may fetch and push with
-     * @param  int  $maxPackBytes  the largest pack that a VM may send back
      */
     public function __construct(
         private ProcessRunner $processes,
         private WorkspaceAgentCommandRunner $agents,
         private ?string $directory = null,
         private array $protocols = ['https'],
-        private int $maxPackBytes = self::MaxPackBytes,
     ) {}
 
     /**
@@ -279,126 +257,6 @@ final readonly class TaskVmGit
     }
 
     /**
-     * Takes the approved commit out of the VM's checkout into the mirror and pushes it to `refs/heads/<branch>` with
-     * the write access. The pack leaves out the history of `$haves`. Its objects go to a quarantine directory first and
-     * join the mirror only when the approved commit and its whole history are there, so a refused pack leaves nothing.
-     * It runs in a queued job ({@see PublishTaskVmCommit}), never in the task tick.
-     *
-     * @param  list<string>  $haves  commits of the mirror, such as those {@see fetch()} returned for the default and task branches
-     * @param  Closure(RemoteCommand): CommandResult  $run
-     * @param  float|null  $deadline  a `microtime(true)` that no Git command may outlast
-     * @param  bool  $replace  whether the commit may replace a branch whose history moved: only over the tip that the last
-     *                         {@see fetch()} of the branch saw, and never otherwise forced
-     *
-     * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
-     */
-    public function publish(Project $project, Node $node, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false, bool $checkedPublish = false): void
-    {
-        if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
-            throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
-        }
-        $url = $this->url($project, $errorCode);
-        $mirror = $this->mirror($project, $errorCode);
-        $tip = $checkedPublish ? trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout) : '';
-        if ($tip === $commit) {
-            return;
-        }
-        $scratch = $this->scratch($errorCode);
-        try {
-            $pack = $scratch.'/receive.pack';
-            $this->receive($node, $checkout, $commit, $haves, $pack, $run, $errorCode, $deadline);
-            $quarantine = $scratch.'/objects';
-            File::ensureDirectoryExists($quarantine.'/pack', 0700);
-            $this->checked('task-vm-git-index-pack', $errorCode, $this->git($mirror, [
-                'index-pack', '--strict', '--fix-thin', '--stdin', '--max-input-size='.$this->maxPackBytes,
-            ], input: ProtectedInput::openFile($pack), timeout: $this->timeout($deadline, 1800.0, $errorCode), quarantine: $quarantine));
-            $type = $this->git($mirror, ['cat-file', '-t', $commit], timeout: $this->timeout($deadline, 300.0, $errorCode), quarantine: $quarantine);
-            // Fails on any object that the history of the commit lacks, up to the mirror's own refs.
-            $complete = $this->git($mirror, ['rev-list', '--objects', '--quiet', $commit, '--not', '--all'], timeout: $this->timeout($deadline, 1800.0, $errorCode), quarantine: $quarantine);
-            if (! $type->succeeded() || trim($type->stdout) !== 'commit' || ! $complete->succeeded()) {
-                throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
-            }
-            $this->locked($project, $errorCode, fn () => $this->migrate($quarantine, $mirror, $errorCode));
-            if ($checkedPublish && $tip !== '' && ! $this->git($mirror, ['merge-base', '--is-ancestor', $tip, $commit])->succeeded()) {
-                throw new RuntimeConvergenceException('task-pull-request-push', 'tasks.not_fast_forward', 'The task branch is not an ancestor of the checked commit.');
-            }
-            $lease = $replace
-                ? ['--force-with-lease=refs/heads/'.$branch.':'.trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout)]
-                : [];
-            $pushed = $this->git($mirror, ['push', '--quiet', ...$lease, '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: $this->timeout($deadline, 1800.0, $errorCode));
-            if (! $pushed->succeeded()) {
-                throw new RuntimeConvergenceException('task-pull-request-push', $checkedPublish && (str_contains($pushed->stderr, 'non-fast-forward') || str_contains($pushed->stderr, '(fetch first)')) ? 'tasks.not_fast_forward' : $errorCode, 'The task branch could not be pushed.', result: $pushed);
-            }
-            $this->git($mirror, ['update-ref', 'refs/heads/'.$branch, $commit]);
-        } finally {
-            File::deleteDirectory($scratch);
-        }
-    }
-
-    /**
-     * Packs the mirror when Git's automatic threshold says so. It runs outside the mirror lock, after a publish, so no
-     * fetch or pack in the task tick waits for it. Git's own `gc.pid` lock keeps two collections apart.
-     *
-     * @throws RuntimeConvergenceException
-     */
-    public function collectGarbage(Project $project, ?float $deadline = null): void
-    {
-        $mirror = $this->root().'/'.$project->id.'.git';
-        if (is_dir($mirror)) {
-            $this->checked('task-vm-git-gc', 'tasks.push_failed', $this->git($mirror, ['-c', 'gc.auto='.self::GcAutoObjects, 'gc', '--auto', '--quiet'], timeout: $this->timeout($deadline, 1800.0, 'tasks.push_failed')));
-        }
-    }
-
-    /**
-     * Streams the VM's pack to `$pack`. The VM leaves out the history of the commits it has of `$haves`. A pack over
-     * the limit stops the VM's command and fails with that limit, as any other failed push does.
-     *
-     * @param  list<string>  $haves
-     * @param  Closure(RemoteCommand): CommandResult  $run
-     */
-    private function receive(Node $node, string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode, ?float $deadline): void
-    {
-        $file = fopen($pack, 'xb');
-        if ($file === false) {
-            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The pack file could not be created.');
-        }
-        try {
-            $sink = new AgentBinaryOutput($file, $this->maxPackBytes);
-            $result = $this->agents->runInWorkspace($node, $run, 'task-vm.export-git-pack', [
-                'checkout' => $checkout, 'commit' => $commit, 'haves' => $this->commitIds($haves),
-            ], $this->timeout($deadline, 1800.0, $errorCode), $sink);
-            if (($result['bytes'] ?? null) !== $sink->bytes()) {
-                throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM pack byte count did not match its result.');
-            }
-        } catch (AgentRunnerFailure|AgentCommandRefused $exception) {
-            $limit = $exception instanceof AgentRunnerFailure
-                ? $exception->kind === AgentRunnerFailure::OutputLimit
-                : $exception->errorCode === 'task_vm.git_pack_too_large';
-            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode,
-                $limit ? 'The task VM sent a pack over '.self::size($this->maxPackBytes).'.' : 'The task VM Git pack could not be received.',
-                previous: $exception);
-        } finally {
-            fclose($file);
-        }
-    }
-
-    /**
-     * Moves the quarantined pack into the mirror. Each index moves last, so Git sees no pack before its data is there.
-     * A pack that the mirror already has stays where it is.
-     */
-    private function migrate(string $quarantine, string $mirror, string $errorCode): void
-    {
-        $files = glob($quarantine.'/pack/pack-*') ?: [];
-        usort($files, static fn (string $left, string $right): int => [str_ends_with($left, '.idx'), $left] <=> [str_ends_with($right, '.idx'), $right]);
-        foreach ($files as $file) {
-            $target = $mirror.'/objects/pack/'.basename($file);
-            if (! is_file($target) && ! @rename($file, $target)) {
-                throw new RuntimeConvergenceException('task-vm-git-migrate', $errorCode, 'The verified pack could not be moved into the mirror.');
-            }
-        }
-    }
-
-    /**
      * Packs the objects of `$tips` that the history of `$haves` lacks, and returns the pack file.
      *
      * @param  list<string>  $tips
@@ -477,11 +335,6 @@ final readonly class TaskVmGit
         }
 
         return "https://github.com/{$repository->owner}/{$repository->name}.git";
-    }
-
-    private static function size(int $bytes): string
-    {
-        return $bytes % (1024 ** 3) === 0 ? ($bytes / 1024 ** 3).' GiB' : $bytes.' bytes';
     }
 
     /** The step's own timeout, cut to what is left before the deadline. A deadline that has passed fails the step. */

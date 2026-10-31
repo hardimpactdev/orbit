@@ -154,7 +154,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
-| `POST /environments/{environment_id}/pairings` | optional `{"async": true}` | `{pairing, pairing_url}` (201), or Operation (202) when opted in |
+| `POST /environments/{environment_id}/pairings` | — | Operation (202) |
 | `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4}`, optional | Operation (202) |
 
 The objects:
@@ -218,13 +218,11 @@ Registration keeps its normal response after it validates and stores the new enc
 
 ## Pairing Operations
 
-Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path admits the same Swamp Operation and waits for up to 30 seconds. Success returns the existing HTTP 201 shape and consumes the encrypted one-time credential. A timeout returns HTTP 504 with `conn.pairing_pending` and `details.operation_id`; follow that Operation rather than creating a second pairing. Failed or cancelled Operations return HTTP 502 with their error code and Operation ID.
+Pairing creation returns HTTP 202 with an Operation. The Gateway validates and records intent, starts the native Swamp workflow and returns without waiting. Revocation also returns an Operation. Swamp reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Pairing revocation and Gateway session cleanup run directly in Swamp.
 
-Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Pairing creation starts Swamp directly on the admitted Node's worker. Swamp reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Pairing revocation runs directly in Swamp; Gateway session cleanup also runs directly in Swamp.
+After the Operation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
 
-For async creation, after the Operation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
-
-When a request repeats the same `Idempotency-Key`, it returns HTTP 202 with the existing Operation, including when the original request used synchronous creation. It never returns the consumed pairing credential again.
+When a request repeats the same `Idempotency-Key`, it returns HTTP 202 with the existing Operation. It never returns the consumed pairing credential again.
 
 The family declares `credential` as a secret stored through `conn.pairing.credential`. Its owner check binds the pairing, calling Node and environment, and refuses a revoked pairing or a conflicting credential.
 
@@ -238,10 +236,12 @@ A failed session-list read ends the revocation Operation with its safe `conn.*` 
 
 ## Direct Swamp writer
 
-`conn.pairing_create` starts `operation-conn-direct` through the shared helper. Its declaration requires Swamp to start it directly, so `swamp.direct_writers` defaults to `direct` for this kind. An explicit `polled` value refuses admission because the old writer is removed. Rollback reverts the owning takeover PR. Pairing revocation also uses the direct writer. Gateway session cleanup uses the same direct writer.
+`conn.pairing_create`, `conn.pairing_revoke` and `conn.gateway_sessions_revoke` start `operation-conn-direct` through fixed direct declarations. Swamp performs their effects and the Gateway records their public metadata. Rollback reverts the owning PR.
 
 Swamp calls T3 directly. The Gateway serves shared run-bound private input, stores the one-time output through the existing encrypted credential store and projects safe metadata. No credential enters Operation input, results or step output. Activity records no request body on either shared private path. The PHP issue command, pairing HTTP relay and their receipt tests are removed.
 
-The native issue checkpoint is scoped to the Operation. A resume with a stored credential projects its metadata; an uncertain issue without a saved credential refuses with `conn.pairing_outcome_unknown`. Existing read-once HTTP201 pairing and the bounded wait keep their contract. The worker uses the configured Node identity; no root socket or family credential route is added.
+The native issue checkpoint is scoped to the Operation. A resume with a stored credential projects its metadata; an uncertain issue without a saved credential refuses with `conn.pairing_outcome_unknown`. The owner-only pairing read returns the URL once. The worker uses the configured Node identity; no root socket or family credential route is added.
 
 A direct pairing exposes only an `issue_started` boolean from the recorded issue timestamp. A worker that loses its native checkpoint refuses an already started issue instead of minting a second link; a stored credential still recovers completion.
+
+When a terminal result repeats, Conn returns the recorded result even after the pairing credential has been consumed or revoked. Conn projects bounded public metadata without a Kit execution contract. Native dispatch failures record a safe failure without changing pairing or cleanup state.

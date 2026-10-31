@@ -13,6 +13,7 @@ use App\Models\Operation;
 
 it('freezes production intent without copying scripts or environment secrets', function (): void {
     [, , , $instance] = deployment_api_fixture();
+    $instance->update(['production_user' => 'orbit-app-'.$instance->project_id, 'production_home' => '/home/orbit-app-'.$instance->project_id]);
     $instance->update(['selected_php_version' => '8.5', ...ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5')->attributes()]);
     $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'environment-secret-sentinel']);
     app(InstanceDeployStepStore::class)->replaceAll($instance, [new DeploymentStep('migrate', DeploymentPhase::BeforeActivation, 'command-secret-sentinel', 60)]);
@@ -48,6 +49,7 @@ it('refuses non-default development and unsupported source states', function (ar
 
 it('admits no deploy scripts for rollback and refuses development rollback', function (): void {
     [, , , $production] = deployment_api_fixture();
+    $production->update(['production_user' => 'orbit-app-'.$production->project_id, 'production_home' => '/home/orbit-app-'.$production->project_id]);
     app(InstanceDeployStepStore::class)->replaceAll($production, [new DeploymentStep('migrate', DeploymentPhase::BeforeActivation, 'never')]);
     $intent = app(InstanceDeploymentIntent::class)->snapshot($production, rollback: true);
     expect($intent['variant'])->toBe('rollback')->and($intent['steps'])->toBe([]);

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
-use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -13,7 +12,7 @@ use Illuminate\Support\Carbon;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
-final readonly class ConnOperationCompletion implements OperationCompletion
+final readonly class ConnOperationCompletion
 {
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {

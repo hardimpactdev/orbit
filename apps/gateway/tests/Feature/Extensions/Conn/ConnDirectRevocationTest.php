@@ -29,7 +29,7 @@ function directConnRevocation(object $test, string $kind = 'conn.pairing_revoke'
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-direct', 'runId' => $test->run]]];
     app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fixture.shared.token', 'swamp.direct_writers' => [], 'operation_executor.worker_node_ids' => [$test->gateway->id]]);
+    config(['swamp.run_token' => 'fixture.shared.token']);
     $cleanup = $kind === 'conn.gateway_sessions_revoke';
     $test->withServerVariables(['REMOTE_ADDR' => $cleanup ? $test->gateway->wireguard_ip : $test->caller->wireguard_ip]);
     $test->postJson('/api/v1/conn/environments/revoke-proof/'.($cleanup ? 'sessions/cleanup' : 'pairings/revoke'))->assertAccepted();
@@ -46,7 +46,6 @@ it('admits revocation directly with only owned labels and links and no legacy cl
 
     expect(app(DirectOperation::class)->writer('conn.pairing_revoke'))->toBe('direct');
     expect(app(OperationKinds::class)->definition('conn.pairing_revoke'))->not->toHaveKeys(['runs', 'completion', 'execution', 'completion_contract']);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'conn.pairing_revoke', 'worker' => 'old-worker'])->assertUnprocessable();
     expect($this->operation->fresh()->attempts)->toBe(0);
     expect($this->operation->fresh()->lock_key)->toBeNull();
     Http::assertNothingSent();
@@ -60,19 +59,15 @@ it('projects successful revocation only onto the admitted pairings without secre
     expect($this->pairing->fresh()->revoked_at)->not->toBeNull();
     expect($this->pairing->fresh()->credential)->toBeNull();
     expect($this->foreign->fresh()->credential)->toBe('private-other');
-    expect(json_encode([$this->operation->fresh()->toArray(), $this->operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-revoke-admin')->not->toContain('private-pairing')->not->toContain('private-other');
+    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-revoke-admin')->not->toContain('private-pairing')->not->toContain('private-other');
     Http::assertNothingSent();
 });
 
-it('refuses a foreign run, a changed pairing owner and the deleted revocation writer', function (): void {
+it('refuses a foreign run, a changed pairing owner without changing admitted revocation', function (): void {
     directConnRevocation($this);
     $this->getJson($this->path.'/private-material?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict();
     $this->pairing->update(['node_id' => $this->other->id]);
     $this->getJson($this->path.'?run_id='.$this->run)->assertUnprocessable();
-    config(['swamp.direct_writers' => ['conn.pairing_revoke' => 'polled']]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    $this->postJson('/api/v1/conn/environments/revoke-proof/pairings/revoke')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->assertDatabaseCount('operations', 1);
     Http::assertNothingSent();
 });
 
@@ -103,7 +98,7 @@ it('projects only the admitted cleanup revision and leaves a newer registration 
     Http::assertNothingSent();
 })->with([false, true]);
 
-it('keeps cleanup privileged, preserves a cancelled revision and refuses a polled takeover setting', function (): void {
+it('keeps cleanup privileged, preserves a cancelled revision without marking cleanup complete', function (): void {
     directConnRevocation($this, 'conn.gateway_sessions_revoke');
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $this->postJson('/api/v1/conn/environments/revoke-proof/sessions/cleanup')->assertForbidden();
@@ -111,7 +106,5 @@ it('keeps cleanup privileged, preserves a cancelled revision and refuses a polle
     $this->call('POST', '/api/v1/conn/operations/'.$this->operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
     $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'cancelled', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => []])->assertOk();
     expect($this->environment->fresh()->cleanup_completed_version)->toBe(0);
-    config(['swamp.direct_writers' => ['conn.gateway_sessions_revoke' => 'polled']]);
-    $this->postJson('/api/v1/conn/environments/revoke-proof/sessions/cleanup')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
     Http::assertNothingSent();
 });

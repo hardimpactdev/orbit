@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,6 +18,7 @@ use Orbit\Extensions\Vault\Actions\SyncVaultAction;
 use Orbit\Extensions\Vault\Domain\DatabaseCredentialCatalog;
 use Orbit\Extensions\Vault\Domain\VaultConfiguration;
 use Orbit\Extensions\Vault\Domain\VaultCredentials;
+use Orbit\Extensions\Vault\Domain\VaultDirectResult;
 use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
@@ -42,17 +41,11 @@ beforeEach(function (): void {
 });
 
 it('admits setup with an encrypted immutable snapshot and no remote or queued PHP work', function (): void {
-    if (! OperationKinds::supports('list_of')) {
-        $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
-        expect(Operation::query()->count())->toBe(0)->and(app(VaultSettings::class)->configuration())->toBeNull();
-
-        return;
-    }
     $response = $this->withHeader('Idempotency-Key', 'vault-setup')->putJson('/api/v1/vault', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->kind)->toBe('vault.setup')->and($operation->status)->toBe(OperationStatus::Queued)
+    expect($operation->kind)->toBe('vault.setup')->and($operation->status)->toBe(OperationStatus::Running)
         ->and($operation->node_id)->toBe($this->caller->id)
-        ->and($operation->input)->toBe(['configuration' => ['$secret' => 'vault.credentials', 'id' => $this->caller->id]])
+        ->and($operation->input['configuration'])->toBe(['$secret' => 'vault.credentials', 'id' => $this->caller->id])
         ->and(app(VaultSettings::class)->configuration())->toBeNull();
     $snapshot = app(VaultOperationSecrets::class)->snapshot($operation, $operation->input['configuration']);
     expect($snapshot['client_secret'])->toBe($this->payload['client_secret']);
@@ -67,12 +60,6 @@ it('admits setup with an encrypted immutable snapshot and no remote or queued PH
 });
 
 it('refuses a reference to another record or source', function (): void {
-    if (! OperationKinds::supports('list_of')) {
-        $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
-        expect(Operation::query()->count())->toBe(0)->and(app(VaultSettings::class)->configuration())->toBeNull();
-
-        return;
-    }
     $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
     expect(fn () => app(VaultOperationSecrets::class)->snapshot($operation, ['$secret' => 'vault.credentials', 'id' => $operation->target_id + 1]))
@@ -109,18 +96,16 @@ it('reports incomplete and password-unknown credentials without contacting Vault
     Http::assertNothingSent();
 });
 
-it('retains only the declared Vault ledger lists with C enabled', function (): void {
-    $operation = new Operation(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id, 'node_id' => $this->caller->id]);
+it('retains only public Vault ledger metadata', function (): void {
     $data = ['backend' => 'synced', 'sources' => ['database-connection:7'], 'cipher_ids' => ['fixture-cipher'],
         'revisions' => ['fixture-revision'], 'fingerprints' => [str_repeat('a', 64)]];
-    $safe = app(OperationExecutionContract::class)->result($operation,
+    $safe = app(VaultDirectResult::class)->publicResult(
         ['outcome' => 'succeeded', 'data' => [...$data, 'password' => 'fixture-secret'], 'token' => 'fixture-secret']);
 
     expect($safe)->toBe(['outcome' => 'succeeded', 'data' => $data]);
 });
 
-it('refuses Vault results outside the shared C limits before projecting the ledger', function (string $limit): void {
-    $operation = new Operation(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id, 'node_id' => $this->caller->id]);
+it('refuses Vault results outside the public transport limits before projecting the ledger', function (string $limit): void {
     $data = ['backend' => 'synced', 'sources' => ['source'], 'cipher_ids' => ['cipher'], 'revisions' => ['revision'], 'fingerprints' => ['fingerprint']];
     if ($limit === 'items') {
         $data['sources'] = array_fill(0, 4097, 'source');
@@ -132,7 +117,7 @@ it('refuses Vault results outside the shared C limits before projecting the ledg
         }
     }
 
-    expect(fn () => app(OperationExecutionContract::class)->result($operation, ['outcome' => 'succeeded', 'data' => $data]))
+    expect(fn () => app(VaultDirectResult::class)->publicResult(['outcome' => 'succeeded', 'data' => $data]))
         ->toThrow(ResourceOperationException::class);
     expect(VaultItem::query()->count())->toBe(0);
 })->with(['items', 'string', 'encoded-size']);

@@ -9,7 +9,6 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
-use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Routes\RouteWebRoot;
@@ -63,10 +62,14 @@ final readonly class InstanceDeploymentIntent
             ];
         }
         $config = $this->production->resolve($instance);
+        if ($instance->production_user !== 'orbit-app-'.$instance->project_id
+            || $instance->production_home !== '/home/orbit-app-'.$instance->project_id) {
+            throw new ResourceOperationException('deployment_config.unavailable', 'The production account does not match this Project.', 409);
+        }
         [$runtime, $refresh] = $this->runtimeIntent($instance);
 
         return [
-            'runtime_synchronous' => app(ProcessSwampSafety::class)->requiresSynchronous($instance->node),
+            'runtime_synchronous' => false,
             'php_profile' => is_string($instance->selected_php_version) ? app(RemotePhpPackageManager::class)->runtimeInput($instance->node, $instance->selected_php_version) : null,
             'variant' => $rollback ? 'rollback' : 'production', 'projection_route_id' => null,
             'needs_vp' => ! $rollback && array_any($config->steps, static fn (DeploymentStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
