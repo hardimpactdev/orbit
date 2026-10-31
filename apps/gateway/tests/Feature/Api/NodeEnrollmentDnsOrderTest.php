@@ -39,7 +39,7 @@ it('orders committed enrollment and serving listener preparation before DNS for 
     expect($source->refresh()->tld)->toBe('before.test');
 })->with(['linux', 'tld_only']);
 
-it('keeps synchronous listener scope and renders units only for active VPN owners', function (array $roles, bool $active, bool $expected): void {
+it('keeps listener scope and renders units only for active VPN owners', function (array $roles, bool $active, bool $expected): void {
     $node = FleetFixtures::node('dns-footprint-roles', $roles);
     if (! $active) {
         $node->roles()->update(['status' => LifecycleStatus::Provisioning]);
@@ -47,7 +47,7 @@ it('keeps synchronous listener scope and renders units only for active VPN owner
     }
     $dns = Mockery::mock(PrivateDnsManager::class);
     $dns->shouldNotReceive('converge');
-    $artifact = new PrivateDnsFootprintArtifact($dns, []);
+    $artifact = new PrivateDnsFootprintArtifact([]);
 
     expect($artifact->applies($node))->toBe($active && in_array(RoleName::Vpn, $roles, true) && ! in_array(RoleName::Gateway, $roles, true));
     if ($expected) {
