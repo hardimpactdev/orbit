@@ -17,6 +17,12 @@ const Process = z.object({
 
 /** Public intent only. Vault references belong to the separate native envelope. */
 export const EnrollmentCommandIntent = z.object({
+    private_bindings: z.never().optional(),
+    model_key: z.never().optional(),
+    pi_token: z.never().optional(),
+    execution_secrets: z.never().optional(),
+    model_execution_secrets: z.never().optional(),
+    configuration: z.never().optional(),
     schema_version: z.literal(1),
     task_vm_id: Id,
     guest_node_id: Id,
@@ -88,7 +94,7 @@ export const EnrollmentCommandIntent = z.object({
         address: z.ipv4().nullable(),
         public_key: z.string().max(4096).nullable(),
     }).strict(),
-}).strict().superRefine((value, context) => {
+}).superRefine((value, context) => {
     const participants = new Set(value.participant_node_ids);
     const owned = [
         value.guest_node_id,

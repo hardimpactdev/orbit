@@ -1,0 +1,287 @@
+id: ed81d446-f71a-48be-acee-f082a91aaf12
+name: task-vm-provider-upcloud
+description: Reusable UpCloud provider actions from captured intent, native vault
+  environment and public results.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.provision
+      - tasks.provision
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        upcloud_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^upcloud-api-gateway-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        provider_bootstrap:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^task-vm-provider-bootstrap-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - upcloud_token
+      - provider_bootstrap
+      additionalProperties: false
+  required:
+  - operation_id
+  - kind
+  - node_id
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: provider
+  target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.intent.gateway_node_id) }}
+  steps:
+  - name: input
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-upcloud-inputs'
+      behaviorName: ${{ "upcloud-inputs-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+        root_node_id: ${{ inputs.node_id }}
+  - name: inventory
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "upcloud-inventory-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B "$ORBIT_SCRIPT"
+        env:
+          ORBIT_UPCLOUD_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud_token.vault,
+            inputs.execution_secrets.upcloud_token.key) }}
+          ORBIT_SCRIPT: ${{ steps.input.outputs.inventory_script }}
+  - name: inventory-data
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-upcloud-inputs'
+      behaviorName: ${{ "upcloud-inputs-" + string(inputs.operation_id) }}
+      methodName: inventory
+      inputs:
+        stdout: ${{ steps.inventory.outputs.stdout }}
+    dependsOn:
+    - step: inventory
+      condition:
+        type: succeeded
+  - name: plan
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: inventory-data
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "upcloud-plan-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B "$ORBIT_SCRIPT"
+        env:
+          ORBIT_UPCLOUD_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud_token.vault,
+            inputs.execution_secrets.upcloud_token.key) }}
+          ORBIT_SCRIPT: ${{ steps.input.outputs.plan_script }}
+    guard: ${{ steps["inventory-data"].outputs.existing_id != "" }}
+  - name: plan-data
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-upcloud-inputs'
+      behaviorName: ${{ "upcloud-inputs-" + string(inputs.operation_id) }}
+      methodName: plan
+      inputs:
+        stdout: ${{ steps.plan.outputs.stdout }}
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    guard: ${{ steps["inventory-data"].outputs.existing_id != "" }}
+  - name: create
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: inventory-data
+      condition:
+        type: succeeded
+    - step: plan-data
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: task-vm-upcloud-allocation
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B "$ORBIT_SCRIPT"
+        env:
+          ORBIT_UPCLOUD_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud_token.vault,
+            inputs.execution_secrets.upcloud_token.key) }}
+          ORBIT_SCRIPT: ${{ steps.input.outputs.create_script }}
+          ORBIT_UPCLOUD_PLAN: '${{ "outputs" in steps["plan-data"] ? steps["plan-data"].outputs.plan_json
+            : "{}" }}'
+          ORBIT_PROVIDER_BOOTSTRAP: ${{ vault.get(inputs.execution_secrets.provider_bootstrap.vault,
+            inputs.execution_secrets.provider_bootstrap.key) }}
+  - name: resolve
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.gateway_node_id) }}
+    writes: true
+    dependsOn:
+    - step: create
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "upcloud-resolve-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B "$ORBIT_SCRIPT"
+        env:
+          ORBIT_UPCLOUD_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud_token.vault,
+            inputs.execution_secrets.upcloud_token.key) }}
+          ORBIT_SCRIPT: ${{ steps.input.outputs.resolve_script }}
+  - name: server
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-upcloud-inputs'
+      behaviorName: ${{ "upcloud-inputs-" + string(inputs.operation_id) }}
+      methodName: server
+      inputs:
+        stdout: ${{ steps.resolve.outputs.stdout }}
+    dependsOn:
+    - step: resolve
+      condition:
+        type: succeeded
+  - name: start
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: server
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "upcloud-start-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B "$ORBIT_SCRIPT"
+        env:
+          ORBIT_UPCLOUD_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud_token.vault,
+            inputs.execution_secrets.upcloud_token.key) }}
+          ORBIT_SCRIPT: ${{ steps.input.outputs.start_script }}
+          ORBIT_SERVER_ID: ${{ steps.server.outputs.provider_id }}
+  - name: observe
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: start
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "upcloud-observe-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 -B "$ORBIT_SCRIPT"
+        env:
+          ORBIT_UPCLOUD_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud_token.vault,
+            inputs.execution_secrets.upcloud_token.key) }}
+          ORBIT_SCRIPT: ${{ steps.input.outputs.observe_script }}
+          ORBIT_SERVER_ID: ${{ steps.server.outputs.provider_id }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.gateway_node_id) }}
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-upcloud-inputs'
+      behaviorName: ${{ "upcloud-inputs-" + string(inputs.operation_id) }}
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.observe.outputs.stdout }}
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded

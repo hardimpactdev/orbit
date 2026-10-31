@@ -1,0 +1,11 @@
+# Task VM UpCloud provider command steps
+
+The UpCloud provider fragment consumes the existing allocated VM and the exact verified image. It keeps the original Operation kind and Node ID. Every API action runs on the admitted Gateway; no step reads or writes Gateway state. Public results contain only the owned server ID, public address, image and SSH host pin.
+
+Admission stores the VM's existing Ed25519 host-key type once, before provider creation. Key generation uses libsodium in memory. It records the encrypted pair and its public pin together. The shared execution-copy helper supplies only vault/key descriptors for the existing UpCloud token and host-key pair. No private key appears in workflow inputs, command arguments or public outputs.
+
+Separate native steps inspect inventory, inspect the plan, create the server, start an owned stopped server and observe readiness. Create and start recheck ownership before mutation. All requests use the fixed UpCloud API origin, no redirect and one bounded request attempt. An uncertain create response returns only `request_uncertain: true`. The following resolution step reads inventory once and fails if the owned server is not yet visible. Native resume repeats that observation, never the completed create submission. No VM readiness is claimed from a submission result. A server that is not ready fails its observation step; resume that step after inspecting the native result. There are no sleep or retry loops.
+
+Every create action uses the same stable `task-vm-upcloud-allocation` native command definition. Its native definition lock covers the fresh inventory/budget read and the single create submission across parent runs. The public inventory and maximum-VM budget are checked again immediately before create. Existing ownership requires the exact VM name, hostname, provider ID when pinned and `orbit-task-vm` label. Only one public IPv4 is accepted at readiness.
+
+This is a source checkpoint for parent composition. It does not change a registered root or admit a live server. Official remote vault stdin, the root terminal subscriber, canonical issuer/worker and fresh hub publication remain their owners' dependencies. Pi install/upload remain model-owned. No protected or failed build is replayed.

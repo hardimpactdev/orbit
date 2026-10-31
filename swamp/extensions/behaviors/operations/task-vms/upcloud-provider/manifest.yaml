@@ -1,0 +1,16 @@
+manifestVersion: 1
+name: '@nckrtl/task-vm-upcloud-provider'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public provider intent and one-action native UpCloud scripts.
+behaviors:
+- operations/task-vms/upcloud-provider/input.ts
+additionalFiles:
+- scripts/upcloud_common.py
+- scripts/inventory.py
+- scripts/plan.py
+- scripts/create.py
+- scripts/resolve.py
+- scripts/start.py
+- scripts/observe.py

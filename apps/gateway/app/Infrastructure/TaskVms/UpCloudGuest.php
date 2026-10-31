@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmProviderHostKey;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Str;
 
 /**
  * Reaches an UpCloud server that Orbit created, before it is a Node: over SSH as `orbit` to its public IPv4 address,
@@ -34,20 +32,7 @@ final readonly class UpCloudGuest
      */
     public function generateHostKey(string $comment): array
     {
-        $directory = sys_get_temp_dir().'/orbit-tvm-key-'.Str::random(16);
-        File::ensureDirectoryExists($directory, 0700);
-        try {
-            $result = Process::timeout(30)->run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', $comment, '-f', $directory.'/key']);
-            $private = @file_get_contents($directory.'/key');
-            $public = @file_get_contents($directory.'/key.pub');
-            if (! $result->successful() || ! is_string($private) || ! is_string($public) || preg_match(self::PublicKeyPattern, trim($public)) !== 1) {
-                throw new TaskVmException('task_vm.host_key_failed', 'The Gateway could not generate an SSH host key for a task VM.', 500);
-            }
-
-            return ['private' => $private, 'public' => trim($public)];
-        } finally {
-            File::deleteDirectory($directory);
-        }
+        return new TaskVmProviderHostKey()->generate($comment);
     }
 
     /** The `SHA256:…` fingerprint of an ed25519 public key line. */

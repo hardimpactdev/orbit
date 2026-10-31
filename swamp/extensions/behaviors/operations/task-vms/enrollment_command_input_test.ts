@@ -199,3 +199,21 @@ Deno.test("Incus metadata refuses the UpCloud transport rather than selecting an
         "task_vm.enrollment_invalid",
     );
 });
+
+Deno.test("enrollment metadata consumes its public subset of the complete provision intent", () => {
+    const enrollment = commandIntent();
+    assertEquals(
+        EnrollmentCommandIntent.parse({
+            ...enrollment,
+            node_id: enrollment.execution_node_id,
+            host_node_id: enrollment.execution_node_id,
+            wireguard_ip: enrollment.node.wireguard_ip,
+            recipe_identity: "recipe-278",
+            image_fingerprint: "a".repeat(64),
+            create: { kind: "create" },
+            upcloud: null,
+            provider_host_public_key: "ssh-ed25519 PUBLIC",
+        }),
+        enrollment,
+    );
+});
