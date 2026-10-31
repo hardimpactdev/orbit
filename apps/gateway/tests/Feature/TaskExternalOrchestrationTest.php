@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -23,7 +22,6 @@ beforeEach(function (): void {
     $this->project = Project::query()->create([
         'name' => 'External demo', 'slug' => 'external-demo', 'repository_url' => 'https://github.com/acme/demo.git', 'default_branch' => 'main',
     ]);
-    $this->mock(InstanceProvisioning::class)->shouldNotReceive('provision');
     $this->mock(DeliverablePathRepository::class)->shouldReceive('defaultBranchCommit')->andReturn(str_repeat('a', 40));
     $this->payload = [
         'project_id' => $this->project->id, 'title' => 'External work', 'brief' => 'An orchestrator drives it.', 'orchestration' => 'external',

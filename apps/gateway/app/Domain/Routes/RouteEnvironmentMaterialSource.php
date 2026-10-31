@@ -21,11 +21,16 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
 
     public function targetTypes(): array
     {
-        return ['route'];
+        return ['route', 'node', 'cluster'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
+        if (isset($operation->input['route_mutations']) && in_array($operation->target_type, ['node', 'cluster'], true)
+            && str_starts_with($operation->kind, $operation->target_type.'.')) {
+            return $operation->target_id;
+        }
+
         return in_array($operation->kind, ['route.withdraw', 'route.destroy', 'route.target_set', 'route.create', 'route.converge', 'route.update'], true)
             && $operation->target_type === 'route' ? $operation->target_id : null;
     }
@@ -38,6 +43,9 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
             throw new ResourceOperationException('operation.execution_forbidden', 'The Route environment field is not bound to this workload Node.', 403);
         }
 
+        if (isset($operation->input['route_mutations'])) {
+            return new OperationSecretValue(app(NativeRouteMutationPlan::class)->environmentMaterial($operation, $nodeId));
+        }
         if (isset($operation->input['route_removal'])) {
             return new OperationSecretValue(app(NativeRouteEnvironmentMaterial::class)->forNode($operation, $nodeId));
         }

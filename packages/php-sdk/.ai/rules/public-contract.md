@@ -1,10 +1,10 @@
 # Public contract
 
-The SDK models exactly 244 concrete public Gateway API operations:
+The SDK models exactly 247 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
-- Node: list, show, add, rename, settings update, WireGuard key set, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.
+- Node: list, show, add, rename, settings update, WireGuard key set, standalone WireGuard hub converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - Project Documents: Project-scoped list, search, create, show, update, write, read, download, version list, restore-version, archive, restore, and removal; Gateway-scoped storage show and update. Preserve revisions, hashes, cursor metadata and request IDs. Credentials are write-only. Decode bounded downloads only after verifying size and digest; never retry conflicts automatically.
 - Project: list, show, create, update, remove, and Swamp dependency results read; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
@@ -17,7 +17,7 @@ The SDK models exactly 244 concrete public Gateway API operations:
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
-- Firewall: list, allow, deny, and remove.
+- Firewall: list, allow, deny, remove, and native inspection refresh.
 - Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.

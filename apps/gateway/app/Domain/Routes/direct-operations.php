@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 use App\Domain\Routes\DirectRoutePublication;
+use App\Domain\Routes\NativeRouteAdmission;
+use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\NativeRouteRemovalProjection;
+use App\Domain\Routes\NativeRouteTargetProjection;
 use App\Domain\Routes\RouteOperationProjection;
 
 $publication = [
@@ -14,9 +17,13 @@ $publication = [
 ];
 
 return [
+    'route.create' => [
+        'workflow' => 'operation-route-create', 'projection' => NativeRouteConvergenceProjection::class,
+        'private_material' => NativeRouteAdmission::privateMaterial(),
+    ],
     'route.target_set' => [
-        'workflow' => 'operation-route-target-set', 'projection' => \App\Domain\Routes\NativeRouteTargetProjection::class,
-        'private_material' => \App\Domain\Routes\NativeRouteAdmission::privateMaterial(),
+        'workflow' => 'operation-route-target-set', 'projection' => NativeRouteTargetProjection::class,
+        'private_material' => NativeRouteAdmission::privateMaterial(),
     ],
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [
         'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,

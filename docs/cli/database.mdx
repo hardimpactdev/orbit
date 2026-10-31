@@ -135,6 +135,8 @@ orbit database:update app --node=
 
 Updating a record does not rewrite the keys already stored on attached Instances. Run `instance:database:add` again with the same prefix to re-project them, then `env:sync` to install them.
 
+Use `--idempotency-key=KEY` to retry the same native update admission.
+
 ## orbit database:server:create
 
 Run a MySQL, PostgreSQL or Valkey server as a Docker Node Process. Orbit generates the admin password and keeps it only in the Gateway.

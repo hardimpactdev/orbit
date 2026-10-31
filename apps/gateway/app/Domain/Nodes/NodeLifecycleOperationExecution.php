@@ -170,7 +170,7 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
 
     private function restoreNeeded(Operation $operation): bool
     {
-        if (! in_array($operation->kind, ['node.remove', 'node.add'], true)) {
+        if ($operation->kind !== 'node.add') {
             return false;
         }
         if ($operation->kind === 'node.add') {
@@ -180,12 +180,12 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
                 return false;
             }
         }
-        $begin = $operation->children()->where('child_key', $operation->kind === 'node.add' ? 'add-begin' : 'remove-begin')->first();
+        $begin = $operation->children()->where('child_key', 'add-begin')->first();
         if ($begin === null || $begin->status !== OperationStatus::Succeeded) {
             return false;
         }
         $this->children->verify($operation, $begin);
-        if ($begin->kind !== ($operation->kind === 'node.add' ? 'node.enrollment_begin' : 'node.removal_begin') || $begin->node_id !== $operation->node_id) {
+        if ($begin->kind !== 'node.enrollment_begin' || $begin->node_id !== $operation->node_id) {
             throw $this->unproven();
         }
         if ($operation->cancel_requested_at !== null) {
@@ -207,17 +207,17 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
 
     private function restoreKey(Operation $operation): string
     {
-        return $operation->kind === 'node.add' ? 'add-restore' : 'remove-restore';
+        return 'add-restore';
     }
 
     private function restoreKind(Operation $operation): string
     {
-        return $operation->kind === 'node.add' ? 'node.enrollment_restore' : 'node.removal_restore';
+        return 'node.enrollment_restore';
     }
 
     private function restoreError(Operation $operation): string
     {
-        return $operation->kind === 'node.add' ? 'node.reprovision_rollback_failed' : 'node.removal_rollback_failed';
+        return 'node.reprovision_rollback_failed';
     }
 
     /** @return list<array<string,mixed>> */

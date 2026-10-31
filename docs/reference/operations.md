@@ -537,7 +537,13 @@ Families declare fixed workflows in their own `direct-operations.php`. `DirectOp
 
 If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal ends that submission call without resubmission.
 
-An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. Bound, terminal and cancellation-requested intents make no native request. Reads remain side-effect free. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
+An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. An intent never submits again after it binds a run, ends, or receives a cancellation request. A read never starts or resumes execution. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
+
+### Recover a terminal native result
+
+`GET /api/v1/operations/{operation}` makes one bounded native history read for an active direct Operation with a recorded run ID. It queries that exact UUID and checks the workflow name, Operation ID, kind and root Node. Only a native status of failed or interrupted can record `operation.native_failed`, through the same terminal transition as the existing root failure callback. Native success never invents a missing domain result.
+
+This recovers a lost failure callback after a serve restart or a refused source bundle. Missing history, connection errors, authorization refusals, invalid history and all other native statuses leave recorded status unchanged. The native request runs outside the database transaction; the final write locks and rechecks the original binding and terminal status. Existing terminal results never change. There is no background poller, execution replay, family action or secret hydration. Terminal failure reports the native outcome; it does not prove that every partial Node effect stopped.
 
 This is bounded submission recovery, with no job, timer, execution retry or history poll. Native runtime tags support lookup; they do not provide atomic start deduplication. The recorded run binding remains required before a workflow can read intent or invoke a primitive. Swamp alone waits for this initial binding: its shared first read retries only `409 operation.run_unbound`, once per second for up to 90 seconds. Cancellation ends that wait. Other errors and all mutations remain single attempts.
 
@@ -547,7 +553,7 @@ After a kind cuts over and removes its previous executor, its `operation-kinds.p
 
 A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
 
-Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
+Cancelling a queued or running Operation with no `swamp_run_id` and zero attempts records `cancelled` immediately and releases its target hold, including an existing cancellation request. A bound run or an Operation with previous attempts only records `cancel_requested_at`; Swamp owns stopping and projecting its terminal result. A terminal Operation stays unchanged. Cancellation does not walk native children.
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
@@ -565,7 +571,7 @@ Direct workers authenticate as active WireGuard peers. Direct requests authorize
 
 Only the root Node may send result, failure or primitive requests. Other Gateway APIs keep their Node access checks. Participation never grants general access to the Gateway or another Node.
 
-Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase without remote diagnostics or credentials.
+Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase. `Swamp direct start refused` records the workflow and the remote error type, code and bounded message after credential and secret-pattern redaction. Remote diagnostics stay out of Operation results and API errors.
 
 Read input comes only from the projection hook, never automatically from raw intent. Primitive calls accept only the run ID; the hook selects its command and input from admitted state. Existing Route publication URLs reach the same shared controller during the Swamp rollout.
 

@@ -11,7 +11,6 @@ use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
-use App\Models\InstanceTransfer;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -36,30 +35,6 @@ final readonly class StartRouteProjectionAction
     public function withdraw(Route $route, bool $offline = false, ?string $requestId = null): Operation
     {
         return app(NativeRouteRemovalAdmission::class)->start('route.withdraw', $route, $offline, requestId: $requestId);
-    }
-
-    public function withdrawInstance(Instance $instance, ?string $requestId = null): Operation
-    {
-        return $this->operation('route.withdraw_instance', 'instance_routes', $instance->id, $instance->node_id,
-            ['instance_id' => $instance->id], 'operator', $requestId);
-    }
-
-    public function cleanupInstance(Instance $instance, ?string $requestId = null): Operation
-    {
-        return $this->operation('route.cleanup_instance', 'instance_routes', $instance->id, $instance->node_id,
-            ['instance_id' => $instance->id], 'operator', $requestId);
-    }
-
-    public function retireSource(InstanceTransfer $transfer, ?string $requestId = null): Operation
-    {
-        app(DirectOperation::class)->writer('route.retire_source');
-        if ($transfer->cutover_at === null || $transfer->source_router_node_id === null) {
-            throw new ResourceOperationException('instance.transfer_source_router_unknown', 'Record cutover and the source Router before retiring source projections.', 409);
-        }
-
-        return $this->operation('route.retire_source', 'route', $transfer->destination_route_id ?? $transfer->source_route_id,
-            $transfer->source_node_id, ['route_id' => $transfer->destination_route_id ?? $transfer->source_route_id,
-                'transfer_id' => $transfer->id], 'operator', $requestId);
     }
 
     /** @param array<string, mixed> $input */

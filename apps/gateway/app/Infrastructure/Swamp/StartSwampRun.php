@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -146,6 +147,21 @@ final readonly class StartSwampRun
                         return ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
                     }
                     if (($message['type'] ?? null) === 'error') {
+                        $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
+                        $redact = static function (mixed $value, int $limit) use ($endpoint): string {
+                            if (! is_string($value) || strlen($value) > 32768 || preg_match('//u', $value) !== 1) {
+                                return '[withheld]';
+                            }
+
+                            $safe = app(LogRedactor::class)->redact($value, array_filter([$endpoint->bearerToken]));
+
+                            return Str::limit(preg_replace('/[\x00-\x1f\x7f]/u', ' ', $safe) ?? '[withheld]', $limit);
+                        };
+                        Log::warning('Swamp direct start refused', [
+                            'workflow' => $payload['workflowIdOrName'], 'remote_type' => 'error',
+                            'remote_code' => $redact($error['code'] ?? null, 100),
+                            'remote_message' => $redact($error['message'] ?? null, 2000),
+                        ]);
                         throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
                     }
                 }

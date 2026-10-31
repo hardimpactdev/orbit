@@ -17,6 +17,7 @@ use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
     FleetFixtures::bind();
+    FleetFixtures::node('reserved-light-node');
     $this->node = FleetFixtures::node('native-role', [RoleName::AppDev]);
     $this->node->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
     config(['swamp_workers.nodes' => [$this->node->id], 'swamp.direct_writers' => ['node.role_add' => 'direct']]);

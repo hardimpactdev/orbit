@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\TaskVms\TaskVmPublishState;
+use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 
 /** Preserves recorded approved work during explicit workspace removal. Starts no review or fixup. */
@@ -19,9 +18,8 @@ final readonly class TaskFinalReview
     public static function reconcileRemovalPush(Task $group): ?string
     {
         $commit = self::unpublishedRemovalCommit($group);
-        if ($commit !== null && TaskVm::query()->where('group_id', $group->id)
-            ->where('publish_state', TaskVmPublishState::Pushed)->where('publish_commit', $commit)
-            ->where('publish_branch', TaskRemoteBranch::for($group))->exists()) {
+        if ($commit !== null && Operation::query()->where('kind', 'tasks.publish')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('status', 'succeeded')->where('result->commit', $commit)->where('result->branch', TaskRemoteBranch::for($group))->exists()) {
             self::recordRemovalPush($group, $commit);
 
             return null;

@@ -44,7 +44,7 @@ final class NodeRolesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RoleMutation)]
-    #[StartsOperation('node.role_add')]
+    #[StartsOperation('node.role_add', kindWhenTrue: ['converge_existing' => 'node.role_converge'])]
     public function store(
         AddNodeRoleRequest $request,
         Node $node,

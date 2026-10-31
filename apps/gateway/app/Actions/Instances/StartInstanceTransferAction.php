@@ -6,27 +6,22 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\TransferInstanceData;
-use App\Domain\AppDev\SsrPortAllocator;
-use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\InstanceTransferProcesses;
+use App\Domain\Instances\NativeInstanceTransferIntent;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\DevelopmentNodeExclusion;
+use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
-use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
-use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -36,7 +31,6 @@ use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 
 /** Validates immutable transfer placement and records intent without moving source or runtime. */
@@ -45,11 +39,7 @@ final readonly class StartInstanceTransferAction
     public function __construct(
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
-        private ManagedUserAccountResolver $accounts,
-        private StorageRootResolver $storageRoots,
-        private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $checkoutOverlap,
-        private InstanceDestinationGuard $destinationGuard,
         private RouteStateResolver $routeState,
         private ScheduleTargetUseGuard $schedules,
     ) {}
@@ -59,22 +49,34 @@ final readonly class StartInstanceTransferAction
         if (($replay = $this->idempotency->replay('instance.transfer')) !== null) {
             return $replay;
         }
-        if (app(DirectOperation::class)->definition('instance.transfer') === null) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Instance transfer has no native workflow.', 503);
-        }
+        app(DirectOperation::class)->writer('instance.transfer');
 
         return DB::transaction(function () use ($instance, $data, $caller, $requestId): Operation {
             $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
+            app(NativeInstanceTransferIntent::class)->assertSupported($instance, $data->sqliteSourcePath);
             $existing = $this->existingTransfer($instance, $data);
             $transfer = $existing ?? $this->reserve($instance, $data);
             $destination = Node::query()->findOrFail($transfer->destination_node_id);
             $source = Node::query()->findOrFail($transfer->source_node_id);
-            app(VitePortAllocator::class)->assign($instance);
-            app(VitePortAllocator::class)->assign($instance, $destination);
-            app(SsrPortAllocator::class)->assign($instance);
-            app(SsrPortAllocator::class)->assign($instance, $destination);
+
+            $processes = app(InstanceTransferProcesses::class)->capture($transfer);
+            $routePlan = app(NativeRouteTransferPlan::class)->capture($transfer);
+            $plan = app(NativeInstanceTransferIntent::class)->capture($transfer);
 
             return $this->operations->execute('instance.transfer', 'instance', $instance->id, $transfer->source_node_id, [
+                'direct_transfer' => $plan, 'route_transfer' => $routePlan, 'process_installations' => $processes,
+                'participant_node_ids' => $routePlan['participant_node_ids'],
+                'environment_fields' => [(string) $source->id => 'source_route_environment', (string) $destination->id => 'destination_route_environment'],
+                'private_bindings' => [
+                    'source_installations' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
+                    'destination_installations' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
+                    'source_route_environment' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
+                    'destination_route_environment' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
+                ],
+                'source_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
+                'destination_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
+                'source_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
+                'destination_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'transfer_id' => $transfer->id,
                 'created' => $existing === null, 'node_id' => $transfer->source_node_id,
                 'destination_node_id' => $transfer->destination_node_id, 'destination_path' => $transfer->destination_path,
@@ -184,59 +186,8 @@ final readonly class StartInstanceTransferAction
 
         $domain = $this->destinationDomain($instance, $route, $name, $placement);
         $this->assertDestinationDomain($instance, $route, $domain);
-        $this->assertTransferableWebRootRoutes(
-            $this->webRootRoutes($instance->id, [$route->id]),
-            $instance->id,
-            $placement->clusterId,
-        );
 
         return [$destination, $path, $domain, $route];
-    }
-
-    /** @param list<int> $exceptRouteIds
-     * @return EloquentCollection<int, Route>
-     */
-    private function webRootRoutes(int $instanceId, array $exceptRouteIds, bool $lock = false): EloquentCollection
-    {
-        $query = Route::query()
-            ->whereNotNull('web_root')
-            ->whereKeyNot($exceptRouteIds)
-            ->whereHas('targets', static fn ($targets) => $targets->where('instance_id', $instanceId))
-            ->orderBy('id');
-
-        if ($lock) {
-            $query->lockForUpdate()->with(['targets' => static fn ($targets) => $targets->lockForUpdate()]);
-        } else {
-            $query->with('targets');
-        }
-
-        return $query->get();
-    }
-
-    /** @param EloquentCollection<int, Route> $routes */
-    private function assertTransferableWebRootRoutes(EloquentCollection $routes, int $instanceId, ?int $destinationClusterId): void
-    {
-        foreach ($routes as $route) {
-            if (
-                $route->status !== RouteStatus::Active
-                || $route->targets->pluck('instance_id')->all() !== [$instanceId]
-                || $route->replaces_route_id !== null
-                || $route->replaced_by_route_id !== null
-                || $route->hasPlacementTransition()
-            ) {
-                throw $this->conflict(
-                    'instance.lifecycle_conflict',
-                    "Route [{$route->domain}] with a web root is not ready for transfer.",
-                );
-            }
-
-            if ($route->publication === RoutePublication::Public && $route->cluster_id !== $destinationClusterId) {
-                throw $this->conflict(
-                    'instance.transfer_public_web_root_route',
-                    "Public Route [{$route->domain}] with a web root cannot move to another Cluster. Make it private, transfer, and publish it again.",
-                );
-            }
-        }
     }
 
     private function assertEligibleSource(Instance $instance): void
@@ -308,47 +259,17 @@ final readonly class StartInstanceTransferAction
 
     private function destinationPath(Node $destination, string $projectSlug, string $name): StoragePath
     {
-        $account = $this->accounts->resolve($destination);
-        $roots = $this->storageRoots->resolveApps(
-            $this->nodeSettings->fromStored($destination->settings),
-            $account,
-        );
+        $root = data_get($destination->settings, 'apps.path');
+        if (! is_string($root) || StoragePath::tryParse($root) === null) {
+            throw $this->conflict('operation.kind_unavailable', 'Native transfer requires a stored absolute apps path.');
+        }
 
-        return $roots->append($projectSlug, $name);
+        return StoragePath::parse($root)->append($projectSlug, $name);
     }
 
     private function assertDestinationAvailable(Node $destination, StoragePath $path): void
     {
-        try {
-            $this->checkoutOverlap->assertAvailable(
-                $destination->id,
-                $path,
-                'instance.destination_exists',
-            );
-            $this->destinationGuard->assertUnoccupied($destination, $path);
-        } catch (ResourceOperationException $exception) {
-            if (in_array($exception->errorCode, [
-                'instance.destination_exists',
-                'instance.path_taken',
-                'instance.migration_conflict',
-            ], true)) {
-                throw $this->destinationExists($path);
-            }
-
-            throw $exception;
-        }
-    }
-
-    private function destinationExists(StoragePath $path): ResourceOperationException
-    {
-        return new ResourceOperationException(
-            errorCode: 'instance.destination_exists',
-            message: "destination already exists. Retry with a different name to use another destination path. Occupied path: [{$path->value}].",
-            status: 409,
-            details: [
-                'rename' => 'Pass name to recalculate the destination path and generated domain.',
-            ],
-        );
+        $this->checkoutOverlap->assertAvailable($destination->id, $path, 'instance.destination_exists');
     }
 
     private function authoritativeRoute(Instance $instance): Route

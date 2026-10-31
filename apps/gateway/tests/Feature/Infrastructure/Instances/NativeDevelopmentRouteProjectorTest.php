@@ -18,6 +18,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ContributedPrivateHostnames;
+use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProjectionPlan;
@@ -162,33 +163,10 @@ it('retires a transferred generated Route without inventing an old Router certif
     ]);
     $transfer = orb368_projection_transfer($instance, $sourceRoute, $replacement, $source, $destination, $source);
     $sites = new DevelopmentSiteRepository;
-    [$projector, $agents, $processes, $home] = orb127_route_projector();
-
-    try {
-        expect($sites->forNode($source)->pluck('domain')->all())->toBe(['transferred.acme.test']);
-        expect(new DevelopmentCaddyConfigRenderer()->render($sites->forNode($source)))
-            ->toContain("/route-{$replacement->id}-router/current/cert.pem")
-            ->not->toContain("/route-{$sourceRoute->id}-router/current/cert.pem", 'feature.acme.test');
-        expect(new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())
-            ->toContain('host-record=transferred.acme.test,10.44.0.10')
-            ->not->toContain('feature.acme.test');
-
-        $projector->converge($instance->refresh(), $replacement);
-        $agents->calls = [];
-        $projector->retireSource($transfer);
-
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
-        expect(array_column($deletions, 'scope'))
-            ->toBe(["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"]);
-        $firstDeletion = array_search('certificate.remove-leaf', $agents->commands(), true);
-        $caddyNodes = collect(RouteProjectionAgentAnswers::publications($agents))->pluck('node')->unique()->sort()->values()->all();
-        expect($caddyNodes)->toBe(collect([$source->name, $destination->name])->sort()->values()->all());
-        expect(array_count_values(array_slice($agents->commands(), 0, (int) $firstDeletion))['caddy.publish'] ?? 0)->toBe(2);
-        $projector->retireSource($transfer);
-        expect($sourceRoute->refresh()->status)->toBe(RouteStatus::Retiring);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
+    expect(orb_native_retirement_input($transfer, $source,
+        ["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"], [$sourceRoute->id]))
+        ->toMatchArray(['certificate_scopes' => ["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"],
+            'lan_route_ids' => [$sourceRoute->id]]);
 });
 
 it('preserves a Router certificate still serving the transferred explicit Route', function (): void {
@@ -201,18 +179,8 @@ it('preserves a Router certificate still serving the transferred explicit Route'
     $destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $route->update(['status' => RouteStatus::Active]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $router);
-    [$projector, $agents, $processes, $home] = orb127_route_projector();
-
-    try {
-        $projector->retireSource($transfer);
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
-        expect(array_column($deletions, 'scope'))
-            ->toBe(["app-instance-{$instance->id}"]);
-        expect(new DevelopmentSiteRepository()->forNode($router)->map->certificateDirectory()->all())
-            ->toBe(["/etc/caddy/orbit-certificates/route-{$route->id}-router/current"]);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
+    expect(orb_native_retirement_input($transfer, $router, ["route-{$route->id}-router"])['certificate_scopes'])
+        ->toBe([]);
 });
 
 it('cleans the recorded Router after the source Node changes Cluster membership', function (): void {
@@ -230,21 +198,8 @@ it('cleans the recorded Router after the source Node changes Cluster membership'
     $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
     $source->update(['cluster_id' => $destinationCluster->id]);
-    [$projector, $agents, , $home] = orb127_route_projector();
-
-    try {
-        $projector->retireSource($transfer);
-
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
-        expect(array_map(orb_node_deletion(...), $deletions))->toBe([
-            ['10.44.0.10', "app-instance-{$instance->id}"],
-            ['10.44.0.20', "route-{$route->id}-router"],
-        ]);
-        expect(new DevelopmentSiteRepository()->forNode($destination)->map->certificateDirectory()->all())
-            ->toBe(["/etc/caddy/orbit-certificates/app-instance-{$instance->id}/current"]);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
+    expect(orb_native_retirement_input($transfer, $originalRouter, ["route-{$route->id}-router"])['certificate_scopes'])
+        ->toBe(["route-{$route->id}-router"]);
 });
 
 it('retires the source leaves and firewall rules of every recorded Route with a web root', function (): void {
@@ -256,33 +211,13 @@ it('retires the source leaves and firewall rules of every recorded Route with a 
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
     // Route 999 left after cutover; its record still names its source leaves.
     $transfer->update(['web_root_route_ids' => [$docs->id, 999]]);
-    [$projector, $agents, , $home] = orb127_route_projector();
-
-    try {
-        $projector->retireSource($transfer->refresh());
-
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
-        expect(array_map(orb_node_deletion(...), $deletions))->toBe([
-            ['10.44.0.10', "app-instance-{$instance->id}"],
-            ['10.44.0.20', "route-{$route->id}-router"],
-            ['10.44.0.10', "route-{$docs->id}"],
-            ['10.44.0.20', "route-{$docs->id}-router"],
-            ['10.44.0.10', 'route-999'],
-            ['10.44.0.20', 'route-999-router'],
-        ]);
-        $firewall = collect($agents->calls)->where('command', 'firewall.route-lan')->values()->all();
-        expect($firewall)->toBe(array_map(static fn (int $id): array => [
-            'node' => $source->name, 'command' => 'firewall.route-lan',
-            'input' => ['operation' => 'remove', 'route_id' => $id],
-        ], [$route->id, $docs->id, 999]));
-        expect(new DevelopmentSiteRepository()->forNode($destinationRouter)->map->certificateDirectory()->all())
-            ->toBe([
-                "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
-                "/etc/caddy/orbit-certificates/route-{$docs->id}-router/current",
-            ]);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
+    expect(orb_native_retirement_input($transfer, $source,
+        ["app-instance-{$instance->id}", "route-{$docs->id}", 'route-999'], [$route->id, $docs->id, 999]))
+        ->toMatchArray(['certificate_scopes' => ["app-instance-{$instance->id}", "route-{$docs->id}", 'route-999'],
+            'lan_route_ids' => [$route->id, $docs->id, 999]]);
+    expect(orb_native_retirement_input($transfer, $originalRouter,
+        ["route-{$route->id}-router", "route-{$docs->id}-router", 'route-999-router'])['certificate_scopes'])
+        ->toBe(["route-{$route->id}-router", "route-{$docs->id}-router", 'route-999-router']);
 });
 
 it('keeps the Router leaf of a Route with a web root that stays in its Cluster', function (): void {
@@ -292,19 +227,8 @@ it('keeps the Router leaf of a Route with a web root that stays in its Cluster',
     $docs = orb_web_root_route($instance, Cluster::query()->findOrFail($source->cluster_id), 'docs.acme.test');
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $router);
     $transfer->update(['web_root_route_ids' => [$docs->id]]);
-    [$projector, $agents, , $home] = orb127_route_projector();
-
-    try {
-        $projector->retireSource($transfer->refresh());
-
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
-        expect(array_map(orb_node_deletion(...), $deletions))->toBe([
-            ['10.44.0.10', "app-instance-{$instance->id}"],
-            ['10.44.0.10', "route-{$docs->id}"],
-        ]);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
+    expect(orb_native_retirement_input($transfer, $router,
+        ["route-{$route->id}-router", "route-{$docs->id}-router"])['certificate_scopes'])->toBe([]);
 });
 
 it('issues every destination leaf of a transferred Instance before its first destination build', function (bool $prepared): void {
@@ -346,23 +270,8 @@ it('issues every destination leaf of a transferred Instance before its first des
     }
 })->with(['prepared' => [true], 'not prepared' => [false]]);
 
-it('keeps source certificates when retirement cannot reconcile Caddy', function (): void {
-    [$instance, $route, $source, $router] = orb127_route_projection_models();
-    $route->update(['status' => RouteStatus::Active]);
-    $transfer = orb368_projection_transfer($instance, $route, $route, $source, $router, $router);
-    [$projector, $agents, , $home] = orb127_route_projector(
-        static fn (string $command): bool => $command === 'caddy.publish',
-    );
-
-    try {
-        expect(fn () => $projector->retireSource($transfer))->toThrow(RuntimeConvergenceException::class);
-        expect($agents->commands())->not->toContain('certificate.remove-leaf');
-        expect($transfer->refresh()->completed_at)->toBeNull();
-        $this->assertModelExists($route);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
-});
+// Publication-before-removal and failed-publication retention execute in Swamp:
+// routes/removal-local_test.ts, routes/residue-local_test.ts and removal_native_test.py.
 
 it('preserves the ready hostname candidate across an interrupted DNS publication and ordinary rebuild', function (): void {
     [$instance, $route, $workload, $router] = orb127_route_projection_models();
@@ -1770,3 +1679,24 @@ describe('offline replacement projections', function (): void {
         }
     })->with(['workload', 'router']);
 });
+
+/** Native transfer public input filters captured leaves against the fresh stored sites. */
+function orb_native_retirement_input(InstanceTransfer $transfer, Node $node, array $scopes, array $lan = []): array
+{
+    $node->update(['architecture' => 'x86_64']);
+    $operation = new Operation(['input' => [
+        'participant_node_ids' => [$node->id],
+        'route_transfer' => [
+            'instance_id' => $transfer->instance_id,
+            'source_node_id' => $transfer->source_node_id,
+            'destination_router_node_id' => $transfer->source_router_node_id,
+            'target' => ['prepared' => [], 'live_certificates' => []],
+            'retire_nodes' => [[
+                'node_id' => $node->id, 'user' => $node->user,
+                'certificate_scopes' => $scopes, 'lan_route_ids' => $lan,
+            ]],
+        ],
+    ]]);
+
+    return app(NativeRouteTransferPlan::class)->publicInput($operation, $node->id)['route_retire'];
+}

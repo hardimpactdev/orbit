@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\NodeEnrollmentPlan;
-use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRoleBaselinePlan;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -70,7 +69,7 @@ it('does not select a provisioning VPN as a role DNS publisher', function (): vo
     expect($vpn->refresh()->status)->toBe(LifecycleStatus::Provisioning);
 });
 
-it('omits executor network projections from enrollment removal and restore plans', function (): void {
+it('omits executor network projections from enrollment plans', function (): void {
     $source = FleetFixtures::node('executor-plan-source');
     $services = FleetFixtures::node('executor-plan-services');
     $first = FleetFixtures::node('executor-plan-worker-one');
@@ -80,8 +79,6 @@ it('omits executor network projections from enrollment removal and restore plans
     $plans = [
         app(NodeEnrollmentPlan::class)->build($source, ['mode' => 'linux', 'roleless_operator' => true],
             ['route_changes' => [], 'roles' => [], 'settings_provided' => false, 'task_vm_id' => null]),
-        app(NodeRemovalPlan::class)->build($source, true),
-        app(NodeRemovalPlan::class)->restore($source),
     ];
 
     foreach ($plans as $plan) {
@@ -90,18 +87,3 @@ it('omits executor network projections from enrollment removal and restore plans
         expect($targets)->toContain($ordinary->id);
     }
 });
-
-it('selects only active VPN owners for removal and restoration DNS children', function (bool $restore): void {
-    $source = FleetFixtures::node('dns-removal-source');
-    $vpn = FleetFixtures::node('dns-removal-vpn', [RoleName::Vpn]);
-    $gateway = FleetFixtures::node('dns-removal-gateway', [RoleName::Gateway]);
-    $pending = FleetFixtures::node('dns-removal-pending-vpn', [RoleName::Vpn]);
-    $pending->roles()->update(['status' => LifecycleStatus::Provisioning]);
-    $failed = FleetFixtures::node('dns-removal-failed-vpn', [RoleName::Vpn], status: LifecycleStatus::Failed);
-    $planner = app(NodeRemovalPlan::class);
-    $plan = $restore ? $planner->restore($source) : $planner->build($source, true);
-    $dns = array_values(array_filter($plan, static fn (array $step): bool => ($step['kind'] ?? null) === 'route.private_dns_publish'));
-
-    expect(array_column($dns, 'node_id'))->toBe([$vpn->id]);
-    expect(array_column($dns, 'node_id'))->not->toContain($gateway->id, $pending->id, $failed->id);
-})->with([false, true]);

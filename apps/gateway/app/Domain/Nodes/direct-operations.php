@@ -5,10 +5,22 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeNetworkProjection;
+use App\Domain\Nodes\NodeRemovalEnvironmentSource;
+use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
+use App\Domain\Nodes\NodeWireGuardHubProjection;
 
-return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
+return ['node.wireguard_hub_converge' => [
+    'workflow' => 'operation-node-wireguard-hub-converge',
+    'projection' => NodeWireGuardHubProjection::class,
+    'private_material' => ['configuration' => 'node.vpn_configuration'],
+], 'node.remove' => [
+    'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
+    'private_material' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity', 'configuration' => 'node.vpn_configuration', 'metrics_runtime' => 'metrics.fleet_runtime',
+        ...NodeRemovalEnvironmentSource::privateMaterial()],
+], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
     'private_material' => ['configuration' => 'node.vpn_configuration'],
@@ -35,4 +47,16 @@ return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_c
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleDirectProjection::class,
     'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
+], 'node.role_converge' => [
+    'workflow' => 'operation-node-role-converge-direct',
+    'projection' => NodeRoleDirectProjection::class,
+    'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
+], 'node.role_relocate' => [
+    'workflow' => 'operation-node-role-relocate-direct',
+    'projection' => NodeRoleDirectProjection::class,
+    'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
+], 'node.role_remove' => [
+    'workflow' => 'operation-node-role-remove-direct',
+    'projection' => NodeRoleRemovalProjection::class,
+    'private_material' => ['metrics_runtime' => 'metrics.fleet_runtime'],
 ]];

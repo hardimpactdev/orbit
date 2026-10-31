@@ -32,9 +32,9 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmProvider;
-use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -415,13 +415,13 @@ describe('placement', function (): void {
         $this->upcloud->template('orbit-task-base-20261011000000');
         $this->upcloud->template('orbit-task-base-20261012000000', 'sha256:'.str_repeat('a', 64));
         $this->upcloud->template('orbit-task-base-20261013000000-unverified', app(RecipeImageBuilds::class)->currentRecipe()->identity);
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, 'template on UpCloud.');
-        Queue::assertNotPushed(ProvisionTaskVm::class);
+        expect(fn () => app(AllocateTaskVmAction::class)->capture(tvm_up_group()))->toThrow(TaskCapacityException::class, 'template on UpCloud.');
+        Queue::assertNothingPushed();
         expect($this->upcloud->created)->toBe([]);
     });
 
     it('places an opted-in group at UpCloud only when no host has a free slot', function (): void {
-        $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
+        $vm = app(AllocateTaskVmAction::class)->capture(tvm_up_group());
 
         expect($vm->provider)->toBe(TaskVmProviderKind::UpCloud)
             ->and($vm->host_node_id)->toBeNull()
@@ -429,7 +429,8 @@ describe('placement', function (): void {
             ->and($vm->state)->toBe(TaskVmState::Provisioning)
             ->and($vm->recipe_identity)->toBe(app(RecipeImageBuilds::class)->currentRecipe()->identity)
             ->and($vm->image_fingerprint)->toBe(array_key_first($this->upcloud->storages));
-        Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertNothingPushed();
+        expect(Operation::query()->count())->toBe(0);
     });
 
     it('resolves the template outside admission and uses list labels without per-template reads', function (): void {
@@ -439,7 +440,7 @@ describe('placement', function (): void {
         };
         $this->upcloud->template('orbit-task-base-20261012000000', 'sha256:'.str_repeat('a', 64));
 
-        $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
+        $vm = app(AllocateTaskVmAction::class)->capture(tvm_up_group());
 
         expect($vm->image_fingerprint)->toBe(array_key_first($this->upcloud->storages));
         expect(array_values(array_filter($this->upcloud->requests, static fn (string $request): bool => str_starts_with($request, 'GET storage/'))))->toBe(['GET storage/template']);
@@ -448,7 +449,7 @@ describe('placement', function (): void {
     it('reads individual template labels only when the list omits them', function (): void {
         $this->upcloud->templateListWithoutLabels = true;
 
-        $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
+        $vm = app(AllocateTaskVmAction::class)->capture(tvm_up_group());
 
         expect($vm->image_fingerprint)->toBe(array_key_first($this->upcloud->storages));
         expect($this->upcloud->count('GET storage/'))->toBe(2);
@@ -471,9 +472,9 @@ describe('placement', function (): void {
         };
         $group = tvm_up_group();
         try {
-            expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, 'template on UpCloud.');
+            expect(fn () => app(AllocateTaskVmAction::class)->capture($group))->toThrow(TaskCapacityException::class, 'template on UpCloud.');
             expect(TaskVm::forGroup($group))->toBeNull();
-            Queue::assertNotPushed(ProvisionTaskVm::class);
+            Queue::assertNothingPushed();
         } finally {
             File::deleteDirectory($directory);
         }
@@ -483,7 +484,7 @@ describe('placement', function (): void {
         tvm_up_settings(maxVms: 2);
         $this->upcloud->authenticationFails = true;
 
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
+        expect(app(AllocateTaskVmAction::class)->capture(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
         expect($this->upcloud->requests)->toBe([]);
     });
 
@@ -492,7 +493,7 @@ describe('placement', function (): void {
         $group = tvm_up_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev', 'app-prod']]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Large))
+        expect(fn () => app(AllocateTaskVmAction::class)->capture($group))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Large))
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)
             ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });
@@ -500,13 +501,13 @@ describe('placement', function (): void {
     it('prefers a free Incus slot', function (): void {
         tvm_up_settings(maxVms: 2);
 
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
+        expect(app(AllocateTaskVmAction::class)->capture(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
     });
 
     it('keeps the group waiting without the switch, the opt-in, or the configuration', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity)
+        expect(fn () => app(AllocateTaskVmAction::class)->capture(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity)
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0);
     })->with([
         'switch off' => [['enabled' => false]],
@@ -519,7 +520,7 @@ describe('placement', function (): void {
         tvm_up_vm(TaskVmState::Failed);
         tvm_up_vm(TaskVmState::Parked);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
+        expect(fn () => app(AllocateTaskVmAction::class)->capture(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
     });
 
     it('is the provider of an upcloud row, and Incus stays the provider of an incus row', function (): void {

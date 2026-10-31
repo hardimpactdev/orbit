@@ -101,8 +101,8 @@ it('broadcasts a changed Route target before a metrics reconcile failure', funct
 });
 
 it('reports association conflicts before active Route reconciliation refusals', function (): void {
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'active.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -130,8 +130,8 @@ it('reports association conflicts before active Route reconciliation refusals', 
 });
 
 it('removes a fully reconciled untargeted Route without route.reconciliation_required', function (): void {
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'active.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -781,8 +781,8 @@ it('keeps an explicit Route domain fixed when the Node TLD changes', function ()
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -939,8 +939,8 @@ it('keeps an explicit Route domain fixed when the Cluster TLD changes', function
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'explicit');
     $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'fixed.cluster.example.test',
         publication: RoutePublication::Private,
         instanceId: $target->id,
@@ -1059,8 +1059,8 @@ it('prepares Cluster Router paths before activation and Node scope before deacti
     $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $explicitTarget = reconciliation_instance($this->orbitApp, $this->node, 'explicit');
     $explicitTarget->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
         instanceId: $explicitTarget->id,
@@ -1209,8 +1209,8 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
     $member = reconciliation_node('member', 'member.test');
     $member->update(['cluster_id' => $cluster->id]);
     $memberTarget = reconciliation_instance($this->orbitApp, $member, 'member');
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1323,8 +1323,8 @@ it('prepares private projections before an attach becomes authoritative', functi
 
 it('keeps an explicit Route domain fixed when a Node attaches or detaches', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1360,8 +1360,8 @@ it('keeps an explicit Route domain fixed when a Node attaches or detaches', func
 
 it('keeps a custom proxy Route on its Node when the Node attaches or detaches', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1422,8 +1422,8 @@ it('keeps a custom proxy Route on its member Node when a TLD-less Cluster activa
 
 it('moves an analytics tracking host with its Instance Route when the Node attaches or detaches', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $owner = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'site.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1480,8 +1480,8 @@ it('moves an analytics tracking host with its Instance Route when the Node attac
 
 it('leaves a tracking host withdrawal to a later DNS move without waiting under the projection owner', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $owner = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'site.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1552,8 +1552,8 @@ it('leaves a tracking host withdrawal to a later DNS move without waiting under 
 
 it('keeps a tracking host serving its old placement when its move fails before cutover', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $owner = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'site.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1603,8 +1603,8 @@ it('keeps a tracking host serving its old placement when its move fails before c
 
 it('refuses an attach before any Route moves when a later Route cannot move', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $first = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $first = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'first.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1614,8 +1614,8 @@ it('refuses an attach before any Route moves when a later Route cannot move', fu
     $first->update(['status' => RouteStatus::Active]);
     $legacy = reconciliation_instance($this->orbitApp, $this->node, 'legacy');
     $legacy->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $second = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $second = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'legacy.example.test',
         publication: RoutePublication::Private,
         instanceId: $legacy->id,
@@ -1774,8 +1774,8 @@ it('refuses an attach whose generated domain would take a custom proxy domain', 
 
 it('refuses a conflicting Cluster LAN address before any Route moves', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'lan.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -1807,8 +1807,8 @@ it('waits once for private DNS answers when an attach moves many Routes, without
     foreach (['feature', 'second', 'third', 'fourth'] as $index => $name) {
         $target = $index === 0 ? $this->target : reconciliation_instance($this->orbitApp, $this->node, $name);
         $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-        $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-            projectId: $this->orbitApp->id,
+        $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
             domain: "{$name}.example.test",
             publication: RoutePublication::Private,
             instanceId: $target->id,
@@ -1870,8 +1870,8 @@ it('waits once for private DNS answers when an attach moves many Routes, without
 
 it('resumes a cut over placement cleanup when the same attach is retried', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $explicit = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'resumed.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -2212,8 +2212,8 @@ function reconciliation_routes_with_legacy(Project $project, Instance $target, b
         $instance->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
         $route = $generated
             ? app(CreateRouteAction::class)->ensureForInstance($instance, null)
-            : app(CreateRouteAction::class)->execute(new CreateRouteData(
-                projectId: $project->id,
+            : app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
                 domain: "{$instance->name}.example.test",
                 publication: RoutePublication::Private,
                 instanceId: $instance->id,
@@ -2439,8 +2439,8 @@ final class NodeTldRouteConfigurator implements DevelopmentInstanceConfigurator
 it('records an eligible active explicit development Route replacement without executing it', function (): void {
     RouteForeignChildKinds::register();
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'active.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,
@@ -2466,8 +2466,8 @@ it('records an eligible active explicit development Route replacement without ex
 });
 
 it('retains reconciliation refusals for active Route changes without association conflicts', function (): void {
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
+    $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
+
         domain: 'active.example.test',
         publication: RoutePublication::Private,
         instanceId: $this->target->id,

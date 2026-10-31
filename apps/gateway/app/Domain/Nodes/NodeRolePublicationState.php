@@ -45,10 +45,18 @@ final readonly class NodeRolePublicationState
             };
             match ($phase) {
                 'certificates_published' => $this->certificates->record($nodeId, $site),
-                'withdrawal_started' => $this->certificates->forget($nodeId, $site),
+                'withdrawal_started' => $this->withdraw($nodeId, $site),
                 'caddy_published' => $site === 'websocket' ? $this->websocket->markServing($nodeId) : null,
                 'withdrawal_completed' => $site === 'websocket' ? $this->websocket->forget($nodeId) : null,
             };
+        }
+    }
+
+    private function withdraw(int $nodeId, string $site): void
+    {
+        $this->certificates->forget($nodeId, $site);
+        if ($site === 'websocket') {
+            $this->websocket->forget($nodeId);
         }
     }
 }

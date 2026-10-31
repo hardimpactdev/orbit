@@ -7,7 +7,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -54,7 +53,6 @@ function external_state_group(string $status = 'running', string $subtaskStatus 
 
 it('updates each allowed external group status without claiming work', function (string $from, string $to): void {
     [$group, $task] = external_state_group($from);
-    $this->mock(InstanceProvisioning::class)->shouldNotReceive('provision');
     $before = $task->getRawOriginal();
 
     $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => $to])->assertOk()->assertJsonPath('data.status', $to);

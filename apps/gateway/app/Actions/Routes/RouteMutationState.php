@@ -164,6 +164,7 @@ final readonly class RouteMutationState
                 'cluster_id' => $placement instanceof RoutePlacement ? $placement->clusterId : $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
                 'domain' => $domain,
+                'web_root' => $locked->web_root,
                 'provenance' => $locked->provenance,
                 'publication' => $publication ?? $locked->publication,
                 'status' => RouteStatus::Pending,

@@ -8,8 +8,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\InstanceProvisioning;
-use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskExtensionState;
@@ -72,13 +70,6 @@ describe('task response fixtures', function (): void {
         $this->markAsGateway($gateway);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
         $this->withHeader('X-Orbit-Request-Id', fixture_request_id());
-        app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
-        {
-            public function provision(InstanceProvisionIntent $intent): ?Instance
-            {
-                return null;
-            }
-        });
         app(TaskExtensionState::class)->enable();
         $this->project = Project::query()->create([
             'name' => 'Orbit',

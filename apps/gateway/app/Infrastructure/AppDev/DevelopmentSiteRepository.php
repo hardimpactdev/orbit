@@ -49,6 +49,12 @@ final readonly class DevelopmentSiteRepository
         return $this->sites($node);
     }
 
+    /** Resource paths for preparing an admitted workload, before its site is published. */
+    public function workloadSite(Instance $instance, Route $route): DevelopmentSite
+    {
+        return $this->instanceSite($instance, $route);
+    }
+
     /** @return Collection<int, DevelopmentSite> */
     public function all(): Collection
     {
@@ -126,11 +132,14 @@ final readonly class DevelopmentSiteRepository
             });
         }
 
-        // A Route only becomes Retiring at cutover, when another Route already answers for it. Serving
-        // it past that point means serving a domain whose certificate now names its replacement, which
-        // sends Caddy to automatic HTTPS for a private Orbit domain.
+        // Keep the original live certificate through DNS grace. Cleanup switches the candidate
+        // to live scopes only after the original sites have left the fresh render.
         $routeQuery->where(static function (Builder $query): void {
             $query->where('status', '!=', RouteStatus::Retiring->value)
+                ->orWhere(static fn (Builder $query): Builder => $query
+                    ->where('replacement_step', RouteReplacementStep::DatabaseCutover->value)
+                    ->whereHas('replacedBy', static fn (Builder $replacement): Builder => $replacement
+                        ->where('replacement_step', RouteReplacementStep::DatabaseCutover->value)))
                 ->orWhere(static function (Builder $query): void {
                     $query->whereNull('replaced_by_route_id')
                         ->whereNotIn('id', InstanceTransfer::query()

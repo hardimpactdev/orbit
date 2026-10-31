@@ -16,14 +16,27 @@ final readonly class NodeNetworkParticipantInput
 {
     public function __construct(private NodeFirewallRuleCatalog $firewall, private PeerDnsPolicy $dns, private AgentDelivery $agent) {}
 
+    /** Whether the same native network capture contains an effect for this Node. */
+    public function affects(Node $node, Node $context, bool $peerDnsChanged = true): bool
+    {
+        $node->loadMissing('roles');
+
+        return $this->routerApplies($node, $context) || ($peerDnsChanged && $this->dns->manages($node));
+    }
+
+    private function routerApplies(Node $node, Node $context): bool
+    {
+        return $node->roles->contains(fn ($role): bool => $role->role === RoleName::Router && $role->status === LifecycleStatus::Active)
+            && $context->cluster_id !== null && $context->cluster_id === $node->cluster_id
+            && (new RouterLanIngressPolicy)->routerHasContactableLan($node);
+    }
+
     /** @return array<string,mixed> */
     public function capture(Node $node, Node $context, bool $prune): array
     {
         $node->load('roles');
         $router = null;
-        if ($node->roles->contains(fn ($role): bool => $role->role === RoleName::Router && $role->status === LifecycleStatus::Active)
-            && $context->cluster_id !== null && $context->cluster_id === $node->cluster_id
-            && (new RouterLanIngressPolicy)->routerHasContactableLan($node)) {
+        if ($this->routerApplies($node, $context)) {
             $overrides = [$context->id => ['status' => $prune ? LifecycleStatus::Removing : LifecycleStatus::Active]];
             $router = ['desired' => array_map(static fn ($rule): array => $rule->shape->toAgentInput(),
                 $this->firewall->routerLanIngress($node, $overrides)), 'expand' => ! $prune, 'prune' => $prune];

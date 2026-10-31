@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\Nodes\NodeEnrollmentPrivateOwner;
 use App\Domain\Nodes\NodeRoleDirectInput;
+use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
@@ -26,13 +28,19 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['node'];
+        return ['node', 'task_vm', 'task_group'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
-        if ($operation->kind === 'node.role_add') {
+        if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
+            return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'secret_hash');
+        }
+        if (in_array($operation->kind, ['node.role_add', 'node.role_converge'], true)) {
             return NodeRoleDirectInput::ownerId($operation);
+        }
+        if ($operation->kind === 'node.role_relocate') {
+            return NodeRoleRelocateInput::ownerId($operation);
         }
         $footprint = $operation->input['footprint'] ?? null;
         if ($operation->kind === 'fleet.recipe' && DirectOperation::owns($operation)

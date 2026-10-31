@@ -107,7 +107,7 @@ it('refuses old claims and execution even for unstamped pre-cutover rows', funct
     expect($operation->fresh()->attempts)->toBe(0);
 });
 
-it('records direct-only cancellation without legacy policy or Gateway settlement', function (string $status, bool $bound): void {
+it('settles only unbound unattempted cancellation without touching native children', function (string $status, bool $bound): void {
     $node = $this->markAsGateway(Node::query()->create(['name' => 'cancel-gateway', 'status' => 'active', 'platform' => 'linux',
         'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
@@ -120,10 +120,10 @@ it('records direct-only cancellation without legacy policy or Gateway settlement
     $child = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node', 'target_id' => $node->id,
         'node_id' => $node->id, 'parent_operation_id' => $operation->id, 'status' => 'queued', 'sequence' => 1, 'input' => [], 'state' => $state]);
 
-    $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()->assertJsonPath('data.status', $status);
+    $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()->assertJsonPath('data.status', $bound ? $status : 'cancelled');
     $cancelled = $operation->fresh();
     expect($cancelled->cancel_requested_at)->not->toBeNull();
-    expect($cancelled->finished_at)->toBeNull();
+    expect($cancelled->finished_at !== null)->toBe(! $bound);
     expect($cancelled->result)->toBeNull();
     expect($cancelled->state)->toBe($state);
     expect($child->fresh()->cancel_requested_at)->toBeNull();

@@ -101,17 +101,21 @@ A resource observation job checks every parked VM once a minute, including group
 
 #### Provision an external group
 
-`tasks:provision <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. All task operations share one target hold: another open operation returns HTTP 409 `operation.target_busy`. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
+`tasks:provision <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
-The operation reserves the group and uses the VM allocator and workspace provisioner. When capacity is full or the VM is still provisioning, the operation stays `waiting` and the group stays `reserved`. Delayed reads continue the claim when the VM is ready. Task VMs that are disabled or misconfigured, or a VM that fails, fail the operation with the task VM error, such as `task_vm.invalid_config`. Any provisioning failure ends the group `failed`, clears its reservation, and leaves VM removal to existing cleanup. A retry needs a new group.
+The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp performs provider creation, bootstrap, WireGuard publication, worker enrollment, model-key issue, Pi runtime preparation, source checkout and Project setup as placed steps in that run. No PHP executor or waiting-read loop runs these effects.
 
-Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, its Node, its start commit, and its immutable analysis pin. `starting_commit` is not necessarily the analysis base.
+Full capacity or a missing promoted image for the current recipe returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available.
+
+The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It issues the existing Node worker credentials itself; caller-supplied worker credentials are unavailable for this parent.
+
+Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
 ##### Optional Swamp worker
 
-The provision API and generated MCP tool accept an optional `worker` object. Omit it to provision the usual workspace without a worker.
+The worker API accepts a `worker` object for an existing workspace. Native provision does not accept caller-supplied worker credentials.
 
 | Field | Contract |
 | --- | --- |
@@ -138,7 +142,7 @@ Orbit stops the worker and its children before ending its group or removing its 
 
 Validate the repository with the existing Git-origin rules (no HTTPS credentials, SSH password, query, or fragment) and the branch with the existing Git-branch rules. An unsafe identity recorded by provision makes the entire public pin unavailable; never publish credentials or redact a secret into a different supposedly exact identity. These are the identities used by [analysis admission](#fixed-execution-and-complete-report), not new caller inputs. Existing result `node_id` identifies the provisioned Node; it is not a moving location lookup.
 
-Provision records the pin once under its workspace lease, before release. The public object copies that validated record, not the current Project settings, workspace HEAD, `starting_commit`, or remote refs. Pin capture uses the initial merge base described [below](#complete-typed-plan). A divergent starting commit can therefore differ from `analysis_base.base`. Persist the result's identity with the existing provision checkpoints so recovery after release and before terminal result persistence retains that same pin. Reads, recovery, and replay under the same key never recalculate it, fetch, or adopt a supplied base. Later default-branch movement, another child, VM parking, or VM destruction cannot change the terminal result.
+Swamp captures the pin once in the native workspace step and retains it in that step's output. The public object copies that validated record, not the current Project settings, workspace HEAD, `starting_commit`, or remote refs. Pin capture uses the initial merge base described [below](#complete-typed-plan). A divergent starting commit can therefore differ from `analysis_base.base`. The final projection copies that output, so recovery before terminal result persistence retains the same pin. Reads, recovery, and replay under the same key never recalculate it, fetch, or adopt a supplied base. Later default-branch movement, another child, VM parking, or VM destruction cannot change the terminal result.
 
 A recorded null base, absent pin, invalid object ID, incomplete or invalid identity, or pin for another provisioned Instance yields `analysis_base: null`. Do not return a partial object, fail an otherwise successful provision solely for unavailable analysis, or repair the pin from today's `origin/main`. A terminal result recorded without an `analysis_base` member also means unavailable; reads do not backfill or mutate old results. Analysis still fails closed with `tasks.analysis_unavailable` when no valid matching pin exists; a different supplied base remains `tasks.analysis_stale`. Publication of the pin does not authorize a base update or bypass fresh workspace checks.
 
@@ -160,17 +164,17 @@ For example, this successful result names a starting commit on a divergent works
 
 The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
 
-The MCP tools `tasks-provision` and `tasks-worker` take the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
+The MCP tool `tasks-worker` takes the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
 
-To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling the operation alone does not end the group. Group cancellation keeps the existing rule for an unreachable Node without a possibly running worker: end the group, keep the workspace, and request removal assistance. A worker stop must be confirmed first.
+To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling native provision ends the group `cancelled`; it does not claim VM removal. Group cancellation keeps the existing rule for an unreachable Node without a possibly running worker: end the group, keep the workspace, and request removal assistance. A worker stop must be confirmed first.
 
 #### Start a group worker
 
-`POST /api/v1/task-groups/{group}/worker` starts keyed operation `tasks.worker`. Send the same `{ worker: { orchestrator_url, enrollment_token, labels } }` object as optional provision enrollment, with a required `Idempotency-Key`. The group must be external and open with a ready workspace and its own task VM.
+`POST /api/v1/task-groups/{group}/worker` starts keyed operation `tasks.worker`. Send `{ worker: { orchestrator_url, enrollment_token, labels } }`, with a required `Idempotency-Key`. The group must be external and open with a ready workspace and its own task VM.
 
 The operation holds the group target, resumes a parked VM through the normal wake path, then starts or replaces the worker under the workspace lease. It preserves the group, checkout, and task state. A fresh key and token replace the previous worker; replaying a key returns its original operation without restarting anything. An expired staged credential fails before a resume or any new VM allocation. Worker startup never allocates another VM.
 
-Optional provision enrollment remains a shortcut for the initial worker. The driver uses `tasks.worker` whenever it needs a worker again on that same group. Cancelling a waiting worker operation discards its staged enrollment; ending the group also stops any running worker.
+Native provision installs the initial Node worker. A replacement worker requires `tasks.worker` on that same group. Cancelling a waiting worker operation discards its staged enrollment; ending the group also stops any running worker.
 
 #### Check an external group
 
@@ -347,19 +351,17 @@ Direct operation cancellation interrupts the held subtask turn and confirms that
 
 #### Publish an external group
 
-`tasks:publish <group> --check=<id> [--title=… --body=…]` starts `tasks.publish` through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body } }`. Supply title and body together. It uses the [shared task-operation rules](#provision-an-external-group), requires a workspace (`409 tasks.no_workspace`), and accepts `--idempotency-key` and `--json`. The PHP SDK and generated MCP tool expose the same inputs.
+`tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input stays `{ check, pull_request?: { title, body } }`. Supply title and body together. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
-The check must be an [eligible checked candidate](#check-an-external-group) belonging to a subtask of this group, with its recorded commit. Publish shares reviewer admission's hosted-CI predicate: when the Project requires CI, a local pass alone does not count; the owning handoff operation must have succeeded with passed CI on that check/commit. Otherwise admission returns `422 tasks.commit_not_checked`. HEAD must still be that commit (`409 tasks.head_moved`). A parked VM queues its resume first; HEAD is checked after readiness as well as at admission when the VM is ready. This prerequisite adds no final-review publication gate and does not open external review-and-merge admission.
+The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit and checked tree in the intent. It performs no Git or GitHub request.
 
-The operation reuses the approval push: `PublishTaskVmCommit` imports the checked commit into the Gateway mirror and pushes it to `task-{id}`. A delayed operation read claims `waiting` as `running`, then reads the job record; it never polls the VM. If a started job is redelivered after losing its outcome, it fetches the remote branch through the Gateway mirror. An identical tip records success without another transfer or push; an ancestor allows the unforced push, and a divergent tip fails with `tasks.not_fast_forward`. A pending cancel resolves after that outcome is recorded.
+The VM worker must be ready. One step under the shared task-workspace model lock verifies HEAD and the whole working tree against the checked candidate. A moved candidate fails with `tasks.head_moved` before a push. Swamp obtains the existing repository installation token through shared private material and uses it only in trusted Git/GitHub calls. Repository commands receive no token.
 
-A divergent remote branch fails with `tasks.not_fast_forward`. An identical remote tip succeeds without a push. A refusal for missing `Workflows: write` fails with `tasks.workflows_permission`. Other push failures use `tasks.push_failed`. The Gateway never forces a push, sends a GitHub token to the VM, or retries a failed effect. A new operation with a new key queues one new attempt after a recorded failure; replaying the old key returns its failure.
+Swamp pushes the exact candidate to `task-{id}` without force. An identical remote tip skips the push. A divergent remote tip fails with `tasks.not_fast_forward`; a GitHub workflow-permission refusal fails with `tasks.workflows_permission`. Other transport failures use `tasks.push_failed`. A lost push reply is reconciled by observing the remote tip before another attempt.
 
-Without `pull_request`, the operation only pushes. With it, the operation first looks for an open pull request for the branch, updates its title and body when found, or opens one against the Project's default branch. A resumed step repeats that lookup before opening, so it cannot open a second pull request. It runs no brief coverage and requests no reviewers. It stores `pr_url` and the watched pull request fields, so the existing tick watch follows it. The tick records its merge or close without settling or completing the group.
+Without `pull_request`, publication only pushes. With it, Swamp looks for an open pull request from the admitted branch, updates its title and body when found, or opens one against the admitted default branch. Recovery repeats the lookup before creating a PR. It requests no reviewers and runs no brief coverage. The Gateway projects `pr_url` and the watched PR fields without changing board status or settle metrics.
 
-The result is `{ branch, commit, pull_request_number, pull_request_url }`, with null pull request fields for a push alone. Publication changes no board status or settle metrics.
-
-Cancelling before the publish job starts invalidates its queued record, so a late job does nothing, and ends the operation `cancelled`. After the job starts, cancellation stays requested and the operation stays `waiting`, holding the group until the job records success or failure. It then ends `cancelled` and opens no pull request. A direct cancel returns the waiting record. Group cancel and complete return `409 operation.target_busy` until that push ends; retry them afterward. A cancel cannot undo a push or a pull request step that already ran.
+The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
 ### Task lifecycle
 

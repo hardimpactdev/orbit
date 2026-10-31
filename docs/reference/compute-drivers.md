@@ -106,7 +106,7 @@ A profile's effective set is the union of `common` and its own list, sorted by t
 
 The one task VM base profile includes the official Swamp binary, pinned by version and SHA-256. Its release matches the orchestrator's `swamp serve`: `20261022.021804.0-sha.983e2929`. Roll out a reviewed recipe pin and matching serve release together. Image verification checks the installed binary against its artifact digest. No fleet or account credential belongs in the image.
 
-Before publishing the base image, the builder installs the Gateway's public Orbit root certificate at `/usr/local/share/ca-certificates/orbit-root.crt` and refreshes the system trust store. Orbit CA rotation requires rebuilding the base image before new task VMs use that CA. The worker explicitly uses this certificate for its WebSocket and HTTP/2 connections. A [provision enrollment](/reference/tasks#optional-swamp-worker) starts the worker after workspace setup; an ordinary provision starts none. Swamp's [remote execution manual](https://swamp-club.com/manual/explanation/remote-execution) and [worker reference](https://swamp-club.com/manual/reference/remote-execution/worker-commands) own its protocol and reconnect behavior.
+Before publishing the base image, the builder installs the Gateway's public Orbit root certificate at `/usr/local/share/ca-certificates/orbit-root.crt` and refreshes the system trust store. Orbit CA rotation requires rebuilding the base image before new task VMs use that CA. The worker explicitly uses this certificate for its WebSocket and HTTP/2 connections. Native VM enrollment starts its exact Node worker before Pi preparation. The separate [Task worker](/reference/tasks#optional-swamp-worker) serves group work after workspace setup. Swamp's [remote execution manual](https://swamp-club.com/manual/explanation/remote-execution) and [worker reference](https://swamp-club.com/manual/reference/remote-execution/worker-commands) own its protocol and reconnect behavior.
 
 ### Role and base tool sets
 
@@ -412,13 +412,13 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### From claim to workspace
 
-A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
+A claim records placement and one native provision intent. The [native root](/reference/task-vm-native-provision) owns provider creation, enrollment and runtime preparation.
 
-1. A keyed provision operation reserves a group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It records a new `provisioning` row, and queues `ProvisionTaskVm`.
-2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
-3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, and its ed25519 host key fingerprint from the host through `incus`. Enrollment [trusts the image](#skip-what-the-image-holds) for the `app-dev` software.
-4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
-5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
+1. Placement records the VM's [size](#size-by-declared-topology) and immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses `capture` and composes the native steps.
+2. Swamp creates the provider VM from that image on the admitted host. Incus cloud-init and provider commands run directly from native system steps.
+3. The host prepares the guest and records its public SSH identity and WireGuard key through the root's running projection.
+4. Native steps publish the network and install the exact `orbit-node-N` worker. They verify that Node identity before runtime preparation.
+5. The shared router behavior issues the model key under its native lock. The guest prepares Pi through the Process lower. Confirmed native success marks the VM ready.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 
@@ -607,7 +607,7 @@ The check stops each setup step's process group when its shell exits, times out,
 
 Orbit writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token.
 
-If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill. Source Git fetches and pushes still run only in the Gateway mirror.
+If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill. Source preparation still uses the Gateway mirror until the native provision adapter replaces it; task publication runs in Swamp.
 
 An interrupted claim resumes only its own checkout after the existing source identity checks.
 
@@ -650,34 +650,15 @@ A new workspace starts from `git init`, with the Project repository URL as `orig
 
 #### Publish from the VM
 
-The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this VM push job and record for the operation's recorded commit on `task-{group}-handoff`, without force or a pull request. It adds no push journal or VM runner. Same-operation recovery reconciles the recorded push and remote tip before repeating work. Cancellation invalidates a queued push; a started push must reconcile before ownership ends. Once only CI waits, cancellation stops observation, not GitHub workflows, and retains the pushed evidence. The Gateway still refuses external review-and-merge groups. The tick-owned publication flow below keeps its existing ownership.
+Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) directly from the task VM. Handoff CI uses the same native Git transport for `task-{group}-handoff`. The Gateway mints the existing repository installation token through shared private material and projects the result; it runs no push job or mirror import.
 
-A VM sends its pack at its own pace, so the task tick does not publish. The push of an approved commit records the commit and `task-<id>` on the task VM row as `queued`, and queues the job `PublishTaskVmCommit` on the [Git queue](#jobs). The approval stays in review, without a failure. Each later tick reads the row:
-
-- `queued`: the job waits or runs. The tick changes nothing.
-- `pushed`: GitHub has the commit at the branch. The approval continues, and the pull request opens.
-- `failed`: the tick reports the job's error as a [failed push](/reference/tasks#pull-request-and-settle-metrics), once. The next push after its backoff queues the job again.
-
-The job records its start on the row. A job that has not finished 40 minutes after its start counts as failed. A push that waits behind other jobs stays pending, for up to 2 hours. A push whose job has not started after 2 hours counts as failed too, so a lost job or a worker that never starts cannot hold the group. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
-
-1. The Gateway fetches the default branch and `task-<id>` into the mirror.
-2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The Gateway calls `task-vm.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
-
-4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
-5. It checks that the approved commit is a commit there, and that its history is complete.
-6. Only then does the verified pack move into the mirror. A pack that fails a check leaves nothing behind.
-7. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
-
-Pack export accepts one approved commit and at most 1,000 known object IDs. It runs Git as the checkout account, uses only locally available commits to reduce the pack, and keeps the 2 GiB pack limit. A partial transfer, a missing final result, or an oversized pack fails publication before quarantine promotion or a push. The Gateway verifies the reported byte count against the received file.
-
-The job and each of its Git commands end within 1600 seconds. Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
+The native action uses an empty temporary bare Git repository with the workspace object store as an alternate. Credentials reach only Git in that trusted directory. The action ignores repository hooks and user/system Git configuration, permits HTTPS only and refuses redirects. It pushes the exact admitted commit without force and reads the remote tip before repeating a mutation. No repository command receives the credential. Native locking, cancellation and replay follow the [Tasks contract](/reference/tasks#publish-an-external-group).
 
 #### What the Gateway trusts
 
 From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
 
-The Gateway refuses to send a command that carries a source Git credential to a task VM. The separate Composer setup token described above is a narrow exception for dependency downloads.
+The remaining Gateway source adapters refuse to send a command that carries a source Git credential to a task VM. Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
 
 A source command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace and `instance:clone` from one. `project:update` with a new repository URL sends no token: it reads the proposed repository on the Gateway and only sets `origin` on the VM. A task VM workspace goes with its group; see [Destroy a task VM](#destroy-a-task-vm).
 
@@ -1397,11 +1378,15 @@ The image builder calls `image.firewall` through the guest agent runner before i
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
-UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init over SSH as `orbit` at the public address, and enrollment needs no jump Node.
+UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. The native provision step generates an ed25519 host key and stages the pair through the admitted `provider_bootstrap` private output before creating a server. The Gateway stores it encrypted on the owning Task VM and records its public pin. A retry reuses that pair; it cannot replace it or create a server before storage succeeds. Incus grants no reader or writer for this UpCloud-only field.
+
+Swamp renders cloud-init from the staged pair and the admitted Gateway public key. No connection trusts a key on first use. Root login stays off. Swamp reads cloud-init over pinned SSH as `orbit` at the public address, and enrollment needs no jump Node.
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.
+
+Task VM enrollment captures the guest Node and Pi Process intent without executing either. One native root bootstraps through its admitted first-visit transport, records the public SSH identity, publishes the network, issues and installs the exact Node worker, then prepares Pi through the shared native Process installer. Readiness requires execution on that guest's trusted Node worker. The group worker cannot substitute for it. Model-key steps use the stable router behavior shared with teardown. Private credentials stay on the admitted private-material transport; the Gateway projects public results.
 
 ### Build the UpCloud template
 
@@ -1571,3 +1556,7 @@ Task group responses report `vm_power` separately from task status. For a [task 
 Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. A task VM with `preview` is never [parked](#park-and-resume). Setting `preview` does not start a VM that is already parked. The next work for the group starts it.
 
 Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
+
+The former lifecycle and standalone Incus admissions for Task VMs return `operation.kind_unavailable` (409) before reading a host or recording an Operation. Standalone enrollment uses `StartTaskVmEnrollmentOperationAction`; provision parents compose the same native lower steps directly. The old enrollment job and runtime transport/contract registrations are removed. Private material for the model router requires the admitted top-level router Node to equal the private binding owner and the configured issuer owner.
+
+Admission holds the existing model-router teardown lock through its outer database transaction, including the router-ready check and model-key reservation. Teardown sees every committed reservation before it can disable the router. This admission fence does not replace the shared native behavior lock that serializes API-key list changes.
