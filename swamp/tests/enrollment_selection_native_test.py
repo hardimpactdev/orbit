@@ -20,8 +20,9 @@ const source='steps.admitted.outputs.intent.plans[0]';
 const read=(name,root,dependency)=>({name,target:'orbit-node-209',...(dependency?{dependsOn:[{step:dependency,condition:{type:'succeeded'}}]}:{}),task:{type:'behavior',behaviorType:'@nckrtl/node-enrollment-settings',behaviorName:name,methodName:'read',inputs:{storage:{root,user:e(source+'.account.user'),create_missing:false,protected_roots:[],managed_checkouts:[]},account:e(source+'.account')}}});
 const first=read('storage',e(source+'.root'));
 const nested=read('nested',e('self.part.root'),'storage');nested.forEach={item:'part',in:e(source+'.children')};
-const last=read('done',e('steps.storage.outputs.root'),'nested');
-const selected=selectEnrollmentSteps([first,nested,last],'size(steps.admitted.outputs.intent.plans)>0');
+const proof={name:'proof',target:'orbit-node-209',dependsOn:[{step:'nested',condition:{type:'succeeded'}}],task:{type:'assert',expr:'steps.storage.outputs.root == "/srv/apps" && steps["nested-0"].outputs.root == "/srv/apps"',message:'Selected scalar and expanded child must both be retained'}};
+const last=read('done',e('steps.storage.outputs.root'),'proof');
+const selected=selectEnrollmentSteps([first,nested,proof,last],'size(steps.admitted.outputs.intent.plans)>0');
 console.log(JSON.stringify([{name:'admitted',target:'orbit-node-209',task:{type:'behavior',behaviorType:'@nckrtl/node-enrollment-intent',behaviorName:'enrollment-admitted',methodName:'read',inputs:{intent:e('inputs.intent')}}},...selected]));
 """
         generated = subprocess.check_output(
@@ -118,7 +119,7 @@ console.log(JSON.stringify([{name:'admitted',target:'orbit-node-209',task:{type:
             if step["name"] != "admitted"
         }
         self.assertEqual(
-            {"storage-0": "succeeded", "nested-0": "succeeded", "done-0": "succeeded"},
+            {"storage-0": "succeeded", "nested-0": "succeeded", "proof-0": "succeeded", "done-0": "succeeded"},
             states,
         )
 

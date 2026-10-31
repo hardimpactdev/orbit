@@ -10,9 +10,9 @@ export function selectEnrollmentSteps(
     const scalarNames = steps.filter((step) => !step.forEach).map((step) =>
         String(step.name)
     );
-    const bind = (value: unknown): unknown => {
+    const bind = (value: unknown, bareExpression = false): unknown => {
         if (typeof value === "string") {
-            if (!value.startsWith("${{ ")) return value;
+            if (!bareExpression && !value.startsWith("${{ ")) return value;
             let result = value;
             for (const name of scalarNames) {
                 const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -25,10 +25,13 @@ export function selectEnrollmentSteps(
             }
             return result;
         }
-        if (Array.isArray(value)) return value.map(bind);
+        if (Array.isArray(value)) return value.map((item) => bind(item));
         if (value !== null && typeof value === "object") {
             return Object.fromEntries(
-                Object.entries(value).map(([key, item]) => [key, bind(item)]),
+                Object.entries(value).map(([key, item]) => [
+                    key,
+                    bind(item, key === "expr"),
+                ]),
             );
         }
         return value;
