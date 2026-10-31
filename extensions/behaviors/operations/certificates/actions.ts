@@ -82,7 +82,7 @@ export function certificateActions(invoke: Invoke = runCertificateSystem) {
       return Presence.parse(
         await invoke({
           name: "certificate.inspect-leaf",
-          input: { scope: scope.scope, home: scope.home },
+          input: { scope: scope.scope, home: scope.home, user: scope.user },
         }, signal),
       );
     },
@@ -91,7 +91,7 @@ export function certificateActions(invoke: Invoke = runCertificateSystem) {
       if (leaf.in_use) return { error_code: "app-dev.certificate_in_use" };
       const result = await invoke({
         name: "certificate.remove-leaf",
-        input: { scope: leaf.scope, home: leaf.home },
+        input: { scope: leaf.scope, home: leaf.home, user: leaf.user },
       }, signal);
       return refused(result).success
         ? Refusal.parse(result)

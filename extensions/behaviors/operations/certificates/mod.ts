@@ -106,6 +106,7 @@ export function certificates(
     node_id: leaf.node_id,
     scope: leaf.scope,
     home: leaf.home,
+    user: leaf.user,
     agent_sha256: leaf.agent_sha256,
   });
   return {
@@ -461,6 +462,7 @@ export function certificates(
             node_id: args.leaf.node_id,
             scope: args.leaf.scope,
             home: args.leaf.home,
+            user: args.leaf.user,
             agent_sha256: args.leaf.agent_sha256,
           }, applied);
           if ("error_code" in presence) throw new Error(presence.error_code);

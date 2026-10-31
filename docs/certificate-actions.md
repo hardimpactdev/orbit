@@ -18,6 +18,12 @@ The approved vault entry contains JSON with `certificate` (the public root PEM) 
 
 Lower consumers can import `signCertificateBatch(leaves, flatRequests, {vaultService, vaultName, secretKey}, signal?)` from `certificates/signing.ts`. Parent families should use the canonical model rather than define another CA locator or signing primitive. Live custody migration requires the approved owner and vault identifiers; disposable CA tests need no fleet access.
 
+Leaf and removal intents admit the configured `user`. `home` is optional. The
+fixed local certificate program runs `getent passwd` for that exact user before
+request, publication, inspection or removal. It accepts only the account's owned
+directory and rejects a supplied home that differs. The resolved home remains
+local; the Gateway needs no account lookup or home checkpoint.
+
 ## Node role pairs
 
 Gateway, Metrics, WebSocket and Analytics use `roleCertificateActions()` from `certificates/role-actions.ts`. Admit `{node_id, scope, domain, version, root_hash}`, where `scope` is `role-gateway`, `role-metrics`, `role-websocket` or `role-analytics`, `version` is 16 lowercase hex characters and `root_hash` is the SHA-256 digest of the public root PEM. `role-analytics` uses the reserved `analytics.orbit` hostname (`AnalyticsHostname::Value` in Orbit). Paths are fixed by scope; callers cannot supply paths or private material.

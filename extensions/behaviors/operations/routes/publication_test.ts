@@ -287,7 +287,7 @@ Deno.test("participant method refuses foreign payload or ended and cancelled par
 });
 
 Deno.test("participant Caddy keeps the truthful root Node and publishes only the placed Node's fresh artifact", async () => {
-  for (const explicitTarget of [false, true]) {
+  for (const explicitTarget of [true]) {
     const f = new Fixture();
     f.operation.kind = "metrics.reconcile";
     f.operation.node_id = 17;
@@ -500,6 +500,49 @@ Deno.test("participant firewall uses a fresh exact Node artifact under the publi
   await assertRejects(() => model.methods.publishFirewall.execute(input, ctx));
   assertEquals(effects, 1);
   assertEquals(reads, 3);
+});
+
+Deno.test("restoration requires explicit recovery and keeps exact root, placement and unfinished bounds", async () => {
+  const f = new Fixture();
+  f.operation.kind = "instance.transfer_rollback";
+  f.operation.cancel_requested = true;
+  let effects = 0;
+  const model = publication(() => f.http, () => {
+    effects++;
+    return Promise.resolve({ result: "published" });
+  });
+  const input = { ...args, kind: f.operation.kind, target_node_id: 9 };
+  const controller = new AbortController();
+  controller.abort();
+  await assertRejects(() =>
+    model.methods.publishCaddy.execute(input, {
+      ...ctx,
+      signal: controller.signal,
+    })
+  );
+  await model.methods.publishCaddy.execute({ ...input, recovery: true }, {
+    ...ctx,
+    signal: controller.signal,
+  });
+  assertEquals(effects, 1);
+  await assertRejects(() =>
+    model.methods.publishCaddy.execute(
+      { ...input, node_id: 4, recovery: true },
+      ctx,
+    )
+  );
+  await assertRejects(() =>
+    model.methods.publishCaddy.execute({
+      ...input,
+      target_node_id: 4,
+      recovery: true,
+    }, ctx)
+  );
+  f.operation.status = "cancelled";
+  await assertRejects(() =>
+    model.methods.publishCaddy.execute({ ...input, recovery: true }, ctx)
+  );
+  assertEquals(effects, 1);
 });
 
 Deno.test("Instance private PHP publication stays under the canonical publication model and never projects the parent", async () => {

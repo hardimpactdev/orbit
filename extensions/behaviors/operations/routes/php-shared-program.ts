@@ -2,8 +2,10 @@
 export const PhpSharedProgram = String
   .raw`"""Fixed local shared PHP pool publication. Swamp owns the native Node lock and ordering."""
 import json
+import grp
 import os
 from pathlib import Path
+import pwd
 import re
 import shutil
 import stat
@@ -15,6 +17,9 @@ ROOT = Path('/')
 UID = 0
 GID = 0
 VERSION = re.compile(r'^[1-9][0-9]*\.[0-9]+$')
+ACCOUNT = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
+GROUP_TOKEN = '__ORBIT_NODE_GROUP__'
+HOME_TOKEN = '__ORBIT_NODE_HOME__'
 POOL = re.compile(r'^orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*(?:-[0-9a-f]{8})?$')
 class Refusal(Exception):
     def __init__(self, code): self.code = code
@@ -109,9 +114,36 @@ def publish(version, text, previous=None):
     finally:
         if os.path.exists(name): os.unlink(name)
 
+def bind_account(configurations, payload):
+    # Only the local account database supplies the actual primary group and home.
+    # No passwd record or resolved configuration is returned to the native caller.
+    if 'account_user' not in payload:
+        if any(isinstance(text, str) and (GROUP_TOKEN in text or HOME_TOKEN in text) for text in configurations.values()):
+            raise Refusal('php.shared_pool_account_invalid')
+        return configurations
+    user = payload['account_user']
+    if not isinstance(user, str) or not ACCOUNT.fullmatch(user): raise Refusal('php.shared_pool_account_invalid')
+    try:
+        account = pwd.getpwnam(user)
+        group = grp.getgrgid(account.pw_gid)
+    except (KeyError, OSError): raise Refusal('php.shared_pool_account_invalid')
+    home = account.pw_dir
+    if account.pw_name != user or account.pw_uid < 0 or account.pw_gid < 0 or group.gr_gid != account.pw_gid or not ACCOUNT.fullmatch(group.gr_name):
+        raise Refusal('php.shared_pool_account_invalid')
+    if not isinstance(home, str) or not home.startswith('/') or len(home) > 4096 or any(ord(c) < 32 or c in ';\"' for c in home) or any(part in ('.', '..') for part in home.split('/')):
+        raise Refusal('php.shared_pool_account_invalid')
+    bound = {}
+    for version, text in configurations.items():
+        if not isinstance(text, str): raise Refusal('php.shared_pool_invalid')
+        # Gateway uses the absolute sentinel to satisfy the public render contract.
+        # Replace it before the bare token so the result has one leading slash.
+        bound[version] = text.replace('/' + HOME_TOKEN, home).replace(HOME_TOKEN, home).replace(GROUP_TOKEN, group.gr_name)
+    return bound
+
 def converge(payload):
     configurations = payload['configurations']
     if not isinstance(configurations, dict): raise Refusal('php.shared_pool_invalid')
+    configurations = bind_account(configurations, payload)
     requested, desired, allnames, missing = {}, {}, set(), []
     for version, text in sorted(configurations.items()):
         if not VERSION.fullmatch(version): raise Refusal('php.shared_pool_invalid')

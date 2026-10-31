@@ -7,6 +7,9 @@ import sys
 import select
 import types
 import unittest
+from unittest.mock import patch
+import pwd
+import grp
 ROOT=Path(__file__).resolve().parent
 
 def program(name):
@@ -61,6 +64,61 @@ class SharedPhp(unittest.TestCase):
     def test_symlink_pool_file_refuses_before_any_mutation(self):
         target=self.version('8.5',self.pool(4));target.unlink();target.symlink_to(self.root/'outside')
         self.assertEqual(self.php.main({'configurations':{}}),{'error_code':'php.shared_pool_unsafe'});self.assertEqual(self.calls,[])
+
+    def test_local_account_binding_uses_the_real_primary_group_and_home(self):
+        user = pwd.getpwuid(os.getuid())
+        group = grp.getgrgid(user.pw_gid)
+        target = self.version('8.5', '')
+        text = self.pool(4) + 'group = __ORBIT_NODE_GROUP__\nenv[HOME] = /__ORBIT_NODE_HOME__\n'
+        result = self.php.main({'configurations': {'8.5': text}, 'account_user': user.pw_name})
+        self.assertEqual(result, {'changed': True, 'missing_pools': []})
+        self.assertEqual(target.read_text(), text.replace('__ORBIT_NODE_GROUP__', group.gr_name).replace('/__ORBIT_NODE_HOME__', user.pw_dir))
+        self.assertNotIn('account', result)
+
+    def test_custom_home_and_primary_group_are_resolved_before_validation(self):
+        home = '/srv/accounts/custom-home'
+        (self.root / home.lstrip('/') / 'app').mkdir(parents=True)
+        target = self.version('8.5', '')
+        text = '[orbit-app-instance-4]\nchdir = /__ORBIT_NODE_HOME__/app\ngroup = __ORBIT_NODE_GROUP__\nenv[HOME] = __ORBIT_NODE_HOME__\n'
+        account = types.SimpleNamespace(pw_name='worker', pw_uid=1009, pw_gid=1021, pw_dir=home, pw_gecos='never-return-this')
+        group = types.SimpleNamespace(gr_name='actual_primary', gr_gid=1021)
+        with patch.object(self.php.pwd, 'getpwnam', return_value=account), patch.object(self.php.grp, 'getgrgid', return_value=group):
+            result = self.php.main({'configurations': {'8.5': text}, 'account_user': 'worker'})
+        self.assertEqual(result, {'changed': True, 'missing_pools': []})
+        self.assertEqual(target.read_text(), text.replace('/__ORBIT_NODE_HOME__', home).replace('__ORBIT_NODE_HOME__', home).replace('__ORBIT_NODE_GROUP__', 'actual_primary'))
+        self.assertNotIn('never-return-this', str(result))
+
+    def test_account_tokens_without_admitted_user_refuse_before_mutation(self):
+        old = self.pool(4)
+        target = self.version('8.5', old)
+        result = self.php.main({'configurations': {'8.5': old + 'group = __ORBIT_NODE_GROUP__\n'}})
+        self.assertEqual(result, {'error_code': 'php.shared_pool_account_invalid'})
+        self.assertEqual(target.read_text(), old)
+        self.assertEqual(self.calls, [])
+
+    def test_missing_account_or_primary_group_has_no_guess_or_live_change(self):
+        old = self.pool(4)
+        target = self.version('8.5', old)
+        payload = {'configurations': {'8.5': old + 'group = __ORBIT_NODE_GROUP__\n'}, 'account_user': 'worker'}
+        with patch.object(self.php.pwd, 'getpwnam', side_effect=KeyError('worker')):
+            self.assertEqual(self.php.main(payload), {'error_code': 'php.shared_pool_account_invalid'})
+        account = types.SimpleNamespace(pw_name='worker', pw_uid=1009, pw_gid=1021, pw_dir='/srv/worker')
+        with patch.object(self.php.pwd, 'getpwnam', return_value=account), patch.object(self.php.grp, 'getgrgid', side_effect=KeyError(1021)):
+            self.assertEqual(self.php.main(payload), {'error_code': 'php.shared_pool_account_invalid'})
+        self.assertEqual(target.read_text(), old)
+        self.assertEqual(self.calls, [])
+
+    def test_invalid_account_fields_refuse_before_validation_or_live_changes(self):
+        old = self.pool(4)
+        target = self.version('8.5', old)
+        payload = {'configurations': {'8.5': old + 'group = __ORBIT_NODE_GROUP__\n'}, 'account_user': 'worker'}
+        for home, name, group_id in [('/srv/home\nuser = root', 'actual', 1021), ('../home', 'actual', 1021), ('/srv/home', 'bad;group', 1021), ('/srv/home', 'actual', 99)]:
+            account = types.SimpleNamespace(pw_name='worker', pw_uid=1009, pw_gid=1021, pw_dir=home)
+            group = types.SimpleNamespace(gr_name=name, gr_gid=group_id)
+            with patch.object(self.php.pwd, 'getpwnam', return_value=account), patch.object(self.php.grp, 'getgrgid', return_value=group):
+                self.assertEqual(self.php.main(payload), {'error_code': 'php.shared_pool_account_invalid'})
+        self.assertEqual(target.read_text(), old)
+        self.assertEqual(self.calls, [])
 
 class Firewall(unittest.TestCase):
     def setUp(self):

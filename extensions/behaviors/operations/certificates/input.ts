@@ -12,14 +12,14 @@ export const Scope = z.object({
     value.slice(1).split("/").every((part) =>
       part !== "" && part !== "." && part !== ".."
     )
-  ),
+  ).optional(),
+  user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 export const Leaf = Scope.extend({
   domain: z.string().min(1).max(253),
   version: z.string().regex(/^[a-f0-9]{16}$/),
   root_hash: z.string().regex(/^[a-f0-9]{64}$/),
-  user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
 });
 export const Removal = Scope.extend({ in_use: z.boolean() });
 export const Request = z.union([

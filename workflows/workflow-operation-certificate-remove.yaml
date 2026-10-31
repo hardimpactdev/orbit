@@ -77,7 +77,7 @@ jobs:
         leaf:
           node_id: ${{ steps.admit.outputs.intent.leaf.node_id }}
           scope: ${{ steps.admit.outputs.intent.leaf.scope }}
-          home: ${{ steps.admit.outputs.intent.leaf.home }}
+          user: ${{ steps.admit.outputs.intent.leaf.user }}
           agent_sha256: ${{ steps.admit.outputs.intent.leaf.agent_sha256 }}
         previous: ${{ steps.remove.outputs.applied }}
   - name: project

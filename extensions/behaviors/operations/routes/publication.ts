@@ -35,19 +35,24 @@ const Parent = z.object({
 
 async function freshParticipant(
   http: ReturnType<typeof gatewayHttp>,
-  args: z.infer<typeof DirectArgs>,
+  args: z.infer<typeof DirectArgs> & { recovery?: boolean },
   signal?: AbortSignal,
 ) {
   const current = Parent.parse(
-    await new GatewayOperation(http, args).read(signal),
+    await new GatewayOperation(http, args).read(
+      args.recovery ? undefined : signal,
+    ),
   );
-  if (current.id !== args.operation_id || current.kind !== args.kind) {
+  if (
+    current.id !== args.operation_id || current.kind !== args.kind ||
+    current.node_id !== args.node_id
+  ) {
     throw new Error("Publication parent does not match admitted intent");
   }
   if (!["queued", "running"].includes(current.status)) {
     throw new Error("Publication parent has ended");
   }
-  if (current.cancel_requested || signal?.aborted) {
+  if (!args.recovery && (current.cancel_requested || signal?.aborted)) {
     throw new DirectOperationCancelled({ effectRunning: false });
   }
   return current;
@@ -74,7 +79,7 @@ export function publication(
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.31.6",
+    version: "2026.10.31.7",
     globalArguments: Globals,
     methods: {
       removeLan: {
@@ -162,15 +167,19 @@ export function publication(
           "Read and apply the participant's current ingress firewall rules",
         arguments: DirectArgs.extend({
           target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
         }),
         execute: async (
-          args: z.infer<typeof DirectArgs> & { target_node_id?: number },
+          args: z.infer<typeof DirectArgs> & {
+            target_node_id?: number;
+            recovery?: boolean;
+          },
           ctx: Context,
         ) => {
           const current = await freshParticipant(
             makeHttp(ctx),
             args,
-            ctx.signal,
+            args.recovery ? undefined : ctx.signal,
           );
           const identity = z.object({ node_id: z.number().int().positive() })
             .parse(current.input.caddy_publication);
@@ -180,7 +189,7 @@ export function publication(
           const result = await convergeFirewall(
             current.input.ingress_firewall,
             invokeFirewall,
-            ctx.signal,
+            args.recovery ? undefined : ctx.signal,
           );
           if ("error_code" in result) throw new Error(result.error_code);
           return result;
@@ -242,21 +251,29 @@ export function publication(
           "Read and publish the participant's current whole-Node PHP pools",
         arguments: DirectArgs.extend({
           target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
         }),
         execute: async (
-          args: z.infer<typeof DirectArgs> & { target_node_id?: number },
+          args: z.infer<typeof DirectArgs> & {
+            target_node_id?: number;
+            recovery?: boolean;
+          },
           ctx: Context,
         ) => {
           const current = await freshParticipant(
             makeHttp(ctx),
             args,
-            ctx.signal,
+            args.recovery ? undefined : ctx.signal,
           );
           const payload = PhpPublication.parse(current.input.php_publication);
           if (payload.node_id !== (args.target_node_id ?? args.node_id)) {
             throw new Error("PHP publication Node does not match");
           }
-          const result = await applyPhp(payload, invokePhp, ctx.signal);
+          const result = await applyPhp(
+            payload,
+            invokePhp,
+            args.recovery ? undefined : ctx.signal,
+          );
           if ("error_code" in result) throw new Error(result.error_code);
           return result;
         },
@@ -266,15 +283,19 @@ export function publication(
           "Read and publish the participant's current private DNS catalog",
         arguments: DirectArgs.extend({
           target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
         }),
         execute: async (
-          args: z.infer<typeof DirectArgs> & { target_node_id?: number },
+          args: z.infer<typeof DirectArgs> & {
+            target_node_id?: number;
+            recovery?: boolean;
+          },
           ctx: Context,
         ) => {
           const current = await freshParticipant(
             makeHttp(ctx),
             args,
-            ctx.signal,
+            args.recovery ? undefined : ctx.signal,
           );
           const payload = DnsPublication.parse(
             current.input.private_dns_publication,
@@ -293,18 +314,20 @@ export function publication(
         arguments: DirectArgs.extend({
           node_id: z.number().int().positive(),
           target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
         }),
         execute: async (
           args: z.infer<typeof DirectArgs> & {
             node_id: number;
             target_node_id?: number;
+            recovery?: boolean;
           },
           ctx: Context,
         ) => {
           const current = await freshParticipant(
             makeHttp(ctx),
             args,
-            ctx.signal,
+            args.recovery ? undefined : ctx.signal,
           );
           const result = await applyCaddy(
             boundCaddy(
@@ -312,7 +335,7 @@ export function publication(
               args.target_node_id ?? args.node_id,
             ),
             invoke,
-            ctx.signal,
+            args.recovery ? undefined : ctx.signal,
           );
           if ("error_code" in result) {
             throw new Error(result.error_code);

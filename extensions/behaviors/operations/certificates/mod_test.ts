@@ -17,6 +17,7 @@ const scope = {
   node_id: leaf.node_id,
   scope: leaf.scope,
   home: leaf.home,
+  user: leaf.user,
   agent_sha256: leaf.agent_sha256,
 };
 const csr =
@@ -229,4 +230,45 @@ Deno.test("parent requests effect Nodes, signs once on control209, then publishe
     "certificate.publish-leaf",
     "certificate.inspect-leaf",
   ]);
+});
+
+Deno.test("home-less leaves and removal scopes keep the admitted user through every local call", async () => {
+  const { home: _home, ...localLeaf } = leaf;
+  const calls: CertificateSystemCall[] = [];
+  const actions = certificateActions((call) => {
+    calls.push(call);
+    return Promise.resolve(
+      call.name === "certificate.request-leaf"
+        ? { state: "request", request: csr }
+        : call.name === "certificate.inspect-leaf"
+        ? { present: false }
+        : {},
+    );
+  });
+  const request = await actions.request(localLeaf);
+  const applied = await actions.publish(localLeaf, request, signed);
+  const localScope = {
+    node_id: leaf.node_id,
+    scope: leaf.scope,
+    user: leaf.user,
+    agent_sha256: leaf.agent_sha256,
+  };
+  await actions.inspect(localScope, applied);
+  await actions.remove({ ...localScope, in_use: false });
+  assertEquals(calls.map((call) => call.input.user), [
+    "orbit",
+    "orbit",
+    "orbit",
+    "orbit",
+  ]);
+  assertEquals(calls.every((call) => call.input.home === undefined), true);
+  await assertRejects(() =>
+    actions.remove({
+      node_id: leaf.node_id,
+      scope: leaf.scope,
+      agent_sha256: leaf.agent_sha256,
+      in_use: false,
+    })
+  );
+  assertEquals(calls.length, 4);
 });

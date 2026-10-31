@@ -13,6 +13,15 @@ class CertificateSystemTest(unittest.TestCase):
         self.ns['os'].chown=lambda path,*ids,**kwargs:original_chown(path,os.getuid(),os.getgid(),**kwargs)
         self.ns['grp']=types.SimpleNamespace(getgrnam=lambda name:types.SimpleNamespace(gr_gid=os.getgid()))
         self.leaf={'scope':'route-42','home':str(self.root/'home'),'domain':'shop.test','version':'0123456789abcdef','root_hash':'','user':getpass.getuser()}
+        self.account_home=self.root/'home';self.account_home.mkdir();self.account_uid=os.getuid();self.account_user=getpass.getuser();self.lookups=[]
+        self.original_run=self.ns['run']
+        def local_run(*args):
+            if args[0]=='/usr/bin/getent':
+                self.lookups.append(args)
+                if args!=('/usr/bin/getent','passwd',self.account_user): raise ValueError('certificate.account_invalid')
+                return f'{self.account_user}:x:{self.account_uid}:{os.getgid()}:fixture:{self.account_home}:/bin/sh\n'
+            return self.original_run(*args)
+        self.ns['run']=local_run
         self.run_command('openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(self.root/'ca.key'),'-out',str(self.root/'anchor.pem'),'-subj','/CN=fixture CA','-days','400')
         self.leaf['root_hash']=hashlib.sha256((self.root/'anchor.pem').read_bytes()).hexdigest()
     def run_command(self,*args): return subprocess.run(args,check=True,capture_output=True).stdout.decode()
@@ -51,5 +60,33 @@ class CertificateSystemTest(unittest.TestCase):
         self.publish();root,_=self.ns['roots'](self.leaf);before=(root/'current/key.pem').read_bytes();self.leaf['root_hash']='a'*64
         with self.assertRaises(ValueError):self.request()
         self.assertEqual(before,(root/'current/key.pem').read_bytes())
+
+    def test_all_effects_resolve_home_from_the_admitted_user_when_home_is_absent(self):
+        self.leaf.pop('home');self.publish()
+        self.assertEqual({'present':True},self.ns['execute']('certificate.inspect-leaf',self.leaf))
+        self.assertEqual({},self.ns['execute']('certificate.remove-leaf',self.leaf))
+        self.assertEqual({'present':False},self.ns['execute']('certificate.inspect-leaf',self.leaf))
+        self.assertEqual(5,len(self.lookups))
+        self.assertTrue(all(call==('/usr/bin/getent','passwd',self.account_user) for call in self.lookups))
+    def test_supplied_home_must_match_getent_before_every_effect(self):
+        wrong={**self.leaf,'home':str(self.root/'foreign')}
+        for action in ['certificate.request-leaf','certificate.publish-leaf','certificate.remove-leaf','certificate.inspect-leaf']:
+            with self.assertRaisesRegex(ValueError,'certificate.home_mismatch'):self.ns['execute'](action,wrong)
+        self.assertFalse((self.account_home/'.orbit').exists());self.assertFalse(self.ns['CADDY'].exists())
+    def test_home_owner_and_symlink_are_checked_before_effects(self):
+        self.account_uid=os.getuid()+1
+        with self.assertRaisesRegex(ValueError,'certificate.home_unsafe'):self.request()
+        self.account_uid=os.getuid();self.account_home.rmdir();target=self.root/'target';target.mkdir();self.account_home.symlink_to(target)
+        with self.assertRaisesRegex(ValueError,'certificate.home_unsafe'):self.request()
+        self.assertFalse((target/'.orbit').exists())
+    def test_username_is_admitted_and_never_interpolated_into_a_shell(self):
+        invalid={**self.leaf,'user':'orbit;id'}
+        with self.assertRaisesRegex(ValueError,'certificate.account_invalid'):self.ns['execute']('certificate.request-leaf',invalid)
+        self.assertEqual([],self.lookups)
+    def test_fixed_getent_can_read_the_existing_account_without_writing_its_home(self):
+        self.ns['run']=self.original_run
+        uid,gid,home=self.ns['local_account']({'user':getpass.getuser()})
+        self.assertEqual(os.getuid(),uid);self.assertTrue(pathlib.Path(home).is_dir())
+        self.assertIsInstance(gid,int)
 
 if __name__=='__main__':unittest.main()

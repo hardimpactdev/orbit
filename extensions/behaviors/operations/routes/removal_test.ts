@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { removal } from "./removal.ts";
+import { removalActions } from "./removal-local.ts";
 import { routeWorkloadLocal } from "./route-workload-local.ts";
 import { Globals } from "../../operation-runner/mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
@@ -51,6 +52,34 @@ const ctx = {
   globalArgs: Globals.parse({}),
   writeResource: () => Promise.resolve({}),
 };
+Deno.test("certificate removal forwards admitted user without a Gateway-resolved home", async () => {
+  const calls: unknown[] = [];
+  const actions = removalActions((_program, raw) => {
+    const call = raw as { name: string; input: Record<string, unknown> };
+    calls.push(JSON.parse(JSON.stringify(call)));
+    return Promise.resolve(
+      call.name === "certificate.inspect-leaf" ? { present: false } : {},
+    );
+  });
+  const { home: _home, ...admitted } = node;
+  assertEquals(
+    await actions.certificates({
+      ...admitted,
+      certificate_scopes: ["route-7"],
+    }),
+    { ready: true },
+  );
+  assertEquals(calls, [
+    {
+      name: "certificate.remove-leaf",
+      input: { scope: "route-7", user: "orbit" },
+    },
+    {
+      name: "certificate.inspect-leaf",
+      input: { scope: "route-7", user: "orbit" },
+    },
+  ]);
+});
 Deno.test("removal rebuilds production runtime from fresh whole-workload input", async () => {
   const commands: string[] = [];
   const http: Http = () =>

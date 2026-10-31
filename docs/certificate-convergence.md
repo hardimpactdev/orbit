@@ -1,11 +1,42 @@
 # Native certificate steps
 
-`certificate.converge` uses one native workflow with separate request, sign, publish, inspect and result steps. `certificate.remove` has its own native workflow with remove, inspect and result steps. Both use the exact admitted `orbit-node-<node_id>` worker, the matching Node label and the pinned local agent with sudo. Native Swamp locks and retries own execution.
+`certificate.converge` uses one native workflow with request, sign, publish,
+inspect and result steps. `certificate.remove` uses remove, inspect and result
+steps. Effects run on the exact admitted Node worker with sudo. Signing runs on
+control Node 209. Swamp owns placement, locks and retries.
 
-Route parent workflows call the same `@nckrtl/certificates` methods directly as steps. Convergence uses the admitted `leaf` shape `{node_id, scope, home, user, domain, version, root_hash, agent_sha256}`. Removal uses `{node_id, scope, home, agent_sha256, in_use:false}` after withdrawing all stored sites that name the scope. Every method also receives the root `{operation_id, kind, node_id, run_id}` and `target_node_id` when the effect Node differs from the root. Placement and the Node label use the effect Node. The Gateway admission helper `StartCertificateOperationAction::convergenceInput` builds the convergence leaf. `removalInput` admits an unused scope.
+Route parent workflows call the same `@nckrtl/certificates` methods in their own
+DAG. A convergence leaf is
+`{node_id, scope, user, domain, version, root_hash, agent_sha256}`. A removal
+leaf is `{node_id, scope, user, agent_sha256, in_use:false}`, admitted after
+withdrawing all stored sites that name the scope. Both accept optional `home`.
+The fixed local program resolves the admitted username with `getent passwd`
+before request, publication, inspection or removal. It requires the account's
+owned home directory and rejects any supplied home that differs. The Gateway
+admits database state and the public root; it performs no account lookup. The
+resolved home stays local.
 
-`request` returns a native `request` output: `{state:"current"}` or `{state:"request",request_base64}`. The latter contains only a public CSR. `sign` records a public CSR checkpoint on its own root, then calls the existing generic primitive with the root run ID only. The root's `CertificateSigningPrimitive` selects the domain and root hash from its admitted `input.certificates` list, or its own standalone leaf. It returns public `certificate_base64` and `root_certificate_base64` in the native `signed` output. `publish` accepts `leaf`, `request` and `signed`; it skips a current leaf and returns native `applied`. `inspect` accepts a scope leaf and `previous: applied`, and returns native `presence`. `remove` accepts a removal leaf and refuses `in_use:true`.
+Every method receives the root `{operation_id, kind, node_id, run_id}` and
+`target_node_id` when the effect Node differs from the root. Placement and the
+Node label use the effect Node. `request` returns `{state:"current"}` or
+`{state:"request",request_base64}` containing only a public CSR. `publish`
+accepts `leaf`, `request` and `signed`, skips a current leaf and returns
+`applied`. `inspect` accepts the scope and `previous: applied`, and returns
+`presence`. `remove` refuses `in_use:true`.
 
-A Route parent runs `requestAll` on each participant, then runs `signBatch` on its root Node, then runs `publishAll` on each participant. The root receives the participant request lists as a nested array. It records `certificate_requests[{node_id,scope,request_base64}]` through its running result projection and calls the run-ID-only primitive once. The signer returns `{certificates:[{node_id,scope,certificate_base64,root_certificate_base64}]}`. The family projection delegates public CSR storage to `CertificateSigningRequests::record`. `publishAll` selects each request and signature by Node and scope and requires final presence. `requestAll` writes `requests-<run_id>` with `requests`; `signBatch` writes `signed-<run_id>` with `certificates`. `removeLeaf` removes and inspects one local leaf. These participant methods return `presence` or throw bounded refusal codes, and never project the parent status. The standalone `admit` and `project` methods read intent and project bounded status. The local primitives are also exported through `certificateActions` in `actions.ts`.
+A parent places `requestAll` on each participant, one `signBatch` on control209,
+then `publishAll` on each participant. The signer uses the canonical
+`orbit-certificate-signing` model and its approved Swamp vault locator. It
+receives the complete admitted leaves and nested participant request arrays,
+then returns
+`{certificates:[{node_id,scope,certificate_base64,root_certificate_base64}]}`.
+`publishAll` matches requests and signatures by Node and scope and requires
+final presence. `removeLeaf` removes and inspects one local leaf. These
+participant methods never project parent status. See
+[Certificate actions](certificate-actions.md) for the canonical signer and
+role-pair interfaces.
 
-These methods never start another workflow, create a child Operation, claim a lease or read a Gateway effect receipt. A resumed request reuses its version's local key and CSR. Publication checks whether that version is already installed. The Node keeps leaf private keys. The Gateway keeps its existing CA key. Only the public CSR and public certificates enter native outputs. No new secret type is introduced.
+Leaf private keys stay on the effect Node. The existing CA private key stays
+inside the control209 vault signing step. Only public CSRs and certificate
+bundles enter native resources. There is no Gateway signing primitive, CSR
+checkpoint or child Operation. No new secret type is introduced.

@@ -30,3 +30,33 @@ Deno.test("requires a typed PHP outcome", async () => {
     publishPhp({ node_id: 1, configurations: {} }, () => Promise.resolve({}))
   );
 });
+Deno.test("shared PHP sends only the admitted user for local account binding", async () => {
+  const configurations = {
+    "8.5":
+      "[orbit-instance-7]\ngroup = __ORBIT_NODE_GROUP__\nenv[HOME] = /__ORBIT_NODE_HOME__\nchdir = /srv/app\n",
+  };
+  const calls: unknown[] = [];
+  assertEquals(
+    await publishPhp(
+      { node_id: 9, configurations, account_user: "node_user" },
+      (_source, input) => {
+        calls.push(input);
+        return Promise.resolve({ changed: true, missing_pools: [] });
+      },
+    ),
+    { ready: true },
+  );
+  assertEquals(calls, [{ configurations, account_user: "node_user" }]);
+});
+Deno.test("invalid account names refuse before invoking the local publication program", async () => {
+  for (const user of ["", "orbit\nroot", "../orbit", "$(id)", "orbit;id"]) {
+    let invoked = false;
+    await assertRejects(() =>
+      publishPhp({ node_id: 9, configurations: {}, account_user: user }, () => {
+        invoked = true;
+        return Promise.resolve({ changed: false, missing_pools: [] });
+      })
+    );
+    assertEquals(invoked, false);
+  }
+});

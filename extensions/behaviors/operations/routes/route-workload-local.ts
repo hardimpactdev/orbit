@@ -50,8 +50,9 @@ export interface RouteLocalHost {
 const encoder = new TextEncoder();
 
 /** Standard local programs only. Private stdin and stderr never become native output. */
-export function localRouteHost(): RouteLocalHost {
-  async function run(
+export function localRouteHost(invoke?: RouteLocalHost["run"]): RouteLocalHost {
+  const run = invoke ?? runDefault;
+  async function runDefault(
     binary: string,
     args: string[],
     options: LocalOptions = {},
@@ -152,13 +153,8 @@ export function localRouteHost(): RouteLocalHost {
     async write(path, value, user, mode) {
       Path.parse(path);
       if (user !== "root") User.parse(user);
-      const temporary = await localFilesystem().makeTempFile({
-        prefix: "orbit-route-private-",
-      });
       const candidate = path + ".orbit-" + crypto.randomUUID();
       try {
-        await localFilesystem().chmod(temporary, 0o600);
-        await localFilesystem().writeTextFile(temporary, value);
         await required("/usr/bin/install", [
           "-m",
           mode.toString(8),
@@ -168,12 +164,11 @@ export function localRouteHost(): RouteLocalHost {
           user,
           "-T",
           "--",
-          temporary,
+          "/dev/stdin",
           candidate,
-        ]);
+        ], { input: value });
         await required("/usr/bin/mv", ["-fT", "--", candidate, path]);
       } finally {
-        await localFilesystem().remove(temporary).catch(() => {});
         await run("/usr/bin/rm", ["-f", "--", candidate]);
       }
     },

@@ -2,7 +2,7 @@ import { runLocalProgram } from "../routes/local-program.ts";
 
 /** Certificate execution belongs to the placed Swamp worker. Private keys stay on that Node. */
 export const certificateProgram = String.raw`
-import datetime, grp, hashlib, json, os, pathlib, pwd, re, shutil, subprocess, sys
+import datetime, grp, hashlib, json, os, pathlib, re, shutil, stat, subprocess, sys
 P = pathlib.Path
 CADDY = P('/etc/caddy/orbit-certificates')
 ANCHOR = P('/usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
@@ -12,6 +12,20 @@ def run(*args):
     result = subprocess.run([str(a) for a in args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=45)
     if result.returncode: raise ValueError('certificate.leaf_failed')
     return result.stdout.decode()
+
+def local_account(data):
+    user=data.get('user')
+    if not isinstance(user,str) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}',user): raise ValueError('certificate.account_invalid')
+    entries=run('/usr/bin/getent','passwd',user).splitlines()
+    if len(entries)!=1: raise ValueError('certificate.account_invalid')
+    fields=entries[0].split(':')
+    if len(fields)!=7 or fields[0]!=user or not fields[2].isdigit() or not fields[3].isdigit(): raise ValueError('certificate.account_invalid')
+    uid,gid=int(fields[2]),int(fields[3]);home=P(fields[5])
+    if not fields[5].startswith('/') or any(part in ('','.','..') for part in fields[5][1:].split('/')) or any(char in fields[5] for char in ('\0','\r','\n')): raise ValueError('certificate.account_invalid')
+    if data.get('home') is not None and data['home']!=fields[5]: raise ValueError('certificate.home_mismatch')
+    metadata=home.lstat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid!=uid: raise ValueError('certificate.home_unsafe')
+    return uid,gid,fields[5]
 
 def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def public_key(path, cert=False):
@@ -47,12 +61,12 @@ def valid(current, caddy, data):
             if ' '.join(run('openssl','x509','-in',cert,'-noout','-ext',extension).split()) != value: return False
         return public_key(key)==public_key(cert,True)==public_key(caddy/'key.pem') and (caddy/'cert.pem').read_bytes()==cert.read_bytes()
     except (ValueError, OSError, subprocess.SubprocessError): return False
-def request(data):
+def request(data, account):
     root,caddy=roots(data)
     if valid(root/'current',caddy/'current',data):
         trust(root/'current/root.pem',data['root_hash'],root/'current/cert.pem')
         return {'state':'current'}
-    account=pwd.getpwnam(data['user']); uid,gid=account.pw_uid,account.pw_gid
+    uid,gid,_=account
     versions=root/'versions'; version=data['version']
     if not re.fullmatch('[a-f0-9]{16}',version) or (versions/version).exists(): raise ValueError('certificate.leaf_failed')
     for directory in (P(data['home'])/'.orbit', P(data['home'])/'.orbit/certificates',root,versions): directories(directory,uid,gid,0o700)
@@ -74,9 +88,9 @@ def link(directory,version,target,owner=None):
     staged.unlink(missing_ok=True); staged.symlink_to(target)
     if owner: os.chown(staged,*owner,follow_symlinks=False)
     os.replace(staged,directory/'current')
-def publish(data):
+def publish(data, account):
     root,caddy=roots(data); version=data['version']; candidate=root/'versions'/(version+'.candidate')
-    account=pwd.getpwnam(data['user']); uid,gid=account.pw_uid,account.pw_gid
+    uid,gid,_=account
     if not candidate.is_dir(): raise ValueError('certificate.leaf_failed')
     for name,value in [('cert.pem',data['certificate']),('root.pem',data['root_certificate'])]:
         path=candidate/name; path.write_text(value); os.chmod(path,0o644); os.chown(path,uid,gid)
@@ -96,9 +110,11 @@ def publish(data):
     if subprocess.run(['systemctl','is-active','--quiet','caddy'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0: run('systemctl','reload','caddy')
     return {}
 def execute(action,data):
+    account=local_account(data)
+    data={**data,'home':account[2]}
     root,caddy=roots(data)
-    if action=='certificate.request-leaf': return request(data)
-    if action=='certificate.publish-leaf': return publish(data)
+    if action=='certificate.request-leaf': return request(data,account)
+    if action=='certificate.publish-leaf': return publish(data,account)
     if action=='certificate.inspect-leaf': return {'present':(root/'current/cert.pem').is_file() and (caddy/'current/cert.pem').is_file()}
     if action=='certificate.remove-leaf':
         for path in (root,caddy):

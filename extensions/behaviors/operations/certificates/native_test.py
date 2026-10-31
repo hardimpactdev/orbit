@@ -52,7 +52,7 @@ class CertificateNative(NativeTestCase):
         self.cli('workflow','resume','operation-certificate-converge','--run',run,'--from','project')
         self.assertEqual(self.read()['commands'],before)
     def test_remove_has_local_effect_and_absence_inspection(self):
-        self.state['operation'].update(kind='certificate.remove',input={k:v for k,v in self.state['operation']['input'].items()if k in ('node_id','scope','home','agent_sha256')})
+        self.state['operation'].update(kind='certificate.remove',input={k:v for k,v in self.state['operation']['input'].items()if k in ('node_id','scope','home','user','agent_sha256')})
         self.state['operation']['input']['in_use']=False
         self.state['present']=True;self.save();self.run_workflow('remove')
         self.assertEqual(self.read()['commands'],['certificate.remove-leaf','certificate.inspect-leaf'])
@@ -61,6 +61,12 @@ class CertificateNative(NativeTestCase):
         self.state['operation']['cancel_requested']=True;self.save();self.run_workflow()
         self.assertEqual(self.read()['commands'],[])
         self.assertEqual(self.read()['operation']['status'],'cancelled')
+    def test_home_less_admission_keeps_user_through_convergence_and_removal(self):
+        self.state['operation']['input'].pop('home');self.save();self.run_workflow()
+        self.assertEqual('succeeded',self.read()['operation']['status'])
+        self.state=self.read();self.state['operation'].update(kind='certificate.remove',status='queued',input={key:value for key,value in self.state['operation']['input'].items() if key in ('node_id','scope','user','agent_sha256')})
+        self.state['operation']['input']['in_use']=False;self.save();self.run_workflow('remove')
+        self.assertEqual('succeeded',self.read()['operation']['status']);self.assertFalse(self.read()['present'])
     def test_role_csr_sign_and_publication_are_steps_in_the_same_native_root(self):
         leaf=dict(node_id=9,scope='role-analytics',domain='analytics.orbit',version='0123456789abcdef',root_hash='a'*64)
         steps=[]

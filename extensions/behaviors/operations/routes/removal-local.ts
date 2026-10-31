@@ -7,7 +7,7 @@ import { removeLan } from "./lan.ts";
 export const RemovalNode = z.object({
   node_id: z.number().int().positive(),
   user: z.string(),
-  home: z.string(),
+  home: z.string().optional(),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   certificate_scopes: z.array(z.string()),
   lan_route_ids: z.array(z.number().int().positive()),
@@ -51,6 +51,7 @@ export function removalActions(invoke = runLocalProgram) {
           node_id: node.node_id,
           scope,
           home: node.home,
+          user: node.user,
           agent_sha256: node.agent_sha256,
           in_use: false,
         };
@@ -61,6 +62,7 @@ export function removalActions(invoke = runLocalProgram) {
               node_id: node.node_id,
               scope,
               home: node.home,
+              user: node.user,
               agent_sha256: node.agent_sha256,
             },
             removed,

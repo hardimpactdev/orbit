@@ -4,6 +4,7 @@ import { PhpSharedProgram } from "./php-shared-program.ts";
 export const PhpPublication = z.object({
   node_id: z.number().int().positive(),
   configurations: z.record(z.string(), z.string()),
+  account_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).optional(),
 });
 /** Converge every stored shared pool, including the empty final set, on this exact worker. */
 export async function publishPhp(
@@ -14,6 +15,9 @@ export async function publishPhp(
   const input = PhpPublication.parse(raw);
   const result = await invoke(PhpSharedProgram, {
     configurations: input.configurations,
+    ...(input.account_user === undefined
+      ? {}
+      : { account_user: input.account_user }),
   }, signal);
   if (result.error_code !== undefined) {
     return {
