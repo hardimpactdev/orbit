@@ -99,7 +99,8 @@ final readonly class NodeRolePublicationInput
             $input['proxy_node_ids'] = $root['proxy_node_ids'] ?? [];
         }
 
-        return [...$input, ...$this->forPlan($snapshot, $node)];
+        return in_array($callerNodeId, self::participants($snapshot), true)
+            ? [...$input, ...$this->forPlan($snapshot, $node)] : $input;
     }
 
     /** Fresh public artifacts only. The owning parent checks its immutable participant authority.

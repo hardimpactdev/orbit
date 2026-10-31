@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Route;
 use Tests\Support\Fleet\FleetFixtures;
@@ -107,3 +108,10 @@ it('preserves lifecycle publication metadata when delegating to the parent calla
     }
     expect($input['private_dns_publication']['node_id'])->toBe($node->id);
 })->with(['node.role_remove', 'node.role_relocate']);
+
+it('refuses direct publication rendering for a Node outside the admitted plan', function (): void {
+    $node = FleetFixtures::node('parent-outside-publication', [RoleName::Database]);
+    $plan = ['caddy_node_ids' => [], 'php_node_ids' => [], 'dns_node_ids' => []];
+    expect(fn () => app(NodeRolePublicationInput::class)->forPlan($plan, $node))
+        ->toThrow(ResourceOperationException::class, 'not an admitted role publication');
+});
