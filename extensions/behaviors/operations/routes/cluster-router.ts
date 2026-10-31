@@ -210,6 +210,7 @@ export function clusterRouter(
         ) => {
           await new GatewayOperation(makeHttp(ctx), args).project({
             status: "running",
+            started_at: new Date().toISOString(),
             result: { checkpoint: args.checkpoint },
           });
           return { ready: true };
@@ -237,6 +238,7 @@ export function clusterRouter(
         execute: async (args: z.infer<typeof Args>, ctx: Context) => {
           await new GatewayOperation(makeHttp(ctx), args).project({
             status: "succeeded",
+            started_at: new Date().toISOString(),
             finished_at: new Date().toISOString(),
             result: { ready: true },
           });

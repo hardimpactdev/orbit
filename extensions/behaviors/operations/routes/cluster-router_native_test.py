@@ -61,7 +61,7 @@ class ClusterNative(NativeTestCase):
         self.assertLess(state['events'].index('certificate-inspect'),state['events'].index('router-serving'))
     def test_current_router_set_records_success_without_any_host_or_dns_effect(self):
         inventory=self.state['operation']['input']['cluster_router']
-        inventory.update(noop=True,old_nodes=[],edge_node_ids=[14],dns_node_ids=[1,14])
+        inventory.update(noop=True,old_nodes=[],edge_node_ids=[14],dns_node_ids=[1,14],workloads=[dict(node_id=13,agent_sha256='a'*64,user='orbit',home='/home/orbit',route_id=7,firewall=dict(route_id=7,router='192.0.2.18',workload='192.0.2.13'))])
         inventory['candidate']['active']=True;self.save()
         state=self.run_workflow()
         self.assertEqual(['record'],state['events'])

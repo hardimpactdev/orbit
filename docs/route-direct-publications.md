@@ -57,3 +57,7 @@ For `cluster.router_set`, selecting the sole already-active Router records succe
 without host effects. The native Router DAG skips edge Caddy, DNS publication and
 withdrawal checkpoints when admission marks the selection unchanged. It still
 reads the admitted inventory and projects the parent result.
+
+Router checkpoint and completion updates include `started_at`, as the shared
+Gateway status request requires. Completion also includes `finished_at`. The
+Gateway preserves the Operation's first start time.

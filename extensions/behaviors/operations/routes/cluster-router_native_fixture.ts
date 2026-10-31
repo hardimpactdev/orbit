@@ -22,7 +22,20 @@ export async function fixtureHttp(
     await Deno.writeTextFile("native-cluster.json", JSON.stringify(state));
     return { status: 200, body: { data: state.operation } };
   }
-  const body = raw as { status: string; result?: { checkpoint?: string } };
+  const body = raw as {
+    status: string;
+    started_at?: string;
+    finished_at?: string;
+    result?: { checkpoint?: string };
+  };
+  // Match the Gateway's shared status projection request at this HTTP boundary.
+  if (
+    !body.started_at ||
+    (["succeeded", "failed", "cancelled"].includes(body.status) &&
+      !body.finished_at)
+  ) {
+    return { status: 422, body: { error: { code: "validation.failed" } } };
+  }
   state.operation.status = body.status;
   if (body.result?.checkpoint) state.events.push(body.result.checkpoint);
   if (body.status === "succeeded") state.events.push("record");
