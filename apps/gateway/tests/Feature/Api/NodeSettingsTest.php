@@ -255,7 +255,7 @@ describe('node storage settings', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev', 'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10', 'user' => 'orbit',
-            'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.3',
+            'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.3', 'ssh_host_fingerprint' => 'SHA256:test',
         ]);
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
         $socket = new FakeRoutePublicationSocket;
@@ -263,7 +263,7 @@ describe('node storage settings', function (): void {
             'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
         ]]];
         app()->instance(WebSocketClient::class, $socket);
-        config(['swamp.run_token' => 'fake.token']);
+        config(['swamp.run_token' => 'fake.token', 'swamp_workers.nodes' => [$node->id]]);
         $agents = Mockery::mock(AgentCommandRunner::class);
         $agents->shouldNotReceive('run', 'install');
         app()->instance(AgentCommandRunner::class, $agents);

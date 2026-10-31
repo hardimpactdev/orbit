@@ -28,7 +28,7 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->gateway = $gateway;
-    $this->node = Node::query()->forceCreate(['id' => 209, 'name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'settings' => ['apps' => ['path' => '/srv/old']]]);
+    $this->node = Node::query()->forceCreate(['id' => 209, 'name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_fingerprint' => 'SHA256:test', 'settings' => ['apps' => ['path' => '/srv/old']]]);
     $this->input = ['agent_pin' => str_repeat('a', 64), 'root' => '/srv/new', 'user' => 'orbit', 'create_missing' => true,
         'protected_roots' => ['/etc'], 'managed_checkouts' => [],
         'settings' => ['apps' => ['path' => '/srv/new']], 'settings_patch' => ['apps' => true, 'task_vms' => false]];
@@ -44,7 +44,7 @@ beforeEach(function (): void {
         'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
     ]]];
     app()->instance(WebSocketClient::class, $this->socket);
-    config(['swamp.run_token' => 'fake.token']);
+    config(['swamp.run_token' => 'fake.token', 'swamp_workers.nodes' => [$this->node->id]]);
 
 });
 
@@ -136,13 +136,13 @@ it('captures safe intent without a Gateway account lookup install or Node effect
 });
 
 it('admits other Node settings directly with their own agent pin', function (): void {
-    $node = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active]);
+    $node = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.40', 'ssh_host_fingerprint' => 'SHA256:test', 'status' => LifecycleStatus::Active]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->worker->accessibleNodes()->attach($node);
     $resolver = Mockery::mock(ManagedUserAccountResolver::class);
     $resolver->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     app()->instance(ManagedUserAccountResolver::class, $resolver);
-    config(['swamp.direct_writers' => ['node.settings' => 'direct']]);
+    config(['swamp.direct_writers' => ['node.settings' => 'direct'], 'swamp_workers.nodes' => [$node->id]]);
     $response = $this->patchJson('/api/v1/nodes/'.$node->id.'/settings', ['apps' => ['path' => '/srv/new']])->assertAccepted();
     $operation = Operation::findOrFail($response->json('data.id'));
     expect($operation->state['node_settings_writer'])->toBe('direct');
@@ -172,4 +172,15 @@ it('refuses unsupported storage platforms before recording an execution intent',
     $this->patchJson('/api/v1/nodes/'.$this->node->id.'/settings', ['apps' => ['path' => '/srv/new']])
         ->assertUnprocessable()->assertJsonPath('error.code', 'node.settings_platform_unsupported');
     expect(Operation::query()->count())->toBe($count)->and($this->socket->sent)->toBe([]);
+});
+
+it('refuses apps-root work outside the worker rollout without an intent or Node effect', function (): void {
+    config(['swamp_workers.nodes' => []]);
+    $this->worker->accessibleNodes()->attach($this->node);
+    $count = Operation::query()->count();
+    $this->patchJson('/api/v1/nodes/'.$this->node->id.'/settings', ['apps' => ['path' => '/srv/new']])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'swamp.node_worker_not_ready');
+    expect(Operation::query()->count())->toBe($count)
+        ->and($this->node->fresh()->settings)->toBe(['apps' => ['path' => '/srv/old']])
+        ->and($this->socket->sent)->toBe([]);
 });

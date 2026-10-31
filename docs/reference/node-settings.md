@@ -22,13 +22,13 @@ The Gateway starts `operation-node-settings` directly after the intent commits. 
 
 The shared `ORBIT_SWAMP_DIRECT_WRITERS` map defaults to `{}`. This kind defaults to `direct`; an explicit `polled` value refuses new admission because that execution path has been removed. Rollback reverts the owning conversion. Each intent retains its admitted writer.
 
-Each step targets `orbit-node-<node_id>` with the same Node label. Node 209 uses its existing `swamp209-migration-a` worker with label `node: "209"`. There is no fallback to another Node. Release the full-kind switch only after the affected workers are ready. If the canary needs released code, canary a safe target immediately after release and revert on failure.
+Each step targets `orbit-node-<node_id>` with the same Node label, including Node 209. Apps-root actions require a managed Linux Node in the operator worker rollout. VPN and usexit remain outside that rollout; an action for a Node without a selected worker refuses before recording an Operation. There is no fallback to another Node. If the canary needs released code, canary a safe target immediately after release and revert on failure.
 
 Workers use the configured Node user’s existing passwordless sudo. The fixed local action checks the admitted binary digest, validates real directory components and ownership, enforces a 30-second command budget, and returns no raw output. Cancel and recover through native Swamp tooling. Only the Gateway start response binds the native run ID; workers cannot read input or project results before that binding. A failed or cancelled Operation preserves the previous settings.
 
 Gateway admission checks path grammar and recorded protected paths. Swamp resolves the actual managed home and group before checking home-dependent restrictions. A request for a hidden control path in that home returns HTTP 202 and then fails without changing settings. Clearing an override uses the actual home’s `apps` directory. The Gateway performs no account lookup, agent install or filesystem action during admission.
 
-An action on an apps root requires Linux. Other platforms refuse before recording an execution intent.
+An action on an apps root requires Linux. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
 
 State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 

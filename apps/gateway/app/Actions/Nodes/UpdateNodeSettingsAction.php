@@ -21,6 +21,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +57,9 @@ final readonly class UpdateNodeSettingsAction
             $storage = $this->validator->directIntent($normalized, $node, $create);
             if ($node->platform !== 'linux') {
                 throw new ResourceOperationException('node.settings_platform_unsupported', 'Apps-root actions require a Linux Node.');
+            }
+            if (! app(NodeWorkerRollout::class)->allows($node)) {
+                throw new ResourceOperationException('swamp.node_worker_not_ready', 'Apps-root actions require a Node in the worker rollout.');
             }
 
             return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
