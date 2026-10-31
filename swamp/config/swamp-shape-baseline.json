@@ -2418,10 +2418,8 @@
     {
       "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
       "rule": "multi-action",
-      "count": 11,
+      "count": 8,
       "evidence": [
-        "/bin/bash",
-        "/usr/bin/env",
         "/usr/bin/getent",
         "/usr/bin/mktemp",
         "/usr/bin/rm",
@@ -2429,8 +2427,7 @@
         "/usr/bin/sudo",
         "/usr/bin/systemctl",
         "/usr/bin/systemd-analyze",
-        "/usr/bin/test",
-        "/usr/bin/timeout"
+        "/usr/bin/test"
       ]
     },
     {

@@ -1,0 +1,363 @@
+id: 90284a9b-b90f-4342-86e3-7d0ababd23a7
+name: operation-schedule-run
+description: Run one admitted Schedule from a 209 worker through official SSH; command
+  bytes use vault-backed stdin.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - schedule.run
+    intent:
+      type: object
+      properties:
+        schedule:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            command_hash:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+            user:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            group:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            home:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            shell:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            working_directory:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            login_shell:
+              type: boolean
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 86400
+          required:
+          - id
+          - command_hash
+          - user
+          - group
+          - home
+          - shell
+          - working_directory
+          - login_shell
+          - timeout_seconds
+          additionalProperties: false
+        ssh_execution:
+          type: object
+      required:
+      - schedule
+      - ssh_execution
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        command:
+          type: object
+          properties:
+            vault:
+              type: string
+            key:
+              type: string
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - command
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: run
+  target: orbit-node-209
+  labels:
+    node: '209'
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "schedule-run-assets-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs: {}
+  - name: prepare_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-schedule-run-" + run.id }}
+  - name: copy_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: prepare_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-schedule-run-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: account
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: copy_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-run-" + run.id + "/scripts/account.py" }}
+        - ${{ inputs.intent.schedule.user }}
+        - ${{ inputs.intent.schedule.home }}
+        - ${{ inputs.intent.schedule.shell }}
+        - ${{ inputs.intent.schedule.group }}
+  - name: directory
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: account
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - -u
+        - ${{ inputs.intent.schedule.user }}
+        - --
+        - /usr/bin/test
+        - -d
+        - ${{ inputs.intent.schedule.working_directory }}
+  - name: accessible
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - -u
+        - ${{ inputs.intent.schedule.user }}
+        - --
+        - /usr/bin/test
+        - -x
+        - ${{ inputs.intent.schedule.working_directory }}
+  - name: command_hash
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: accessible
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-run-" + run.id + "/scripts/command_hash.py" }}
+        - ${{ inputs.intent.schedule.command_hash }}
+        stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key)
+          }}
+  - name: execute
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: command_hash
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ ["/usr/bin/sudo", "-n", "--user", inputs.intent.schedule.user,
+          "--group", inputs.intent.schedule.group, "--", "/usr/bin/timeout", "--signal=TERM",
+          "--kill-after=5", string(inputs.intent.schedule.timeout_seconds) + "s",
+          "/usr/bin/env", "-i", "--chdir=" + inputs.intent.schedule.working_directory,
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME="
+          + inputs.intent.schedule.home, "SHELL=" + inputs.intent.schedule.shell,
+          "USER=" + inputs.intent.schedule.user, "LOGNAME=" + inputs.intent.schedule.user,
+          "/bin/bash", "-o", "pipefail", "-c", "\"$@\" 2>&1 | /usr/bin/systemd-cat
+          --identifier \"$0\"", "orbit-schedule-" + inputs.intent.schedule.id] + [inputs.intent.schedule.shell]
+          + (inputs.intent.schedule.login_shell ? ["--login"] : []) + ["-s"] }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key)
+          }}
+        timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
+        captureOutput: false
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: prepare_assets
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: account
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: accessible
+      condition:
+        type: always
+    - step: command_hash
+      condition:
+        type: always
+    - step: execute
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-run-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\nif [ \"$EXECUTED\" = succeeded ]; then\n  printf '%s\\n' '{\"\
+          ready\":true}'\nelif [ \"$ACCOUNT\" = failed ] || [ \"$DIRECTORY\" = failed\
+          \ ] || [ \"$ACCESSIBLE\" = failed ]; then\n  printf '%s\\n' '{\"error_code\"\
+          :\"schedule.target_unavailable\"}'\nelif [ \"$HASH\" = failed ]; then\n\
+          \  printf '%s\\n' '{\"error_code\":\"schedule.artifact_conflict\"}'\nelse\n\
+          \  printf '%s\\n' '{\"error_code\":\"schedule.run_failed\"}'\nfi\n"
+        env:
+          EXECUTED: '${{ "execute" in steps ? steps.execute.status : "skipped" }}'
+          ACCOUNT: '${{ "account" in steps ? steps.account.status : "skipped" }}'
+          DIRECTORY: '${{ "directory" in steps ? steps.directory.status : "skipped"
+            }}'
+          ACCESSIBLE: '${{ "accessible" in steps ? steps.accessible.status : "skipped"
+            }}'
+          HASH: '${{ "command_hash" in steps ? steps.command_hash.status : "skipped"
+            }}'
+  - name: cleanup_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-schedule-run-" + run.id }}
+    guard: ${{ !("execute" in steps && steps.execute.status == "succeeded") }}
+    allowFailure: true
