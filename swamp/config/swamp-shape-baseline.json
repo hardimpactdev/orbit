@@ -2215,18 +2215,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/role_relocate_direct_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_relocate_direct_local.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_removal.ts",
       "rule": "custom-control",
       "count": 2,
@@ -2254,7 +2242,7 @@
     {
       "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
       "rule": "private-material",
-      "count": 3,
+      "count": 1,
       "evidence": []
     },
     {
