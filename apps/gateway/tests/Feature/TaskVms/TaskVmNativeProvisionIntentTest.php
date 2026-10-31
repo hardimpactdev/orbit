@@ -6,8 +6,6 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmProvisionAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -67,15 +65,7 @@ beforeEach(function (): void {
     app()->instance(SshKeyProvider::class, $keys);
     app()->instance(TaskVmProvider::class, Mockery::mock(TaskVmProvider::class));
     app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
-    if (app(DirectOperation::class)->definition('task_vm.provision') === null) {
-        app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
-        {
-            public function definitions(): array
-            {
-                return ['task_vm.provision' => ['workflow' => 'operation-task-vm-provision', 'projection' => TaskVmProvisionProjection::class, 'private_material' => ['installation' => 'task_vm.installation', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit']]];
-            }
-        }]));
-    }
+
 });
 
 function savedNativeProvisionIntent(): Operation
@@ -222,7 +212,7 @@ it('exposes only public provision input to admitted participants without a globa
     $projection = app(TaskVmProvisionProjection::class);
     $input = $projection->publicInput($operation, $operation->input['guest_node_id']);
     expect($input['guest_node_id'])->toBe($operation->input['guest_node_id'])
-        ->and($input)->not->toHaveKeys(['installation', 'enrollment_network', 'first_visit', 'upcloud_token']);
+        ->and($input)->not->toHaveKeys(['installation', 'configuration', 'first_visit', 'upcloud_token']);
     expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
 });
 

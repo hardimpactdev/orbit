@@ -9,6 +9,8 @@ The Gateway validates the allocated VM and records its host, recipe image, resou
 
 The workflow creates the provider VM, prepares enrollment on its admitted host, proves the guest's exact `orbit-node-N` worker and prepares Pi through the shared Process lower action. Every placed job also requires the matching `node` label. A task-group worker does not satisfy this identity.
 
+The host root records the guest SSH public identity after bootstrap and its WireGuard public key before hub publication. Hub publication runs on the Gateway through the canonical `wireguard-hub-N` behavior lock and the admitted pinned SSH transport to the hub. Its private material uses only `configuration` (`node.vpn_configuration`); the old rendered enrollment network source is removed. A failed hub result stops peer publication.
+
 After network publication succeeds, the host root records `node.network_enrolled=true` before worker issuance. The shared enrollment projector activates only the admitted guest Node. The VM, app-dev role and Pi Process remain provisioning until native worker and runtime confirmation succeeds. This checkpoint adds no Node access edge. The shared boundary authorizes each admitted participant for this parent run.
 
 The enrollment lane supplies the provider and enrollment lower actions. They run inside the provision root. Missing preparation refuses before provider allocation. Provision does not admit a Node, Process or enrollment child Operation.

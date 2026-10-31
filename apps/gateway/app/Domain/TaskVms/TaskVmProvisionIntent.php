@@ -89,7 +89,7 @@ final readonly class TaskVmProvisionIntent
     {
         $vm = $this->owned($operation);
 
-        return [...Arr::except($operation->input, ['upcloud_token', 'installation', 'enrollment_network', 'first_visit', 'model_key', 'model_router', 'pi_token', 'pi_artifact_file', 'pi_artifact', 'secret_hash', 'worker_credentials', 'provider_bootstrap']),
+        return [...Arr::except($operation->input, ['upcloud_token', 'installation', 'configuration', 'first_visit', 'model_key', 'model_router', 'pi_token', 'pi_artifact_file', 'pi_artifact', 'secret_hash', 'worker_credentials', 'provider_bootstrap']),
             'enrollment' => [...ValidatedData::object($operation->input['enrollment']), 'wireguard_public_key' => $vm->node?->wireguard_public_key],
             'eligible' => $vm->state === TaskVmState::Provisioning];
     }
