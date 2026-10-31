@@ -194,7 +194,7 @@ The fleet does not have to own its public edge. A tracking host mirrors the Inst
 
 ### Native workflows manage sites
 
-Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, managed account homes and participant Nodes. Placed steps reuse the shared Route publication and certificate behaviors. A control step on Node 209 signs public requests with the CA in the Swamp vault; Node private keys stay on their Nodes. The Gateway neither signs certificates nor stores signing requests.
+Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, Node users and participant Nodes. The placed worker resolves its own account home with local `getent`; the Gateway performs no account lookup. Placed steps reuse the shared Route publication and certificate behaviors. A control step on Node 209 signs public requests with the CA in the Swamp vault; Node private keys stay on their Nodes. The Gateway neither signs certificates nor stores signing requests.
 
 Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
 
@@ -208,6 +208,14 @@ The browser never holds the Stats API key, and it cannot ask for another Instanc
 
 ### Compose Analytics tracking into Route changes
 
-Target-only Route changes keep the hostname catalog and require no Analytics lifecycle effect. A Route parent that changes tracking placement or publication uses `AnalyticsRoutePlan::capture()` to admit the current and retiring host Nodes, Router leaves, private DNS owners and Ingress TLS probes. Capture reads stored state; it neither executes work nor changes records.
+Target-only Route changes keep the hostname catalog and require no Analytics lifecycle effect. A Route parent that changes tracking placement or publication uses `AnalyticsRoutePlan::capture()` to admit the current and retiring host Nodes, Router leaves, private DNS owners and Ingress TLS probes. Capture reads stored state, including `node.user`, and omits the home. Leaf `home` is optional; when present the worker checks it against the local account. Capture neither executes work nor changes records.
 
 The parent composes `analyticsRouteActions()` as placed native steps: `hostPrepare` requests a public CSR; `publish` installs and checks the matching public certificate; `remove` and `hostWithdraw` remove an unused leaf and its Route LAN allowance. The same helpers serve enable and disable. The parent retains its kind and run, calls the canonical signer on Node 209, and uses fresh whole-Node Route publication for Caddy, DNS and firewall changes. It withdraws listeners before removing leaves and owns the DNS grace and domain callbacks. These four steps never start child Operations.
+
+`AnalyticsRoutePlan::associated($appRoute)` selects published authoritative tracking Routes through the app Route's target Instances. Each Instance must name that app Route as its `authoritativeRoute()`. The `analyticsTracking` relation exists on the tracking Route, not on the app Route. A secondary app Route owns no tracking host.
+
+`captureUpdate($appRoute, $candidate)` captures only placement or publication changes for those hosts. It returns each `route_id`, bounded `before`/`after` state, `publish`/`rollback` host plans and their union `node_ids` without writing. Existing default and custom tracking hostnames stay literal. A domain-only change does not rename them or call Plausible; an explicit Analytics enable converges the provider site and desired host set.
+
+The Route parent stores that capture in its immutable input. Its own result projection calls `checkpointUpdate($captured, $checkpoint)` with that stored input: `certificates_ready` publishes the new stored placement, `public_verified` enables the public handler, `placement_cleanup` withdraws retiring placement after the native DNS grace, and `complete` clears transition fields. `rollback` restores the captured prior state. These callbacks change only tracking records and do no execution or receipt validation. The parent publishes fresh Caddy/DNS/firewall state between callbacks and owns terminal replay.
+
+The parent admits the returned union `node_ids`, plus its own root and other effect Nodes. Publish and cleanup must use the union of both host plans, including the previous Ingress when a host changes from public to private. A new private publication plan alone does not list that old public listener.

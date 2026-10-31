@@ -24,7 +24,7 @@ use App\Support\ValidatedData;
 /**
  * Stored Route intent and observed-result projection. No host execution.
  *
- * @phpstan-type Leaf array{node_id:int,user:string,home:string,agent_sha256:string,route_id:int,domain:string,scope:string,version?:string,root_hash?:string,in_use?:bool}
+ * @phpstan-type Leaf array{node_id:int,user:string,home?:string,agent_sha256:string,route_id:int,domain:string,scope:string,version?:string,root_hash?:string,in_use?:bool}
  * @phpstan-type Plan array{publish:list<int>,remove:list<int>,snapshot:list<array<string,mixed>>,certificates:list<Leaf>,cleanup:list<Leaf>,caddy_node_ids:list<int>,dns_node_ids:list<int>,router_node_ids:list<int>,ingress_node_ids:list<int>,public_verify_node_ids:list<int>,firewall_node_ids:list<int>,cleanup_caddy_node_ids:list<int>,public_verifications:list<array<string,mixed>>}
  */
 final readonly class AnalyticsTrackingIntent
@@ -235,7 +235,8 @@ final readonly class AnalyticsTrackingIntent
     private function leaf(array $leaf): array
     {
         return ['node_id' => ValidatedData::integer($leaf['node_id']), 'route_id' => ValidatedData::integer($leaf['route_id']),
-            'user' => ValidatedData::string($leaf['user']), 'home' => ValidatedData::string($leaf['home']), 'agent_sha256' => ValidatedData::string($leaf['agent_sha256']),
+            'user' => ValidatedData::string($leaf['user']),
+            ...(isset($leaf['home']) ? ['home' => ValidatedData::string($leaf['home'])] : []), 'agent_sha256' => ValidatedData::string($leaf['agent_sha256']),
             'domain' => ValidatedData::string($leaf['domain']), 'scope' => ValidatedData::string($leaf['scope']),
             ...(isset($leaf['version']) ? ['version' => ValidatedData::string($leaf['version']), 'root_hash' => ValidatedData::string($leaf['root_hash'])] : []),
             ...(array_key_exists('in_use', $leaf) ? ['in_use' => false] : [])];
