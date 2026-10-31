@@ -311,4 +311,6 @@ nonlocal declarations, walrus assignments and deleted bindings prevent a claim
 that a captured command is fixed. Unresolved executable control remains unknown
 and cannot gain a clean classification.
 
-The Node-worker lint recognizes the exact official `@swamp/ssh`, `@swamp/cfgmgmt/file`, `@swamp/cfgmgmt/directory` and `@swamp/cfgmgmt/systemd` types. The systemd model provides native `apply` and `restart` used by publication workflows. This is not an extension-namespace wildcard; other unknown types still fail.
+The Node-worker lint recognizes the exact official `@swamp/ssh`, `@swamp/cfgmgmt/file`, `@swamp/cfgmgmt/directory`, `@swamp/cfgmgmt/systemd` and `@swamp/cfgmgmt/firewall` types. The systemd model provides native `apply` and `restart` used by publication workflows. This is not an extension-namespace wildcard; other unknown types still fail.
+
+The official firewall model (`@swamp/cfgmgmt` package `2026.10.27.1`) supplies `apply` for Node-local port/protocol/source tuples with its defaults. Family workflows keep fixed209 placement and public official connection inputs. Recognition adds no destination/comment semantics or family SSH adapter; native validation owns the model schema.
