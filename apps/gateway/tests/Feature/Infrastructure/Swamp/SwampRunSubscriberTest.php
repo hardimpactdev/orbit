@@ -390,27 +390,109 @@ it('preserves a terminal Operation when an older event arrives', function (): vo
     expect($operation->fresh()->result)->toBe(['prior' => true]);
 });
 
-it('retains the binding after failed synchronous delivery and recovers by reattaching without rerunning work', function (): void {
+it('retains a failed terminal delivery without reconnecting or blocking another run', function (): void {
     $operation = nativeSubscriberOperation();
+    $other = nativeSubscriberOperation('b075eb23-7ac4-4487-80d1-57a038a92676');
+    $clock = (object) ['now' => 100.0];
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger, static fn (): float => $clock->now);
+    $subscriber->pass();
+    [$request, $otherRequest] = $socket->sent;
+    $attempts = [];
+    Bus::shouldReceive('dispatchSync')->andReturnUsing(function ($job) use (&$attempts, $operation): void {
+        $attempts[] = $job->operationId;
+        if ($job->operationId === $operation->id) {
+            throw new RuntimeException('synthetic-projection-failed');
+        }
+    });
+    $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation),
+        nativeSubscriberAttached($otherRequest), nativeSubscriberFrame($otherRequest, $other));
+
+    $subscriber->pass();
+    for ($i = 0; $i < 50; $i++) {
+        $clock->now = 104.9;
+        $subscriber->pass();
+    }
+
+    expect($socket->isConnected())->toBeTrue();
+    expect($socket->endpoints)->toHaveCount(1);
+    expect($socket->sent)->toHaveCount(2);
+    expect($attempts)->toBe([$operation->id, $other->id]);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($operation->fresh()->state['swamp_run_id'])->toBe($request['payload']['runId']);
+    $clock->now = 105.0;
+    $subscriber->pass();
+    $clock->now = 114.9;
+    $subscriber->pass();
+    expect($attempts)->toBe([$operation->id, $other->id, $operation->id]);
+
+    Bus::fake([ProjectSwampTerminal::class]);
+    $clock->now = 115.0;
+    $subscriber->pass();
+    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
+    $subscriber->close();
+    $subscriber->pass();
+    expect($socket->sent)->toHaveCount(2);
+});
+
+it('backs off repeated unavailable transport handshakes', function (): void {
+    nativeSubscriberOperation();
+    $clock = (object) ['now' => 100.0];
+    $socket = new FakeSwampEventSocket;
+    $attempts = 0;
+    $socket->onConnect = function () use (&$attempts): void {
+        $attempts++;
+        throw new WebSocketException('unavailable');
+    };
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger, static fn (): float => $clock->now);
+    $subscriber->pass();
+    $clock->now = 101.0;
+    $subscriber->pass();
+    $clock->now = 102.0;
+    $subscriber->pass();
+    expect($attempts)->toBe(2);
+    $clock->now = 103.0;
+    $subscriber->pass();
+    expect($attempts)->toBe(3);
+});
+
+it('preserves a retained terminal notice when the transport reconnects', function (): void {
+    $operation = nativeSubscriberOperation();
+    $other = nativeSubscriberOperation('b075eb23-7ac4-4487-80d1-57a038a92676');
     $clock = (object) ['now' => 100.0];
     $socket = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber($socket, new NullLogger, static fn (): float => $clock->now);
     $subscriber->pass();
     $request = $socket->sent[0];
-    Bus::shouldReceive('dispatchSync')->once()->andThrow(new RuntimeException('synthetic-projection-failed'));
+    Bus::shouldReceive('dispatchSync')->once()->andThrow(new RuntimeException('unavailable'));
     $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
-
     $subscriber->pass();
-
-    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
-    expect($operation->fresh()->state['swamp_run_id'])->toBe($request['payload']['runId']);
-    expect($socket->isConnected())->toBeFalse();
+    $subscriber->close();
+    $subscriber->pass();
+    expect(array_column(array_column($socket->sent, 'payload'), 'runId'))->toBe([
+        $operation->state['swamp_run_id'], $other->state['swamp_run_id'], $other->state['swamp_run_id'],
+    ]);
     Bus::fake([ProjectSwampTerminal::class]);
+    $clock->now = 105.0;
+    $subscriber->pass();
+    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
+});
+
+it('does not reset reconnect backoff for a handshake followed by immediate disconnect', function (): void {
+    nativeSubscriberOperation();
+    $clock = (object) ['now' => 100.0];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('isConnected')->andReturnFalse();
+    $socket->shouldReceive('connect')->times(3);
+    $socket->shouldReceive('send')->times(3);
+    $socket->shouldReceive('receive')->times(3)->andReturn([]);
+    $socket->shouldReceive('close')->times(3);
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger, static fn (): float => $clock->now);
+    $subscriber->pass();
     $clock->now = 101.0;
     $subscriber->pass();
-    $socket->push(['type' => 'error', 'id' => $socket->sent[1]['id'], 'code' => 'not_found']);
+    $clock->now = 102.0;
     $subscriber->pass();
-
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === null);
-    expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
+    $clock->now = 103.0;
+    $subscriber->pass();
 });
