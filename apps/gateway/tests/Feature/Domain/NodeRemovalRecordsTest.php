@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\NodeRemovalPlan;
+use App\Domain\TaskVms\TaskVmNodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -88,4 +89,27 @@ it('retains the actual Metrics contribution when capturing an already deleted Ta
     $snapshot = app(NodeRemovalPlan::class)->build($guest, true, true);
     expect($snapshot['metrics'])->toBe(['node_id' => $metrics->id, 'gateway_id' => $gateway->id]);
     $this->assertModelExists($guest);
+});
+
+it('captures the exact deleted TaskVM and all serving participant owners without calling the deleted guest', function (): void {
+    $source = FleetFixtures::node('removal-lower-guest', [RoleName::AppDev]);
+    $hub = FleetFixtures::node('removal-lower-vpn', [RoleName::Vpn]);
+    $other = FleetFixtures::node('removal-lower-serving');
+    $vm = TaskVm::query()->create(['node_id' => $source->id, 'name' => $source->name, 'wireguard_ip' => $source->wireguard_ip, 'provider' => 'incus', 'state' => 'destroying']);
+    $snapshot = app(TaskVmNodeRemovalPlan::class)->deletedTaskVm($vm, $source);
+
+    expect($snapshot)->toMatchArray(['schema_version' => 1, 'node_id' => $source->id, 'task_vm_id' => $vm->id, 'machine_deleted' => true, 'offline' => true, 'metrics' => null]);
+    expect($snapshot['participants'])->toBe([
+        ['node_id' => $hub->id, 'peer' => false, 'routes' => false, 'residue' => false, 'dns' => true],
+    ]);
+    $this->assertModelExists($source);
+});
+
+it('refuses a foreign VM Node binding before producing a reusable cleanup input', function (): void {
+    $source = FleetFixtures::node('removal-lower-owner');
+    $other = FleetFixtures::node('removal-lower-foreign');
+    $vm = TaskVm::query()->create(['node_id' => $source->id, 'name' => $source->name, 'wireguard_ip' => $source->wireguard_ip, 'provider' => 'incus', 'state' => 'destroying']);
+    expect(fn () => app(TaskVmNodeRemovalPlan::class)->deletedTaskVm($vm, $other))->toThrow(ResourceOperationException::class);
+    $this->assertModelExists($source);
+    $this->assertModelExists($other);
 });

@@ -12,6 +12,10 @@ final readonly class StartTaskVmLifecycleOperationAction
 {
     public function execute(int $taskVmId, string $verb): ?Operation
     {
+        if ($verb === 'destroy') {
+            return app(StartTaskVmDestroyAction::class)->execute($taskVmId);
+        }
+
         throw new ResourceOperationException('operation.kind_unavailable', 'Use the owning native Task VM lifecycle admission.', 409);
     }
 }
