@@ -100,10 +100,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database#orbit-databaseupdate) | `validate()` and `afterCommit()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
-| `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
-
-`DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn contributes its pairing-creation declaration. Core imports neither extension.
 
 `ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; the AI router tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
 
