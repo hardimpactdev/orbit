@@ -11,6 +11,7 @@ import {
   proxyUnit,
 } from "./proxy-install.ts";
 import type { NodeCommand } from "../operations/_lib/node-commands.ts";
+import { workerUnit } from "./install.ts";
 
 const vpn = {
   node_id: 1 as const,
@@ -57,6 +58,14 @@ Deno.test("two proxy units have isolated credentials and state with exact placem
     assertEquals(unit.includes("orbit-agent"), false);
     assertEquals(unit.includes("NoNewPrivileges"), false);
     assertEquals(unit.includes("User=orbit"), true);
+  }
+});
+Deno.test("proxy workers use the same public CA path as the existing persistent worker", () => {
+  const ordinary = workerUnit({ node_id: 209, user: "orbit" });
+  const ca = ordinary.match(/--ca-cert=(\S+)/)?.[1];
+  assertEquals(ca, "/usr/local/share/ca-certificates/orbit-root.crt");
+  for (const node of [1, 18] as const) {
+    assertEquals(proxyUnit(node).match(/--ca-cert=(\S+)/)?.[1], ca);
   }
 });
 Deno.test("insufficient209 memory refuses before key, file, credential or unit effects", async () => {

@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { type NodeCommand, run } from "../operations/_lib/node-commands.ts";
-import type { WorkerCredentials } from "./install.ts";
+import { WorkerCaFile, type WorkerCredentials } from "./install.ts";
 import { attestProxyRuntime, type ProxyRuntime } from "./proxy-runtime.ts";
 import {
   metadata,
@@ -120,7 +120,7 @@ export function proxyUnit(node: 1 | 18): string {
   if (node !== 1 && node !== 18) throw new Error("Unsupported proxy Node");
   const state = `/var/lib/orbit-node-proxy-${node}`;
   const credentials = `${root}/credentials/${node}`;
-  return `[Unit]\nDescription=Orbit SSH proxy worker for Node ${node}\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=0\n\n[Service]\nType=exec\nUser=orbit\nWorkingDirectory=${state}\nEnvironment=HOME=${state} SWAMP_HOME=${state}/home SWAMP_CONFIG_DIR=${state}/config\nLoadCredential=enrollment:${credentials}/enrollment.token\nLoadCredential=server:${credentials}/server.token\nExecStart=/usr/local/bin/swamp worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert=/etc/orbit/agent/ca.pem --cache-dir=${state}/cache --label node=${node} --label pool=light-node-proxy\nRestart=on-failure\nRestartSec=15\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n`;
+  return `[Unit]\nDescription=Orbit SSH proxy worker for Node ${node}\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=0\n\n[Service]\nType=exec\nUser=orbit\nWorkingDirectory=${state}\nEnvironment=HOME=${state} SWAMP_HOME=${state}/home SWAMP_CONFIG_DIR=${state}/config\nLoadCredential=enrollment:${credentials}/enrollment.token\nLoadCredential=server:${credentials}/server.token\nExecStart=/usr/local/bin/swamp worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert=${WorkerCaFile} --cache-dir=${state}/cache --label node=${node} --label pool=light-node-proxy\nRestart=on-failure\nRestartSec=15\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n`;
 }
 
 /** Called on209 after public-key authorization on both exact approved targets. */

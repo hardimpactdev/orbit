@@ -25,6 +25,7 @@ export const Swamp = {
   bytes: 405875640,
   headroom: 256 * 1024 * 1024,
 };
+export const WorkerCaFile = "/usr/local/share/ca-certificates/orbit-root.crt";
 const binary = "/usr/local/bin/swamp";
 const root = "/var/lib/orbit-node-worker";
 const credentialsRoot = "/etc/orbit/swamp-worker";
@@ -49,7 +50,7 @@ export function availableMemory(
 }
 export function workerUnit(config: WorkerConfig): string {
   const input = WorkerConfig.parse(config);
-  return `[Unit]\nDescription=Orbit Swamp worker for Node ${input.node_id}\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=0\n\n[Service]\nType=exec\nUser=${input.user}\nWorkingDirectory=${root}\nEnvironment=HOME=${root} SWAMP_HOME=${root}/home SWAMP_CONFIG_DIR=${root}/config\nLoadCredential=enrollment:${credentialsRoot}/enrollment.token\nLoadCredential=server:${credentialsRoot}/server.token\nExecStartPre=+${checker}\nExecStart=${binary} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert=/usr/local/share/ca-certificates/orbit-root.crt --cache-dir=${root}/cache --label node=${input.node_id}\nRestart=on-failure\nRestartSec=15\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n`;
+  return `[Unit]\nDescription=Orbit Swamp worker for Node ${input.node_id}\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=0\n\n[Service]\nType=exec\nUser=${input.user}\nWorkingDirectory=${root}\nEnvironment=HOME=${root} SWAMP_HOME=${root}/home SWAMP_CONFIG_DIR=${root}/config\nLoadCredential=enrollment:${credentialsRoot}/enrollment.token\nLoadCredential=server:${credentialsRoot}/server.token\nExecStartPre=+${checker}\nExecStart=${binary} worker connect wss://swamp.orbit --token-file=%d/enrollment --server-token-file=%d/server --ca-cert=${WorkerCaFile} --cache-dir=${root}/cache --label node=${input.node_id}\nRestart=on-failure\nRestartSec=15\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\nUMask=0077\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n`;
 }
 const checkProgram = `#!/usr/bin/python3
 import os,stat,sys
@@ -236,7 +237,7 @@ export async function configureNodeWorker(
   ) throw new Error("swamp.node_worker_invalid");
   changed = await publishRootFile(
     invoke,
-    "/usr/local/share/ca-certificates/orbit-root.crt",
+    WorkerCaFile,
     text(await required(invoke, ["/usr/bin/cat", "/etc/orbit/agent/ca.pem"])),
     0o644,
   ) || changed;
