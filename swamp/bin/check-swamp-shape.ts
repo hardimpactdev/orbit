@@ -1471,8 +1471,10 @@ export function analyzeYaml(
     const labels = object(step.labels), task = object(step.task);
     const inputs = object(task.inputs);
     return step.name === "wait-private-dns-ttl" &&
-      step.target === "orbit-node-209" &&
-      Object.keys(labels).join() === "node" && labels.node === "209" &&
+      (step.target !== undefined || step.labels !== undefined) &&
+      worker209(path) &&
+      (step.labels === undefined ||
+        Object.keys(labels).join() === "node" && labels.node === "209") &&
       Object.keys(task).sort().join() ===
         "behaviorName,behaviorType,inputs,methodName,type" &&
       task.type === "behavior" && task.behaviorType === "command/shell" &&
@@ -1496,7 +1498,7 @@ export function analyzeYaml(
       ? task
       : undefined;
   };
-  const sshWorker209 = (path: string[]) => {
+  const worker209 = (path: string[]) => {
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     const job = object(jobs[Number(path[1])]);
     const steps = Array.isArray(job.steps) ? job.steps : [];
@@ -1546,7 +1548,7 @@ export function analyzeYaml(
     const sshTask = officialSshTask(path);
     const sshDelivery = sshTask &&
       (sshTask.methodName === "exec" || sshTask.methodName === "script") &&
-      sshWorker209(path);
+      worker209(path);
     const nativeStdin = path.length === 7 && path[5] === "inputs" &&
       path[6] === "stdin" && sshTask?.methodName === "exec" && sshDelivery;
     if (nativeIdentity && !wholeVault(value)) add("secret-native-source");
