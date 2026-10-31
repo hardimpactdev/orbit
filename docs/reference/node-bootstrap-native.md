@@ -22,4 +22,6 @@ Each workflow has a separate failure callback on its root Node. It settles the o
 
 ## Swamp execution copies
 
-The Gateway remains the source of truth for bootstrap SSH credentials. `SwampVaultExecutionCopy::synchronize` pushes a changed value through native `swamp vault put --server` with protected stdin and the existing Gateway run credential. It returns only the vault and key names. The Gateway retains only the synchronization digest; a failed write records no successful synchronization. The process arguments, public intent and exception messages contain no value. Native put-only authorization and an exact key condition keep the execution-copy writer separate from the CA, issuer, outputs and vault administration.
+The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCommandStep::executionCopy` pushes a changed value in a native `vault.put` frame over the authenticated serve WebSocket using the existing Gateway run credential. No CLI or secret argument is involved. It returns only the vault and key names. The Gateway retains only the synchronization digest; a failed write records no successful synchronization. The process arguments, public intent and exception messages contain no value.
+
+Live admission still requires exact approved authority for the bootstrap key. Official e459 uses the broader vault `write` action for put, delete and annotate; it cannot express put-only authority through a method restriction. The helper does not add a grant.

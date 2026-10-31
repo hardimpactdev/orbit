@@ -134,8 +134,10 @@ export function agentPythonFindings(
   depth = 0,
 ): Finding[] {
   const root = pythonParser.parse(source).topNode;
-  const bindings = new Map<string, PythonNode>(),
-    aliases = new Map<string, string>();
+  type Binding = { statement: PythonNode; value?: PythonNode };
+  const bindings = new Map<string, Binding[]>(),
+    aliases = new Map<string, string>(),
+    crossScopeNames = new Set<string>();
   const children = (node: PythonNode) => {
     const out: PythonNode[] = [];
     for (let child = node.firstChild; child; child = child.nextSibling) {
@@ -148,11 +150,81 @@ export function agentPythonFindings(
     fn(node);
     for (const child of children(node)) visit(child, fn);
   };
+  const lexicalScope = (node: PythonNode): PythonNode => {
+    let current = node;
+    while (
+      current.parent &&
+      !["FunctionDefinition", "LambdaExpression", "Script"].includes(
+        current.name,
+      )
+    ) current = current.parent;
+    return current;
+  };
+  const bind = (id: PythonNode, statement: PythonNode, value?: PythonNode) => {
+    const key = text(id);
+    bindings.set(key, [...(bindings.get(key) ?? []), { statement, value }]);
+  };
   visit(root, (node) => {
+    if (node.name === "ScopeStatement") {
+      for (const part of children(node)) {
+        if (part.name === "VariableName") crossScopeNames.add(text(part));
+      }
+    }
     if (
-      node.name === "AssignStatement" &&
-      node.firstChild?.name === "VariableName" && node.lastChild
-    ) bindings.set(text(node.firstChild), node.lastChild);
+      node.name === "NamedExpression" &&
+      node.firstChild?.name === "VariableName"
+    ) {
+      bind(node.firstChild, node);
+    }
+    if (node.name === "DeleteStatement") {
+      visit(node, (part) => {
+        if (part.name === "VariableName") bind(part, node);
+      });
+    }
+    if (
+      ["AssignStatement", "UpdateStatement", "ForStatement", "WithStatement"]
+        .includes(node.name)
+    ) {
+      const parts = children(node);
+      if (node.name === "AssignStatement" || node.name === "UpdateStatement") {
+        const end = parts.findIndex((part) =>
+          ["AssignOp", "UpdateOp"].includes(part.name)
+        );
+        const targets = parts.slice(0, end);
+        for (const target of targets) {
+          visit(target, (id) => {
+            if (id.name === "VariableName") {
+              bind(
+                id,
+                node,
+                targets.length === 1 && target === id &&
+                  node.name === "AssignStatement"
+                  ? node.lastChild ?? undefined
+                  : undefined,
+              );
+            }
+          });
+        }
+      } else if (node.name === "ForStatement") {
+        const end = parts.findIndex((part) => part.name === "in");
+        for (const target of parts.slice(1, end)) {
+          visit(target, (id) => {
+            if (id.name === "VariableName") bind(id, node);
+          });
+        }
+      } else {
+        const start = parts.findIndex((part) => part.name === "as");
+        for (
+          const target of parts.slice(start + 1).filter((part) =>
+            part.name !== "Body"
+          )
+        ) {
+          visit(target, (id) => {
+            if (id.name === "VariableName") bind(id, node);
+          });
+        }
+      }
+    }
     if (node.name === "ImportStatement") {
       const statement = text(node);
       const imported = /^from\s+([\w.]+)\s+import\s+(\w+)(?:\s+as\s+(\w+))?/
@@ -173,6 +245,46 @@ export function agentPythonFindings(
       ? aliases.get(first) + raw.slice(first.length)
       : raw;
   };
+  const bound = (id: string, at: PythonNode): Binding | undefined => {
+    // A global/nonlocal binding can change in a separate function invocation.
+    // Local statement order alone cannot prove its value at this call.
+    if (crossScopeNames.has(id)) return;
+    let scope: PythonNode | null = lexicalScope(at);
+    const own = scope;
+    while (scope) {
+      const writes = (bindings.get(id) ?? []).filter((binding) =>
+        lexicalScope(binding.statement) === scope
+      );
+      if (writes.length) {
+        if (scope !== own && writes.length !== 1) return;
+        const prior = writes.filter((binding) =>
+          binding.statement.from < at.from
+        );
+        const binding = prior.at(-1);
+        if (!binding) return;
+        const parent = binding.statement.parent;
+        let use: PythonNode | null = at;
+        while (use?.parent && use.parent !== parent) use = use.parent;
+        if (use && use.parent === parent && binding.statement.from < use.from) {
+          return binding;
+        }
+        return;
+      }
+      const parameters = children(scope).find((part) =>
+        part.name === "ParamList"
+      );
+      let parameter = false;
+      if (parameters) {
+        visit(parameters, (part) => {
+          if (part.name === "VariableName" && text(part) === id) {
+            parameter = true;
+          }
+        });
+      }
+      if (parameter) return;
+      scope = scope.parent ? lexicalScope(scope.parent) : null;
+    }
+  };
   const argumentsOf = (node: PythonNode) =>
     children(node).find((child) => child.name === "ArgList");
   const expressions = (node: PythonNode) =>
@@ -182,12 +294,20 @@ export function agentPythonFindings(
   const value = (
     node: PythonNode | undefined,
     seen = new Set<string>(),
+    at = node,
   ): string | string[] | undefined => {
     if (!node) return;
     if (
       node.name === "VariableName" && bindings.has(text(node)) &&
       !seen.has(text(node))
-    ) return value(bindings.get(text(node)), new Set([...seen, text(node)]));
+    ) {
+      const binding = at ? bound(text(node), at) : undefined;
+      return value(
+        binding?.value,
+        new Set([...seen, text(node)]),
+        binding?.statement,
+      );
+    }
     if (node.name === "String") {
       const raw = text(node),
         match = /^([rRuUbB]*)(["']{1,3})([\s\S]*)\2$/.exec(raw);
@@ -199,7 +319,7 @@ export function agentPythonFindings(
     }
     if (["ArrayExpression", "TupleExpression"].includes(node.name)) {
       return expressions(node).flatMap((child) => {
-        const v = value(child, seen);
+        const v = value(child, seen, at);
         return child.name === "StarredExpression" && Array.isArray(v)
           ? v
           : [typeof v === "string" ? v : "<dynamic>"];
@@ -207,8 +327,8 @@ export function agentPythonFindings(
     }
     if (node.name === "BinaryExpression") {
       const parts = children(node),
-        left = value(parts[0], seen),
-        right = value(parts.at(-1), seen);
+        left = value(parts[0], seen, at),
+        right = value(parts.at(-1), seen, at);
       if (Array.isArray(left) && Array.isArray(right)) {
         return [...left, ...right];
       }
@@ -221,7 +341,7 @@ export function agentPythonFindings(
       name(node.firstChild) === "shlex.quote"
     ) {
       const args = argumentsOf(node),
-        v = args ? value(expressions(args)[0], seen) : undefined;
+        v = args ? value(expressions(args)[0], seen, at) : undefined;
       if (typeof v === "string") return quoteShellWord(v);
     }
   };
@@ -229,7 +349,10 @@ export function agentPythonFindings(
   visit(root, (node) => {
     if (node.name !== "CallExpression" || !node.firstChild) return;
     let called = name(node.firstChild);
-    if (bindings.has(called)) called = name(bindings.get(called)!);
+    if (bindings.has(called)) {
+      const binding = bound(called, node);
+      if (binding?.value) called = name(binding.value);
+    }
     if (
       !/^(?:subprocess\.(?:run|Popen|call|check_call|check_output)|os\.(?:system|execv|execve|popen))$/
         .test(called)
@@ -250,10 +373,12 @@ export function agentPythonFindings(
           true,
         ),
       );
-    } else if (/\borbit-agent\b/.test(source)) {
+    } else if (/\b(?:orbit-agent|sleep|flock|lockfile)\b/.test(source)) {
       findings.push({
         file,
-        rule: "agent-dynamic",
+        rule: /\borbit-agent\b/.test(source)
+          ? "agent-dynamic"
+          : "unknown-command",
         count: 1,
         line: 1,
         evidence: [],
@@ -1162,7 +1287,7 @@ export function analyzeTs(
       f.rule === "agent-action"
     ).length;
     result.unknown ||= literalAgentCalls.some((f) =>
-      f.rule === "agent-dynamic"
+      f.rule === "agent-dynamic" || f.rule.startsWith("unknown-")
     );
     if (isAgent) {
       const targets = [...new Set(texts.filter((t) => t in inventory))];
@@ -1399,7 +1524,7 @@ export function analyzeYaml(
           f.rule === "agent-action"
         ).length;
         result.unknown ||= agentFindings.some((f) =>
-          f.rule === "agent-dynamic"
+          f.rule === "agent-dynamic" || f.rule.startsWith("unknown-")
         );
       }
       return;
@@ -1492,7 +1617,11 @@ export function analyzeScript(
 ): Analysis {
   const result = empty();
   if (file.endsWith(".py")) {
-    result.findings.push(...agentPythonFindings(file, source, inventory));
+    const findings = agentPythonFindings(file, source, inventory);
+    result.findings.push(...findings);
+    result.unknown ||= findings.some((f) =>
+      f.rule === "agent-dynamic" || f.rule.startsWith("unknown-")
+    );
     return result;
   } // Python is parsed by the AST helper, never regexed as executable text.
   const add = (rule: string, count = 1) =>
@@ -1518,7 +1647,9 @@ export function analyzeScript(
   result.findings.push(...agentFindings);
   result.agentActions +=
     agentFindings.filter((f) => f.rule === "agent-action").length;
-  result.unknown ||= agentFindings.some((f) => f.rule === "agent-dynamic");
+  result.unknown ||= agentFindings.some((f) =>
+    f.rule === "agent-dynamic" || f.rule.startsWith("unknown-")
+  );
   return result;
 }
 
