@@ -575,6 +575,7 @@ export function gatewayHttp(
       return await proxyGatewayRequest(
         proxy,
         url,
+        caFile,
         method,
         path,
         body,

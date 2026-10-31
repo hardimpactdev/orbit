@@ -16,7 +16,7 @@ Behaviors import `run` from `extensions/behaviors/operations/_lib/node-commands.
 
 Commands run locally on ordinary workers and over pinned SSH on light Node proxies. Systemd cgroup membership selects the root-owned proxy mapping. Workflow arguments and environment variables cannot select a host. One bounded fixed Python subprocess reads the inherited cgroup and validates public configuration custody, because the compiled native runtime forbids direct `/proc` reads. Metadata failures refuse execution. Stdin and stdout drain concurrently to avoid pipe backpressure deadlocks.
 
-Gateway HTTP also runs on the effect Node over SSH, using its installed CA. The Gateway sees that Node's WireGuard peer identity. No identity header or authorization exception is added. Unported agent-action adapters refuse proxy execution; each family must port its effects before using a proxy.
+Gateway HTTP also runs on the effect Node over SSH, using the caller’s existing configured CA path on that Node. The transport does not substitute an agent configuration path. The Gateway sees that Node's WireGuard peer identity. No identity header or authorization exception is added. Unported agent-action adapters refuse proxy execution; each family must port its effects before using a proxy.
 
 ## Persistent local workers
 
