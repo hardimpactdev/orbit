@@ -174,6 +174,30 @@ final readonly class AdmitRouteOperationAction
         });
     }
 
+    public function converge(Route $route, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        app(DirectOperation::class)->writer('route.converge');
+
+        return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $caller, $requestId): Operation {
+            $route = Route::query()->with(['targets.instance.node', 'cluster.routerAssignment.node', 'customProxy.node'])->lockForUpdate()->findOrFail($route->id);
+            if ($route->isAnalyticsTracking()) {
+                throw new ResourceOperationException('route.kind_unsupported', 'Tracking hosts converge through their Analytics parent.', 409);
+            }
+            if ($route->status === RouteStatus::Retiring) {
+                throw new ResourceOperationException('route.removal_in_progress', 'A retiring Route must finish its recorded withdrawal.', 409);
+            }
+            if ($route->replaces_route_id !== null || $route->replaced_by_route_id !== null || $route->hasPlacementTransition()) {
+                throw new ResourceOperationException('route.domain_change_conflict', 'The Route must finish its recorded update before convergence.', 409);
+            }
+
+            if ($route->target_set_intent !== null) {
+                throw new ResourceOperationException('route.target_set_conflict', 'The Route must finish its recorded target change before convergence.', 409);
+            }
+
+            return $this->start('route.converge', $route, ['mode' => 'converge'], $caller, $requestId);
+        });
+    }
+
     public function destroy(Route $route, bool $offline = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
 

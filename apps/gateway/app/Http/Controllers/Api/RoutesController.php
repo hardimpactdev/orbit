@@ -71,6 +71,16 @@ final class RoutesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
+    #[StartsOperation('route.converge')]
+    public function converge(EmptyRouteRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
+    {
+        $caller = $request->user();
+        $operation = $action->converge(Route::query()->findOrFail($route), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    #[RequiresNodeAccess(ServingNode::RouteOwning)]
     #[StartsOperation('route.target_set')]
     public function setTarget(SetRouteTargetRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
     {

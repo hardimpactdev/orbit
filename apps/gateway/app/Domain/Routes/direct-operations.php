@@ -21,6 +21,10 @@ return [
         'workflow' => 'operation-route-create', 'projection' => NativeRouteConvergenceProjection::class,
         'private_material' => NativeRouteAdmission::privateMaterial(),
     ],
+    'route.converge' => [
+        'workflow' => 'operation-route-converge', 'projection' => NativeRouteConvergenceProjection::class,
+        'private_material' => NativeRouteAdmission::privateMaterial(),
+    ],
     'route.target_set' => [
         'workflow' => 'operation-route-target-set', 'projection' => NativeRouteTargetProjection::class,
         'private_material' => NativeRouteAdmission::privateMaterial(),
