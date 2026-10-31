@@ -195,7 +195,9 @@ The fleet does not have to own its public edge. A tracking host mirrors the Inst
 
 ### Native workflows manage sites
 
-Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, managed account homes and participant Nodes. Placed steps reuse the shared Route publication and certificate behaviors. A control step on Node 209 signs public requests with the CA in the Swamp vault; Node private keys stay on their Nodes. The Gateway neither signs certificates nor stores signing requests. Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
+Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, managed account homes and participant Nodes. Placed steps reuse the shared Route publication and certificate behaviors. A control step on Node 209 signs public requests with the CA in the Swamp vault; Node private keys stay on their Nodes. The Gateway neither signs certificates nor stores signing requests.
+
+Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
 
 The Gateway projects these checkpoints, clears retiring placements and saves the site binding after successful completion. It does not check execution receipts. Only the owning Analytics Node reads the declared protected Plausible credentials. The Project owns its markup.
 
