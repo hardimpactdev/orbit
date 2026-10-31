@@ -210,7 +210,7 @@ def remove_route_lan(raw):
     comment = f"orbit:route-{route_id}-lan"
     with transaction_lock():
         backend, rows = status()
-        if backend == "absent":
+        if backend != "active":
             raise Refusal("firewall.status_failed")
         delete_comments({comment}, rows)
         if any(row["comment"] == comment for row in status()[1]):

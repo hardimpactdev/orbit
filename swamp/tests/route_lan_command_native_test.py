@@ -1,4 +1,4 @@
-"""Official native script delivery and exact UFW removal in a disposable fixture."""
+"""Official native asset resolution and exact UFW removal in a disposable fixture."""
 
 import json
 import os
@@ -139,9 +139,14 @@ else:
             [["--force", "delete", "4"], ["--force", "delete", "1"]],
         )
 
-    def test_absent_or_inactive_route_has_no_mutation(self):
-        _, state, calls = self.run_lan([], backend="inactive")
-        self.assertEqual(state["backend"], "inactive")
+    def test_inactive_backend_refuses_without_claiming_persistent_absence(self):
+        rows = ["[{number}] 10.44.0.9 443/tcp ALLOW IN 10.44.0.1 # orbit:route-47-lan"]
+        _, state, calls = self.run_lan(rows, backend="inactive", success=False)
+        self.assertEqual(state["rows"], rows)
+        self.assertEqual(calls, [["status", "numbered"]])
+
+    def test_missing_owned_rule_on_active_backend_has_no_mutation(self):
+        _, _, calls = self.run_lan([])
         self.assertTrue(all(call == ["status", "numbered"] for call in calls))
 
     def test_unnumbered_owned_comment_refuses_before_delete(self):
