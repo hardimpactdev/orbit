@@ -96,3 +96,13 @@ it('refuses an unowned workspace before creating a session', function (): void {
         ->assertConflict()->assertJsonPath('error.code', 'tasks.no_workspace');
     expect(AgentThread::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });
+
+it('refuses a missing VM credential before creating a thread or starting Swamp', function (): void {
+    [$group, $task] = turn_operation_group();
+    TaskVm::forGroup($group)->update(['pi_token' => '']);
+
+    $this->postJson('/api/v1/task-groups/'.$group->id.'/turn', turn_operation_input($task))
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.pi_credential_unavailable');
+
+    expect(AgentThread::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+});
