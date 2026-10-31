@@ -1,6 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 import { runLocalProgram } from "./local-program.ts";
 import { FirewallProgram } from "./firewall-program.ts";
+import { FirewallRules } from "./firewall-schema.ts";
+export { FirewallRules } from "./firewall-schema.ts";
 const Id = z.number().int().positive();
 export const RouteLan = z.discriminatedUnion("operation", [
   z.object({
@@ -17,25 +19,6 @@ export const RouteLan = z.discriminatedUnion("operation", [
       .max(256),
   }).strict(),
 ]);
-const Shape = z.object({
-  comment: z.string().min(1).max(256),
-  action: z.enum(["allow", "deny"]),
-  direction: z.enum(["in", "out", "fwd"]),
-  source: z.string(),
-  destination: z.string(),
-  port: z.string(),
-  protocol: z.enum(["any", "tcp", "udp"]),
-  in_interface: z.string().nullable().default(null),
-  out_interface: z.string().nullable().default(null),
-  family: z.enum(["v4", "v6"]).nullable().default(null),
-}).strict();
-export const FirewallRules = z.object({
-  desired: z.array(
-    z.object({ shape: Shape, replace_port: z.boolean() }).strict(),
-  ).max(4096),
-  remove: z.array(Shape).max(4096),
-  enable: z.boolean(),
-}).strict();
 const result = (raw: unknown) =>
   z.union([
     z.object({ matches: z.literal(true) }).strict(),
