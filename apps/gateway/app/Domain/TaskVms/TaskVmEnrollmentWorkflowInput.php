@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -12,7 +13,41 @@ use Illuminate\Support\Arr;
 /** Full public command-step intent. Execution-copy descriptors are supplied separately. */
 final readonly class TaskVmEnrollmentWorkflowInput
 {
-    public function __construct(private TaskVmEnrollmentIntent $enrollment) {}
+    public function __construct(private TaskVmEnrollmentIntent $enrollment, private TaskVmModelKeyInputs $models, private SwampCommandStep $shared) {}
+
+    /** Store the model owner's exact descriptors once; the root owns this captured input.
+     * @param  array<string,mixed>  $public
+     * @return array<string,mixed>
+     */
+    public function withExecutionCopies(TaskVm $vm, array $public): array
+    {
+        if (($public['task_vm_id'] ?? null) !== $vm->id || ! is_int($public['gateway_node_id'] ?? null)
+            || ! is_string($vm->pi_token) || preg_match('/\A[a-f0-9]{64}\z/D', $vm->pi_token) !== 1) {
+            throw new ResourceOperationException('task_vm.enrollment_invalid', 'Execution copies require the admitted VM.', 409);
+        }
+        $model = $this->models->capture($vm, $public['gateway_node_id'], $this->shared->executionCopy(...));
+        foreach ($model['intent'] as $field => $value) {
+            if (($public[$field] ?? null) !== $value) {
+                throw new ResourceOperationException('task_vm.enrollment_invalid', 'Model and enrollment placements must agree.', 409);
+            }
+        }
+
+        return [...$public, 'model_execution_secrets' => $model['execution_secrets'],
+            'execution_secrets' => ['pi_token' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token)]];
+    }
+
+    /** The projection supplies this outer envelope to the canonical shared input hook.
+     * @param  array<string,mixed>  $captured
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
+     */
+    public function envelope(array $captured): array
+    {
+        $model = ValidatedData::object($captured['model_execution_secrets'] ?? []);
+        $execution = ValidatedData::object($captured['execution_secrets'] ?? []);
+
+        return ['intent' => Arr::except($captured, ['model_execution_secrets', 'execution_secrets']),
+            'execution_secrets' => [...$model, ...$execution]];
+    }
 
     /** Capture through the same admission policy used by the provision parent.
      * @return array<string,mixed>

@@ -3,7 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmEnrollmentWorkflowInput;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\TaskVm;
 use Illuminate\Support\Arr;
 
 /** @return array{array<string,mixed>,array<string,mixed>} */
@@ -19,7 +24,7 @@ function commandEnrollmentCapture(): array
         'agent' => ['configuration' => 'public-config', 'certificate' => 'PUBLIC CA', 'unit' => 'public-unit', 'checkouts' => []],
         'runtime' => ['guest_node_id' => 212, 'user' => 'orbit', 'agent_sha256' => str_repeat('a', 64),
             'pi_sha256' => str_repeat('b', 64), 'origin' => 'https://models.example.test', 'models' => ['one'],
-            'process' => ['process_id' => 55, 'name' => 'pi-server', 'runtime' => 'systemd', 'content_hash' => str_repeat('c', 64), 'desired' => 'running', 'on_demand' => false, 'activation_pending' => true]],
+            'process' => ['process_id' => 55, 'name' => 'orbit-process-55-pi-server.service', 'runtime' => 'systemd', 'content_hash' => str_repeat('c', 64), 'desired' => 'running', 'on_demand' => false, 'activation_pending' => true]],
     ], [
         'gateway_node_id' => 14, 'issuer_node_id' => 209, 'model_router_node_id' => 3,
         'model_origin' => 'https://models.example.test', 'participant_node_ids' => [13, 14, 209, 3, 212, 1],
@@ -76,4 +81,39 @@ it('keeps UpCloud execution on the admitted Gateway and carries only its public 
     expect($public['connection'])->toBe($connection)->and($public['vm'])->toBeNull();
     $intent['execution_node_id'] = 13;
     expect(fn () => app(TaskVmEnrollmentWorkflowInput::class)->fromCaptured($intent, $placement, $connection))->toThrow(ResourceOperationException::class);
+});
+
+it('composes canonical model descriptors and Pi copy through the shared helper only', function (): void {
+    config(['swamp.run_token' => 'synthetic-run.private', 'swamp.ca_path' => '/public/root.pem']);
+    $issuer = Mockery::mock(ModelKeyIssuer::class);
+    $issuer->shouldReceive('origin')->andReturn('https://models.example.test');
+    $issuer->shouldReceive('ownerNodeId')->andReturn(3);
+    $issuer->shouldReceive('privateMaterial')->once()->with('https://models.example.test', 3)
+        ->andReturn(['management_key' => 'synthetic-management', 'anchor_key' => str_repeat('2', 64)]);
+    app()->instance(ModelKeyIssuer::class, $issuer);
+    $writes = [];
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->times(4)->andReturnUsing(function (ProcessInvocation $call) use (&$writes): CommandResult {
+        $input = $call->protectedInput ?? throw new LogicException('An execution copy requires protected stdin.');
+        $value = stream_get_contents($input->stream());
+        expect(json_encode($call->arguments))->not->toContain($value);
+        $writes[] = $call->arguments[4];
+
+        return new CommandResult(0, '{}', '', 1, false);
+    });
+    app()->instance(ProcessRunner::class, $runner);
+    $vm = (new TaskVm)->forceFill(['id' => 184, 'model_key' => str_repeat('1', 64),
+        'pi_token' => str_repeat('3', 64), 'ai_router_origin' => 'https://models.example.test']);
+    [$intent, $placement] = commandEnrollmentCapture();
+    $supplier = app(TaskVmEnrollmentWorkflowInput::class);
+    $public = $supplier->fromCaptured($intent, $placement, ['address' => null, 'public_key' => null]);
+    $captured = $supplier->withExecutionCopies($vm, $public);
+    $envelope = $supplier->envelope($captured);
+
+    expect($writes)->toBe(['task-vm-model-key-184', 'model-router-management-node-3', 'model-router-anchor-node-3', 'task-vm-pi-token-184']);
+    expect($envelope['intent'])->toBe($public);
+    expect(array_keys($envelope['execution_secrets']))->toBe(['model_key', 'model_router_management', 'model_router_anchor', 'pi_token']);
+    expect(Arr::only($envelope['execution_secrets'], ['model_key', 'model_router_management', 'model_router_anchor']))
+        ->toBe($captured['model_execution_secrets']);
+    expect(json_encode($captured, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('1', 64), str_repeat('2', 64), str_repeat('3', 64), 'synthetic-management');
 });

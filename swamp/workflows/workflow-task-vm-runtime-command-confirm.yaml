@@ -191,9 +191,11 @@ jobs:
       inputs:
         run: |
           set -eu
-          state=$(/usr/bin/sudo -n -- /usr/bin/systemctl is-active -- pi-server.service)
+          state=$(/usr/bin/sudo -n -- /usr/bin/systemctl is-active -- "$ORBIT_PROCESS_UNIT")
           [ "$state" = active ]
           printf '{"process_active":true}\n'
+        env:
+          ORBIT_PROCESS_UNIT: ${{ steps["public-input"].outputs.process_unit }}
     dependsOn:
     - step: observer-active
       condition:
