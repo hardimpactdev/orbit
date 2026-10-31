@@ -160,7 +160,11 @@ The shared helper attempts to revoke the token at the fixed GitHub
 then drops its reference. Revocation is best effort: failure reports only
 `operation.github_token_revoke_failed` and preserves the action's result or
 refusal. A successful GitHub write must not fail because revocation failed. The
-expiry check uses the client's injected clock. The helper refuses callback
+helper also attempts revocation when a private reply contains a token string
+but its grant fails validation. Each adopting family must bound mints per native
+run and make its GitHub writes idempotent. The instance limit does not enforce a
+run-wide cap across steps or resumed executions. Reconcile an uncertain write
+before retrying it. The expiry check uses the client's injected clock. The helper refuses callback
 results containing the credential and replaces thrown diagnostics with fixed
 codes. Family results remain bounded and secret-free. Native Swamp owns retry
 policy; token minting adds no claim, lease, receipt or retry loop.

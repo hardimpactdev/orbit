@@ -548,6 +548,49 @@ Deno.test("shared GitHub credentials revoke on success action failure and invali
   }
 });
 
+Deno.test("shared GitHub credentials revoke a raw token when grant parsing fails", async () => {
+  for (
+    const change of [
+      { repository: "invalid" },
+      { permissions: { administration: "write" } },
+      { expires_at: "invalid" },
+      { unexpected: "ephemeral-sentinel" },
+    ]
+  ) {
+    let revoked = 0;
+    let acted = false;
+    const gateway = new GatewayOperation(
+      () =>
+        Promise.resolve({ status: 200, body: { data: tokenFixture(change) } }),
+      args,
+      undefined,
+      undefined,
+      (url, init) => {
+        assertEquals(url, "https://api.github.com/installation/token");
+        assertEquals(init?.method, "DELETE");
+        assertEquals(
+          new Headers(init?.headers).get("Authorization"),
+          "Bearer ephemeral-sentinel",
+        );
+        revoked++;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      },
+    );
+    const error = await assertRejects(
+      () =>
+        gateway.withGitHubToken(() => {
+          acted = true;
+          return Promise.resolve({});
+        }),
+      Error,
+      "operation.github_token_unavailable",
+    );
+    assertEquals(acted, false);
+    assertEquals(revoked, 1);
+    assertEquals(String(error).includes("ephemeral-sentinel"), false);
+  }
+});
+
 Deno.test("shared GitHub revoke failures preserve a successful write and report only a fixed diagnostic", async () => {
   const originalWarn = console.warn;
   try {

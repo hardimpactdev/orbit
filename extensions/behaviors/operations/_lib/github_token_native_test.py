@@ -1,12 +1,16 @@
 """Pinned native credential proof: no secret in the whole disposable Swamp tree."""
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
 import secrets
 import shutil
+import socket
 import subprocess
 import tempfile
 import unittest
+import time
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[4]
 SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
@@ -20,7 +24,7 @@ export const behavior = {
  execute:async(args:{run_id:string;mode:string},ctx:{writeResource:(spec:string,name:string,data:Record<string,unknown>)=>Promise<unknown>})=>{
   const token=Deno.env.get("ORBIT_CREDENTIAL_PROOF_SENTINEL")!;
   let revocations=0;
-  const gateway=new GatewayOperation((method,path,body)=>{if(method!=="GET"||path!=="/api/v1/direct-operations/71/private-material?run_id="+args.run_id||body!==undefined)throw new Error("private read mismatch");return Promise.resolve({status:200,body:{data:{github:{repository:"hardimpactdev/orbit",permissions:{contents:"write",pull_requests:"write"},token,expires_at:new Date(Date.now()+3600000).toISOString()}}}});},{operation_id:71,node_id:209,kind:"proof.apply",run_id:args.run_id},undefined,undefined,(url,init)=>{
+  const gateway=new GatewayOperation((method,path,body)=>{if(method!=="GET"||path!=="/api/v1/direct-operations/71/private-material?run_id="+args.run_id||body!==undefined)throw new Error("private read mismatch");return Promise.resolve({status:200,body:{data:{github:{repository:"hardimpactdev/orbit",permissions:args.mode==="parse-failed"?{administration:"write"}:{contents:"write",pull_requests:"write"},token,expires_at:new Date(Date.now()+3600000).toISOString()}}}});},{operation_id:71,node_id:209,kind:"proof.apply",run_id:args.run_id},undefined,undefined,(url,init)=>{
    if(url!=="https://api.github.com/installation/token"||init?.method!=="DELETE"||new Headers(init.headers).get("Authorization")!=="Bearer "+token)throw new Error("invalid revoke");
    revocations++;if(args.mode==="revoke-throws")throw new Error(token);return Promise.resolve(new Response(args.mode==="revoke-failed"?token:null,{status:args.mode==="revoke-failed"?503:204}));
   });
@@ -33,7 +37,7 @@ export const behavior = {
     let n=0;return Promise.resolve({toJSON(){return ++n===1?{completed:true}:{token:secret}}});
    }
    return Promise.resolve({completed:true});
-  }); } finally { if(revocations!==1)throw new Error("revoke missing"); }
+  }); } catch(error) { if(args.mode==="parse-failed"&&error.message==="operation.github_token_unavailable")result={refused:true};else throw error; } finally { if(revocations!==1)throw new Error("revoke missing"); }
   return {dataHandles:[await ctx.writeResource("safe","result",result)]};
  }}}
 };
@@ -49,6 +53,9 @@ jobs:
   - name: proof
     steps:
       - name: mint
+        target: orbit-node-209
+        labels: {node: "209"}
+        queueTimeout: 10
         writes: true
         task:
           type: behavior
@@ -59,6 +66,60 @@ jobs:
             mode: '${{ inputs.mode }}'
             run_id: '${{ run.id }}'
 '''
+
+
+@contextmanager
+def placed_worker(test, root, env):
+    def cli(*args):
+        result = subprocess.run([SWAMP, *args, '--json'], cwd=root, env=env,
+                                capture_output=True, text=True, timeout=30)
+        test.assertEqual(result.returncode, 0, 'Isolated native fixture setup failed: ' + ' '.join(args[:3]))
+        return json.loads(result.stdout)
+
+    cli('access', 'token', 'mint', 'fixture-admin', '--principal', 'user:fixture')
+    admin = root / 'admin.token'
+    admin.write_text(cli('access', 'token', 'reveal', 'fixture-admin', '--yes')['token'])
+    admin.chmod(0o600)
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    url = f'ws://127.0.0.1:{port}'
+    flags = ['--server', url, '--token-file', str(admin)]
+    worker = None
+    with (root / 'serve.log').open('w') as log, (root / 'worker.log').open('w') as worker_log:
+        server = subprocess.Popen([SWAMP, 'serve', '--host', '127.0.0.1', '--port', str(port),
+                                   '--auth-mode', 'token', '--admins', 'user:fixture'],
+                                  cwd=root, env=env, stdout=log, stderr=log)
+        try:
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    urllib.request.urlopen(f'http://127.0.0.1:{port}/ready', timeout=1).close()
+                    break
+                except OSError:
+                    test.assertIsNone(server.poll())
+                    test.assertLess(time.monotonic(), deadline, 'Isolated serve readiness timed out')
+                    time.sleep(.05)
+            enrollment = root / 'enrollment.token'
+            enrollment.write_text(cli('worker', 'token', 'create', 'orbit-node-209', '--duration', '10m', *flags)['token'])
+            enrollment.chmod(0o600)
+            cli('access', 'token', 'mint', 'fixture-worker', '--principal', 'worker:orbit-node-209', *flags)
+            token = root / 'worker-server.token'
+            token.write_text(cli('access', 'token', 'reveal', 'fixture-worker', '--yes')['token'])
+            token.chmod(0o600)
+            worker = subprocess.Popen([SWAMP, 'worker', 'connect', url, '--token-file', str(enrollment),
+                                       '--server-token-file', str(token), '--cache-dir', str(root / 'worker-cache'),
+                                       '--label', 'node=209'], cwd=root, env=env, stdout=worker_log, stderr=worker_log)
+            yield flags
+        finally:
+            for process in (worker, server):
+                if process is not None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
 
 
 class GitHubTokenNative(unittest.TestCase):
@@ -80,19 +141,20 @@ class GitHubTokenNative(unittest.TestCase):
                 env.pop(key, None)
             describe = subprocess.run([SWAMP, 'behavior', 'type', 'describe', '@nckrtl/github-token-proof', '--json'], cwd=repo, env=env, capture_output=True, timeout=60)
             self.assertEqual(describe.returncode, 0, (describe.stdout + describe.stderr).decode(errors='replace').replace(sentinel, '[synthetic credential]'))
-            for mode in ['success', 'return-secret', 'throw-secret', 'serialize-secret', 'stateful', 'revoke-failed', 'revoke-throws']:
-                with self.subTest(mode=mode):
-                    result = subprocess.run([SWAMP, 'workflow', 'run', 'credential-proof',
-                                             '--input', 'mode=' + mode, '--json'], cwd=repo, env=env,
-                                            capture_output=True, timeout=60)
-                    self.assertEqual(result.returncode == 0, mode in ['success', 'stateful', 'revoke-failed', 'revoke-throws'],
-                                     'native credential fixture outcome mismatch: ' + (result.stdout + result.stderr).decode(errors='replace').replace(sentinel, '[synthetic credential]')[-3000:])
-                    self.assertNotIn(sentinel.encode(), result.stdout + result.stderr)
-                    files = [path for path in repo.rglob('*') if path.is_file()]
-                    self.assertGreater(len(files), 20)
-                    for path in files:
-                        self.assertNotIn(sentinel.encode(), path.read_bytes(),
-                                         'credential persisted at ' + str(path.relative_to(repo)))
+            with placed_worker(self, repo, env) as flags:
+                for mode in ['success', 'return-secret', 'throw-secret', 'serialize-secret', 'stateful', 'revoke-failed', 'revoke-throws', 'parse-failed']:
+                    with self.subTest(mode=mode):
+                        result = subprocess.run([SWAMP, 'workflow', 'run', 'credential-proof',
+                                                 '--input', 'mode=' + mode, *flags, '--json'], cwd=repo, env=env,
+                                                capture_output=True, timeout=60)
+                        self.assertEqual(result.returncode == 0, mode in ['success', 'stateful', 'revoke-failed', 'revoke-throws', 'parse-failed'],
+                                         'native credential fixture outcome mismatch: ' + (result.stdout + result.stderr).decode(errors='replace').replace(sentinel, '[synthetic credential]')[-3000:])
+                        self.assertNotIn(sentinel.encode(), result.stdout + result.stderr)
+                        files = [path for path in repo.rglob('*') if path.is_file()]
+                        self.assertGreater(len(files), 20)
+                        for path in files:
+                            self.assertNotIn(sentinel.encode(), path.read_bytes(),
+                                             'credential persisted at ' + str(path.relative_to(repo)))
             outputs = [p for p in repo.rglob('*') if p.is_file() and 'data' in p.parts]
             self.assertTrue(any(b'"completed"' in p.read_bytes() for p in outputs),
                             'positive safe output was not persisted')

@@ -223,8 +223,10 @@ export class GatewayOperation {
     let refusal = "operation.github_token_unavailable";
     try {
       await this.withPrivateMaterial(async (material) => {
-        const credential = GitHubCredential.parse(material.github);
+        const raw = z.object({ token: z.string() }).safeParse(material.github);
+        let credential: z.infer<typeof GitHubCredential> | undefined;
         try {
+          credential = GitHubCredential.parse(material.github);
           const expiry = Date.parse(credential.expires_at);
           const now = this.now();
           if (expiry <= now || expiry > now + 3_605_000) throw new Error();
@@ -241,7 +243,8 @@ export class GatewayOperation {
           }
           safe = value;
         } finally {
-          await this.revokeGitHubToken(credential);
+          if (credential) await this.revokeGitHubToken(credential);
+          else if (raw.success) await this.revokeGitHubToken(raw.data);
         }
       });
     } catch {
@@ -250,7 +253,7 @@ export class GatewayOperation {
     return safe!;
   }
   private async revokeGitHubToken(
-    credential: z.infer<typeof GitHubCredential>,
+    credential: { token: string },
   ) {
     try {
       const response = await this.github(
