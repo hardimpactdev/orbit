@@ -48,7 +48,7 @@ The existing observer recovered the terminal result during normal Gateway releas
 
 `POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or worker.
 
-The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Every step runs on 209. The workflow `operation-node-ssh-access-converge` reads the shipped public authorized-key action and executes it with official `@swamp/ssh.script`, Python 3 and sudo. The action retains existing keys and appends the approved 209 public key only when absent.
+The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Every step runs on 209. The workflow `operation-node-ssh-access-converge` reads the shipped public authorized-key action and executes it with official `@swamp/ssh.script` and Python 3 as the authenticated managed account. The action retains existing keys and appends the approved 209 public key only when absent.
 
 For this first-key publication only, `task.globalArgs.transport.identityContent` resolves the existing `orbit-control-inputs/bootstrap-identity-node-14` execution copy. This identity performs no other Node action. A subsequent official SSH `exec` runs `/usr/bin/true` with 209's own `identityFile` and the same target pins.
 
@@ -57,3 +57,11 @@ A distinct official SSH fleet name prevents reuse of the connection authenticate
 Before the first admission, the owning load lane publishes the exact workflow and lane16 proves the Gateway's exact workflow run/read authority. The existing vault read authority is a separate requirement. Lane21 owns rollout, target verification and removal of the Gateway identity execution copy after all targets verify with 209's own key. This source change performs no live publication, grant change or key rollout.
 
 Core workflow dependencies, vault expressions, method outputs and the existing terminal subscriber provide the execution contract. Official SSH package `2026.10.23.1` provides transport, pins, identity handling and sudo with its defaults. Official cfgmgmt authorized-key actions were checked: their connection schema lacks the admitted full host-key list. The shipped key policy uses official SSH for that connection contract and adds no transport or secret channel.
+
+## Record a trusted first host key
+
+After an authorized one-time scan from209 over the Node's WireGuard address, `POST /api/v1/nodes/{node}/ssh-host-key` records the public `{host,type,value}` result. `host` must equal the Node's stored WireGuard address; `type` is `ssh-ed25519` and `value` is its base64 public key. The Gateway calculates the SHA-256 fingerprint and records the three host-key fields on the Node, then broadcasts its normal update. The response is the updated Node with HTTP200. Normal directed Node access applies.
+
+This path stores a first pin. Repeating the same key returns the existing Node; a different or incomplete existing pin returns `node.ssh_host_key_already_recorded` with HTTP409. It performs no scan, SSH connection, key installation, workflow admission or known-hosts file write. It accepts neither a jump host nor caller-provided fingerprint. The `node.ssh_access_converge` operation then uses the stored full pin. A scan that returned no key supplies nothing to record.
+
+The tracked SSH-access key step runs as the authenticated managed account without sudo. It requires that account to write its own `.ssh/authorized_keys`. Existing directory or file permissions that prevent that write produce a native failure; the step does not request privilege, change another account, or select another identity. Package installation keeps its separate privilege requirements.
