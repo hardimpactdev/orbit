@@ -12,8 +12,8 @@ porting or reviewing an operation. It and the
 standard. Existing grandfathered implementations do not establish the intended
 contract.
 
-The native pilot settles the guide's open points before conversions resume. This
-documentation does not claim that the existing family workflows already conform.
+Right-shape conversions continue using the shared native template. Live pilot
+readiness remains separate; existing family workflows do not all conform.
 
 ## Repository
 
