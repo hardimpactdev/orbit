@@ -20,7 +20,7 @@ final class OperationsServiceProvider extends ServiceProvider
         $this->app->singleton(DirectOperation::class);
         $this->app->scoped(OperationIdempotency::class);
         $this->app->singleton(SwampRunSubscriber::class, static fn ($app): SwampRunSubscriber => new SwampRunSubscriber(
-            new StreamWebSocketClient,
+            StreamWebSocketClient::forSwamp(),
             $app->make(LoggerInterface::class),
         ));
     }
