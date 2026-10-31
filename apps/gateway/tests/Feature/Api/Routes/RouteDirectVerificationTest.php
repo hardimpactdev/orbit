@@ -6,6 +6,7 @@ use App\Actions\Routes\RouteChildAdmission;
 use App\Actions\Routes\StartRouteNodeOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRouteLanRemovalProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -26,7 +27,7 @@ beforeEach(function (): void {
     $cluster = Cluster::query()->create(['name' => 'dev', 'status' => 'active']);
     $this->router = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'name' => 'router', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => '10.44.0.9', 'lan_ip' => '192.168.6.9', 'cluster_id' => $cluster->id, 'user' => 'orbit']);
     $this->router->roles()->create(['role' => RoleName::Router, 'status' => 'active', 'cluster_id' => $cluster->id]);
-    $workload = Node::query()->create(['public_ssh_host' => '192.0.2.18', 'name' => 'workload', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => '10.44.0.18', 'lan_ip' => '192.168.6.18', 'cluster_id' => $cluster->id, 'user' => 'orbit']);
+    $workload = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-workload-pin', 'public_ssh_host' => '192.0.2.18', 'name' => 'workload', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => '10.44.0.18', 'lan_ip' => '192.168.6.18', 'cluster_id' => $cluster->id, 'user' => 'orbit']);
     $project = Project::query()->create(['name' => 'Demo', 'slug' => 'demo', 'repository_url' => 'https://example.test/demo.git']);
     $this->instance = Instance::query()->create(['checkout_path' => '/home/orbit/code/demo', 'node_id' => $workload->id, 'project_id' => $project->id, 'name' => 'dev', 'status' => 'active']);
     $this->route = Route::query()->create(['cluster_id' => $cluster->id, 'project_id' => $project->id, 'domain' => 'demo.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
@@ -172,7 +173,7 @@ it('admits LAN removal directly only for its withdrawn Route and records no Gate
     expect($operation->input['lan_removal'])->toBe($intent)
         ->and($operation->worker)->toBeNull()->and($operation->lock_key)->toBeNull()->and($this->agents->calls)->toBe([]);
     $inputs = $this->socket->sent[0]['payload']['inputs'];
-    expect($inputs['intent'])->toBe($intent)->and($inputs['operation_id'])->toBe($operation->id)
+    expect($inputs['intent'])->toBe([...$intent, ...app(NativeCaddyPublicationInput::class)->connectionForNode($this->instance->node)])->and($inputs['operation_id'])->toBe($operation->id)
         ->and($inputs['node_id'])->toBe($this->instance->node_id)->and($inputs['kind'])->toBe('route.lan_remove')
         ->and(json_encode($inputs['execution_secrets'], JSON_THROW_ON_ERROR))->toBe('{}')
         ->and(app(DirectOperation::class)->definition('route.lan_remove')['terminal_result'])->toBe(['job' => 'withdrawal', 'step' => 'remove-lan']);

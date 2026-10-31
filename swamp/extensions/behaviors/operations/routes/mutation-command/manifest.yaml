@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/route-mutation-command"
-version: 2026.10.31.1
+version: 2026.10.31.2
 visibility: private
 license: MIT
 description: Public Route mutation intent and native one-action assets.

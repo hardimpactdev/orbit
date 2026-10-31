@@ -1,18 +1,15 @@
 """Official cfgmgmt file application followed by actual native shell dependencies."""
 
-import grp
 import hashlib
 import json
-import os
-import pwd
 import sys
 from pathlib import Path
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tests.cfgmgmt_fixture import install_cfgmgmt
 from tests.native_harness import NativeTestCase
+from tests.route_ssh_fixture import PIN, install_ssh
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,7 +18,7 @@ class CaddyCommandNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.connection = dict(
-            install_cfgmgmt(self), nodeIdentityFile="/unused/fixture-key", become=True
+            install_ssh(self), nodeIdentityFile="/unused/fixture-key", become=True
         )
         self.host = self.repo / "host"
         self.host.mkdir()
@@ -44,31 +41,27 @@ if name=='systemctl' and os.environ.get('FIXTURE_FAIL')=='reload': sys.exit(1)
         workflow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-route-caddy.yaml").read_text()
         )
+
+        def patch_strings(value):
+            if isinstance(value, str):
+                return (
+                    value.replace("/usr/bin/caddy", str(commands / "caddy"))
+                    .replace("/usr/bin/systemctl", str(commands / "systemctl"))
+                    .replace("/etc/caddy/Caddyfile", str(self.host / "Caddyfile"))
+                )
+            if isinstance(value, list):
+                return [patch_strings(item) for item in value]
+            if isinstance(value, dict):
+                return {key: patch_strings(item) for key, item in value.items()}
+            return value
+
+        workflow = patch_strings(workflow)
         for job in workflow["jobs"]:
             job.pop("target")
             job.pop("labels")
             for step in job["steps"]:
-                self.assertIn("target", step)
-                self.assertIn("labels", step)
-                step.pop("target")
-                step.pop("labels")
-                task = step["task"]
-                if task["behaviorType"] == "@swamp/cfgmgmt/file":
-                    task["globalArgs"].update(
-                        path=str(self.host / "Caddyfile"),
-                        owner=pwd.getpwuid(os.getuid()).pw_name,
-                        group=grp.getgrgid(os.getgid()).gr_name,
-                        become=False,
-                    )
-                if task["behaviorType"] == "command/shell":
-                    task["inputs"]["run"] = (
-                        task["inputs"]["run"]
-                        .replace("sudo -u caddy ", "")
-                        .replace("sudo ", "")
-                        .replace("/usr/bin/caddy", str(commands / "caddy"))
-                        .replace("/usr/bin/systemctl", str(commands / "systemctl"))
-                        .replace("/etc/caddy/Caddyfile", str(self.host / "Caddyfile"))
-                    )
+                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"node": "209"})
         folder = self.repo / "extensions/behaviors/operations/routes"
         folder.mkdir(parents=True)
         import shutil
@@ -89,7 +82,8 @@ if name=='systemctl' and os.environ.get('FIXTURE_FAIL')=='reload': sys.exit(1)
                 "caddy_publication": {
                     "node_id": 9,
                     "user": "orbit",
-                    "control_node_id": 14,
+                    "control_node_id": 209,
+                    "host_keys": [PIN],
                     "connection": self.connection,
                     "caddy": {
                         "content": self.content,

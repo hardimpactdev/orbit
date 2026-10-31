@@ -22,15 +22,11 @@ inputs:
         node_id:
           type: integer
           minimum: 1
-          not:
-            enum:
-            - 1
-            - 18
         user:
           type: string
         control_node_id:
           type: integer
-          minimum: 1
+          const: 209
         connection:
           type: object
           properties:
@@ -43,11 +39,16 @@ inputs:
             become:
               type: boolean
               const: true
+            nodePort:
+              type: integer
+              minimum: 1
+              maximum: 65535
           required:
           - nodeHost
           - nodeUser
           - nodeIdentityFile
           - become
+          - nodePort
           additionalProperties: false
         before:
           type: object
@@ -58,6 +59,11 @@ inputs:
           enum:
           - forward
           - restore
+        host_keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
       required:
       - node_id
       - user
@@ -66,6 +72,7 @@ inputs:
       - before
       - after
       - direction
+      - host_keys
       additionalProperties: false
   required:
   - operation_id
@@ -76,14 +83,14 @@ inputs:
   additionalProperties: false
 jobs:
 - name: composition
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-  labels: &id001
-    node: ${{ string(inputs.intent.node_id) }}
+  target: orbit-node-209
+  labels:
+    node: '209'
   steps:
   - name: plan
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -97,18 +104,37 @@ jobs:
         before: ${{ inputs.intent.before }}
         after: ${{ inputs.intent.after }}
         direction: ${{ inputs.intent.direction }}
+        host_keys: ${{ inputs.intent.host_keys }}
   - name: read-account
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-read-account-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-read-account-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
-        run: |
-          /usr/bin/python3 - <<'PYTHON'
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_NODE_USER=' + string(inputs.intent.user) }}
+        - /bin/sh
+        - -c
+        - |
+          /usr/bin/python3 -B - <<'PYTHON'
           import grp
           import json
           import os
@@ -117,24 +143,29 @@ jobs:
           account = pwd.getpwnam(os.environ["ORBIT_NODE_USER"])
           print(json.dumps({"user": account.pw_name, "home": account.pw_dir, "group": grp.getgrgid(account.pw_gid).gr_name}))
           PYTHON
-        env:
-          ORBIT_NODE_USER: ${{ inputs.intent.user }}
     dependsOn:
     - step: plan
       condition:
         type: succeeded
   - name: read-current
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-read-current-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-read-current-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: |
-          sudo --preserve-env=ORBIT_PHP_VERSIONS /usr/bin/python3 - <<'PYTHON'
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_PHP_VERSIONS=' + string(steps.plan.outputs.versions_json) }}
+        - /bin/sh
+        - -c
+        - |
+          sudo --preserve-env=ORBIT_PHP_VERSIONS /usr/bin/python3 -B - <<'PYTHON'
           import json
           import os
           from pathlib import Path
@@ -143,16 +174,14 @@ jobs:
           paths = {version: Path(f"/etc/php/{version}/fpm/pool.d/orbit-scopes.conf") for version in versions}
           print(json.dumps({version: path.read_text() if path.is_file() else "" for version, path in paths.items()}))
           PYTHON
-        env:
-          ORBIT_PHP_VERSIONS: ${{ steps.plan.outputs.versions_json }}
     dependsOn:
     - step: read-account
       condition:
         type: succeeded
   - name: compose
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -168,51 +197,63 @@ jobs:
         direction: ${{ inputs.intent.direction }}
         current: ${{ steps["read-current"].outputs.stdout }}
         account: ${{ steps["read-account"].outputs.stdout }}
+        host_keys: ${{ inputs.intent.host_keys }}
     dependsOn:
     - step: read-current
       condition:
         type: succeeded
 - name: publication
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-  labels: *id001
+  target: orbit-node-209
+  labels:
+    node: '209'
   steps:
   - name: apply-pool
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.control_node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "route-delta-apply-pool-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        path: ${{ self.pool.path }}
-        ensure: ${{ self.pool.ensure }}
-        content: ${{ self.pool.content }}
-        owner: root
-        group: root
-        mode: '0644'
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-apply-pool-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          if [ "$1" = absent ]; then /usr/bin/rm -f "$2"; else
+            /usr/bin/install -m 0644 -o root -g root /dev/null "$2"
+            /usr/bin/cat > "$2"
+          fi
+        - route-pool
+        - ${{ self.pool.ensure }}
+        - ${{ self.pool.path }}
+        stdin: ${{ self.pool.content }}
+        sudo: true
     forEach:
       item: pool
       in: ${{ steps.compose.outputs.files }}
   - name: validate
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-validate-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo "/usr/sbin/php-fpm$ORBIT_PHP_VERSION" -t
-        env:
-          ORBIT_PHP_VERSION: ${{ self.pool.version }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_PHP_VERSION=' + string(self.pool.version) }}
+        - /bin/sh
+        - -c
+        - sudo "/usr/sbin/php-fpm$ORBIT_PHP_VERSION" -t
     dependsOn:
     - step: apply-pool
       condition:
@@ -221,18 +262,23 @@ jobs:
       item: pool
       in: ${{ steps.compose.outputs.files }}
   - name: reload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-delta-reload-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo /usr/bin/systemctl reload "php$ORBIT_PHP_VERSION-fpm"
-        env:
-          ORBIT_PHP_VERSION: ${{ self.pool.version }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_PHP_VERSION=' + string(self.pool.version) }}
+        - /bin/sh
+        - -c
+        - sudo /usr/bin/systemctl reload "php$ORBIT_PHP_VERSION-fpm"
     dependsOn:
     - step: validate
       condition:
@@ -245,18 +291,18 @@ jobs:
     condition:
       type: succeeded
 - name: completion
-  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.node_id) }}
+    node: '209'
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

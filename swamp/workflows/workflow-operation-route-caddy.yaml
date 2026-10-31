@@ -25,17 +25,13 @@ inputs:
             node_id:
               type: integer
               minimum: 1
-              not:
-                enum:
-                - 1
-                - 18
             user:
               type: string
             caddy:
               type: object
             control_node_id:
               type: integer
-              minimum: 1
+              const: 209
             connection:
               type: object
               properties:
@@ -48,18 +44,29 @@ inputs:
                 become:
                   type: boolean
                   const: true
+                nodePort:
+                  type: integer
+                  minimum: 1
+                  maximum: 65535
               required:
               - nodeHost
               - nodeUser
               - nodeIdentityFile
               - become
+              - nodePort
               additionalProperties: false
+            host_keys:
+              type: array
+              items:
+                type: string
+              minItems: 1
           required:
           - node_id
           - user
           - caddy
           - control_node_id
           - connection
+          - host_keys
           additionalProperties: false
       required:
       - caddy_publication
@@ -73,14 +80,14 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
+    node: '209'
   steps:
   - name: input
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
@@ -89,73 +96,98 @@ jobs:
       inputs:
         publication: ${{ inputs.intent.caddy_publication }}
   - name: apply-config
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "apply-config-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        path: /etc/caddy/Caddyfile
-        ensure: present
-        content: ${{ steps.input.outputs.caddy.content }}
-        owner: root
-        group: caddy
-        mode: '0640'
-        nodeHost: ${{ inputs.intent.caddy_publication.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.caddy_publication.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.caddy_publication.connection.become }}
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-apply-config-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.caddy_publication.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.caddy_publication.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.caddy_publication.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.caddy_publication.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          /usr/bin/install -m 0640 -o root -g caddy /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - route-file
+        - /etc/caddy/Caddyfile
+        stdin: ${{ steps.input.outputs.caddy.content }}
+        sudo: true
     dependsOn:
     - step: input
       condition:
         type: succeeded
   - name: validate
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "validate-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+        hosts: name:target
+        argv:
+        - env
+        - /bin/sh
+        - -c
+        - sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
     dependsOn:
     - step: apply-config
       condition:
         type: succeeded
   - name: reload
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "reload-" + run.id }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: sudo /usr/bin/systemctl reload caddy
+        hosts: name:target
+        argv:
+        - env
+        - /bin/sh
+        - -c
+        - sudo /usr/bin/systemctl reload caddy
     dependsOn:
     - step: validate
       condition:
         type: succeeded
 - name: completion
-  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+  target: orbit-node-209
   labels:
-    node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+    node: '209'
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Gateway\GatewayCommandNode;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -26,9 +25,6 @@ final readonly class NativeCaddyPublicationInput
     /** @return array<string,mixed> */
     public function forNode(Node $node): array
     {
-        if (in_array($node->id, [1, 18], true)) {
-            throw new ResourceOperationException('caddy.placement_unavailable', 'Native Caddy publication requires the shared placed shell transport.', 503);
-        }
         $publication = CaddyPublicationPlan::forNode($node);
         if (isset($publication['error_code'])) {
             throw new ResourceOperationException('caddy.render_failed', 'The admitted Node Caddy configuration cannot be rendered.', 422);
@@ -37,20 +33,19 @@ final readonly class NativeCaddyPublicationInput
         return [...array_intersect_key($publication, array_flip(['node_id', 'user', 'caddy'])), ...$this->connectionForNode($node)];
     }
 
-    /** @return array{control_node_id: int, connection: array{nodeHost: string, nodeUser: string, nodeIdentityFile: string, become: true}} */
+    /** @return array{control_node_id:209,host_keys:list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}} */
     public function connectionForNode(Node $node): array
     {
-        $gateway = GatewayCommandNode::find();
+        $ssh = app(SwampSshExecutionInput::class)->forNode($node);
+        $target = $ssh['target'];
         $address = app(RouteRenderContext::class)->wireguardIp($node);
-        if ($gateway === null || $address === null || $node->user === '') {
-            throw new ResourceOperationException('caddy.connection_unavailable', 'Publication requires the active Gateway and admitted Node SSH identity.', 503);
+        if ($address === null) {
+            throw new ResourceOperationException('caddy.connection_unavailable', 'Publication requires its admitted Node SSH address.', 503);
         }
 
-        return ['control_node_id' => $gateway->id, 'connection' => [
-            'nodeHost' => $address,
-            'nodeUser' => $node->user,
-            'nodeIdentityFile' => app(SshKeyProvider::class)->privateKeyPath(),
-            'become' => true,
+        return ['control_node_id' => $ssh['control_node_id'], 'host_keys' => $target['host_keys'], 'connection' => [
+            'nodeHost' => $address, 'nodeUser' => $target['user'], 'nodePort' => $target['port'],
+            'nodeIdentityFile' => $ssh['identity_file'], 'become' => true,
         ]];
     }
 }

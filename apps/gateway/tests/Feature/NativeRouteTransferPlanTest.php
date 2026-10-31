@@ -17,7 +17,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -27,10 +27,10 @@ use App\Models\Project;
 use App\Models\Route;
 
 beforeEach(function (): void {
-    $gateway = Node::query()->create(['name' => 'gateway-control', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
+    $gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'gateway-control', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $this->gateway = $gateway;
-    $this->node = Node::query()->create(['name' => 'native-dev', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'native-dev', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Native', 'slug' => 'native', 'repository_url' => 'https://example.test/native.git', 'root' => 'public']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'native', 'checkout_path' => '/srv/native', 'branch' => 'main', 'source_is_laravel' => false, 'status' => InstanceState::SourceResolved]);
@@ -51,7 +51,7 @@ beforeEach(function (): void {
     $this->destinationCluster = Cluster::query()->create(['name' => 'destination', 'state' => 'active', 'tld' => 'destination.test']);
     $this->node->update(['cluster_id' => $this->cluster->id]);
     $this->node->roles()->create(['cluster_id' => $this->cluster->id, 'role' => 'router', 'status' => 'active']);
-    $this->destination = Node::query()->create(['name' => 'destination', 'cluster_id' => $this->destinationCluster->id, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.2']);
+    $this->destination = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'destination', 'cluster_id' => $this->destinationCluster->id, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.2']);
     $this->destination->roles()->create(['cluster_id' => $this->destinationCluster->id, 'role' => 'router', 'status' => 'active']);
     $this->route->update(['node_id' => null, 'cluster_id' => $this->cluster->id, 'sites_published' => true, 'status' => 'active']);
     $this->extra = Route::query()->create(['project_id' => $this->instance->project_id, 'cluster_id' => $this->cluster->id, 'domain' => 'extra.test', 'web_root' => 'admin/public', 'status' => 'pending', 'sites_published' => true, 'publication' => 'private', 'provenance' => 'explicit']);
@@ -155,10 +155,10 @@ it('captures prospective complete publications without changing stored placement
     $rows = collect($publications['nodes'])->keyBy('node_id');
     $source = $rows[$this->node->id];
     $destination = $rows[$this->destination->id];
-    expect($source['control_node_id'])->toBe($this->gateway->id)
+    expect($source['control_node_id'])->toBe(209)
         ->and($source['connection'])->toMatchArray(['nodeHost' => '10.44.0.11', 'nodeUser' => 'orbit', 'become' => true])
         ->and($destination['connection'])->toMatchArray(['nodeHost' => '10.44.0.12', 'nodeUser' => 'orbit', 'become' => true])
-        ->and($destination['connection']['nodeIdentityFile'])->toBe(app(SshKeyProvider::class)->privateKeyPath())
+        ->and($destination['connection']['nodeIdentityFile'])->toBe(app(SwampSshExecutionInput::class)->identity()['identity_file'])
         ->and($source['before']['caddy']['content'])->toContain('native.test')->toContain('survivor.source.test')
         ->and($source['after']['caddy']['content'])->toContain('survivor.source.test')->not->toContain('https://native.test')
         ->and($destination['after']['caddy']['content'])->toContain('native.destination.test')->toContain('/srv/new-native')->toContain('extra.test')
