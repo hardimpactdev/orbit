@@ -6,7 +6,7 @@ import { invokeSql } from "./local_sql.ts";
 import { runSqliteLocal, type SqliteInvoke } from "./sqlite_local.ts";
 import { destroyDatabase, DestroyInput } from "./destroy.ts";
 import type { Context } from "./native_effect.ts";
-import type { PrivateMaterialUse } from "./user_create_action.ts";
+import type { PrivateMaterialUse } from "./private_material.ts";
 
 const Path = z.string().startsWith("/").refine((p) =>
   !/[\0\r\n]|(?:^|\/)\.{1,2}(?:\/|$)|\/\//.test(p)

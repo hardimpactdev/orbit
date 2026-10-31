@@ -65,7 +65,7 @@ def valkey(intent, material, *args):
     return reply.stdout.rstrip("\n")
 
 
-def main(action):
+def main(action, *, error_code="database.server_create_outcome_unknown"):
     try:
         intent = json.loads(sys.argv[1])
         material = json.load(sys.stdin)
@@ -73,7 +73,7 @@ def main(action):
     except Refused as error:
         print(json.dumps({"error_code": error.code}))
         raise SystemExit(1) from None
-    except (KeyError, OSError, TypeError, ValueError):
-        print('{"error_code":"database.server_create_outcome_unknown"}')
+    except Exception:
+        print(json.dumps({"error_code": error_code}))
         raise SystemExit(1) from None
     print(json.dumps(result))

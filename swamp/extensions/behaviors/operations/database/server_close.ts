@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { nativeEffect } from "./native_effect.ts";
 import { ValkeyClient } from "./valkey_client.ts";
-import type { PrivateMaterialUse } from "./user_create_action.ts";
+import type { PrivateMaterialUse } from "./private_material.ts";
 
 const Input = z.object({
   host: z.ipv4(),
