@@ -146,7 +146,7 @@ describe('same-root Node parent runtime custody', function (): void {
         $this->plan = app(MetricsFleetCapture::class)->capture();
         $direct = app(DirectOperation::class);
         $definitions = $direct->definitions();
-        foreach (['node.role_add', 'node.role_converge', 'node.role_remove', 'node.role_relocate', 'node.remove', 'node.removal_restore'] as $kind) {
+        foreach (['node.role_add', 'node.role_converge', 'node.role_remove', 'node.role_relocate', 'node.remove'] as $kind) {
             $definitions[$kind] = ['workflow' => 'fixture-node-parent', 'projection' => MetricsFleetProjection::class,
                 'private_material' => ['metrics_runtime' => 'metrics.fleet_runtime']];
         }
@@ -163,11 +163,11 @@ describe('same-root Node parent runtime custody', function (): void {
                 'private_bindings' => ['metrics_runtime' => ['owner_node_id' => 9, 'read_node_ids' => [9], 'write_node_ids' => []]]]]);
     });
 
-    it('hydrates each exact parent capture only on the Metrics owner without minting or persisting material', function (string $kind, string $capture): void {
+    it('hydrates each exact parent capture only on the Metrics owner without minting or persisting material', function (string $kind, string $capture, bool $restoring = false): void {
         $input = $this->operation->input;
         unset($input['_role']);
-        $input[$capture] = ['metrics_fleet' => $this->plan];
-        $this->operation->update(['kind' => $kind, 'input' => $input]);
+        $input[$capture] = [$restoring ? 'restore_metrics_fleet' : 'metrics_fleet' => $this->plan];
+        $this->operation->update(['kind' => $kind, 'input' => $input, 'result' => $restoring ? ['restoring' => true] : null]);
         $before = $this->operation->fresh()->getAttributes();
         $material = app(DirectOperationPrivateMaterial::class)->read($this->operation, 9)['metrics_runtime'];
         expect($material['runtime']['configuration']['/etc/orbit/metrics/grafana/admin-password'])->toBe('existing-parent-private-sentinel')
@@ -178,7 +178,7 @@ describe('same-root Node parent runtime custody', function (): void {
         expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation, 14))->toThrow(ResourceOperationException::class);
     })->with([
         ['node.role_add', '_role'], ['node.role_converge', '_role'], ['node.role_remove', '_role_remove'],
-        ['node.role_relocate', '_relocate'], ['node.remove', '_removal'], ['node.removal_restore', '_removal'],
+        ['node.role_relocate', '_relocate'], ['node.remove', '_removal'], ['node.remove', '_removal', true],
     ]);
 
     it('refuses wrong owner readers writers references paths assignments and owner drift', function (string $change): void {

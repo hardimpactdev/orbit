@@ -9,6 +9,7 @@ use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -17,6 +18,10 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 {
     public function enable(int $nodeId): Operation
     {
+        if (($existing = app(OperationIdempotency::class)->replay('node.role_add')) !== null) {
+            return $existing;
+        }
+
         if (Node::query()->whereHas('roles', static fn ($query) => $query->where(
             'role',
             RoleName::Metrics->value,
@@ -29,7 +34,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         $this->guardLinuxPlatform($node);
         app(DirectOperation::class)->writer('node.role_add');
 
-        return app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::Metrics, converge: true);
+        return app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::Metrics);
     }
 
     public function remove(bool $force, bool $purge): Operation
@@ -50,10 +55,8 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 
         $node = $nodes->sole();
         app(DirectOperation::class)->writer('node.role_remove');
-        $operation = app(AdmitNodeRoleOperationAction::class)->remove($node, RoleName::Metrics, $force, $purge);
-        assert($operation instanceof Operation);
 
-        return $operation;
+        return app(AdmitNodeRoleOperationAction::class)->remove($node, RoleName::Metrics, $force, $purge);
     }
 
     private function guardLinuxPlatform(Node $node): void

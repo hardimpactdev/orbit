@@ -2,15 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\Fleet\FleetFixtures;
 
 it('refuses removal without a Metrics assignment', function (): void {
     expect(fn () => app(NativeMetricsRoleManager::class)->remove(true, false))
@@ -85,3 +89,31 @@ function metricsRoleManagerNode(string $name, string $address, bool $assigned = 
 
     return $node;
 }
+
+it('records Metrics enable as role add and replays the same request before singleton checks', function (): void {
+    FleetFixtures::bind();
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn('fixture-public-root');
+    app()->instance(LeafCertificateSigner::class, $signer);
+    $gateway = FleetFixtures::node('gateway', [RoleName::Gateway]);
+    $this->markAsGateway($gateway);
+    $node = metricsRoleManagerNode('fresh-metrics', '10.44.0.9', false);
+    $node->forceFill(['user' => 'orbit', 'agent_secret_hash' => str_repeat('e', 64)])->save();
+    config(['swamp_workers.nodes' => [$node->id]]);
+    $idempotency = app(OperationIdempotency::class);
+    $idempotency->kind = 'node.role_add';
+    $idempotency->key = 'metrics-enable-once';
+    $idempotency->fingerprint = str_repeat('f', 64);
+
+    DB::beginTransaction();
+    try {
+        $first = app(NativeMetricsRoleManager::class)->enable($node->id);
+        $second = app(NativeMetricsRoleManager::class)->enable($node->id);
+
+        expect($first->kind)->toBe('node.role_add')->and($second->id)->toBe($first->id);
+        $this->assertDatabaseCount('operations', 1);
+        expect($node->roles()->where('role', RoleName::Metrics)->count())->toBe(1);
+    } finally {
+        DB::rollBack();
+    }
+});

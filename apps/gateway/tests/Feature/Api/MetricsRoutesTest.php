@@ -407,6 +407,9 @@ it('refuses a second Metrics claim through the generic role route with a stable 
         'wireguard_ip' => '10.44.0.3',
     ]);
 
+    $other->forceFill(['platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_fingerprint' => 'SHA256:managed'])->save();
+    config(['swamp_workers.nodes' => [$other->id]]);
+
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'metrics'])
