@@ -32,6 +32,11 @@ for (const path of await files(`${root}/models`)) {
 }
 const errors: string[] = [];
 const seen = new Set<string>();
+// This immutable official SSH library is part of the UpCloud image credential review.
+// Keep the exception exact: no mutable refs, other entrypoints or extension loading.
+const pinnedNodeLibraries = new Set([
+  "https://raw.githubusercontent.com/swamp-club/swamp-extensions/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh/extensions/models/_lib/operations.ts",
+]);
 async function reviewed(path: string) {
   if (seen.has(path)) return;
   seen.add(path);
@@ -56,7 +61,10 @@ async function reviewed(path: string) {
       await reviewed(
         resolve(dirname(path), dependency),
       );
-    } else if (!/^(?:npm:|jsr:|node:)/.test(dependency)) {
+    } else if (
+      !/^(?:npm:|jsr:|node:)/.test(dependency) &&
+      !pinnedNodeLibraries.has(dependency)
+    ) {
       errors.push(
         `Unreviewed Node import ${dependency}: ${path}`,
       );

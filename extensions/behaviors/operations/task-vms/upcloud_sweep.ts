@@ -19,7 +19,7 @@ const Server = Listed.extend({
 });
 type Candidate = { uuid: string; name: string; label: string; value: string };
 export type CloudRequest = (
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: Record<string, unknown>,
   missing?: boolean,

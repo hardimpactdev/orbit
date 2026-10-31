@@ -52,3 +52,43 @@ Deno.test("Node placement lint refuses missing or mismatched selectors and third
     false,
   );
 });
+
+Deno.test("Node library exception accepts only the exact pinned SSH operations source", async () => {
+  const both = 'target: orbit-node-9\nlabels: {node: "9"}';
+  const pinned =
+    "https://raw.githubusercontent.com/swamp-club/swamp-extensions/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh/extensions/models/_lib/operations.ts";
+  const source = (url: string) =>
+    `import "${url}"; export const behavior = {type: "@fixture/local"};`;
+  assertEquals(await check(both, "@fixture/local", source(pinned)), true);
+  assertEquals(
+    await check(
+      both,
+      "@fixture/local",
+      source(
+        pinned.replace("d6f7afdcd6d04a63fdbc6ed56c403832770f67a6", "main"),
+      ),
+    ),
+    false,
+  );
+  assertEquals(
+    await check(
+      both,
+      "@fixture/local",
+      source(pinned.replace("operations.ts", "runner.ts")),
+    ),
+    false,
+  );
+  assertEquals(
+    await check(
+      both,
+      "@fixture/local",
+      source(
+        pinned.replace(
+          "d6f7afdcd6d04a63fdbc6ed56c403832770f67a6",
+          "a".repeat(40),
+        ),
+      ),
+    ),
+    false,
+  );
+});

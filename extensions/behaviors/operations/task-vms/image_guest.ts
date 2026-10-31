@@ -153,20 +153,7 @@ export function incusGuest(
         600,
       );
       if (!cloud.success) throw new Error("task_vm.bootstrap_failed");
-      for (const path of ["/usr", "/usr/local", "/usr/local/bin", agent]) {
-        const info = await Deno.lstat(path);
-        if (
-          info.isSymlink || info.uid !== 0 || info.mode === null ||
-          (info.mode & 0o022) !== 0 ||
-          (path === agent ? !info.isFile : !info.isDirectory)
-        ) {
-          throw new Error("Unsafe image agent path");
-        }
-      }
-      const candidate = await Deno.readFile(agent);
-      if (await digest(candidate) !== pin) {
-        throw new Error("agent.version_mismatch");
-      }
+      const candidate = await imageAgent(pin);
       const path = `/var/tmp/orbit-agent-candidate-${pin}`;
       const pushed = await invoke(
         [
@@ -200,32 +187,63 @@ export function incusGuest(
       await command("guest.cloud-init", {}, 45);
     },
     async artifact(bytes: Uint8Array, sha256: string) {
-      if (
-        bytes.length < 1 || bytes.length > 268435456 || !Digest.test(sha256) ||
-        await digest(bytes) !== sha256
-      ) throw new Error("Invalid image artifact");
-      let offset = 0;
-      while (offset < bytes.length) {
-        const chunk = bytes.subarray(offset, offset + 2097152);
-        const base64 = btoa(
-          Array.from(chunk, (byte) => String.fromCharCode(byte)).join(""),
-        );
-        const result = await command("pi.receive-artifact", {
-          sha256,
-          offset,
-          total: bytes.length,
-          bytes: base64,
-        }, 120);
-        const next = result.received_bytes;
-        if (
-          !Number.isInteger(next) || Number(next) < offset + chunk.length ||
-          Number(next) > bytes.length ||
-          result.verified !== (next === bytes.length)
-        ) {
-          throw new Error("Invalid image artifact progress");
-        }
-        offset = Number(next);
-      }
+      await imageArtifact(bytes, sha256, command);
     },
   };
+}
+
+/** Both guest transports deliver the same pinned artifact protocol. */
+export async function imageArtifact(
+  bytes: Uint8Array,
+  sha256: string,
+  command: (
+    name: string,
+    input: Record<string, unknown>,
+    seconds: number,
+  ) => Promise<Record<string, unknown>>,
+) {
+  if (
+    bytes.length < 1 || bytes.length > 268435456 || !Digest.test(sha256) ||
+    await digest(bytes) !== sha256
+  ) throw new Error("Invalid image artifact");
+  let offset = 0;
+  while (offset < bytes.length) {
+    const chunk = bytes.subarray(offset, offset + 2097152);
+    const base64 = btoa(
+      Array.from(chunk, (byte) => String.fromCharCode(byte)).join(""),
+    );
+    const result = await command("pi.receive-artifact", {
+      sha256,
+      offset,
+      total: bytes.length,
+      bytes: base64,
+    }, 120);
+    const next = result.received_bytes;
+    if (
+      !Number.isInteger(next) || Number(next) < offset + chunk.length ||
+      Number(next) > bytes.length ||
+      result.verified !== (next === bytes.length)
+    ) {
+      throw new Error("Invalid image artifact progress");
+    }
+    offset = Number(next);
+  }
+}
+
+export async function imageAgent(pin: string) {
+  for (const path of ["/usr", "/usr/local", "/usr/local/bin", agent]) {
+    const info = await Deno.lstat(path);
+    if (
+      info.isSymlink || info.uid !== 0 || info.mode === null ||
+      (info.mode & 0o022) !== 0 ||
+      (path === agent ? !info.isFile : !info.isDirectory)
+    ) {
+      throw new Error("Unsafe image agent path");
+    }
+  }
+  const candidate = await Deno.readFile(agent);
+  if (await digest(candidate) !== pin) {
+    throw new Error("agent.version_mismatch");
+  }
+  return candidate;
 }

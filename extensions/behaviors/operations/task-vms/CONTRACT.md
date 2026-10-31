@@ -86,19 +86,31 @@ removal requires the stamped failed worker-stop and power-off children. Optional
 lifecycle branches use exact-key completion assertions; no unsupported
 per-variant contract is registered.
 
-Incus image parents drive reset, launch, boot, six native recipe phases,
-preparation, cleanup, publication, smoke, topology seed, promotion and pruning.
-Preparation and publication evidence belongs to stamped child Operations.
-Promotion verifies that the smoke VM booted the candidate fingerprint. Re-entry
-reuses phase boot/invocation identities. Only a later explicit attempt restarts
-a proven failed invocation.
+The direct Incus image root above owns recipe supervision, smoke, topology seed
+and final promotion. Successful native steps provide its execution history.
 
-UpCloud image parents use the same recipe, owned labelled servers and a private
-unverified template. Builder verification, firewall, cleanup, template creation
-and smoke checks require child proof before promotion. Pruning retains the
-newest two verified templates and templates pinned by allocations. Swamp owns
-all provider polling, graceful stop escalation and deletion waits; a Gateway
-UpCloud primitive submits one fixed API action.
+`task_vm.upcloud_image_build` directly starts
+`operation-task-vm-upcloud-image-build` (UUID
+`ede34ced-7d0e-4764-84c1-cfc533d9e980`). One native root places every API and
+guest step at the admitted Gateway Node worker. It uses the same recipe observer
+and artifact uploader as Incus images. Swamp generates guest host keys, stores
+them through the existing encrypted output boundary and uses the pinned official
+`@swamp/ssh` library for strict host-key verification. Private keys and provider
+tokens stay in callback-local memory and the encrypted Gateway record; they
+never enter native arguments or resources. The SSH library is bundled from
+commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6` of
+swamp-club/swamp-extensions, matching its published `2026.10.23.1` operations
+source. The Node trust linter allows only that exact immutable operations URL;
+mutable refs, other SSH entrypoints and third-party workflow execution remain
+refused. This exception is included in the credential/access review.
+
+Server adoption requires the exact title, hostname and image-attempt label.
+Smoke failure prevents promotion and removes only this attempt's servers and
+unverified template. A lost create reply is observed through those provider
+identities before another mutation. Pruning retains the two newest verified
+templates and templates pinned by current allocations. Provider waits and stop
+escalation stay inside native steps. The old image child kinds, PHP command/read
+relays, claim registration and polled discovery entries are deleted together.
 
 Each host sweep is one direct `task_vm.sweep_host` root in
 `operation-task-vm-sweep`, placed on `orbit-node-<admittedNodeId>` with the
@@ -225,8 +237,8 @@ resource or automatic cancellation request for an unclaimed child. Operators
 cancel the native run with `swamp workflow cancel`; the family adds no separate
 queue or cancellation policy.
 
-The retained UpCloud image observation loop yields on its last admitted child
-until the owning UpCloud parent cutover. Incus images have no such loop.
+Both image roots use native placed steps and have no Gateway child observation
+loop.
 
 The unused cache-preparation Operation family is retired:
 `prepare_package_cache`, `cache_initialize`, `cache_mount` and `cache_seed` have

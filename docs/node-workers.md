@@ -58,8 +58,12 @@ systemd state.
 
 Node workers run reviewed orbit-swamp code only. Third-party extensions must
 not run in-process. CI checks every Node placement for both target and string
-node label and traces the local behavior imports. Third-party packages stay in
-the `orbit-swamp-package` sandbox without sudo.
+node label and traces the local behavior imports. The UpCloud image behavior
+has one credential-reviewed library exception: the official SSH operations source
+at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. The linter accepts only its
+exact immutable URL. It does not permit extension loading or third-party workflow
+execution. Other third-party packages stay in the `orbit-swamp-package` sandbox
+without sudo.
 
 Update each Node to the released agent before selecting that Node. Old agents
 cannot parse the bool-to-table `[swamp_worker]` change. Select it immediately

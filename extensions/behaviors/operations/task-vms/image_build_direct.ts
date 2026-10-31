@@ -4,6 +4,7 @@ import { Globals } from "../../operation-runner/mod.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
 import { incusGuest } from "./image_guest.ts";
+import { imagePhase } from "./image_phase.ts";
 import { recipePhases as phases } from "./images.ts";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -90,7 +91,7 @@ export async function imageStage(
   guest: (smoke: boolean) => Guest,
   artifact: () => Promise<Uint8Array>,
   expectedBoot: string | null = null,
-) {
+): Promise<Record<string, unknown>> {
   const command = async (name: string, payload: Record<string, unknown>) => {
     const result = await host({
       name,
@@ -141,66 +142,21 @@ export async function imageStage(
   const builder = guest(false);
   if ((phases as readonly string[]).includes(stage)) {
     if (stage === "pi" && input.pi_artifact === null) return {};
-    const key = {
-      identity: input.identity,
-      profile: "base",
-      phase: stage,
-      execution: `${input.build_id}-${input.attempt}`,
-    };
-    let lastReadAt = Date.now();
-    let deadline = lastReadAt + 1440000;
-    const observe = async (
-      boot_id: string | null,
-    ): Promise<Record<string, unknown>> => {
-      for (;;) {
-        const remaining = Math.min(deadline, lastReadAt + 60000) - Date.now();
-        if (remaining <= 0) throw new Error("task_vm.image_channel_lost");
-        try {
-          const observed = await builder.command(
-            "image.inspect-phase",
-            { key, boot_id },
-            Math.min(30, Math.ceil(remaining / 1000)),
-          );
-          lastReadAt = Date.now();
-          return observed;
-        } catch (error) {
-          if (
-            !(error instanceof Error) ||
-            error.message !== "task_vm.image_channel_lost"
-          ) throw error;
-          // systemd can re-exec during APT. Re-read status; never repeat a mutation.
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      }
-    };
-    let observation = await observe(null);
-    const boot_id = z.string().uuid().parse(observation.boot_id);
-    if (expectedBoot !== null && boot_id !== expectedBoot) {
-      throw new Error("task_vm.image_builder_rebooted");
-    }
-    if (observation.state === "missing") {
-      if (stage === "pi") {
-        await builder.artifact(await artifact(), input.pi_artifact!.sha256);
-      }
-      observation = await builder.command("image.start-phase", {
-        key,
-        boot_id,
-        recipe: input.recipe,
-      });
-      lastReadAt = Date.now();
-      deadline = lastReadAt + 1440000;
-    }
-    // Local observation of the guest's existing bounded service, never a Gateway wait or child.
-    while (observation.state === "running") {
-      if (Date.now() >= deadline) throw new Error("task_vm.image_build_failed");
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      observation = await observe(boot_id);
-    }
-    if (observation.state !== "complete" || observation.boot_id !== boot_id) {
-      throw new Error("task_vm.image_build_failed");
-    }
-    return {};
+    return await imagePhase(
+      {
+        identity: input.identity,
+        profile: "base",
+        phase: stage,
+        execution: `${input.build_id}-${input.attempt}`,
+      },
+      input.recipe,
+      builder,
+      artifact,
+      stage === "pi" ? input.pi_artifact!.sha256 : null,
+      expectedBoot,
+    );
   }
+
   switch (stage) {
     case "reset":
       await remove(false);
