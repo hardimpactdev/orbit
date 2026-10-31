@@ -10,6 +10,7 @@ SECRET = re.compile(r"secret|password|passwd|credential|private.?key|api.?key|to
 HOST_TOOL_LOCKS = {
     "/run/lock/orbit-firewall.lock": "UFW numbered-rule transaction",
     "/run/lock/orbit-self-update.lock": "atomic observer binary/config transaction",
+    "/run/lock/orbit-wireguard-peer.lock": "WireGuard peer config/syncconf transaction",
     "/run/orbit/project-documents/execution.lock": "documents cleanup tool inode",
 }
 SAFE_REF = re.compile(r"(?:key|id|ref|name|hash|digest|public|field)s?$", re.I)
