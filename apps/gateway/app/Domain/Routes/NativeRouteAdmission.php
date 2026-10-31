@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Route;
 use App\Support\ValidatedData;
 
@@ -18,7 +19,7 @@ final readonly class NativeRouteAdmission
     public function capture(string $kind, Route $route, array $input, int $rootNodeId): array
     {
         $intent = match ($kind) {
-            'route.create' => ['route_convergence' => app(NativeRouteConvergenceIntent::class)->forRoute($route, $input)],
+            'route.create', 'route.converge' => ['route_convergence' => app(NativeRouteConvergenceIntent::class)->forRoute($route, $input)],
             'route.destroy', 'route.withdraw' => ['route_removal' => app(NativeRouteRemovalIntent::class)->forRoute($route, $input)],
             'route.target_set' => ['route_target' => app(NativeRouteTargetIntent::class)->forRoute($route, $input)],
             default => [],
@@ -35,6 +36,22 @@ final readonly class NativeRouteAdmission
         }
         $nodes = array_values(array_unique([$rootNodeId, ...$nodes, ...($leaves !== [] ? [209] : [])]));
         sort($nodes);
+
+        return [...$input, ...$intent, 'certificates' => array_values(array_unique($leaves, SORT_REGULAR)),
+            ...self::environmentBindings($nodes, $rootNodeId, $route->id)];
+    }
+
+    /** Existing finite environment fields reused by truthful composing parents.
+     * @param  list<int>  $nodes
+     * @return array<string,mixed>
+     */
+    public static function environmentBindings(array $nodes, int $rootNodeId, int $ownerId): array
+    {
+        $nodes = array_values(array_unique([$rootNodeId, ...$nodes]));
+        sort($nodes);
+        if (count($nodes) > self::EnvironmentSlots) {
+            throw new ResourceOperationException('route.environment_participants_exceeded', 'The Route environment exceeds its declared participant fields.', 422);
+        }
         $fields = [];
         $bindings = [];
         $references = [];
@@ -45,12 +62,11 @@ final readonly class NativeRouteAdmission
             $bindings[$field] = ['owner_node_id' => $nodeId, 'read_node_ids' => $used ? [$nodeId] : [], 'write_node_ids' => []];
             if ($used) {
                 $fields[(string) $nodeId] = $field;
-                $references[$field] = ['$secret' => 'route.environment_sync', 'id' => $route->id];
+                $references[$field] = ['$secret' => 'route.environment_sync', 'id' => $ownerId];
             }
         }
 
-        return [...$input, ...$intent, 'participant_node_ids' => $nodes, 'certificates' => array_values(array_unique($leaves, SORT_REGULAR)),
-            'environment_fields' => $fields, 'private_bindings' => $bindings, ...$references];
+        return ['participant_node_ids' => $nodes, 'environment_fields' => $fields, 'private_bindings' => $bindings, ...$references];
     }
 
     /** @return array<string,string> */
