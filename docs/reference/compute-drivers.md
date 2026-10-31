@@ -693,23 +693,19 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` starts one native Swamp run immediately on that exact Node worker. Swamp reads inventory, checks current Gateway ownership before each deletion, and projects the final observation. The old sweep children and polled dispatch path are removed.
-
-The native run checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
+The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. The Operation checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
 - A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
 - An **orphaned volume** is a storage volume `tvm-<number>-topology-seed` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
 
-The sweep fails a missing VM only when two distinct host Operations in a row miss it. Replaying one native root or its projected result never counts as a second miss. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
+The sweep fails a missing VM only when two distinct host Operations in a row miss it. Replaying the observation child of one Operation never counts as a second miss. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
 The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays).
 
-It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Admission records retirement of expired nonrunning builds before dispatch, using the same conditional update as resume. The native run deletes only those admitted builders and rechecks running ownership before each effect. An absent build row also permits cleanup, but a new row observed before deletion protects that name.
-
-The sweep never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
+It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Cleanup claims an older failed build before deleting its VMs, so it cannot race a resume. Builders without a row or with a completed or cleanup-claimed row are eligible for deletion. It never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
 [Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. The sweep deletes orphaned volumes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
 
@@ -717,7 +713,7 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders and their smoke VMs only when they are eligible for cleanup, as described above; recent unclaimed failed builds are retained for resume. For every other stray, neither tool changes it: the operator decides. The native sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
+The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders and their smoke VMs only when they are eligible for cleanup, as described above; recent unclaimed failed builds are retained for resume. For every other stray, neither tool changes it: the operator decides. The sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
 
 A **stray instance** is an Incus instance in any project of the host that is none of these:
 
@@ -1364,7 +1360,7 @@ These alternatives were also rejected:
 
 ## UpCloud overflow
 
-Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. The native orphan sweep verifies the recorded name, label and stopped state and calls UpCloud directly. Image build cleanup still uses its retained Gateway delete primitive until the owning image root moves. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
+Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. Each Gateway delete primitive verifies the recorded name, label and stopped state, sends one request, and returns without polling. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
 
 
 When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
@@ -1393,7 +1389,7 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp orders UpCloud image cleanup and orphan sweeps. The native sweep uses its Gateway worker and callback-local credential; retained image primitives each submit one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp orders UpCloud image cleanup and orphan sweeps. Each Gateway primitive submits one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 

@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Infrastructure\TaskVms\TaskVmPreservation;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmSweepRead;
 use App\Infrastructure\TaskVms\TaskVmUpCloudImageRead;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -27,6 +28,11 @@ use Throwable;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class TaskVmExecutorReadController extends Controller
 {
+    public function sweep(ReadTaskVmExecutorRequest $request, Operation $operation, TaskVmSweepRead $sweep): JsonResponse
+    {
+        return response()->json(['data' => $sweep->read($operation), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+    }
+
     public function upcloudImage(ReadTaskVmExecutorRequest $request, Operation $operation, TaskVmUpCloudImageRead $images, ?string $view = null): JsonResponse
     {
         return response()->json(['data' => $images->read($operation, $view), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
