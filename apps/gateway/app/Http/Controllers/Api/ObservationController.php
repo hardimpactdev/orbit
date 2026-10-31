@@ -12,30 +12,37 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Observation\ObservationRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use Illuminate\Http\JsonResponse;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class ObservationController extends Controller
 {
-    public function plan(ObservationRequest $request, string $collection, StartDoctorAction $action, TaskExtensionState $tasks): JsonResponse
+    #[StartsOperation('doctor.inspect')]
+    public function plan(ObservationRequest $request, string $collection, StartDoctorAction $action): JsonResponse
     {
-        if (! $tasks->enabled()) {
-            return $this->respond($request, ['status' => 'disabled']);
-        }
-
-        return $this->respond($request, OperationData::fromModel($action->collect($request->attributes->getString('orbit.request_id')))->toArray(), 202);
+        return $this->collect($request, $action);
     }
 
+    #[StartsOperation('doctor.inspect')]
+    public function health(ObservationRequest $request, StartDoctorAction $action): JsonResponse
+    {
+        return $this->collect($request, $action, true);
+    }
+
+    #[StartsOperation('observation.maintain')]
     public function maintain(ObservationRequest $request, string $routine, StartObservationMaintenance $action): JsonResponse
     {
-        if ($routine === 'health' && ! app(TaskExtensionState::class)->enabled()) {
+        return $this->respond($request, OperationData::fromModel($action->execute($routine, $request->attributes->getString('orbit.request_id')))->toArray(), 202);
+    }
+
+    private function collect(ObservationRequest $request, StartDoctorAction $action, bool $horizonOnly = false): JsonResponse
+    {
+        if (! app(TaskExtensionState::class)->enabled()) {
             return $this->respond($request, ['status' => 'disabled']);
         }
-        $operation = $routine === 'health'
-            ? app(StartDoctorAction::class)->collect($request->attributes->getString('orbit.request_id'), horizonOnly: true)
-            : $action->execute($routine, $request->attributes->getString('orbit.request_id'));
 
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
+        return $this->respond($request, OperationData::fromModel($action->collect($request->attributes->getString('orbit.request_id'), $horizonOnly))->toArray(), 202);
     }
 
     /** @param array<string, mixed> $data */
