@@ -810,6 +810,48 @@ Deno.test("normalized repository identity is public while authentication identit
   }
 });
 
+Deno.test("official cfgmgmt identity file workflow input is a public string path", () => {
+  const source = (name: string, schema: unknown) =>
+    "inputs:\n  properties:\n    connection:\n      type: object\n      properties:\n        " +
+    name + ": " + JSON.stringify(schema) + "\n";
+  assert(
+    !analyzeYaml(
+      "workflows/cfgmgmt.yaml",
+      source("nodeIdentityFile", { type: "string" }),
+    ).findings.some((f) => f.rule === "secret-input"),
+  );
+  for (const schema of [{}, { type: "object" }, { type: "array" }]) {
+    assert(
+      analyzeYaml("workflows/cfgmgmt.yaml", source("nodeIdentityFile", schema))
+        .findings.some((f) => f.rule === "secret-input"),
+    );
+  }
+  for (
+    const name of ["identityContent", "nodeIdentityContent", "ssh_identity"]
+  ) {
+    assert(
+      analyzeYaml("workflows/cfgmgmt.yaml", source(name, { type: "string" }))
+        .findings.some((f) => f.rule === "secret-input"),
+    );
+  }
+  const vault = "${{ vault.get('execution', 'ssh') }}";
+  assert(
+    analyzeYaml(
+      "models/cfgmgmt.yaml",
+      "globalArguments:\n  nodeIdentityFile: " + vault,
+    )
+      .findings.some((f) => f.rule === "vault-placement"),
+  );
+  assert(
+    analyzeYaml(
+      "workflows/cfgmgmt.yaml",
+      workflow(
+        "        run: 'tool $NODE_IDENTITY_FILE'\n",
+      ),
+    ).findings.some((f) => f.rule === "secret-argv"),
+  );
+});
+
 Deno.test("agent invocations inside shell substitutions and interpreter bodies are actions", () => {
   for (
     const source of [

@@ -74,7 +74,6 @@ function fixture() {
 Deno.test("standalone bootstrap kinds compose native lower actions without child Operations", async () => {
   for (
     const [kind, wanted] of [
-      ["node.bootstrap_probe", ["probe"]],
       ["node.bootstrap_install", ["install"]],
       ["node.bootstrap_host", ["install", "host"]],
       ["node.bootstrap_verify", ["probe", "verify"]],
@@ -155,7 +154,7 @@ Deno.test("bootstrap protocol keeps identity callback-local and projects only bo
   const secret = "/private/bootstrap-key-sentinel";
   const args = {
     operation_id: 7,
-    kind: "node.bootstrap_probe" as const,
+    kind: "node.bootstrap_verify" as const,
     node_id: 14,
     run_id: "0d363abd-ec96-4979-8866-f1c0233c576c",
   };
@@ -189,7 +188,7 @@ Deno.test("bootstrap protocol keeps identity callback-local and projects only bo
       assertEquals(raw, input());
       assertEquals(identity, secret);
       return Promise.resolve({
-        probed: true,
+        bootstrap_verified: true,
         architecture: "x86_64",
         host_type: "ssh-ed25519",
         public_key: "AAAA",

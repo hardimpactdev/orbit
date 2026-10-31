@@ -1588,6 +1588,8 @@ export function analyzeYaml(
       if (
         path[0] === "inputs" && path.at(-1) === "properties" &&
         secret(key) &&
+        // Official cfgmgmt uses this string as a privateKeyPath locator, not key bytes.
+        !(key === "nodeIdentityFile" && object(item).type === "string") &&
         !referenceOnlySchema(item)
       ) {
         add("secret-input");
