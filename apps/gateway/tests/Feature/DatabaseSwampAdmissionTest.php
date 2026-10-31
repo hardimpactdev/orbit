@@ -3,10 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
@@ -20,7 +18,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeRoutePublicationSocket;
-use Tests\Support\FakeValkeyServerAdmin;
 
 function databaseAdmissionNode($test): Node
 {
@@ -181,10 +178,12 @@ it('refuses reusing failed create intent after its recorded credentials change',
 
 it('keeps server initializer material out of safe direct input', function (string $driver): void {
     $node = databaseAdmissionNode($this);
-    $tag = match ($driver) { 'mysql' => '8.0', 'pgsql' => '18', default => '8.1' };
+    $tag = match ($driver) {
+        'mysql' => '8.0', 'pgsql' => '18', default => '8.1'
+    };
     $this->postJson('/api/v1/database-servers', ['slug' => 'throwaway', 'node_id' => $node->id, 'driver' => $driver, 'tag' => $tag, 'port' => 15432])->assertAccepted();
     $operation = Operation::query()->sole();
-    $input = app(\App\Domain\DatabaseServers\DatabaseServerCreateProjection::class)->input($operation);
+    $input = app(DatabaseServerCreateProjection::class)->input($operation);
     expect($input)->not->toHaveKeys(['password', 'environment', 'acl', 'payload']);
     expect($input['container_input'])->not->toHaveKey('environment');
     expect($operation->state['database_server_create_writer'])->toBe('direct');

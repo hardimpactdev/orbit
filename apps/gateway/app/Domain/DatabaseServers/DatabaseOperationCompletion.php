@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
@@ -25,6 +26,7 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
         $this->execution->assertCompletion($operation, $outcome);
+        $server = $operation->target_type === 'database_server' ? DatabaseServer::query()->find($operation->target_id) : null;
         $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
         $preflight = ValidatedData::object($runs['preflight'] ?? []);
         if ($outcome->status !== OperationStatus::Succeeded) {
@@ -39,6 +41,11 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
                         $connection->delete();
                     }
                 }
+            }
+
+            if ($operation->kind === 'database_server.destroy' && $server !== null) {
+                $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $outcome->errorCode,
+                    'failed_step' => $operation->steps()->where('status', 'failed')->value('name')]);
             }
 
             return;

@@ -6,6 +6,7 @@ use App\Actions\DatabaseServers\CreateDatabaseServerAction;
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -84,4 +85,29 @@ it('refuses a changed server Node or foreign caller before releasing material', 
     DatabaseServer::query()->sole()->update(['node_id' => $this->gateway->id]);
     $this->getJson($path.'?run_id='.$this->runId)->assertUnprocessable();
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+});
+
+it('refuses create and private reads while the server has a removal intent', function (): void {
+    $operation = ($this->create)('mysql');
+    DatabaseServer::query()->sole()->update(['status' => 'removing']);
+    expect(fn () => ($this->create)('mysql'))->toThrow(ResourceOperationException::class, 'unfinished removal intent');
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertUnprocessable();
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+});
+
+it('refuses stale open Valkey policy but records its safe failure after closure', function (): void {
+    $initial = ($this->create)('redis');
+    $initial->update(['status' => 'succeeded', 'finished_at' => now()]);
+    $server = DatabaseServer::query()->sole();
+    $server->update(['default_open' => true, 'status' => 'active']);
+    $operation = ($this->create)('redis');
+    $server->update(['default_open' => false]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->runId)->assertUnprocessable();
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $this->postJson($path.'/result', ['run_id' => $this->runId, 'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z', 'status' => 'succeeded', 'result' => ['backend' => 'active']])->assertUnprocessable();
+    $this->postJson($path.'/result', ['run_id' => $this->runId, 'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z', 'status' => 'failed', 'error_code' => 'database.server_policy_changed',
+        'result' => ['error_code' => 'database.server_policy_changed']])->assertOk();
+    expect($server->fresh()->default_open)->toBeFalse();
+    expect($server->fresh()->status->value)->toBe('active');
 });

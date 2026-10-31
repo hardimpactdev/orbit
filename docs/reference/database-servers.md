@@ -30,7 +30,7 @@ The Gateway resolves stored database credentials only when it invokes an authori
 
 `database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes. Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. The old kind is absent from polled registration and scheduled discovery. Rollback reverts the kind PR.
 
-`database:server:create` creates the server and its Process in one command.
+`database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent. A Valkey repair also refuses a changed default-user policy. An old open repair never reopens a closed default user.
 
 ```bash
 orbit database:server:create beast-mysql --node=beast

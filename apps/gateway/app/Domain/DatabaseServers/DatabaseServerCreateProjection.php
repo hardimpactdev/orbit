@@ -20,6 +20,12 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
 {
     public function input(Operation $operation): array
     {
+        return $this->admittedInput($operation);
+    }
+
+    /** @return array<string, mixed> */
+    private function admittedInput(Operation $operation, bool $checkPolicy = true): array
+    {
         $intent = $this->intent($operation);
         $input = ValidatedData::object($intent->payload['admission']['input'] ?? null);
         $container = ValidatedData::object($input['container_input']);
@@ -29,8 +35,8 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
         if (! $operation->status->terminal()) {
             $server = DatabaseServer::query()->find($operation->target_id);
             $process = $server?->process;
-            if ($server === null || $server->node_id !== $operation->node_id || $server->driver->value !== $input['driver']
-                || $server->process_id !== $input['process_id'] || $server->port !== $input['port'] || $server->node->wireguard_ip !== $input['host']
+            if ($server === null || $server->status->value === 'removing' || $server->node_id !== $operation->node_id || $server->driver->value !== $input['driver']
+                || ($checkPolicy && $server->default_open !== $input['default_open']) || $server->process_id !== $input['process_id'] || $server->port !== $input['port'] || $server->node->wireguard_ip !== $input['host']
                 || $process === null || $process->runtime->value !== 'docker' || $process->owner_type !== Node::class || $process->owner_id !== $operation->node_id
                 || app(DockerProcessRenderer::class)->containerName($process) !== $input['container']) {
                 $this->invalid();
@@ -56,13 +62,13 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         if (($status === 'succeeded' && ($result !== ['backend' => 'active'] || $code !== null))
             || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
-            || ($status === 'failed' && ($result !== ['error_code' => $code] || ! in_array($code, ['agent.version_mismatch', 'database.server_adoption_refused', 'database.server_command_failed', 'database.server_admin_invalid', 'database.server_admin_failed', 'database.server_not_ready', 'database.valkey_acl_invalid', 'database.valkey_acl_failed', 'process.invalid', 'process.name_collision', 'process.start_failed', 'process.stop_failed', 'process.restart_failed', 'process.converge_failed', 'process.recovery_required'], true)))) {
+            || ($status === 'failed' && ($result !== ['error_code' => $code] || ! in_array($code, ['agent.version_mismatch', 'database.server_adoption_refused', 'database.server_policy_changed', 'database.server_command_failed', 'database.server_admin_invalid', 'database.server_admin_failed', 'database.server_not_ready', 'database.valkey_acl_invalid', 'database.valkey_acl_failed', 'process.invalid', 'process.name_collision', 'process.start_failed', 'process.stop_failed', 'process.restart_failed', 'process.converge_failed', 'process.recovery_required'], true)))) {
             throw new ResourceOperationException('operation.result_invalid', 'Server creation needs its closed native result.', 422);
         }
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $code): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            $this->input($operation);
+            $this->admittedInput($operation, in_array($status, ['running', 'succeeded'], true));
             $terminal = $operation->status->terminal();
             $projected = app(DirectOperation::class)->project($operation, $data, $result, 'database-apply');
             $server = DatabaseServer::query()->find($operation->target_id);
