@@ -114,7 +114,7 @@ final readonly class CreateDatabaseServerAction
                 'host' => $node->wireguard_ip, 'port' => $server->port, 'default_open' => $server->default_open,
                 'volume' => $server->driver === DatabaseDriver::Redis ? (DatabaseServerProcess::valkeyVolume($process) ?? DatabaseServerProcess::volume($server->slug)) : null,
                 'adoption_connection_id' => $adoption['connection']->id ?? null],
-            ['database-apply' => ['name' => 'database.server-create', 'input' => $private, 'protected' => ['password', 'environment', 'acl', 'payload']]],
+            ['database-apply' => ['name' => 'database.server-create', 'input' => $private, 'protected' => ['password', 'environment', 'acl', 'payload'], 'redactions' => [$server->root_password]]],
             ['server' => ['status' => 'active', 'failed_step' => null, 'error_code' => null],
                 'process' => ['runtime_config' => $desired->runtime_config, 'working_directory' => $desired->working_directory, 'restart_policy' => $desired->restart_policy], 'adopted_connection' => $data->connection]);
     }

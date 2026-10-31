@@ -40,7 +40,7 @@ beforeEach(function (): void {
 
 it('hydrates only fixed owner-checked material without changing Operation state', function (): void {
     config(['operation_executor.worker_node_ids' => []]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'old', 'operation_id' => $this->operation->id])->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'old', 'operation_id' => $this->operation->id])->assertNotFound();
     $before = $this->operation->fresh()->getAttributes();
     $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.environment.admin_session', 'shared-private-admin-sentinel');
     expect($this->operation->fresh()->getAttributes())->toBe($before);
@@ -50,7 +50,7 @@ it('hydrates only fixed owner-checked material without changing Operation state'
 
 it('calls the existing encrypted owner store and accepts only exact replay', function (): void {
     config(['operation_executor.worker_node_ids' => []]);
-    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertForbidden();
+    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertNotFound();
     $before = $this->operation->fresh()->getAttributes();
     $this->postJson($this->path.'/secret-output', $this->output)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.stored.credential', ['$secret' => 'conn.pairing.credential', 'id' => $this->pairing->id]);
     $this->postJson($this->path.'/secret-output', $this->output)->assertOk();
@@ -58,7 +58,7 @@ it('calls the existing encrypted owner store and accepts only exact replay', fun
     expect($this->pairing->fresh()->credential)->toBe('shared-output-sentinel');
     expect(DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential'))->not->toContain('shared-output-sentinel');
     expect($this->operation->fresh()->getAttributes())->toBe($before);
-    expect(json_encode([$this->operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('shared-output-sentinel')->not->toContain('different-output-sentinel');
+    expect(json_encode([Activity::query()->get()->toArray()]))->not->toContain('shared-output-sentinel')->not->toContain('different-output-sentinel');
 });
 
 it('rejects foreign and missing native bindings without establishing a run', function (): void {

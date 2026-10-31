@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Operations;
 
-use App\Domain\Operations\OperationHealth;
-use App\Domain\Operations\OperationPoll;
 use App\Models\Operation;
 use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -65,8 +63,8 @@ final class OperationData extends Data
             createdAt: $operation->created_at?->format(DateTimeInterface::ATOM),
             startedAt: $operation->started_at?->format(DateTimeInterface::ATOM),
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),
-            pollAfterSeconds: OperationPoll::afterSeconds($operation),
-            assistance: app(OperationHealth::class)->assistance($operation),
+            pollAfterSeconds: null,
+            assistance: null,
         );
     }
 }
