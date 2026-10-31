@@ -65,7 +65,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($status === OperationStatus::Succeeded) {
-                $this->projectRemoval($operation->input, $result);
+                $this->projectRemoval($operation->input);
             } elseif ($status === OperationStatus::Failed) {
                 $vm->update(['error_code' => ValidatedData::string($data['error_code']), 'error_message' => 'The task VM destruction did not complete.']);
             }
@@ -76,14 +76,13 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
 
     /** Call inside the owning parent's projection transaction after native success.
      * @param  array<string,mixed>  $canonicalInput
-     * @param  array<string,mixed>  $nativeResult
      */
-    public function projectRemoval(array $canonicalInput, array $nativeResult): TaskVm
+    public function projectRemoval(array $canonicalInput): TaskVm
     {
         $this->intent->available($canonicalInput);
         $vm = $this->intent->ownedInput($canonicalInput, lock: true);
         if ($canonicalInput['node_removal'] !== null) {
-            $this->nodes->remove(ValidatedData::object($canonicalInput['node_removal']), ValidatedData::object($nativeResult['node_removal']));
+            $this->nodes->remove(ValidatedData::object($canonicalInput['node_removal']));
             $vm->refresh();
         }
         $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null, 'model_key' => null,

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,7 +22,7 @@ use LogicException;
 /** Records destruction scope. It never reads power, stops a worker or deletes a resource. */
 final readonly class TaskVmDestroyIntent
 {
-    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents, private NodeRemovalPlan $nodes, private ModelKeyIssuer $modelKeys) {}
+    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents, private TaskVmNodeRemovalPlan $nodes, private ModelKeyIssuer $modelKeys) {}
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array

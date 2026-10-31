@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmNodeRemovalPlan;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\TaskVm;
@@ -20,7 +20,7 @@ it('captures the exact deleted TaskVM and all serving participant owners without
     $hub = FleetFixtures::node('removal-lower-vpn', [RoleName::Vpn]);
     $other = FleetFixtures::node('removal-lower-serving');
     $vm = TaskVm::query()->create(['node_id' => $source->id, 'name' => $source->name, 'wireguard_ip' => $source->wireguard_ip, 'provider' => 'incus', 'state' => 'destroying']);
-    $snapshot = app(NodeRemovalPlan::class)->deletedTaskVm($vm, $source);
+    $snapshot = app(TaskVmNodeRemovalPlan::class)->deletedTaskVm($vm, $source);
 
     expect($snapshot)->toMatchArray(['schema_version' => 1, 'node_id' => $source->id, 'task_vm_id' => $vm->id, 'machine_deleted' => true, 'offline' => true, 'metrics' => null]);
     expect($snapshot['participants'])->toBe([
@@ -34,7 +34,7 @@ it('refuses a foreign VM Node binding before producing a reusable cleanup input'
     $source = FleetFixtures::node('removal-lower-owner');
     $other = FleetFixtures::node('removal-lower-foreign');
     $vm = TaskVm::query()->create(['node_id' => $source->id, 'name' => $source->name, 'wireguard_ip' => $source->wireguard_ip, 'provider' => 'incus', 'state' => 'destroying']);
-    expect(fn () => app(NodeRemovalPlan::class)->deletedTaskVm($vm, $other))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(TaskVmNodeRemovalPlan::class)->deletedTaskVm($vm, $other))->toThrow(ResourceOperationException::class);
     $this->assertModelExists($source);
     $this->assertModelExists($other);
 });
@@ -45,10 +45,9 @@ it('projects bounded native completion into exact Node and role records without 
     $project = Project::query()->create(['slug' => 'remove-lower', 'name' => 'Removal', 'repository_url' => 'https://github.com/example/remove-lower.git']);
     $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $source->id, 'domain' => 'remove-lower.orbit', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $keep = Route::query()->create(['project_id' => $project->id, 'node_id' => $other->id, 'domain' => 'keep-lower.orbit', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
-    $snapshot = app(NodeRemovalPlan::class)->build($source, true);
-    $result = ['schema_version' => 1, 'node_id' => $source->id, 'removed' => true];
-    app(NodeRemovalRecords::class)->remove($snapshot, $result);
-    app(NodeRemovalRecords::class)->remove($snapshot, $result);
+    $snapshot = app(TaskVmNodeRemovalPlan::class)->build($source, true);
+    app(NodeRemovalRecords::class)->remove($snapshot);
+    app(NodeRemovalRecords::class)->remove($snapshot);
 
     $this->assertModelMissing($source);
     $this->assertModelMissing($route);
@@ -58,23 +57,21 @@ it('projects bounded native completion into exact Node and role records without 
     $this->assertDatabaseHas('node_roles', ['node_id' => $other->id, 'role' => 'database']);
 });
 
-it('does not project failed uncertain or foreign native outcomes', function (array $outcome): void {
-    $node = FleetFixtures::node('removal-lower-refuse', [RoleName::CiRunner]);
-    expect(fn () => app(NodeRemovalRecords::class)->remove(app(NodeRemovalPlan::class)->build($node, true), $outcome))->toThrow(ResourceOperationException::class);
+it('retains Node records when the immutable owning Node identity changes', function (): void {
+    $node = FleetFixtures::node('removal-lower-owner', [RoleName::CiRunner]);
+    $snapshot = app(TaskVmNodeRemovalPlan::class)->build($node, true);
+    $node->update(['name' => 'different-node']);
+    expect(fn () => app(NodeRemovalRecords::class)->remove($snapshot))->toThrow(ResourceOperationException::class);
     $this->assertModelExists($node);
-})->with([
-    'failure' => [['schema_version' => 1, 'node_id' => 1, 'removed' => false]],
-    'foreign' => [['schema_version' => 1, 'node_id' => 999999, 'removed' => true]],
-    'empty' => [[]],
-]);
+});
 
 it('does not broadcast a Node deletion when the owning parent transaction rolls back', function (): void {
     $node = FleetFixtures::node('removal-lower-rollback', [RoleName::AppDev]);
-    $snapshot = app(NodeRemovalPlan::class)->build($node, true);
+    $snapshot = app(TaskVmNodeRemovalPlan::class)->build($node, true);
     Event::fake([RecordBroadcast::class]);
 
-    expect(fn () => DB::transaction(function () use ($snapshot, $node): void {
-        app(NodeRemovalRecords::class)->remove($snapshot, ['schema_version' => 1, 'node_id' => $node->id, 'removed' => true]);
+    expect(fn () => DB::transaction(function () use ($snapshot): void {
+        app(NodeRemovalRecords::class)->remove($snapshot);
         throw new RuntimeException('Parent rollback');
     }))->toThrow(RuntimeException::class, 'Parent rollback');
 

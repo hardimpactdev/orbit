@@ -24,17 +24,13 @@ final readonly class NodeRemovalRecords
     public function __construct(private RecordEventBroadcaster $broadcaster, private WebSocketRegistry $registry) {}
 
     /** No host calls, receipt reads, child ownership or replay of native validation.
-     * @param  array<string,mixed>  $snapshot  Safe input captured by NodeRemovalPlan.
-     * @param  array<string,mixed>  $outcome  Closed native result.
+     * @param  array<string,mixed>  $snapshot  Safe input captured by the owning parent.
      */
-    public function remove(array $snapshot, array $outcome): void
+    public function remove(array $snapshot): void
     {
-        if (($snapshot['schema_version'] ?? null) !== 1 || ! is_int($snapshot['node_id'] ?? null)
-            || $outcome !== ['schema_version' => 1, 'node_id' => $snapshot['node_id'], 'removed' => true]) {
-            throw new ResourceOperationException('operation.result_invalid', 'Node cleanup needs its bounded native result.', 422);
-        }
-        DB::transaction(function () use ($snapshot): void {
-            $node = Node::query()->lockForUpdate()->find($snapshot['node_id']);
+        $nodeId = ValidatedData::integer($snapshot['node_id']);
+        DB::transaction(function () use ($snapshot, $nodeId): void {
+            $node = Node::query()->lockForUpdate()->find($nodeId);
             if ($node === null) {
                 return;
             }
