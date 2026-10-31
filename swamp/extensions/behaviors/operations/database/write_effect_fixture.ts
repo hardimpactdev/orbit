@@ -13,9 +13,14 @@ export function registerWriteEffect(driver: "mysql" | "pgsql") {
           args,
           stdout: "piped",
           stderr: "null",
-          signal: AbortSignal.timeout(15000),
+          // A fresh CI runner also downloads the image during container creation.
+          signal: AbortSignal.timeout(args[0] === "run" ? 120000 : 15000),
         }).output();
-        if (!out.success) throw new Error("Disposable SQL fixture failed");
+        if (!out.success) {
+          throw new Error(
+            `Disposable SQL fixture ${args[0]} failed (exit ${out.code})`,
+          );
+        }
         return new TextDecoder().decode(out.stdout).trim();
       };
       try {

@@ -98,7 +98,7 @@ jobs:
     name: Swamp Deno tests
     needs: [test-shards]
     if: always()
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-26.04
     steps:
       - name: Require every Operations shard
         env:
@@ -160,6 +160,7 @@ jobs:
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
         with:
           deno-version: v2.9.8
+          cache: true
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: "8.5"

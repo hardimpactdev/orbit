@@ -182,9 +182,11 @@ engine cases use separate native test modules, so `--parallel` runs their
 unchanged effects concurrently. New files enter the general shards automatically,
 or their assigned directory job.
 Each shard keeps `--parallel -A` and `DENO_JOBS=4`, runs the same
-prerequisite checks and receives no validation credentials. All shards run even
-when one fails. The single `Swamp Deno tests` aggregate always runs on
-`ubuntu-slim` and succeeds only when the complete matrix succeeds; failed,
+prerequisite checks and receives no validation credentials. The pinned official
+`setup-deno` action caches downloaded modules and packages; Deno still performs
+its native type checking. All shards run even when one fails. The single
+`Swamp Deno tests` aggregate always runs on `ubuntu-26.04` and succeeds only
+when the complete matrix succeeds; failed,
 cancelled or skipped shards fail
 the aggregate. The root `Required checks` continues to require this reusable
 workflow.
