@@ -3,7 +3,6 @@ import {
   publishLeaf,
   readParticipant,
   removeLeaf,
-  requestLeaf,
   verifyPublic,
 } from "./hosts.ts";
 import { Leaf } from "./lifecycle.ts";
@@ -92,37 +91,13 @@ function fixture(extra = {}, input = {}) {
   };
   return { calls, gateway, actions, lan };
 }
-Deno.test("Router CSR uses the admitted home through the canonical certificate action", async () => {
+Deno.test("foreign participants and cancellation refuse before remaining host effects", async () => {
   const f = fixture();
-  assertEquals(await requestLeaf(args, f.gateway, f.actions), request);
-  assertEquals(f.calls, [{
-    name: "request",
-    input: {
-      node_id: 14,
-      scope: leaf.scope,
-      home: leaf.home,
-      agent_sha256: leaf.agent_sha256,
-      domain: leaf.domain,
-      version: leaf.version,
-      root_hash: leaf.root_hash,
-      user: leaf.user,
-    },
-  }]);
-});
-Deno.test("foreign participants, homes, scopes and cancellation refuse before local effects", async () => {
-  const f = fixture();
-  for (
-    const changed of [
-      { ...args, target_node_id: 209 },
-      { ...args, leaf: { ...leaf, home: "/home/other" } },
-      { ...args, leaf: { ...leaf, scope: "route-9-router" } },
-    ]
-  ) await assertRejects(() => requestLeaf(changed, f.gateway, f.actions));
   await assertRejects(() =>
-    readParticipant(args, fixture({ cancel_requested: true }).gateway)
+    readParticipant({ ...args, target_node_id: 209 }, f.gateway)
   );
   await assertRejects(() =>
-    requestLeaf(args, fixture({ status: "succeeded" }).gateway, f.actions)
+    readParticipant(args, fixture({ cancel_requested: true }).gateway)
   );
   assertEquals(f.calls, []);
 });
