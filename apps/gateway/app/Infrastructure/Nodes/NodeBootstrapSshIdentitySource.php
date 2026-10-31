@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\NodeBootstrapIntent;
+use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationConnectionSecretSource;
 use App\Domain\Operations\OperationSecretValue;
@@ -30,6 +31,9 @@ final readonly class NodeBootstrapSshIdentitySource implements OperationConnecti
 
     public function ownerId(Operation $operation): ?int
     {
+        if ($operation->kind === 'node.remove') {
+            return NodeRemovalInput::privateOwner($operation);
+        }
         if (! app(NodeBootstrapIntent::class)->owns($operation)) {
             return null;
         }

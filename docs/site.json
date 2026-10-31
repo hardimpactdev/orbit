@@ -295,7 +295,7 @@
     },
     {
       "source": "/decisions/0072-add-and-remove-nodes-without-changing-the-machine",
-      "destination": "/reference/node-provisioning#removal-does-not-clean-the-machine"
+      "destination": "/reference/node-provisioning#removal-retains-user-data"
     },
     {
       "source": "/decisions/0077-allow-database-beside-router",
