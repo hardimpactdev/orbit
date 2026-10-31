@@ -11,7 +11,7 @@ use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Models\Node;
 use Tests\Support\Fleet\FleetFixtures;
 
-function nodeSecretOutput($test, bool $nativeWorker = false): array
+function nodeSecretOutput($test): array
 {
     app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'node.converge' => require app_path('Domain/Nodes/node-converge-kind.php')]));
     $gateway = FleetFixtures::node('hash-gateway', [RoleName::Gateway]);
@@ -19,17 +19,10 @@ function nodeSecretOutput($test, bool $nativeWorker = false): array
     $services->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $services->id]);
     $node = FleetFixtures::node('hash-owner');
-    if ($nativeWorker) {
-        config(['swamp_workers.nodes' => [$node->id]]);
-    }
     $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
     $pin = app(AgentDelivery::class)->pin($node);
     $agent = ['secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id],
-        'worker_credentials' => ['$secret' => 'node.worker_credentials', 'id' => $node->id],
         'configuration' => 'gateway_url = "https://gateway.orbit"', 'certificate' => 'public certificate', 'unit' => 'public unit', 'checkouts' => []];
-    if ($nativeWorker) {
-        $agent['configuration'] .= "\n[swamp_worker]\nnode_id = {$node->id}\nuser = ".json_encode($node->user, JSON_THROW_ON_ERROR)."\n";
-    }
     $operation = app(StartOperationAction::class)->execute('node.converge', 'node', $node->id, $node->id,
         ['force_artifacts' => false, 'first_visit' => false, '_footprint' => ['node_id' => $node->id, 'agent_pin' => $pin,
             'artifacts' => [['name' => 'agent', 'digest' => 'agent-digest', 'required' => true, 'repair' => false]],

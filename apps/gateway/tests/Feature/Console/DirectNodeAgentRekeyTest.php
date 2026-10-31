@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Nodes\StartNodeAgentRekeyAction;
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeLocks;
@@ -14,127 +14,127 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
-require_once __DIR__.'/../../Support/Fleet/NodeSecretOutput.php';
-
-function directRekeySource($test): array
+function directRekeySource(): array
 {
-    [$node, $source, $path, $run] = nodeSecretOutput($test, true);
-    $agents = new FakeAgentCommandRunner;
-    $agents->answer('agent.configure', static function (): array {
-        throw new RuntimeException('lost live configure response');
-    });
+    FleetFixtures::bind();
+    $agents = Mockery::mock(AgentCommandRunner::class);
+    $agents->shouldNotReceive('run', 'install');
     app()->instance(AgentCommandRunner::class, $agents);
-    $test->postJson($path.'/run', $run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $gateway = FleetFixtures::node('rekey-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('rekey-owner');
+    $node->accessibleNodes()->attach($gateway);
+    $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
+    config(['swamp_workers.nodes' => [$node->id], 'operation_executor.worker_node_ids' => [$node->id], 'swamp.run_token' => 'fake-token']);
+    $source = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'input' => [], 'status' => 'running', 'lock_key' => 'node:'.$node->id, 'attempts' => 1, 'sequence' => 1,
+        'state' => ['executor_runs' => ['footprint-agent' => ['transport' => 'agent', 'name' => 'agent.configure', 'started' => true, 'result' => null,
+            'input' => ['configuration' => "\n[swamp_worker]\nnode_id = {$node->id}\nuser = ".json_encode($node->user, JSON_THROW_ON_ERROR)."\n",
+                'certificate' => 'public-ca', 'unit' => 'admitted-unit', 'checkouts' => [], 'binary_changed' => false,
+                'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id],
+                'worker_credentials' => ['$secret' => 'node.worker_credentials', 'id' => $node->id]]]]]]);
     $socket = new FakeRoutePublicationSocket;
     $runId = 'ff3b7992-7376-4ac7-a49f-ed45bedc8de5';
     $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
         'kind' => 'started', 'workflowName' => 'operation-node-agent-rekey', 'runId' => $runId,
     ]]];
     app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake-token']);
 
-    return [$node, $source->fresh(), $socket, $runId];
+    return [$node, $source, $socket, $runId];
 }
 
-it('admits one direct recovery without PHP execution or a new Gateway hold', function (): void {
-    [$node, $source, $socket, $runId] = directRekeySource($this);
+it('records an idempotent native intent without PHP execution holds or children', function (): void {
+    [$node, $source, $socket, $runId] = directRekeySource();
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);
-    $op = DB::transaction(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id));
-    $again = app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id);
-    expect($again->id)->toBe($op->id);
-    expect($agents->commands())->toBe([]);
-    expect($socket->sent)->toHaveCount(1);
-    expect($op->fresh()->state['node_agent_rekey_writer'])->toBe('direct');
-    expect($op->fresh()->state['swamp_run_id'])->toBe($runId);
-    expect($op->attempts)->toBe(0);
-    expect($op->worker)->toBeNull();
-    expect($op->lock_key)->toBeNull();
-    expect($op->parent_operation_id)->toBeNull();
-    expect($source->fresh()->lock_key)->toBe('node:'.$node->id);
-    expect($op->input['_agent_rekey']['configuration'])->not->toHaveKeys(['secret_hash', 'worker_credentials']);
+    for ($i = 0; $i < 2; $i++) {
+        $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])
+            ->expectsOutputToContain('Agent recovery Operation #')->doesntExpectOutputToContain('authentication restored')->assertSuccessful();
+    }
+    $op = Operation::query()->where('kind', 'node.agent_rekey')->sole();
+    expect(DirectOperation::owns($op))->toBeTrue()->and($socket->sent)->toHaveCount(1)
+        ->and($op->state['swamp_run_id'])->toBe($runId)->and($agents->commands())->toBe([])
+        ->and($op->attempts)->toBe(0)->and($op->worker)->toBeNull()->and($op->lock_key)->toBeNull()->and($op->parent_operation_id)->toBeNull()
+        ->and($source->fresh()->lock_key)->toBe('node:'.$node->id)
+        ->and($op->input['_agent_rekey']['configuration'])->not->toHaveKeys(['secret_hash', 'worker_credentials']);
 });
 
-it('refuses an active legacy configure critical section before admitting recovery', function (): void {
-    [$node, $source, $socket] = directRekeySource($this);
+it('refuses an ineligible source before admitting a recovery', function (string $case): void {
+    [$node, $source, $socket] = directRekeySource();
+    $state = $source->state;
+    match ($case) {
+        'finished' => $source->status = 'succeeded',
+        'unowned' => $source->lock_key = null,
+        'foreign' => $source->target_id = $node->id + 1,
+        'parent' => $source->parent_operation_id = $source->id,
+        'kind' => $source->kind = 'node.settings',
+        'not_started' => $state['executor_runs']['footprint-agent']['started'] = false,
+        'proven' => $state['executor_runs']['footprint-agent']['result'] = ['restarted' => true],
+        'workerless' => config(['swamp_workers.nodes' => []]),
+    };
+    $source->state = $state;
+    $source->save();
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertFailed();
+    expect(Operation::query()->where('kind', 'node.agent_rekey')->exists())->toBeFalse()->and($socket->sent)->toBe([]);
+})->with(['finished', 'unowned', 'foreign', 'parent', 'kind', 'not_started', 'proven', 'workerless']);
+
+it('refuses a still-active legacy configure section without acquiring a Gateway hold', function (): void {
+    [$node, $source] = directRekeySource();
     $lock = app(NodeLocks::class)->lock('node-agent:id:'.$node->id, 420);
     $lock->get();
     try {
-        expect(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id))
-            ->toThrow(ResourceOperationException::class);
+        $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertFailed();
         expect(Operation::query()->where('kind', 'node.agent_rekey')->exists())->toBeFalse();
-        expect($socket->sent)->toBe([]);
     } finally {
         $lock->release();
     }
 });
 
-it('rejects a successful or foreign configure as a recovery source', function (): void {
-    [$node, $source] = directRekeySource($this);
-    $source->update(['status' => 'succeeded', 'lock_key' => null]);
-    expect(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id))->toThrow(ResourceOperationException::class);
-    expect(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id + 1000, $source->id))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->where('kind', 'node.agent_rekey')->exists())->toBeFalse();
+it('allows an explicit new request after a terminal refusal without PHP retry sequencing', function (): void {
+    [$node, $source] = directRekeySource();
+    $input = ['node' => $node->id, 'operation' => $source->id];
+    $this->artisan('orbit:node-agent-rekey', $input)->assertSuccessful();
+    $first = Operation::query()->where('kind', 'node.agent_rekey')->sole();
+    $first->update(['status' => 'failed', 'error_code' => 'agent.version_mismatch']);
+    $this->artisan('orbit:node-agent-rekey', $input)->assertSuccessful();
+    expect(Operation::query()->where('kind', 'node.agent_rekey')->count())->toBe(1);
+    $this->artisan('orbit:node-agent-rekey', [...$input, '--attempt' => '2'])->assertSuccessful();
+    expect(Operation::query()->where('kind', 'node.agent_rekey')->count())->toBe(2);
 });
 
-it('stores a private output only for the exact bound Node and projects no hash', function (): void {
-    [$node, $source, , $runId] = directRekeySource($this);
-    $op = DB::transaction(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id));
-    $node->accessibleNodes()->syncWithoutDetaching(Node::query()->whereHas('roles', static fn ($q) => $q->where('role', 'gateway'))->pluck('id')->all());
-    config(['operation_executor.worker_node_ids' => [$node->id]]);
+it('stores only an exact Node bound private hash and leaves the original receipt untouched', function (): void {
+    [$node, $source, , $runId] = directRekeySource();
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertSuccessful();
+    $op = Operation::query()->where('kind', 'node.agent_rekey')->sole();
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$op->id;
     $hash = str_repeat('d', 64);
-    $before = $source->state['executor_runs'];
-    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])
-        ->assertOk()->assertJsonPath('data.stored.secret_hash', ['$secret' => 'node.agent_secret_hash', 'id' => $node->id]);
-    expect($node->fresh()->agent_secret_hash)->toBe($hash);
-    expect(DB::table('nodes')->where('id', $node->id)->value('agent_secret_hash'))->not->toContain($hash);
+    $before = $source->state;
+    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])->assertOk();
+    expect($node->fresh()->agent_secret_hash)->toBe($hash)
+        ->and(DB::table('nodes')->where('id', $node->id)->value('agent_secret_hash'))->not->toContain($hash);
     $this->postJson($path.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00.000Z',
         'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['restarted' => true, 'rekeyed' => true]])->assertOk();
-    expect($source->fresh()->state['executor_runs'])->toBe($before);
-    expect($source->fresh()->state['agent_secret_rekey']['recovery_operation_id'])->toBe($op->id);
-    expect($source->fresh()->status->value)->toBe('running');
-    expect(json_encode([$op->fresh()->toArray(), $op->steps()->get()->toArray()]))->not->toContain($hash);
+    expect($source->fresh()->state)->toBe($before)->and($source->fresh()->status->value)->toBe('running')
+        ->and(json_encode([$op->fresh()->toArray(), $op->steps()->get()->toArray()]))->not->toContain($hash);
     $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])->assertConflict();
 });
 
-it('reuses unfinished and successful attempts but admits an explicit retry after refusal or cancellation', function (): void {
-    [$node, $source] = directRekeySource($this);
-    $start = fn () => DB::transaction(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id));
-    $first = $start();
-    expect($start()->id)->toBe($first->id);
-    $first->update(['status' => 'failed', 'error_code' => 'agent.version_mismatch']);
-    $second = $start();
-    expect($second->id)->not->toBe($first->id);
-    expect($start()->id)->toBe($second->id);
-    $second->update(['status' => 'cancelled']);
-    $third = $start();
-    expect($third->id)->not->toBe($second->id);
-    $third->update(['status' => 'succeeded', 'result' => ['rekeyed' => true, 'restarted' => true]]);
-    expect($start()->id)->toBe($third->id);
-    expect(Operation::query()->where('kind', 'node.agent_rekey')->count())->toBe(3);
-});
-
-it('accepts the operator command without claiming restored authentication', function (): void {
-    [$node, $source] = directRekeySource($this);
-    $this->artisan('orbit:node-agent-rekey', ['node' => (string) $node->id, 'operation' => (string) $source->id])
-        ->expectsOutputToContain('Agent recovery Operation #')
-        ->doesntExpectOutputToContain('Agent authentication restored')->assertSuccessful();
-});
-
-it('refuses wrong runs, undeclared outputs, private public results and source drift without storing', function (): void {
-    [$node, $source, , $runId] = directRekeySource($this);
-    $op = DB::transaction(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id));
-    $node->accessibleNodes()->syncWithoutDetaching(Node::query()->whereHas('roles', static fn ($q) => $q->where('role', 'gateway'))->pluck('id')->all());
-    config(['operation_executor.worker_node_ids' => [$node->id]]);
-    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+it('refuses foreign callers wrong runs undeclared outputs source drift and unsafe public results', function (): void {
+    [$node, $source, , $runId] = directRekeySource();
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertSuccessful();
+    $op = Operation::query()->where('kind', 'node.agent_rekey')->sole();
     $path = '/api/v1/direct-operations/'.$op->id;
     $hash = str_repeat('d', 64);
     $before = $node->agent_secret_hash;
+    $foreign = FleetFixtures::node('foreign-direct-rekey-caller');
+    $foreign->accessibleNodes()->syncWithoutDetaching(Node::query()->whereHas('roles', static fn ($q) => $q->where('role', 'gateway'))->pluck('id')->all());
+    config(['operation_executor.worker_node_ids' => [$foreign->id, $node->id], 'dependency_detection.services_node_id' => (string) $foreign->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip]);
+    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     $this->postJson($path.'/secret-output', ['run_id' => '3a332a4f-0911-4e9d-9a18-09899b7b1864', 'outputs' => ['secret_hash' => $hash]])->assertConflict();
     $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['worker_credentials' => $hash]])->assertUnprocessable();
-    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => 'invalid-hash']])->assertConflict();
+    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => 'malformed-private-hash']])->assertConflict();
     $this->postJson($path.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00.000Z',
         'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['rekeyed' => true, 'restarted' => true, 'secret_hash' => $hash]])->assertUnprocessable();
     foreach (['agent.configure_failed', 'swamp.node_worker_not_ready', 'swamp.node_worker_memory_low'] as $code) {
@@ -145,19 +145,7 @@ it('refuses wrong runs, undeclared outputs, private public results and source dr
     $state = $source->state;
     $state['executor_runs']['footprint-agent']['input']['configuration'] .= '# changed';
     $source->update(['state' => $state]);
-    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])->assertUnprocessable();
-    expect($node->fresh()->agent_secret_hash)->toBe($before);
-    expect(json_encode($op->fresh()->toArray()))->not->toContain($hash);
-});
-
-it('keeps private output authority on the exact owning Node', function (): void {
-    [$node, $source, , $runId] = directRekeySource($this);
-    $op = DB::transaction(fn () => app(StartNodeAgentRekeyAction::class)->execute($node->id, $source->id));
-    $foreign = FleetFixtures::node('foreign-direct-rekey-caller');
-    $foreign->accessibleNodes()->syncWithoutDetaching(Node::query()->whereHas('roles', static fn ($q) => $q->where('role', 'gateway'))->pluck('id')->all());
-    config(['operation_executor.worker_node_ids' => [$foreign->id], 'dependency_detection.services_node_id' => (string) $foreign->id]);
-    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip]);
-    $before = $node->agent_secret_hash;
-    $this->postJson('/api/v1/direct-operations/'.$op->id.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => str_repeat('d', 64)]])->assertForbidden();
-    expect($node->fresh()->agent_secret_hash)->toBe($before);
+    $this->getJson($path.'?run_id='.$runId)->assertUnprocessable();
+    $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])->assertConflict();
+    expect($node->fresh()->agent_secret_hash)->toBe($before)->and(json_encode($op->fresh()->toArray()))->not->toContain($hash);
 });
