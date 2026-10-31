@@ -13,7 +13,6 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketRegistry;
 use App\Models\Instance;
@@ -29,13 +28,11 @@ use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakesEnvironmentSyncInspection;
-use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
     fake_websocket_registry_start();
     Http::preventStrayRequests();
     Http::fake();
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(NodeConverger::class, new FakeNodeConverger);
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     app()->instance(GatewayPrivateDnsRoute::class, new FakeGatewayPrivateDnsRoute);

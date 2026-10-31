@@ -10,17 +10,14 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Console\Output\BufferedOutput;
-use Tests\Support\FakeToolManagerMaterializer;
 
 it('provisions the first peer from the gateway console', function (): void {
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
     {
         public function converge(?Node $pendingNode = null): void {}
@@ -183,7 +180,6 @@ it('reports unexpected causes only with redacted bounded diagnostics', function 
 })->with([true, false]);
 
 it('passes explicit console user identities', function (): void {
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
     {
         public function converge(?Node $pendingNode = null): void {}
@@ -229,7 +225,6 @@ it('passes explicit console user identities', function (): void {
 });
 
 it('bootstraps as root for a new node and as the managed user for an existing node', function (): void {
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
     {
         public function converge(?Node $pendingNode = null): void {}

@@ -37,7 +37,6 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketServerCredentials;
@@ -80,7 +79,6 @@ use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\PhpBuildAnswers;
 
@@ -403,7 +401,6 @@ it('verifies VPN PHP before Gateway publication regardless of requested role ord
     });
     app()->instance(RoleBaselineConverger::class, $baselines);
     $this->mock(NodeConverger::class)->shouldReceive('converge')->once()->andReturn(new NodeObservation('x86_64'));
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     $this->mock(MetricsFleetReconciler::class)->shouldReceive('reconcile');
     $provision = fn (): Node => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
         name: 'gateway-vpn', publicSshHost: '192.0.2.10', wireguardIp: '10.44.0.10',
