@@ -26,37 +26,37 @@ The Node reader already limits source files to 1,048,576 bytes. The Gateway's ex
 
 Propose a code-owned exception restricted to the `env.import` kind, its one fixed declared store, one fixed output field and the existing Instance owner checks. Neither a request field nor runtime configuration selects a larger limit. All other stores and aggregate public results retain their current 262,144-byte limits. The old executor continues to extract secret outputs under its current limit.
 
-The proposed wire uses one base64 string under the fixed output field. Freeze that field and store name with the family before implementation. For a concrete review vector, this record uses `source` and `instance.environment_import`; these names are proposed, not registered. An object around the string requires a revised calculation before implementation.
+The fixed store name is `instance.environment.import` and its only output field is `environment`. The field contains exactly `encoding`, `content` and `sha256`: the literal encoding `base64`, canonical base64 of the raw `.env` bytes, and the lowercase SHA-256 hex digest of those same bytes. The Gateway verifies the digest before parsing or storing the source. The store name belongs to the trusted declaration; it is not a caller-selected body field. These names and this object are the orchestrator's default contract for lane1 unless the family identifies a concrete objection. This proposal registers no store.
 
 ### Exact byte limits
 
-For the proposed compact body below, `R` is a 36-byte UUID and `B` is canonical RFC 4648 standard base64, including required padding. Byte limits exclude HTTP headers and TLS framing.
+For the fixed compact body below, `R` is a 36-byte UUID, `B` is canonical RFC 4648 standard base64 including required padding, and `H` is the 64-character lowercase hex SHA-256 digest of the decoded bytes. Byte limits exclude HTTP headers and TLS framing.
 
 ```json
-{"run_id":"R","outputs":{"source":"B"}}
+{"run_id":"R","outputs":{"environment":{"encoding":"base64","content":"B","sha256":"H"}}}
 ```
 
 | Representation | Maximum bytes |
 | --- | ---: |
 | Original source, counted as bytes | 1,048,576 |
 | Base64 string, `4 * ceil(source_bytes / 3)` | 1,398,104 |
-| JSON string value, including two quote bytes | 1,398,106 |
-| Compact `outputs` object, including its fixed key | 1,398,117 |
-| Complete compact HTTP JSON body with the actual UUID | 1,398,177 |
+| Compact `environment` value object, including the 64-byte digest | 1,398,214 |
+| Compact `outputs` object, including its fixed key | 1,398,230 |
+| Complete compact HTTP JSON body with the actual UUID | 1,398,290 |
 
-For a different fixed ASCII output key of `k` bytes and the same string-only value, the exact full-body limit is `1,398,104 + 67 + k`. Derive it from the trusted declaration and canonical empty frame, never from caller-selected fields. Do not mistake 1,398,104 for the complete request limit or 1,048,576 for an encoded limit.
+The value, outputs object and full body add exactly 110, 126 and 186 ASCII bytes to the base64 content length. The full-body cap is therefore `1,398,104 + 186 = 1,398,290` bytes. Derive it from the trusted declaration and this fixed frame, never from caller-selected fields. Do not mistake 1,398,104 for the complete request limit or 1,048,576 for an encoded limit.
 
 Apply a raw HTTP body cap, a fixed-shape validation, an encoded string cap and a decoded source cap before parser or store invocation. Count actual body bytes as well as any supplied Content-Length. Whitespace and escaped spellings count toward the body cap. Reject excess data; never truncate it or fall through to an ordinary store. No global PHP, HTTP or result limit increases.
 
-Validate standard base64 strictly and require its canonical re-encoding to equal the submitted string. Reject whitespace, missing or surplus padding, URL-safe alternatives and invalid alphabet bytes. After decoding, reject more than 1,048,576 bytes before Dotenv parsing or any record mutation. Sources of 1,048,577 and 1,048,578 bytes have the same encoded length as the maximum valid source and must still refuse.
+Validate the exact object keys, string types, literal encoding and 64-character lowercase hex digest. Validate standard base64 strictly and require its canonical re-encoding to equal the submitted string. Reject whitespace, missing or surplus padding, URL-safe alternatives and invalid alphabet bytes. After decoding, reject more than 1,048,576 bytes and verify SHA-256 against the supplied digest before Dotenv parsing or any record mutation. Sources of 1,048,577 and 1,048,578 bytes have the same encoded length as the maximum valid source and must still refuse. A digest mismatch refuses without echoing the source or digest into public errors or logs.
 
 Native `JSON.stringify` does not escape base64 `/` characters. PHP's default `json_encode` does. Use raw request bytes for the HTTP cap and canonical serialization with unescaped slashes for the encoded-output calculation. Do not use PHP-escaped JSON as the size measurement for a cap calculated from unescaped JSON. A request that actually sends escaped slashes still counts those bytes toward its raw body cap; refuse it if it exceeds that cap. Do not add a larger global allowance to compensate.
 
-Resolve the exceptional policy from the admitted kind and its registered store declaration. Reject additional output fields. Preserve exact caller Node, native run or verified admission identity, unfinished-operation and owner checks. Private bytes remain outside Operation input, state, results, steps, Activity, logs and native resources. Responses retain no-store and MCP exclusion.
+Resolve the exceptional policy from the admitted kind and its registered store declaration. Reject additional output fields and additional keys in the environment object. Preserve exact caller Node, bound native run, unfinished-operation and owner checks. Private bytes and their digest remain outside Operation input, state, results, steps, Activity, logs and native resources. Responses retain no-store and MCP exclusion.
 
 ### Required verification
 
-The implementation must test the maximum valid source, one byte over and two bytes over, empty source under existing parser semantics, malformed base64, slash-heavy base64, extra fields and oversized raw bodies. Assert refusal before parser or store calls for every size or wire-shape failure. Repeat the existing default-limit boundary on an unrelated store and the old executor to prove that neither limit changed. Count bytes in non-ASCII source and exercise the actual shipped HTTP serializer.
+The implementation must test the maximum valid source, one byte over and two bytes over, empty source under existing parser semantics, malformed base64, slash-heavy base64, missing or extra fields, wrong encoding, malformed or mismatched digest and oversized raw bodies. Assert refusal before parser or store calls for every size, digest or wire-shape failure. Repeat the existing default-limit boundary on an unrelated store and the old executor to prove that neither limit changed. Count bytes in non-ASCII source and exercise the actual shipped HTTP serializer.
 
 The implementation must exercise a real private-output HTTP request, a foreign Node and foreign run refusal, exact owner checks and a whole-scratch/log scan using synthetic source. Native fixture success is not a fleet TLS, placement, release or activation proof.
 
