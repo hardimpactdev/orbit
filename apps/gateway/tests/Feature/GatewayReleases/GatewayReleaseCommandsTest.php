@@ -197,6 +197,13 @@ it('accepts a native Caddy submission in the serving handoff report', function (
     expect($this->agents->commands())->toBe(['gateway.handoff-release']);
 });
 
+it('accepts an unchanged Caddy handoff without an Operation', function (): void {
+    $report = ['caddy' => 'unchanged', 'caddy_operation_id' => null, 'fpm' => 'unchanged'];
+    $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $report]);
+
+    expect($this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'))->toBe($report);
+});
+
 it('rejects an invalid Caddy submission without retrying the handoff', function (array $report): void {
     $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $report]);
 
@@ -209,4 +216,6 @@ it('rejects an invalid Caddy submission without retrying the handoff', function 
     'noninteger operation' => [['caddy' => 'submitted', 'caddy_operation_id' => '5898']],
     'unsubmitted operation' => [['caddy' => 'failed', 'caddy_operation_id' => 5898]],
     'retired inline publication' => [['caddy' => 'reloaded']],
+    'unchanged with no explicit null Operation' => [['caddy' => 'unchanged']],
+    'unchanged with submitted Operation' => [['caddy' => 'unchanged', 'caddy_operation_id' => 5898]],
 ]);
