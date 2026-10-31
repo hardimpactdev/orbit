@@ -156,7 +156,11 @@ Every read uses the Valkey snapshot and never calls CLIProxyAPI. An account togg
 
 The Gateway reads the snapshot from Valkey through the cache connection. `ai-router:provider:list`, `ai-router:provider:show`, `ai-router:model:list`, and the AI router pages use it. A read or toggle before setup, or after teardown, fails with `ai_router.disabled` (409).
 
-`ai-router:account:enable` and `ai-router:account:disable` checks that the account is in the snapshot, or fails with `resource.not_found`. The Gateway then sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{account}` with `Host: collector.ai-router.orbit`, Orbit CA verification, and the control token. The account ID must match `[A-Za-z0-9._-]+`. The Gateway then writes the snapshot again with the new state. That write sets `collected_at` to the toggle time and drops each account's `checked_at` and `next_check_at` until the next collection round. The schedule itself is unchanged. When the collector refuses or cannot be reached, the call fails with `ai_router.upstream_failed` (502).
+### Account controls
+
+`ai-router:account:enable` and `ai-router:account:disable` require an account in the snapshot, or return `resource.not_found`. The account ID must match `[A-Za-z0-9._-]+`. The Gateway records an `ai_router.account_update` Operation and returns HTTP 202. The CLI follows its native result.
+
+One Swamp workflow runs on the configured collector Node. Its method lock covers a fresh CLIProxyAPI auth-file read, a status update when needed, and a confirming read. The existing management key stays inside the shared private-material callback. A repeated invocation verifies the desired state before sending another update. PHP and the collector daemon perform no action for this path. The observer refreshes the quota snapshot on its next collection round; an Operation success confirms upstream account state, not a newly collected quota snapshot.
 
 The web app shows the AI router section while the `ai-router` extension is enabled, and reads it every 60 seconds. It shows provider quota when the collector is configured, whether or not the `tasks` extension is enabled. When the collector is not configured, the page names what is missing. A provider page lists the accounts, the remaining quota and reset time of each window, and the controls to enable or disable an account.
 

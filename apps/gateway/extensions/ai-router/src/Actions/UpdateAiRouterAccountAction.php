@@ -4,65 +4,40 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Actions;
 
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
-use Orbit\Extensions\AiRouter\Domain\AiRouterAccountControlClient;
+use App\Models\Operation;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
-use Orbit\Extensions\AiRouter\Domain\AiRouterPoolCompiler;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
 final readonly class UpdateAiRouterAccountAction
 {
-    public function __construct(
-        private AiRouterState $state,
-        private AiRouterSnapshotStore $snapshots,
-        private AiRouterPlacement $placement,
-        private AiRouterAccountControlClient $client,
-        private AiRouterPoolCompiler $compiler = new AiRouterPoolCompiler,
-    ) {}
+    public function __construct(private AiRouterState $state, private AiRouterSnapshotStore $snapshots,
+        private AiRouterPlacement $placement, private StartOperationAction $operations, private OperationIdempotency $idempotency) {}
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function execute(string $account, bool $disabled): array
+    public function execute(string $account, bool $disabled, ?string $requestId = null): Operation
     {
+        if (($replay = $this->idempotency->replay('ai_router.account_update')) !== null) {
+            return $replay;
+        }
         $this->state->assertEnabled();
         $node = $this->placement->node($this->state->nodeId() ?? 0);
-
-        $accounts = $this->snapshots->accounts();
-        $known = array_any($accounts, static fn ($row): bool => $row->id === $account);
-
-        if (! $known) {
-            throw new ResourceOperationException(
-                'resource.not_found',
-                "Account [{$account}] was not found in the snapshot.",
-                404,
-            );
+        if (! preg_match('/^[A-Za-z0-9._-]{1,255}$/D', $account)
+            || ! array_any($this->snapshots->accounts(), static fn ($row): bool => $row->id === $account)) {
+            throw new ResourceOperationException('resource.not_found', 'The account was not found in the snapshot.', 404);
+        }
+        $origin = rtrim((string) $this->state->routerUrl(), '/');
+        $url = parse_url($origin);
+        if (! is_array($url) || ! in_array($url['scheme'] ?? null, ['http', 'https'], true)
+            || ! isset($url['host']) || isset($url['pass']) || isset($url['user']) || isset($url['query']) || isset($url['fragment'])
+            || ! in_array($url['path'] ?? '', ['', '/'], true)) {
+            throw new ResourceOperationException('ai_router.url_invalid', 'Account updates require the configured CLIProxyAPI origin.', 422);
         }
 
-        $wireguardIp = $node->wireguard_ip;
-        if (! is_string($wireguardIp) || $wireguardIp === '') {
-            throw new ResourceOperationException(
-                'ai_router.node_invalid',
-                'ai-router enable requires an active Linux Node with a WireGuard address.',
-                422,
-            );
-        }
-
-        $this->client->setDisabled(
-            $wireguardIp,
-            443,
-            (string) $this->state->controlToken(),
-            $account,
-            $disabled,
-        );
-        $updated = $this->compiler->withDisabled($accounts, $account, $disabled);
-        $snapshot = $this->snapshots->write($updated, date(DATE_ATOM));
-        $match = array_first(array_filter(
-            $snapshot->accounts,
-            static fn ($row): bool => $row->id === $account,
-        )) ?? null;
-
-        return $match?->toArray() ?? ['id' => $account, 'disabled' => $disabled];
+        return $this->operations->execute('ai_router.account_update', 'ai_router', $node->id, $node->id,
+            ['origin' => $origin, 'account' => $account, 'disabled' => $disabled,
+                'router' => ['$secret' => 'ai_router.management', 'id' => $node->id]], 'operator', $requestId);
     }
 }

@@ -9,6 +9,8 @@ use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Operations\DirectOperationContribution;
+use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\TaskVms\ModelKeyIssuer;
@@ -18,9 +20,10 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\AiRouter\Actions\ReconvergeAiRouterConnectionAction;
 use Orbit\Extensions\AiRouter\Console\ConvergeAiRouterCommand;
-use Orbit\Extensions\AiRouter\Domain\AiRouterAccountControlClient;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
 use Orbit\Extensions\AiRouter\Domain\AiRouterConnectionOwnership;
+use Orbit\Extensions\AiRouter\Domain\AiRouterDirectOperations;
+use Orbit\Extensions\AiRouter\Domain\AiRouterManagementMaterial;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcessOwnership;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
@@ -32,7 +35,6 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterModelKeyIssuer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\ConfiguredAiRouterCache;
-use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
@@ -44,7 +46,6 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         ModelKeyIssuer::class => AiRouterModelKeyIssuer::class,
-        AiRouterAccountControlClient::class => HttpAiRouterAccountControlClient::class,
     ];
 
     public function name(): string
@@ -60,6 +61,8 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
     public function register(): void
     {
         parent::register();
+        $this->contribute(DirectOperationContribution::class, AiRouterDirectOperations::class);
+        $this->contribute(OperationSecretSource::class, AiRouterManagementMaterial::class);
 
         $this->app->singleton(ArrayAiRouterCache::class);
         $this->app->singleton(AiRouterCache::class, function ($app): AiRouterCache {

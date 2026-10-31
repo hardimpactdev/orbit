@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Http\Controllers;
 
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
+use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\AiRouter\Actions\DisableAiRouterAction;
@@ -49,14 +52,16 @@ final class AiRouterController extends Controller
         return $this->payload($request, $action->execute($provider));
     }
 
+    #[StartsOperation('ai_router.account_update')]
     public function enableAccount(Request $request, string $account, UpdateAiRouterAccountAction $action): JsonResponse
     {
-        return $this->payload($request, $action->execute($account, false));
+        return $this->operationResponse($request, $action->execute($account, false, $request->attributes->getString('orbit.request_id')));
     }
 
+    #[StartsOperation('ai_router.account_update')]
     public function disableAccount(Request $request, string $account, UpdateAiRouterAccountAction $action): JsonResponse
     {
-        return $this->payload($request, $action->execute($account, true));
+        return $this->operationResponse($request, $action->execute($account, true, $request->attributes->getString('orbit.request_id')));
     }
 
     public function models(Request $request, ListAiRouterModelsAction $action): JsonResponse
@@ -65,6 +70,11 @@ final class AiRouterController extends Controller
             static fn (AiRouterModel $model): array => new AiRouterModelData($model->id, $model->provider)->toArray(),
             $action->execute(),
         ));
+    }
+
+    private function operationResponse(Request $request, Operation $operation): JsonResponse
+    {
+        return $this->payload($request, OperationData::fromModel($operation)->toArray(), 202);
     }
 
     private function statusResponse(Request $request, AiRouterStatusData $result, int $status = 200): JsonResponse

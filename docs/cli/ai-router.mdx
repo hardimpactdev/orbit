@@ -116,7 +116,7 @@ orbit ai-router:account:disable <account> [--json]
 | --- | --- | --- |
 | `account` | yes | Account ID from `ai-router:provider:show`: the auth file's `auth_index`, or its name when it has none. Only letters, digits, `.`, `_`, and `-` are accepted. |
 
-The command changes the account in CLIProxyAPI and rewrites the snapshot from cache. It fetches no quota.
+Both commands start one `ai_router.account_update` Operation and follow its native result. JSON output contains the final Operation with `result.account` and `result.disabled`. Swamp verifies the upstream state without fetching quota. The observer refreshes the quota snapshot on its next collection round.
 
 ## orbit ai-router:model:list
 

@@ -16,6 +16,8 @@ use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
 use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -160,26 +162,19 @@ it('shows one provider and omits a window the snapshot did not return', function
         ->and($output)->not->toContain('5h', 'Primary', 'Secondary', ' 0% remaining');
 });
 
-it('updates an account from cache after the status patch', function (): void {
+it('follows the native account update and returns its final Operation', function (): void {
+    $operation = ['id' => 77, 'kind' => 'ai_router.account_update', 'target_type' => 'ai_router', 'target_id' => 8,
+        'status' => 'succeeded', 'sequence' => 5, 'result' => ['account' => 'plus.json', 'disabled' => true]];
     $mock = MockClient::global([
         ListExtensionsRequest::class => ai_router_cli_extensions_response(),
-        DisableAiRouterAccountRequest::class => MockResponse::make([
-            'data' => [
-                ...ai_router_cli_account_payload(),
-                'disabled' => true,
-            ],
-            'meta' => ['request_id' => ai_router_cli_request_id()],
-        ]),
+        DisableAiRouterAccountRequest::class => MockResponse::make(['data' => [...$operation, 'status' => 'queued', 'sequence' => 1, 'result' => null], 'meta' => ['request_id' => ai_router_cli_request_id()]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => ai_router_cli_request_id()]]),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
     ]);
-
-    [$exit, $output] = ai_router_cli_display('ai-router:account:disable', [
-        'account' => 'plus.json',
-        '--json' => true,
-    ]);
-
+    [$exit, $output] = ai_router_cli_display('ai-router:account:disable', ['account' => 'plus.json', '--json' => true]);
     expect($exit)->toBe(0)
-        ->and(json_decode($output, true)['disabled'])->toBeTrue()
-        ->and($mock->getLastPendingRequest()->getMethod()->value)->toBe('POST');
+        ->and(json_decode($output, true)['result'])->toBe(['account' => 'plus.json', 'disabled' => true]);
+    expect(count(array_filter($mock->getRecordedResponses(), static fn ($response): bool => $response->getRequest() instanceof ShowOperationRequest)))->toBeGreaterThanOrEqual(2);
 });
 
 it('tears down the fleet collector with explicit consent', function (): void {

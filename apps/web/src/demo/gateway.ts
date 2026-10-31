@@ -707,9 +707,14 @@ export function createDemoGateway() {
                         return notFound("Account");
                     }
 
-                    row.disabled = action === "disable";
-
-                    return ok(row);
+                    const answer = startDemoOperation("ai_router.account_update", 17, {
+                        account: row.id,
+                        disabled: action === "disable",
+                    });
+                    const admitted = operations[operations.length - 1];
+                    if (admitted?.kind === "ai_router.account_update")
+                        admitted.target_type = "ai_router";
+                    return answer;
                 },
             ],
             ["GET", /^\/api\/v1\/realtime$/, () => ok(recordedFixture("unconfigured").body.data)],
@@ -1256,11 +1261,19 @@ export function createDemoGateway() {
                 String(operation.target_id),
             );
         }
+        const accountInput = Array.isArray(operation.input) ? {} : operation.input;
+        if (operation.kind === "ai_router.account_update") {
+            const row = quotaAccounts.find((account) => account.id === accountInput.account);
+            if (row !== undefined) row.disabled = accountInput.disabled === true;
+        }
         Object.assign(operation, {
             status: "succeeded",
             finished_at: now,
             poll_after_seconds: null,
-            result: { deployment_id: null, release: null, selected_release: null, commit: null },
+            result:
+                operation.kind === "ai_router.account_update"
+                    ? { account: accountInput.account, disabled: accountInput.disabled }
+                    : { deployment_id: null, release: null, selected_release: null, commit: null },
             sequence,
         });
     }
