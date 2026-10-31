@@ -10,6 +10,16 @@ import urllib.request
 from pathlib import Path
 
 
+def native_env(config, inherited):
+    env = {"PATH": inherited.get("PATH", os.defpath), "HOME": config,
+           "XDG_CONFIG_HOME": config, "XDG_CACHE_HOME": config, "SWAMP_CONFIG_DIR": config,
+           "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"}
+    for name in ("SWAMP_API_KEY", "SWAMP_SIGNIN_TOKEN"):
+        if inherited.get(name):
+            env[name] = inherited[name]
+    return env
+
+
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--cache", type=Path, required=True)
@@ -43,10 +53,8 @@ def main():
         finally:
             candidate.unlink(missing_ok=True)
     # Validation must never use the developer/runner account or its credential files.
-    with tempfile.TemporaryDirectory(prefix="swamp-validate-no-auth-") as config:
-        env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": config,
-               "XDG_CONFIG_HOME": config, "XDG_CACHE_HOME": config, "SWAMP_CONFIG_DIR": config,
-               "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"}
+    with tempfile.TemporaryDirectory(prefix="swamp-validate-isolated-") as config:
+        env = native_env(config, os.environ)
         actual = subprocess.run([str(binary), "--version"], capture_output=True, text=True, env=env, check=True)
         if version not in actual.stdout:
             raise SystemExit("Installed runtime version mismatch")
