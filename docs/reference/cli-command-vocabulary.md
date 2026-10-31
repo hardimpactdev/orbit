@@ -95,7 +95,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
-| `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
+| `firewall` | `allow`, `deny`, `inspect` | The CLI writes an allow or deny firewall rule. Inspection records a fresh native snapshot. |
 | `fleet` | `resume`, `status` | The CLI shows the [fleet rollout](/reference/gateway-recovery#fleet-rollout) with `fleet:rollout:status`, or resumes a halted one with `fleet:rollout:resume`. |
 | `gateway` | `deploy`, `resume`, `rollback`, `smoke`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy, roll back, and smoke-test the Gateway itself, and resume paused automatic releases. |
 | `github` | `sync` | The CLI records an Operation to refresh the [GitHub App installations](/cli/github#orbit-githubappsync). |

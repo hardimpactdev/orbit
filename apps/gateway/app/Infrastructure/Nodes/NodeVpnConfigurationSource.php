@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Operation;
@@ -26,7 +27,7 @@ final readonly class NodeVpnConfigurationSource implements OperationSecretSource
 
     public function targetTypes(): array
     {
-        return ['node', 'task_vm'];
+        return ['node', 'task_vm', 'task_group'];
     }
 
     public function ownerId(Operation $operation): ?int
@@ -53,7 +54,18 @@ final readonly class NodeVpnConfigurationSource implements OperationSecretSource
             ->map(static fn (Node $node): array => ['node_id' => $node->id, 'name' => $node->name,
                 'public_key' => $node->wireguard_public_key, 'address' => $node->wireguard_ip])->all();
 
-        return new OperationSecretValue(['snapshot' => $snapshot, 'address' => $vpn->serverAddress, 'port' => $vpn->port,
-            'private_key' => $vpn->serverPrivateKey, 'peers' => $peers], [$vpn->serverPrivateKey]);
+        $material = ['snapshot' => $snapshot, 'address' => $vpn->serverAddress, 'port' => $vpn->port,
+            'private_key' => $vpn->serverPrivateKey, 'peers' => $peers];
+        if ($snapshot['executor_node_id'] !== $snapshot['hub_id']) {
+            $hub = $vpn->server;
+            if (! is_string($hub->ssh_host_fingerprint) || preg_match('/\ASHA256:[A-Za-z0-9+\/]{43}\z/D', $hub->ssh_host_fingerprint) !== 1) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'Hub SSH requires its pinned host identity.', 422);
+            }
+            $material['connection'] = ['target' => ['node_id' => $hub->id, 'host' => $hub->public_ssh_host,
+                'port' => $hub->public_ssh_port, 'user' => $hub->user, 'fingerprint' => $hub->ssh_host_fingerprint],
+                'identity' => app(SshKeyProvider::class)->privateKeyPath()];
+        }
+
+        return new OperationSecretValue($material, [$vpn->serverPrivateKey]);
     }
 }

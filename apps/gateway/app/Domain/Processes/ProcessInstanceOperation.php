@@ -59,9 +59,10 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         if ($records->count() > 4096) {
             throw new ResourceOperationException('operation.runtime_limit', 'An Instance runtime plan may contain at most 4096 members.', 409);
         }
-        $pin = app(AgentDelivery::class)->pin($instance->node);
+        $pin = null;
         $members = [];
         foreach ($records as $record) {
+            $pin ??= app(AgentDelivery::class)->pin($instance->node);
             $input = $this->admission->inputFor($record, $verb);
             if ($input['node_id'] !== $instance->node_id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process is placed on another Node.', 422);

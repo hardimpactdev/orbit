@@ -229,6 +229,8 @@ The worker runs as the Node's configured user. Clone cleanup removes only its ow
 
 SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection uses its own native database.read Operation.
 
+SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO` cannot create another database file, including through an SQL expression. The same limit refuses ordinary `VACUUM`, which needs an internal attachment. These refusals return `database.query_failed` and leave the registered file unchanged.
+
 ### Instance-owned removal
 
 Removing an Instance records one `database.destroy_owned` intent. One native Swamp DAG removes its databases on their admitted Nodes and its SQLite files on the Instance Node. Each server is a placed workflow step. The Gateway creates no child Operations and performs no remote SQL or file removal. It deletes the owned connection records only after the whole native DAG succeeds. Attached databases that the Instance does not own stay.

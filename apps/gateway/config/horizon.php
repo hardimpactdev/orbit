@@ -57,7 +57,7 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
-        // One worker, so task VM jobs run one at a time and in order. The timeout is the longest task VM job, EnrollTaskVm;
+        // One worker keeps the remaining task VM queue jobs in order. The timeout covers their longest supported work;
         // no task-vms job may exceed it.
         'task-vms' => [
             'connection' => 'gateway',

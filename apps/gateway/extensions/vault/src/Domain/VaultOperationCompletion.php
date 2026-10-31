@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Vault\Domain;
 
-use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
@@ -12,8 +11,8 @@ use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Orbit\Extensions\Vault\Models\VaultItem;
 
-/** Projects proven safe collection metadata. This hook does no network work. */
-final readonly class VaultOperationCompletion implements OperationCompletion
+/** Records safe collection metadata. This hook does no network work. */
+final readonly class VaultOperationCompletion
 {
     public function __construct(private VaultSettings $settings, private VaultOperationSecrets $secrets) {}
 
@@ -21,7 +20,7 @@ final readonly class VaultOperationCompletion implements OperationCompletion
     {
         if ($outcome->status !== OperationStatus::Succeeded) {
             if ($outcome->status === OperationStatus::Failed) {
-                $this->settings->recordError($outcome->errorCode ?? 'vault.sync_failed', 'The Vault Operation failed. Read its steps.');
+                $this->settings->recordError($outcome->errorCode ?? 'vault.sync_failed', 'The Vault Operation failed. Read its native run.');
             }
             $this->secrets->forgetTerminal($operation);
 

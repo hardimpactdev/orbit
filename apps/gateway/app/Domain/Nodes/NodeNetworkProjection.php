@@ -6,14 +6,38 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Public key recording precedes the native hub read. No Node effect or receipt validation. */
-final readonly class NodeNetworkProjection implements DirectOperationProjection
+final readonly class NodeNetworkProjection implements DirectOperationProjection, DirectOperationPublicView
 {
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        $this->hubParticipant($operation, $callerNodeId);
+    }
+
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        return ['hub' => $this->hubParticipant($operation, $callerNodeId)];
+    }
+
+    /** @return array<string, mixed> */
+    private function hubParticipant(Operation $operation, int $callerNodeId): array
+    {
+        $snapshot = NodeWireGuardInput::bound($operation);
+        if ($operation->kind !== 'node.network_converge' || $snapshot === null
+            || $callerNodeId !== $snapshot['executor_node_id']) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The Node is outside the admitted network hub participant.', 403);
+        }
+
+        return $snapshot;
+    }
+
     public function input(Operation $operation): array
     {
         return ['network' => ValidatedData::object($operation->input['_network'] ?? []),

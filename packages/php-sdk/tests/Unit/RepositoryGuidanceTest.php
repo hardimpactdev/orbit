@@ -226,6 +226,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
+        $firewallInspectionRequests = ['Orbit\\Sdk\\Requests\\Firewall\\InspectFirewallRequest'];
         $preScheduleOperationCount = 108;
         $scheduleRequests = [
             ListSchedulesRequest::class,
@@ -379,7 +380,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
+        $expectedOperationCount = count($firewallInspectionRequests) + count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -485,6 +486,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$aiRouterSwitchRequests)
             ->toContain(...$fleetRequests)
             ->toContain(...$operationRequests)
+            ->toContain(...$firewallInspectionRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)

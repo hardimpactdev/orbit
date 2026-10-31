@@ -22,7 +22,7 @@ use Throwable;
 /**
  * One disposable VM that serves one task group as a normal `app-dev` Node. An `incus` row runs on
  * its host Node. An `upcloud` row has no host Node: `provider_id` is its server's UUID, and `ssh_host_key` the host
- * key that the Gateway generated for it.
+ * key staged by its native provider workflow.
  *
  * @property int $id
  * @property int|null $group_id
@@ -43,6 +43,7 @@ use Throwable;
  * @property Carbon|null $publish_queued_at
  * @property Carbon|null $publish_started_at
  * @property string|null $provider_id
+ * @property array{private:string,public:string}|null $provider_bootstrap
  * @property string|null $ssh_host_key
  * @property string $name
  * @property TaskVmState $state
@@ -79,14 +80,14 @@ final class TaskVm extends Model
     #[\Override]
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
-        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at',
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $hidden = ['pi_token', 'model_key'];
+    protected $hidden = ['pi_token', 'model_key', 'provider_bootstrap'];
 
     /** @var array<string, string> */
     #[\Override]
@@ -108,6 +109,7 @@ final class TaskVm extends Model
             'publish_started_at' => 'datetime',
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
+            'provider_bootstrap' => 'encrypted:array',
             'worker_stop_required' => 'boolean',
             'claimed_at' => 'datetime',
             'warmed_at' => 'datetime',
