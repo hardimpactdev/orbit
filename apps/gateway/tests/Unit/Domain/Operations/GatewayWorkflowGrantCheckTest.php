@@ -9,7 +9,7 @@ it('requires both run and read for each exact Gateway workflow while sharing ali
         'process.start' => ['workflow' => 'operation-process-control'],
         'process.restart' => ['workflow' => 'operation-process-control'],
     ];
-    $policy = ['version' => 1, 'principal' => 'user:orbit-gateway', 'workflows' => [
+    $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => [
         ['workflow' => 'operation-process-control', 'actions' => ['read', 'run']],
     ]];
 
@@ -18,7 +18,7 @@ it('requires both run and read for each exact Gateway workflow while sharing ali
 
 it('rejects a newly declared Horizon workflow without a matching grant intent', function (): void {
     $definitions = ['process.horizon_handoff' => ['workflow' => 'operation-process-horizon-handoff']];
-    $policy = ['version' => 1, 'principal' => 'user:orbit-gateway', 'workflows' => []];
+    $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => []];
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
         ->toThrow(LogicException::class, 'operation-process-horizon-handoff');
@@ -26,7 +26,7 @@ it('rejects a newly declared Horizon workflow without a matching grant intent', 
 
 it('rejects run-only and read-only intent rather than implying the other action', function (array $actions): void {
     $definitions = ['process.stop' => ['workflow' => 'operation-process-stop']];
-    $policy = ['version' => 1, 'principal' => 'user:orbit-gateway', 'workflows' => [
+    $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => [
         ['workflow' => 'operation-process-stop', 'actions' => $actions],
     ]];
 
@@ -36,7 +36,7 @@ it('rejects run-only and read-only intent rather than implying the other action'
 
 it('rejects broader or malformed intended policy', function (array $change): void {
     $definitions = ['process.stop' => ['workflow' => 'operation-process-stop']];
-    $policy = ['version' => 1, 'principal' => 'user:orbit-gateway', 'workflows' => [
+    $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => [
         ['workflow' => 'operation-process-stop', 'actions' => ['run', 'read']],
     ]];
 
@@ -44,7 +44,7 @@ it('rejects broader or malformed intended policy', function (array $change): voi
         ->toThrow(LogicException::class);
 })->with([
     'different principal' => [['principal' => 'user:other']],
-    'other schema' => [['version' => 2]],
+    'other schema' => [['version' => 3]],
     'extra authority field' => [['credentials' => []]],
     'non-list entries' => [['workflows' => ['named' => ['workflow' => 'operation-process-stop', 'actions' => ['run', 'read']]]]],
     'wildcard' => [['workflows' => [['workflow' => '*', 'actions' => ['run', 'read']]]]],
@@ -58,10 +58,44 @@ it('rejects broader or malformed intended policy', function (array $change): voi
 ]);
 
 it('rejects retired workflow grant intent after its final declaration is removed', function (): void {
-    $policy = ['version' => 1, 'principal' => 'user:orbit-gateway', 'workflows' => [
+    $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => [
         ['workflow' => 'operation-retired', 'actions' => ['run', 'read']],
     ]];
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute([], $policy))
         ->toThrow(LogicException::class, 'operation-retired');
+});
+
+it('checks exact execution copy vault intent against public declarations', function (): void {
+    $copy = ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$'];
+    $definitions = ['database.write' => ['workflow' => 'operation-database-write', 'execution_copies' => [$copy]]];
+    $policy = ['version' => 2, 'principal' => 'user:orbit-gateway',
+        'workflows' => [['workflow' => 'operation-database-write', 'actions' => ['run', 'read']]],
+        'vaults' => [[...$copy, 'actions' => ['write', 'read']]]];
+
+    expect((new GatewayWorkflowGrantCheck)->execute($definitions, $policy))->toBe(1);
+});
+
+it('refuses missing or broader execution copy vault intent', function (array $entry): void {
+    $copy = ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$'];
+    $definitions = ['database.write' => ['workflow' => 'operation-database-write', 'execution_copies' => [$copy]]];
+    $policy = ['version' => 2, 'principal' => 'user:orbit-gateway',
+        'workflows' => [['workflow' => 'operation-database-write', 'actions' => ['run', 'read']]],
+        'vaults' => $entry];
+
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))->toThrow(LogicException::class);
+})->with([
+    'missing' => [[]],
+    'broader pattern' => [[['vault' => 'orbit-control-inputs', 'key_pattern' => '^.*$', 'actions' => ['write', 'read']]]],
+    'other vault' => [[['vault' => 'other', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$', 'actions' => ['write', 'read']]]],
+    'write only' => [[['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$', 'actions' => ['write']]]],
+    'admin' => [[['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$', 'actions' => ['write', 'read', 'admin']]]],
+    'unanchored' => [[['vault' => 'orbit-control-inputs', 'key_pattern' => 'database-write-intent-', 'actions' => ['write', 'read']]]],
+]);
+
+it('refuses retired execution copy intent after its declaration is removed', function (): void {
+    $policy = ['version' => 2, 'principal' => 'user:orbit-gateway', 'workflows' => [],
+        'vaults' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^old-[0-9]+$', 'actions' => ['write', 'read']]]];
+
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute([], $policy))->toThrow(LogicException::class);
 });

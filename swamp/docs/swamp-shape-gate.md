@@ -41,6 +41,8 @@ including extension contributions, with `config/gateway-workflow-grants.json`.
 Each declared workflow needs one exact entry for `user:orbit-gateway` with both
 `run` and `read`. Missing actions or workflows fail CI. Wildcards, other
 principals or actions, duplicate entries and retired declaration entries fail.
+Version 2 also checks each kind's public `execution_copies` declarations against the manifest's `vaults` entries. Each entry names one exact vault, an anchored key pattern, and only `write` plus same-key `read`. Missing, broader, duplicate or retired entries fail. The approved patterns cover positive database intent IDs, Vault-sync and Conn-revoke UUIDv4 keys, and the existing exact bootstrap identity key.
+
 Update the declaration and expected policy together. The check also runs when
 only this manifest changes; other Swamp-only changes keep their existing scope.
 
@@ -50,7 +52,7 @@ live grant is installed. In particular, historical run-only grants do not prove
 read access. Before Gateway uptake, the live grant owner must verify the exact
 registered workflow and the installed Gateway principal with native
 `access.can-i`. CI reads source files only; it never applies grants, contacts
-Swamp access APIs or handles Swamp credentials.
+Swamp access APIs or handles Swamp credentials. Workers retain get/resolve access only for the keys their steps use; the manifest does not install worker grants. Official `access.can-i` exposes the installed key conditions but has no key-context input. The live owner therefore checks that metadata, then proves the family's actual execution-copy push.
 
 ## Review checklist
 
