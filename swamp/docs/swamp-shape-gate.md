@@ -36,8 +36,18 @@ workflow has known steps and no findings in its own source or reachable local
 behavior dependencies. Static coverage is not a runtime canary. Each run emits
 versioned JSON with its commit and units, plus a `SHAPE-GATE` summary on one line.
 
-Current PLAN also forbids Gateway HTTP calls from any step, including failure
-reporters. The `gateway-http` rule covers the client and its aliases and imports;
+Nick permits exactly two Gateway execution primitives from steps: GitHub
+installation-token mint and certificate signing (CSR plus operation id to a public
+bundle). The gate allows only these exact POST route templates:
+
+- `/api/v1/direct-operations/{operation}/github-token`
+- `/api/v1/direct-operations/{operation}/certificates/sign`
+
+Root confirmed both route contracts on 2026-10-31. The operation segment must be a
+positive numeric id. The native Python request fixture proves
+its numeric check precedes the request and rejects reassignment after that check. It does not exempt
+a client, module, endpoint prefix or file. Other Gateway HTTP calls from steps,
+including failure reporters, remain forbidden. The `gateway-http` rule covers the client and its aliases and imports;
 workflow coverage follows local dependencies, so helper modules and failure jobs
 remain part of the audit. A registered step that reaches a Gateway helper has
 its own file/rule finding, so new steps cannot inherit a historical exception.
@@ -74,3 +84,12 @@ The scanner reads tracked files. Stage the imported inventory and baseline befor
 a local import check. When the preserved source predates the gate, the checker
 derives initial limits from that source; a gate-source comparison base is not
 needed. The import fixtures cover both the PR and its first main push.
+
+The only Gateway wait exception is in the Orbit release runner: it may wait up
+to ten minutes for Swamp serve health before failing Caddy publication. It does
+not allow Swamp-step polling or Gateway wait/retry machinery elsewhere.
+
+The TS checker owns the endpoint policy and passes it to the Python AST helper.
+Native shell URLs use the same policy. The signer fixture is copied from lane0c
+model `orbit-certificate-signing-http`; altered methods, paths, unchecked ids and
+extra callbacks are rejected.
