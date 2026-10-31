@@ -138,6 +138,86 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             },
         }
 
+    def test_terminal_observation_reads_actual_root_owned_caddy_permissions(self):
+        if (
+            shutil.which("sudo") is None
+            or subprocess.run(
+                ["sudo", "-n", "/usr/bin/true"], check=False, capture_output=True
+            ).returncode
+        ):
+            self.skipTest("Root-owned Caddy permissions require passwordless sudo")
+        generation = self.host / "protected-generation"
+        candidate = self.repo / "public-config"
+        candidate.write_text(self.content)
+        subprocess.run(
+            [
+                "sudo",
+                "-n",
+                "/usr/bin/install",
+                "-d",
+                "-m",
+                "0750",
+                "-o",
+                "root",
+                "-g",
+                "root",
+                str(generation),
+            ],
+            check=True,
+        )
+        try:
+            subprocess.run(
+                [
+                    "sudo",
+                    "-n",
+                    "/usr/bin/install",
+                    "-m",
+                    "0640",
+                    "-o",
+                    "root",
+                    "-g",
+                    "root",
+                    str(candidate),
+                    str(generation / "Caddyfile"),
+                ],
+                check=True,
+            )
+            (self.host / "Caddyfile").symlink_to(generation / "Caddyfile")
+            with self.assertRaises(PermissionError):
+                (self.host / "Caddyfile").read_bytes()
+            workflow = yaml.safe_load(
+                (ROOT / "workflows/workflow-operation-route-caddy.yaml").read_text()
+            )
+            script = workflow["jobs"][-1]["steps"][0]["task"]["inputs"]["run"]
+            script = script.replace("/etc/caddy", str(self.host))
+            env = dict(
+                os.environ,
+                ORBIT_CADDY_META=json.dumps(
+                    {
+                        "run_id": "test",
+                        "sha256": hashlib.sha256(self.content.encode()).hexdigest(),
+                        "version": self.version,
+                    }
+                ),
+                ORBIT_CADDY_OBSERVED=json.dumps({"withdraw": False, "publish": True}),
+            )
+            reply = subprocess.run(
+                ["/bin/sh", "-c", script],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(reply.returncode, 0, reply.stderr)
+            self.assertEqual(
+                json.loads(reply.stdout),
+                {"ready": True, "result": "published", "version": self.version},
+            )
+        finally:
+            subprocess.run(
+                ["sudo", "-n", "/usr/bin/rm", "-rf", str(generation)], check=True
+            )
+
     def run_caddy(self, refusal="", success=True, inactive=False):
         self.input["fixture_refuse"] = refusal
         self.input["fixture_inactive"] = "yes" if inactive else ""

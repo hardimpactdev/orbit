@@ -866,7 +866,7 @@ jobs:
       inputs:
         run: |
           set -eu
-          /usr/bin/python3 - <<'PYTHON'
+          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
           import hashlib
           import json
           import os
