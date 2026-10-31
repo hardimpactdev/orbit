@@ -52,13 +52,22 @@ def scan(source, gateway_primitives=()):
     def bound(identifier, at):
         current = scope(at)
         while current is not None:
-            values = [(part, part.value) for part in ast.walk(current)
-                      if isinstance(part, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and scope(part) is current
-                      and any(isinstance(target, ast.Name) and target.id == identifier
-                              for target in (part.targets if isinstance(part, ast.Assign) else [part.target]))]
-            values += [(part, item.context_expr) for part in ast.walk(current)
-                       if isinstance(part, (ast.With, ast.AsyncWith)) and scope(part) is current
-                       for item in part.items if isinstance(item.optional_vars, ast.Name) and item.optional_vars.id == identifier]
+            values = []
+            for part in ast.walk(current):
+                if isinstance(part, ast.Name) and part.id == identifier and isinstance(part.ctx, (ast.Store, ast.Del)) and scope(part) is current:
+                    parent = parents.get(part)
+                    if isinstance(parent, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and (getattr(parent, "target", None) is part or part in getattr(parent, "targets", [])):
+                        values.append((parent, parent.value if isinstance(parent, (ast.Assign, ast.AnnAssign)) else None))
+                    elif isinstance(parent, ast.withitem) and parent.optional_vars is part:
+                        values.append((parents[parent], parent.context_expr))
+                    else:
+                        # Loop, destructuring, deletion and other target forms are
+                        # writes too. They cannot establish literal FD/URL provenance.
+                        values.append((statement(part), None))
+                if isinstance(part, ast.ExceptHandler) and part.name == identifier and scope(part) is current:
+                    values.append((part, None))
+                if isinstance(part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and part.name == identifier and part in parents and scope(parents[part]) is current:
+                    values.append((part, None))
             if values:
                 # Function bodies may run after later module/closure rebindings.
                 # Only a syntactically immutable outer binding is provable here.
