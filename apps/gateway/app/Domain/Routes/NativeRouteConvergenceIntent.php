@@ -119,7 +119,7 @@ final readonly class NativeRouteConvergenceIntent
                 throw new ResourceOperationException('route.workload_moved', 'The workload moved from its admitted Route target or Node.', 409);
             }
             if ($member['production']) {
-                [$runtime] = app(InstanceDeploymentIntent::class)->runtimeIntent($instance, $route->status === RouteStatus::Failed ? null : $route);
+                [$runtime] = app(InstanceDeploymentIntent::class)->runtimeIntent($instance, ($operation->state['native_route_rollback'] ?? false) === true ? null : $route);
                 $version = $instance->selected_php_version;
                 $extra = ['runtime' => $runtime, 'profile' => $runtime === null || $version === null ? null : app(RemotePhpPackageManager::class)->runtimeInput($node, $version),
                     'packages' => $runtime === null || $version === null ? null : app(RemotePhpPackageManager::class)->packagesOnlyInputForAppProd($node, [$version])];
@@ -129,7 +129,11 @@ final readonly class NativeRouteConvergenceIntent
                 if (! is_object($php['configurations'])) {
                     throw new ResourceOperationException('route.php_input_invalid', 'The shared PHP renderer requires a configuration map.', 409);
                 }
-                $extra['packages'] = app(RouteWorkloadInput::class)->packages($node, array_keys(get_object_vars($php['configurations'])));
+                $versions = array_keys(get_object_vars($php['configurations']));
+                if (is_string($instance->selected_php_version)) {
+                    $versions[] = $instance->selected_php_version;
+                }
+                $extra['packages'] = app(RouteWorkloadInput::class)->packages($node, array_values(array_unique($versions)));
             }
             $routerId = $intent['router_node_id'];
             $lan = is_int($routerId) ? app(RouteHopInput::class)->firewall($instance, $route, Node::query()->findOrFail($routerId), $callerNodeId) : null;

@@ -38,7 +38,8 @@ final readonly class RouteWorkloadInput
         }
 
         $checkout = rtrim($instance->checkout_path, '/');
-        $sites = NativeDevelopmentSourceAccess::walkedSites($this->sites->forNode($instance->node))
+        $sites = NativeDevelopmentSourceAccess::walkedSites($this->sites->forNode($instance->node)->push($this->sites->workloadSite($instance, $route)))
+            ->unique(static fn (DevelopmentSite $site): string => $site->addressKey())
             ->filter(static fn (DevelopmentSite $site): bool => $checkout !== '' && ($site->checkoutPath === $checkout || str_starts_with($site->checkoutPath, $checkout.'/')))->values();
         $plan = ['php' => $this->pools->forNode($instance->node)];
         if ($sites->isNotEmpty()) {

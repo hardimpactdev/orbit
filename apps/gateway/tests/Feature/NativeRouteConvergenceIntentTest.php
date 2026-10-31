@@ -189,3 +189,16 @@ it('preserves a serving Route when its no-effect create retry fails', function (
         ->and($this->route->fresh()->getAttributes())->toBe($before);
     expect(fn () => app(NativeRouteConvergenceProjection::class)->project($operation, ['checkpoint' => 'rollback-initial']))->toThrow(ResourceOperationException::class);
 });
+
+it('prepares unpublished development source and selected PHP without publishing its site', function (): void {
+    $this->instance->update(['selected_php_version' => '8.5']);
+    $intent = app(NativeRouteConvergenceIntent::class)->forRoute($this->route, []);
+    $operation = new Operation(['kind' => 'route.create', 'target_type' => 'route', 'target_id' => $this->route->id,
+        'input' => ['route_convergence' => $intent, 'participant_node_ids' => $intent['node_ids']]]);
+
+    $public = app(NativeRouteConvergenceIntent::class)->publicInput($operation, $this->node->id);
+
+    expect($public['workloads'][0]['source_access']['sites'])->toBe([['checkout' => '/srv/native', 'relative_root' => 'public', 'application' => '/srv/native']])
+        ->and($public['workloads'][0]['packages']['configure'][0]['version'])->toBe('8.5')
+        ->and($this->route->fresh()->sites_published)->toBeFalse();
+});
