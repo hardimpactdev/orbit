@@ -22,3 +22,18 @@ observer-only exception in PLAN. Its mutation path must move to a native step;
 only a separated read/collection daemon may retain that exception. This source
 port changes no frozen agent code and makes no claim that the collector has
 already been separated or safely replaced on a live Node.
+
+## Native account updates
+
+`operation-ai-router-account-update` places one `@nckrtl/ai-router-accounts.update`
+method on the configured collector Node. The stable behavior instance is
+`ai-router-accounts-node-<nodeId>`; its native method lock covers fresh auth-file
+selection, status PATCH and confirmation. An already matching state avoids a
+second PATCH after a lost reply. The existing management key stays inside the
+shared private-material callback. Only the account identity and disabled state
+reach the native result. Quota snapshots refresh through observation.
+
+The Gateway returns HTTP 202 and projects this native result. The CLI and web
+app follow the Operation. The frozen collector still contains its old control
+endpoints; they must be removed in the final observer strip before the daemon
+qualifies for the observer-only exception. This workflow changes no agent code.
