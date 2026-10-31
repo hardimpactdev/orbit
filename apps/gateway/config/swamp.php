@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 $directWriters = json_decode((string) env('ORBIT_SWAMP_DIRECT_WRITERS', '{}'), true);
+if (is_array($directWriters)) {
+    $directWriters = ['instance.deploy' => 'direct', ...$directWriters];
+}
 
 return [
     'address' => env('ORBIT_SWAMP_ADDRESS', 'swamp.orbit'),

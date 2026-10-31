@@ -106,7 +106,7 @@ final readonly class ReadDeploymentSourceAction
 
     private function branch(Instance $instance): string
     {
-        return $instance->deployment_branch ?? (string) $instance->branch;
+        return $instance->placedOnAppDev() ? (string) $instance->project->default_branch : ($instance->deployment_branch ?? (string) $instance->branch);
     }
 
     private function unavailable(GitHubApiException $exception): ResourceOperationException

@@ -6,16 +6,12 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use App\Models\OperationStep;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
-/**
- * Every write to an operation and its steps. Each change takes the next `sequence` in the same transaction as the
- * change itself, so a reader that sees sequence N sees every change up to N. Each change then sends its notices.
- */
+/** Persists intent and native results. Swamp owns locks, steps and execution. */
 final readonly class OperationStore
 {
     public function __construct(private OperationBroadcaster $broadcaster, private OperationIdempotency $idempotency) {}
@@ -25,84 +21,30 @@ final readonly class OperationStore
         return "{$targetType}:{$targetId}";
     }
 
-    /**
-     * Creates a queued operation that holds its target until it ends.
-     *
-     * An operation of a kind in `$supersedes` that holds the target and that no worker started gives the target up: it
-     * ends `cancelled` with `operation.superseded` in the same transaction that creates this one. A worker that claims
-     * it first keeps the target, and this start is busy.
-     *
-     * @param  array<string, mixed>  $input
-     * @param  list<string>  $supersedes
-     *
-     * @throws ResourceOperationException `operation.target_busy` while another operation holds the target
-     */
-    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null): Operation
+    /** @param array<string,mixed> $input */
+    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId): Operation
     {
         if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
-            throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
+            throw new LogicException('The Operation kind must match the request idempotency key.');
         }
-
-        $writer = app(DirectOperation::class)->writer($kind, $input, $nodeId);
-        if ($expectedWriter !== null && $writer !== $expectedWriter) {
-            throw new LogicException('The prepared Operation input must match its admitted writer.');
-        }
-        $lockKey = null;
+        $direct = app(DirectOperation::class);
+        $direct->writer($kind);
         if ($nodeId === null) {
             throw new ResourceOperationException('operation.node_required', 'A direct Operation requires its admitted root Node.', 422);
         }
-        $definition = app(DirectOperation::class)->definition($kind);
+        $definition = $direct->definition($kind);
         $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
-        $superseded = null;
-
         try {
-            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $lockKey, $input, $triggeredBy, $requestId, $supersedes, $writer, &$superseded): Operation {
-                $holder = $lockKey === null || $supersedes === [] ? null : Operation::query()->where('lock_key', $lockKey)->whereIn('kind', $supersedes)->first();
-                $now = Carbon::now();
-                $superseded = $holder instanceof Operation
-                    && $this->cancelUnstarted($holder, $now, ['error_code' => 'operation.superseded', 'cancel_requested_at' => $now]) ? $holder : null;
-
-                $created = Operation::query()->create([
-                    'kind' => $kind,
-                    'idempotency_key' => $this->idempotency->key,
-                    'idempotency_fingerprint' => $this->idempotency->fingerprint,
-                    'target_type' => $targetType,
-                    'target_id' => $targetId,
-                    'node_id' => $nodeId,
-                    'lock_key' => $lockKey,
-                    'input' => $input,
-                    'state' => ['executor_target' => ['node_id' => $nodeId, 'target_type' => $targetType, 'target_id' => $targetId],
-                        ...app(DirectOperation::class)->stamp($kind, $writer)],
-                    'status' => OperationStatus::Queued,
-                    'sequence' => 1,
-                    'attempts' => 0,
-                    'triggered_by' => $triggeredBy,
-                    'request_id' => $requestId,
-                ]);
-
-                return $created;
-            });
+            $operation = Operation::query()->create([
+                'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
+                'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId,
+                'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
+                'triggered_by' => $triggeredBy, 'request_id' => $requestId,
+            ]);
         } catch (UniqueConstraintViolationException $exception) {
-            if (($existing = $this->idempotency->replay($kind)) !== null) {
-                return $existing;
-            }
-
-            $holder = Operation::query()->where('lock_key', $lockKey)->value('id');
-
-            throw new ResourceOperationException(
-                'operation.target_busy',
-                'Another operation on this target has not ended. Follow it, or cancel it, before you start another.',
-                409,
-                $exception,
-                is_int($holder) ? ['operation_id' => $holder] : [],
-            );
+            return $this->idempotency->replay($kind) ?? throw $exception;
         }
-
-        if ($superseded instanceof Operation) {
-            $this->broadcaster->changed($superseded->refresh(), true);
-        }
-
         $this->broadcaster->created($operation);
 
         return $operation;
@@ -141,183 +83,16 @@ final readonly class OperationStore
         return $operation;
     }
 
-    /**
-     * Applies the changes to the operation and to one of its steps under one new sequence.
-     *
-     * @param  array<string, mixed>  $changes
-     * @param  array<string, mixed>  $stepChanges
-     */
-    public function change(Operation $operation, array $changes = [], ?OperationStep $step = null, array $stepChanges = []): void
+    /** @param array<string,mixed> $changes */
+    public function change(Operation $operation, array $changes = []): void
     {
         $before = $operation->status;
         $cancelRequested = array_key_exists('cancel_requested_at', $changes) && $operation->cancel_requested_at === null;
-
-        DB::transaction(function () use ($operation, $changes, $step, $stepChanges): void {
-            $sequence = $this->nextSequence($operation);
-            $operation->forceFill([...$changes, 'sequence' => $sequence])->save();
-            $step?->forceFill([...$stepChanges, 'sequence' => $sequence])->save();
+        DB::transaction(function () use ($operation, $changes): void {
+            $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+            $operation->setRawAttributes($current->getAttributes(), true);
+            $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
         });
-
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
-    }
-
-    /**
-     * Creates the planned steps, all pending, under one new sequence.
-     *
-     * @param  list<OperationStepPlan>  $plan
-     */
-    public function plan(Operation $operation, array $plan): void
-    {
-        DB::transaction(function () use ($operation, $plan): void {
-            $sequence = $this->nextSequence($operation);
-            $operation->forceFill(['sequence' => $sequence])->save();
-
-            foreach ($plan as $index => $step) {
-                OperationStep::query()->create([
-                    'operation_id' => $operation->id,
-                    'position' => $index + 1,
-                    'name' => $step->name,
-                    'status' => OperationStepStatus::Pending,
-                    'resumable' => $step->resumable,
-                    'sequence' => $sequence,
-                ]);
-            }
-        });
-
-        $operation->unsetRelation('steps');
-        $this->broadcaster->changed($operation, false);
-    }
-
-    /**
-     * Moves a queued operation to running for this worker. Only one worker wins; any other copy of its job does
-     * nothing.
-     */
-    public function claim(Operation $operation, string $worker): bool
-    {
-        $claimed = DB::transaction(function () use ($operation, $worker): bool {
-            $now = Carbon::now();
-            $updated = Operation::query()
-                ->whereKey($operation->id)
-                ->where('status', OperationStatus::Queued->value)
-                ->update([
-                    'status' => OperationStatus::Running->value,
-                    'worker' => $worker,
-                    'attempts' => DB::raw('attempts + 1'),
-                    'sequence' => DB::raw('sequence + 1'),
-                    'updated_at' => $now,
-                ]);
-
-            if ($updated !== 1) {
-                return false;
-            }
-
-            Operation::query()->whereKey($operation->id)->whereNull('started_at')->update(['started_at' => $now]);
-
-            return true;
-        });
-
-        $operation->refresh();
-
-        if ($claimed) {
-            $this->broadcaster->changed($operation, true);
-        }
-
-        return $claimed;
-    }
-
-    /** Claims a due read without spending a worker-loss attempt. The conditional write settles duplicate jobs. */
-    public function claimWaiting(Operation $operation, string $worker): bool
-    {
-        $claimed = Operation::query()
-            ->whereKey($operation->id)
-            ->where('status', OperationStatus::Waiting->value)
-            ->where('next_read_at', '<=', Carbon::now())
-            ->update([
-                'status' => OperationStatus::Running->value,
-                'worker' => $worker,
-                'sequence' => DB::raw('sequence + 1'),
-                'updated_at' => Carbon::now(),
-            ]) === 1;
-        $operation->refresh();
-
-        if ($claimed) {
-            $this->broadcaster->changed($operation, true);
-        }
-
-        return $claimed;
-    }
-
-    /** Ends an operation that no worker started as cancelled. Any other operation stops at its next step instead. */
-    public function cancelQueued(Operation $operation): bool
-    {
-        $now = Carbon::now();
-        $cancelled = $this->cancelUnstarted($operation, $now);
-        $operation->refresh();
-
-        if ($cancelled) {
-            OperationStep::query()->where('operation_id', $operation->id)->where('status', OperationStepStatus::Pending->value)
-                ->update(['status' => OperationStepStatus::Cancelled->value, 'finished_at' => $now, 'sequence' => $operation->sequence]);
-            $this->broadcaster->changed($operation, true);
-        }
-
-        return $cancelled;
-    }
-
-    /**
-     * Ends an operation that no worker started as `cancelled`, with the extra changes, and frees its target. A worker
-     * that claims it first keeps it. A requeued operation already ran steps; its next worker stops it and finishes its
-     * records.
-     *
-     * @param  array<string, mixed>  $changes
-     */
-    private function cancelUnstarted(Operation $operation, Carbon $now, array $changes = []): bool
-    {
-        return Operation::query()
-            ->whereKey($operation->id)
-            ->where('status', OperationStatus::Queued->value)
-            ->where('attempts', 0)
-            ->update([
-                ...$changes,
-                'status' => OperationStatus::Cancelled->value,
-                'lock_key' => null,
-                'finished_at' => $now,
-                'sequence' => DB::raw('sequence + 1'),
-                'updated_at' => $now,
-            ]) === 1;
-    }
-
-    /** Returns a running operation whose worker was lost to the queue, so the next worker resumes or fails it. */
-    public function requeue(Operation $operation): bool
-    {
-        $requeued = Operation::query()
-            ->whereKey($operation->id)
-            ->where('status', OperationStatus::Running->value)
-            ->where('worker', $operation->worker)
-            ->update([
-                'status' => OperationStatus::Queued->value,
-                'worker' => null,
-                'sequence' => DB::raw('sequence + 1'),
-                'updated_at' => Carbon::now(),
-            ]) === 1;
-
-        $operation->refresh();
-
-        if ($requeued) {
-            $this->broadcaster->changed($operation, true);
-        }
-
-        return $requeued;
-    }
-
-    private function nextSequence(Operation $operation): int
-    {
-        Operation::query()->whereKey($operation->id)->increment('sequence');
-        $sequence = Operation::query()->whereKey($operation->id)->value('sequence');
-
-        if (! is_int($sequence)) {
-            throw new LogicException("Operation [{$operation->id}] has no sequence.");
-        }
-
-        return $sequence;
     }
 }

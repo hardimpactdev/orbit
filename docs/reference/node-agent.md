@@ -169,6 +169,8 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
+`instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
+
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text
@@ -305,7 +307,7 @@ Command mode currently runs as the enrolled macOS account. A future LaunchAgent 
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner, and `instance.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner. Native Swamp development deployment uses its shared sudo runner as the configured Node account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
 
 While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 
@@ -414,11 +416,17 @@ Swamp `agent.configure` returns its new hash only in the first live response. Th
 php artisan orbit:node-agent-rekey <node-id> <operation-id>
 ```
 
-Use the `node.converge` ID that owns the uncertain `footprint-agent` run. This command runs synchronously on the Gateway, including for Services and executor workers, and needs no live Swamp worker. Swamp configuration holds the same Node agent lock through secret hydration, remote configuration and encrypted hash projection, so retained synchronous convergence cannot replace its secret meanwhile. Recovery requires its existing managed Linux Node, original configuration, started configure run with no result, and retained Node target hold. It takes the shared Operation attempt lease and Node agent lock. An active effect or different owner refuses recovery.
+Use the `node.converge` ID that owns the uncertain `footprint-agent` run. Recovery requires an active Linux Node with its own selected worker, the original started configure run with no result, and the original Node hold. The original attempt's kernel lease must be free: a slow configure that still holds it is not uncertain recovery work. The Gateway probes that existing lease at admission, intent read and private hash storage; it holds no execution lease across native recovery.
 
-The command starts a fresh unkeyed configure with that recorded configuration and a null previous hash. It encrypts the returned hash and records only the Node ID and recovery time. It prints no secret and leaves the original receipt uncertain. Cancel the old Operation through the normal API and start a fresh converge after recovery.
+Finished, foreign or superseded Operations cannot authorize recovery. An existing parent-owned receipt keeps its original ownership check; recovery creates no child. The command only records a `node.agent_rekey` intent. It never runs SSH, an agent command, a child Operation or a Gateway wait. Workerless Nodes, including VPN and usexit, refuse rekey; there is no PHP execution path.
 
-If this recovery response is also lost, run the explicit operator command again. Repeating an acknowledged recovery is a no-op. A terminal or superseded Operation cannot authorize recovery; start a fresh normal converge after the target is free.
+Swamp validates the admitted configuration and pin on the exact Node worker. The original configuration must keep that Node's existing worker enabled under its configured account. Recovery passes `worker_credentials: null`, so it preserves and validates existing root-owned credential files. It never replays an enrollment reference or mints credentials. Swamp holds its stable per-Node method lock through configure and private hash storage. The hash stays inside the effect callback and protected private-output request. Arguments, resources, results and error text contain no hash.
+
+Observe the returned Operation through the normal API. Acknowledgement does not prove recovery. The default `--attempt=1` is an idempotent request identity; repeat it after a lost admission reply. After a terminal refusal or cancellation, supply another positive attempt number to request a new recovery. Swamp observes cancellation before its effect checkpoint. A later Gateway cancellation request is ignored by this attempt, including a resume, so rotation can reconcile and store its hash before settlement. A native abort before invoke still cancels without a Node effect.
+
+Invalid safe input is a bounded pre-effect refusal. Configure, memory, worker-readiness or storage errors that may follow rotation remain unresolved. No PHP retry or completion marker changes the original uncertain receipt.
+
+Only a succeeded recovery proves encrypted hash storage. Cancel the original uncertain Operation, then start a fresh converge. A successful converge is not a recovery source. A positive canary uses a disposable x86_64 Node with its own worker: start a retained converge, stop that worker during `footprint-agent` configure, wait until the original attempt releases its lease, then run recovery and verify agent authentication with the stored hash. Do not interrupt a production Node to create this condition or use a successful Operation to force rotation.
 
 ## Gateway view
 
