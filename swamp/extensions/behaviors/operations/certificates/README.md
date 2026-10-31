@@ -50,11 +50,11 @@ hex characters and `root_hash` is the SHA-256 digest of the public root PEM.
 (`AnalyticsHostname::Value` in Orbit). Paths are fixed by scope; callers cannot
 supply paths or private material.
 
-New parents compose the `node-role-certificate-publish` child with `roleCertificateSteps(name,leafExpr,fullGlobals,dependency?,guard?)` from `certificates/role_steps.ts`. Supply the canonical role leaf and complete official SSH `name`, `transport` and `hosts` map with target `target`, approved209 identity and full pins. Read `steps["<name>"].outputs.result` for `{ready:true,node_id,scope,version}`. Every child action runs on209. The signer receives the root parent run ID. Native activation, pair restoration and recovery activation are separate steps; an activation failure restores the prior pair and fails without readiness.
+New parents compose the `node-role-certificate-publish` child with `roleCertificateSteps(name,leafExpr,fullGlobals,dependency?,guard?)` from `certificates/role_steps.ts`. Supply the canonical role leaf and complete official SSH `name`, `transport` and `hosts` map with target `target`, approved209 identity and full pins. Read `steps["<name>"].outputs.result` for `{ready:true,node_id,scope,version}`. Every child action runs on209. The signer receives the root parent run ID.
 
-The shared Python file `scripts/role_policy.py` owns role paths, key preparation, certificate checks and pair writes. Native assets read it through `extensionFile`; retained `roleRequest` and `rolePublish` pass the same resolver to `roleCertificateActions`. Retained Caddy and certificate exports compose only the corresponding helper sections from those bytes. The new native path includes neither the legacy Caddy lock loop nor the whole-Node publication engine. The existing retained transaction remains isolated to its legacy callers.
+The native child executes separate `scripts/role_request.py` and `scripts/role_publish.py` actions. They share the existing certificate `scripts/local.py` key, CSR and public signature helpers. `scripts/role_paths.py` owns the fixed paths for native and retained callers. Official SSH copies the shipped script directory and executes each action. The retained guarded helpers live in `retained_role_policy.py`, outside that directory.
 
-The pending RSA key stays on its effect Node. Only the CSR and signed public certificate bundle enter Swamp resources. Native pair publication retains the prior pair locally until activation succeeds; finalization removes that snapshot and pending key. Failed activation restores the prior pair, and native resume from publication can use the same pending key. The child does not restore the whole role parent or perform role withdrawal. The complete contract is in [Native Node role certificates](https://github.com/hardimpactdev/orbit/blob/main/docs/reference/node-role-certificates.md).
+The RSA key stays on its effect Node. Only the CSR and signed public certificates enter Swamp resources. A native `systemctl try-reload-or-restart caddy` action reloads an active service before readiness and leaves an inactive service stopped. This also runs for a current pair, so fresh admission retries an interrupted activation. Failed activation stays failed; resume the child from `activate`. The complete parent owns restoration of its admitted publication snapshots. The child has no pair snapshot or automatic restoration engine. The complete contract is in [Native Node role certificates](https://github.com/hardimpactdev/orbit/blob/main/docs/reference/node-role-certificates.md).
 
 Publication keeps
 `/etc/caddy/orbit-cert-current/{gateway.pem,gateway.key,root-ca.pem}`,
@@ -64,8 +64,8 @@ Publication keeps
 publication also keeps the public `root-ca.pem` for local renewal checks. An
 existing owned version link is accepted only within that role's fixed versions
 directory. Retained local callers use the existing Caddy lock around their
-transaction. The native child uses its explicit publication, activation and
-recovery steps. The Gateway projects role state after those stages succeed.
+transaction. The native child uses explicit publication and activation
+steps. The Gateway projects role state after those stages succeed.
 
 ## Native leaf actions and the official certificate extension
 

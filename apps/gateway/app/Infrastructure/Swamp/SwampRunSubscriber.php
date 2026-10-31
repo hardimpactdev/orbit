@@ -180,7 +180,14 @@ final class SwampRunSubscriber
 
             return;
         }
-        if (in_array($type, ['run.elsewhere', 'run.interrupted'], true)) {
+        if ($type === 'run.interrupted') {
+            if (is_array($payload) && ($payload['runId'] ?? null) === $entry['run']) {
+                $this->project($operationId, null);
+            }
+
+            return;
+        }
+        if ($type === 'run.elsewhere') {
             $this->log->warning('The native terminal observer cannot attach on this Serve.', ['operation_id' => $operationId]);
             unset($this->following[$operationId], $this->requests[$id]);
 

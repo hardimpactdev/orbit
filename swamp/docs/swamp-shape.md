@@ -31,7 +31,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - CI runs shellcheck (and ruff for Python) on all of it.
 5. **Secrets come from Swamp vaults.**
    - The Gateway stays the source of truth. It pushes the execution copy with the native authenticated `vault.put` WebSocket request when a value changes. The value is in the frame payload, never argv; the shared Gateway helper launches no CLI.
-   - Steps read `${{ vault.get('<vault>', '<key>') }}`. In `command/shell`, Swamp passes it as an environment variable.
+   - Steps read `${{ vault.get('<vault>', '<key>') }}`. In `command/shell`, Swamp passes it as an environment variable. The approved Node209 worker SSH key instead uses official `@swamp/ssh` `identityFile` through native `LoadCredential`; worker-wide read is approved.
    - Scripts pass a secret to a tool by stdin or a config file, never as an argument, because `ps` shows arguments to every user on the Node.
    - Root-of-trust keys stay only in the Gateway: the GitHub App key and the Orbit CA private key. Steps get short-lived minted GitHub tokens, and signed certificates by sending a CSR plus the operation id to the Gateway sign primitive. These two calls are the only Gateway calls a step may make. Never copy either key into a Swamp vault.
 6. **Use native control flow, not your own.**
@@ -142,7 +142,7 @@ The original proof did not cover logical Nodes 1/18. Their replacement uses offi
 
 ### 2. A whole vault expression maps to a named environment variable
 
-For `command/shell`, a whole `vault.get` expression belongs in `task.inputs.env`. For official `@swamp/ssh`, its supported native input is `task.globalArgs.transport.identityContent`:
+For `command/shell`, a whole `vault.get` expression belongs in `task.inputs.env`. For the approved Node209 worker SSH key, use `task.globalArgs.transport.identityFile` supplied through native `LoadCredential`. The vault-backed bootstrap pilot below uses `identityContent` for its Gateway-sourced copy:
 
 ```yaml
 task:

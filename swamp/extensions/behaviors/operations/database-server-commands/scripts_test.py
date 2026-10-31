@@ -16,6 +16,9 @@ import inspect_policy
 import ready
 import wait_ready
 import write_acl
+import user_apply
+import user_common
+import user_wal
 
 
 class Scripts(unittest.TestCase):
@@ -113,6 +116,46 @@ class Scripts(unittest.TestCase):
         event.terminate.assert_called_once()
         event.kill.assert_called_once()
         self.assertEqual([call.kwargs for call in event.wait.call_args_list],[{'timeout':1},{'timeout':1}])
+
+
+    def test_user_sql_stays_on_stdin_and_returns_no_output_for_both_drivers(self):
+        material={'password':self.material['password'],'sql':"CREATE USER reader PASSWORD 'private-login-sentinel';"}
+        for driver in ('mysql','pgsql'):
+            intent={'driver':driver,'container':self.intent['container'],'username':'reader','replication':False,'known_user':False}
+            paths=[]
+            def command(argv,stdin=None):
+                self.assertNotIn(material['password'],repr(argv));self.assertNotIn(material['sql'],repr(argv))
+                paths.append(Path(argv[argv.index('--env-file')+1]));self.assertEqual(stat.S_IMODE(paths[-1].stat().st_mode),0o600)
+                self.assertEqual(stdin,material['sql'])
+                return subprocess.CompletedProcess(argv,0,material['password']+material['sql'],'')
+            with patch.object(server_common,'command',command):self.assertEqual(user_apply.apply(intent,material),{'backend':'active'})
+            self.assertTrue(all(not path.exists() for path in paths))
+
+    def test_user_replication_wal_refusal_is_read_only(self):
+        intent={'driver':'pgsql','container':self.intent['container'],'username':'reader','replication':True,'known_user':False}
+        material={'password':self.material['password'],'sql':'PRIVATE USER SQL'}
+        with patch.object(user_common,'client',return_value=subprocess.CompletedProcess([],0,'replica\n','')) as client:
+            with self.assertRaisesRegex(server_common.Refused,'database.wal_level_not_logical'):user_wal.check(intent,material)
+            self.assertEqual(client.call_args.args[-1],'SHOW wal_level;\n')
+            self.assertNotIn(material['sql'],client.call_args.args[-1])
+        with patch.object(user_common,'client',return_value=subprocess.CompletedProcess([],0,'logical\n','')):
+            self.assertEqual(user_wal.check(intent,material),{'ready':True})
+
+    def test_user_invalid_material_or_selected_executable_never_reaches_a_client(self):
+        intent={'driver':'mysql','container':self.intent['container'],'username':'reader','replication':False,'known_user':False}
+        material={'password':'private','sql':'CREATE USER reader;'}
+        for raw,secret in [(dict(intent,client=['selected']),material),(dict(intent,container='foreign'),material),(intent,dict(material,password={})),(intent,dict(material,sql='\0private'))]:
+            with patch.object(user_common,'client') as client:
+                with self.assertRaisesRegex(server_common.Refused,'database.server_admin_invalid'):user_apply.apply(raw,secret)
+                client.assert_not_called()
+
+    def test_unknown_user_action_exception_emits_only_fixed_public_code(self):
+        import io
+        out=io.StringIO()
+        def fail(_intent,_material):raise RuntimeError('private-exception-sentinel')
+        with patch.object(sys,'argv',['user_apply.py','{}']),patch.object(sys,'stdin',io.StringIO('{}')),patch.object(sys,'stdout',out):
+            with self.assertRaises(SystemExit):server_common.main(fail,error_code='database.user_create_outcome_unknown')
+        self.assertEqual(json.loads(out.getvalue()),{'error_code':'database.user_create_outcome_unknown'})
 
 
 if __name__=='__main__':unittest.main()

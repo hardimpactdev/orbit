@@ -1,22 +1,20 @@
 import { z } from "npm:zod@4.4.3";
 import { Applied, Request, Signed } from "./input.ts";
 import { RoleLeaf } from "./role-input.ts";
-import type { ExtensionFile } from "./role_source.ts";
 import { signCertificateBatch } from "./signing.ts";
 
-const Read = z.object({
-    action: z.enum(["request", "publish", "restore", "finish"]),
-    leaf: RoleLeaf,
-    request: Request.optional(),
-    signed: Signed.optional(),
+const Read = z.object({ leaf: RoleLeaf }).strict();
+const Assets = z.object({
+    input_json: z.string(),
+    scripts_directory: z.string(),
 }).strict();
-const Script = z.object({ script_body: z.string().max(1048576) }).strict();
 const PublicRequest = z.object({
     request: Request,
     request_json: z.string(),
     leaf_json: z.string(),
 }).strict();
-const Signature = z.object({ signed: Signed }).strict();
+const Signature = z.object({ signed: Signed, signed_json: z.string() })
+    .strict();
 const Completion = z.object({
     ready: z.literal(true),
     node_id: z.number().int().positive(),
@@ -24,7 +22,7 @@ const Completion = z.object({
     version: RoleLeaf.shape.version,
 }).strict();
 type Context = {
-    extensionFile: ExtensionFile;
+    extensionFile: (path: string) => string | Promise<string>;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 const retained = <T>(schema: T) => ({
@@ -38,46 +36,24 @@ export const behavior = {
     type: "@nckrtl/node-role-certificate-assets",
     version: "2026.10.31.1",
     resources: {
-        assets: retained(Script),
+        assets: retained(Assets),
         request: retained(PublicRequest),
         signed: retained(Signature),
         completion: retained(Completion),
     },
     methods: {
         read: {
-            description: "Read one admitted fixed-role certificate action",
+            description:
+                "Resolve shared scripts and the admitted public role leaf",
             arguments: Read,
             execute: async (raw: z.infer<typeof Read>, ctx: Context) => {
-                const args = Read.parse(raw);
-                if (args.action === "publish") {
-                    if (!args.request || !args.signed) {
-                        throw new Error("certificate.role_input_invalid");
-                    }
-                    if (
-                        "error_code" in args.request ||
-                        "error_code" in args.signed
-                    ) throw new Error("certificate.role_input_invalid");
-                    if (
-                        args.request.state === "request" &&
-                        !("certificate_base64" in args.signed)
-                    ) throw new Error("certificate.role_input_invalid");
-                }
-                const input = {
-                    ...args.leaf,
-                    operation: args.action,
-                    ...(args.action === "publish"
-                        ? { request: args.request, signed: args.signed }
-                        : {}),
-                };
-                const script = await Deno.readTextFile(
-                    await ctx.extensionFile("scripts/role_policy.py"),
+                const { leaf } = Read.parse(raw);
+                const script = await ctx.extensionFile(
+                    "scripts/role_request.py",
                 );
-                const result = Script.parse({
-                    script_body: script.replace(
-                        "ROLE_ACTION_INPUT = None",
-                        "ROLE_ACTION_INPUT = json.loads(" +
-                            JSON.stringify(JSON.stringify(input)) + ")",
-                    ),
+                const result = Assets.parse({
+                    input_json: JSON.stringify(leaf),
+                    scripts_directory: script.replace(/\/[^/]+$/, ""),
                 });
                 await ctx.writeResource("assets", "assets", result);
                 return result;
@@ -141,38 +117,35 @@ export const behavior = {
                     ...request,
                 }], args.stdout);
                 const record = batch.certificates[0];
+                const signed = record
+                    ? {
+                        certificate_base64: record.certificate_base64,
+                        root_certificate_base64: record.root_certificate_base64,
+                    }
+                    : { skipped: true };
                 const result = Signature.parse({
-                    signed: record
-                        ? {
-                            certificate_base64: record.certificate_base64,
-                            root_certificate_base64:
-                                record.root_certificate_base64,
-                        }
-                        : { skipped: true },
+                    signed,
+                    signed_json: JSON.stringify(signed),
                 });
                 await ctx.writeResource("signed", "signed", result);
                 return result;
             },
         },
         result: {
-            description: "Require successful pair activation and finalization",
+            description:
+                "Record readiness after native publication and activation",
             arguments: z.object({
                 leaf: RoleLeaf,
-                restored: z.boolean(),
                 stdout: z.string().max(65536),
             }).strict(),
             execute: async (
                 args: {
                     leaf: z.infer<typeof RoleLeaf>;
-                    restored: boolean;
                     stdout: string;
                 },
                 ctx: Context,
             ) => {
                 const leaf = RoleLeaf.parse(args.leaf);
-                if (args.restored) {
-                    throw new Error("certificate.role_activation_failed");
-                }
                 const applied = Applied.parse(JSON.parse(args.stdout));
                 if ("error_code" in applied) {
                     throw new Error(applied.error_code);

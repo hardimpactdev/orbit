@@ -1,7 +1,6 @@
 id: 4ae59518-f877-4ab7-9a51-069cd462a7ec
 name: node-role-certificate-publish
-description: Fixed role CSR, parent-bound signature, local pair, native activation
-  and recovery.
+description: Fixed role CSR, parent-bound signature, local publication, and native activation.
 vaults: []
 inputs:
   type: object
@@ -32,46 +31,96 @@ inputs:
 jobs:
 - name: certificate
   steps:
-  - name: request-assets
+  - name: assets
     target: orbit-node-209
-    labels: &id001
+    labels: &id003
       node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-request-assets-" + run.id }}
+      behaviorName: ${{ "role-assets-" + run.id }}
       methodName: read
       inputs:
-        action: request
         leaf: ${{ inputs.leaf }}
-  - name: request
+  - name: prepare-assets
     target: orbit-node-209
-    labels: *id001
+    labels: &id001
+      node: '209'
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
-      methodName: script
-      globalArgs:
+      methodName: exec
+      globalArgs: &id002
         name: ${{ inputs.ssh.name }}
         transport: ${{ inputs.ssh.transport }}
         hosts: ${{ inputs.ssh.hosts }}
       inputs:
         hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps["request-assets"].outputs.script_body }}
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-role-certificate-" + run.id }}
     dependsOn:
-    - step: request-assets
+    - step: assets
       condition:
         type: or
         conditions:
         - type: succeeded
         - type: skipped
-    writes: true
-  - name: request-info
+  - name: copy-assets
     target: orbit-node-209
     labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ inputs.ssh.name }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-role-certificate-" + run.id + "/" }}
+        direction: to
+        recursive: true
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: request
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ inputs.ssh.name }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_request.py" }}
+        sudo: true
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: request-info
+    target: orbit-node-209
+    labels: *id003
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
@@ -89,51 +138,42 @@ jobs:
         - type: skipped
   - name: sign
     target: orbit-node-209
-    labels: *id001
+    labels: *id003
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: orbit-certificate-signing-http
       methodName: execute
       inputs:
-        run: "#!/bin/sh\nset -eu\n/usr/bin/python3 - <<'PYTHON'\nimport json\nimport\
-          \ os\nimport re\nimport ssl\nimport sys\nimport urllib.request\n\n\nclass\
-          \ NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
-          \ req, fp, code, msg, headers, newurl):\n        return None\n\n\ntry:\n\
-          \    operation = os.environ[\"ORBIT_CERTIFICATE_OPERATION_ID\"]\n    run_id\
-          \ = os.environ[\"ORBIT_CERTIFICATE_RUN_ID\"]\n    if not re.fullmatch(r\"\
-          [1-9][0-9]*\", operation):\n        raise ValueError(\"Invalid operation\"\
-          )\n    raw = json.loads(os.environ[\"ORBIT_CERTIFICATE_REQUESTS\"])\n  \
-          \  if os.environ[\"ORBIT_CERTIFICATE_MODE\"] == \"single\":\n        leaf\
-          \ = json.loads(os.environ[\"ORBIT_CERTIFICATE_LEAF\"])\n        raw = [dict(node_id=leaf[\"\
-          node_id\"], scope=leaf[\"scope\"], **raw)]\n    else:\n        raw = [record\
-          \ for batch in raw for record in batch]\n    if len(raw) > 256:\n      \
-          \  raise ValueError(\"Too many requests\")\n    requests = [record for record\
-          \ in raw if record.get(\"state\") == \"request\"]\n    if not requests:\n\
-          \        print(json.dumps({\"certificates\": []}))\n        sys.exit(0)\n\
-          \    body = {\"run_id\": run_id, \"requests\": requests}\n    if os.environ.get(\"\
-          ORBIT_CERTIFICATE_RESTORING\") == \"true\":\n        body[\"restoring\"\
-          ] = True\n    payload = json.dumps(body).encode()\n    url = (\n       \
-          \ \"https://gateway.orbit/api/v1/direct-operations/\"\n        + operation\n\
-          \        + \"/certificates/sign\"\n    )\n    request = urllib.request.Request(\n\
-          \        url,\n        data=payload,\n        method=\"POST\",\n       \
-          \ headers={\n            \"Content-Type\": \"application/json\",\n     \
-          \       \"Accept\": \"application/json\",\n        },\n    )\n    context\
-          \ = ssl.create_default_context(\n        cafile=\"/usr/local/share/ca-certificates/orbit-managed-root-ca.crt\"\
-          \n    )\n    opener = urllib.request.build_opener(\n        NoRedirect(),\
-          \ urllib.request.HTTPSHandler(context=context)\n    )\n    with opener.open(request,\
-          \ timeout=60) as response:\n        raw_response = response.read(16_777_217)\n\
-          \        if len(raw_response) > 16_777_216 or response.status != 200:\n\
-          \            raise ValueError(\"Invalid signing response\")\n    result\
-          \ = json.loads(raw_response)[\"data\"]\n    print(json.dumps(result))\n\
+        run: "#!/bin/sh\nset -eu\n/usr/bin/python3 - <<'PYTHON'\nimport json\nimport os\nimport re\nimport\
+          \ ssl\nimport sys\nimport urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n\
+          \    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\
+          \n\ntry:\n    operation = os.environ[\"ORBIT_CERTIFICATE_OPERATION_ID\"]\n    run_id = os.environ[\"\
+          ORBIT_CERTIFICATE_RUN_ID\"]\n    if not re.fullmatch(r\"[1-9][0-9]*\", operation):\n       \
+          \ raise ValueError(\"Invalid operation\")\n    raw = json.loads(os.environ[\"ORBIT_CERTIFICATE_REQUESTS\"\
+          ])\n    if os.environ[\"ORBIT_CERTIFICATE_MODE\"] == \"single\":\n        leaf = json.loads(os.environ[\"\
+          ORBIT_CERTIFICATE_LEAF\"])\n        raw = [dict(node_id=leaf[\"node_id\"], scope=leaf[\"scope\"\
+          ], **raw)]\n    else:\n        raw = [record for batch in raw for record in batch]\n    if len(raw)\
+          \ > 256:\n        raise ValueError(\"Too many requests\")\n    requests = [record for record\
+          \ in raw if record.get(\"state\") == \"request\"]\n    if not requests:\n        print(json.dumps({\"\
+          certificates\": []}))\n        sys.exit(0)\n    body = {\"run_id\": run_id, \"requests\": requests}\n\
+          \    if os.environ.get(\"ORBIT_CERTIFICATE_RESTORING\") == \"true\":\n        body[\"restoring\"\
+          ] = True\n    payload = json.dumps(body).encode()\n    url = (\n        \"https://gateway.orbit/api/v1/direct-operations/\"\
+          \n        + operation\n        + \"/certificates/sign\"\n    )\n    request = urllib.request.Request(\n\
+          \        url,\n        data=payload,\n        method=\"POST\",\n        headers={\n        \
+          \    \"Content-Type\": \"application/json\",\n            \"Accept\": \"application/json\",\n\
+          \        },\n    )\n    context = ssl.create_default_context(\n        cafile=\"/usr/local/share/ca-certificates/orbit-managed-root-ca.crt\"\
+          \n    )\n    opener = urllib.request.build_opener(\n        NoRedirect(), urllib.request.HTTPSHandler(context=context)\n\
+          \    )\n    with opener.open(request, timeout=60) as response:\n        raw_response = response.read(16_777_217)\n\
+          \        if len(raw_response) > 16_777_216 or response.status != 200:\n            raise ValueError(\"\
+          Invalid signing response\")\n    result = json.loads(raw_response)[\"data\"]\n    print(json.dumps(result))\n\
           except Exception:\n    print(json.dumps({\"error_code\": \"app-dev.certificate_sign_failed\"\
           }))\n    sys.exit(1)\nPYTHON\n"
         env:
           ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
           ORBIT_CERTIFICATE_MODE: single
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["request-info"].outputs.request_json
-            }}
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["request-info"].outputs.request_json }}
           ORBIT_CERTIFICATE_LEAF: ${{ steps["request-info"].outputs.leaf_json }}
     dependsOn:
     - step: request-info
@@ -144,7 +184,7 @@ jobs:
         - type: skipped
   - name: signed-info
     target: orbit-node-209
-    labels: *id001
+    labels: *id003
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
@@ -161,19 +201,26 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-  - name: publish-assets
+  - name: publish
     target: orbit-node-209
     labels: *id001
+    writes: true
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-publish-assets-" + run.id }}
-      methodName: read
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ inputs.ssh.name }}
+      methodName: exec
+      globalArgs: *id002
       inputs:
-        action: publish
-        leaf: ${{ inputs.leaf }}
-        request: ${{ steps["request-info"].outputs.request }}
-        signed: ${{ steps["signed-info"].outputs.signed }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
+        - ${{ "ORBIT_CERTIFICATE_SIGNED=" + steps["signed-info"].outputs.signed_json }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_publish.py" }}
+        sudo: true
     dependsOn:
     - step: signed-info
       condition:
@@ -181,215 +228,50 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-  - name: active
-    target: orbit-node-209
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: exec
-      globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/systemctl
-        - is-active
-        - --quiet
-        - caddy
-        sudo: true
-        okExitCodes:
-        - 0
-        - 3
-        - 4
-    dependsOn:
-    - step: publish-assets
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: publish
-    target: orbit-node-209
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: script
-      globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps["publish-assets"].outputs.script_body }}
-    dependsOn:
-    - step: active
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    allowFailure: true
-    writes: true
   - name: activate
     target: orbit-node-209
     labels: *id001
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
+      globalArgs: *id002
       inputs:
         hosts: name:target
         argv:
         - /usr/bin/systemctl
-        - reload-or-restart
+        - try-reload-or-restart
         - caddy
         sudo: true
     dependsOn:
     - step: publish
       condition:
-        type: always
-    guard: ${{ !(steps.publish.status == "succeeded" && steps.active.outputs.exitCode
-      == 0 && steps["request-info"].outputs.request.state == "request") }}
-    allowFailure: true
-  - name: restore-assets
+        type: succeeded
+  - name: cleanup-assets
     target: orbit-node-209
     labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-restore-assets-" + run.id }}
-      methodName: read
-      inputs:
-        action: restore
-        leaf: ${{ inputs.leaf }}
-    dependsOn:
-    - step: publish
-      condition:
-        type: always
-    - step: activate
-      condition:
-        type: always
-    guard: ${{ !((("publish" in steps && steps.publish.status == "failed") || ("activate"
-      in steps && steps.activate.status == "failed"))) }}
-  - name: restore
-    target: orbit-node-209
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: script
-      globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps["restore-assets"].outputs.script_body }}
-    dependsOn:
-    - step: restore-assets
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ !((("publish" in steps && steps.publish.status == "failed") || ("activate"
-      in steps && steps.activate.status == "failed"))) }}
     writes: true
-  - name: reactivate
-    target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
+      globalArgs: *id002
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/systemctl
-        - reload-or-restart
-        - caddy
-        sudo: true
+        - rm
+        - -rf
+        - ${{ "/tmp/orbit-role-certificate-" + run.id }}
     dependsOn:
-    - step: restore
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ !((("publish" in steps && steps.publish.status == "failed") || ("activate"
-      in steps && steps.activate.status == "failed")) && steps.active.outputs.exitCode
-      == 0) }}
-  - name: finish-assets
-    target: orbit-node-209
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-finish-assets-" + run.id }}
-      methodName: read
-      inputs:
-        action: finish
-        leaf: ${{ inputs.leaf }}
-    dependsOn:
-    - step: publish
-      condition:
-        type: always
     - step: activate
       condition:
-        type: always
-    guard: ${{ !(!(("publish" in steps && steps.publish.status == "failed") || ("activate"
-      in steps && steps.activate.status == "failed"))) }}
-  - name: finish
-    target: orbit-node-209
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: script
-      globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps["finish-assets"].outputs.script_body }}
-    dependsOn:
-    - step: finish-assets
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ !(!(("publish" in steps && steps.publish.status == "failed") || ("activate"
-      in steps && steps.activate.status == "failed"))) }}
-    writes: true
+        type: succeeded
   - name: result
     target: orbit-node-209
-    labels: *id001
+    labels: *id003
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
@@ -397,27 +279,8 @@ jobs:
       methodName: result
       inputs:
         leaf: ${{ inputs.leaf }}
-        restored: ${{ (("publish" in steps && steps.publish.status == "failed") ||
-          ("activate" in steps && steps.activate.status == "failed")) }}
-        stdout: '${{ (("publish" in steps && steps.publish.status == "failed") ||
-          ("activate" in steps && steps.activate.status == "failed")) ? "" : steps.finish.outputs.stdout
-          }}'
+        stdout: ${{ steps.publish.outputs.stdout }}
     dependsOn:
-    - step: finish
+    - step: cleanup-assets
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: restore
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: reactivate
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: succeeded

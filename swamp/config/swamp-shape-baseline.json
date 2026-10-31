@@ -800,20 +800,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/user_create.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/user_create.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/valkey_acl_local.ts",
       "rule": "multi-action",
       "count": 2,
@@ -3312,20 +3298,6 @@
       "evidence": [
         "git",
         "sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/turn.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/turn.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {

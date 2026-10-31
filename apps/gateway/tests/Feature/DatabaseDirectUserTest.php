@@ -28,8 +28,8 @@ beforeEach(function (): void {
     $this->server = DatabaseServer::query()->create(['slug' => 'proof', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'private-root-sentinel', 'status' => 'active']);
     $this->connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'database_server_id' => $this->server->id, 'host' => '192.0.2.9', 'database' => 'proof', 'username' => 'owner', 'password' => 'private-owner-sentinel']);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-user-create', 'runId' => $this->runId]]];
+    $socket = $this->socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => ($sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-user-create', 'runId' => $this->runId]]]);
     app()->instance(WebSocketClient::class, $socket);
     $this->sql = "CREATE USER reader PASSWORD 'private-login-sentinel';";
     $this->operation = app(RecordDatabaseOperationAction::class)->execute('database_user.create', 'database_server', $this->server->id, $this->node->id,
@@ -44,30 +44,23 @@ it('directly starts SQL user intent without old execution declarations or secret
     expect($this->operation->state)->toMatchArray(['swamp_run_id' => $this->runId]);
     expect($this->operation->attempts)->toBe(0);
     expect($this->operation->worker)->toBeNull();
-    $public = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input');
+    $public = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input.intent');
     expect($public)->toHaveKeys(['driver', 'container', 'username', 'replication', 'known_user'])->not->toHaveKeys(['password', 'sql', 'agent_sha256']);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-root-sentinel', $this->sql, 'private-login-sentinel');
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
 });
 
-it('reads only declared private fields for the exact unfinished run and owning Node', function (): void {
-    $before = $this->operation->fresh()->getAttributes();
-    $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
-        ->assertJsonPath('data.password', 'private-root-sentinel')->assertJsonPath('data.sql', $this->sql);
-    expect($this->operation->fresh()->getAttributes())->toBe($before);
-    $this->getJson($this->path.'/private-material?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
-    $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertForbidden();
+it('copies only the existing recorded material and refuses private step reads', function (): void {
+    $copy = collect($this->socket->sent)->firstWhere('type', 'vault.put');
+    expect($copy['payload']['key'])->toBe('database-user-create-intent-'.$this->operation->input['intent_id']);
+    expect(json_decode($copy['payload']['value'], true))->toBe(['password' => 'private-root-sentinel', 'sql' => $this->sql]);
+    $start = collect($this->socket->sent)->firstWhere('type', 'workflow.run');
+    expect($start['payload']['inputs']['intent']['ssh'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
+    expect($start['payload']['inputs']['execution_secrets']['user_create']['key'])->toBe($copy['payload']['key']);
+    expect(json_encode($start))->not->toContain('private-root-sentinel', $this->sql, 'private-login-sentinel');
+    $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    expect(fn () => app(DatabaseIntentSource::class)->resolve($this->operation, $this->operation->input['intent_id'], '', 'password'))->toThrow(ResourceOperationException::class);
     expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('private-root-sentinel', $this->sql);
-});
-
-it('maps only fixed direct material paths through the existing owner-checked source', function (): void {
-    $source = app(DatabaseIntentSource::class);
-    $id = $this->operation->input['intent_id'];
-    expect($source->resolve($this->operation, $id, '', 'password')->value)->toBe('private-root-sentinel');
-    expect(fn () => $source->resolve($this->operation, $id, '', 'container'))->toThrow(ResourceOperationException::class);
-    $this->operation->node_id = $this->gateway->id;
-    expect(fn () => $source->resolve($this->operation, $id, '', 'sql'))->toThrow(ResourceOperationException::class);
 });
 
 it('projects the encrypted recorded user once and refuses later private reads', function (): void {
@@ -89,7 +82,6 @@ it('projects the encrypted recorded user once and refuses later private reads', 
 
 it('projects a bounded preflight refusal without creating a user or accepting SQL output', function (): void {
     $failed = [...$this->finished, 'status' => 'failed', 'error_code' => 'database.wal_level_not_logical', 'result' => ['error_code' => 'database.wal_level_not_logical']];
-    $this->postJson($this->path.'/result', [...$failed, 'error_code' => 'invented', 'result' => ['error_code' => 'invented']])->assertUnprocessable();
     $this->postJson($this->path.'/result', [...$failed, 'result' => [...$failed['result'], 'password' => 'private-root-sentinel', 'output' => $this->sql]])->assertOk();
     expect($this->operation->fresh()->result)->toBe(['error_code' => 'database.wal_level_not_logical']);
     $this->assertDatabaseCount('database_users', 0);
@@ -103,7 +95,7 @@ it('admits PostgreSQL replication without any Gateway SQL and leaves WAL checks 
     $this->assertDatabaseCount('database_users', 0);
 });
 
-it('refuses unbound runs foreign material references and an undeclared private output', function (): void {
+it('refuses unbound private access and an undeclared private output', function (): void {
     $this->postJson($this->path.'/secret-output', ['run_id' => $this->runId, 'outputs' => ['credential' => 'invented']])->assertUnprocessable();
     $this->operation->update(['input' => [...$this->operation->input, 'password' => ['$secret' => 'database.intent', 'id' => $this->operation->input['intent_id'] + 100]]]);
     $response = $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable()->assertHeader('Cache-Control', 'no-store, private');

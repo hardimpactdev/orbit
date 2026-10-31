@@ -1,512 +1,236 @@
-import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
-import { withTaskCancellation } from "./cancellation.ts";
-import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import {
-  DirectArgs,
-  directOperation,
-  DirectOperationCancelled,
-  GatewayOperation,
-} from "../_lib/direct.ts";
 
-const Globals = z.object({
-  gatewayUrl: z.string().url().default("https://gateway.orbit"),
-  caFile: z.string().min(1).default(
-    "/usr/local/share/ca-certificates/orbit-root.crt",
-  ),
-});
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
 export const Snapshot = z.object({ head: Sha, tree: Sha }).strict();
 export const Input = z.object({
-  new_session: z.boolean(),
-  group_id: Id,
-  instance_id: Id,
-  node_id: Id,
-  subtask: Id,
-  thread_id: Id,
-  checkout_path: z.string().startsWith("/"),
-  session_id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
-  role: z.enum(["implementer", "reviewer", "consult"]),
-  prompt: z.string().max(100000),
-  model: z.string().startsWith("orbit-task-vm/"),
-  effort: z.string().nullable(),
-  pi_host: z.string().min(1),
-  pi_port: z.number().int().min(1).max(65535),
-  candidate: Sha.nullable(),
-  deliverables: z.array(z.record(z.string(), z.unknown())),
-  analysis_evidence: z.object({
-    input: z.record(z.string(), z.unknown()),
-    result: z.record(z.string(), z.unknown()),
-  }).nullable(),
+    new_session: z.boolean(),
+    group_id: Id,
+    instance_id: Id,
+    node_id: Id,
+    subtask: Id,
+    thread_id: Id,
+    checkout_path: z.string().startsWith("/"),
+    session_id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    role: z.enum(["implementer", "reviewer", "consult"]),
+    prompt: z.string().max(100000),
+    model: z.string().startsWith("orbit-task-vm/"),
+    effort: z.string().nullable(),
+    pi_host: z.string().min(1),
+    pi_port: z.number().int().min(1).max(65535),
+    candidate: Sha.nullable(),
+    deliverables: z.array(z.record(z.string(), z.unknown())),
+    analysis_evidence: z.object({
+        input: z.record(z.string(), z.unknown()),
+        result: z.record(z.string(), z.unknown()),
+    }).nullable(),
 });
 export type TurnInput = z.infer<typeof Input>;
-const Args = DirectArgs.extend({ kind: z.literal("tasks.turn"), node_id: Id });
 const Usage = z.object({
-  input: z.number().nonnegative().default(0),
-  output: z.number().nonnegative().default(0),
-  cacheRead: z.number().nonnegative().default(0),
-  cacheWrite: z.number().nonnegative().default(0),
-  total: z.number().nonnegative().default(0),
-  calls: z.number().nonnegative().default(0),
-  peakContext: z.number().nonnegative().default(0),
+    input: z.number().nonnegative().default(0),
+    output: z.number().nonnegative().default(0),
+    cacheRead: z.number().nonnegative().default(0),
+    cacheWrite: z.number().nonnegative().default(0),
+    total: z.number().nonnegative().default(0),
+    calls: z.number().nonnegative().default(0),
+    peakContext: z.number().nonnegative().default(0),
 });
 const State = z.object({
-  state: z.enum(["idle", "working", "done", "failed"]),
-  turnId: z.string().nullable(),
-  usage: Usage,
+    state: z.enum(["idle", "working", "done", "failed"]),
+    turnId: z.string().nullable(),
+    usage: Usage,
 });
 const Receipt = z.object({
-  thread: Id,
-  outcome: z.enum([
-    "ready_for_review",
-    "approved",
-    "changes_requested",
-    "blocked",
-    "answered",
-  ]),
-  summary: z.string().trim().min(1).max(16384),
-  question: z.string().max(16384).optional(),
-  deliverables: z.record(z.string(), z.string()).default({}),
-  cause: z.string().optional(),
+    thread: Id,
+    outcome: z.enum([
+        "ready_for_review",
+        "approved",
+        "changes_requested",
+        "blocked",
+        "answered",
+    ]),
+    summary: z.string().trim().min(1).max(16384),
+    question: z.string().max(16384).optional(),
+    deliverables: z.record(z.string(), z.string()).default({}),
+    cause: z.string().optional(),
 });
-export interface Pi {
-  create(input: TurnInput): Promise<void>;
-  send(session: string, key: string, prompt: string): Promise<void>;
-  states(session: string): AsyncIterable<unknown>;
-  interrupt(session: string): Promise<void>;
-}
-export interface Workspace {
-  prepare(input: TurnInput): Promise<z.infer<typeof Snapshot>>;
-  snapshot(): Promise<z.infer<typeof Snapshot>>;
-  receipt(): Promise<unknown>;
-  reset(commit: string): Promise<void>;
-  analysis(base: string): Promise<Record<string, unknown>>;
-  difference(base: string): Promise<Record<string, unknown>>;
-}
 
-/** Pi Durable owns session/send deduplication. Swamp consumes its event stream. */
-export async function turn(
-  input: TurnInput,
-  key: string,
-  before: z.infer<typeof Snapshot>,
-  pi: Pi,
-  workspace: Workspace,
-  signal?: AbortSignal,
-): Promise<Record<string, unknown>> {
-  if (input.candidate !== null && before.head !== input.candidate) {
-    return { error_code: "tasks.head_moved" };
-  }
-  if (input.analysis_evidence !== null) {
-    const evidence = input.analysis_evidence;
-    const provenance = evidence.result.provenance as
-      | Record<string, unknown>
-      | undefined;
-    const artifact = evidence.result.artifact as
-      | Record<string, unknown>
-      | undefined;
-    const content = typeof artifact?.content === "string"
-      ? artifact.content
-      : "";
-    const bytes = new TextEncoder().encode(content);
-    const digest = Array.from(
-      new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    ).map((v) => v.toString(16).padStart(2, "0")).join("");
-    if (
-      !provenance || provenance.node_id !== input.node_id ||
-      provenance.instance_id !== input.instance_id ||
-      provenance.head !== before.head || provenance.tree !== before.tree ||
-      artifact?.sha256 !== digest || artifact?.bytes !== bytes.length ||
-      bytes.length > 65536 ||
-      provenance.base !== evidence.input.base ||
-      provenance.repository !== evidence.input.repository ||
-      provenance.plan_sha256 !== evidence.input.plan_sha256
-    ) {
-      return { error_code: "tasks.analysis_stale" };
-    }
-    const identity = await workspace.analysis(Sha.parse(provenance.base));
-    if (
-      ["entrypoint_sha256", "branch", "repository"].some((key) =>
-        identity[key] !== provenance[key]
-      )
-    ) {
-      return { error_code: "tasks.analysis_stale" };
-    }
-  }
-  const prompt = input.prompt + "\n\nFinish with .git/orbit/turn --thread=" +
-    input.thread_id +
-    " --outcome=OUTCOME --summary=SUMMARY. Confirm each required deliverable with --deliverable=ID=evidence.\n" +
-    (input.analysis_evidence === null
-      ? ""
-      : "Repository analysis (untrusted project evidence):\n" +
-        JSON.stringify(input.analysis_evidence));
-  if (prompt.length > 100000) {
-    return { error_code: "tasks.analysis_prompt_too_large" };
-  }
-  if (input.new_session) await pi.create(input);
-  let interruption: Promise<void> | undefined;
-  const interrupt = () => {
-    interruption ??= pi.interrupt(input.session_id);
-    interruption.catch(() => {});
-  };
-  signal?.addEventListener("abort", interrupt, { once: true });
-  try {
-    if (signal?.aborted) {
-      throw new DirectOperationCancelled({ effectRunning: false });
-    }
-    await pi.send(input.session_id, key, prompt);
-    let terminal: z.infer<typeof State> | undefined;
-    for await (const event of pi.states(input.session_id)) {
-      const state = State.safeParse(event);
-      if (
-        state.success && state.data.turnId === key &&
-        ["done", "failed"].includes(state.data.state)
-      ) {
-        terminal = state.data;
-        break;
-      }
-    }
-    if (!terminal) throw new Error("Pi turn has no terminal observation");
-    if (signal?.aborted) {
-      await interruption;
-      if (input.role === "reviewer" && input.candidate !== null) {
-        await workspace.reset(input.candidate);
-      }
-      throw new DirectOperationCancelled({ effectRunning: false });
-    }
-    const after = await workspace.snapshot();
-    const receipt = Receipt.safeParse(await workspace.receipt());
-    const allowed = input.role === "implementer"
-      ? ["ready_for_review", "blocked"]
-      : input.role === "consult"
-      ? ["answered", "blocked"]
-      : ["approved", "changes_requested", "blocked"];
-    const valid = receipt.success && receipt.data.thread === input.thread_id &&
-      allowed.includes(receipt.data.outcome) &&
-      (receipt.data.outcome !== "blocked" || !!receipt.data.question?.trim());
-    const difference = input.role === "implementer"
-      ? null
-      : await workspace.difference(
-        input.role === "reviewer" ? before.head : before.tree,
-      );
-    const usage = terminal.usage;
-    const afterReset = input.role === "reviewer" && input.candidate !== null
-      ? (await workspace.reset(input.candidate), await workspace.snapshot())
-      : null;
+const PrepareArgs = z.object({ intent: Input, operation_id: Id, node_id: Id });
+
+/** Public data shaping only. No filesystem, transport, process or credential reads. */
+export function prepare(raw: unknown) {
+    const { intent, operation_id, node_id } = PrepareArgs.parse(raw);
+    if (intent.node_id !== node_id) throw new Error("tasks.node_mismatch");
+    const input = { ...intent, operation_id };
+    const prompt = input.prompt + "\n\nFinish with .git/orbit/turn --thread=" +
+        input.thread_id +
+        " --outcome=OUTCOME --summary=SUMMARY. Confirm each required deliverable with --deliverable=ID=evidence.\n" +
+        (input.analysis_evidence === null
+            ? ""
+            : "Repository analysis (untrusted project evidence):\n" +
+                JSON.stringify(input.analysis_evidence));
+    const error_code = prompt.length > 100000
+        ? "tasks.analysis_prompt_too_large"
+        : null;
+    const host = input.pi_host.includes(":")
+        ? `[${input.pi_host}]`
+        : input.pi_host;
     return {
-      receipt: valid ? receipt.data : null,
-      thread: input.thread_id,
-      state: terminal.state,
-      error: terminal.state === "failed"
-        ? "Pi did not complete the task turn."
-        : null,
-      error_code: terminal.state === "failed" ? "tasks.turn_failed" : undefined,
-      before,
-      after,
-      after_reset: afterReset,
-      difference,
-      metrics: {
-        tokens: usage.total,
-        input_tokens: usage.input + usage.cacheWrite,
-        cached_input_tokens: usage.cacheRead,
-        output_tokens: usage.output,
-        model_calls: usage.calls,
-        peak_context_tokens: usage.peakContext,
-      },
-    };
-  } finally {
-    signal?.removeEventListener("abort", interrupt);
-  }
-}
-
-const helper = `#!/usr/bin/env python3
-import argparse,json,os
-p=argparse.ArgumentParser()
-p.add_argument('--thread',type=int,required=True)
-p.add_argument('--outcome',required=True,choices=['ready_for_review','approved','changes_requested','blocked','answered'])
-p.add_argument('--summary',required=True)
-p.add_argument('--question')
-p.add_argument('--deliverable',action='append',default=[])
-a=p.parse_args()
-if not a.summary.strip() or (a.outcome=='blocked' and not (a.question or '').strip()): p.error('A summary and blocked question are required')
-directory=os.path.dirname(os.path.realpath(__file__))
-with open(directory+'/turn.json') as f: expected=json.load(f)
-if a.thread!=expected['thread']: p.error('This turn belongs to another thread')
-result={'thread':a.thread,'outcome':a.outcome,'summary':a.summary,'deliverables':dict(v.split('=',1) for v in a.deliverable)}
-if a.question: result['question']=a.question
-with open(directory+'/receipt.json','w') as f: json.dump(result,f)
-`;
-
-export function localWorkspace(cwd: string): Workspace {
-  const git = async (...args: string[]) => {
-    const result = await localCommand("git", {
-      cwd,
-      args,
-      stdout: "piped",
-      stderr: "null",
-    }).output();
-    if (!result.success) throw new Error("Task workspace command failed");
-    return new TextDecoder().decode(result.stdout).trim();
-  };
-  const snapshot = async () => {
-    await git("add", "--all");
-    return Snapshot.parse({
-      head: await git("rev-parse", "HEAD"),
-      tree: await git("write-tree"),
-    });
-  };
-  const directory = async () =>
-    await git("rev-parse", "--path-format=absolute", "--git-path", "orbit");
-  return {
-    snapshot,
-    analysis: async (base) => {
-      await git("merge-base", "--is-ancestor", base, "HEAD");
-      const tracked = await git("show", "HEAD:bin/task-analyze");
-      const path = cwd + "/bin/task-analyze";
-      const content = await Deno.readTextFile(path);
-      if (
-        (await Deno.realPath(path)) !== path ||
-        !(await Deno.lstat(path)).isFile ||
-        !((await Deno.stat(path)).mode! & 0o111) ||
-        content.trim() !== tracked ||
-        !(await git("ls-tree", "HEAD", "--", "bin/task-analyze")).startsWith(
-          "100755 ",
-        )
-      ) {
-        throw new Error("Analysis entrypoint changed");
-      }
-      const entrypoint_sha256 = Array.from(
-        new Uint8Array(
-          await crypto.subtle.digest(
-            "SHA-256",
-            new TextEncoder().encode(content),
-          ),
-        ),
-      ).map((v) => v.toString(16).padStart(2, "0")).join("");
-      return {
-        entrypoint_sha256,
-        branch: await git("symbolic-ref", "--short", "HEAD"),
-        repository: await git("remote", "get-url", "origin"),
-      };
-    },
-    prepare: async (input) => {
-      const before = await snapshot();
-      const root = await directory();
-
-      await localFilesystem().mkdir(root, { recursive: true, mode: 0o700 });
-
-      await localFilesystem().writeTextFile(root + "/turn", helper, {
-        mode: 0o700,
-      });
-
-      await localFilesystem().chmod(root + "/turn", 0o700);
-
-      await localFilesystem().writeTextFile(
-        root + "/turn.json",
-        JSON.stringify({
-          thread: input.thread_id,
-          role: input.role,
-          deliverables: input.deliverables,
+        error_code,
+        intent_json: JSON.stringify(input),
+        pi_url: `http://${host}:${input.pi_port}`,
+        create_json: JSON.stringify({
+            id: input.session_id,
+            cwd: input.checkout_path,
+            model: input.model,
+            thinkingLevel: input.effort ?? "high",
+            appendSystemPrompt:
+                `You are the ${input.role} for Orbit task ${input.group_id}, subtask ${input.subtask}. Required deliverables: ${
+                    JSON.stringify(input.deliverables)
+                }`,
         }),
-        { mode: 0o600 },
-      );
-      try {
-        await localFilesystem().remove(root + "/receipt.json");
-      } catch (error) {
-        if (!(error instanceof Deno.errors.NotFound)) throw error;
-      }
-      return before;
-    },
-    receipt: async () => {
-      try {
-        const path = await directory() + "/receipt.json";
-        if ((await Deno.stat(path)).size > 65536) {
-          throw new Error("Turn receipt is too large");
-        }
-        return JSON.parse(await Deno.readTextFile(path));
-      } catch (error) {
-        if (error instanceof Deno.errors.NotFound) return null;
-        throw error;
-      }
-    },
-    difference: async (base) => {
-      const counts = await git(
-        "diff",
-        "--numstat",
-        "--no-renames",
-        "-z",
-        base,
-        "--",
-      );
-      const files = counts.split("\0").filter(Boolean).map((entry) => {
-        const [added, removed, ...path] = entry.split("\t");
-        return {
-          path: path.join("\t"),
-          insertions: added === "-" ? 0 : Number(added),
-          deletions: removed === "-" ? 0 : Number(removed),
-        };
-      });
-      const diff = await git("diff", "--no-renames", base, "--");
-      return {
-        files: files.slice(0, 500),
-        diff: diff.slice(0, 65536),
-        files_complete: files.length <= 500,
-        diff_available: diff.length <= 65536,
-        summary: {
-          files: files.length,
-          insertions: files.reduce((sum, file) => sum + file.insertions, 0),
-          deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+        send_json: JSON.stringify({
+            key: `operation-${input.operation_id}`,
+            text: prompt,
+        }),
+    };
+}
+
+const PublicJson = z.string().max(1048576).default("");
+const ResultArgs = z.object({
+    input: Input,
+    before: PublicJson,
+    after: PublicJson,
+    terminal: PublicJson,
+    receipt: PublicJson,
+    difference: PublicJson,
+    restored: PublicJson,
+    failure: z.boolean().default(false),
+    failure_code: z.enum([
+        "tasks.head_moved",
+        "tasks.analysis_stale",
+        "tasks.analysis_prompt_too_large",
+    ]).nullable().default(null),
+});
+export function finish(raw: unknown) {
+    const args = ResultArgs.parse(raw);
+    const read = (value: string): unknown =>
+        value.trim() ? JSON.parse(value) : null;
+    const before = Snapshot.nullable().parse(read(args.before));
+    const terminal = State.nullable().parse(read(args.terminal));
+    const receipt = Receipt.safeParse(read(args.receipt));
+    const allowed = args.input.role === "implementer"
+        ? ["ready_for_review", "blocked"]
+        : args.input.role === "consult"
+        ? ["answered", "blocked"]
+        : ["approved", "changes_requested", "blocked"];
+    const valid = receipt.success &&
+        receipt.data.thread === args.input.thread_id &&
+        allowed.includes(receipt.data.outcome) &&
+        (receipt.data.outcome !== "blocked" || !!receipt.data.question?.trim());
+    const failed = args.failure || terminal?.state !== "done";
+    const usage = terminal?.usage ?? Usage.parse({});
+    const result = {
+        receipt: valid && !failed ? receipt.data : null,
+        thread: args.input.thread_id,
+        state: failed ? "failed" : "done",
+        error: failed ? "Pi did not complete the task turn." : null,
+        ...(failed
+            ? { error_code: args.failure_code ?? "tasks.turn_failed" }
+            : {}),
+        before,
+        after: Snapshot.nullable().parse(read(args.after)),
+        after_reset: Snapshot.nullable().parse(read(args.restored)),
+        difference: read(args.difference),
+        metrics: {
+            tokens: usage.total,
+            input_tokens: usage.input + usage.cacheWrite,
+            cached_input_tokens: usage.cacheRead,
+            output_tokens: usage.output,
+            model_calls: usage.calls,
+            peak_context_tokens: usage.peakContext,
         },
-      };
-    },
-    reset: async (commit) => {
-      await git("reset", "--hard", commit);
-      await git("clean", "-fd");
-    },
-  };
+    };
+    return { result_json: JSON.stringify(result) };
 }
-
-/** Credentials stay inside the VM action and never enter native resources or arguments. */
-async function withPi<T>(
-  input: TurnInput,
-  effect: (pi: Pi) => Promise<T>,
-): Promise<T> {
-  const home = Deno.env.get("HOME");
-  if (!home) throw new Error("Task VM account is unavailable");
-  const token = (await Deno.readTextFile(home + "/.pi/agent/orbit-token"))
-    .trim();
-  if (token.length < 32) {
-    throw new Error("Task VM Pi credential is unavailable");
-  }
-  const models = JSON.parse(
-    await Deno.readTextFile(home + "/.pi/agent/models.json"),
-  );
-  const keys = [
-    token,
-    ...Object.values(models.providers ?? {}).map((provider) =>
-      (provider as Record<string, unknown>).apiKey
-    ).filter((key): key is string => typeof key === "string" && key.length > 0),
-  ];
-  const host = input.pi_host.includes(":")
-    ? `[${input.pi_host}]`
-    : input.pi_host;
-  const base = `http://${host}:${input.pi_port}`;
-  const request = async (path: string, body?: unknown) => {
-    const response = await fetch(base + path, {
-      method: body === undefined ? "GET" : "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: "error",
-    });
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error("Task VM Pi request failed");
-    }
-    return response;
-  };
-  const pi: Pi = {
-    create: async (value) => {
-      await (await request("/sessions", {
-        id: value.session_id,
-        cwd: value.checkout_path,
-        model: value.model,
-        thinkingLevel: value.effort ?? "high",
-        appendSystemPrompt:
-          `You are the ${value.role} for Orbit task ${value.group_id}, subtask ${value.subtask}. Required deliverables: ${
-            JSON.stringify(value.deliverables)
-          }`,
-      })).body?.cancel();
-    },
-    send: async (id, key, text) => {
-      await (await request(`/sessions/${id}/messages`, { key, text })).body
-        ?.cancel();
-    },
-    interrupt: async (id) => {
-      await (await request(`/sessions/${id}/interrupt`, {})).body?.cancel();
-    },
-    states: async function* (id) {
-      const response = await request(
-        `/sessions/${id}/stream?max_bytes=1048576`,
-      );
-      if (!response.body) throw new Error("Pi event stream is unavailable");
-      const reader = response.body.pipeThrough(new TextDecoderStream())
-        .getReader();
-      let buffer = "";
-      try {
-        while (true) {
-          const item = await reader.read();
-          if (item.done) return;
-          buffer += item.value;
-          let end: number;
-          while ((end = buffer.indexOf("\n")) !== -1) {
-            const line = buffer.slice(0, end);
-            buffer = buffer.slice(end + 1);
-            if (line.length > 1048576) throw new Error("Pi event is too large");
-            yield JSON.parse(line);
-          }
-          if (buffer.length > 1048576) throw new Error("Pi event is too large");
-        }
-      } finally {
-        await reader.cancel();
-        reader.releaseLock();
-      }
-    },
-  };
-  let publicJson = JSON.stringify(await effect(pi));
-  for (const key of keys) publicJson = publicJson.replaceAll(key, "[redacted]");
-  return JSON.parse(publicJson);
-}
-
-type Context = {
-  globalArgs: z.infer<typeof Globals>;
-  signal?: AbortSignal;
+type PublicContext = {
+    extensionFile(name: string): string;
+    writeResource(
+        spec: string,
+        name: string,
+        value: Record<string, unknown>,
+    ): Promise<unknown>;
 };
-export const turnBehavior = {
-  globalArguments: Globals,
-  methods: {
-    execute: {
-      description:
-        "Prepare the workspace and run Pi under one native write lock",
-      arguments: Args,
-      execute: (args: z.infer<typeof Args>, ctx: Context) => {
-        const gateway = new GatewayOperation(
-          gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-          args,
-        );
-        return directOperation(
-          args,
-          gateway,
-          async (raw) => {
-            const input = Input.parse(raw);
-            if (input.node_id !== args.node_id) {
-              throw new Error(
-                "Wrong task VM Node",
-              );
-            }
-            const workspace = localWorkspace(input.checkout_path);
-            const before = await workspace.prepare(input);
-            return await withTaskCancellation(
-              gateway,
-              (signal) =>
-                withPi(input, (pi) =>
-                  turn(
-                    input,
-                    `operation-${args.operation_id}`,
-                    before,
-                    pi,
-                    workspace,
-                    signal,
-                  )),
-              ctx.signal,
-            );
-          },
-          (result) => result,
-          ctx.signal,
-        );
-      },
+export const turnDataResources = {
+    turnPrepared: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "Public turn inputs serialized for placed scripts",
+        schema: z.object({
+            directory: z.string(),
+            error_code: z.string().nullable(),
+            intent_json: z.string(),
+            pi_url: z.string(),
+            create_json: z.string(),
+            send_json: z.string(),
+        }),
     },
-  },
+    candidate: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        schema: z.object({
+            admitted: z.boolean(),
+            error_code: z.enum(["tasks.head_moved", "tasks.analysis_stale"])
+                .nullable().default(null),
+        }),
+    },
+    turnResult: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "Public terminal turn result",
+        schema: z.object({ result_json: z.string() }),
+    },
+};
+export const turnDataMethods = {
+    prepare: {
+        description: "Shape the complete admitted public turn intent",
+        arguments: PrepareArgs,
+        execute: async (args: unknown, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource(
+                    "turnPrepared",
+                    "prepared",
+                    {
+                        ...prepare(args),
+                        directory: ctx.extensionFile("scripts/snapshot.py")
+                            .replace(/\/[^/]+$/, ""),
+                    },
+                ),
+            ],
+        }),
+    },
+    candidate: {
+        description: "Decode public candidate evidence for native branching",
+        arguments: z.object({ value: z.string() }),
+        execute: async (args: { value: string }, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource(
+                    "candidate",
+                    "candidate",
+                    turnDataResources.candidate.schema.parse(
+                        JSON.parse(args.value),
+                    ),
+                ),
+            ],
+        }),
+    },
+    result: {
+        description: "Shape public turn step outputs for terminal projection",
+        arguments: ResultArgs,
+        execute: async (args: unknown, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource("turnResult", "result", finish(args)),
+            ],
+        }),
+    },
 };

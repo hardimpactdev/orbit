@@ -130,3 +130,20 @@ Deno.test("server result reads bounded native child output before assertion diag
         exitCode: 1,
     });
 });
+
+Deno.test("SQL user result uses its fixed fallback without exporting diagnostics", async () => {
+    const value = await behavior.methods.result.execute({
+        completed: false,
+        failure_code: "database.user_create_outcome_unknown",
+        steps: {
+            apply: {
+                status: "failed",
+                outputs: { stdout: "private SQL diagnostic" },
+            },
+        },
+    }, context);
+    assertEquals(value, {
+        stdout: '{"error_code":"database.user_create_outcome_unknown"}\n',
+        exitCode: 1,
+    });
+});

@@ -54,7 +54,9 @@ return ['database.update' => [
 ], 'database_user.create' => [
     'workflow' => 'operation-database-user-create',
     'projection' => DatabaseUserProjection::class,
-    'private_material' => ['password' => 'database.intent', 'sql' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'user', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-user-create-intent-[1-9][0-9]*$']],
 ], 'database.sqlite_export' => [
     'workflow' => 'operation-database-sqlite-export',
     'projection' => DatabaseSqliteProjection::class,

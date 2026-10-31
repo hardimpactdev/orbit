@@ -7,8 +7,10 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseUser;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -30,8 +32,18 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
             $this->invalid();
         }
 
-        return ['driver' => $input['driver'], 'container' => $container,
-            'username' => $username, 'replication' => $input['replication'], 'known_user' => $input['known_user']];
+        $node = Node::query()->findOrFail($operation->node_id);
+        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-user-create-intent-'.$intent->id];
+        if (! $operation->status->terminal()) {
+            $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'],
+                json_encode(array_intersect_key($command['input'], array_flip(['password', 'sql'])), JSON_THROW_ON_ERROR));
+        }
+
+        return ['intent' => ['driver' => $input['driver'], 'container' => $container,
+            'username' => $username, 'replication' => $input['replication'], 'known_user' => $input['known_user'],
+            'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
+                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]], 'execution_secrets' => ['user_create' => $copy]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -42,15 +54,11 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
             $this->invalid();
         }
         $raw = ValidatedData::object($data['result'] ?? []);
-        $result = array_intersect_key($raw, array_flip(['backend', 'error_code']));
-        $status = ValidatedData::string($data['status']);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        if (($status === 'succeeded' && ($result !== ['backend' => 'active'] || $code !== null))
-            || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
-            || ($status === 'failed' && ($code === null || $result !== ['error_code' => $code]
-                || ! in_array($code, ['agent.version_mismatch', 'database.server_admin_invalid', 'database.server_admin_failed', 'database.server_not_ready', 'database.wal_level_not_logical', 'database.name_conflict'], true)))) {
-            throw new ResourceOperationException('operation.result_invalid', 'The SQL user needs its bounded Swamp result.', 422);
+        $result = ($raw['backend'] ?? null) === 'active' ? ['backend' => 'active'] : [];
+        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
+            $result['error_code'] = $raw['error_code'];
         }
+        $status = ValidatedData::string($data['status']);
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $user): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

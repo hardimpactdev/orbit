@@ -332,7 +332,7 @@ The request and generic Operation read APIs stay unchanged. CLI JSON, PHP SDK an
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
-The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The task VM worker must be ready before starting a turn. Swamp owns workspace locking, cancellation and the Pi session.
+The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a workspace lease or cross-step lock.
 
 | Input | Rule |
 | --- | --- |
@@ -341,7 +341,7 @@ The Gateway admits the request and starts the native `operation-task-turn` workf
 | `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
 | `analysis` | Optional `{operation, plan_sha256}` under the [analysis-bound turn contract](#analysis-bound-turn-evidence); absent preserves ordinary behavior. Complete evidence and fresh first-send identity checks do not replace reviewer check/CI eligibility |
 
-One native task-workspace step prepares the checkout and sends one turn through Pi with key `operation-{id}`. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
+Separate native steps capture workspace evidence, prepare the receipt helper, create or continue the Pi session, send the turn with key `operation-{id}`, and observe one Pi event stream. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
 
 When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null`. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; and token metrics.
 
@@ -349,7 +349,7 @@ After a reviewer turn, Orbit records the checkout difference, resets to the chec
 
 A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash-loop park or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
 
-Direct operation cancellation interrupts the held subtask turn and confirms that its lease ended. Subtask cancellation first cancels its turn operation, including receipt collection and the reviewer reset, before recording the subtask as cancelled. A cancel received during send waits for the same confirmed stop. An unconfirmed interrupt returns HTTP 502 `tasks.subtask_interrupt_failed` after recording the cancel request. The operation stays `waiting`, retains its target, and retries the stop on the next delayed read.
+Direct turn cancellation uses native Swamp cancellation and official SSH session teardown. It does not prove that the Pi session or remote descendants stopped. Normal group cleanup or VM destruction removes remaining work. A failed or disconnected Pi stream takes the separate interrupt action once before collecting a failed result. Native resume reuses completed steps, including the keyed message send; it adds no Gateway poller or ownership machinery.
 
 #### Publish an external group
 
@@ -750,9 +750,9 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 ## Workspace lease
 
-This section describes the retained lease consumers. Script and analysis operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
+This section describes the retained lease consumers. Script, analysis and turn operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
 
-One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
+One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
 
 A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
 

@@ -30,23 +30,23 @@ class Roles(fixture.Certificates):
         )
         self.addCleanup(target.cleanup)
         self.target = Path(target.name)
-        policy = (
-            self.repo
-            / "extensions/behaviors/operations/certificates/scripts/role_policy.py"
+        scripts = self.repo / "extensions/behaviors/operations/certificates/scripts"
+        paths = scripts / "role_paths.py"
+        paths.write_text(
+            paths.read_text()
+            .replace(
+                'ROOT = Path("/etc/caddy")',
+                f"ROOT = Path({str(self.target / 'caddy')!r})",
+            )
+            .replace(
+                'KEY_ROOT = Path("/var/lib/orbit/role-certificates")',
+                f"KEY_ROOT = Path({str(self.target / 'role-keys')!r})",
+            )
         )
-        source = policy.read_text().replace(
-            'ROOT = Path("/etc/caddy")', f"ROOT = Path({str(self.target / 'caddy')!r})"
+        publish = scripts / "role_publish.py"
+        publish.write_text(
+            publish.read_text().replace('grp.getgrnam("caddy").gr_gid', "os.getgid()")
         )
-        source = source.replace(
-            'KEY_ROOT = Path("/var/lib/orbit/role-certificates")',
-            f"KEY_ROOT = Path({str(self.target / 'role-keys')!r})",
-        )
-        source = source.replace("OWNER_UID = 0", "OWNER_UID = os.getuid()")
-        source = source.replace(
-            "# END HOST",
-            '\nos.chown = lambda *args: None\nos.fchown = lambda *args: None\ngrp.getgrnam = lambda _: __import__("types").SimpleNamespace(gr_gid=os.getgid())\n# END HOST',
-        )
-        policy.write_text(source)
         (self.target / "caddy").mkdir()
         fake = self.tools / "ssh"
         source = fake.read_text()
@@ -55,15 +55,16 @@ class Roles(fixture.Certificates):
             """
 if argv[:2] == ['/usr/bin/systemctl','is-active']:
     raise SystemExit(0)
-if argv[:2] == ['/usr/bin/systemctl','reload-or-restart']:
+if argv[:2] == ['/usr/bin/systemctl','try-reload-or-restart']:
+    if Path(INACTIVE).exists(): raise SystemExit(0)
     with open(ACTIVATIONS,'a') as stream: stream.write('activate\\n')
     failure=Path(FAIL_ACTIVATE)
     if failure.exists(): failure.unlink();raise SystemExit(1)
     raise SystemExit(0)
 result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
-""".replace("ACTIVATIONS", repr(str(self.fixture / "activations"))).replace(
-                "FAIL_ACTIVATE", repr(str(self.fixture / "fail-activate"))
-            ),
+""".replace("ACTIVATIONS", repr(str(self.fixture / "activations")))
+            .replace("INACTIVE", repr(str(self.fixture / "inactive")))
+            .replace("FAIL_ACTIVATE", repr(str(self.fixture / "fail-activate"))),
         )
         fake.write_text(source)
         child = yaml.safe_load(
@@ -76,7 +77,9 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
             self.assertEqual(step.pop("labels"), {"node": "209"})
             task = step["task"]
             if task.get("behaviorType") == "@swamp/ssh":
-                task["globalArgs"]["sshBinary"] = str(fake)
+                task["globalArgs"].update(
+                    sshBinary=str(fake), scpBinary=str(self.tools / "scp")
+                )
             if task.get("behaviorType") == "command/shell":
                 # The fixture signer and its synthetic CA stay outside the native repository.
                 original = next(
@@ -92,7 +95,11 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
                 task["inputs"]["run"] = original["task"]["inputs"]["run"]
         (
             self.repo / "workflows/workflow-node-role-certificate-publish.yaml"
-        ).write_text(yaml.safe_dump(child, sort_keys=False))
+        ).write_text(
+            yaml.safe_dump(child, sort_keys=False).replace(
+                "/tmp/orbit-role-certificate-", str(self.fixture / "role-staging-")
+            )
+        )
         self.globals = dict(
             name="role-fixture",
             sshBinary=str(fake),
@@ -222,22 +229,27 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(result["id"], self.signs[0][1]["run_id"])
 
-    def test_activation_failure_restores_prior_pair_and_does_not_claim_ready(self):
+    def fail_activation(self):
         self.run_role()
+        # Force a new pair under the same domain and canonical stable path.
         root = self.current / "root-ca.pem"
         root.write_bytes(root.read_bytes() + b"\n")
-        previous = {p.name: p.read_bytes() for p in self.current.iterdir()}
+        previous = (self.current / "metrics.key").read_bytes()
         (self.fixture / "fail-activate").touch()
         result = self.run_role(success=False, version="fedcba9876543210")
         self.assertEqual("failed", result["status"])
-        self.assertEqual(
-            previous, {p.name: p.read_bytes() for p in self.current.iterdir()}
-        )
+        self.assertNotEqual(previous, (self.current / "metrics.key").read_bytes())
         states = {s["name"]: s["status"] for s in result["jobs"][0]["steps"]}
-        self.assertEqual("succeeded", states["restore"])
-        self.assertEqual("succeeded", states["reactivate"])
+        self.assertEqual("failed", states["activate"])
         self.assertNotEqual("succeeded", states["result"])
+        self.assertNotIn("restore", states)
+        return result
 
+    def test_failed_activation_stays_failed_and_native_resume_retries_only_activation(
+        self,
+    ):
+        result = self.fail_activation()
+        pair = {p.name: p.read_bytes() for p in self.current.iterdir()}
         resumed = json.loads(
             self.cli(
                 "workflow",
@@ -246,44 +258,27 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
                 "--run",
                 result["id"],
                 "--from",
-                "publish",
+                "activate",
             ).stdout
         )
         self.assertEqual("succeeded", resumed["status"])
         self.assertEqual(2, len(self.signs))
-        self.assertNotEqual(
-            previous["metrics.key"], (self.current / "metrics.key").read_bytes()
-        )
+        self.assertEqual(pair, {p.name: p.read_bytes() for p in self.current.iterdir()})
 
-    def test_pending_pair_fresh_admission_does_not_skip_activation(self):
-        import importlib.util
-
-        policy = (
-            self.repo
-            / "extensions/behaviors/operations/certificates/scripts/role_policy.py"
-        )
-        module_spec = importlib.util.spec_from_file_location(
-            "role_policy_fixture", policy
-        )
-        module = importlib.util.module_from_spec(module_spec)
-        module_spec.loader.exec_module(module)
-        # A prior process stopped after publication but before activation.
-        self.run_role()
-        saved = module.role_previous(self.leaf)
-        saved.mkdir(mode=0o700)
-        workspace = module.KEY_ROOT / self.leaf["scope"] / self.leaf["version"]
-        workspace.mkdir(parents=True, mode=0o700)
-        (workspace / "key.pem").write_bytes((self.current / "metrics.key").read_bytes())
-        (workspace / "key.pem").chmod(0o600)
-        # Parent directories mirror the existing private-key workspace policy.
-        workspace.parent.chmod(0o700)
-        module.KEY_ROOT.chmod(0o700)
+    def test_fresh_admission_activates_current_pair_after_interrupted_activation(self):
+        self.fail_activation()
         before = (self.fixture / "activations").read_text()
         self.assertEqual(
-            "succeeded", self.run_role(version="fedcba9876543210")["status"]
+            "succeeded", self.run_role(version="1111111111111111")["status"]
         )
+        self.assertEqual(2, len(self.signs))
         self.assertNotEqual(before, (self.fixture / "activations").read_text())
-        self.assertFalse(saved.exists())
+
+    def test_inactive_caddy_is_not_started_by_certificate_publication(self):
+        (self.fixture / "inactive").touch()
+        self.assertEqual("succeeded", self.run_role()["status"])
+        self.assertFalse((self.fixture / "activations").exists())
+        self.assertTrue((self.current / "metrics.key").is_file())
 
     def test_role_signing_refusal_and_missing_pins_prevent_publication(self):
         self.refuse = True

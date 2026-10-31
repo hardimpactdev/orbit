@@ -20,7 +20,6 @@ EXPECTED = {
     "certificate_active": "a46a17d347c33039a5a619d12c49f7f18226057d64b00d4af9198c2eadf5d053",
     "certificate_reload": "5bbf07602b8ffabe08a0696af1629e2843f298a21c9b8d9541f2079e39df6034",
     "certificate_valid": "317fec45b0f31cdf75dd30c49f65160003b3acb2b661d865aaa1e08e77dd13f3",
-    "role_paths": "f7cd239cd075895aea35ec59db1990f026715ea59921a87d43603e4aaa20c054",
     "role_checked": "708f940002cf13a9b9ea92fffb9a89acddda4121da149123ded5b46c3a149247",
     "role_valid": "d447779652bcd52ad3b0e8b940ae03b845a3bc6d1b584e7b701fe8bbb2ef6a4a",
     "role_workspace": "92ce7d8dfd63e0fca9278c7c0ffa108e73561148b139bf7155ee6c4cba6f5896",
@@ -30,12 +29,7 @@ EXPECTED = {
 
 class HelperIdentity(unittest.TestCase):
     def test_factored_helpers_preserve_existing_policy(self):
-        source = (
-            pathlib.Path(__file__)
-            .with_name("scripts")
-            .joinpath("role_policy.py")
-            .read_text()
-        )
+        source = pathlib.Path(__file__).with_name("retained_role_policy.py").read_text()
         actual = {
             node.name: hashlib.sha256(
                 ast.dump(node, include_attributes=False).encode()
