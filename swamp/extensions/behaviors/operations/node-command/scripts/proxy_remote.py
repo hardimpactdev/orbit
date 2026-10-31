@@ -41,9 +41,10 @@ def main():
     if len(raw) != length:
         raise ValueError('incomplete frame')
     request = json.loads(raw)
-    if (set(request) != {'schema_version', 'node_id', 'host', 'user', 'script', 'env', 'timeout_ms'}
+    if (set(request) != {'schema_version', 'node_id', 'host', 'user', 'script', 'env', 'timeout_ms', 'interpreter', 'as_root'}
             or request['schema_version'] != 1 or isinstance(request['schema_version'], bool)
             or request['node_id'] not in (1, 18) or isinstance(request['node_id'], bool)
+            or request['interpreter'] not in ('sh', 'python3') or not isinstance(request['as_root'], bool)
             or request['user'] != 'orbit' or not isinstance(request['script'], str)
             or not request['script'] or '\0' in request['script'] or len(request['script'].encode()) > 256 * 1024
             or not isinstance(request['timeout_ms'], int) or isinstance(request['timeout_ms'], bool)
@@ -70,9 +71,11 @@ def main():
                 or not isinstance(value, str) or '\0' in value or len(value.encode()) > 256 * 1024):
             raise ValueError('invalid environment')
         env[name] = value
-    process = subprocess.Popen(['/bin/sh', '-s'], stdin=subprocess.PIPE, env=env,
-                               start_new_session=True, user=account.pw_uid, group=account.pw_gid,
-                               extra_groups=os.getgrouplist(account.pw_name, account.pw_gid))
+    argv = ['/usr/bin/python3', '-I', '-'] if request['interpreter'] == 'python3' else ['/bin/sh', '-s']
+    process = subprocess.Popen(argv, stdin=subprocess.PIPE, env=env,
+                               start_new_session=True, user=0 if request['as_root'] else account.pw_uid,
+                               group=0 if request['as_root'] else account.pw_gid,
+                               extra_groups=[] if request['as_root'] else os.getgrouplist(account.pw_name, account.pw_gid))
     finished = threading.Event()
 
     def closed():

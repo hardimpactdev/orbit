@@ -11,6 +11,12 @@ function nativeShellStaysOnNode(workflow: Map, target: unknown): boolean {
   if (typeof target !== "string") return false;
   const literal = /^orbit-node-([1-9][0-9]*)$/.exec(target);
   if (literal) return !["1", "18"].includes(literal[1]);
+  const constant = /^\$\{\{ "orbit-node-" \+ string\(([1-9][0-9]*)\) \}\}$/
+    .exec(target);
+  if (constant) {
+    return Number.isSafeInteger(Number(constant[1])) &&
+      !["1", "18"].includes(constant[1]);
+  }
   const expression =
     /^\$\{\{ "orbit-node-" \+ string\(inputs\.([a-z_]+)\) \}\}$/.exec(
       target,
@@ -233,11 +239,47 @@ for (const path of await files(`${root}/workflows`)) {
           ...(launch?.env ?? []),
         ]);
         const safeEnvironment = Object.keys(environment).every((name) =>
-          allowedEnv.has(name) && safeNodeEnv(name)
+          allowedEnv.has(name) && safeNodeEnv(name) && (
+            launch?.secretEnv.includes(name)
+              ? typeof environment[name] === "string" &&
+                /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
+                  String(environment[name]),
+                )
+              : !String(environment[name]).includes("vault.get")
+          )
         ) && [...allowedEnv].every((name) =>
           name in environment
         );
-        const shared = launch && safeEnvironment &&
+        let safeActionAsset = !launch?.actionAsset;
+        if (launch?.actionAsset) {
+          const binding = launch.actionAsset;
+          const step = siblings.find((s) => s.name === binding.step);
+          const task = object(step?.task);
+          const source = sources.get(String(task.behaviorType));
+          const code = source ? await Deno.readTextFile(source) : "";
+          const field = new RegExp(
+            "\\b" + binding.field +
+              ":\\s*[A-Za-z_][A-Za-z0-9_]*\\.extensionFile\\([\"']scripts/[A-Za-z0-9_/-]+\\.py[\"']\\)",
+          );
+          const effectPlacement = {
+            ...inherited,
+            ...Object.fromEntries(
+              ["target", "labels"].filter((k) => k in (step ?? {})).map(
+                (k) => [k, step![k]],
+              ),
+            ),
+          };
+          safeActionAsset = task.type === "behavior" &&
+            task.methodName === "read" &&
+            effectPlacement.target === placement.target &&
+            object(effectPlacement.labels).node === labels.node &&
+            field.test(code) && depends.some((d) =>
+              d.step === binding.step &&
+              object(d.condition).type === "succeeded"
+            );
+          if (source) await reviewed(source);
+        }
+        const shared = launch && safeEnvironment && safeActionAsset &&
           assetTask.type === "behavior" &&
           assetTask.behaviorType === "@nckrtl/node-command-assets" &&
           assetTask.methodName === "read" &&

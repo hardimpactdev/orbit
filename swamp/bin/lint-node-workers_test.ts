@@ -249,12 +249,18 @@ Deno.test("builtin shells require a proven physical Node selector, never a logic
         ["orbit-node-1", [1, 18], false],
         ["orbit-node-18", [1, 18], false],
         ["orbit-node-14", [], true],
+        ['${{ "orbit-node-" + string(209) }}', [], true],
+        ['${{ "orbit-node-" + string(1) }}', [], false],
+        ['${{ "orbit-node-" + string(18) }}', [], false],
       ] as const
     ) {
       workflow.target = target;
       workflow.labels.node = target.startsWith("orbit-node-")
         ? target.slice(11)
-        : "${{ string(inputs.node_id) }}";
+        : target.includes("string(inputs.")
+        ? "${{ string(inputs.node_id) }}"
+        : target.slice(target.indexOf("string("), target.indexOf(")") + 1)
+          .replace(/^/, "${{ ") + " }}";
       workflow.inputs.properties.node_id.not.enum = [...excluded];
       await Deno.writeTextFile(
         root + "/workflows/fixture.yaml",
@@ -375,6 +381,11 @@ Deno.test("logical proxy builtins require the shared asset, exact envelope and s
     };
     await check(() => {}, true);
     await check((w) => {
+      const action = w.jobs[0].steps[1];
+      action.task.inputs.run =
+        '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.assets.outputs.runner }}" --interpreter python3 --env ORBIT_PUBLIC';
+    }, false);
+    await check((w) => {
       w.jobs[0].steps[1].task.inputs!.run += "touch /tmp/local\n";
     }, false);
     await check((w) => {
@@ -401,6 +412,66 @@ Deno.test("logical proxy builtins require the shared asset, exact envelope and s
           [name]: "${{ inputs.value }}",
         });
       }, false);
+    }
+    await Deno.writeTextFile(
+      root + "/extensions/behaviors/family.ts",
+      'export const behavior={type:"@fixture/action-assets"}; export const read=(args,ctx)=>({script:ctx.extensionFile("scripts/hub_peer.py")});',
+    );
+    const fileAction = structuredClone(action);
+    fileAction.task.inputs.run =
+      '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.family.outputs.script }}" --interpreter python3 --as-root --env ORBIT_PUBLIC';
+    fileAction.dependsOn.push({
+      step: "family",
+      condition: { type: "succeeded" },
+    });
+    const family = {
+      name: "family",
+      ...placement,
+      task: {
+        type: "behavior",
+        behaviorType: "@fixture/action-assets",
+        methodName: "read",
+      },
+    };
+    for (
+      const [wrongPlacement, missingDependency, allowed] of [
+        [false, false, true],
+        [true, false, false],
+        [false, true, false],
+      ]
+    ) {
+      const step = structuredClone(fileAction);
+      if (missingDependency) {
+        step.dependsOn = step.dependsOn.filter((d) => d.step !== "family");
+      }
+      await Deno.writeTextFile(
+        root + "/workflows/fixture.yaml",
+        stringify({
+          jobs: [{
+            name: "job",
+            steps: [assets, {
+              ...family,
+              target: wrongPlacement ? "orbit-node-18" : "orbit-node-1",
+              labels: { node: wrongPlacement ? "18" : "1" },
+            }, step],
+          }],
+        }),
+      );
+      const result = await new Deno.Command(Deno.execPath(), {
+        args: [
+          "run",
+          "--allow-read",
+          import.meta.resolve("./lint-node-workers.ts"),
+          root,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(
+        result.success,
+        allowed,
+        new TextDecoder().decode(result.stderr),
+      );
     }
   } finally {
     await Deno.remove(root, { recursive: true });

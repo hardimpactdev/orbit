@@ -51,6 +51,21 @@ A private value is one whole `${{ vault.get(inputs.execution_secrets.password.va
 
 The action is at most 256 KiB; the request is at most 1 MiB. Output is bounded and buffered before emission. A failing action returns its exit code. Refusal errors contain fixed public codes, never the request or a traceback. A family needing a longer action also sets its native builtin `timeout` input. Recovery uses native workflow resume and dependencies, never a transport retry.
 
+## Shipped Python action
+
+A standalone family asset can replace the inline body. Its metadata `read` method returns a literal `script: ctx.extensionFile("scripts/hub_peer.py")` field. It runs at the same placement and the action directly depends on both metadata steps. Declare the asset under that family's manifest `additionalFiles`.
+
+```yaml
+run: |
+  /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps["hub-assets"].outputs.script }}" --interpreter python3 --as-root --env ORBIT_HUB_CONTEXT
+```
+
+The runner accepts only a regular `.py` file beneath the same native worker cache's `bundles/<fingerprint>/files/scripts/` tree, including another package's bundle. It rejects symlinks, foreign ownership, writable-by-others paths and arbitrary local paths. It reads the bounded source on 209 and frames its **contents**, not its cache path, over SSH stdin. The remote command is fixed `/usr/bin/python3 -I -`; a light Node never needs access to 209's cache. Assets must be standalone standard-library scripts; sibling-module shipping is not part of this interface.
+
+The default action identity is `orbit`. `--as-root` explicitly selects the already-approved remote root supervisor's root UID/GID with no supplementary groups. This is the same existing sudo authority available to inline actions, not a new SSH edge or grant. No public or private value becomes a remote argument. Pass action selection and intent in declared environment variables. The source lint requires a static literal `ctx.extensionFile` binding, matching placements and successful dependencies. Vault expressions must use `--secret-env`; public forwarding cannot silently omit private output redaction.
+
+The shared metadata also exposes `identity_script`. The existing canary uses it to prove the asset form, while its separate disposable effects prove the inline form.
+
 ## Placement and custody
 
 A fixed read-only sudo program verifies the protected Node209 identity and returns only a public success marker. It never prints config contents or changes permissions; existing root0600 config files are accepted.

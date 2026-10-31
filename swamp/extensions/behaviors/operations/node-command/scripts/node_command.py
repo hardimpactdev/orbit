@@ -97,8 +97,28 @@ def placement(node):
     return target
 
 
+def action_asset(path):
+    asset = Path(path)
+    bundles = Path(__file__).resolve().parents[3]
+    if bundles.name != 'bundles' or not asset.is_absolute() or asset.resolve(strict=True) != asset:
+        raise Refused('node.command.asset_refused')
+    relative = asset.relative_to(bundles)
+    if (len(relative.parts) < 4 or not re.fullmatch(r'[a-f0-9]{64}', relative.parts[0])
+            or relative.parts[1:3] != ('files', 'scripts') or asset.suffix != '.py'):
+        raise Refused('node.command.asset_refused')
+    for item in (asset, *asset.parents):
+        info = item.lstat()
+        if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
+            raise Refused('node.command.asset_refused')
+        if item == bundles:
+            break
+    if not stat.S_ISREG(asset.lstat().st_mode):
+        raise Refused('node.command.asset_refused')
+    return bounded_file(asset, MAX_SCRIPT)
+
+
 def request(args, target):
-    action = sys.stdin.buffer.read(MAX_SCRIPT + 1)
+    action = action_asset(args.action_file) if getattr(args, 'action_file', None) else sys.stdin.buffer.read(MAX_SCRIPT + 1)
     if not action or len(action) > MAX_SCRIPT or b'\0' in action:
         raise Refused('node.command.script_refused')
     names = args.env + args.secret_env
@@ -116,7 +136,8 @@ def request(args, target):
         forwarded[name] = value
     body = json.dumps({'schema_version': 1, 'node_id': args.node_id, 'host': target['host'],
                        'user': target['user'], 'script': action.decode(), 'env': forwarded,
-                       'timeout_ms': args.timeout_ms}, separators=(',', ':')).encode()
+                       'timeout_ms': args.timeout_ms, 'interpreter': getattr(args, 'interpreter', 'sh'),
+                       'as_root': getattr(args, 'as_root', False)}, separators=(',', ':')).encode()
     if len(body) > MAX_FRAME:
         raise Refused('node.command.input_oversized')
     program = REMOTE.read_bytes()
@@ -215,6 +236,9 @@ def exchange(argv, frame, limit, timeout_ms):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node-id', type=int, required=True, choices=(1, 18))
+    parser.add_argument('--action-file')
+    parser.add_argument('--interpreter', choices=('sh', 'python3'), default='sh')
+    parser.add_argument('--as-root', action='store_true')
     parser.add_argument('--env', action='append', default=[])
     parser.add_argument('--secret-env', action='append', default=[])
     parser.add_argument('--timeout-ms', type=int, default=60000)
@@ -222,6 +246,8 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.timeout_ms <= 3600000 or not 1 <= args.max_output_bytes <= MAX_OUTPUT:
         raise Refused('node.command.limits_refused')
+    if args.action_file and args.interpreter != 'python3':
+        raise Refused('node.command.asset_interpreter_refused')
     target = placement(args.node_id)
     frame, values = request(args, target)
     code, stdout, stderr = exchange(launch(target, args.timeout_ms), frame,

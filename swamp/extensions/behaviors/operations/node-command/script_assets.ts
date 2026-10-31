@@ -1,10 +1,13 @@
 import { z } from "npm:zod@4.4.3";
 
-const Assets = z.object({ runner: z.string().min(1) }).strict();
+const Assets = z.object({
+  runner: z.string().min(1),
+  identity_script: z.string().min(1),
+}).strict();
 /** Public asset metadata only. Native dispatch ships and fingerprints every file. */
 export const behavior = {
   type: "@nckrtl/node-command-assets",
-  version: "2026.10.31.1",
+  version: "2026.10.31.2",
   resources: {
     assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
   },
@@ -22,6 +25,7 @@ export const behavior = {
       }) => {
         const result = Assets.parse({
           runner: ctx.extensionFile("scripts/node_command.py"),
+          identity_script: ctx.extensionFile("scripts/identity.py"),
         });
         await ctx.writeResource("assets", "assets", result);
         return result;

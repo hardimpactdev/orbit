@@ -149,6 +149,44 @@ class NodeCommandTest(unittest.TestCase):
         self.assertNotIn(b'never-forward-this', wire)
         self.assertNotIn('private-value', ' '.join(command.launch(self.target, 60000)))
 
+    def test_shipped_python_asset_is_framed_as_contents_not_remote_cache_path(self):
+        bundles = self.root / 'bundles'
+        folder = bundles / ('a' * 64) / 'files/scripts'
+        folder.mkdir(parents=True)
+        runner = folder / 'node_command.py'
+        runner.write_text('fixture runner path only')
+        asset = folder / 'hub_peer.py'
+        asset.write_text('print("public-asset-result")\n')
+        args = SimpleNamespace(env=[], secret_env=[], node_id=1, timeout_ms=5000,
+                               action_file=str(asset), interpreter='python3', as_root=True)
+        with patch.object(command, '__file__', str(runner)):
+            frame, _values = command.request(args, self.target)
+            self.assertNotIn(str(asset).encode(), frame)
+            program_size, remaining = frame.split(b'\n', 1)
+            _length, body = remaining[int(program_size):].split(b'\n', 1)
+            request = json.loads(body)
+            self.assertEqual(request['script'], asset.read_text())
+            self.assertEqual(request['interpreter'], 'python3')
+            self.assertTrue(request['as_root'])
+            with self.assertRaises((ValueError, command.Refused)):
+                command.action_asset('/etc/passwd')
+            link = folder / 'link.py'
+            link.symlink_to(asset)
+            with self.assertRaisesRegex(command.Refused, 'asset_refused'):
+                command.action_asset(str(link))
+
+    def test_python_asset_interpreter_receives_forwarded_env(self):
+        frame = self.remote_frame('import os; print(os.environ["ORBIT_VALUE"])\n', env={'ORBIT_VALUE': 'python-result'})
+        size, remaining = frame.split(b'\n', 1)
+        program, remaining = remaining[:int(size)], remaining[int(size):]
+        _length, body = remaining.split(b'\n', 1)
+        body = json.loads(body)
+        body['interpreter'] = 'python3'
+        body = json.dumps(body).encode()
+        frame = size + b'\n' + program + str(len(body)).encode() + b'\n' + body
+        code, out, error = command.exchange([sys.executable, '-I', '-c', command.LOADER], frame, 65536, 5000)
+        self.assertEqual((code, out, error), (0, b'python-result\n', b''))
+
     def test_duplex_writer_drains_output_before_large_input_finishes(self):
         body = b'x' * 400000
         frame = str(len(body)).encode() + b'\n' + body
@@ -174,13 +212,13 @@ class NodeCommandTest(unittest.TestCase):
         source = source.replace('if os.geteuid() != 0:', 'if os.geteuid() != ' + str(os.getuid()) + ':')
         source = source.replace("'/usr/sbin/ip'", repr(str(ip))).replace("'/usr/bin/systemctl'", repr(str(systemctl)))
         source = source.replace("pwd.getpwnam(request['user'])", 'pwd.getpwuid(os.getuid())')
-        source = source.replace("extra_groups=os.getgrouplist(account.pw_name, account.pw_gid)", "extra_groups=None")
+        source = source.replace("extra_groups=[] if request['as_root'] else os.getgrouplist(account.pw_name, account.pw_gid)", "extra_groups=None")
         return source.encode()
 
     def remote_frame(self, script, *, env=None, timeout=5000, host='10.44.0.1'):
         program = self.remote_program(host=host)
         body = json.dumps({'schema_version': 1, 'node_id': 1, 'host': '10.44.0.1', 'user': 'orbit',
-                           'script': script, 'env': env or {}, 'timeout_ms': timeout}).encode()
+                           'script': script, 'env': env or {}, 'timeout_ms': timeout, 'interpreter': 'sh', 'as_root': False}).encode()
         return str(len(program)).encode() + b'\n' + program + str(len(body)).encode() + b'\n' + body
 
     def test_remote_supervisor_runs_only_the_remote_script_and_preserves_exit(self):
@@ -199,7 +237,7 @@ class NodeCommandTest(unittest.TestCase):
         self.assertIn(b'remote_refused', error)
         program = self.remote_program(mask='enabled')
         body = json.dumps({'schema_version': 1, 'node_id': 1, 'host': '10.44.0.1', 'user': 'orbit',
-                           'script': script, 'env': {}, 'timeout_ms': 5000}).encode()
+                           'script': script, 'env': {}, 'timeout_ms': 5000, 'interpreter': 'sh', 'as_root': False}).encode()
         frame = str(len(program)).encode() + b'\n' + program + str(len(body)).encode() + b'\n' + body
         code, _out, _error = command.exchange([sys.executable, '-I', '-c', command.LOADER], frame, 65536, 5000)
         self.assertNotEqual(code, 0)

@@ -9,6 +9,7 @@ Deno.test("native proxy launcher is one exact local command and a visible remote
   assertEquals(nodeCommandLaunch(valid), {
     assetStep: "proxy-assets",
     env: ["ORBIT_PUBLIC_VALUE", "ORBIT_PRIVATE_VALUE"],
+    secretEnv: ["ORBIT_PRIVATE_VALUE"],
     action: "printf '%s' \"$ORBIT_PUBLIC_VALUE\"\n",
   });
   for (
@@ -30,4 +31,25 @@ Deno.test("native proxy launcher is one exact local command and a visible remote
       valid.replace("--env ORBIT_PUBLIC_VALUE", '--env "$ORBIT_PRIVATE_VALUE"'),
     ]
   ) assertEquals(nodeCommandLaunch(source), null, source);
+});
+
+Deno.test("shipped Python action uses only two static metadata paths", () => {
+  const run =
+    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.hub.outputs.script }}" --interpreter python3 --as-root --env ORBIT_CONTEXT';
+  assertEquals(nodeCommandLaunch(run), {
+    assetStep: "assets",
+    action: "",
+    env: ["ORBIT_CONTEXT"],
+    secretEnv: [],
+    actionAsset: { step: "hub", field: "script" },
+  });
+  for (
+    const bad of [
+      run + "; id",
+      run.replace("steps.hub.outputs.script", "inputs.script"),
+      run.replace("python3 --as-root", "python3 -c"),
+      run.replace("--interpreter python3", "--interpreter bash"),
+      run.replace("--env ORBIT_CONTEXT", "--env LD_PRELOAD"),
+    ]
+  ) assertEquals(nodeCommandLaunch(bad), null);
 });
