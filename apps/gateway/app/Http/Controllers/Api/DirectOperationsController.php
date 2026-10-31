@@ -8,8 +8,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
-use App\Http\Authorization\RequiresNodeAccess;
-use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\DirectOperationPrivateRequest;
 use App\Http\Requests\Operations\DirectOperationRequest;
@@ -19,7 +17,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-#[RequiresNodeAccess(ServingNode::Gateway)]
 final class DirectOperationsController extends Controller
 {
     public function show(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
