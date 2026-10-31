@@ -247,38 +247,25 @@ it('destroys a connection after --force', function (): void {
 });
 
 it('adds a user through the connection-scoped request and hides the password', function (bool $replication): void {
-    $user = [
-        'id' => 2,
-        'database_connection_id' => 4,
-        'username' => 'reporting',
-        'privileges' => 'CONNECT, USAGE, SELECT ON "app"',
-        'created_by' => 'gateway',
-        'created_at' => '2026-01-01T00:00:00+00:00',
-        'replication' => $replication,
-    ];
-    $mockClient = database_cli_mock(CreateDatabaseUserRequest::class, $user, status: 201);
+    $mockClient = database_cli_operation_mock(CreateDatabaseUserRequest::class, 'database_user.create');
 
-    $this
-        ->artisan('database:user:create', [
-            'slug' => 'app',
-            '--username' => 'reporting',
-            '--password' => DATABASE_CLI_SECRET,
-            '--read-only' => ! $replication,
-            '--replication' => $replication,
-            '--json' => true,
+    [$exit, $output] = database_cli_display('database:user:create', [
+        'slug' => 'app',
+        '--username' => 'reporting',
+        '--password' => DATABASE_CLI_SECRET,
+        '--read-only' => ! $replication,
+        '--replication' => $replication,
+        '--json' => true,
+    ]);
+
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray([
+            'kind' => 'database_user.create', 'status' => 'succeeded', 'result' => ['backend' => 'active'],
         ])
-        ->expectsOutput(json_encode([...$user, 'request_id' => database_cli_request_id()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->doesntExpectOutputToContain(DATABASE_CLI_SECRET)
-        ->assertExitCode(0);
-
-    $request = $mockClient->getLastRequest();
-
-    expect($request)
-        ->toBeInstanceOf(CreateDatabaseUserRequest::class)
-        ->and($request?->resolveEndpoint())
-        ->toBe('/api/v1/database-connections/app/users')
-        ->and($request?->body()->all())
-        ->toBe([
+        ->and($output)->not->toContain(DATABASE_CLI_SECRET);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseUserRequest
+        && $request->resolveEndpoint() === '/api/v1/database-connections/app/users'
+        && $request->body()->all() === [
             'username' => 'reporting',
             'password' => DATABASE_CLI_SECRET,
             'read_only' => ! $replication,
@@ -287,22 +274,14 @@ it('adds a user through the connection-scoped request and hides the password', f
 })->with(['read-only' => [false], 'replication' => [true]]);
 
 it('creates a database on a server with only the slug, the server, and the Instance', function (): void {
-    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [
-        ...database_cli_gateway_data(),
-        'slug' => 'dlf-leden',
-        'database' => 'dlf_leden',
-        'server' => 'beast-mysql',
-        'owner_instance_id' => 60,
-        'test_database' => 'dlf_leden_test',
-    ], status: 201);
+    $mockClient = database_cli_operation_mock(CreateDatabaseConnectionRequest::class, 'database.create');
 
-    $this
-        ->artisan('database:create', ['slug' => 'dlf-leden', '--server' => 'beast-mysql', '--instance' => '60', '--json' => true])
-        ->expectsOutputToContain('"test_database":"dlf_leden_test"')
-        ->assertExitCode(0);
+    [$exit, $output] = database_cli_display('database:create', ['slug' => 'dlf-leden', '--server' => 'beast-mysql', '--instance' => '60', '--json' => true]);
 
-    expect($mockClient->getLastRequest()?->body()->all())
-        ->toBe(['slug' => 'dlf-leden', 'server' => 'beast-mysql', 'instance_id' => 60]);
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'database.create', 'status' => 'succeeded']);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseConnectionRequest
+        && $request->body()->all() === ['slug' => 'dlf-leden', 'server' => 'beast-mysql', 'instance_id' => 60]);
 });
 
 it('refuses --instance without --server before it contacts the Gateway', function (): void {
@@ -531,9 +510,6 @@ it('refuses mysql create without a password before it contacts the Gateway', fun
 });
 
 /**
- * @param  array<string, mixed>|list<array<string, mixed>>  $data
- */
-/**
  * @param  array<string, mixed>  $arguments
  * @return array{0: int, 1: string}
  */
@@ -544,6 +520,18 @@ function database_cli_display(string $command, array $arguments = []): array
     return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
 }
 
+function database_cli_operation_mock(string $request, string $kind): MockClient
+{
+    $operation = ['id' => 7, 'kind' => $kind, 'target_type' => 'database_server', 'target_id' => 2,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['backend' => 'active']];
+    $envelope = ['data' => $operation, 'meta' => ['request_id' => database_cli_request_id()]];
+
+    return MockClient::global([$request => MockResponse::make($envelope, 202), ShowOperationRequest::class => MockResponse::make($envelope), ShowRealtimeRequest::class => MockResponse::make([], 503)]);
+}
+
+/**
+ * @param  array<string, mixed>|list<array<string, mixed>>  $data
+ */
 function database_cli_mock(string $request, array $data, int $status = 200): MockClient
 {
     if ($request === UpdateDatabaseConnectionRequest::class) {
@@ -630,13 +618,14 @@ function database_cli_attachment_json(): string
 }
 
 it('sends repeated ACL patterns and allow rules with the Redis database index', function (): void {
-    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [
-        ...database_cli_gateway_data(), 'driver' => 'redis', 'database' => '0',
-    ], 201);
-    $this->artisan('database:create', ['slug' => 'app', '--server' => 'cache', '--database' => '0', '--pattern' => ['queue:*', 'horizon:*'], '--allow' => ['@list', 'eval'], '--json' => true])->assertExitCode(0);
-    expect($mockClient->getLastRequest()?->body()->all())->toBe([
-        'slug' => 'app', 'server' => 'cache', 'patterns' => ['queue:*', 'horizon:*'], 'allow' => ['@list', 'eval'], 'database' => 0,
-    ]);
+    $mockClient = database_cli_operation_mock(CreateDatabaseConnectionRequest::class, 'database.create');
+    [$exit, $output] = database_cli_display('database:create', ['slug' => 'app', '--server' => 'cache', '--database' => '0', '--pattern' => ['queue:*', 'horizon:*'], '--allow' => ['@list', 'eval'], '--json' => true]);
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'database.create', 'status' => 'succeeded']);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseConnectionRequest
+        && $request->body()->all() === [
+            'slug' => 'app', 'server' => 'cache', 'patterns' => ['queue:*', 'horizon:*'], 'allow' => ['@list', 'eval'], 'database' => 0,
+        ]);
 });
 
 it('refuses ACL options without a server before sending', function (): void {
@@ -655,12 +644,12 @@ it('sends the explicit attachment network with its prefix through the SDK', func
 })->with(['lan', 'wireguard']);
 
 it('sends the PostgreSQL builtin locale when creating a database on a server', function (): void {
-    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [
-        ...database_cli_gateway_data(), 'driver' => 'pgsql', 'server' => 'services-postgres', 'locale' => 'C.UTF-8',
-    ], status: 201);
-    $this->artisan('database:create', ['slug' => 'mealou-food-catalog', '--server' => 'services-postgres', '--locale' => 'C.UTF-8', '--json' => true])
-        ->expectsOutputToContain('"locale":"C.UTF-8"')->assertExitCode(0);
-    expect($mockClient->getLastRequest()?->body()->all())->toBe(['slug' => 'mealou-food-catalog', 'server' => 'services-postgres', 'locale' => 'C.UTF-8']);
+    $mockClient = database_cli_operation_mock(CreateDatabaseConnectionRequest::class, 'database.create');
+    [$exit, $output] = database_cli_display('database:create', ['slug' => 'mealou-food-catalog', '--server' => 'services-postgres', '--locale' => 'C.UTF-8', '--json' => true]);
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'database.create', 'status' => 'succeeded']);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseConnectionRequest
+        && $request->body()->all() === ['slug' => 'mealou-food-catalog', 'server' => 'services-postgres', 'locale' => 'C.UTF-8']);
 });
 
 it('refuses a locale without a server before contacting the Gateway', function (): void {
@@ -688,10 +677,13 @@ it('sends explicit replacement consent through the typed attachment request', fu
     expect($mockClient->getLastRequest()?->body()->all())->toBe(['replace' => true]);
 });
 
-it('sends and renders the PostgreSQL parallel worker count through the typed SDK request', function (): void {
-    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [...database_cli_gateway_data(), 'driver' => 'pgsql', 'server' => 'pg', 'test_database' => 'app_test', 'test_processes' => 4], status: 201);
-    $this->artisan('database:create', ['slug' => 'app', '--server' => 'pg', '--instance' => '12', '--test-processes' => '4', '--json' => true])->expectsOutputToContain('"test_processes":4')->assertExitCode(0);
-    expect($mockClient->getLastRequest()?->body()->all())->toBe(['slug' => 'app', 'server' => 'pg', 'instance_id' => 12, 'test_processes' => 4]);
+it('sends the PostgreSQL parallel worker count and follows the native create Operation', function (): void {
+    $mockClient = database_cli_operation_mock(CreateDatabaseConnectionRequest::class, 'database.create');
+    [$exit, $output] = database_cli_display('database:create', ['slug' => 'app', '--server' => 'pg', '--instance' => '12', '--test-processes' => '4', '--json' => true]);
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'database.create', 'status' => 'succeeded']);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseConnectionRequest
+        && $request->body()->all() === ['slug' => 'app', 'server' => 'pg', 'instance_id' => 12, 'test_processes' => 4]);
 });
 
 it('refuses invalid worker counts before sending a request', function (string $count): void {
