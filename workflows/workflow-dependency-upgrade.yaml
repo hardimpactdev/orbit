@@ -42,7 +42,6 @@ jobs:
         weight: 0
         allowFailure: false
       - name: plan-matches-scan
-        labels: {}
         task:
           type: assert
           expr: >-
@@ -57,7 +56,6 @@ jobs:
         weight: 0
         allowFailure: false
       - name: every-subtask-has-packages
-        labels: {}
         task:
           type: assert
           expr: >-
@@ -71,7 +69,6 @@ jobs:
         weight: 0
         allowFailure: false
       - name: registries-answered
-        labels: {}
         task:
           type: assert
           expr: >-
@@ -89,7 +86,6 @@ jobs:
     dependsOn: []
     weight: 0
   - name: approve
-    labels: {}
     description: Approval gate when the plan has a major upgrade (stub)
     dependsOn:
       - job: plan

@@ -1,3 +1,5 @@
+import { callWorkerModel, type WorkerModelContext } from "./worker_model.ts";
+import { queryWorkerData } from "./worker_query.ts";
 import { z } from "npm:zod@4";
 import {
   type DependencyProject,
@@ -24,15 +26,7 @@ export const ProjectExtensionsSchema = z.array(
 });
 export type ProjectExtension = z.infer<typeof ProjectExtensionsSchema>[number];
 
-export interface ProjectConfigContext {
-  runModel: (
-    args: {
-      modelType: string;
-      name: string;
-      method: string;
-      arguments?: Record<string, unknown>;
-    },
-  ) => Promise<{ ok: boolean }>;
+export interface ProjectConfigContext extends WorkerModelContext {
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
 }
 
@@ -57,14 +51,15 @@ export async function projectConfigurations(
     )
   ) {
     const name = type.slice("@nckrtl/".length);
-    const result = await context.runModel({
+    const result = await callWorkerModel(context, {
       modelType: type,
       name,
       method: "configuration",
       arguments: {},
     });
     if (!result.ok) throw new Error(`cannot read project extension ${type}`);
-    const rows = await context.queryData(
+    const rows = await queryWorkerData(
+      context,
       `modelName == ${JSON.stringify(name)} && name == "configuration"`,
       "attributes",
     );

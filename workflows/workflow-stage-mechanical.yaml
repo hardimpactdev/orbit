@@ -1,5 +1,6 @@
 id: 1e8c0fea-8008-4bc7-99e9-30d385cf0c2b
 name: stage-mechanical
+labels: { pool: migration, node: "209" }
 description: >-
   composer update in the sub-project, committed with the key; no LLM.
 tags: {}

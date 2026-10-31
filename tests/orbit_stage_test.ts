@@ -32,7 +32,7 @@ Deno.test("report records nothing when this stage entry already has its evidence
           ? [{ name: "evidence-bump-x-handoff-run", attributes: { stageId: "handoff", cycle: 2 } }]
           : [],
       ),
-    runModel: (o: unknown) => {
+    invokeModel: (o: unknown) => {
       calls.push(o);
       return Promise.resolve({ ok: true });
     },
@@ -52,7 +52,7 @@ Deno.test("report treats an agent-runner review without a result as a failed run
           ? [{ name: "review-x", attributes: { verdict: "fail", body: "", findings: [{ severity: "critical", file: "N/A", description: "Agent did not produce a structured result" }] } }]
           : [],
       ),
-    runModel: (o: { method?: string; arguments?: Record<string, unknown> }) => {
+    invokeModel: (o: { method?: string; arguments?: Record<string, unknown> }) => {
       calls.push(o);
       return Promise.resolve({ ok: true });
     },

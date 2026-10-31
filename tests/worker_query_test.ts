@@ -7,18 +7,22 @@ Deno.test("worker projection uses only permitted query records and no select", a
       assertEquals(predicate.includes('modelName == "fixture"'), true);
       assertEquals(select, undefined);
       return Promise.resolve([{
-        attributes: { workItem: "tg-7" },
+        attributes: { workItem: "tg-7", runs: [{ workItem: "tg-7" }] },
         content: "report",
       }]);
     },
   };
   assertEquals(
     await queryWorkerData(ctx, 'modelName == "fixture"', "attributes"),
-    [{ workItem: "tg-7" }],
+    [{ workItem: "tg-7", runs: [{ workItem: "tg-7" }] }],
   );
   assertEquals(
     await queryWorkerData(ctx, 'modelName == "fixture"', "attributes.workItem"),
     ["tg-7"],
+  );
+  assertEquals(
+    await queryWorkerData(ctx, 'modelName == "fixture"', "attributes.runs"),
+    [[{ workItem: "tg-7" }]],
   );
   assertEquals(
     await queryWorkerData(ctx, 'modelName == "fixture"', "content"),

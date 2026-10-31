@@ -12,7 +12,6 @@ reports:
   skip: ["@swamp/workflow-summary"]
 jobs:
   - name: verify
-    labels: {}
     steps:
       - name: enrolled
         task:
@@ -39,7 +38,6 @@ jobs:
           inputs:
             cwd: '${{ inputs.cwd }}'
   - name: tasks
-    labels: {}
     dependsOn:
       - job: detect
         condition: { type: succeeded }

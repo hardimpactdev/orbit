@@ -1,5 +1,6 @@
 id: 9f4b267b-29ec-4ce0-b9ce-cd37fb0d9d41
 name: stage-handoff
+labels: { pool: migration, node: "209" }
 description: >-
   The sub-project's composer check and full composer test on the worktree HEAD.
 tags: {}

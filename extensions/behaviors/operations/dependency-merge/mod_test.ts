@@ -1,3 +1,4 @@
+import { recordQuery } from "../../../../tests/fixtures/worker_query.ts";
 import { batchReviewWait } from "./review.ts";
 import type { Job } from "../../_lib/gateway_stage.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
@@ -84,25 +85,26 @@ class Fixture {
     const context: Context & ProjectConfigContext = {
       ...test,
       globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "fixture" },
-      runModel: () => {
+      invokeModel: () => {
         this.configurations++;
         return Promise.resolve({ ok: this.refreshOk });
       },
-      queryData: () =>
+      queryData: recordQuery(() =>
         Promise.resolve([{
           projectId: this.projectId,
           enabled: this.enabled,
           repository: this.repository,
           defaultBranch: "main",
           smokeWorkflow: this.smokeWorkflow,
-        }]),
+        }])
+      ),
       readResource: (name) => Promise.resolve(this.resources.get(name) ?? null),
       writeResource: (_spec, name, value) => {
         this.resources.set(name, structuredClone(value));
         return Promise.resolve({ name });
       },
     };
-    return Object.assign(context, { invokeModel: context.runModel });
+    return context;
   }
   run() {
     return dependencyMerge(() => this.http).methods.execute.execute({
@@ -244,7 +246,7 @@ function admissionFixture() {
     posts: { key: string | undefined; body: unknown }[] = [];
   let lost = false, projectType = "laravel-app", refused = false;
   const ctx = {
-    queryData: (predicate: string) =>
+    queryData: recordQuery((predicate: string) =>
       Promise.resolve(
         predicate.includes('name == "package-')
           ? [target]
@@ -253,7 +255,8 @@ function admissionFixture() {
           : predicate.includes('name.startsWith("job-')
           ? [job]
           : [...stored.values()],
-      ),
+      )
+    ),
     writeResource: (
       _spec: string,
       name: string,
@@ -427,16 +430,17 @@ Deno.test("execution configuration refresh runs the private extension again", as
       dependencyProjects: [],
       projectExtensions: [{ projectId: 20, type: "@nckrtl/project-widgets" }],
     },
-    runModel: () => {
+    invokeModel: () => {
       reads++;
       return Promise.resolve({ ok: true });
     },
-    queryData: () =>
+    queryData: recordQuery(() =>
       Promise.resolve([{
         schema: 3,
         ...f.project,
         dependencyAutoMerge: enabled,
-      }]),
+      }])
+    ),
     writeResource: (
       _spec: string,
       _name: string,

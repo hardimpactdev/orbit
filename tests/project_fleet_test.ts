@@ -179,11 +179,15 @@ Deno.test("the fleet registers all 18 projects once and owns private, correctly 
         type: "model_method",
         ...(mode === "detect"
           ? {
-            modelType: "@nckrtl/dependency-scanner",
-            modelName: "dependency-scanner",
-            methodName: "scan",
+            modelType: "@nckrtl/native-host-method",
+            modelName: `native-project-detect-${source.project.id}`,
+            methodName: "project_scan",
           }
-          : { modelIdOrName: "orbit-gateway", methodName: "schedule_project" }),
+          : {
+            modelType: "@nckrtl/native-host-method",
+            modelName: `native-project-routine-${source.project.id}`,
+            methodName: "project_routine",
+          }),
         inputs: {
           projectId: source.project.id,
           ...(mode === "routine" ? { mode } : {}),

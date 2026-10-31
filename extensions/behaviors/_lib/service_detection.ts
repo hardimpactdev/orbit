@@ -1,3 +1,5 @@
+import { callWorkerModel, type WorkerModelContext } from "./worker_model.ts";
+import { queryWorkerData } from "./worker_query.ts";
 import { z } from "npm:zod@4";
 import { behavior as composer } from "../composer-maintenance/mod.ts";
 import { behavior as js } from "../js-maintenance/mod.ts";
@@ -43,7 +45,7 @@ import {
   type Diagnostic,
 } from "./dependency_credentials.ts";
 
-export interface DependencyContext {
+export interface DependencyContext extends WorkerModelContext {
   definition: { name: string };
   signal?: AbortSignal;
   readResource?: (
@@ -57,18 +59,10 @@ export interface DependencyContext {
     data: Record<string, unknown>,
     overrides?: { tags: Record<string, string> },
   ): Promise<{ name: string; version?: number }>;
-  runModel(
-    args: {
-      definition?: string;
-      modelType?: string;
-      name?: string;
-      method: string;
-      arguments?: Record<string, unknown>;
-    },
-  ): Promise<{ ok: boolean; resources?: { name: string; version?: number }[] }>;
 }
 const query = (ctx: DependencyContext, name: string) =>
-  ctx.queryData(
+  queryWorkerData(
+    ctx,
     `modelName == ${JSON.stringify(ctx.definition.name)} && name == ${
       JSON.stringify(name)
     }`,
@@ -418,7 +412,8 @@ export async function batchEvidence(
     if (response.status !== 200 || !Array.isArray(response.body?.data)) {
       throw new Error("groups_unavailable");
     }
-    const targets = await ctx.queryData(
+    const targets = await queryWorkerData(
+      ctx,
       `modelName == ${
         JSON.stringify(ctx.definition.name)
       } && name.startsWith("package-")`,
@@ -430,13 +425,15 @@ export async function batchEvidence(
       if (g.project_id !== project.projectId) continue;
       const target = targets.find((t) => t.workItem === `tg-${g.id}`);
       if (!target) continue;
-      const owners = await ctx.queryData(
+      const owners = await queryWorkerData(
+        ctx,
         `modelName == ${
           JSON.stringify(`orbit-group-${target.workItem}`)
         } && name == "owner"`,
         "attributes",
       ) as { runId?: string }[];
-      const publish = await ctx.queryData(
+      const publish = await queryWorkerData(
+        ctx,
         `modelName == ${
           JSON.stringify(ctx.definition.name)
         } && name.startsWith(${
@@ -663,14 +660,15 @@ export async function assertCurrentPlan(
     Date.now() - Date.parse(index.last_attempt.finished_at!) >= 26 * 3600000
   ) throw new Error("fresh_service_detection_required");
   const name = `dependency-source-${project.projectId}`;
-  const result = await ctx.runModel({
+  const result = await callWorkerModel(ctx, {
     modelType: "@swamp/git",
     name,
     method: "remote_ref",
     arguments: { remote: project.repository, ref: findings.sourceRef },
   });
   if (!result.ok) throw new Error("source_head_unavailable");
-  const heads = await ctx.queryData(
+  const heads = await queryWorkerData(
+    ctx,
     `modelName == ${JSON.stringify(name)} && name == ${
       JSON.stringify(`remote-ref-${findings.sourceRef.replaceAll("/", "-")}`)
     }`,

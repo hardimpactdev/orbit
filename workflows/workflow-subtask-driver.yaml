@@ -1,5 +1,6 @@
 id: db27d653-b57b-46ef-a11f-e1b0a29e6731
 name: subtask-driver
+labels: { pool: migration, node: "209" }
 description: >-
   One tick of the reconcile loop over orbit-subtask-factory: each active work
   item takes one short, guarded step. Run it every minute (a CLI loop now,

@@ -1,3 +1,5 @@
+import { callWorkerModel } from "./_lib/worker_model.ts";
+import { queryWorkerData } from "./_lib/worker_query.ts";
 import { batchReviewWait } from "./operations/dependency-merge/review.ts";
 import { MergeConfiguration, mergeConfigurationMethod } from "./operations/dependency-merge/configuration.ts";
 import { Admission as DependencyMergeAdmission, admitBatchMerge } from "./operations/dependency-merge/admission.ts";
@@ -155,7 +157,7 @@ export const behavior = {
       description:"Select due PR observations without holding the model lock during network access",
       arguments:z.object({runId:z.string()}),
       execute:async(args:{runId:string},context:StageContext)=>{
-        const indexes=(await context.queryData('modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-")',"attributes")).map(i=>IndexSchema.parse(i))
+        const indexes=(await queryWorkerData(context, 'modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-")', "attributes")).map(i=>IndexSchema.parse(i))
           .filter(i=>Date.now()-Date.parse(i.batch_pr.checked_at)>=180000).sort((a,b)=>a.batch_pr.checked_at.localeCompare(b.batch_pr.checked_at)).slice(0,6);
         const rows=[];
         for(const index of indexes){const project=(await projectConfigurations(context.globalArgs.dependencyProjects,context.globalArgs.projectExtensions,context,index.project_id))[0];if(project?.worker)rows.push({project,index});}
@@ -168,7 +170,7 @@ export const behavior = {
       description:"Publish credential-free evidence only if its index publication is still current",
       arguments:z.object({projectId:z.number().int().positive(),expectedPublicationId:z.string(),evidence:BatchEvidenceSchema}),
       execute:async(args:{projectId:number;expectedPublicationId:string;evidence:z.infer<typeof BatchEvidenceSchema>},context:StageContext)=>{
-        const indexes=(await context.queryData(`modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-${args.projectId}-")`,"attributes")).map(i=>IndexSchema.parse(i));
+        const indexes=(await queryWorkerData(context, `modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-${args.projectId}-")`, "attributes")).map(i=>IndexSchema.parse(i));
         const index=indexes.find(i=>i.publication_id===args.expectedPublicationId);
         if(!index)return {dataHandles:[]};
         await reconcileDependencyIndex(index,context,args.evidence);
@@ -199,7 +201,7 @@ export const behavior = {
       description: "Publish one bounded dependency resource under the short gateway model lock",
       arguments: z.object({spec:z.enum(["dependencyIndex","dependencyReport","findings"]),name:z.string(),value:z.record(z.string(),z.unknown()),overrides:z.object({tags:z.record(z.string(),z.string())}).optional(),runId:z.string(),projectId:z.number().int().positive()}),
       execute: async (args: {spec:string;name:string;value:Record<string,unknown>;overrides?:{tags:Record<string,string>};runId:string;projectId:number}, context: StageContext) => {
-        const request=(await context.queryData(`modelName == "orbit-gateway" && name == "dependency-scan-input-${args.projectId}"`,"attributes"))[0] as {runId?:string}|undefined;
+        const request=(await queryWorkerData(context, `modelName == "orbit-gateway" && name == "dependency-scan-input-${args.projectId}"`, "attributes"))[0] as {runId?:string}|undefined;
         if(request?.runId!==args.runId) throw new Error("stale_scan_publication");
         if(args.spec === "findings") {
           const value=FindingsSchema.parse(args.value);
@@ -246,7 +248,7 @@ export const behavior = {
           const claim = await reserve(context, { key: row?.key ?? `manual-${workItem}`, projectId: config.projectId, mode: row?.mode ?? "routine", workItem });
           if (!claim.admitted) throw new Error(claim.reason);
         }
-        const existing = (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`worker-${args.group}`)}`, "attributes"))[0] as { ready?: boolean } | undefined;
+        const existing = (await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`worker-${args.group}`)}`, "attributes"))[0] as { ready?: boolean } | undefined;
         if (existing?.ready) throw new Error("The group worker is already enrolled; use its owning workflow to reconcile it");
         const handles: { name: string }[] = [];
         await ensureWorker(args.group, workerControl({
@@ -315,17 +317,17 @@ export const behavior = {
       outputLifetime: "7d",
       description: "Admit one unused configured project group after its earlier packages merged and completed; never creates a group",
       arguments: PackageTargetSchema.strip(), // Swamp merges global args into method validation.
-      execute: async (target: PackageTarget, context: StageContext & { runModel: (args: { definition: string; method: string; arguments: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }> }) => {
+      execute: async (target: PackageTarget, context: StageContext) => {
         let handle: { name: string } | null = null;
         // The official overview loads by stable factory ID, including records
         // written before the factory rename. Name-filtering old state loses it.
-        const overview = await context.runModel({ definition: "dependency-package", method: "status", arguments: {} });
+        const overview = await callWorkerModel(context, { definition: "dependency-package", method: "status", arguments: {} });
         if (!overview.ok) throw new Error(overview.error?.message ?? "cannot read package factory");
-        const runs = (await context.queryData('modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
+        const runs = (await queryWorkerData(context, 'modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
         await admitPackage(target, {
           http: curlHttp(context.globalArgs),
           projects: await groupConfigurations(target.workItem, context),
-          targets: await context.queryData(`modelName == "${context.definition.name}" && name.startsWith("package-")`, "attributes") as PackageTarget[],
+          targets: await queryWorkerData(context, `modelName == "${context.definition.name}" && name.startsWith("package-")`, "attributes") as PackageTarget[],
           runState: (workItem) => Promise.resolve(runs.find((run) => run.workItem === workItem) ?? null),
           save: async (value) => { handle = await context.writeResource("packageTarget", `package-${target.workItem}`, value); },
           start: async (workItem) => {
@@ -333,7 +335,7 @@ export const behavior = {
             const row=(await scheduleRows(context)).find(r=>r.workItem===workItem);
             const claim=await reserve(context,{key:row?.key??`manual-${workItem}`,projectId:project.projectId,mode:"package",workItem});
             if(!claim.admitted)throw new Error(claim.reason);
-            const r = await context.runModel({ definition: "dependency-package", method: "start", arguments: { workItem } });
+            const r = await callWorkerModel(context, { definition: "dependency-package", method: "start", arguments: { workItem } });
             if (!r.ok) throw new Error(r.error?.message ?? "cannot start package factory");
           },
         });
@@ -351,7 +353,7 @@ export const behavior = {
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
         key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional(), workspace: z.unknown().optional() }),
       execute: async (args: StageArgs, context: StageContext) => {
-        const rows = await context.queryData(`modelName == "${context.definition.name}" && name == "package-${args.workItem}"`, "attributes");
+        const rows = await queryWorkerData(context, `modelName == "${context.definition.name}" && name == "package-${args.workItem}"`, "attributes");
         const target = PackageTargetSchema.parse(rows[0]);
         return executeStage({ ...args, routine: true, packageTarget: target }, context);
       },
@@ -380,7 +382,7 @@ export const behavior = {
         },
       ) => {
         const read = async <T>(name: string): Promise<T | null> =>
-          ((await context.queryData(`modelName == "${context.definition.name}" && name == "${name}"`, "attributes")) as T[])[0] ?? null;
+          ((await queryWorkerData(context, `modelName == "${context.definition.name}" && name == "${name}"`, "attributes")) as T[])[0] ?? null;
         let handle: { name: string } | null = null;
         await syncAssistance(args, {
           http: curlHttp(context.globalArgs),
@@ -390,16 +392,16 @@ export const behavior = {
           },
           readJob: (key) => read<Job>(`job-${key}`),
           readRun: async () => args.stage === "driver" && args.gateIds?.[0] === "driver-factory-conflict" && args.driverDefinition
-            ? ((await context.queryData(`modelName == ${JSON.stringify(args.driverDefinition)} && name == ${JSON.stringify(`conflict-${args.workItem}`)}`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
+            ? ((await queryWorkerData(context, `modelName == ${JSON.stringify(args.driverDefinition)} && name == ${JSON.stringify(`conflict-${args.workItem}`)}`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
             : args.factory
-            ? ((await context.queryData(`modelName == "${args.factory}" && name == "state-${args.workItem}"`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
+            ? ((await queryWorkerData(context, `modelName == "${args.factory}" && name == "state-${args.workItem}"`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
             : null,
           readApproval: async (gateId) => /^driver-retry-g[1-9]\d*$/.test(gateId)
             ? args.driverDefinition
-              ? ((await context.queryData(`modelName == ${JSON.stringify(args.driverDefinition)} && name == "retry"`, "attributes")) as unknown[])[0] ?? null
+              ? ((await queryWorkerData(context, `modelName == ${JSON.stringify(args.driverDefinition)} && name == "retry"`, "attributes")) as unknown[])[0] ?? null
               : null
             : args.factory
-            ? ((await context.queryData(`modelName == "${args.factory}" && name == "approval-${args.workItem}-${gateId}"`, "attributes")) as unknown[])[0] ?? null
+            ? ((await queryWorkerData(context, `modelName == "${args.factory}" && name == "approval-${args.workItem}-${gateId}"`, "attributes")) as unknown[])[0] ?? null
             : null,
         });
         return { dataHandles: handle ? [handle] : [] };
@@ -435,7 +437,6 @@ export const behavior = {
 interface StageContext extends MaintenanceContext {
   signal?: AbortSignal;
   readResource?: (name: string, version?: number) => Promise<Record<string, unknown> | null>;
-  runModel: MaintenanceContext["runModel"] & ((args: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }>);
   globalArgs: GlobalArgs;
   definition: { name: string };
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
@@ -461,10 +462,10 @@ async function executeStage(args: StageArgs, context: StageContext) {
     ...(args.routine ? {
       reserveCapacity: async () => (await reserve(context, await intent())).admitted,
       reviewWait: async (job: Job) => batchReviewWait(job, {
-        targets: () => context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`package-${job.workItem}`)}`, "attributes"),
+        targets: () => queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`package-${job.workItem}`)}`, "attributes"),
         park: async () => {
           const input = await intent();
-          const rows = await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${input.key}`)}`, "attributes");
+          const rows = await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${input.key}`)}`, "attributes");
           if (!rows[0]) throw new Error("Review parking requires an admission receipt");
           const result = await parkForReview(job.key, AdmissionSchema.parse(rows[0]), { http, save: async a => { await context.writeResource("admission", `admission-${a.key}`, a); } });
           if (args.stage === "merged") return { ...job, lastError: job.lastError ?? result.reason ?? null };
@@ -477,14 +478,10 @@ async function executeStage(args: StageArgs, context: StageContext) {
     http,
     projects: args.routine ? await groupConfigurations(args.workItem, context) : [],
     readJob: async () => {
-      const rows = (await context.queryData(
-        `modelName == "${context.definition.name}" && name == "job-${args.key}"`, "attributes",
-      )) as Job[];
+      const rows = (await queryWorkerData(context, `modelName == "${context.definition.name}" && name == "job-${args.key}"`, "attributes")) as Job[];
       return rows[0] ?? null;
     },
-    readPriorPublish: async () => (await context.queryData(
-      `modelName == "${context.definition.name}" && name.startsWith("job-${args.workItem}.publish.c")`, "attributes",
-    )) as Job[],
+    readPriorPublish: async () => (await queryWorkerData(context, `modelName == "${context.definition.name}" && name.startsWith("job-${args.workItem}.publish.c")`, "attributes")) as Job[],
     writeJob: async (j) => {
       handle = await context.writeResource("job", `job-${args.key}`, j as unknown as Record<string, unknown>);
     },
@@ -507,20 +504,20 @@ async function groupConfigurations(workItem: string, context: StageContext) {
 function scheduleStore(context: StageContext) {
   return {
     http: curlHttp(context.globalArgs),
-    read: async (key: string) => (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`schedule-${key}`)}`, "attributes"))[0] as ScheduleReceipt | undefined ?? null,
+    read: async (key: string) => (await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`schedule-${key}`)}`, "attributes"))[0] as ScheduleReceipt | undefined ?? null,
     save: async (receipt: ScheduleReceipt) => { await context.writeResource("schedule", `schedule-${receipt.key}`, receipt); },
   };
 }
 async function scheduleRows(context: StageContext) {
-  return (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("schedule-")`, "attributes")).map((r) => ScheduleReceiptSchema.parse(r));
+  return (await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("schedule-")`, "attributes")).map((r) => ScheduleReceiptSchema.parse(r));
 }
 async function callDefinition(context: StageContext, definition: string, method: string, args: Record<string, unknown> = {}) {
-  const result = await context.runModel({ definition, method, arguments: args });
+  const result = await callWorkerModel(context, { definition, method, arguments: args });
   if (!result.ok) throw new Error(result.error?.message ?? `${definition}.${method} failed`);
 }
 
 async function startFactory(context: StageContext, factory: string, workItem: string) {
-  const state = await context.queryData(`modelName == ${JSON.stringify(factory)} && name == ${JSON.stringify(`state-${workItem}`)}`, "attributes");
+  const state = await queryWorkerData(context, `modelName == ${JSON.stringify(factory)} && name == ${JSON.stringify(`state-${workItem}`)}`, "attributes");
   if (!state.length) await callDefinition(context, factory, "start", { workItem });
 }
 
@@ -529,12 +526,9 @@ async function reserve(context: StageContext, intent: AdmissionIntent) {
   return reserveMaintenance(intent, {
     http: curlHttp(context.globalArgs),
     admissions:
-      (await context.queryData(
-        `modelName == ${
+      (await queryWorkerData(context, `modelName == ${
           JSON.stringify(context.definition.name)
-        } && name.startsWith("admission-")`,
-        "attributes",
-      )).map((a) => AdmissionSchema.parse(a)),
+        } && name.startsWith("admission-")`, "attributes")).map((a) => AdmissionSchema.parse(a)),
     existing: rows.filter((r) => r.attempted && !r.completed).map((r) => ({
       key: r.key,
       projectId: r.projectId,
@@ -552,12 +546,9 @@ async function bindAdmission(
   workItem: string,
 ) {
   const a =
-    (await context.queryData(
-      `modelName == ${JSON.stringify(context.definition.name)} && name == ${
+    (await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name == ${
         JSON.stringify(`admission-${key}`)
-      }`,
-      "attributes",
-    ))[0] as Admission;
+      }`, "attributes"))[0] as Admission;
   await context.writeResource("admission", `admission-${key}`, {
     ...a,
     workItem,
@@ -571,10 +562,7 @@ async function projectWork(context: StageContext) {
       package: [],
     };
   await reconcileAdmissions({
-    admissions: (await context.queryData(
-      `modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("admission-")`,
-      "attributes",
-    )).map(a => AdmissionSchema.parse(a)),
+    admissions: (await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("admission-")`, "attributes")).map(a => AdmissionSchema.parse(a)),
     receipts: await scheduleRows(context),
     http: store.http,
     save: async a => {
@@ -588,12 +576,9 @@ async function projectWork(context: StageContext) {
   });
   const rows = await scheduleRows(context);
   const previous =
-    (await context.queryData(
-      `modelName == ${
+    (await queryWorkerData(context, `modelName == ${
         JSON.stringify(context.definition.name)
-      } && name == "project-work"`,
-      "attributes",
-    ))[0] as { nextOffset?: number; nextPendingOffset?: number } | undefined;
+      } && name == "project-work"`, "attributes"))[0] as { nextOffset?: number; nextPendingOffset?: number } | undefined;
   const active = rows.filter((r) => r.started && !r.completed),
     offset = active.length ? (previous?.nextOffset ?? 0) % active.length : 0;
   const batch = [...active.slice(offset), ...active.slice(0, offset)].slice(
@@ -625,12 +610,9 @@ async function projectWork(context: StageContext) {
         workItem: receipt.workItem,
       });
       const state =
-        (await context.queryData(
-          `modelName == ${JSON.stringify(factory)} && name == ${
+        (await queryWorkerData(context, `modelName == ${JSON.stringify(factory)} && name == ${
             JSON.stringify(`state-${receipt.workItem}`)
-          }`,
-          "attributes",
-        ))[0] as { stageId: string; status: string } | undefined;
+          }`, "attributes"))[0] as { stageId: string; status: string } | undefined;
       if (!state) {
         throw new Error("scheduled factory state is missing");
       }
@@ -648,19 +630,16 @@ async function projectWork(context: StageContext) {
   // Only admitted intents are materialized. Findings without targets stay data.
   let latestRows = await scheduleRows(context);
   const documents =
-    (await context.queryData(
-      `modelName == ${
+    (await queryWorkerData(context, `modelName == ${
         JSON.stringify(context.definition.name)
-      } && name.startsWith("findings-")`,
-      "attributes",
-    )).map((f) => FindingsSchema.parse(f));
+      } && name.startsWith("findings-")`, "attributes")).map((f) => FindingsSchema.parse(f));
   // Supersede only a proven unattempted, unbound package intent. Keep the complete ledger.
   // Attempted creates and real groups remain held until their ordinary reconciliation settles.
   for (const receipt of latestRows.filter(r => r.mode === "package" && !r.attempted && !r.started && !r.completed && !r.workItem)) {
     const current = documents.find(f => f.projectId === receipt.projectId);
     if (!current || current.source === receipt.findingsRunId) continue;
     await isolateScheduleRow(context,receipt,"admission",async()=>{
-      const reservations = await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${receipt.key}`)}`,"attributes");
+      const reservations = await queryWorkerData(context, `modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${receipt.key}`)}`, "attributes");
       if(reservations.length>1)throw new Error("ambiguous unattempted admission");
       if(reservations.length){
         const reservation=AdmissionSchema.parse(reservations[0]);
@@ -696,12 +675,9 @@ async function projectWork(context: StageContext) {
     });
   }
   const history =
-    (await context.queryData(
-      `modelName == ${
+    (await queryWorkerData(context, `modelName == ${
         JSON.stringify(context.definition.name)
-      } && name.startsWith("admission-")`,
-      "attributes",
-    )).map((a) => AdmissionSchema.parse(a));
+      } && name.startsWith("admission-")`, "attributes")).map((a) => AdmissionSchema.parse(a));
   for (const entry of orderProjects(queued, history)) {
     await isolateScheduleRow(context, entry.receipt, "admission", async () => {
       let receipt = entry.receipt;
@@ -712,21 +688,15 @@ async function projectWork(context: StageContext) {
         await assertCurrentPlan(config, current, context);
         await callDefinition(context, "dependency-package", "status", {});
         const runs =
-          (await context.queryData(
-            'modelName == "dependency-package" && name == "status-_factory"',
-            "attributes.runs",
-          ))[0] as { workItem: string; stageId: string; status: string }[];
+          (await queryWorkerData(context, 'modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
         await assertPreviousPackages(
           receipt.projectId,
           receipt.workItem ?? "",
           {
             http: store.http,
-            targets: await context.queryData(
-              `modelName == ${
+            targets: await queryWorkerData(context, `modelName == ${
                 JSON.stringify(context.definition.name)
-              } && name.startsWith("package-")`,
-              "attributes",
-            ) as PackageTarget[],
+              } && name.startsWith("package-")`, "attributes") as PackageTarget[],
             runState: (item) =>
               Promise.resolve(runs.find((r) => r.workItem === item) ?? null),
           },
@@ -752,19 +722,13 @@ async function projectWork(context: StageContext) {
         });
         await callDefinition(context, "dependency-package", "status", {});
         const runs =
-          (await context.queryData(
-            'modelName == "dependency-package" && name == "status-_factory"',
-            "attributes.runs",
-          ))[0] as { workItem: string; stageId: string; status: string }[];
+          (await queryWorkerData(context, 'modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
         await admitPackage(target, {
           http: store.http,
           projects: await groupConfigurations(target.workItem, context),
-          targets: await context.queryData(
-            `modelName == ${
+          targets: await queryWorkerData(context, `modelName == ${
               JSON.stringify(context.definition.name)
-            } && name.startsWith("package-")`,
-            "attributes",
-          ) as PackageTarget[],
+            } && name.startsWith("package-")`, "attributes") as PackageTarget[],
           runState: (item) =>
             Promise.resolve(
               runs.find((r) => r.workItem === item) ?? null,
@@ -790,12 +754,9 @@ async function projectWork(context: StageContext) {
     });
   }
   const issues =
-    (await context.queryData(
-      `modelName == ${
+    (await queryWorkerData(context, `modelName == ${
         JSON.stringify(context.definition.name)
-      } && name.startsWith("scheduler-issue-")`,
-      "attributes",
-    )).map((r) => SchedulerIssueSchema.parse(r)).filter((r) =>
+      } && name.startsWith("scheduler-issue-")`, "attributes")).map((r) => SchedulerIssueSchema.parse(r)).filter((r) =>
       r.status === "open"
     );
   const handle = await context.writeResource("projectWork", "project-work", {

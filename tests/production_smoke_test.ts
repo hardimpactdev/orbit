@@ -451,7 +451,7 @@ Deno.test("a stalled configuration refresh cannot send after its tick has aborte
         mode: "baseline",
       }, {
         ...f.context(),
-        runModel: () => held,
+        invokeModel: () => held,
       }),
     Error,
     "budget exceeded",

@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import {
   ConfigurationV3Schema,
   readProjectConfiguration,
@@ -76,11 +77,11 @@ Deno.test("config refresh refuses stale, missing, wrong-project and duplicate ex
   let ok = true;
   let config: unknown = { ...original, schema: 3 };
   const ctx = {
-    runModel: (args: unknown) => {
+    invokeModel: (args: unknown) => {
       calls.push(args);
       return Promise.resolve({ ok });
     },
-    queryData: () => Promise.resolve(config ? [config] : []),
+    queryData: recordQuery(() => Promise.resolve(config ? [config] : [])),
   };
   assertEquals(await projectConfigurations([], registered, ctx, 20), [
     original,
@@ -369,11 +370,11 @@ Deno.test("pre-retirement configuration is rewritten as v3 before the Gateway re
     },
   };
   const gateway = {
-    runModel: async () => {
+    invokeModel: async () => {
       await behavior.methods.configuration.execute({}, ctx);
       return { ok: true };
     },
-    queryData: () => Promise.resolve([saved]),
+    queryData: recordQuery(() => Promise.resolve([saved])),
   };
   assertEquals(await projectConfigurations([], registered, gateway, 20), [
     original,

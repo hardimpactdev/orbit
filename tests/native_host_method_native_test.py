@@ -5,9 +5,9 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
-import tempfile
 import time
 import unittest
+from native_harness import NativeTestCase
 import urllib.request
 
 REPO = Path(__file__).resolve().parents[1]
@@ -24,13 +24,14 @@ def reply(raw):
     raise AssertionError('Native JSON missing')
 
 
-class NativeHostMethodTest(unittest.TestCase):
+class NativeHostMethodTest(NativeTestCase):
     def test_remote_refusal_is_resolved_by_a_separate_native_process(self):
-        with tempfile.TemporaryDirectory(prefix='native-host-integration-') as temp:
-            root = Path(temp)
+        with self.subTest('isolated native worker'):
+            root = self.repo
             shutil.copy(REPO / '.swamp.yaml', root)
             ext = root / 'extensions/behaviors'
             ext.mkdir(parents=True)
+            shutil.copytree(REPO / 'extensions/models', root / 'extensions/models')
             (root / 'bin').mkdir()
             shutil.copy(REPO / 'bin/native-host-start.py', root / 'bin/native-host-start.py')
             shutil.copytree(REPO / 'extensions/behaviors/_lib', ext / '_lib')
@@ -44,6 +45,7 @@ class NativeHostMethodTest(unittest.TestCase):
             (ext / 'native_coordinator.ts').write_text('''
 import { z } from "npm:zod@4";
 import { callWorkerModel } from "./_lib/worker_model.ts";
+import { projectConfigurations } from "./_lib/project_config.ts";
 import { queryWorkerData } from "./_lib/worker_query.ts";
 export const behavior = {
   type: "@fixture/native-coordinator", version: "2026.10.30.1",
@@ -60,12 +62,34 @@ export const behavior = {
       if (attrs.length !== 1 || attrs[0].projectId !== 20) throw new Error("worker_query_not_hydrated");
       const content = await queryWorkerData(ctx, predicate, "content") as { projectId: number }[];
       if (content.length !== 1 || content[0].projectId !== 20) throw new Error("worker_content_not_hydrated");
+      const configs = await projectConfigurations([], [{projectId: 20, type: "@nckrtl/project-native-proof"}], ctx);
+      if (configs.length !== 1 || configs[0].projectId !== 20) throw new Error("project_refresh_not_hydrated");
+      await callWorkerModel(ctx, { definition: "dependency-package", method: "status" });
+      const runs = await queryWorkerData(ctx, 'modelName == "dependency-package" && name == "status-_factory"', "attributes.runs");
+      if (runs.length !== 1 || !Array.isArray(runs[0]) || runs[0].length !== 0) throw new Error("factory_status_not_hydrated");
       return { dataHandles: [] };
     },
   }},
 };
 ''')
-            shutil.copy(REPO / 'extensions/behaviors/orbit_group_runs.ts', ext / 'orbit_group_runs.ts')
+            for name in ('orbit_group_runs', 'orbit_stage'):
+                shutil.copy(REPO / f'extensions/behaviors/{name}.ts', ext / f'{name}.ts')
+            # Real project refresh and factory status, without GitHub or task effects.
+            project = json.loads((REPO / 'tests/fixtures/project-extensions/nckrtl-com.json').read_text())
+            (ext / 'fixture_project.ts').write_text('import { projectConfig } from "./_lib/project_extension.ts";\nexport const behavior = projectConfig("@nckrtl/project-native-proof", ' + json.dumps(project) + ');')
+            package = '.swamp/pulled-extensions/@swamp/software-factory'
+            shutil.copytree(REPO / package, root / package)
+            model = root / 'models/@swamp/software-factory/dependency-package.yaml'
+            model.parent.mkdir(parents=True)
+            shutil.copy(REPO / 'models/@swamp/software-factory/dependency-package.yaml', model)
+            (ext / 'fixture_factory.ts').write_text('''import { z } from "npm:zod@4";
+export const behavior = {
+ type: "@fixture/stage-factory", version: "2026.10.31.1", globalArguments: z.object({}),
+ resources: { proof: { schema: z.object({ workItem: z.string(), name: z.string(), payload: z.record(z.string(), z.unknown()) }), lifetime: "1h", garbageCollection: 1 } },
+ methods: { record_evidence: { description: "Retain stage evidence in scratch only", arguments: z.object({ workItem: z.string(), name: z.string(), payload: z.record(z.string(), z.unknown()) }),
+ execute: async (args: Record<string, unknown>, ctx: { writeResource: (s: string, n: string, v: unknown) => Promise<unknown> }) => ({ dataHandles: [await ctx.writeResource("proof", "proof", args)] }) } }
+};
+''')
             for name in ('scanner', 'leaf', 'refusal'):
                 shutil.copy(REPO / f'tests/fixtures/native-host/{name}.ts', ext / f'{name}.ts')
             env = {**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1',
@@ -86,6 +110,9 @@ export const behavior = {
                 self.assertEqual(result.returncode, 0, 'Native command failed: ' + ' '.join(args[:3]) + result.stderr[-1000:])
                 return reply(result.stdout)
 
+            cli('behavior', 'create', '@fixture/stage-factory', 'stage-factory')
+            cli('behavior', 'run', '@nckrtl/project-native-proof', 'configuration', 'project-native-proof')
+            cli('behavior', 'run', 'dependency-package', 'status')
             workflow = cli('workflow', 'create', 'native-host-proof')
             Path(workflow['path']).write_text(json.dumps({'id': workflow['id'], 'name': 'native-host-proof',
                 'labels': {'pool': 'migration', 'node': '209'}, 'queueTimeout': 10, 'affinity': True,
@@ -95,7 +122,11 @@ export const behavior = {
                      'task': {'type': 'model_method', 'modelType': '@nckrtl/native-host-method', 'modelName': 'native-scan', 'methodName': 'project_scan',
                               'inputs': {'projectId': 20, 'runId': 'native-host-proof'}}},
                     {'name': 'coordinator', 'dependsOn': [{'step': 'native', 'condition': {'type': 'succeeded'}}],
-                     'task': {'type': 'model_method', 'modelType': '@fixture/native-coordinator', 'modelName': 'coordinator', 'methodName': 'probe'}}]}]}))
+                     'task': {'type': 'model_method', 'modelType': '@fixture/native-coordinator', 'modelName': 'coordinator', 'methodName': 'probe'}},
+                    {'name': 'stage', 'dependsOn': [{'step': 'coordinator', 'condition': {'type': 'succeeded'}}],
+                     'task': {'type': 'model_method', 'modelType': '@nckrtl/orbit-stage', 'modelName': 'stage-proof', 'methodName': 'report',
+                              'globalArgs': {'factory': 'stage-factory'},
+                              'inputs': {'workItem': 'native-proof', 'stage': 'review', 'key': 'native-proof.review.c1', 'runId': 'review-proof', 'worktree': '/unused', 'subProject': '.', 'planCommit': 'a'*40}}}]}]}))
             for name in ('groups-driver', 'group-fanout', 'group-run'):
                 shutil.copy(REPO / f'workflows/workflow-{name}.yaml', root / f'workflows/workflow-{name}.yaml')
             definition = cli('behavior', 'create', '@nckrtl/orbit-group-runs', 'orbit-group-runs')
@@ -143,6 +174,10 @@ export const behavior = {
                     self.assertTrue(nested[0]['nested'])
                     self.assertNotIn(nested[0]['pid'], (serve.pid, worker.pid))
                     self.assertEqual(nested[0]['runId'], 'coordinator-proof')
+                    evidence = cli('data', 'query', 'modelName == "stage-factory" && name == "proof"', '--select', 'attributes', *flags)['results']
+                    self.assertEqual(len(evidence), 1)
+                    self.assertEqual(evidence[0]['name'], 'review-run')
+                    self.assertEqual(evidence[0]['payload']['runId'], 'review-proof')
                     # Real shipped coordinator: the former unplaced step is refused;
                     # the shipped placed step runs on the worker with its native scratch context.
                     driver = root / 'workflows/workflow-groups-driver.yaml'

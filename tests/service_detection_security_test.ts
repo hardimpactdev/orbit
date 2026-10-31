@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import { dirname } from "node:path";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { serviceWorkspace } from "../extensions/behaviors/_lib/service_workspace.ts";
@@ -339,16 +340,17 @@ print(json.dumps({'url':sys.argv[3],'number':17,'headRefOid':'a'*40,'state':'OPE
     const url = "https://github.com/nckrtl/website/pull/17";
     const ctx = {
       definition: { name: "orbit-gateway" },
-      queryData: (q: string) =>
+      queryData: recordQuery((q: string) =>
         Promise.resolve(
           q.includes('startsWith("package-')
             ? [{ workItem: "tg-2195", targets: [] }]
             : q.includes('name == "owner"')
             ? [{ runId: "batch-run" }]
             : [],
-        ),
+        )
+      ),
       writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
-      runModel: () => Promise.resolve({ ok: true }),
+      invokeModel: () => Promise.resolve({ ok: true }),
     };
     const http = () =>
       Promise.resolve({

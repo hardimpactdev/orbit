@@ -1,3 +1,4 @@
+import { recordQuery } from "../worker_query.ts";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import {
   type Context,
@@ -124,8 +125,10 @@ export class Fixture {
         gatewayUrl: "https://gateway.orbit",
         caFile: "/unused",
       },
-      runModel: () => Promise.resolve({ ok: true }),
-      queryData: () => Promise.resolve([{ ...this.project, schema: 3 }]),
+      invokeModel: () => Promise.resolve({ ok: true }),
+      queryData: recordQuery(() =>
+        Promise.resolve([{ ...this.project, schema: 3 }])
+      ),
       readResource: (name: string) =>
         Promise.resolve(this.stored.get(name) ?? null),
       writeResource: async (

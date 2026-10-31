@@ -1,5 +1,6 @@
 id: 774375ae-0b97-47d2-8a80-551cc5bb62d7
 name: stage-consult
+labels: { pool: migration, node: "209" }
 description: >-
   The reviewer answers the implementer's BLOCKED question.
 tags: {}

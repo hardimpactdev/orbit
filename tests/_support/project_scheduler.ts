@@ -117,7 +117,9 @@ export function fixture(token?: Record<string, unknown>) {
       return Promise.resolve(
         select === "attributes.runs"
           ? values.map((v) => (v as { runs: unknown }).runs)
-          : values,
+          : select === "attributes"
+          ? values
+          : values.map((attributes) => ({ attributes })),
       );
     },
     writeResource: (
@@ -133,7 +135,7 @@ export function fixture(token?: Record<string, unknown>) {
       get: () =>
         Promise.reject(new Error("must not read secrets in scheduler")),
     },
-    runModel: async (
+    invokeModel: async (
       args: {
         definition?: string;
         modelType?: string;

@@ -1,5 +1,6 @@
 id: 321ad876-e288-4c20-811e-28f2cce2a774
 name: production-smoke
+labels: { pool: migration, node: "209" }
 description: Observe one opted-in Project, optionally admit a baseline, then durably wait and read once.
 autoResume: true
 inputs:

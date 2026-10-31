@@ -1,3 +1,5 @@
+import { callWorkerModel } from "../_lib/worker_model.ts";
+import { queryWorkerData } from "../_lib/worker_query.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
 import { projectConfigurations } from "../_lib/project_config.ts";
@@ -117,7 +119,8 @@ export function repairMethod(
             repository: project.repository,
             ...config,
           });
-          const pending = (await ctx.queryData(
+          const pending = (await queryWorkerData(
+            ctx,
             `modelName == "production-smoke-${project.projectId}" && name.startsWith("repair-") && attributes.status != "started" && attributes.status != "completed"`,
             "attributes",
           ))
@@ -181,7 +184,9 @@ export function repairMethod(
             !observed.production || !observed.base_urls.includes(config.baseUrl)
           ) throw new Error("Repair ownership changed.");
           const verify = async () => {
-            if (!job) return false;
+            if (!job) {
+              return false;
+            }
             const receipt = await call(
               "GET",
               root + `/receipt?request_key=${encodeURIComponent(job.key)}`,
@@ -282,7 +287,8 @@ export function repairMethod(
           }
           const workItem = `tg-${repair.group_id}`;
           const readFactory = async () => {
-            const rows = await ctx.queryData(
+            const rows = await queryWorkerData(
+              ctx,
               `modelName == "orbit-groups" && name == "state-${workItem}"`,
               "attributes",
             );
@@ -303,7 +309,7 @@ export function repairMethod(
             state.factory_attempted = true;
             await save("pending", "Normal task factory handoff intent saved.");
             ctx.signal?.throwIfAborted();
-            const result = await ctx.runModel({
+            const result = await callWorkerModel(ctx, {
               modelType: "@swamp/software-factory",
               name: "orbit-groups",
               method: "start",

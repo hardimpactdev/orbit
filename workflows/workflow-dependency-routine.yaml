@@ -13,7 +13,6 @@ jobs:
   - name: tick
     steps:
       - name: reconcile
-        labels: {}
         task:
           type: workflow
           workflowIdOrName: group-supervise

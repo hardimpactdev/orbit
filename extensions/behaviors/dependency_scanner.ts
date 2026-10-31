@@ -15,6 +15,16 @@ import {
 import { IndexSchema } from "./_lib/dependency_results_schema.ts";
 import { DependencyProjectSchema } from "./_lib/dependency_projects.ts";
 
+/** This scanner runs only through the fixed native-host action. */
+interface ScannerContext extends DependencyContext {
+  runModel(
+    request: import("./native_host_method.ts").NativeModelRequest,
+  ): Promise<{
+    ok: boolean;
+    resources?: { name: string; version?: number }[];
+  }>;
+}
+
 /** Long work owns this model's native lock, never the orchestration lock. */
 export const behavior = {
   type: "@nckrtl/dependency-scanner",
@@ -45,7 +55,7 @@ export const behavior = {
       arguments: z.object({}),
       execute: async (
         _args: Record<string, never>,
-        context: DependencyContext,
+        context: ScannerContext,
       ) => {
         const runId = crypto.randomUUID(), failures: Diagnostic[] = [];
         const prepared = await context.runModel({
@@ -137,7 +147,7 @@ export const behavior = {
       }),
       execute: async (
         args: { projectId: number; runId: string },
-        context: DependencyContext,
+        context: ScannerContext,
       ) => {
         const failures: Diagnostic[] = [];
         let diagnosticHandle: { name: string };

@@ -21,7 +21,7 @@ def placed_workflows():
 
 
 class HeavyWorkflowPlacementTest(unittest.TestCase):
-    def test_heavy_methods_are_host_bound_and_native_coordinators_remain_local(self):
+    def test_heavy_methods_and_native_coordinators_select_workers(self):
         for path in placed_workflows():
             workflow = yaml.safe_load(path.read_text())
             self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, path.name)
@@ -29,8 +29,8 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
             for job in workflow['jobs']:
                 for step in job['steps']:
                     task = step['task']
-                    if task.get('type') in ('workflow', 'assert', 'manual_approval'):
-                        self.assertEqual(step.get('labels', job.get('labels')), {}, path.name)
+                    fields = {**workflow, **job, **step}
+                    self.assertTrue(fields.get('target') or fields.get('labels') or fields.get('platform'), path.name)
                     if task.get('modelType') == '@nckrtl/native-host-method':
                         self.assertNotIn('labels', step)
                         self.assertNotIn('labels', job)
@@ -40,7 +40,7 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
         for name in ('subtasks-driver', 'dependency-results-prune'):
             path = REPO / f'workflows/workflow-{name}.yaml'
             workflow = yaml.safe_load(path.read_text())
-            self.assertNotIn('labels', workflow, name)
+            self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, name)
 
     def test_active_coordinators_select_authoritative_workers(self):
         for name in ('groups-driver', 'group-fanout', 'group-supervise', 'group-run',

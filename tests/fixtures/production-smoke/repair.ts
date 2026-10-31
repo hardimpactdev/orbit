@@ -1,3 +1,4 @@
+import { recordQuery } from "../worker_query.ts";
 import { FailureFixture } from "./failure.ts";
 import { productionSmoke } from "../../../extensions/behaviors/production-smoke/mod.ts";
 import { Repair } from "../../../extensions/behaviors/production-smoke/repair.ts";
@@ -81,7 +82,7 @@ export class RepairFixture extends FailureFixture {
     const base = super.context();
     return {
       ...base,
-      queryData: async (predicate = "") => {
+      queryData: recordQuery(async (predicate = "") => {
         if (predicate.includes('name.startsWith("repair-")')) {
           return [...this.stored.entries()].filter(([name, row]) =>
             name.startsWith("repair-") &&
@@ -93,9 +94,11 @@ export class RepairFixture extends FailureFixture {
             ? await this.queryFactory(predicate)
             : [...this.factory.values()];
         }
-        return await base.queryData(predicate);
-      },
-      runModel: async (
+        return (await base.queryData(predicate)).map((r) =>
+          (r as { attributes: unknown }).attributes
+        );
+      }),
+      invokeModel: async (
         args?: {
           modelType: string;
           name: string;

@@ -1,5 +1,6 @@
 id: 5e2e6a8a-d67f-40c8-a979-aa4c80f2aa59
 name: '@nckrtl/dependencies/prune-results'
+labels: { pool: migration, node: "209" }
 description: Retain seven days of dependency indexes and all exact reports they reference.
 trigger:
   schedule: 30 1 * * *

@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { behavior as groupRun } from "../extensions/behaviors/orbit_group_run.ts";
 import { behavior as driver } from "../extensions/behaviors/orbit_driver.ts";
@@ -18,7 +19,6 @@ import {
 } from "../extensions/behaviors/_lib/swamp_maintenance.ts";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
-import { standaloneMethodFixture } from "./_support/standalone_method_fixture.ts";
 
 // The factory status/evidence boundary is a fixture. The deployed tick settings,
 // driver, Gateway stage planner, worker startup, placement and result reader are real.
@@ -224,7 +224,7 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
       maxCallsPerTick: 60,
     }),
     logger: { info() {}, warning() {} },
-    queryData: (predicate: string) => {
+    queryData: recordQuery((predicate: string) => {
       const model = JSON.parse(predicate.match(/modelName == ("[^"]*")/)![1]);
       const name = JSON.parse(predicate.match(/name == ("[^"]*")/)![1]);
       return Promise.resolve(
@@ -232,7 +232,7 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
           ? [records.get(`${model}/${name}`)]
           : [],
       );
-    },
+    }),
     writeResource: (
       _spec: string,
       name: string,
@@ -241,7 +241,7 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
       records.set(`orbit-driver-detect/${name}`, value);
       return Promise.resolve({ name });
     },
-    runModel: (
+    invokeModel: async (
       call: {
         definition: string;
         method: string;
@@ -250,9 +250,8 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
     ) => {
       const a = call.arguments!;
       if (call.definition === "orbit-gateway") {
-        throw new Error(
-          "maintenance work must use the standalone method boundary",
-        );
+        await stageCall(a as unknown as Parameters<typeof runStage>[0]);
+        return { ok: true };
       } else if (call.method === "status") {
         const evidence = records.get(
           `dependency-detect/evidence-tg-7-${stage}-run`,
@@ -299,9 +298,6 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
       return Promise.resolve({ ok: true });
     },
   };
-  const method = standaloneMethodFixture((args) =>
-    stageCall(args as unknown as Parameters<typeof runStage>[0])
-  );
   try {
     // Reproduce a completed provision whose result the minute driver has not read yet.
     await stageCall({
@@ -314,7 +310,11 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
       { workItems: ["tg-7"], maxSteps },
       context,
     );
-    assertEquals(stage, "script");
+    assertEquals(
+      stage,
+      "script",
+      JSON.stringify(records.get("orbit-driver-detect/tick")),
+    );
     assertEquals(
       workerStarts,
       1,
@@ -342,7 +342,6 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
     assertEquals(fake.startsOf(7, "publish"), 0);
     assertEquals(fake.startsOf(7, "repair"), 0);
   } finally {
-    method.restore();
     await fake.close();
   }
 });

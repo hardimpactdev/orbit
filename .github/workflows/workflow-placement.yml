@@ -1,0 +1,17 @@
+name: Workflow placement
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  worker-placement:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: v2.9.8
+      - name: Reject unplaced workflow steps
+        run: deno run --allow-read bin/lint-workflow-placement.ts

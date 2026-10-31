@@ -1,3 +1,4 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
 import {
   assert,
   assertEquals,
@@ -395,13 +396,13 @@ Deno.test("native adapter rejects duplicate current indexes and never falls back
     requested: unknown[] = [];
   const context = {
     definition: { name: "orbit-gateway" },
-    queryData: () => Promise.resolve([index, index]),
+    queryData: recordQuery(() => Promise.resolve([index, index])),
     readResource: (name: string, version?: number) => {
       requested.push([name, version]);
       return Promise.resolve(null);
     },
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
   };
   const store = resultStore(context);
   await assertRejects(
@@ -456,14 +457,15 @@ Deno.test("PR lookup failure retains last success/value, missing group fields ar
   };
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: (q: string) =>
+    queryData: recordQuery((q: string) =>
       Promise.resolve(
         q.includes('startsWith("package-')
           ? [{ workItem: "tg-10", targets: [] }]
           : [],
-      ),
+      )
+    ),
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
   };
   const e = await batchEvidence(
     project,
@@ -501,16 +503,17 @@ Deno.test("PR observation verifies exact URL/head/native run, including a still-
     calls: string[] = [];
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: (q: string) =>
+    queryData: recordQuery((q: string) =>
       Promise.resolve(
         q.includes('startsWith("package-')
           ? [{ workItem: "tg-2195", targets: [] }]
           : q.includes('name == "owner"')
           ? [{ runId: "native-batch-run" }]
           : [{ state: "succeeded", artifacts: { "pull-request": { url } } }],
-      ),
+      )
+    ),
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
   };
   const http = () =>
     Promise.resolve({
@@ -673,7 +676,7 @@ Deno.test("minute reconciliation ends an interrupted running attempt and preserv
   let saved = stale;
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: () => Promise.resolve([]),
+    queryData: recordQuery(() => Promise.resolve([])),
     readResource: (name: string, version?: number) =>
       f.store.readReport(name, version!),
     writeResource: (
@@ -684,7 +687,7 @@ Deno.test("minute reconciliation ends an interrupted running attempt and preserv
       saved = IndexSchema.parse(value);
       return Promise.resolve({ name: "index", version: 1 });
     },
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
   };
   await reconcileDependencyIndex(
     stale,
@@ -713,9 +716,9 @@ Deno.test("cancelled PR observation starts no Gateway or GitHub lookup", async (
   const ctx = {
     definition: { name: "orbit-gateway" },
     signal: AbortSignal.abort(),
-    queryData: () => Promise.resolve([]),
+    queryData: recordQuery(() => Promise.resolve([])),
     writeResource: () => Promise.resolve({ name: "unused" }),
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
   };
   const evidence = await batchEvidence(project, null, ctx, () => {
     calls++;
@@ -740,16 +743,17 @@ Deno.test("PR refresh projects real immutable batch targets into its publication
   };
   const ctx = {
     definition: { name: "orbit-gateway" },
-    queryData: (q: string) =>
+    queryData: recordQuery((q: string) =>
       Promise.resolve(
         q.includes('startsWith("package-')
           ? [{ workItem: "tg-2195", targets: [target] }]
           : q.includes('name == "owner"')
           ? [{ runId: "batch-run" }]
           : [],
-      ),
+      )
+    ),
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
-    runModel: () => Promise.resolve({ ok: true }),
+    invokeModel: () => Promise.resolve({ ok: true }),
   };
   const evidence = await batchEvidence(
     project,

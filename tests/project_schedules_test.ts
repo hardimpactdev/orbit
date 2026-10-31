@@ -303,8 +303,8 @@ for (const change of ["head", "policy", "running", "partial", "failed"]) {
           policyIdentity: "wrong",
         });
       } else if (change === "head") {
-        const run = f.ctx.runModel;
-        f.ctx.runModel = async (args) => {
+        const run = f.ctx.invokeModel;
+        f.ctx.invokeModel = async (args) => {
           const result = await run(args);
           if (args.method === "remote_ref") {
             f.data.set(`${args.name}/remote-ref-refs-heads-main`, {
@@ -612,9 +612,9 @@ Deno.test("cleaned cancellation retires an obsolete factory stage before status 
       tasks: [{ status: "cancelled" }],
     });
     f.groups.set(2, { id: 2, project_id: 20, status: "running" });
-    const runModel = f.ctx.runModel;
+    const runModel = f.ctx.invokeModel;
     let cancelledStatusCalls = 0;
-    f.ctx.runModel = (args) => {
+    f.ctx.invokeModel = (args) => {
       if (
         args.definition === "dependency-detect" && args.method === "status" &&
         args.arguments?.workItem === "tg-1"

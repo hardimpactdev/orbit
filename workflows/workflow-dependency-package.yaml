@@ -23,7 +23,6 @@ jobs:
             workItem: '${{ inputs.workItem }}'
             targets: '${{ inputs.targets }}'
       - name: reconcile
-        labels: {}
         dependsOn:
           - step: admit
             condition: { type: succeeded }

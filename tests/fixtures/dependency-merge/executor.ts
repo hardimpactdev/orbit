@@ -1,3 +1,4 @@
+import { recordQuery } from "../worker_query.ts";
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import type { Http } from "../../../extensions/behaviors/automatic-deploy/gateway.ts";
 const file = "native-merge.json";
@@ -59,13 +60,14 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
 };
 
 export const fixtureConfiguration = {
-  runModel: (_args: unknown) => Promise.resolve({ ok: true }),
-  queryData: (_predicate: string, _select?: string) =>
+  invokeModel: (_args: unknown) => Promise.resolve({ ok: true }),
+  queryData: recordQuery((_predicate: string, _select?: string) =>
     Promise.resolve([{
       projectId: 20,
       enabled: true,
       repository: "acme/widgets",
       defaultBranch: "main",
       smokeWorkflow: ".github/workflows/production-smoke.yml",
-    }]),
+    }])
+  ),
 };

@@ -1,3 +1,4 @@
+import { callWorkerModel, type WorkerModelContext } from "./_lib/worker_model.ts";
 // @nckrtl/orbit-stage — glue steps for the stage workflows of orbit-subtasks.
 // Each stage workflow (workflows/workflow-stage-*.yaml) does its work with
 // @swamp/git, @nckrtl/composer and @swamp/agent-runner, and uses these methods
@@ -32,10 +33,9 @@ const RESULT_EVIDENCE: Record<string, string> = {
 };
 
 type Rec = { name: string; attributes: Record<string, unknown>; version?: number };
-type Ctx = {
+type Ctx = WorkerModelContext & {
   globalArgs: G;
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
-  runModel: (o: Record<string, unknown>) => Promise<{ ok: boolean; error?: { message: string } }>;
   writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
   logger: { info: (m: string, p?: Record<string, unknown>) => void };
 };
@@ -59,8 +59,8 @@ async function envelope(ctx: Ctx, workItem: string, artifact: string): Promise<E
   return r ? (r.attributes as unknown as Envelope) : null;
 }
 
-async function call(ctx: Ctx, o: Record<string, unknown>) {
-  const r = await ctx.runModel(o);
+async function call(ctx: Ctx, o: import("./native_host_method.ts").NativeModelRequest) {
+  const r = await callWorkerModel(ctx, o);
   if (!r.ok) throw new Error(`${o.definition ?? o.name}.${o.method}: ${r.error?.message}`);
 }
 

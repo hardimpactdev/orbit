@@ -1,5 +1,6 @@
 id: 7e3a4af3-a48f-482d-a676-6aaa584dba5a
 name: stage-review
+labels: { pool: migration, node: "209" }
 description: >-
   One read-only review of the change; findings gate the exit.
 tags: {}

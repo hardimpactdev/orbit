@@ -2,7 +2,7 @@
 export async function queryWorkerData(
   context: { queryData: (predicate: string) => Promise<unknown[]> },
   predicate: string,
-  field: "attributes" | "attributes.workItem" | "content",
+  field: "attributes" | "attributes.workItem" | "attributes.runs" | "content",
 ): Promise<unknown[]> {
   const records = await context.queryData(predicate);
   return records.map((value) => {
@@ -15,6 +15,8 @@ export async function queryWorkerData(
     };
     return field === "attributes.workItem"
       ? record.attributes?.workItem
+      : field === "attributes.runs"
+      ? record.attributes?.runs
       : record[field];
   });
 }
