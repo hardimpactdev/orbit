@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Schedules\ActivateScheduleAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Actions\Schedules\CompleteScheduleAction;
 use App\Actions\Schedules\CreateScheduleAction;
@@ -156,6 +157,14 @@ it('does not update or recreate state for removing and deleted completion callba
     $schedule->delete();
     expect($complete->execute($id, ScheduleRunStatus::Success, $this->node))->toBeNull()
         ->and(Schedule::query()->whereKey($id)->exists())->toBeFalse();
+});
+
+it('activates only an active Instance Schedule and persists desired intent after success', function (): void {
+    $schedule = $this->addSchedule->execute(lifecycle_schedule_data($this->instance))['schedule'];
+    $activated = new ActivateScheduleAction($this->runtime)->execute($schedule);
+
+    expect($activated->desired_timer_state)->toBe(DesiredTimerState::Enabled)
+        ->and($this->runtime->activated)->toBe([$schedule->id]);
 });
 
 it('cascades only the selected Instance schedules and blocks Node removal while hosted', function (): void {
