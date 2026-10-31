@@ -40,25 +40,23 @@ function collectorCaptureFixture(): array
 function collectorCaptureOperation(Node $node, array $payload): Operation
 {
     return new Operation(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
-        'input' => ['node_id' => $node->id, 'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id],
-            'worker_credentials' => ['$secret' => 'node.worker_credentials', 'id' => $node->id],
-            'collector_installation' => $payload['installation'], '_converge' => ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($node),
-                'artifacts' => $payload['applicable'] ? [['name' => 'ai-router', 'digest' => app(AgentDelivery::class)->pin($node), 'required' => true, 'repair' => false]] : [], 'payloads' => ['ai-router' => $payload]]],
-        'state' => ['node_converge_writer' => 'direct', 'swamp_run_id' => '6eb3e06c-8497-4d27-86e9-d3610aacb410'], 'status' => 'running']);
+        'input' => ['node_id' => $node->id, 'collector_installation' => $payload['installation'], '_converge' => ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($node),
+            'artifacts' => $payload['applicable'] ? [['name' => 'ai-router', 'digest' => app(AgentDelivery::class)->pin($node), 'required' => true, 'repair' => false]] : [], 'payloads' => ['ai-router' => $payload]]],
+        'state' => ['node_converge_writer' => 'direct'], 'status' => 'running']);
 }
 
 function collectorPrivateReader(): DirectOperationPrivateMaterial
 {
-    // Isolate the future map without adding a duplicate kind or activating the production declaration.
-    $reflection = new ReflectionClass(DirectOperation::class);
-    $direct = $reflection->newInstanceWithoutConstructor();
-    $reflection->getProperty('definitions')->setValue($direct, ['node.converge' => [
-        'workflow' => 'collector-contract', 'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'node_converge_writer', 'projection' => ProcessControlProjection::class,
-        'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials',
-            AiRouterCollectorSnapshot::Parameter => AiRouterCollectorSnapshot::Source],
-    ]]);
-    app()->instance(DirectOperation::class, $direct);
+    $contribution = new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['node.converge' => ['workflow' => 'collector-contract', 'writer_config' => 'swamp.direct_writers',
+                'writer_state' => 'node_converge_writer', 'projection' => ProcessControlProjection::class,
+                'private_material' => [AiRouterCollectorSnapshot::Parameter => AiRouterCollectorSnapshot::Source]]];
+        }
+    };
+    app()->instance(DirectOperation::class, new DirectOperation([$contribution]));
 
     return app(DirectOperationPrivateMaterial::class);
 }
@@ -110,12 +108,11 @@ it('hydrates explicit noncollector absence through the unchanged shared reader w
     if ($selectedElsewhere) {
         app(AiRouterState::class)->enable($node->id + 1, 'collector-cache', 'http://127.0.0.1:8317', 'management', 'read', 'control');
     }
-    $node->forceFill(['agent_secret_hash' => str_repeat('c', 64)])->save();
     $payload = app(AiRouterCollectorSnapshot::class)->capture($node);
     $operation = collectorCaptureOperation($node, $payload);
     $reader = collectorPrivateReader();
     DB::enableQueryLog();
-    expect($reader->read($operation))->toBe(['secret_hash' => str_repeat('c', 64), 'worker_credentials' => null, 'collector_installation' => null]);
+    expect($reader->read($operation))->toBe(['collector_installation' => null]);
     $sql = implode("\n", array_column(DB::getQueryLog(), 'query'));
     DB::disableQueryLog();
     expect($sql)->not->toContain('processes')->not->toContain('database_connections')->not->toContain('ai_router_process_sources');
