@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\NodeEnrollmentProjection;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Certificates\FilesystemRootCertificate;
@@ -201,6 +204,48 @@ it('rejects duplicate scope selectors instead of signing twice', function (): vo
     $this->body['requests'][] = $this->body['requests'][0];
     $this->postJson($this->path, $this->body)->assertConflict();
 });
+
+it('signs the exact admitted enrollment target before terminal identity activation', function (LifecycleStatus $status): void {
+    direct_sign_enrollment_declaration();
+    $this->node->update(['status' => $status]);
+    $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'input' => [
+        'certificates' => [$this->leaf], 'enrollment' => ['existed' => $status === LifecycleStatus::Failed],
+        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id]],
+    ]]);
+    $this->postJson($this->path, $this->body)->assertOk()->assertJsonPath('data.certificates.0.node_id', $this->node->id);
+    expect($this->node->refresh()->status)->toBe($status);
+})->with([LifecycleStatus::Provisioning, LifecycleStatus::Failed]);
+
+it('does not extend enrollment signing to an unbound or foreign inactive Node', function (string $change): void {
+    direct_sign_enrollment_declaration();
+    $this->node->update(['status' => LifecycleStatus::Provisioning]);
+    $input = ['certificates' => [$this->leaf], 'enrollment' => ['existed' => false],
+        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id]]];
+    $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'input' => $input]);
+    match ($change) {
+        'foreign' => $this->operation->update(['target_id' => 209, 'node_id' => 209]),
+        'intent' => data_set($input, 'intent.node_id', 209),
+        'candidate' => data_set($input, 'intent.candidate.node_id', 209),
+        'reservation' => data_set($input, 'enrollment.existed', null),
+        'removing' => $this->node->update(['status' => LifecycleStatus::Removing]),
+    };
+    if (! in_array($change, ['foreign', 'removing'], true)) {
+        $this->operation->update(['input' => $input]);
+    }
+    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
+    expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+})->with(['foreign', 'intent', 'candidate', 'reservation', 'removing']);
+
+function direct_sign_enrollment_declaration(): void
+{
+    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['node.add' => ['workflow' => 'operation-node-add-native', 'projection' => NodeEnrollmentProjection::class]];
+        }
+    }]));
+}
 
 function direct_sign_bad_signature(): string
 {

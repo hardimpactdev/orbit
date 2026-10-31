@@ -88,6 +88,7 @@ final readonly class SignDirectCertificatesAction
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],
             'node.role_relocate' => ['_relocate.certificates.leaves'],
             'node.role_remove' => ['_role_remove.certificates.leaves'],
+            'node.add' => ['certificates'],
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
             'instance.transfer' => ['route_transfer.target.certificates'],
             default => [],
@@ -99,7 +100,7 @@ final readonly class SignDirectCertificatesAction
                 if (! is_array($row) || ! is_int($row['node_id'] ?? null) || ! is_string($row['scope'] ?? null)
                     || ! is_string($row['domain'] ?? null) || ! RouteDomain::isValid($row['domain'])
                     || ! is_string($row['root_hash'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $row['root_hash']) !== 1
-                    || ! Node::query()->whereKey($row['node_id'])->where('status', 'active')->exists()) {
+                    || ! $this->admittedNode($operation, $row['node_id'])) {
                     continue;
                 }
                 $leaf = ['node_id' => $row['node_id'], 'scope' => $row['scope'], 'domain' => $row['domain'], 'root_hash' => $row['root_hash']];
@@ -115,5 +116,20 @@ final readonly class SignDirectCertificatesAction
         }
 
         return $leaves;
+    }
+
+    private function admittedNode(Operation $operation, int $nodeId): bool
+    {
+        $node = Node::query()->find($nodeId);
+        if ($node?->status->value === 'active') {
+            return true;
+        }
+
+        return $node !== null && in_array($node->status->value, ['provisioning', 'failed'], true)
+            && $operation->kind === 'node.add' && $operation->target_type === 'node'
+            && $operation->target_id === $nodeId && $operation->node_id === $nodeId
+            && Arr::get($operation->input, 'intent.node_id') === $nodeId
+            && Arr::get($operation->input, 'intent.candidate.node_id') === $nodeId
+            && is_bool(Arr::get($operation->input, 'enrollment.existed'));
     }
 }
