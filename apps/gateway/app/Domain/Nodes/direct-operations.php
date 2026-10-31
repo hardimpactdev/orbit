@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
+use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 
 return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.agent_rekey' => [
@@ -25,4 +26,8 @@ return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.agent_rek
     'writer_scope' => ['parent_operation_id' => null, 'native_footprint' => true],
     'projection' => NodeConvergeProjection::class,
     'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
+], 'node.role_add' => [
+    'workflow' => 'operation-node-role-add-direct',
+    'projection' => NodeRoleDirectProjection::class,
+    'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
 ]];

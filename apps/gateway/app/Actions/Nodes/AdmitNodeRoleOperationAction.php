@@ -49,7 +49,7 @@ final readonly class AdmitNodeRoleOperationAction
 
     public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false): Operation
     {
-        $kind = $converge ? 'node.role_converge' : 'node.role_add';
+        $kind = 'node.role_add';
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
@@ -71,7 +71,7 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
             }
             $existing = $node->roles()->where('role', $role)->first();
-            if ($existing !== null && ! $converge) {
+            if ($existing !== null && ! $converge && ! ($role === RoleName::Ingress && $existing->status === LifecycleStatus::Active)) {
                 throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
             }
             if ($role === RoleName::Analytics) {
@@ -91,6 +91,9 @@ final readonly class AdmitNodeRoleOperationAction
             $created = $assignment->wasRecentlyCreated;
             if (! $created) {
                 $assignment->claimConvergence();
+            }
+            if ($role === RoleName::Gateway) {
+                app(GrantGatewayRoleAccessAction::class)->execute($node);
             }
             app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
             $snapshot = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, $created);

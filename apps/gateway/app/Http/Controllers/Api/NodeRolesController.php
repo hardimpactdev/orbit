@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
-use App\Domain\Operations\OperationIdempotency;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -55,9 +54,6 @@ final class NodeRolesController extends Controller
         $role = $request->role();
         $this->guardMutable($role, $registry);
 
-        if ($request->convergeExisting()) {
-            app(OperationIdempotency::class)->kind = 'node.role_converge';
-        }
         try {
             $result = $action->add($node, $role, $request->convergeExisting(), $request->analyticsSettings(),
                 requestId: $request->attributes->getString('orbit.request_id'));

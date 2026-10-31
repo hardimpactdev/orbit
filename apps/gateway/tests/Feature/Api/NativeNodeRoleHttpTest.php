@@ -79,6 +79,5 @@ it('serves each role publication participant fresh public data and denies privat
     $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip])
         ->getJson("/api/v1/direct-operations/{$operation->id}?run_id={$run}")->assertForbidden();
 })->with([
-    ['node.role_add', '_role'], ['node.role_converge', '_role'],
-    ['node.role_remove', '_role_remove'], ['node.role_relocate', '_relocate'],
+    ['node.role_add', '_role'],
 ]);

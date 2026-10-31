@@ -61,6 +61,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 return $projected;
             }
             if (! $status->terminal()) {
+                if (($result['runtime_completed'] ?? false) === true) {
+                    app(NodeRoleRuntimeProjection::class)->record($snapshot);
+                }
                 if (isset($result['publication_phase'])) {
                     $phase = ValidatedData::object($result['publication_phase']);
                     app(NodeRolePublicationState::class)->record(ValidatedData::object($snapshot['certificates']), ValidatedData::string($phase['phase']), ValidatedData::integer($phase['node_id']));
