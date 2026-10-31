@@ -481,7 +481,9 @@ The serving phase:
 
 An unchanged digest records `caddy: unchanged` and a null `caddy_operation_id`, with no Swamp call. A changed configuration submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its ID. The Operation owns publication and its final result. Submission is not a publication claim. The digest comparison reads the actual `/etc/caddy/Caddyfile` managed link, not the last submitted Operation. Release verification still checks live HTTPS.
 
-Only the Gateway release runner has a bounded self-recovery exception: after an explicitly refused or unavailable Caddy or Horizon start, it waits up to 600 seconds for Swamp's HTTPS health endpoint, using the configured CA. It then makes one fresh submission. A refusal after healthy serve, an uncertain admission, or another failure still fails the handoff. An uncertain start is never repeated. The existing release failure rules preserve or restore the prior release when safe. This wait is not available to other Operation kinds or Swamp steps.
+Only the Gateway release runner has a bounded self-recovery exception: after an explicitly refused or unavailable Caddy or Horizon start, it waits up to 600 seconds for Swamp's HTTPS health endpoint, using the configured CA. It then makes one fresh submission. If that attempt cannot connect before sending, the runner keeps waiting within the same deadline; a healthy HTTPS response alone does not establish a working WebSocket connection.
+
+A refusal after healthy serve, an uncertain admission, or another failure still fails the handoff. An uncertain start is never repeated. The existing release failure rules preserve or restore the prior release when safe. This wait is not available to other Operation kinds or Swamp steps.
 
 An explicit rollback uses the running release's handoff code against the stable Gateway path. It does not execute a retained target's older handoff implementation, which may still require Swamp for unchanged Caddy configuration. Forward deploys keep using the target release's handoff code.
 
