@@ -23,7 +23,7 @@ final readonly class PlausibleProcess
 
     public const int PORT = 8000;
 
-    private const string AgentBinary = '/usr/local/bin/orbit-agent';
+    public const array Startup = ['/entrypoint.sh', 'run'];
 
     public static function data(
         Node $node,
@@ -54,7 +54,7 @@ final readonly class PlausibleProcess
             targetId: $node->id,
             name: self::NAME,
             runtime: ProcessRuntime::Docker,
-            command: [self::AgentBinary, 'service', 'plausible'],
+            command: self::Startup,
             image: self::IMAGE.':v'.$version,
             workingDirectory: null,
             environment: [
@@ -66,7 +66,7 @@ final readonly class PlausibleProcess
             // WireGuard only: the Node's own Caddy site serves the dashboard, and the Router
             // reaches the tracking paths over WireGuard.
             ports: ["{$node->wireguard_ip}:".self::PORT.':'.self::PORT.'/tcp'],
-            volumes: [['source' => self::AgentBinary, 'target' => self::AgentBinary, 'read_only' => true]],
+            volumes: [],
             restartPolicy: 'unless-stopped',
             start: true,
         );

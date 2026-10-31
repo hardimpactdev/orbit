@@ -14,7 +14,6 @@ use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
-use App\Domain\GitHub\GitHubInstallation;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
@@ -31,6 +30,7 @@ use DateTimeImmutable;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 use Throwable;
 
@@ -47,90 +47,6 @@ final readonly class HttpGitHubApi implements GitHubApi
     private const int OPEN_PULL_REQUEST_PAGES = 3;
 
     public function __construct(private HttpGitHubReviewReader $reviewReader) {}
-
-    /**
-     * Laravel's `post($url)` JSON-encodes an omitted payload as `[]`. GitHub's
-     * convert schema rejects that array (`[] is not a null or object`).
-     */
-    public function convertManifest(#[SensitiveParameter] string $code): GitHubAppCredentials
-    {
-        $response = $this->send(
-            fn (): Response => $this->request()
-                ->withBody('', 'application/json')
-                ->post('/app-manifests/'.rawurlencode($code).'/conversions'),
-        );
-
-        if (! $response->successful()) {
-            throw GitHubApiException::refused();
-        }
-
-        $appId = $response->json('id');
-        $slug = $response->json('slug');
-        $name = $response->json('name');
-        $owner = $response->json('owner.login');
-        $ownerType = $response->json('owner.type');
-        $url = $response->json('html_url');
-        $privateKey = $response->json('pem');
-
-        if (
-            ! is_int($appId)
-            || ! is_string($slug)
-            || ! is_string($name)
-            || ! is_string($owner)
-            || ! is_string($ownerType)
-            || ! is_string($url)
-            || ! is_string($privateKey)
-            || $privateKey === ''
-        ) {
-            throw GitHubApiException::refused();
-        }
-
-        return new GitHubAppCredentials(
-            appId: $appId,
-            slug: $slug,
-            name: $name,
-            owner: $owner,
-            ownerType: strtolower($ownerType) === 'organization' ? 'organization' : 'user',
-            url: $url,
-            privateKey: $privateKey,
-        );
-    }
-
-    public function installations(GitHubAppCredentials $credentials): array
-    {
-        $installations = [];
-
-        for ($page = 1; $page <= 10; $page++) {
-            $response = $this->send(fn (): Response => $this->asApp($credentials)->get('/app/installations', [
-                'per_page' => 100,
-                'page' => $page,
-            ]));
-
-            if (! $response->successful()) {
-                throw GitHubApiException::unavailable();
-            }
-
-            $rows = $response->json();
-
-            if (! is_array($rows)) {
-                throw GitHubApiException::unavailable();
-            }
-
-            foreach ($rows as $row) {
-                $installation = $this->installation($row);
-
-                if ($installation instanceof GitHubInstallation) {
-                    $installations[] = $installation;
-                }
-            }
-
-            if (count($rows) < 100) {
-                break;
-            }
-        }
-
-        return $installations;
-    }
 
     public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): ?int
     {
@@ -163,6 +79,7 @@ final readonly class HttpGitHubApi implements GitHubApi
         $repository = $grant->repository;
         $requestedPermissions = $grant->permissions;
         $deadline = microtime(true) + 5;
+        $issued = null;
         try {
             $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
                 ->get($this->repositoryPath($repository).'/installation');
@@ -181,14 +98,13 @@ final readonly class HttpGitHubApi implements GitHubApi
             $token = $response->json('token');
             $expires = $response->json('expires_at');
             $permissions = $response->json('permissions');
-            $repos = $response->json('repositories');
+            if (is_string($token) && $token !== '' && strlen($token) <= 2048 && preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) === 1) {
+                $issued = new GitHubAccessToken($token, is_string($expires) ? $expires : '');
+            }
             if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) !== 1 || ! is_string($expires)
                 || ! is_array($permissions) || array_any($requestedPermissions, static fn (string $level, string $name): bool => ($permissions[$name] ?? null) !== $level)
                 || array_diff_key($permissions, $requestedPermissions + ['metadata' => 'read']) !== []
                 || (isset($permissions['metadata']) && $permissions['metadata'] !== 'read')
-                || ! is_array($repos) || count($repos) !== 1 || ! is_array($repos[0] ?? null)
-                || ! is_string($repos[0]['full_name'] ?? null)
-                || strtolower($repos[0]['full_name']) !== strtolower($repository->owner.'/'.$repository->name)
                 || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z/D', $expires) !== 1) {
                 throw new \UnexpectedValueException;
             }
@@ -197,11 +113,27 @@ final readonly class HttpGitHubApi implements GitHubApi
                 throw new \UnexpectedValueException;
             }
 
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0) {
+                throw new \UnexpectedValueException;
+            }
+            $scope = $this->request()->withToken($token)->withoutRedirecting()->timeout($remaining)->connectTimeout($remaining)
+                ->get('/installation/repositories', ['per_page' => 2]);
+            $this->assertDependencyTokenResponse($scope);
+            $repos = $scope->json('repositories');
+            if (! $scope->successful() || $scope->json('total_count') !== 1 || ! is_array($repos) || count($repos) !== 1
+                || ! is_array($repos[0] ?? null) || ! is_string($repos[0]['full_name'] ?? null)
+                || strtolower($repos[0]['full_name']) !== strtolower($repository->owner.'/'.$repository->name)) {
+                throw new \UnexpectedValueException;
+            }
+
             return new GitHubAccessToken($token, $expires);
-        } catch (ResourceOperationException $exception) {
-            throw $exception;
-        } catch (Throwable) {
-            throw new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
+        } catch (Throwable $exception) {
+            if ($issued !== null && ! $this->revokeInstallationToken($issued)) {
+                Log::warning('github.scoped_token_revoke_failed');
+            }
+            throw $exception instanceof ResourceOperationException ? $exception
+                : new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
         }
     }
 
@@ -849,30 +781,6 @@ final readonly class HttpGitHubApi implements GitHubApi
     private function text(mixed $value): ?string
     {
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function installation(mixed $row): ?GitHubInstallation
-    {
-        if (! is_array($row)) {
-            return null;
-        }
-
-        $id = $row['id'] ?? null;
-        $account = is_array($row['account'] ?? null) ? ($row['account']['login'] ?? null) : null;
-        $type = $row['target_type'] ?? null;
-        $repositories = $row['repository_selection'] ?? null;
-
-        if (! is_int($id) || ! is_string($account) || ! is_string($type) || ! is_string($repositories)) {
-            return null;
-        }
-
-        return new GitHubInstallation(
-            id: $id,
-            account: $account,
-            type: strtolower($type) === 'organization' ? 'organization' : 'user',
-            repositories: $repositories === 'all' ? 'all' : 'selected',
-            suspended: ($row['suspended_at'] ?? null) !== null,
-        );
     }
 
     /** @param callable(): Response $request */
