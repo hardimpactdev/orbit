@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: "@nckrtl/vault-sync-commands"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public Vault sync planning and native HTTP crypto client assets.
+behaviors:
+  - operations/vault-sync/mod.ts
+additionalFiles:
+  - client.py

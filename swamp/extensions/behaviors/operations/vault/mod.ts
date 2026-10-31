@@ -9,7 +9,7 @@ import {
 } from "../_lib/direct.ts";
 import { collection } from "./collection.ts";
 const Args = DirectArgs.extend({
-  kind: z.enum(["vault.sync", "vault.setup", "vault.teardown"]),
+  kind: z.enum(["vault.setup", "vault.teardown"]),
 });
 const Text = z.string().max(1024);
 const Metadata = z.object({
@@ -129,7 +129,6 @@ export async function executeVault(
               safe.data.backend ===
                 ({
                   setup: "configured",
-                  sync: "synced",
                   teardown: "absent",
                 }[action])
             ? safe

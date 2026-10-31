@@ -1,0 +1,329 @@
+id: 8f61a312-2b19-4ef7-92d5-39dff3d42380
+name: operation-vault-sync
+description: Complete public intent, vault environment, one cipher action per native shell step.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - vault.sync
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        client_id:
+          type: string
+        device_identifier:
+          type: string
+        organization_id:
+          type: string
+        collection_id:
+          type: string
+        ca_file:
+          type: string
+        wanted:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              fingerprint:
+                type: string
+            required:
+            - source
+            - fingerprint
+            additionalProperties: false
+        ledger:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              cipher_id:
+                type: string
+              revision_date:
+                type: string
+              fingerprint:
+                type: string
+            required:
+            - source
+            - cipher_id
+            - revision_date
+            - fingerprint
+            additionalProperties: false
+      additionalProperties: false
+      required:
+      - url
+      - client_id
+      - device_identifier
+      - organization_id
+      - collection_id
+      - ca_file
+      - wanted
+      - ledger
+    execution_secrets:
+      type: object
+      properties:
+        configuration:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^vault-sync-[a-f0-9-]+$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - configuration
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: inventory
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-assets" }}
+      methodName: assets
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: inventory
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-inventory" }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import importlib.util
+          import json
+          import os
+
+          spec = importlib.util.spec_from_file_location("vault_sync_client", os.environ["ORBIT_VAULT_CLIENT"])
+          client = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(client)
+          try:
+              intent = json.loads(os.environ["ORBIT_VAULT_INTENT"])
+              config = client.configuration(intent)
+              remote = client.Collection(config)
+              snapshot = remote.open()
+              ciphers = client.selected(snapshot, intent)
+              known = {item["source"] for item in intent["wanted"] + intent["ledger"]}
+              for item in ciphers:
+                  if item["source"] not in known:
+                      item["source"] = None
+              print(json.dumps(client.public(ciphers, config, remote), separators=(",", ":")))
+          except client.Refusal as failure:
+              print(json.dumps({"error_code": failure.code}))
+              raise SystemExit(1)
+          except Exception:
+              print('{"error_code":"vault.unreachable"}')
+              raise SystemExit(1)
+          PYTHON
+        env:
+          ORBIT_VAULT_CLIENT: ${{ steps.assets.outputs.client_path }}
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: plan
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-plan" }}
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+        inventory: ${{ steps.inventory.outputs.stdout }}
+    dependsOn:
+    - step: inventory
+      condition:
+        type: succeeded
+- name: deletions
+  dependsOn:
+  - job: inventory
+    condition:
+      type: succeeded
+  steps:
+  - name: delete
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-delete" }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import importlib.util
+          import json
+          import os
+
+          spec = importlib.util.spec_from_file_location("vault_sync_client", os.environ["ORBIT_VAULT_CLIENT"])
+          client = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(client)
+          try:
+              intent = json.loads(os.environ["ORBIT_VAULT_INTENT"])
+              config = client.configuration(intent)
+              remote = client.Collection(config)
+              item = json.loads(os.environ["ORBIT_VAULT_ITEM"])
+              if not any(row["source"] == item["source"] and row["cipher_id"] == item["id"] for row in intent["ledger"]):
+                  client.refuse("vault.intent_changed")
+              current = next((row for row in client.selected(remote.open(), intent) if row["id"] == item["id"]), None)
+              if current is not None:
+                  if current["source"] != item["source"] or (not current["deleted"] and any(value["source"] == item["source"] for value in intent["wanted"])):
+                      client.refuse("vault.item_changed")
+                  if any(identity != intent["collection_id"] for identity in current["collection_ids"]):
+                      client.refuse("vault.item_shared")
+                  remote.delete(item["id"])
+              print(json.dumps(client.public({"deleted": item["id"]}, config, remote)))
+          except client.Refusal as failure:
+              print(json.dumps({"error_code": failure.code}))
+              raise SystemExit(1)
+          except Exception:
+              print('{"error_code":"vault.unreachable"}')
+              raise SystemExit(1)
+          PYTHON
+        env:
+          ORBIT_VAULT_CLIENT: ${{ steps.assets.outputs.client_path }}
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
+    forEach:
+      item: item
+      in: ${{ steps.plan.outputs.deletes }}
+- name: writes
+  dependsOn:
+  - job: deletions
+    condition:
+      type: succeeded
+  steps:
+  - name: write
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-write" }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import importlib.util
+          import json
+          import os
+
+          spec = importlib.util.spec_from_file_location("vault_sync_client", os.environ["ORBIT_VAULT_CLIENT"])
+          client = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(client)
+          try:
+              intent = json.loads(os.environ["ORBIT_VAULT_INTENT"])
+              config = client.configuration(intent)
+              remote = client.Collection(config)
+              item = json.loads(os.environ["ORBIT_VAULT_ITEM"])
+              wanted = next((row for row in config["wanted"] if row["source"] == item["source"]), None)
+              if wanted is None or wanted["fingerprint"] != item["fingerprint"]:
+                  client.refuse("vault.intent_changed")
+              if item["cipher_id"] is not None:
+                  current = next((row for row in client.selected(remote.open(), intent) if row["id"] == item["cipher_id"]), None)
+                  if current is None or current["source"] != item["source"] or current["deleted"]:
+                      client.refuse("vault.item_changed")
+              else:
+                  remote.open()
+              published = remote.write(wanted, item["cipher_id"])
+              print(json.dumps(client.public({"source": item["source"], "cipher_id": published["id"], "revision": published["revision"], "fingerprint": item["fingerprint"]}, config, remote), separators=(",", ":")))
+          except client.Refusal as failure:
+              print(json.dumps({"error_code": failure.code}))
+              raise SystemExit(1)
+          except Exception:
+              print('{"error_code":"vault.unreachable"}')
+              raise SystemExit(1)
+          PYTHON
+        env:
+          ORBIT_VAULT_CLIENT: ${{ steps.assets.outputs.client_path }}
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
+    forEach:
+      item: item
+      in: ${{ steps.plan.outputs.writes }}
+- name: sync
+  dependsOn:
+  - job: writes
+    condition:
+      type: succeeded
+  steps:
+  - name: summary
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-summary" }}
+      methodName: result
+      inputs:
+        plan: ${{ steps.plan.outputs }}
+        writes: ${{ steps.filter(name, name.startsWith("write")).map(name, steps[name].outputs.stdout) }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-result" }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          printf '%s\n' "$ORBIT_VAULT_RESULT"
+        env:
+          ORBIT_VAULT_RESULT: ${{ steps.summary.outputs.result_json }}
+    dependsOn:
+    - step: summary
+      condition:
+        type: succeeded

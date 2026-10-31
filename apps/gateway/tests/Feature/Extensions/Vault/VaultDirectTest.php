@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -12,18 +16,35 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Vault\Domain\VaultConfiguration;
 use Orbit\Extensions\Vault\Domain\VaultCredentials;
-use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
+use Orbit\Extensions\Vault\Domain\VaultSyncProjection;
 use Orbit\Extensions\Vault\Models\VaultItem;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
+    $this->runner = new class implements ProcessRunner
+    {
+        public array $calls = [];
+
+        public array $values = [];
+
+        public bool $fail = false;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->calls[] = $invocation;
+            $this->values[] = stream_get_contents($invocation->protectedInput->stream());
+
+            return new CommandResult($this->fail ? 1 : 0, '{}', '', 1, false);
+        }
+    };
+    app()->instance(ProcessRunner::class, $this->runner);
     $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
     $this->outsider = Node::query()->create(['name' => 'other', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2']);
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-vault-direct', 'runId' => $this->run]]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->socket = $socket;
     config(['swamp.run_token' => 'fixture.shared.token']);
@@ -50,53 +71,65 @@ function directVaultProjection(object $test, array $result): array
     return ['run_id' => $test->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $result];
 }
 
-it('refuses hidden wanted-item values echoed in scalar or nested direct result metadata', function (array $echo): void {
+it('starts sync with public intent and a separate names-only execution copy', function (): void {
     admitDirectVault($this);
-    $secrets = app(VaultOperationSecrets::class);
-    $snapshot = $secrets->snapshot($this->operation, ['$secret' => 'vault.credentials', 'id' => $this->operation->target_id]);
-    $snapshot['wanted'] = [['cipher' => ['fields' => [['hidden' => true, 'value' => 'hidden-item-private-sentinel']]]]];
-    $secrets->store($this->operation, $snapshot);
-    $data = ['backend' => 'synced', 'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => [], ...$echo];
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => $data]))->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
-    expect($this->operation->fresh()->status->value)->toBe('running');
-    Http::assertNothingSent();
-})->with([
-    'scalar' => [['email' => 'hidden-item-private-sentinel']],
-    'nested' => [['sources' => ['prefix-hidden-item-private-sentinel-suffix']]],
-]);
-
-it('starts sync directly and keeps private material outside the admitted tuple and public read', function (): void {
-    admitDirectVault($this);
-    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', ['action' => 'sync']);
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.configuration.client_secret', 'private-vault-client');
-    expect($this->socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $this->operation->id, 'kind' => 'vault.sync', 'node_id' => $this->gateway->id]);
-    expect(app(DirectOperation::class)->writer('vault.sync'))->toBe('direct');
-    expect(app(OperationKinds::class)->definition('vault.sync'))->not->toHaveKeys(['runs', 'completion', 'completion_contract']);
+    $input = $this->operation->input;
+    expect($input)->toHaveKeys(['intent', 'execution_secrets'])
+        ->and($input['intent'])->toHaveKeys(['url', 'client_id', 'device_identifier', 'organization_id', 'collection_id', 'ca_file', 'wanted', 'ledger'])
+        ->and($input['intent'])->not->toHaveKeys(['client_secret', 'master_password'])
+        ->and($input['execution_secrets']['configuration']['vault'])->toBe('orbit-control-inputs')
+        ->and($input['execution_secrets']['configuration']['key'])->toStartWith('vault-sync-');
+    expect(app(DirectOperation::class)->projection($this->operation)->input($this->operation))->toBe($input);
+    expect($this->socket->sent[0]['payload']['inputs'])->toBe([...$input,
+        'operation_id' => $this->operation->id, 'kind' => 'vault.sync', 'node_id' => $this->gateway->id]);
+    expect($this->runner->values)->toHaveCount(1);
+    expect(json_decode($this->runner->values[0], true)['master_password'])->toBe('private-vault-master');
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+    expect(json_encode([$input, $this->socket->sent, $this->runner->calls[0]->arguments]))
+        ->not->toContain('private-vault-client')->not->toContain('private-vault-master');
+    $this->postJson('/api/v1/vault/sync')->assertAccepted()->assertJsonPath('data.id', $this->operation->id);
+    expect($this->runner->values)->toHaveCount(1);
     Http::assertNothingSent();
 });
 
-it('projects the stored sync ledger and cleans the terminal snapshot without leaking credentials', function (): void {
+it('rolls back sync admission when the shared execution copy cannot be stored', function (): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'private-vault-client', 'private-vault-master', 'fixture-device'), 'fixture@example.test', 'org', 'Orbit', 'collection', 'Test'));
+    $this->runner->fail = true;
+    $this->postJson('/api/v1/vault/sync')->assertStatus(503)->assertJsonPath('error.code', 'swamp.vault_sync_unavailable');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBeEmpty();
+});
+
+it('records the native sync ledger from the fixed terminal output without a family callback', function (): void {
     admitDirectVault($this);
     VaultItem::query()->create(['source' => 'orphan', 'cipher_id' => 'old', 'revision_date' => 'old', 'fingerprint' => 'old']);
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced', 'sources' => ['database:7'], 'cipher_ids' => ['cipher'], 'revisions' => ['revision'], 'fingerprints' => ['fingerprint']]]))->assertOk();
+    $result = ['outcome' => 'succeeded', 'data' => ['backend' => 'synced', 'sources' => ['database:7'], 'cipher_ids' => ['cipher'], 'revisions' => ['revision'], 'fingerprints' => ['fingerprint']]];
+    $run = ['id' => $this->run, 'workflowName' => 'operation-vault-sync', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->gateway->id, 'kind' => 'vault.sync'],
+        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+        'jobs' => [['name' => 'sync', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result)]]]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+
+    app(SwampCommandStep::class)->projectTerminal($this->operation, $run, ['job' => 'sync', 'step' => 'result']);
+
     $this->assertDatabaseMissing('vault_items', ['source' => 'orphan']);
     $this->assertDatabaseHas('vault_items', ['source' => 'database:7', 'cipher_id' => 'cipher']);
-    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
-    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertConflict();
+    expect($this->operation->fresh()->status->value)->toBe('succeeded');
+    expect(app(VaultSettings::class)->lastSyncedAt())->not->toBeNull();
+    expect($this->socket->sent)->toHaveCount(2);
+    expect($this->socket->sent[1]['type'])->toBe('workflow.history.get');
     Http::assertNothingSent();
 });
 
-it('refuses foreign material access, secret echoes and incomplete sync metadata', function (): void {
+it('preserves Vault configuration and ledger after a native sync failure', function (): void {
     admitDirectVault($this);
-    $this->getJson($this->path.'/private-material?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->outsider->wireguard_ip]);
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertForbidden();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced', 'email' => 'private-vault-client']]))->assertUnprocessable();
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced']]))->assertConflict();
-    expect($this->operation->fresh()->status->value)->toBe('running');
-    Http::assertNothingSent();
+    VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'old', 'revision_date' => 'old', 'fingerprint' => 'old']);
+    $data = directVaultProjection($this, []);
+    $data['status'] = 'failed';
+    $data['error_code'] = 'operation.native_failed';
+    app(VaultSyncProjection::class)->apply($this->operation, $data);
+    expect($this->operation->fresh()->status->value)->toBe('failed');
+    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
+    $this->assertDatabaseHas('vault_items', ['source' => 'database:7', 'cipher_id' => 'old']);
 });
 
 it('starts setup directly and projects encrypted settings only after proven safe metadata', function (): void {
@@ -152,12 +185,12 @@ it('replays a terminal native result without resolving deleted credentials or re
     admitDirectVault($this);
     $projection = directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced',
         'sources' => ['database:7'], 'cipher_ids' => ['first'], 'revisions' => ['revision'], 'fingerprints' => ['fingerprint']]]);
-    $this->postJson($this->path.'/result', $projection)->assertOk();
+    app(VaultSyncProjection::class)->apply($this->operation, $projection);
     expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
     VaultItem::query()->where('source', 'database:7')->update(['cipher_id' => 'newer']);
     app(VaultSettings::class)->clear();
 
-    $this->postJson($this->path.'/result', $projection)->assertOk();
+    app(VaultSyncProjection::class)->apply($this->operation, $projection);
 
     $this->assertDatabaseHas('vault_items', ['source' => 'database:7', 'cipher_id' => 'newer']);
     expect(app(VaultSettings::class)->configuration())->toBeNull();

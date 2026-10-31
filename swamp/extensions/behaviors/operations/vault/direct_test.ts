@@ -8,11 +8,11 @@ import type { Http } from "../../automatic-deploy/gateway.ts";
 const identity = {
   operation_id: 17,
   node_id: 9,
-  kind: "vault.sync" as const,
+  kind: "vault.teardown" as const,
   run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
 };
 for (
-  const [kind, backend] of [["vault.sync", "synced"], [
+  const [kind, backend] of [[
     "vault.setup",
     "configured",
   ], ["vault.teardown", "absent"]] as const
@@ -83,7 +83,7 @@ Deno.test("Vault secret-bearing exceptions and malformed output become bounded r
       [() =>
         Promise.resolve({
           outcome: "succeeded",
-          data: { backend: "synced", master_password: "secret-sentinel" },
+          data: { backend: "absent", master_password: "secret-sentinel" },
         }), "vault.result_invalid"],
     ] as const
   ) {
@@ -92,7 +92,7 @@ Deno.test("Vault secret-bearing exceptions and malformed output become bounded r
     });
   }
 });
-Deno.test("Vault sync cannot accept a setup backend and a failed read cannot execute", async () => {
+Deno.test("Vault teardown cannot accept a setup backend and a failed read cannot execute", async () => {
   const http: Http = () =>
     Promise.resolve({ status: 200, body: { data: { configuration: {} } } });
   assertEquals(
@@ -145,14 +145,14 @@ Deno.test({
 for (
   const [secretField, data] of [
     ["master_password", {
-      backend: "synced",
+      backend: "absent",
       email: "echo-private-sentinel",
     }],
     ["client_secret", {
-      backend: "synced",
+      backend: "absent",
       organization_name: "prefix-echo-private-sentinel-suffix",
     }],
-    ["hidden", { backend: "synced", sources: ["echo-private-sentinel"] }],
+    ["hidden", { backend: "absent", sources: ["echo-private-sentinel"] }],
     ["master_password", { error_code: "vault.echo_private_sentinel" }],
   ] as const
 ) {
@@ -180,7 +180,7 @@ for (
           data: {
             id: 17,
             node_id: 9,
-            kind: "vault.sync",
+            kind: "vault.teardown",
             input: {},
             status: "queued",
             cancel_requested: false,

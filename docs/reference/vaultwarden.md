@@ -63,7 +63,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a placed Swamp integration worker. It skips every unfinished Operation, including one waiting for children. The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a placed Swamp integration worker. It skips every unfinished Operation. The command builds the wanted items from the database records and compares them with the published items it recorded:
 
 | Wanted item | Published item | Action |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 The publishing ledger identifies Orbit's items. Do not add items with an `orbit.source` field by hand.
 
-One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
+A failed command fails the native run. The Gateway keeps its previous ledger; a later run reconciles the remote state. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. Operation assistance reports queued or stalled native runs. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
 [`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
 
@@ -194,16 +194,25 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The shared private-material route resolves the Operation's secret reference into its encrypted snapshot of the submitted credentials and wanted Database items. Only the exact recorded run on that Node can read it while the Operation is unfinished.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. The Gateway performs admission and records the public result. Swamp performs all remote actions on the recorded Gateway Node.
 
-Swamp uses the private material in memory and through protected stdin; only safe metadata and published item identifiers reach its resources. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
+## Native command-step sync
 
-A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
+The direct declaration separates input transport from result selection:
 
-Direct setup, sync, and teardown results carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
+```php
+'workflow_inputs' => true,
+'terminal_result' => ['job' => 'sync', 'step' => 'result'],
+```
 
-## Direct Swamp writer
+`vault.sync` opts into full workflow inputs with `workflow_inputs => true`. Its projection returns the outer `{intent, execution_secrets}` envelope. The public intent contains the Vaultwarden origin, client and device identifiers, organization and collection IDs, the public CA path, wanted source identities and fingerprints, and the recorded ledger. `execution_secrets.configuration` contains only the vault and key names returned by the shared execution-copy helper. Credentials and item payloads stay in the protected Swamp vault value.
 
-`vault.sync`, `vault.setup`, and `vault.teardown` start `operation-vault-direct` through the shared helper and use their fixed direct declarations. No polling writer or Kit result contract is loaded. Rollback reverts the owning PR.
+The workflow separates inventory, pure planning, each cipher deletion, each cipher write, and terminal result assembly. Every step has exact Node placement. Each mutation client authenticates and unlocks in its own process; bearer tokens and decrypted keys never become outputs. The command environment receives protected configuration from one complete `vault.get` expression. No step reads intent from or sends results to the Gateway.
 
-The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its 900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway filters bounded public metadata, projects the ledger and removes terminal credential snapshots. It does not load a Kit execution contract. Terminal replay returns the recorded result without resolving deleted credentials or projecting the ledger again. No family route, token or relay is added.
+Deletion requires both the recorded cipher ID and decrypted source marker in the configured organization and collection. It removes recorded orphans and replaces trashed recorded items. It preserves marker-only copies. A recorded source never adopts another cipher, even when its recorded cipher is missing or trashed. Adoption requires no ledger entry. An additional visible collection refuses the entire plan before mutation; an absent collection ID does not prove absence of hidden memberships.
+
+Native dependencies place planning before fan-out expansion. A failed action leaves the Operation failed and its previous Gateway ledger intact. Native resume can recover failed steps. It does not change an already terminal Gateway Operation; a later sync records the reconciled state. The final `sync/result` command prints the public ledger as JSON. The shared terminal subscriber reads that fixed output once; the family projection records ledger rows and synchronization times without repeating remote validation. Terminal replay preserves later settings and ledger state.
+
+Setup and teardown retain `operation-vault-direct` and their run-bound private-material path until their own rewrite. Their exact recorded Node worker uses the encrypted snapshot in memory and through protected stdin. No polling writer or Kit completion contract is loaded. Terminal completion removes their encrypted snapshots. No production setup or teardown is part of sync verification.
+
+Official runtime support for remote vault-put stdin and the shared terminal subscriber must be available before admitting the new sync workflow. There is no family transport, callback, or polling workaround.

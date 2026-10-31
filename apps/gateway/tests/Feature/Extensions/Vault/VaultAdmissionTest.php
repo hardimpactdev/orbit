@@ -6,6 +6,9 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
 use App\Models\Node;
@@ -23,17 +26,25 @@ use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
+use Orbit\Extensions\Vault\Domain\VaultSyncProjection;
 use Orbit\Extensions\Vault\Models\VaultItem;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
     Queue::fake();
+    app()->instance(ProcessRunner::class, new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(0, '{}', '', 1, false);
+        }
+    });
     $this->caller = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active',
         'platform' => 'linux', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-vault-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture.shared.token']);
     $this->payload = ['url' => 'https://vault.orbit', 'client_id' => 'fixture-client', 'client_secret' => 'fixture-client-secret',
@@ -138,11 +149,12 @@ it('projects proven setup and sync metadata and retains it until successful tear
         ->and($settings->lastVerifiedAt())->toBeNull();
     expect(Setting::query()->where('key', 'vault.operation.'.$setup->id)->exists())->toBeFalse();
     VaultItem::query()->create(['source' => 'obsolete', 'cipher_id' => 'old', 'revision_date' => 'old', 'fingerprint' => 'old']);
-    $sync = new Operation(['kind' => 'vault.sync']);
+    $sync = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id,
+        'node_id' => $this->caller->id, 'status' => 'running', 'input' => [], 'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
 
-    $completion->complete($sync, OperationOutcome::succeeded(['data' => ['backend' => 'synced',
+    nativeVaultSyncProjection($sync, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced',
         'sources' => ['database-connection:7'], 'cipher_ids' => ['fixture-cipher'],
-        'revisions' => ['fixture-revision'], 'fingerprints' => [str_repeat('a', 64)]]]));
+        'revisions' => ['fixture-revision'], 'fingerprints' => [str_repeat('a', 64)]]]);
 
     $this->assertDatabaseMissing('vault_items', ['source' => 'obsolete']);
     $this->assertDatabaseHas('vault_items', ['source' => 'database-connection:7', 'cipher_id' => 'fixture-cipher',
@@ -199,17 +211,6 @@ it('removes historical and orphaned credential snapshots after proven teardown',
     expect(Setting::query()->where('key', 'like', 'vault.%')->exists())->toBeFalse();
 });
 
-it('removes the sync credential snapshot after proven ledger projection', function (): void {
-    $operation = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'vault', 'target_id' => $this->caller->id,
-        'node_id' => $this->caller->id, 'status' => 'running', 'input' => []]);
-    app(VaultOperationSecrets::class)->store($operation, $this->payload);
-
-    app(VaultOperationCompletion::class)->complete($operation, OperationOutcome::succeeded(['data' => ['backend' => 'synced',
-        'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => []]]));
-
-    expect(Setting::query()->where('key', 'vault.operation.'.$operation->id)->exists())->toBeFalse();
-});
-
 it('skips every unfinished Vault Operation without admitting another or contacting Vaultwarden', function (string $status): void {
     app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'fixture-secret', 'fixture-password', 'fixture-device'),
         'fixture@example.test', 'fixture-org', 'Orbit', 'fixture-collection', 'Database'));
@@ -235,8 +236,8 @@ it('keeps a failure exit code until a later collection completion proves success
     $operation = Operation::query()->sole();
     $this->getJson('/api/v1/vault')->assertJsonPath('data.last_error.code', 'vault.sync_failed')
         ->assertJsonPath('data.last_synced_at', now()->subHour()->toIso8601ZuluString());
-    app(VaultOperationCompletion::class)->complete($operation, OperationOutcome::succeeded(['data' => ['backend' => 'synced',
-        'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => []]]));
+    nativeVaultSyncProjection($operation, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced',
+        'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => []]]);
     $operation->update(['status' => 'succeeded']);
 
     $this->artisan('orbit:vault-sync')->assertSuccessful();
@@ -262,3 +263,12 @@ it('counts local credential intent changes without constructing an execution pla
     $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.pending', 2);
     Http::assertNothingSent();
 });
+
+/** Apply only the public native terminal record; no credential snapshot is required. */
+function nativeVaultSyncProjection(Operation $operation, array $result): void
+{
+    app(VaultSyncProjection::class)->apply($operation, [
+        'run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $result,
+    ]);
+}
