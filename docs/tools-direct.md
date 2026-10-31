@@ -1,32 +1,28 @@
 # Direct Tools intent
 
-`operation-tool-install-direct` runs standalone `tool.install` on the exact
-admitted Node worker. `operation-tool-direct` retains `tool.update`,
-`tool.remove`, `tool.adopt` and `tool.manager_converge` on standalone Node209.
+`operation-tool-install-direct` runs `tool.install`. `operation-tool-direct`
+runs `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge`.
 Both use the [shared direct Operation boundary](direct-operations.md). The
-Gateway declares fixed workflow names, `writer_config: swamp.direct_writers`,
-immutable `tool_writer` and `ToolIntentProjection`. It uses `StartSwampRun` and
-the one `ORBIT_SWAMP_RUN_TOKEN`. No family token, controller, request, route,
-primitive or Gateway execution relay is added.
+Gateway declares only fixed workflow names and `ToolIntentProjection` in its
+sole `direct-operations.php` registration. `StartOperationAction` starts the
+native root through `StartSwampRun` with the existing run token.
 
 The Gateway admits package identity, enrolled account, agent pin and public
 recipe data. Its read projection exposes only those safe inputs. Native Node
 policy selects fixed typed commands from the closed manager registry. Result
-projection stores bounded manager/package versions and refusal codes; it never
-stores manager stdout or execution receipts.
+projection stores bounded manager/package versions and refusal codes. It never
+stores manager stdout or execution receipts, or repeats native completion rules.
 
-Standalone installs target `orbit-node-<admitted-node-id>` and the matching
-`node` label, including Node209. No migration worker or other Node can receive
-that job. Parent Operations remain excluded. The other four kinds retain their
-existing Node209 migration-pool placement. Each kind has one direct dispatch
-path; install is removed from the older workflow input enum when its placed
-workflow takes over. `tools-node-<id>` stays the native serialization identity.
-Placement uses Swamp's queue, concurrency and retention defaults. A missing
-exact worker waits under the native queue policy; it does not fall back.
+Every Tool kind targets `orbit-node-<admitted-node-id>` and its matching `node`
+label. No migration worker or other Node can receive that job. Parent workflows
+compose their own native manager steps instead of creating child Operations.
+`tools-node-<id>` stays the native serialization identity. Placement uses Swamp's
+queue, concurrency and retention defaults. A missing exact worker waits under
+the native queue policy.
 
 ## Policy and native recovery
 
-The direct and retained writers share `policy.ts`: constraints gate normal
+Native Tool actions use `policy.ts`: constraints gate normal
 candidates, install refuses silent adoption, adoption never mutates, and removal
 requires only the exact recorded root with no autoremove. Manager
 materialization is part of the native action, rather than a Gateway child
@@ -45,7 +41,7 @@ A terminal Gateway read avoids another action. Bounded Gateway HTTP calls do not
 inherit the workflow cancellation signal. Cancellation is checked before action;
 a started action must stop safely and retain an uncertain outcome if needed.
 
-## Activation gates
+## Worker execution
 
 The worker runs as the Node's configured user with its existing passwordless
 sudo. Fixed policy commands run through the admitted, root-owned local agent;
@@ -61,8 +57,7 @@ started mutation finishes under its agent deadline even if workflow cancellation
 arrives; native recovery reconciles uncertain outcomes. No socket, broker,
 account, sudo rule, token, grant or runtime unit is installed by this family.
 
-Each kind ships its direct start, writer selection and Gateway execution
-deletion in one slice. Its converted kind is also removed from legacy discovery
+Each kind ships its direct start and Gateway execution deletion together. Its converted kind is also removed from legacy discovery
 and executor registration. Rollback is a revert PR. If the owning writer needs a
 release, merge first, then canary immediately against a test target and revert
 on failure. The shared boundary lane owns final executor API deletion.
@@ -95,5 +90,5 @@ only in a disposable checkout; fixture success is not live canary proof.
 Run Deno tests/check/lint/fmt for this directory and
 `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s extensions/behaviors/operations/tools -p direct_native_test.py`.
 Gateway `ToolIntentsTest.php` covers immutable safe admission, start-binding and
-first-read ordering, Node identity, bounded results, inventory projection and
-refusal of a retired polled writer.
+first-read ordering, Node identity, bounded results and inventory projection
+without Gateway step receipts or runtime completion proofs.
