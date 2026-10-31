@@ -34,6 +34,11 @@ name=Path(sys.argv[0]).name
 with open(os.environ['FIXTURE_AUDIT'],'a') as file: file.write(json.dumps([name,*sys.argv[1:]])+'\\n')
 if name=='systemctl' and sys.argv[1]=='is-active' and os.environ.get('FIXTURE_INACTIVE')=='yes': sys.exit(3)
 if name=='systemctl' and sys.argv[1]=='is-enabled' and os.environ.get('FIXTURE_INACTIVE')=='yes': sys.exit(1)
+if name=='systemctl' and sys.argv[1]=='enable' and os.environ.get('FIXTURE_REFUSE')=='interleaved':
+ root=Path(os.environ['FIXTURE_HOST']); other=root/'newer-config'; other.write_text('# Managed by Orbit: Node Caddy build\\n{ admin off }\\n'); (root/'Caddyfile').unlink(); (root/'Caddyfile').symlink_to(other); sys.exit(1)
+if name=='systemctl' and sys.argv[1]=='enable' and os.environ.get('FIXTURE_REFUSE')=='identical':
+ root=Path(os.environ['FIXTURE_HOST']); live=root/'Caddyfile'; content=live.read_bytes(); other=root/'orbit-versions'/'newer-identical'; other.mkdir(); (other/'Caddyfile').write_bytes(content); (other/'loaded.json').write_text(json.dumps({'sha256':__import__('hashlib').sha256(content).hexdigest(),'invocation_id':'a'*32})); live.unlink(); live.symlink_to(other/'Caddyfile'); sys.exit(1)
+if name=='systemctl' and sys.argv[1]=='show': print('a'*32)
 if name=='caddy': print('v2.10.2 fixture')
 if name=='ip': print('1: wg0 inet 10.44.0.9/24 scope global')
 if name=='runuser' and os.environ.get('FIXTURE_REFUSE')=='validate': sys.exit(1)
@@ -97,6 +102,7 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
                 task["inputs"]["env"].update(
                     {
                         "FIXTURE_AUDIT": str(self.audit),
+                        "FIXTURE_HOST": str(self.host),
                         "FIXTURE_REFUSE": "${{ inputs.fixture_refuse }}",
                         "FIXTURE_INACTIVE": "${{ inputs.fixture_inactive }}",
                     }
@@ -138,6 +144,100 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             },
         }
 
+    def test_failure_restoration_preserves_a_newer_publication(self):
+        previous = self.host / "Caddyfile"
+        previous.write_text("# Managed by Orbit: Node Caddy build\n{ debug }\n")
+        result = self.cli(
+            "workflow",
+            "run",
+            "operation-route-caddy",
+            "--input",
+            json.dumps(dict(self.input, fixture_refuse="interleaved")),
+            success=False,
+        )
+        self.assertIn("failed", result.stdout)
+        self.assertEqual(
+            previous.read_text(),
+            "# Managed by Orbit: Node Caddy build\n{ admin off }\n",
+        )
+        self.assertEqual(previous.resolve(), self.host / "newer-config")
+
+    def test_compensation_preserves_newer_identical_loaded_generation(self):
+        self.run_caddy("identical", success=False)
+        live = self.host / "Caddyfile"
+        self.assertEqual(live.read_text(), self.content)
+        self.assertEqual(live.resolve().parent.name, "newer-identical")
+        self.assertTrue((live.resolve().parent / "loaded.json").is_file())
+
+    def test_changed_service_invocation_requires_new_load_receipt(self):
+        self.run_caddy()
+        systemctl = self.commands / "systemctl"
+        systemctl.write_text(
+            systemctl.read_text().replace("print('a'*32)", "print('b'*32)")
+        )
+        self.audit.unlink()
+        self.run_caddy()
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertIn(["systemctl", "reload-or-restart", "caddy"], calls)
+        receipt = (self.host / "Caddyfile").resolve().parent / "loaded.json"
+        self.assertEqual(json.loads(receipt.read_text())["invocation_id"], "b" * 32)
+
+    def test_restore_invalidates_a_prior_load_before_reloading_it(self):
+        run_id = "fb062341-cd94-4b4b-b692-da0132158756"
+        versions = self.host / "orbit-versions"
+        old = versions / "prior"
+        new = versions / (self.version + "-" + run_id)
+        old.mkdir(parents=True)
+        new.mkdir()
+        prior_content = "# Managed by Orbit: Node Caddy build\n{ debug }\n"
+        (old / "Caddyfile").write_text(prior_content)
+        (new / "Caddyfile").write_text(self.content)
+        old_digest = hashlib.sha256(prior_content.encode()).hexdigest()
+        for generation, sha in [
+            (old, old_digest),
+            (new, hashlib.sha256(self.content.encode()).hexdigest()),
+        ]:
+            (generation / "loaded.json").write_text(
+                json.dumps({"sha256": sha, "invocation_id": "a" * 32})
+            )
+        (self.host / "Caddyfile").symlink_to(new / "Caddyfile")
+        stage = self.host / ".orbit-staging" / run_id
+        stage.mkdir(parents=True)
+        (stage / "prior").symlink_to(old / "Caddyfile")
+        (stage / "restore.json").write_text(
+            json.dumps(
+                {
+                    "had_live": True,
+                    "previous_target": str(old / "Caddyfile"),
+                    "prior_target": str(old / "Caddyfile"),
+                    "prior_digest": old_digest,
+                    "active": True,
+                    "enabled": True,
+                }
+            )
+        )
+        step = next(
+            step
+            for job in self.workflow["jobs"]
+            for step in job["steps"]
+            if step["name"] == "restore-config"
+        )
+        script = step["task"]["inputs"]["run"]
+        meta = {
+            "run_id": run_id,
+            "version": self.version,
+            "sha256": hashlib.sha256(self.content.encode()).hexdigest(),
+        }
+        reply = subprocess.run(
+            ["/bin/sh", "-c", script],
+            env=dict(os.environ, ORBIT_CADDY_META=json.dumps(meta)),
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        self.assertEqual((self.host / "Caddyfile").read_text(), prior_content)
+        self.assertFalse((old / "loaded.json").exists())
+
     def test_terminal_observation_reads_actual_root_owned_caddy_permissions(self):
         if (
             shutil.which("sudo") is None
@@ -146,7 +246,7 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             ).returncode
         ):
             self.skipTest("Root-owned Caddy permissions require passwordless sudo")
-        generation = self.host / "protected-generation"
+        generation = self.host / "orbit-versions" / "protected-generation"
         candidate = self.repo / "public-config"
         candidate.write_text(self.content)
         subprocess.run(
@@ -182,6 +282,30 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
                 ],
                 check=True,
             )
+            candidate.write_text(
+                json.dumps(
+                    {
+                        "sha256": hashlib.sha256(self.content.encode()).hexdigest(),
+                        "invocation_id": "a" * 32,
+                    }
+                )
+            )
+            subprocess.run(
+                [
+                    "sudo",
+                    "-n",
+                    "/usr/bin/install",
+                    "-m",
+                    "0640",
+                    "-o",
+                    "root",
+                    "-g",
+                    "root",
+                    str(candidate),
+                    str(generation / "loaded.json"),
+                ],
+                check=True,
+            )
             (self.host / "Caddyfile").symlink_to(generation / "Caddyfile")
             with self.assertRaises(PermissionError):
                 (self.host / "Caddyfile").read_bytes()
@@ -190,6 +314,13 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             )
             script = workflow["jobs"][-1]["steps"][0]["task"]["inputs"]["run"]
             script = script.replace("/etc/caddy", str(self.host))
+            script = script.replace(
+                "/usr/bin/systemctl", str(self.commands / "systemctl")
+            )
+            script = script.replace(
+                "--preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED",
+                "--preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED,FIXTURE_AUDIT",
+            )
             env = dict(
                 os.environ,
                 ORBIT_CADDY_META=json.dumps(
@@ -200,6 +331,7 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
                     }
                 ),
                 ORBIT_CADDY_OBSERVED=json.dumps({"withdraw": False, "publish": True}),
+                FIXTURE_AUDIT=str(self.audit),
             )
             reply = subprocess.run(
                 ["/bin/sh", "-c", script],
@@ -252,7 +384,8 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
         calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
         self.assertFalse(
             any(
-                row[0] == "systemctl" and row[1] not in ("is-active", "is-enabled")
+                row[0] == "systemctl"
+                and row[1] not in ("is-active", "is-enabled", "show")
                 for row in calls
             )
         )
@@ -267,18 +400,29 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             sum(row[:2] == ["systemctl", "reload-or-restart"] for row in calls), 2
         )
 
+    def test_identical_but_not_loaded_config_requires_actual_reload(self):
+        (self.host / "Caddyfile").write_text(self.content)
+        self.run_caddy()
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertIn(["systemctl", "reload-or-restart", "caddy"], calls)
+        self.assertTrue(
+            ((self.host / "Caddyfile").resolve().parent / "loaded.json").is_file()
+        )
+
     def test_native_unchanged_does_not_stage_enable_or_reload(self):
-        live = self.host / "Caddyfile"
-        live.write_text(self.content)
+        self.run_caddy()
+        prior_stages = list((self.host / ".orbit-staging").iterdir())
+        self.audit.unlink()
         self.run_caddy()
         calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
         self.assertFalse(
             any(
-                row[0] == "systemctl" and row[1] not in ("is-active", "is-enabled")
+                row[0] == "systemctl"
+                and row[1] not in ("is-active", "is-enabled", "show")
                 for row in calls
             )
         )
-        self.assertFalse((self.host / ".orbit-staging").exists())
+        self.assertEqual(list((self.host / ".orbit-staging").iterdir()), prior_stages)
 
     def test_native_unserved_without_caddy_does_not_require_package_or_group(self):
         (self.commands / "caddy").unlink()
@@ -298,7 +442,8 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
         calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
         self.assertFalse(
             any(
-                row[0] == "systemctl" and row[1] not in ("is-active", "is-enabled")
+                row[0] == "systemctl"
+                and row[1] not in ("is-active", "is-enabled", "show")
                 for row in calls
             )
         )
@@ -381,7 +526,9 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             ["sh", "-c", script],
             env={
                 **os.environ,
-                "ORBIT_CADDY_META": json.dumps({"run_id": "00000000-0000-4000-8000-999999999999"}),
+                "ORBIT_CADDY_META": json.dumps(
+                    {"run_id": "00000000-0000-4000-8000-999999999999"}
+                ),
             },
             capture_output=True,
             text=True,

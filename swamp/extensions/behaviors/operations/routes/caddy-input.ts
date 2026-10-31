@@ -71,6 +71,7 @@ export async function prepareCaddyInput(raw: unknown) {
 
 const Observation = z.object({
     prior_digest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+    prior_target: z.string().nullable(),
     unchanged: z.boolean(),
     publish: z.boolean(),
     withdraw: z.boolean(),
