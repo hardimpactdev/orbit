@@ -1,44 +1,76 @@
 id: 50dfa101-dcab-4fc4-aaac-e47dd1b47f0b
 name: operation-node-bootstrap-probe
-description: Run the admitted node.bootstrap_probe intent in one native root.
-vaults: []
+description: Probe admitted machine identity with native inputs, vault references and script steps.
+vaults: [orbit-control-inputs]
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [node.bootstrap_probe] }
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [node.bootstrap_probe]}
+    intent:
+      type: object
+      properties:
+        bootstrap: {type: object}
+      required: [bootstrap]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        bootstrap_identity:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^bootstrap-identity-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [bootstrap_identity]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
   - name: bootstrap
     target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
+    labels: {node: '${{ string(inputs.node_id) }}'}
     steps:
-      - name: apply
+      - name: assets
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
         writes: true
         task:
           type: behavior
-          behaviorType: "@nckrtl/node-bootstrap-direct"
-          behaviorName: '${{ "node-bootstrap-" + string(inputs.node_id) }}'
-          methodName: apply
+          behaviorType: '@nckrtl/node-bootstrap-script-assets'
+          behaviorName: '${{ "bootstrap-assets-" + string(inputs.operation_id) }}'
+          methodName: read
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-  - name: failure
-    dependsOn: [{ job: bootstrap, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: settle-failure
+            intent: '${{ inputs.intent }}'
+      - name: scan-host-key
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
         writes: true
+        dependsOn: [{step: assets, condition: {type: succeeded}}]
         task:
           type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "node-bootstrap-failure-" + string(inputs.node_id) }}'
-          methodName: report
+          behaviorType: command/shell
+          behaviorName: '${{ "bootstrap-scan-" + string(inputs.operation_id) }}'
+          methodName: execute
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+            run: '/usr/bin/python3 "${{ steps.assets.outputs.scan_script }}"'
+            env:
+              ORBIT_BOOTSTRAP_INTENT: '${{ steps.assets.outputs.input_json }}'
+      - name: probe-host
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: {node: '${{ string(inputs.node_id) }}'}
+        writes: true
+        dependsOn: [{step: scan-host-key, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "bootstrap-probe-" + string(inputs.operation_id) }}'
+          methodName: execute
+          inputs:
+            run: '/usr/bin/python3 "${{ steps.assets.outputs.probe_script }}"'
+            env:
+              ORBIT_BOOTSTRAP_INTENT: '${{ steps.assets.outputs.input_json }}'
+              ORBIT_BOOTSTRAP_HOST_KEY: '${{ steps["scan-host-key"].outputs.stdout }}'
+              ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'

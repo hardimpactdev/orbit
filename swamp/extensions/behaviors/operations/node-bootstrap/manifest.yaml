@@ -1,0 +1,12 @@
+manifestVersion: 1
+name: '@nckrtl/node-bootstrap-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Read-only bootstrap pilot with native script assets.
+behaviors:
+  - operations/node-bootstrap/script_assets.ts
+additionalFiles:
+  - scripts/ssh_common.py
+  - scripts/scan_host_key.py
+  - scripts/probe_host.py
