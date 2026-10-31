@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->freezeTime();
@@ -20,6 +22,10 @@ beforeEach(function (): void {
     $this->caller = Node::query()->create(['name' => 'phone', 'status' => 'active', 'platform' => 'ios', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2']);
     $this->environment = ConnEnvironment::query()->create(['environment_id' => 'conn-wait', 'label' => 'proof', 'url' => 'http://dev.test',
         'admin_session' => 'fixture-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture.shared.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     // AwaitOperation requires the request admission to commit, as it does outside the test harness.
     while (DB::transactionLevel() > 0) {
