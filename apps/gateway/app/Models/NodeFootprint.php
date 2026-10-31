@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $node_id
+ * @property string|null $ssh_access_digest
  * @property string|null $digest
  * @property array<string, string>|null $artifacts
  * @property Carbon|null $converged_at
@@ -25,7 +26,7 @@ final class NodeFootprint extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['node_id', 'digest', 'artifacts', 'converged_at', 'cli_state', 'cli_checked_at'];
+    protected $fillable = ['node_id', 'digest', 'artifacts', 'converged_at', 'cli_state', 'cli_checked_at', 'ssh_access_digest'];
 
     /** @return array<string, string> */
     protected function casts(): array

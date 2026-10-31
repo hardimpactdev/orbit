@@ -21,6 +21,9 @@ Route::middleware([
         ->name('node:list');
     Route::get('nodes/{node}', [NodesController::class, 'show'])
         ->name('node:show');
+    Route::post('nodes/{node}/ssh-access/converge', [NodeFootprintsController::class, 'sshAccess'])
+        ->whereNumber('node')
+        ->name('node:ssh-access:converge');
     Route::post('nodes/{node}/converge', [NodeFootprintsController::class, 'converge'])
         ->whereNumber('node')
         ->name('node:converge');
