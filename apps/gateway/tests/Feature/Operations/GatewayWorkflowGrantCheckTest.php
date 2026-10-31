@@ -24,6 +24,7 @@ it('refuses missing intent for booted core, computed and extension declarations'
         ->toThrow(LogicException::class, $workflow);
 })->with([
     'Horizon' => 'operation-process-horizon-handoff',
+    'Schedule run' => 'operation-schedule-run',
     'computed bootstrap' => 'operation-node-bootstrap-probe',
     'Conn contribution' => 'operation-conn-direct',
     'Vault contribution' => 'operation-vault-direct',
@@ -52,4 +53,4 @@ it('requires execution copy key intent from core and loaded extension declaratio
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
         ->toThrow(LogicException::class, 'Execution copy vault intent');
-})->with(['database.write', 'vault.sync', 'conn.pairing_revoke', 'node.ssh_access_converge']);
+})->with(['database.write', 'vault.sync', 'conn.pairing_revoke', 'node.ssh_access_converge', 'schedule.run']);

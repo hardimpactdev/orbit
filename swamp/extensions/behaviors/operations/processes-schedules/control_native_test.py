@@ -24,7 +24,7 @@ class ScheduleNativeFixture(NativeTestCase):
         source = ROOT/'workflows/workflow-operation-schedule-control.yaml'
         text = '\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('labels:', 'target:')))+'\n'
         (self.repo/'workflows'/source.name).write_text(text)
-        self.state = {'operation': {'id': 17, 'node_id': 9, 'kind': 'schedule.run', 'status': 'queued', 'cancel_requested': False, 'result': None,
+        self.state = {'operation': {'id': 17, 'node_id': 9, 'kind': 'schedule.enable', 'status': 'queued', 'cancel_requested': False, 'result': None,
             'input': {'command_hash': hashlib.sha256(b'/usr/bin/true').hexdigest(), 'group': 'orbit', 'home': '/home/orbit', 'shell': '/bin/sh', 'login_shell': False, 'calendar': 'daily', 'timeout_seconds': 60, 'desired': 'disabled', 'id': '9a067a27-c2ce-45c5-83f5-735e03dc5b2f', 'user': 'orbit', 'working_directory': '/home/orbit'}}, 'actions': 0, 'calls': []}
         self.save()
         source = ROOT/'workflows/workflow-operation-schedule-create.yaml'
@@ -38,7 +38,7 @@ class ScheduleNativeFixture(NativeTestCase):
         return json.loads((self.repo/'schedule-native.json').read_text())
 
     def run_workflow(self, success=True):
-        result = self.cli('workflow', 'run', 'operation-schedule-control', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=schedule.run', success=success)
+        result = self.cli('workflow', 'run', 'operation-schedule-control', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=schedule.enable', success=success)
         payload = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
         self.assertIn('id', payload, result.stdout+result.stderr)
         self.run_id = payload['id']

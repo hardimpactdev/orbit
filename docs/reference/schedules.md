@@ -113,13 +113,15 @@ Existing files must be regular, root-owned files with the exact expected modes a
 
 ## Direct Swamp control
 
-`schedule.create` uses the single native `operation-schedule-create` DAG. Its installation step shares the canonical Schedule model with enable, run and destroy controls. The Gateway validates and records intent, starts the native DAG, and projects its bounded outcome. It does not install or control timers. Roll back through a revert PR.
+`schedule.create` uses the single native `operation-schedule-create` DAG. Its installation step shares the canonical Schedule model with enable and destroy controls. The Gateway validates and records intent, starts the native DAG, and projects its bounded outcome. It does not install or control timers. Roll back through a revert PR.
 
 When you enable an active Instance Schedule, its writer defaults to direct. Its public PHP action and runtime activation method are removed. The Gateway changes desired timer state after native success; a failed activation preserves the prior intent.
 
-The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. The selected Node worker reads admitted execution context and the command hash. It reads the existing `schedule.command` private source inside the local effect callback. The source checks Schedule identity, owner, placement and the admitted hash. Each DAG projects only bounded ready/error fields through the shared endpoint.
+The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. For create, enable and destroy, the selected Node worker reads admitted execution context and the command hash. It reads the existing `schedule.command` private source inside the local effect callback. The source checks Schedule identity, owner, placement and the admitted hash. These DAGs project only bounded ready/error fields through the shared endpoint.
 
-Every job targets exactly `orbit-node-<admitted Node ID>` with the matching Node label, including Node 209. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
+`schedule.run` uses `operation-schedule-run`. Every step runs on a Node 209 worker. The Gateway supplies the complete public execution context, the canonical pinned SSH target and the existing command execution-copy vault descriptor. Official `@swamp/ssh` checks the recorded account and directory, verifies the command hash, then executes the command on the target through stdin. No target worker or forwarded environment is required. The command timeout remains 1 through 86,400 seconds; the SSH execution deadline includes the existing ten-second termination margin. Native dependencies control ordering and recovery. The shared terminal subscriber projects only the fixed public result. Timer intent stays unchanged.
+
+Create, enable and destroy retain their current target-worker placement until each kind is converted. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
 
 Definition installation composes the same Schedule installer as steps of its parent native DAG. It does not create child Operations.
 
