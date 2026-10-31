@@ -43,7 +43,7 @@ function task_checked_operation(TaskCheck $check): Operation
 
     return Operation::query()->create([
         'kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $task->parent_id,
-        'input' => ['subtask' => $task->id, 'phase' => 'handoff'], 'status' => OperationStatus::Succeeded,
+        'input' => ['subtask' => $task->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded,
         'sequence' => 1, 'attempts' => 1, 'state' => ['check_id' => $check->id, 'ci' => null],
         'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $check->commit_sha,
             'head' => $check->head_after, 'tree' => $check->tree_after, 'ci' => null],
