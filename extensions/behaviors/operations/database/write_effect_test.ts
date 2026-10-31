@@ -75,6 +75,23 @@ for (const driver of ["mysql", "pgsql"] as const) {
           }),
           { row_count: 1, truncated: false },
         );
+        if (!pg) {
+          assertEquals(
+            await pdoWrite({
+              ...material,
+              sql:
+                "INSERT INTO private_write_sentinel VALUES (19); INSERT INTO private_write_sentinel VALUES (23)",
+            }),
+            { error_code: "database.query_failed" },
+          );
+          assertEquals(
+            await pdoWrite({
+              ...material,
+              sql: "DELETE FROM private_write_sentinel WHERE id IN (19, 23)",
+            }),
+            { row_count: 0, truncated: false },
+          );
+        }
         const refused = await pdoWrite(material);
         assertEquals(refused, { error_code: "database.query_failed" });
         assertEquals(JSON.stringify(refused).includes(password), false);

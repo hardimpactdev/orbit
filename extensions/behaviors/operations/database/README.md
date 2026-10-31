@@ -42,7 +42,10 @@ the bounded row count leaves it. PDO needs no agent pin.
 The apply step emits a native outcome; projection resume reads that saved output
 without repeating SQL. An interrupted apply with a running Gateway status
 refuses another private read or effect: arbitrary SQL cannot be assumed
-idempotent. Inspect an uncertain mutation before starting another Operation. No
+idempotent. Validation or private-read failure before invocation projects failed
+with `database.write_outcome_unknown`; after invocation an exception remains
+uncertain. SQL is limited to 16,384 characters and MySQL multi-statements are
+disabled. Inspect an uncertain mutation before starting another Operation. No
 family receipt, lock, claim or retry loop is added.
 
 `write_native_test.py` uses the shared native harness and the REAL `gatewayHttp`

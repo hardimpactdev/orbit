@@ -17,7 +17,7 @@ const Input = z.discriminatedUnion("driver", [
 ]);
 const Material = z.object({
   password: z.string().max(16384),
-  sql: z.string().min(1).max(1024 * 1024),
+  sql: z.string().min(1).max(16384),
   dsn: z.string().max(4096),
   username: z.string().max(128).nullable(),
 }).strict();
@@ -26,6 +26,7 @@ const Refusal = z.object({
     "agent.version_mismatch",
     "database.sqlite_unreadable",
     "database.query_failed",
+    "database.write_outcome_unknown",
   ]),
 }).strict();
 const Count = z.object({
@@ -41,7 +42,9 @@ export const WriteResult = z.union([
 const php = String.raw`
 $p = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 try {
-  $pdo = new PDO($p['dsn'], $p['username'], $p['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10, PDO::ATTR_EMULATE_PREPARES => false]);
+  $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10, PDO::ATTR_EMULATE_PREPARES => false];
+  if (str_starts_with($p['dsn'], 'mysql:')) $options[PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
+  $pdo = new PDO($p['dsn'], $p['username'], $p['password'], $options);
   $statement = $pdo->query($p['sql']);
   echo json_encode(['row_count' => max(0, $statement->rowCount()), 'truncated' => false]);
 } catch (Throwable $error) { exit(1); }
@@ -93,6 +96,7 @@ export async function writeDatabase(
   invoke = runNodeAgent,
   pdo = pdoWrite,
 ) {
+  let invoked = false;
   try {
     const input = Input.parse(raw);
     signal?.throwIfAborted();
@@ -117,12 +121,14 @@ export async function writeDatabase(
           deadlineMs: 30000,
           input: { owner: input.owner, path: input.path, sql: material.sql },
         };
+        invoked = true;
         reply = await invoke(call, signal);
       } else {
         if (
           !material.dsn.startsWith(`${input.driver}:`) ||
           material.dsn.includes("\0")
         ) throw new Error("Foreign SQL material");
+        invoked = true;
         reply = await pdo(material);
       }
       const refused = Refusal.safeParse(reply);
@@ -133,6 +139,9 @@ export async function writeDatabase(
     if (!result) throw new Error("No completed write");
     return result;
   } catch {
+    if (!invoked) {
+      return { error_code: "database.write_outcome_unknown" as const };
+    }
     throw new Error("database.write_outcome_unknown");
   }
 }
