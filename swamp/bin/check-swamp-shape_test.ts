@@ -846,3 +846,29 @@ Deno.test("Python command bindings use execution order and immutable lexical cap
     );
   }
 });
+
+Deno.test("Python cross-scope and walrus writes invalidate captured command provenance", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nif (cmd := ['sleep','30']):\n    execute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nsubprocess.run(cmd)\n",
+      "import subprocess\ndef outer():\n    cmd=['echo','safe']\n    def execute():\n        subprocess.run(cmd)\n    def change():\n        nonlocal cmd\n        cmd=['sleep','30']\n    change()\n    execute()\nouter()\n",
+    ]
+  ) {
+    for (
+      const findings of [
+        agentPythonFindings(file, source, inventory),
+        agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory),
+      ]
+    ) {
+      assert(
+        findings.some((finding) =>
+          finding.rule === "unknown-command" ||
+          finding.rule === "custom-control"
+        ),
+        source,
+      );
+    }
+  }
+});

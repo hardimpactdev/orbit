@@ -135,7 +135,8 @@ export function agentPythonFindings(
   const root = pythonParser.parse(source).topNode;
   type Binding = { statement: PythonNode; value?: PythonNode };
   const bindings = new Map<string, Binding[]>(),
-    aliases = new Map<string, string>();
+    aliases = new Map<string, string>(),
+    crossScopeNames = new Set<string>();
   const children = (node: PythonNode) => {
     const out: PythonNode[] = [];
     for (let child = node.firstChild; child; child = child.nextSibling) {
@@ -163,6 +164,22 @@ export function agentPythonFindings(
     bindings.set(key, [...(bindings.get(key) ?? []), { statement, value }]);
   };
   visit(root, (node) => {
+    if (node.name === "ScopeStatement") {
+      for (const part of children(node)) {
+        if (part.name === "VariableName") crossScopeNames.add(text(part));
+      }
+    }
+    if (
+      node.name === "NamedExpression" &&
+      node.firstChild?.name === "VariableName"
+    ) {
+      bind(node.firstChild, node);
+    }
+    if (node.name === "DeleteStatement") {
+      visit(node, (part) => {
+        if (part.name === "VariableName") bind(part, node);
+      });
+    }
     if (
       ["AssignStatement", "UpdateStatement", "ForStatement", "WithStatement"]
         .includes(node.name)
@@ -228,6 +245,9 @@ export function agentPythonFindings(
       : raw;
   };
   const bound = (id: string, at: PythonNode): Binding | undefined => {
+    // A global/nonlocal binding can change in a separate function invocation.
+    // Local statement order alone cannot prove its value at this call.
+    if (crossScopeNames.has(id)) return;
     let scope: PythonNode | null = lexicalScope(at);
     const own = scope;
     while (scope) {

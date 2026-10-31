@@ -139,3 +139,8 @@ The TS checker owns the endpoint policy and passes it to the Python AST helper.
 Native shell URLs use the same policy. The signer fixture is copied from lane0c
 model `orbit-certificate-signing-http`; altered methods, paths, unchecked ids and
 extra callbacks are rejected.
+
+Python command provenance uses lexical scope and statement order. Global or
+nonlocal declarations, walrus assignments and deleted bindings prevent a claim
+that a captured command is fixed. Unresolved executable control remains unknown
+and cannot gain a clean classification.
