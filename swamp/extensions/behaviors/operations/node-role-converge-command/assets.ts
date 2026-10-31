@@ -16,9 +16,23 @@ const Inputs = {
     ci_resource: z.object({
         resource: z.enum(["pool", "project", "acl", "network", "profile"]),
     }).strict(),
+    file: z.object({
+        path: Path,
+        mode: z.string().regex(/^[0-7]{3,4}$/),
+        owner: z.string().regex(
+            /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*:[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/,
+        ),
+        content: z.string().max(4194304).nullable(),
+        material_field: z.enum([
+            "text",
+            "configuration",
+            "websocket_environment",
+        ]).default("text"),
+        marker: z.string().max(1024).nullable().default(null),
+    }).strict(),
 };
 const Args = z.object({
-    action: z.enum(["storage", "directory", "ci_resource"]),
+    action: z.enum(["storage", "directory", "ci_resource", "file"]),
     input: z.record(z.string(), z.unknown()),
 }).strict();
 const Assets = z.object({ script_body: z.string() }).strict();

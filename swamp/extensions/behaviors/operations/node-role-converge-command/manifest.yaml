@@ -6,7 +6,9 @@ license: MIT
 description: Public one-action role convergence assets for official SSH from Node209.
 behaviors:
   - operations/node-role-converge-command/assets.ts
+  - operations/node-role-converge-command/result.ts
 additionalFiles:
   - scripts/storage.py
   - scripts/directory.py
   - scripts/ci_resource.py
+  - scripts/file.py

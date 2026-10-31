@@ -6,10 +6,11 @@ const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 /** One baseline action; the parent supplies its immutable public input and SSH globals. */
 export function roleBaselineSteps(
     name: string,
-    action: "storage" | "directory" | "ci_resource",
+    action: "storage" | "directory" | "ci_resource" | "file",
     input: Fields,
     globalArgs: Fields,
     dependency?: string,
+    material?: string,
 ): Fields[] {
     const assets = name + "_assets", command = name + "_command";
     return [{
@@ -32,13 +33,26 @@ export function roleBaselineSteps(
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: globalArgs.name,
-            methodName: "script",
+            methodName: material ? "exec" : "script",
             globalArgs,
             inputs: {
                 hosts: "name:target",
-                interpreter: "python3",
                 sudo: true,
-                script: expr('steps["' + assets + '"].outputs.script_body'),
+                ...(material
+                    ? {
+                        argv: [
+                            "/usr/bin/python3",
+                            "-c",
+                            expr('steps["' + assets + '"].outputs.script_body'),
+                        ],
+                        stdin: expr(material),
+                    }
+                    : {
+                        interpreter: "python3",
+                        script: expr(
+                            'steps["' + assets + '"].outputs.script_body',
+                        ),
+                    }),
             },
         },
     }, {

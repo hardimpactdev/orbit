@@ -23,6 +23,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
 {
     public function input(Operation $operation): array
     {
+        if ($operation->kind === 'node.role_converge') {
+            return ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets']];
+        }
         $snapshot = $this->snapshot($operation);
         if (isset($operation->state['role_footprint'])) {
             $snapshot['footprint'] = $operation->state['role_footprint'];
@@ -89,6 +92,25 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
             }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)
                 ->where('role', $snapshot['role'])->firstOrFail();
+            if ($operation->kind === 'node.role_converge') {
+                if (($result['runtime_completed'] ?? false) === true) {
+                    app(NodeRoleRuntimeProjection::class)->record($snapshot);
+                }
+                $phases = $result['publication_phases'] ?? [];
+                if (! is_array($phases)) {
+                    throw new \InvalidArgumentException('Native publication phases must be a list.');
+                }
+                foreach ($phases as $raw) {
+                    $phase = ValidatedData::object($raw);
+                    app(NodeRolePublicationState::class)->record(ValidatedData::object($snapshot['certificates']),
+                        ValidatedData::string($phase['phase']), ValidatedData::integer($phase['node_id']));
+                }
+                if (($result['target_completed'] ?? false) === true) {
+                    $assignment->markConvergenceActive();
+                    $projected->state = [...($projected->state ?? []), 'role_target_completed' => true];
+                    $projected->save();
+                }
+            }
             if ($status === OperationStatus::Succeeded) {
                 $assignment->markConvergenceActive();
                 app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($snapshot['footprint']),
@@ -113,6 +135,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
     /** @return array<string,mixed> */
     private function snapshot(Operation $operation): array
     {
+        if ($operation->kind === 'node.role_converge') {
+            return ValidatedData::object($operation->input['intent']);
+        }
         if ($operation->kind !== 'node.role_relocate') {
             return ValidatedData::object($operation->input['_role'] ?? []);
         }

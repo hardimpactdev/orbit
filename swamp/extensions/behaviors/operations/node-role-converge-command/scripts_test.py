@@ -3,8 +3,11 @@
 import copy
 import grp
 import importlib.util
+import io
+import json
 import os
 import pwd
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +24,7 @@ def load(name):
 storage = load("storage")
 ci = load("ci_resource")
 directory = load("directory")
+file = load("file")
 
 
 class StorageTest(unittest.TestCase):
@@ -108,6 +112,49 @@ class DirectoryTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     directory.apply({"path": str(path)})
                 chmod.assert_not_called()
+
+
+class FileTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "role" / "configuration"
+        self.input = {
+            "path": str(self.path), "mode": "0640", "owner": f"{os.getuid()}:{os.getgid()}",
+            "content": "# Managed by Orbit.\nvalue=new\n", "material_field": "text", "marker": "# Managed by Orbit.\n",
+        }
+
+    def test_one_atomic_public_file_is_idempotent_and_applies_its_mode(self):
+        self.assertEqual(file.apply(self.input), {"ready": True, "changed": True})
+        self.assertEqual(file.apply(self.input), {"ready": True, "changed": False})
+        self.assertEqual(self.path.read_text(), self.input["content"])
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(list(self.path.parent.glob(".orbit-role-*")), [])
+
+    def test_failed_rename_keeps_prior_content_and_removes_the_candidate(self):
+        file.apply(self.input)
+        self.input["content"] = "# Managed by Orbit.\nvalue=replacement\n"
+        with patch.object(file.os, "replace", side_effect=OSError("refused")), self.assertRaises(OSError):
+            file.apply(self.input)
+        self.assertEqual(self.path.read_text(), "# Managed by Orbit.\nvalue=new\n")
+        self.assertEqual(list(self.path.parent.glob(".orbit-role-*")), [])
+
+    def test_private_existing_material_selects_only_the_admitted_configuration_file(self):
+        self.input.update(content=None, material_field="configuration", marker=None, mode="0400")
+        private = {"configuration": {str(self.path): "private-file-fixture", "/unrelated": "not-selected"}}
+        with patch.object(sys, "stdin", io.StringIO(json.dumps(private))):
+            result = file.apply(self.input)
+        self.assertEqual(result, {"ready": True, "changed": True})
+        self.assertEqual(self.path.read_text(), "private-file-fixture")
+        self.assertNotIn("private-file-fixture", json.dumps(result))
+
+    def test_foreign_file_is_refused_without_overwriting_or_staging(self):
+        self.path.parent.mkdir()
+        self.path.write_text("operator content")
+        with self.assertRaises(ValueError):
+            file.apply(self.input)
+        self.assertEqual(self.path.read_text(), "operator content")
+        self.assertEqual(list(self.path.parent.glob(".orbit-role-*")), [])
 
 
 class CiTest(unittest.TestCase):

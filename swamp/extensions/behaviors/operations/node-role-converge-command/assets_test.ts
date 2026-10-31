@@ -83,3 +83,37 @@ Deno.test("baseline composition places every action on209 and passes full pinned
     assertEquals(task.globalArgs, globals);
     assertEquals((task.inputs as Record<string, unknown>).hosts, "name:target");
 });
+
+Deno.test("private role files consume only the whole execution copy through official exec stdin", () => {
+    const globals = { name: "role-files" };
+    const steps = roleBaselineSteps(
+        "metrics_config",
+        "file",
+        {
+            path: "/etc/orbit/metrics/prometheus.yml",
+            mode: "0400",
+            owner: "root:root",
+            content: null,
+            material_field: "configuration",
+        },
+        globals,
+        "packages",
+        "vault.get(inputs.execution_secrets.runtime_material.vault, inputs.execution_secrets.runtime_material.key)",
+    );
+    const task = steps[1].task as Record<string, unknown>;
+    const inputs = task.inputs as Record<string, unknown>;
+    assertEquals(task.methodName, "exec");
+    assertEquals(task.globalArgs, globals);
+    assertEquals(
+        inputs.stdin,
+        "${{ vault.get(inputs.execution_secrets.runtime_material.vault, inputs.execution_secrets.runtime_material.key) }}",
+    );
+    assertEquals(inputs.argv, [
+        "/usr/bin/python3",
+        "-c",
+        '${{ steps["metrics_config_assets"].outputs.script_body }}',
+    ]);
+    assertEquals(inputs.sudo, true);
+    assertEquals("env" in inputs, false);
+    assertEquals("script" in inputs, false);
+});
