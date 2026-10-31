@@ -83,7 +83,7 @@ jobs:
         guard: ${{ !inputs.intent.cascade }}
         task:
           type: behavior
-          behaviorType: '@swamp/cfgmgmt/systemd'
+          behaviorType: '@swamp/cfgmgmt/exec'
           behaviorName: ${{ "schedule-stop_service-" + string(inputs.operation_id) }}
           methodName: apply
           globalArgs:
@@ -92,8 +92,7 @@ jobs:
             nodePort: ${{ inputs.intent.ssh_execution.target.port }}
             nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
             become: true
-            service: ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
-            ensure: stopped
+            command: ${{ "systemctl stop orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
           inputs: {}
       - name: remove_files
         target: orbit-node-209

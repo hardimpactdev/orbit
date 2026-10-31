@@ -1,7 +1,9 @@
 """Run the production lifecycle DAGs with unmodified official cfgmgmt and SSH models."""
 
+import grp
 import json
 import os
+import pwd
 import shutil
 import sys
 
@@ -60,12 +62,13 @@ if s['failures'] and s['failures'][0]==action:
 unit=a[1] if len(a)>1 else '';current=s['units'].setdefault(unit,{'enabled':False,'active':False})
 if action=='show':
  print('LoadState='+('loaded' if (Path(UNITS)/unit).exists() else 'not-found'))
- print('ActiveState='+('active' if current['active'] else 'inactive'))
+ print('ActiveState='+(current['active'] if isinstance(current['active'],str) else 'active' if current['active'] else 'inactive'))
  print('UnitFileState='+('enabled' if current['enabled'] else 'disabled'))
 elif action=='is-active':
- print('active' if current['active'] else 'inactive')
+ print(current['active'] if isinstance(current['active'],str) else 'active' if current['active'] else 'inactive')
 elif action in ['enable','disable']:current['enabled']=action=='enable'
 elif action in ['start','stop']:current['active']=action=='start'
+elif action=='daemon-reload':s['loaded']={p.name:p.read_text() for p in Path(UNITS).glob('*')}
 p.write_text(json.dumps(s))
 """.replace("STATE", repr(str(self.state))).replace(
                 "UNITS", repr(str(self.host / "units"))
@@ -97,6 +100,12 @@ p.write_text(json.dumps(s))
                 for step in job["steps"]:
                     self.assertEqual(step.pop("target"), "orbit-node-209")
                     self.assertEqual(step.pop("labels"), {"node": "209"})
+                    # Map declared root ownership to this disposable fixture account.
+                    if step["task"]["behaviorType"] == "@swamp/cfgmgmt/file":
+                        globals = step["task"]["globalArgs"]
+                        if "owner" in globals:
+                            globals["owner"] = pwd.getpwuid(os.getuid()).pw_name
+                            globals["group"] = grp.getgrgid(os.getgid()).gr_name
                     if step["task"]["behaviorType"] == "@swamp/ssh":
                         step["task"]["globalArgs"].update(
                             sshBinary=str(self.ssh), scpBinary=str(self.scp)
@@ -124,7 +133,9 @@ p.write_text(json.dumps(s))
 
     def drift(self, kind, **changes):
         state = json.loads(self.state.read_text())
-        state["units"][self.unit_name(kind)].update(changes)
+        state["units"].setdefault(
+            self.unit_name(kind), {"enabled": False, "active": False}
+        ).update(changes)
         self.state.write_text(json.dumps(state))
 
     def run_lifecycle(self, kind="create", success=True):
@@ -161,7 +172,10 @@ p.write_text(json.dumps(s))
         self.save_state(calls=[])
         self.run_lifecycle()
         self.assertFalse(
-            any(c[0] != "show" for c in json.loads(self.state.read_text())["calls"])
+            any(
+                c[0] not in ["show", "daemon-reload"]
+                for c in json.loads(self.state.read_text())["calls"]
+            )
         )
         self.assertFalse(list(self.host.glob("**/*snapshot*")))
 
@@ -225,3 +239,41 @@ p.write_text(json.dumps(s))
             self.assertEqual(self.result(), {"ready": True})
             self.assertFalse(self.unit("service").exists())
             self.assertFalse(self.unit("timer").exists())
+
+    def test_cascade_stops_an_activating_oneshot_before_removing_units(self):
+        self.run_lifecycle()
+        self.drift("service", active="activating")
+        self.inputs["intent"]["cascade"] = True
+        self.run_lifecycle("destroy")
+        self.assertEqual(self.result(), {"ready": True})
+        self.assertFalse(self.current("service")["active"])
+        self.assertIn(
+            ["stop", self.unit_name("service")],
+            json.loads(self.state.read_text())["calls"],
+        )
+        self.assertFalse(self.unit("service").exists())
+
+    def test_rerun_reloads_failed_replacement_before_removing_old_runner(self):
+        self.inputs["intent"]["schedule"]["desired"] = "enabled"
+        self.run_lifecycle()
+        self.unit("service").write_text("obsolete-service-definition")
+        state = json.loads(self.state.read_text())
+        state["loaded"][self.unit_name("service")] = "obsolete-service-definition"
+        self.save_state(loaded=state["loaded"], failures=["daemon-reload"])
+        obsolete = (
+            self.host / "schedules" / (self.inputs["intent"]["schedule"]["id"] + ".sh")
+        )
+        obsolete.write_text("obsolete-private-command")
+        self.run_lifecycle(success=False)
+        self.assertTrue(obsolete.exists())
+        self.assertEqual(
+            json.loads(self.state.read_text())["loaded"][self.unit_name("service")],
+            "obsolete-service-definition",
+        )
+        self.run_lifecycle()
+        self.assertEqual(self.result(), {"ready": True})
+        self.assertEqual(
+            json.loads(self.state.read_text())["loaded"][self.unit_name("service")],
+            self.unit("service").read_text(),
+        )
+        self.assertFalse(obsolete.exists())

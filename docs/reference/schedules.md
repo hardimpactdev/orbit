@@ -107,7 +107,7 @@ The service sends an authenticated Node request to the Gateway run endpoint. Its
 
 ## Install and recover
 
-Creation uses the official `@swamp/cfgmgmt/systemd` model to deploy the public service and timer units. Its `apply` method reloads systemd when unit content changes and converges the timer to its recorded enabled/running or disabled/stopped intent. Repeating create converges the same Schedule UUID. Obsolete script and completion files are removed through `@swamp/cfgmgmt/file`; they are not executed or copied into native history.
+Creation uses `@swamp/cfgmgmt/file` to deploy the public units, the official exec model to reload systemd, and `@swamp/cfgmgmt/systemd` to converge the timer to its recorded enabled/running or disabled/stopped intent. Repeating create converges the same Schedule UUID. Obsolete script and completion files are removed through `@swamp/cfgmgmt/file`; they are not executed or copied into native history.
 
 A failed create or destroy records `operation.native_failed` through the shared native terminal projection. Successful actions stay applied. Correct the cause and repeat the operation to converge; these workflows do not keep snapshots or roll back host state. Definition installation and enable retain their existing canonical installer and recovery behavior.
 
@@ -121,9 +121,9 @@ The shared [direct Operation boundary](/reference/operations#direct-swamp-starts
 
 `schedule.run` uses `operation-schedule-run`. Every step runs on a Node 209 worker. The Gateway supplies the complete public execution context, the canonical pinned SSH target and the existing command execution-copy vault descriptor. Official `@swamp/ssh` checks the recorded account and directory, verifies the command hash, then executes the command on the target through stdin. No target worker or forwarded environment is required. The command timeout remains 1 through 86,400 seconds; the SSH execution deadline includes the existing ten-second termination margin. Native dependencies control ordering and recovery. The shared terminal subscriber projects only the fixed public result. Timer intent stays unchanged.
 
-`schedule.create` and `schedule.destroy` also run on Node 209 workers. They receive the complete public Schedule specification and canonical SSH target. Official cfgmgmt models use the approved identity file and runner SSH configuration. Stored host keys must be seeded in that runner's `known_hosts`, as the official models document; lifecycle workflows do not select or capture trust.
+`schedule.create` and `schedule.destroy` also run on Node 209 workers. They receive the complete public Schedule specification and canonical SSH target. Official cfgmgmt models use the approved identity file and runner SSH configuration. The shared worker pin workflow seeds stored host keys in that runner's `known_hosts`. The Gateway triggers it after a pin is recorded or changed; lifecycle families consume it and do not select or capture trust.
 
-Creation uses the systemd model's `unitFile` input so the model owns both the write and daemon reload. Destruction makes one official `@swamp/ssh` active-work check before effects, stops and disables the timer through the systemd model, removes the UUID-owned files through the file model, then reloads systemd through the official exec model. A cascade removal also stops the service. These paths read no private command source and need no command execution copy.
+Creation reloads after applying the files, including on rerun; the systemd model's content-triggered reload alone would miss a previous reload failure. Destruction makes one official `@swamp/ssh` active-work check before effects, stops and disables the timer through the systemd model, removes the UUID-owned files through the file model, then reloads systemd through the official exec model. A cascade removal uses an unconditional official exec stop so an activating oneshot is stopped too. These paths read no private command source and need no command execution copy.
 
 Enable retains its current target-worker placement until converted. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
 
@@ -159,6 +159,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 
 | Error code | Meaning |
 | --- | --- |
+| `operation.native_failed` | Native create or destroy failed. Completed host work remains; fix the cause and repeat to converge. |
 | `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | The input is outside the accepted form, or the host's systemd refuses the calendar. |
 | `schedule.target_invalid` | The target does not exist, or the operation does not apply to it. The Gateway also uses it with 403 when a completion report comes from another Node. |
 | `schedule.target_unavailable` | The target, its Node, its user, or its working directory cannot run the operation. |
