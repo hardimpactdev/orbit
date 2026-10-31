@@ -7,7 +7,7 @@ namespace App\Domain\Analytics;
 use App\Domain\Shared\ResourceOperationException;
 
 /**
- * The four mounts for Plausible's ClickHouse configuration. The Rust agent owns the file contents and publication;
+ * The four mounts for Plausible's ClickHouse configuration. Swamp owns the file contents and publication;
  * the Gateway adds only these read-only mounts to the Process (ADR 0142).
  */
 final readonly class PlausibleClickhouseConfiguration
