@@ -14,11 +14,6 @@ export const Inspection = z.object({
   default_route: z.string(),
   uplink: z.boolean(),
 });
-export const Completion = z.object({
-  status: z.enum(["succeeded", "failed", "cancelled"]),
-  result: z.record(z.string(), z.unknown()),
-  error_code: z.string().regex(/^[a-z0-9_.-]+$/).nullable(),
-});
 export function matchesPolicy(
   input: z.infer<typeof PeerDnsInput>,
   observed: z.infer<typeof Inspection>,
@@ -37,7 +32,7 @@ export function matchesPolicy(
     setting(observed.default_route) === "no";
 }
 
-/** The existing install refusal mapping, shared with the polled wrapper. */
+/** Canonical CLI install refusal mapping. */
 export function cliInstallError(
   result: Record<string, unknown>,
 ): string | null {

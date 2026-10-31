@@ -1,5 +1,16 @@
 import { z } from "npm:zod@4.4.3";
-import { type Context } from "../../operation-runner/mod.ts";
+import type { Globals } from "../_lib/direct.ts";
+
+export type MaintenanceContext = {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+  readResource(name: string): Promise<Record<string, unknown> | null>;
+  writeResource(
+    spec: string,
+    name: string,
+    value: Record<string, unknown>,
+  ): Promise<{ name: string }>;
+};
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 const Terminal = new Set(["succeeded", "failed", "cancelled"]);
@@ -14,10 +25,10 @@ const Admission = z.object({
   attempt: z.number().int().nonnegative(),
   generation: z.string().optional(),
 });
-export const MaintenanceReceipt = Admission;
+export const MaintenanceIntent = Admission;
 export async function maintenance(
   args: { tick: string },
-  ctx: Context,
+  ctx: MaintenanceContext,
   http: Http,
   at = new Date(),
 ) {
@@ -128,22 +139,39 @@ export async function maintenance(
     }
   });
   await independently(async () => {
+    if (minute % 5 !== 0) return;
     const prPlan = z.object({
       status: z.string(),
+      recipe_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      serving_recipe_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      base_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
       date: z.string().optional(),
       pulls: z.array(
         z.object({
           number: z.number(),
           variant: z.string(),
           head_sha: z.string(),
+          checks: z.enum([
+            "passed",
+            "failed",
+            "pending",
+            "missing",
+            "unreadable",
+          ]).optional(),
+          checks_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+          policy_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
         }),
       ).default([]),
     }).parse(await request("GET", "/api/v1/fleet/recipe-pr/plan"));
-    if (prPlan.status === "ready") {
+    if (
+      prPlan.status === "ready" &&
+      prPlan.recipe_revision && prPlan.serving_recipe_revision &&
+      prPlan.base_revision
+    ) {
       if (hour >= 3 && minute % 5 === 0) {
         for (const variant of ["snapshot", "artifacts"]) {
-          await admit(
-            `open-${variant}-${prPlan.date}`,
+          await request(
+            "POST",
             "/api/v1/fleet/recipe-pr",
             {
               action: "open",
@@ -152,18 +180,51 @@ export async function maintenance(
               head_sha: "",
               date: prPlan.date,
             },
-            false,
+            `fleet:recipe-pr:open:${prPlan.date}:${variant}:${prPlan.serving_recipe_revision}`,
           );
         }
       }
-      // Each PR has one active Operation; each action revalidates the exact App head.
+      // The native behavior lock serializes GitHub writes; each action rechecks its admitted head.
       // The merge command checks retirement first, including on this cadence’s merge tick.
       const action =
         ["retire", "update", "merge"][Math.floor(at.getTime() / 60_000) % 3];
       for (const pull of prPlan.pulls) {
-        if (action === "update" && pull.variant !== "snapshot") continue;
-        await admit(
-          `pr-${pull.number}-${prPlan.date}-${pull.head_sha}`,
+        if (!pull.checks || !pull.checks_revision || !pull.policy_revision) {
+          throw new Error("fleet.recipe_pr_plan_incomplete");
+        }
+        if (
+          action === "update" &&
+          (pull.variant !== "snapshot" || pull.checks !== "failed")
+        ) continue;
+        if (
+          action === "merge" && pull.variant === "snapshot" &&
+          pull.checks !== "passed"
+        ) continue;
+        const evidence = action === "retire"
+          ? [
+            prPlan.recipe_revision,
+            prPlan.pulls.map((candidate) =>
+              `${candidate.number}:${candidate.head_sha}:${candidate.policy_revision}`
+            ).sort(),
+          ]
+          : action === "update"
+          ? [prPlan.base_revision, pull.checks_revision]
+          : pull.variant === "artifacts"
+          ? [prPlan.recipe_revision, pull.checks_revision]
+          : [pull.checks_revision];
+        const digest = Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(
+                JSON.stringify([pull.head_sha, pull.policy_revision, evidence]),
+              ),
+            ),
+          ),
+          (byte) => byte.toString(16).padStart(2, "0"),
+        ).join("");
+        await request(
+          "POST",
           "/api/v1/fleet/recipe-pr",
           {
             action,
@@ -172,7 +233,7 @@ export async function maintenance(
             head_sha: pull.head_sha,
             date: prPlan.date,
           },
-          true,
+          `fleet:recipe-pr:${prPlan.date}:${action}:${pull.number}:${digest}`,
         );
       }
     }
@@ -207,14 +268,13 @@ export async function maintenance(
           node_id: z.number(),
           attempts: z.number(),
           finished_at: z.string().nullable().optional(),
-          window: z.boolean(),
           running: z.boolean(),
         }),
       ).default([]),
     }).parse(await request("GET", "/api/v1/fleet/rollout/plan"));
     // Pending Nodes precede catch-up retries; a busy or unreachable Node does not starve later ones.
     const target = rollout.targets.filter((t) =>
-      t.window && !t.running && (t.attempts === 0 || !t.finished_at ||
+      !t.running && (t.attempts === 0 || !t.finished_at ||
         new Date(t.finished_at).getTime() <= at.getTime() - 300_000)
     ).sort((a, b) =>
       a.attempts - b.attempts
