@@ -1,9 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+  Args,
   begin,
   checkpoint,
   convergeSite,
-  detach,
   dnsGrace,
   finish,
   publishRecords,
@@ -143,41 +143,11 @@ Deno.test("success projects exact site identity", async () => {
   });
 });
 
-Deno.test("detach never reads private material or mutates the provider", async () => {
-  const f = fixture({
-    kind: "analytics.disable",
-    status: "running",
-    input: {
-      instance_id: 1,
-      enabled: false,
-      base_url: null,
-      site: null,
-      tracking: {
-        certificates: [],
-        cleanup: [],
-        caddy_node_ids: [],
-        dns_node_ids: [],
-        router_node_ids: [],
-        ingress_node_ids: [],
-        public_verify_node_ids: [],
-        firewall_node_ids: [],
-        cleanup_caddy_node_ids: [],
-      },
-    },
-  });
+Deno.test("the callback lifecycle no longer admits analytics disable", () => {
   assertEquals(
-    await detach({ ...args, kind: "analytics.disable" }, f.gateway),
-    { detached: true },
+    Args.safeParse({ ...args, kind: "analytics.disable" }).success,
+    false,
   );
-  assertEquals(f.projected, []);
-  await finish({ ...args, kind: "analytics.disable" }, true, f.gateway);
-  assertEquals(f.projected[0].result, {
-    ready: true,
-    enabled: false,
-    domain: null,
-    timezone: null,
-    detached: true,
-  });
 });
 
 Deno.test("activation and retirement callbacks are bounded and honour cancellation", async () => {

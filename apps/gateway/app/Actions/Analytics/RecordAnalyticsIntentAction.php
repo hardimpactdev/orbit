@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Analytics;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Analytics\AnalyticsDisableInput;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Analytics\AnalyticsTrackingIntent;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
@@ -14,6 +15,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -68,10 +70,15 @@ final readonly class RecordAnalyticsIntentAction
             ];
             $intent = new Operation(['kind' => $enabled ? 'analytics.enable' : 'analytics.disable', 'target_type' => 'instance',
                 'target_id' => $instance->id, 'node_id' => $nodeId, 'input' => $input]);
+            $beforeSites = ! $enabled ? app(DevelopmentSiteRepository::class)->all() : null;
             $plan = $this->tracking->materialize($intent);
             $input['tracking'] = $plan;
             $input['certificates'] = $plan['certificates'];
             $input['participant_node_ids'] = array_values(array_unique([$nodeId, ...$plan['caddy_node_ids'], ...$plan['dns_node_ids']]));
+            if ($beforeSites !== null) {
+                $input['native_disable'] = app(AnalyticsDisableInput::class)->capture($plan, $beforeSites,
+                    is_array($previous) ? ValidatedData::object($previous) : null);
+            }
 
             return $this->operations->execute($intent->kind, 'instance', $instance->id, $nodeId, $input,
                 'operator', request()->attributes->getString('orbit.request_id'));

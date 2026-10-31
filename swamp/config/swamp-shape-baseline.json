@@ -2388,10 +2388,8 @@
     {
       "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
       "rule": "multi-action",
-      "count": 11,
+      "count": 8,
       "evidence": [
-        "/bin/bash",
-        "/usr/bin/env",
         "/usr/bin/getent",
         "/usr/bin/mktemp",
         "/usr/bin/rm",
@@ -2399,8 +2397,7 @@
         "/usr/bin/sudo",
         "/usr/bin/systemctl",
         "/usr/bin/systemd-analyze",
-        "/usr/bin/test",
-        "/usr/bin/timeout"
+        "/usr/bin/test"
       ]
     },
     {
@@ -2441,22 +2438,6 @@
       "rule": "inline-script",
       "count": 150,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/cluster-router.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/cluster-router.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/convergence.ts",
@@ -3244,20 +3225,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/tasks/analysis_program.ts",
-      "rule": "inline-script",
-      "count": 201,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/analysis.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/tasks/cancellation.ts",
       "rule": "custom-control",
       "count": 1,
@@ -3345,14 +3312,6 @@
       "evidence": [
         "git",
         "sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/script.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {

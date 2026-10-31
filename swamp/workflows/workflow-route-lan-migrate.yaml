@@ -56,7 +56,8 @@ jobs:
       behaviorType: '@nckrtl/route-mutation-command'
       behaviorName: ${{ "route-assets-" + run.id }}
       methodName: lanMigration
-      inputs: {}
+      inputs:
+        legacy_router: ${{ has(inputs.intent.rule.legacy_router) && inputs.intent.rule.legacy_router }}
   - name: prepare-assets
     target: orbit-node-209
     labels:

@@ -1,0 +1,16 @@
+manifestVersion: 1
+name: "@nckrtl/task-repository-scripts"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public Tasks repository metadata and separate native script/analysis actions.
+behaviors:
+  - operations/task-repository/assets.ts
+additionalFiles:
+  - scripts/repository_common.py
+  - scripts/inspect.py
+  - scripts/snapshot.py
+  - scripts/execute_script.py
+  - scripts/execute_analysis.py
+  - scripts/script_result.py
+  - scripts/analysis_result.py

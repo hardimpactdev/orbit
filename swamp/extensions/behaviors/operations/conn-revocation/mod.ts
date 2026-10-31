@@ -71,7 +71,7 @@ export function terminalResult(
 
 export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         selection: {

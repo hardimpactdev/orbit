@@ -1,21 +1,18 @@
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const coordinator = { target: "orbit-node-209", labels: { node: "209" } };
-const completed = {
-    type: "or",
-    conditions: [{ type: "succeeded" }, { type: "skipped" }],
-};
+const completed = { type: "always" };
 /** Compose native children under the real parent Operation, without callbacks or effects in TS. */
 export function routeMutationSteps(
     name: string,
     intent: string,
     mode: "forward" | "restore",
     guard?: string,
+    parentRunId = "run.id",
 ): Fields[] {
     const side = `${intent}.${mode}`;
     const predicate = guard?.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
-    const selected = (list: string) =>
-        expr(predicate ? `(${predicate}) ? ${list} : []` : list);
+    const selected = (list: string) => expr(list);
     const common = {
         operation_id: expr("inputs.operation_id"),
         node_id: expr("inputs.node_id"),
@@ -35,6 +32,13 @@ export function routeMutationSteps(
             name: childName,
             ...coordinator,
             forEach: { item: "part", in: selected(list) },
+            guard: expr(
+                `${
+                    predicate
+                        ? `!(${predicate}) || `
+                        : ""
+                }steps.exists(key, key.startsWith("${name}_") && steps[key].status == "failed")`,
+            ),
             dependsOn: steps.map((step) => ({
                 step: step.name,
                 condition: completed,
@@ -70,7 +74,7 @@ export function routeMutationSteps(
             list,
             targetIntent("leaf"),
             {},
-            { parent_run_id: expr("run.id"), restoring: mode === "restore" },
+            { parent_run_id: expr(parentRunId), restoring: mode === "restore" },
         );
     }
     function caddy(
@@ -169,6 +173,7 @@ export function routeMutationSteps(
         name,
         ...coordinator,
         forEach: { item: "stage", in: selected(`[${side}]`) },
+        ...(predicate ? { guard: expr(`!(${predicate})`) } : {}),
         dependsOn: steps.map((step) => ({
             step: step.name,
             condition: completed,

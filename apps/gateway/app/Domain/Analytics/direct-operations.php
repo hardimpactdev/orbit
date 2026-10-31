@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsDisableProjection;
 use App\Domain\Analytics\AnalyticsIntentProjection;
 use App\Domain\Analytics\AnalyticsUpdateProjection;
 
@@ -13,7 +14,9 @@ return [
     ],
     'analytics.disable' => [
         'workflow' => 'operation-analytics-disable-direct',
-        'projection' => AnalyticsIntentProjection::class,
+        'projection' => AnalyticsDisableProjection::class,
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'finish', 'step' => 'result'],
     ],
     'analytics.update' => [
         'workflow' => 'operation-analytics-update-direct',

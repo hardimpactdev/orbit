@@ -235,6 +235,10 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Check CI scope and import fixtures
+        run: |
+          python3 -m unittest discover -s tools -p 'test_ci_*.py'
+          python3 tools/test_swamp_import_base.py
       - name: Select changed build inputs
         id: plan
         env:
@@ -248,12 +252,10 @@ jobs:
 
   swamp:
     name: Swamp
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).swamp
     uses: ./.github/workflows/swamp-shape.yml
     with:
       working-directory: swamp
-      base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
+      changed-only: true
     secrets:
       SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
       SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}

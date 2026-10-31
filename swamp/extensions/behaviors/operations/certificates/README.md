@@ -63,9 +63,9 @@ Publication keeps
 `/etc/caddy/orbit-analytics-cert-current/{analytics.pem,analytics.key}`. Each
 publication also keeps the public `root-ca.pem` for local renewal checks. An
 existing owned version link is accepted only within that role's fixed versions
-directory. The shared Caddy lock covers key preparation and each complete
-publication transaction, including reload and rollback. The Gateway projects
-role state only after the native stages succeed.
+directory. Retained local callers use the existing Caddy lock around their
+transaction. The native child uses its explicit publication, activation and
+recovery steps. The Gateway projects role state after those stages succeed.
 
 ## Native leaf actions and the official certificate extension
 
