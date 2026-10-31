@@ -11,6 +11,7 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskParkIntent;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Models\Operation;
 use App\Models\Project;
@@ -31,7 +32,7 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
     public function targetTypes(): array
     {
         return match ($this->source) {
-            'upcloud.api' => ['task_vm', 'task_vm_upcloud_image', 'task_vm_sweep'],
+            'upcloud.api' => ['task_vm', 'task_vm_upcloud_image', 'task_vm_sweep', 'task_group'],
             'task_vm.package_cache_github' => ['task_vm_cache'],
             'task_vm.image_bootstrap' => ['task_vm_upcloud_image'],
             default => ['task_vm'],
@@ -44,6 +45,14 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
             return null;
         }
         $id = $operation->target_id;
+        if ($operation->target_type === 'task_group') {
+            if ($this->source !== 'upcloud.api' || $operation->kind !== 'tasks.park') {
+                return null;
+            }
+            $vm = app(TaskParkIntent::class)->owned($operation);
+
+            return $vm->provider === TaskVmProviderKind::UpCloud ? $vm->id : null;
+        }
         if ($operation->target_type === 'task_vm') {
             $vm = TaskVm::query()->find($id);
             if ($vm === null || ($this->source === 'upcloud.api' && $vm->provider !== TaskVmProviderKind::UpCloud)) {
