@@ -22,6 +22,7 @@ Deno.test("Process metadata resolves shipped files and serializes only public in
         },
     });
     assertEquals(result.control_script, "/native-cache/scripts/control.py");
+    assertEquals(result.scripts_directory, "/native-cache/scripts");
     assertEquals(JSON.parse(result.control_json), control);
     assertEquals(result.installation_json, "null");
     assertEquals(

@@ -1,0 +1,282 @@
+id: 983c76da-115e-4629-b5db-80e7762982ac
+name: operation-process-stop
+description: Explicit Process stop on a 209 worker through official SSH to its admitted target, with separate boot
+  policy, control and verification.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - process.stop
+    intent:
+      type: object
+      properties:
+        control:
+          type: object
+          properties:
+            process_id:
+              type: integer
+              minimum: 1
+            runtime:
+              type: string
+              enum:
+              - systemd
+              - docker
+            name:
+              type: string
+              pattern: ^orbit-process-[1-9][0-9]*-[a-z0-9-]+(?:\.service)?$
+            on_demand:
+              type: boolean
+            vite:
+              default: null
+              enum:
+              - null
+          required:
+          - process_id
+          - runtime
+          - name
+          - on_demand
+          - vite
+          additionalProperties: false
+        ssh_execution:
+          type: object
+      required:
+      - control
+      - ssh_execution
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: runtime
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/process-command-assets'
+      behaviorName: ${{ "process-stop-assets-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        control: ${{ inputs.intent.control }}
+  - name: prepare-assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-process-stop-" + run.id }}
+  - name: copy-assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs:
+        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-process-stop-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: disable
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}
+        - ORBIT_PROCESS_ENABLE=disable
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-process-stop-" + run.id + "/scripts/enable.py" }}
+        sudo: true
+    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+  - name: stop
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: disable
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: copy-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}
+        - ORBIT_PROCESS_OPERATION=stop
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-process-stop-" + run.id + "/scripts/control.py" }}
+        sudo: true
+  - name: verify
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: stop
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}
+        - ORBIT_PROCESS_DESIRED=stopped
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-process-stop-" + run.id + "/scripts/verify.py" }}
+        sudo: true
+  - name: cleanup-assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-process-stop-" + run.id }}
+        sudo: true
+    allowFailure: true

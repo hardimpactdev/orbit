@@ -49,6 +49,7 @@ const Args = z.object({
     }
 });
 const Assets = z.object({
+    scripts_directory: z.string(),
     inspect_script: z.string(),
     control_script: z.string(),
     enable_script: z.string(),
@@ -90,7 +91,7 @@ const PublicResult = z.union([
 /** Resolve native additionalFiles and serialize public member inputs; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/process-command-assets",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         result: {
@@ -113,6 +114,8 @@ export const behavior = {
                 ): Promise<unknown>;
             }) => {
                 const assets = Assets.parse({
+                    scripts_directory: ctx.extensionFile("scripts/control.py")
+                        .replace(/\/[^/]+$/, ""),
                     inspect_script: ctx.extensionFile("scripts/inspect.py"),
                     control_script: ctx.extensionFile("scripts/control.py"),
                     enable_script: ctx.extensionFile("scripts/enable.py"),

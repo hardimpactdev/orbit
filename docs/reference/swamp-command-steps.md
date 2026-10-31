@@ -58,3 +58,11 @@ After an explicit late-attach miss, the shared subscriber can pass only the alre
 A terminal event contains metadata, not step outputs. `workflow.history.get` responds with the full run under `payload.data` and includes outputs.
 
 The synthetic dev-worker runs `2ebfa2a6-bb7e-4ad2-8a5b-867095984e93` and `2491206d-0531-442a-b5a5-60b988e989f6` proved success and failure through a second authenticated attach connection, then one history request per terminal event on official e459. This is a transport spike, not the live bootstrap canary.
+
+## Node execution through official SSH
+
+Node 209 hosts Serve and all Swamp workers. Converted Node effects use official `@swamp/ssh` from those workers; they install no target worker or Swamp binary and mint no worker token. Retained workers remain until their owning workflow placements migrate.
+
+`SwampSshExecutionInput::identity()` returns the public control Node ID, existing 209 identity-file locator and approved public key. Bootstrap can read this before a target has a pinned identity; its parent owns first contact. `forNode(Node)` adds the public `target` fields (`name`, `host`, `user`, `port`, `host_keys`) from the stored target account, WireGuard address and complete host key. It refuses incomplete targets. The capture reads no private key, makes no connection and changes no account or access edge. Families compose the official native `task.globalArgs.name`, `transport` and `hosts` from this one capture.
+
+The descriptor does not prove that a target currently authorizes the existing key. Lane 21 owns that coverage proof and worker retirement. Do not assume fleet-wide SSH `AcceptEnv` or sudo `env_keep`. Public Process control arguments can use official `exec.argv`; secret values must use a documented official delivery method and stay out of argv.
