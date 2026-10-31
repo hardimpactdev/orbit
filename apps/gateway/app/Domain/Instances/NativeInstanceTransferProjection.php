@@ -46,7 +46,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
         $plan['cutover'] = $transfer->cutover_at !== null;
         $plan['completed'] = $transfer->completed_at !== null;
 
-        return [...$this->routes->publicInput($operation, $callerNodeId), 'direct_transfer' => $plan];
+        return [...$this->routes->publicInput($operation, $callerNodeId), 'direct_transfer' => $plan,
+            'process_runtime' => app(InstanceTransferProcesses::class)->input($operation, $callerNodeId)];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -71,6 +72,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                     }
                     app(ScheduleTargetUseGuard::class)->assertInstanceStable($instance);
                     app(NativeInstanceTransferIntent::class)->assertSupported($instance, $transfer->sqlite_source_path);
+                    app(InstanceTransferProcesses::class)->cutover($instance, $transfer, ValidatedData::object($operation->input['process_installations']));
                     $instance->update(['node_id' => $transfer->destination_node_id, 'name' => $transfer->destination_name,
                         'checkout_path' => $transfer->destination_path, 'source_layout' => InstanceSourceLayout::Checkout,
                         'registration_common_repository_path' => null,
@@ -91,6 +93,9 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                         throw $this->conflict();
                     }
                     $this->routes->retire($snapshot);
+                    foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
+                        DB::table($table)->where('instance_id', $instance->id)->where('node_id', $transfer->source_node_id)->delete();
+                    }
                 } elseif ($checkpoint !== 'cutover') {
                     throw $this->conflict();
                 }
