@@ -80,6 +80,14 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
                     DatabaseConnection::query()->whereKey($id)->update(['database_server_id' => $server->id]);
                 }
             } elseif (! $terminal && $server !== null && in_array($status, ['failed', 'cancelled'], true)) {
+                $admitted = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
+                if ($status === 'failed' && $code === 'database.server_adoption_refused'
+                    && $admitted['created'] && $admitted['validate_existing'] && ! $admitted['was_active']
+                    && $admitted['adoption_connection_id'] !== null && $server->status->value !== 'active') {
+                    $server->delete();
+
+                    return $projected;
+                }
                 $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $code, 'failed_step' => 'database-apply']);
             }
 

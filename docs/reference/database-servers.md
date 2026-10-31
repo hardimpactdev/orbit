@@ -53,7 +53,7 @@ The Gateway records the server and protected command intent. Swamp creates a MyS
 3. It starts the Process with `MYSQL_ROOT_PASSWORD` set and waits until MySQL accepts the root login.
 4. It removes the variable from the Process and recreates the container. The data volume keeps the password.
 
-After step 4, the root password exists only encrypted in the Gateway. It is not in the Process record, the container environment, `docker inspect`, or a file on the Node. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
+Until password removal succeeds, an initialization retry injects the same recorded password into the container environment again. After step 4, the root password exists only encrypted in the Gateway. It is not in the Process record, the container environment, `docker inspect`, or a file on the Node. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
 
 ### A PostgreSQL server
 
@@ -429,3 +429,5 @@ PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure fai
 ### Direct default-user closure
 
 `database:server:close` starts `operation-database-server-close` on the admitted Node. It reads only the declared admin password through the shared private-material endpoint. The native step checks other default-user clients, changes the password, saves the ACL file and disconnects default-user sessions. Save failure restores anonymous access only when it was open on entry, then reports a bounded failure. A resumed step authenticates with the admitted admin password even if the first attempt already closed anonymous access. The Gateway records `default_open=false` only after success.
+
+A first Valkey adoption refused before mutation releases only its reserved Database server record. Its existing Process, container, data volume and connection remain unchanged, so correcting the connection password permits another adoption. Later or uncertain failures retain their records for inspection.

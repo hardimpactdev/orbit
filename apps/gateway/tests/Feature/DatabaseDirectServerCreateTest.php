@@ -8,8 +8,10 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
+use App\Models\Process;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -111,3 +113,45 @@ it('refuses stale open Valkey policy but records its safe failure after closure'
     expect($server->fresh()->default_open)->toBeFalse();
     expect($server->fresh()->status->value)->toBe('active');
 });
+
+it('releases only a fresh refused adoption reservation and preserves its operator Process', function (bool $uncertain): void {
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id,
+        'name' => 'operator-valkey', 'runtime' => 'docker', 'runtime_config' => ['image' => 'valkey/valkey:8.0',
+            'command' => ['valkey-server'], 'environment' => [], 'ports' => [$this->node->wireguard_ip.':6379:6379'],
+            'volumes' => [['source' => 'operator-valkey-data', 'target' => '/data', 'read_only' => false]]],
+        'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+    $original = $process->refresh()->getAttributes();
+    $connection = DatabaseConnection::query()->create(['slug' => 'operator-valkey', 'driver' => 'redis',
+        'node_id' => $this->node->id, 'host' => $this->node->wireguard_ip, 'port' => 6379, 'password' => 'wrong-first-password']);
+    $data = new CreateDatabaseServerData('adopt-proof', $this->node->id, DatabaseDriver::Redis, '8.0', null, $process->id, $connection->slug);
+    $operation = app(CreateDatabaseServerAction::class)->execute($data);
+    $reserved = DatabaseServer::query()->sole();
+    $failed = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T04:00:00.000Z',
+        'finished_at' => '2026-10-31T04:00:01.000Z', 'error_code' => 'database.server_adoption_refused',
+        'result' => ['error_code' => 'database.server_adoption_refused']];
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    if ($uncertain) {
+        $previous = [...$failed, 'error_code' => 'process.converge_failed', 'result' => ['error_code' => 'process.converge_failed']];
+        $this->postJson($path.'/result', $previous)->assertOk();
+        $operation = app(CreateDatabaseServerAction::class)->execute($data);
+        $path = '/api/v1/direct-operations/'.$operation->id;
+        $this->postJson($path.'/result', $failed)->assertOk();
+        expect($reserved->fresh()->status->value)->toBe('failed');
+        expect($process->fresh()->getAttributes())->toBe($original);
+        expect($connection->fresh()->database_server_id)->toBeNull();
+
+        return;
+    }
+    $this->postJson($path.'/result', $failed)->assertOk();
+    $this->assertModelMissing($reserved);
+    expect($process->fresh()->getAttributes())->toBe($original);
+    expect($connection->fresh()->database_server_id)->toBeNull();
+    $this->postJson($path.'/result', $failed)->assertOk();
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk();
+    $connection->update(['password' => 'corrected-operator-password']);
+    $retry = app(CreateDatabaseServerAction::class)->execute($data);
+    expect($retry->id)->not->toBe($operation->id);
+    expect(DatabaseServer::query()->sole()->root_password)->toBe('corrected-operator-password');
+    expect(DatabaseServer::query()->sole()->process_id)->toBe($process->id);
+    expect($process->fresh()->getAttributes())->toBe($original);
+})->with(['first refusal' => false, 'refusal after uncertain mutation' => true]);
