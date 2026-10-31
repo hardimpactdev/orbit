@@ -106,6 +106,7 @@ class PiInstallNativeTest(NativeTestCase):
         self.assertIn("worker-cache", steps["assets"]["outputs"]["install_script"])
         self.assertEqual(json.loads(steps["result"]["outputs"]["stdout"]),
                          {"task_vm_id": 42, "sha256": SHA, "installed": True})
+        self.assertEqual(list((self.repo / "worker-cache").rglob("*.pyc")), [])
         self.source.unlink()
         result, steps = self.run_install()
         self.assertEqual(result["status"], "succeeded")

@@ -37,7 +37,7 @@ jobs:
       behaviorName: '${{ "task-vm-pi-guest-" + string(inputs.intent.guest_node_id) }}'
       methodName: execute
       inputs:
-        run: '/usr/bin/sudo -n -- /usr/bin/python3 "${{ steps.assets.outputs.inspect_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
+        run: '/usr/bin/sudo -n -- /usr/bin/python3 -B "${{ steps.assets.outputs.inspect_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
   - name: observation
     target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
     labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
@@ -63,7 +63,7 @@ jobs:
       behaviorName: '${{ "task-vm-pi-guest-" + string(inputs.intent.guest_node_id) }}'
       methodName: execute
       inputs:
-        run: '/usr/bin/sudo -n -- /usr/bin/python3 "${{ steps.assets.outputs.install_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
+        run: '/usr/bin/sudo -n -- /usr/bin/python3 -B "${{ steps.assets.outputs.install_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
   - name: result
     target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
     labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
@@ -80,4 +80,4 @@ jobs:
       behaviorName: '${{ "task-vm-pi-guest-" + string(inputs.intent.guest_node_id) }}'
       methodName: execute
       inputs:
-        run: '/usr/bin/sudo -n -- /usr/bin/python3 "${{ steps.assets.outputs.verify_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
+        run: '/usr/bin/sudo -n -- /usr/bin/python3 -B "${{ steps.assets.outputs.verify_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
