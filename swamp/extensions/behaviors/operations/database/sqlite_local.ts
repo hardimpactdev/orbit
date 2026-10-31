@@ -14,7 +14,7 @@ const Reply = z.discriminatedUnion("ok", [
 ]);
 /** Only the four SQLite operations are accepted; no executable, source or arbitrary argv is input. */
 export type SqliteCall = {
-  action: "copy" | "seedSource" | "seedTarget" | "write" | "read";
+  action: "copy" | "seedSource" | "seedTarget" | "read";
   input: Record<string, unknown>;
 };
 export type SqliteInvoke = (
@@ -24,14 +24,14 @@ export type SqliteInvoke = (
 export function sqliteLaunch(call: SqliteCall) {
   const seconds = call.action === "copy"
     ? 600
-    : ["write", "read"].includes(call.action)
+    : call.action === "read"
     ? 30
     : 120;
   let sudo: string[] = [];
   if (call.action === "seedSource" || call.action === "seedTarget") {
     sudo = ["-n", "--", "/usr/bin/python3"];
   }
-  if (["write", "read"].includes(call.action)) {
+  if (call.action === "read") {
     const owner = User.parse(call.input.owner);
     if (owner !== userInfo().username) {
       sudo = ["-n", "-u", owner, "--", "/usr/bin/python3"];
@@ -48,7 +48,7 @@ export function sqliteLaunch(call: SqliteCall) {
 export const runSqliteLocal: SqliteInvoke = async (call, signal) => {
   signal?.throwIfAborted();
   if (
-    !["copy", "seedSource", "seedTarget", "write", "read"].includes(call.action)
+    !["copy", "seedSource", "seedTarget", "read"].includes(call.action)
   ) {
     throw new Error("database.sqlite_action_invalid");
   }
@@ -106,10 +106,4 @@ export async function copySqlite(
   invoke: SqliteInvoke = runSqliteLocal,
 ) {
   return await invoke({ action: "copy", input }, signal);
-}
-export async function writeSqlite(
-  input: { owner: string; path: string; sql: string },
-  signal?: AbortSignal,
-) {
-  return await runSqliteLocal({ action: "write", input }, signal);
 }

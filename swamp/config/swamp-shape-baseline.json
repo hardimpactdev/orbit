@@ -849,7 +849,7 @@
     {
       "file": "extensions/behaviors/operations/database/sqlite_program.ts",
       "rule": "inline-script",
-      "count": 535,
+      "count": 514,
       "evidence": []
     },
     {
@@ -882,20 +882,6 @@
       "evidence": [
         "setTimeout"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/write.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/write.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",

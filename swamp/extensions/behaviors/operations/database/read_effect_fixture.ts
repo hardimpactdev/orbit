@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { pdoRead, readDatabase } from "./read.ts";
-import { pdoWrite } from "./write.ts";
+import { pdoWrite } from "../../../../tests/_support/database_write_command.ts";
 
 export function registerReadEffect(driver: "mysql" | "pgsql") {
   Deno.test({
