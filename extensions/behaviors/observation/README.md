@@ -5,8 +5,9 @@ Doctor admission records stored expectations and starts
 `orbit-node-N` workers, and combines their bounded reports on the root Node.
 Worker failures become unverifiable findings and never clear an earlier
 observation scope. Parked and unmanaged Nodes need no placed inspection. Doctor
-uses observer primitives only; SQL reads use the native database clients. It
-never calls an agent action.
+runs native domain reads directly, including SQL through native database
+clients. Continuous Node and Process health comes from fresh Gateway
+observations. It never launches orbit-agent commands.
 
 The Gateway retains authorization, safe intent, fingerprints and cursors.
 Schedule commands and existing database credentials use the shared private

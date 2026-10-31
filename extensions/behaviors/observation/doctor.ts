@@ -5,7 +5,7 @@ import {
   directOperation,
   GatewayOperation,
 } from "../operations/_lib/direct.ts";
-import { runNodeAgent } from "../operations/_lib/node-agent.ts";
+import { type NativeReadCall, readDoctor } from "./doctor_native.ts";
 import { Globals } from "./contract.ts";
 import {
   Families,
@@ -126,7 +126,7 @@ export async function localRead(argv: string[]): Promise<string> {
     stdin: "null",
     stdout: "piped",
     stderr: "null",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(60_000),
   }).output();
   if (!result.success || result.stdout.length > 8_388_608) {
     throw new Error("doctor.local_read_failed");
@@ -138,7 +138,10 @@ export async function localRead(argv: string[]): Promise<string> {
 export function doctor(
   makeHttp: (ctx: Context) => Http = (ctx) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  run = runNodeAgent,
+  run: (call: NativeReadCall, signal?: AbortSignal) => Promise<Row> = (
+    call,
+    signal,
+  ) => readDoctor(call, local, signal),
   local = localRead,
   logs = collectLogs,
 ) {
@@ -193,17 +196,8 @@ export function doctor(
               cancelled: true,
             };
           }
-          const invoke = async (name: string, body: Row, sudo = true) => {
-            const result = await run({
-              name,
-              input: body,
-              pin: node.agent_sha256,
-              sudo,
-              mutates: false,
-              deadlineMs: name === "instance.inspect-laravel-routes"
-                ? 60_000
-                : 30_000,
-            }, ctx.signal);
+          const invoke = async (name: string, body: Row, _sudo = true) => {
+            const result = await run({ name, input: body, node }, ctx.signal);
             if (result.error_code) throw new Error("doctor.observation_failed");
             return result;
           };
@@ -214,7 +208,8 @@ export function doctor(
               address: node.address,
             });
           } catch {
-            inspectionFailed = true;
+            // An unavailable Node identity read must not prevent independent domain reads.
+            observation = { reachable: true, node_read_unavailable: true };
           }
           const encoded = JSON.stringify(node.resources);
           if (

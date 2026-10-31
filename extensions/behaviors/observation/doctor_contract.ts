@@ -1,5 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import type { NodeCall } from "../operations/_lib/node-agent.ts";
 
 export const Families = [
   "node",
@@ -57,10 +56,6 @@ export interface ProbeContext {
   privateMaterial: Row;
   signal?: AbortSignal;
 }
-export type AgentInvoke = (
-  call: NodeCall,
-  signal?: AbortSignal,
-) => Promise<Row>;
 export function issue(
   family: Family,
   code: string,

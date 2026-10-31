@@ -370,6 +370,35 @@ export async function checkNode(ctx: ProbeContext): Promise<FamilyReport> {
     ]);
   }
   const observation = ctx.observation;
+  if (observation.observer_unavailable === true) {
+    issues.push(
+      nodeIssue(
+        ctx,
+        "agent_view_stale",
+        "The Gateway has no fresh continuous observation of this Node.",
+        "fresh",
+        "unavailable",
+        true,
+      ),
+    );
+  }
+  if (observation.node_read_unavailable) {
+    if (facts.dns) issues.push(...await dnsIssues(ctx, object(facts.dns)));
+    if (facts.task_host) {
+      issues.push(...await taskVmIssues(ctx, object(facts.task_host)));
+    }
+    return report("node", 1, [
+      ...issues,
+      nodeIssue(
+        ctx,
+        "inspection_failed",
+        "Node identity and filesystem state could not be inspected.",
+        "fresh",
+        "unavailable",
+        true,
+      ),
+    ]);
+  }
   if (observation.worker_state === "failed") {
     issues.push(
       nodeIssue(

@@ -2,7 +2,7 @@ import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { doctor, summarize } from "./doctor.ts";
 import { issue, type NodeIntent, report, type Row } from "./doctor_contract.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
-import type { NodeCall } from "../operations/_lib/node-agent.ts";
+import type { NativeReadCall } from "./doctor_native.ts";
 
 const args = {
   operation_id: 7,
@@ -27,7 +27,7 @@ const node = (id: number, values: Row = {}): NodeIntent => ({
 function fixture(nodes: NodeIntent[] = [node(9)], families: string[] = []) {
   const events: string[] = [];
   const projects: Row[] = [];
-  const agent: NodeCall[] = [];
+  const agent: NativeReadCall[] = [];
   const localCalls: string[][] = [];
   const current = {
     id: args.operation_id,
@@ -72,7 +72,7 @@ function fixture(nodes: NodeIntent[] = [node(9)], families: string[] = []) {
   const context = {
     globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/unused" },
   };
-  const run = (call: NodeCall) => {
+  const run = (call: NativeReadCall) => {
     events.push(`agent:${call.name}`);
     agent.push(call);
     return Promise.resolve(
@@ -186,9 +186,7 @@ Deno.test("private Schedule commands stay within the observation callback and ne
   assert(!JSON.stringify(f.projects).includes("private-sentinel-command"));
   assertEquals(f.events[0], "bound-read");
   assert(
-    f.agent.every((call) =>
-      call.pin === "a".repeat(64) && call.mutates === false
-    ),
+    f.agent.every((call) => call.node.id === 9),
   );
 });
 
