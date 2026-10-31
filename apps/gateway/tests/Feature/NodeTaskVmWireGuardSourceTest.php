@@ -73,7 +73,7 @@ it('hydrates current hub config and existing pinned SSH custody for exact canoni
         'port' => $this->hub->public_ssh_port, 'user' => $this->hub->user, 'fingerprint' => $this->hub->ssh_host_fingerprint], 'identity' => '/private/gateway-identity']);
     expect(array_column($secret->value['peers'], 'node_id'))->toContain($fresh->id);
     expect(json_encode($secret))->not->toContain('/private/gateway-identity', base64_encode(str_repeat('p', 32)));
-})->with(['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision']);
+})->with(['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision', 'task_vm.destroy']);
 
 it('refuses altered TaskVM hub custody before reading the SSH identity', function (string $case): void {
     $keys = Mockery::mock(SshKeyProvider::class);
@@ -91,12 +91,13 @@ it('refuses altered TaskVM hub custody before reading the SSH identity', functio
         'reader' => $input['private_bindings']['configuration']['read_node_ids'] = [$this->guest->id],
         'participant' => $input['participant_node_ids'] = [$this->gateway->id, $this->guest->id],
         'exclusion' => $input['_wireguard']['excluded_node_id'] = $this->guest->id,
+        'Gateway participant' => $input['participant_node_ids'] = [$this->guest->id, $this->hub->id],
     };
     $operation->input = $input;
     expect(NodeWireGuardInput::bound($operation))->toBeNull();
     expect(fn () => app(NodeVpnConfigurationSource::class)->resolve($operation, $this->hub->id, '', 'configuration'))
         ->toThrow(ResourceOperationException::class);
-})->with(['guest', 'target', 'parent kind', 'Node kind', 'executor', 'owner', 'reader', 'participant', 'exclusion']);
+})->with(['guest', 'target', 'parent kind', 'Node kind', 'executor', 'owner', 'reader', 'participant', 'exclusion', 'Gateway participant']);
 
 it('preserves exact destroyed TaskVM guest exclusion without expanding standalone Node authority', function (): void {
     $operation = $this->operation;
@@ -109,4 +110,26 @@ it('preserves exact destroyed TaskVM guest exclusion without expanding standalon
     $operation->target_type = 'node';
     $operation->target_id = $this->guest->id;
     expect(NodeWireGuardInput::bound($operation))->toBeNull();
+});
+
+it('serves hub SSH material only to the immutable Gateway reader through the shared private endpoint', function (): void {
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->once()->andReturn('/private/gateway-identity');
+    app()->instance(SshKeyProvider::class, $keys);
+    $operation = $this->operation;
+    $operation->save();
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $query = '?run_id='.$operation->state['swamp_run_id'];
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->guest->wireguard_ip])
+        ->getJson($path.'/private-material'.$query)->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->hub->wireguard_ip])
+        ->getJson($path.'/private-material'.$query)->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
+        ->getJson($path.'/private-material'.$query)->assertOk()
+        ->assertJsonPath('data.configuration.connection.target.node_id', $this->hub->id)
+        ->assertJsonPath('data.configuration.connection.identity', '/private/gateway-identity');
+    $this->getJson($path.$query)->assertOk()
+        ->assertDontSee('/private/gateway-identity', false)
+        ->assertDontSee(base64_encode(str_repeat('p', 32)), false);
 });
