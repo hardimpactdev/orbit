@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { RuntimeInput } from "../php/monitor-command/assets.ts";
 
 const Id = z.number().int().positive();
 const IPv4 = z.ipv4();
@@ -18,7 +19,18 @@ const Member = z.object({
     worker: z.literal(true),
     fpm: z.boolean(),
     service: Service,
-    pools: z.array(z.record(z.string(), z.unknown())),
+    pools: z.array(
+        z.object({
+            instance_id: Id,
+            inspect: z.object({
+                user: z.string(),
+                version: z.string(),
+                marker: z.string(),
+            }).strict(),
+            enabled: RuntimeInput,
+            disabled: RuntimeInput,
+        }).strict(),
+    ),
 }).passthrough();
 export const Intent = z.object({
     participant_node_ids: z.array(Id).min(1).max(256),
@@ -108,26 +120,6 @@ export function readIntent(value: unknown) {
             node_id: n.node_id,
             json: JSON.stringify(n.service),
         })),
-        service_files: plan.fleet.flatMap((n) => [
-            {
-                key: `${n.node_id}-config`,
-                node_id: n.node_id,
-                json: JSON.stringify({
-                    path: "/etc/orbit/service-metrics/fpm.yml",
-                    content: n.service.config,
-                    mode: 384,
-                }),
-            },
-            {
-                key: `${n.node_id}-unit`,
-                node_id: n.node_id,
-                json: JSON.stringify({
-                    path: "/etc/systemd/system/orbit-fpm-exporter.service",
-                    content: n.service.unit,
-                    mode: 420,
-                }),
-            },
-        ]),
         service_rules: plan.fleet.flatMap((n) =>
             n.service.rules.map((rule, index) => ({
                 key: `${n.node_id}-${index}`,
@@ -137,7 +129,13 @@ export function readIntent(value: unknown) {
             }))
         ),
         pools: plan.fleet.flatMap((n) =>
-            n.pools.map((p) => ({ node_id: n.node_id, ...p }))
+            n.pools.map((p) => ({
+                key: `${n.node_id}-${p.instance_id}`,
+                node_id: n.node_id,
+                instance_id: p.instance_id,
+                enabled: n.fpm,
+                runtime: n.fpm ? p.enabled : p.disabled,
+            }))
         ),
         publications: intent.caddy_publications,
         files: paths.map((path) => ({
@@ -205,6 +203,73 @@ export function readIntent(value: unknown) {
         assignment_id: plan.assignment_id,
         owner_node_id: plan.metrics_node_id,
     };
+}
+const PoolObservation = z.object({
+    present: z.literal(true),
+    enabled: z.boolean(),
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export function serviceFilesWithPools(raw: {
+    intent: unknown;
+    observations: { key: string; stdout: string }[];
+}) {
+    const intent = Intent.parse(raw.intent);
+    const pools = readIntent(intent).pools;
+    if (
+        raw.observations.length !== pools.length ||
+        new Set(raw.observations.map((item) => item.key)).size !==
+            pools.length ||
+        raw.observations.some((item) =>
+            !pools.some((pool) => pool.key === item.key)
+        )
+    ) {
+        throw new Error("metrics.pool_unverified");
+    }
+    const states = new Map(raw.observations.map((item) => {
+        const parsed = PoolObservation.safeParse(JSON.parse(item.stdout));
+        const pool = pools.find((pool) => pool.key === item.key)!;
+        if (!parsed.success || parsed.data.enabled !== pool.enabled) {
+            throw new Error("metrics.pool_unverified");
+        }
+        return [item.key, parsed.data] as const;
+    }));
+    const services: { node_id: number; json: string }[] = [];
+    const files = intent.metrics_fleet.fleet.flatMap((node) => {
+        let config = node.service.config;
+        if (config !== null) {
+            for (const pool of node.pools) {
+                config += `# runtime ${pool.instance_id}: ${
+                    states.get(`${node.node_id}-${pool.instance_id}`)!
+                        .fingerprint
+                }\n`;
+            }
+        }
+        services.push({
+            node_id: node.node_id,
+            json: JSON.stringify({ ...node.service, config }),
+        });
+        return [
+            {
+                key: `${node.node_id}-config`,
+                node_id: node.node_id,
+                json: JSON.stringify({
+                    path: "/etc/orbit/service-metrics/fpm.yml",
+                    content: config,
+                    mode: 384,
+                }),
+            },
+            {
+                key: `${node.node_id}-unit`,
+                node_id: node.node_id,
+                json: JSON.stringify({
+                    path: "/etc/systemd/system/orbit-fpm-exporter.service",
+                    content: node.service.unit,
+                    mode: 420,
+                }),
+            },
+        ];
+    });
+    return { files, services };
 }
 const Rule = z.array(z.string());
 export function planServiceRules(
@@ -345,6 +410,33 @@ export const behavior = {
                     ),
                 };
                 await ctx.writeResource("intent", "assets", result);
+                return result;
+            },
+        },
+        serviceFiles: {
+            description:
+                "Bind confirmed public PHP pool fingerprints to exporter configuration",
+            arguments: z.object({
+                intent: Intent,
+                observations: z.array(
+                    z.object({ key: z.string(), stdout: z.string() }).strict(),
+                ),
+            }).strict(),
+            execute: async (
+                args: {
+                    intent: unknown;
+                    observations: { key: string; stdout: string }[];
+                },
+                ctx: {
+                    writeResource: (
+                        kind: string,
+                        name: string,
+                        value: unknown,
+                    ) => Promise<unknown>;
+                },
+            ) => {
+                const result = serviceFilesWithPools(args);
+                await ctx.writeResource("intent", "service-files", result);
                 return result;
             },
         },

@@ -1,0 +1,287 @@
+id: 553b2e77-c04d-4509-ac8c-2e25836822f6
+name: operation-php-monitor
+description: Compose dedicated PHP monitoring with full public intent and one placed action per step.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+      properties:
+        php_runtime:
+          type: object
+        node_id:
+          type: integer
+          minimum: 1
+      required:
+      - php_runtime
+      - node_id
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: admission
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.intent.node_id) }}
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/php-monitor-command'
+      behaviorName: ${{ "php-monitor-assets-" + string(inputs.operation_id) }}
+      methodName: assets
+      inputs:
+        run_id: ${{ run.id }}
+        runtime: ${{ inputs.intent.php_runtime }}
+        target_node_id: ${{ inputs.intent.node_id }}
+- name: publication
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id002
+    node: ${{ string(inputs.intent.node_id) }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  steps:
+  - name: stage
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-stage-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.stage }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+  - name: stage-result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/php-monitor-command'
+      behaviorName: ${{ "php-monitor-stage-result-" + string(inputs.operation_id) }}
+      methodName: observe
+      inputs:
+        stdout: ${{ steps.stage.outputs.stdout }}
+    dependsOn:
+    - step: stage
+      condition:
+        type: succeeded
+  - name: validate
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-validate-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.validate }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: stage-result
+      condition:
+        type: succeeded
+    guard: ${{ !steps["stage-result"].outputs.present }}
+  - name: publish
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-publish-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.publish }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: validate
+      condition:
+        type: succeeded
+    guard: ${{ !steps["stage-result"].outputs.present }}
+  - name: reload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-reload-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.reload }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+    guard: ${{ !steps["stage-result"].outputs.present }}
+  - name: confirm
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-confirm-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.confirm }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: reload
+      condition:
+        type: succeeded
+    guard: ${{ !steps["stage-result"].outputs.present }}
+  - name: cleanup
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-cleanup-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: confirm
+      condition:
+        type: succeeded
+    guard: ${{ !steps["stage-result"].outputs.present }}
+- name: restore
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id003
+    node: ${{ string(inputs.intent.node_id) }}
+  dependsOn:
+  - job: publication
+    condition:
+      type: failed
+  steps:
+  - name: recovery-restore
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-recovery-restore-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.restore }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+  - name: recovery-reload_restored
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-recovery-reload_restored-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.reload_restored }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: recovery-restore
+      condition:
+        type: succeeded
+  - name: recovery-finish_restore
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-recovery-finish_restore-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.finish_restore }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: recovery-reload_restored
+      condition:
+        type: succeeded
+  - name: recovery-cleanup
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-recovery-cleanup-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup }}"'
+        env:
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: recovery-finish_restore
+      condition:
+        type: succeeded
+- name: completion
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id004
+    node: ${{ string(inputs.intent.node_id) }}
+  dependsOn:
+  - job: publication
+    condition:
+      type: succeeded
+  steps:
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-monitor-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/printf ''%s\n'' "$ORBIT_PHP_MONITOR_RESULT"'
+        env:
+          ORBIT_PHP_MONITOR_RESULT: '${{ steps["stage-result"].outputs.present ? steps.confirm.outputs.stdout : ''{"ready":true,"present":false,"changed":false,"active":false}'' }}'

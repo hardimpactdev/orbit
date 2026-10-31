@@ -107,8 +107,8 @@ jobs:
     labels: *id001
     task:
       type: assert
-      expr: size(steps.read.outputs.pools) == 0 && size(steps.read.outputs.publications) == 0
-      message: metrics.native_shared_steps_unavailable
+      expr: size(steps.read.outputs.publications) == 0
+      message: metrics.native_caddy_steps_unavailable
       severity: high
 - name: verify-existing-credential
   dependsOn:
@@ -812,9 +812,106 @@ jobs:
       item: item
       in: ${{ steps.read.outputs.exporters }}
     guard: ${{ !self.item.selected }}
-- name: stop-fpm-exporter
+- name: php-monitor-assets
   dependsOn:
   - job: verify-exporter-endpoint
+    condition:
+      type: succeeded
+  steps:
+  - name: php-monitor-assets${{ self.item.key }}
+    target: ${{ "orbit-node-" + string(self.item.node_id) }}
+    labels:
+      node: ${{ string(self.item.node_id) }}
+    forEach:
+      item: item
+      in: ${{ steps.read.outputs.pools }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/php-monitor-command'
+      behaviorName: ${{ "metrics-php-assets-" + string(inputs.operation_id) + "-"
+        + self.item.key }}
+      methodName: assets
+      inputs:
+        run_id: ${{ run.id }}
+        target_node_id: ${{ self.item.node_id }}
+        runtime: ${{ self.item.runtime }}
+- name: php-monitor
+  dependsOn:
+  - job: php-monitor-assets
+    condition:
+      type: succeeded
+  steps:
+  - name: php-monitor${{ self.item.key }}
+    target: ${{ "orbit-node-" + string(self.item.node_id) }}
+    labels:
+      node: ${{ string(self.item.node_id) }}
+    forEach:
+      item: item
+      in: ${{ steps.read.outputs.pools }}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-php-monitor
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.item.node_id }}
+          php_runtime: ${{ self.item.runtime }}
+        execution_secrets: {}
+- name: inspect-php-pool
+  dependsOn:
+  - job: php-monitor
+    condition:
+      type: succeeded
+  steps:
+  - name: inspect-php-pool${{ self.item.key }}
+    target: ${{ "orbit-node-" + string(self.item.node_id) }}
+    labels:
+      node: ${{ string(self.item.node_id) }}
+    forEach:
+      item: item
+      in: ${{ steps.read.outputs.pools }}
+    writes: false
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "metrics-php-inspect-" + string(inputs.operation_id) + "-"
+        + self.item.key }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n --preserve-env=ORBIT_PHP_MONITOR_INPUT -- /usr/bin/python3 "$ORBIT_ACTION_SCRIPT"
+        env:
+          ORBIT_ACTION_SCRIPT: ${{ steps["php-monitor-assets" + self.item.key].outputs.scripts.inspect
+            }}
+          ORBIT_PHP_MONITOR_INPUT: ${{ steps["php-monitor-assets" + self.item.key].outputs.input_json
+            }}
+- name: php-service-files
+  dependsOn:
+  - job: inspect-php-pool
+    condition:
+      type: succeeded
+  steps:
+  - name: php-service-files
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/metrics-fleet-intent'
+      behaviorName: ${{ "metrics-php-service-files-" + string(inputs.operation_id)
+        }}
+      methodName: serviceFiles
+      inputs:
+        intent: ${{ inputs.intent }}
+        observations: ${{ steps.read.outputs.pools.map(p, {"key":p.key,"stdout":steps["inspect-php-pool"+p.key].outputs.stdout})
+          }}
+- name: stop-fpm-exporter
+  dependsOn:
+  - job: php-service-files
     condition:
       type: succeeded
   steps:
@@ -839,7 +936,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
 - name: disable-fpm-exporter
   dependsOn:
   - job: stop-fpm-exporter
@@ -867,7 +964,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
 - name: publish-fpm-exporter-file
   dependsOn:
   - job: disable-fpm-exporter
@@ -895,7 +992,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.service_files }}
+      in: ${{ steps["php-service-files"].outputs.files }}
   concurrency: 1
 - name: download-fpm-exporter
   dependsOn:
@@ -924,7 +1021,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
     guard: ${{ !inputs.intent.metrics_fleet.fleet.filter(n, n.node_id == self.item.node_id)[0].service.binary }}
 - name: verify-fpm-exporter-digest
   dependsOn:
@@ -953,7 +1050,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
     guard: ${{ !inputs.intent.metrics_fleet.fleet.filter(n, n.node_id == self.item.node_id)[0].service.binary }}
 - name: publish-fpm-exporter-binary
   dependsOn:
@@ -982,7 +1079,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
     guard: ${{ !inputs.intent.metrics_fleet.fleet.filter(n, n.node_id == self.item.node_id)[0].service.binary }}
 - name: reload-fpm-exporter-unit
   dependsOn:
@@ -1007,7 +1104,7 @@ jobs:
           sudo -n -- /usr/bin/systemctl daemon-reload
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
 - name: enable-fpm-exporter
   dependsOn:
   - job: reload-fpm-exporter-unit
@@ -1035,7 +1132,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
 - name: restart-fpm-exporter
   dependsOn:
   - job: enable-fpm-exporter
@@ -1063,7 +1160,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
 - name: remove-service-rule
   concurrency: 1
   dependsOn:
@@ -1178,7 +1275,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
 - name: remove-cadvisor-binary
   dependsOn:
   - job: verify-fpm-exporter
@@ -1232,7 +1329,7 @@ jobs:
             }}
     forEach:
       item: item
-      in: ${{ steps.read.outputs.services }}
+      in: ${{ steps["php-service-files"].outputs.services }}
     guard: ${{ inputs.intent.metrics_fleet.fleet.filter(n,n.node_id == self.item.node_id)[0].service.binary }}
 - name: publish-runtime-files
   dependsOn:

@@ -259,3 +259,9 @@ Other-role and removal parents read only the Metrics owner's existing encrypted 
 An exact public `input.role=metrics` runs runtime once, then credential verification. Other roles verify first. If verification fails after runtime converged, the runtime stays committed and the fleet is not rolled back. The prior Metrics role-runtime baseline is omitted to prevent double initialization.
 
 Swamp consumes the returned `runtime` and `verify` actions inside its private callback on the exact Metrics worker. The root and unrelated participants receive no credential. Parent admission owns the captured desired transition; it is not replaced by the currently active fleet during private hydration.
+
+### PHP monitor command composition
+
+The Metrics command workflow passes each pool's canonical `enabled` or `disabled` runtime descriptor to the PHP monitor native workflow. It retains the parent Operation ID, root Node and kind; the nested native graph places every action on the pool's admitted Node. It starts no Gateway child Operation and reads no intent from the Gateway. The PHP owner supplies the shipped scripts and owns pool publication, reload and bounded recovery.
+
+After publication, Metrics runs the canonical public pool inspection and requires a present pool with the desired monitoring state and a public fingerprint. That observation supplies the runtime fingerprint comment in the FPM exporter configuration. Missing, mismatched or duplicate observations fail before exporter service publication. Caddy revision/survivor admission, shared terminal delivery and transport readiness remain separate draft dependencies.

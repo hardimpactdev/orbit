@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { readIntent } from "./intent.ts";
+import { readIntent, serviceFilesWithPools } from "./intent.ts";
 const paths = [
     "prometheus.yml",
     "grafana/grafana.ini",
@@ -110,5 +110,130 @@ Deno.test("disabled exporter intent never discards unselected Nodes or changes t
     assertEquals(
         JSON.parse(result.exporters[0].json).path,
         "/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf",
+    );
+});
+
+function withPool(enabled = true) {
+    const base = intent();
+    const runtime = {
+        mode: "monitor" as const,
+        user: "instance41",
+        home: "/home/instance41",
+        version: "8.5",
+        marker: "instance:41",
+        application: "/home/instance41/releases/current",
+        initial_application: "/home/instance41/releases/initial",
+        configuration: {
+            main: "public main",
+            pool: "enabled pool",
+            initial_pool: "initial",
+            local_defaults: "defaults",
+            master_ini: "ini",
+            unit: "unit",
+        },
+    };
+    const pool = {
+        instance_id: 41,
+        inspect: {
+            user: runtime.user,
+            version: runtime.version,
+            marker: runtime.marker,
+        },
+        enabled: runtime,
+        disabled: {
+            ...runtime,
+            configuration: { ...runtime.configuration, pool: "disabled pool" },
+        },
+    };
+    return {
+        ...base,
+        metrics_fleet: {
+            ...base.metrics_fleet,
+            fleet: base.metrics_fleet.fleet.map((node) =>
+                node.node_id === 9
+                    ? {
+                        ...node,
+                        fpm: enabled,
+                        pools: [pool],
+                        service: {
+                            ...node.service,
+                            config: enabled ? "managed fpm config\n" : null,
+                        },
+                    }
+                    : node
+            ),
+        },
+    };
+}
+Deno.test("PHP pool intent selects canonical descriptor and preserves admitted effect Node", () => {
+    const enabled = readIntent(withPool()).pools;
+    assertEquals(enabled[0].node_id, 9);
+    assertEquals(enabled[0].key, "9-41");
+    assertEquals(enabled[0].runtime.configuration.pool, "enabled pool");
+    assertEquals(
+        readIntent(withPool(false)).pools[0].runtime.configuration.pool,
+        "disabled pool",
+    );
+});
+Deno.test("verified PHP fingerprint is identical in published file and service verification intent", () => {
+    const fingerprint = "f".repeat(64);
+    const result = serviceFilesWithPools({
+        intent: withPool(),
+        observations: [{
+            key: "9-41",
+            stdout: JSON.stringify({
+                present: true,
+                enabled: true,
+                fingerprint,
+            }),
+        }],
+    });
+    const file = JSON.parse(
+        result.files.find((file) => file.key === "9-config")!.json,
+    );
+    const service = JSON.parse(
+        result.services.find((node) => node.node_id === 9)!.json,
+    );
+    assertEquals(
+        file.content,
+        `managed fpm config\n# runtime 41: ${fingerprint}\n`,
+    );
+    assertEquals(service.config, file.content);
+});
+Deno.test("missing mismatched foreign and duplicate PHP observations cannot publish exporter configuration", () => {
+    const state = JSON.stringify({
+        present: true,
+        enabled: true,
+        fingerprint: "a".repeat(64),
+    });
+    for (
+        const observations of [[], [{ key: "foreign", stdout: state }], [{
+            key: "9-41",
+            stdout: state,
+        }, { key: "9-41", stdout: state }], [{
+            key: "9-41",
+            stdout: '{"present":false}',
+        }], [{
+            key: "9-41",
+            stdout: JSON.stringify({
+                present: true,
+                enabled: false,
+                fingerprint: "a".repeat(64),
+            }),
+        }]]
+    ) {
+        assertThrows(
+            () => serviceFilesWithPools({ intent: withPool(), observations }),
+            Error,
+            "metrics.pool_unverified",
+        );
+    }
+});
+Deno.test("an empty PHP pool set retains service intent without inventing monitoring evidence", () => {
+    const value = intent();
+    const result = serviceFilesWithPools({ intent: value, observations: [] });
+    assertEquals(
+        result.services.map((node) => JSON.parse(node.json)),
+        value.metrics_fleet.fleet.map((node) => node.service),
     );
 });
