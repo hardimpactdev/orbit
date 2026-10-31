@@ -13,6 +13,7 @@
 pub(super) mod doctor;
 
 use super::caddy::chown;
+use super::health::{self, HealthInput};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use crate::logs::{journalctl, valid_docker_container, valid_journal_unit};
@@ -54,6 +55,8 @@ command_errors! {
         Invalid { check: String } => "process.invalid", "The Process request does not pass its checks.";
         NameCollision { step: String, artifact: String, output: Output } => "process.name_collision", "An artifact with the Process's name is not the Process's own.";
         NotFound { step: String } => "process.not_found", "The Process has no runtime artifact.";
+        SpecChanged {} => "process.spec_changed", "The current container differs from the admitted replacement.";
+        HealthFailed { restored: bool } => "process.health_failed", "The container did not pass its readiness check.";
         StartFailed { step: String, restored: bool, output: Output } => "process.start_failed", "The Process did not start.";
         StopFailed { step: String, restored: bool, output: Output } => "process.stop_failed", "The Process did not stop.";
         RestartFailed { step: String, output: Output } => "process.restart_failed", "The Process did not restart.";
@@ -124,6 +127,9 @@ fn recovery_required(step: String, output: Output) -> ProcessError {
 /// The programs a command runs: `systemctl`, `systemd-analyze`, and `docker`. Tests answer for them.
 pub trait Programs {
     fn run(&mut self, program: &str, arguments: &[&str]) -> Output;
+    fn sleep(&mut self, delay: Duration) {
+        std::thread::sleep(delay);
+    }
 }
 
 /// The most of each stream a failed step keeps.
@@ -883,6 +889,15 @@ pub struct ContainerInput {
     pub mounts: Vec<Mount>,
     /// Goes to `docker container create` through a root-only file, never an argument.
     pub environment: BTreeMap<String, String>,
+    /// Verify readiness before releasing the Process lock or removing the rollback container.
+    #[serde(default)]
+    pub health: Option<HealthInput>,
+    /// Refuse replacing a newer or missing runtime; the desired spec is accepted for replay.
+    #[serde(default)]
+    pub expected_spec: Option<String>,
+    /// Compare the canonical running state too, except during rollback recovery.
+    #[serde(default)]
+    pub expected_running: Option<bool>,
 }
 
 fn check_container(input: &ContainerInput) -> Result<(), ProcessError> {
@@ -897,6 +912,22 @@ fn check_container(input: &ContainerInput) -> Result<(), ProcessError> {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"._/:@-".contains(&b));
     let checks = [
+        (
+            input
+                .expected_spec
+                .as_ref()
+                .is_none_or(|spec| spec.len() == 64 && spec.bytes().all(|b| b.is_ascii_hexdigit())),
+            "the expected spec is a SHA-256",
+        ),
+        (
+            input.health.as_ref().is_none_or(|h| {
+                input.desired == Desired::Running
+                    && health::valid(&h.url)
+                    && (1..=90).contains(&h.attempts)
+                    && h.interval_seconds <= 2
+            }),
+            "readiness is a bounded HTTP check for a running container",
+        ),
         (image_ok, "the image is a reference"),
         (!input.command.is_empty(), "the command has an argument"),
         (
@@ -956,6 +987,21 @@ struct Converge<'a, P> {
     input: &'a ContainerInput,
     name: String,
     candidate: String,
+    ready_verified: bool,
+}
+
+struct Readiness<'a, P>(&'a mut P);
+
+impl<P: Programs> health::Host for Readiness<'_, P> {
+    fn curl(&mut self, arguments: &[&str]) -> bool {
+        let mut args = vec!["-q"];
+        args.extend_from_slice(arguments);
+        self.0.run("/usr/bin/curl", &args).ok()
+    }
+
+    fn sleep(&mut self, delay: Duration) {
+        self.0.sleep(delay);
+    }
 }
 
 impl<P: Programs> Converge<'_, P> {
@@ -976,6 +1022,18 @@ impl<P: Programs> Converge<'_, P> {
         self.node.must("docker", arguments, step, fail).map(|_| ())
     }
 
+    fn ready(&mut self) -> Result<(), ProcessError> {
+        if self.ready_verified {
+            return Ok(());
+        }
+        if let Some(input) = &self.input.health {
+            health::wait(&mut Readiness(&mut self.node.programs), input)
+                .map_err(|_| ProcessError::HealthFailed { restored: false })?;
+        }
+        self.ready_verified = true;
+        Ok(())
+    }
+
     fn converge(&mut self) -> Result<(), ProcessError> {
         let state = self.recover()?;
         if state.complete {
@@ -986,7 +1044,8 @@ impl<P: Programs> Converge<'_, P> {
                     output: Output::default(),
                 });
             };
-            return self.desired_state(&canonical);
+            self.desired_state(&canonical)?;
+            return self.ready();
         }
         let name = self.name.clone();
         let candidate = self.candidate.clone();
@@ -1000,7 +1059,10 @@ impl<P: Programs> Converge<'_, P> {
         let Some(canonical) = state.canonical else {
             let created = self.inspect(&name, "verify-container")?;
             return match created {
-                Some(created) if created.spec == self.input.spec => self.desired_state(&created),
+                Some(created) if created.spec == self.input.spec => {
+                    self.desired_state(&created)?;
+                    self.ready()
+                }
                 created => Err(ProcessError::CandidateInvalid {
                     step: "verify-container".into(),
                     artifact: name,
@@ -1031,6 +1093,23 @@ impl<P: Programs> Converge<'_, P> {
         let running_state = self.inspect(&running_rollback, "inspect-rollback-container")?;
         let stopped_state = self.inspect(&stopped_rollback, "inspect-rollback-container")?;
         let mut candidate_state = self.inspect(&candidate, "inspect-candidate-container")?;
+        if let Some(expected) = &self.input.expected_spec {
+            let previous = running_state.as_ref().or(stopped_state.as_ref());
+            if previous.is_some_and(|state| &state.spec != expected)
+                || canonical
+                    .as_ref()
+                    .is_some_and(|state| &state.spec != expected && state.spec != self.input.spec)
+                || (previous.is_none()
+                    && canonical.as_ref().is_some_and(|state| {
+                        self.input
+                            .expected_running
+                            .is_some_and(|expected| state.running != expected)
+                    }))
+                || (canonical.is_none() && previous.is_none())
+            {
+                return Err(ProcessError::SpecChanged {});
+            }
+        }
         if let (Some(running), Some(_)) = (&running_state, &stopped_state) {
             return Err(ProcessError::RecoveryRequired {
                 step: "inspect-rollback-container".into(),
@@ -1130,6 +1209,10 @@ impl<P: Programs> Converge<'_, P> {
         let name = self.name.clone();
         if !self.running_desired() && canonical.running {
             self.must(&["container", "stop", &name], "stop", stop_failed)?;
+        }
+        if self.ready().is_err() {
+            self.rollback_published(rollback)?;
+            return Err(ProcessError::HealthFailed { restored: true });
         }
         self.must(
             &["container", "rm", "--force", rollback],
@@ -1288,6 +1371,10 @@ impl<P: Programs> Converge<'_, P> {
                 });
             }
         }
+        if self.ready().is_err() {
+            self.rollback_published(&rollback)?;
+            return Err(ProcessError::HealthFailed { restored: true });
+        }
         let finalize = self.run(&["container", "rm", "--force", &rollback]);
         if finalize.ok() {
             return Ok(());
@@ -1355,6 +1442,7 @@ pub fn converge_container<P: Programs>(
         input,
         name: input.container.clone(),
         candidate: format!("{}-candidate", input.container),
+        ready_verified: false,
     }
     .converge()
     .map(|()| Done {})
