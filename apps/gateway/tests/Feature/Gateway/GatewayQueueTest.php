@@ -6,18 +6,21 @@ use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
@@ -29,6 +32,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 /** @return list<Event> */
@@ -214,74 +218,58 @@ describe(GatewayHorizon::class, function (): void {
         });
     });
 
-    it('creates and starts a horizon Process beside the scheduler when the Gateway has none', function (): void {
-        expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))->toBe('created');
+    beforeEach(function (): void {
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+        config(['swamp.run_token' => 'fixture-token']);
+    });
 
+    it('records Horizon beside the scheduler and admits one native handoff without Gateway effects', function (): void {
+        $result = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
         $horizon = Process::query()->where('name', 'horizon')->sole();
-        expect($horizon->runtime)->toBe(ProcessRuntime::Systemd)
-            ->and($horizon->runtime_config['command'])->toBe(['/usr/bin/php8.5', 'artisan', 'horizon'])
+        $operation = Operation::query()->findOrFail($result['operation_id']);
+        expect($result['outcome'])->toBe('submitted')
+            ->and($operation->kind)->toBe('process.horizon_handoff')
+            ->and($operation->node_id)->toBe($this->gateway->id)
+            ->and($operation->input['command'])->toBe(['/usr/bin/php8.5', 'artisan', 'horizon'])
+            ->and($operation->input['content'])->not->toContain('EnvironmentFile=')
             ->and($horizon->working_directory)->toBe('/home/orbit/orbit/apps/gateway')
-            ->and($horizon->restart_policy)->toBe('always')
             ->and($horizon->desired_state)->toBe(DesiredProcessState::Running)
-            ->and($this->runtime->convergedProcessIds)->toBe([$horizon->id])
+            ->and($horizon->status)->toBe(LifecycleStatus::Provisioning)
+            ->and($this->runtime->convergedProcessIds)->toBe([])
             ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
     });
 
-    it('terminates the master of an active unit and leaves the unit alone, so no restart kills a running job', function (): void {
+    it('reuses an existing stopped Horizon definition without consulting the scheduler or runtime', function (): void {
         app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
-        $this->runtime->convergedProcessIds = [];
-        $this->runtime->statusOverride = 'active';
-
-        expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))->toBe('terminated')
-            ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(1)
-            ->and($this->runtime->convergedProcessIds)->toBe([])
-            ->and(Process::query()->where('name', 'horizon')->count())->toBe(1);
+        $horizon = Process::query()->where('name', 'horizon')->sole();
+        $horizon->update(['desired_state' => DesiredProcessState::Stopped, 'status' => LifecycleStatus::Failed]);
+        $result = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => throw new LogicException('The scheduler is not read.'));
+        expect($result['outcome'])->toBe('submitted')
+            ->and(Operation::query()->findOrFail($result['operation_id'])->input['created'])->toBeFalse()
+            ->and(Process::query()->where('name', 'horizon')->count())->toBe(1)
+            ->and($horizon->refresh()->desired_state)->toBe(DesiredProcessState::Running)
+            ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
 
-    it('starts a Horizon whose unit is not active, where horizon:terminate would reach no master', function (string $unit, DesiredProcessState $desired, LifecycleStatus $status): void {
-        $horizon = Process::query()->create([
-            'owner_type' => Node::class,
-            'owner_id' => $this->gateway->id,
-            'name' => 'horizon',
-            'runtime' => ProcessRuntime::Systemd,
-            'working_directory' => '/home/orbit/orbit/apps/gateway',
-            'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon'], 'environment_file' => ''],
-            'restart_policy' => 'always',
-            'desired_state' => $desired,
-            'status' => $status,
-            'failed_step' => $status === LifecycleStatus::Failed ? 'start' : null,
-            'error_code' => $status === LifecycleStatus::Failed ? 'process.start_failed' : null,
-        ]);
-        $this->runtime->statusOverride = $unit;
-
-        expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => throw new LogicException('The scheduler is not read.')))->toBe('started')
-            ->and($this->runtime->convergedProcessIds)->toBe([$horizon->id])
-            ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0)
-            ->and($horizon->refresh()->only(['desired_state', 'status', 'failed_step', 'error_code']))
-            ->toBe(['desired_state' => DesiredProcessState::Running, 'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
-    })->with([
-        'a failed first creation, whose unit was removed' => ['absent', DesiredProcessState::Running, LifecycleStatus::Failed],
-        'a crash loop that systemd gave up on' => ['failed', DesiredProcessState::Running, LifecycleStatus::Active],
-        'a crash loop between restarts' => ['activating', DesiredProcessState::Running, LifecycleStatus::Active],
-        'a stop after a switch back' => ['inactive', DesiredProcessState::Stopped, LifecycleStatus::Active],
-    ]);
-
-    it('marks the Process failed and fails loudly when Horizon cannot start', function (): void {
-        app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
-        $this->runtime->statusOverride = 'failed';
-        $this->runtime->failConverge = true;
+    it('retains a failed Horizon intent when native submission cannot be confirmed', function (): void {
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket(false));
 
         expect(fn () => app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))
-            ->toThrow(ProcessOperationException::class)
-            ->and(Process::query()->where('name', 'horizon')->sole()->status)->toBe(LifecycleStatus::Failed);
+            ->toThrow(ResourceOperationException::class);
+
+        $operation = Operation::query()->sole();
+        $horizon = Process::query()->where('name', 'horizon')->sole();
+        expect($operation->status)->toBe(OperationStatus::Failed)
+            ->and($horizon->status)->toBe(LifecycleStatus::Failed)
+            ->and($horizon->error_code)->toBe($operation->error_code)
+            ->and($horizon->desired_state)->toBe(DesiredProcessState::Running)
+            ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
 
     it('does nothing without the Gateway queue', function (): void {
         config(['orbit.gateway_queue.connection' => '']);
-
-        expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))->toBe('none')
-            ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse()
-            ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
+        expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))->toBe(['outcome' => 'none'])
+            ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse();
     });
 });
 

@@ -87,7 +87,11 @@ Operations need the queue too. An Instance deploy or rollback request answers `5
 
 Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
 
-The serving phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) creates the Process and starts it, when `ORBIT_GATEWAY_QUEUE_CONNECTION` is set and no Process of the Gateway Node runs `artisan horizon`. So the first release after you set the key starts Horizon. When the handoff cannot create or start the Process, it fails with `gateway.release_units_failed`. The Gateway never removes the Process. After you empty the key, destroy it with `orbit process:destroy <id>`.
+The serving phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) records the fixed Horizon Process and admits `process.horizon_handoff` on the Gateway Node. The handoff records `horizon=submitted` and `horizon_operation_id`; this is admission, not a readiness claim.
+
+The native run receives the complete non-secret intent as workflow inputs. Placed `command/shell` steps inspect, stage, validate, publish and reload the unit, then enable and hand it over. Scripts are inline in each step. No step reads intent or reports results to the Gateway; the shared terminal-run adapter projects the bounded final output. An active unit receives `horizon:terminate` without a restart, so running jobs can finish. A stopped or missing unit starts with its desired state running. Typed native results update the Process and Operation; the Gateway executes no Process command or Artisan termination. Verify the handoff Operation as well as the release after changing this path.
+
+Horizon uses cached application configuration. This parent adds no private-material field, and refuses managed environment overrides instead of exposing them in the public unit. The Gateway never removes the Process. After emptying `ORBIT_GATEWAY_QUEUE_CONNECTION`, destroy it with `orbit process:destroy <id>`.
 
 ### Reservation metadata failures
 
@@ -107,16 +111,7 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 ## Releases
 
-A release drains Horizon before switching the serving link and starts it in the serving phase. It moves the old database jobs in the scheduler phase, after the scheduler's drain. The handoff records the Horizon step as `horizon`:
-
-| Outcome | When | What the handoff does |
-| --- | --- | --- |
-| `created` | No Process runs Horizon | Creates the `horizon` Process and starts it |
-| `terminated` | The Process's unit is active | Runs `php artisan horizon:terminate` and leaves the unit alone |
-| `started` | The unit is not active, for example after a failed start, a crash loop, or a stop after a switch back | Installs the unit again when it is missing, and starts it |
-| `none` | `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty | Nothing |
-
-`horizon:terminate` reaches only a running master, so a stopped Horizon is started instead. The handoff never restarts an active unit, because a restart ends its running jobs.
+A release drains Horizon before switching the serving link and admits its native handoff during the serving phase. The Operation records the actual `created`, `started`, or `terminated` outcome; an empty queue connection records `none` without starting a run. A failed native handoff retains the Process definition with a failed state for diagnosis.
 
 Before changing the serving release link, the release runner drains the Gateway's Horizon Process through `gateway.drain-horizon`. This applies to deployment, rollback and switch-back. The agent installs a temporary systemd stop policy: SIGTERM reaches only the master, the stop has no systemd timeout, and systemd never escalates to SIGKILL. It submits a stop and waits for both an inactive unit and an empty control group. Running jobs finish against the source release. The stopped unit cannot restart automatically. A missing Horizon Process needs no drain.
 

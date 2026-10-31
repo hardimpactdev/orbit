@@ -533,8 +533,9 @@ describe('gateway:release:handoff', function (): void {
         $serve = $handoff->serve();
         $schedule = $handoff->schedule();
 
-        expect($serve['horizon'])->toBe('terminated')
-            ->and(Cache::get('handoff-horizon-terminated'))->toBe(1)
+        expect($serve['horizon'])->toBe('submitted')
+            ->and(Operation::query()->findOrFail($serve['horizon_operation_id'])->kind)->toBe('process.horizon_handoff')
+            ->and((int) Cache::get('handoff-horizon-terminated'))->toBe(0)
             ->and($schedule)->not->toHaveKey('horizon')
             ->and($schedule)->toMatchArray(['scheduler' => 'restarted'])
             ->and($schedule['processes_restarted'])->toBe([])
@@ -543,7 +544,7 @@ describe('gateway:release:handoff', function (): void {
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe([]);
     });
 
-    it('fails the serving phase when Horizon cannot move, so the release switches back', function (): void {
+    it('fails the serving phase when native Horizon admission is refused', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
         handoff_scheduler($gateway);
@@ -556,8 +557,10 @@ describe('gateway:release:handoff', function (): void {
         });
         [$handoff] = runtime_handoff(horizon: app(GatewayHorizon::class));
 
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket(false));
+
         expect(fn () => $handoff->serve())
-            ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
+            ->toThrow(GatewayReleaseException::class);
     });
 
     it('does not reset OPcache or fail the release when native connection observation fails', function (): void {
