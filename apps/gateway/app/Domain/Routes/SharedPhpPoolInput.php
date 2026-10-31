@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -17,12 +16,12 @@ use Closure;
 /** Pure stored-state render. An empty map still withdraws stale pools on the Node. */
 final readonly class SharedPhpPoolInput
 {
-    public function __construct(private DevelopmentSiteRepository $sites, private DevelopmentPhpFpmConfigRenderer $renderer, private ManagedUserAccountResolver $accounts) {}
+    public function __construct(private DevelopmentSiteRepository $sites, private DevelopmentPhpFpmConfigRenderer $renderer) {}
 
-    /** @return array{configurations: object} */
+    /** @return array{configurations: object,account_user:string} */
     public function forNode(Node $node): array
     {
-        return $this->render($node, fn (): ManagedUserAccount => $this->accounts->resolve($node));
+        return [...$this->render($node, static fn (): ManagedUserAccount => new ManagedUserAccount($node->user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__')), 'account_user' => $node->user];
     }
 
     /** Pure render with an already admitted account; no Node lookup.

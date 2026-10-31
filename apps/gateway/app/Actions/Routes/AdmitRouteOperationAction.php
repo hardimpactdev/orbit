@@ -13,6 +13,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -134,8 +135,8 @@ final readonly class AdmitRouteOperationAction
             return $this->start('route.target_set', $route, [...$input, 'mode' => $recovery === null ? 'targets' : 'targets_recover',
                 ...($recovery === null ? [] : ['recovery_operation_id' => $recovery->id,
                     'previous_target_instance_ids' => $recovery->input['previous_target_instance_ids'],
-                    'instance_placements' => RouteExecutionProof::objects(data_get($recovery->state, 'route_plan.placements')),
-                    'detached_instances' => RouteExecutionProof::objects(data_get($recovery->state, 'route_plan.detached_instances'))])], $caller, $requestId);
+                    'instance_placements' => RouteExecutionProof::objects($recovery->input['instance_placements'] ?? []),
+                    'detached_instances' => RouteExecutionProof::objects($recovery->input['detached_instances'] ?? [])])], $caller, $requestId);
         });
     }
 
@@ -228,7 +229,7 @@ final readonly class AdmitRouteOperationAction
             ['route_id' => $route->id, 'node_ids' => $nodes,
                 'public_process' => $route->isCustomProxy() && $route->cluster_id !== null,
                 'access_node_ids' => $accessNodes,
-                'caller_node_id' => $caller?->id, ...$input, 'target_instance_ids' => $proposedIds,
+                'caller_node_id' => $caller?->id, ...app(NativeRouteAdmission::class)->capture($kind, $route, $input, $nodeId), 'target_instance_ids' => $proposedIds,
                 'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements,
                 'detached_instances' => $input['detached_instances'] ?? $this->targets->detachedInstances($removedIds)], 'operator', $requestId);
 
