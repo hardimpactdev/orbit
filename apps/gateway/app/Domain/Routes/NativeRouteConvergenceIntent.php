@@ -107,7 +107,20 @@ final readonly class NativeRouteConvergenceIntent
         if (! in_array($callerNodeId, self::participants($operation), true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not an admitted Route participant.', 403);
         }
-        $route = Route::query()->findOrFail(ValidatedData::integer($intent['route_id']));
+
+        return $this->publicInputForRoute($operation, $callerNodeId, $intent,
+            Route::query()->findOrFail(ValidatedData::integer($intent['route_id'])));
+    }
+
+    /** The composing parent supplies its stored candidate; publications still render fresh DB state.
+     * @param  array<string,mixed>  $intent
+     * @return array<string,mixed>
+     */
+    public function publicInputForRoute(Operation $operation, int $callerNodeId, array $intent, Route $route): array
+    {
+        if (! in_array($callerNodeId, self::participants($operation), true) || $route->id !== $intent['route_id']) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The Node or Route is not an admitted participant.', 403);
+        }
         $node = Node::query()->findOrFail($callerNodeId);
         $workloads = [];
         foreach (RouteExecutionProof::objects($intent['workloads']) as $member) {
