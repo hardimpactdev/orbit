@@ -9,6 +9,7 @@ use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
@@ -32,7 +33,10 @@ final readonly class NodeRoleBaselinePlan
     public function converge(Node $node, NodeRole $assignment, ManagedUserAccount $account): array
     {
         $role = $assignment->role;
-        if (in_array($role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
+        if ($role === RoleName::Analytics) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Analytics requires its native parent workflow.', 503);
+        }
+        if (in_array($role, [RoleName::Metrics, RoleName::WebSocket], true)) {
             return [$this->child('role-runtime', $role->value.'.role_converge', $node, [])];
         }
         $steps = [];
@@ -109,7 +113,10 @@ final readonly class NodeRoleBaselinePlan
     public function remove(Node $node, NodeRole $assignment, bool $purgeData, bool $offline): array
     {
         $role = $assignment->role;
-        if (in_array($role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
+        if ($role === RoleName::Analytics) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Analytics requires its native parent workflow.', 503);
+        }
+        if (in_array($role, [RoleName::Metrics, RoleName::WebSocket], true)) {
             return [$this->child('role-runtime', $role->value.'.role_remove', $node, ['purge_data' => $purgeData, 'offline' => $offline])];
         }
         $steps = [];
