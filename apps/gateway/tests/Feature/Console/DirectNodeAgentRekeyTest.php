@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationChildIntent;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeLocks;
@@ -149,3 +150,28 @@ it('refuses foreign callers wrong runs undeclared outputs source drift and unsaf
     $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => $hash]])->assertConflict();
     expect($node->fresh()->agent_secret_hash)->toBe($before)->and(json_encode($op->fresh()->toArray()))->not->toContain($hash);
 });
+
+it('preserves read-only legacy parent ownership without creating recovery children', function (bool $tamper): void {
+    [$node, $source] = directRekeySource();
+    $source->update(['lock_key' => null]);
+    $intent = ['key' => 'enrollment-footprint', 'kind' => 'node.converge', 'node_id' => $node->id,
+        'input' => ['force_artifacts' => false, 'first_visit' => false]];
+    $parent = Operation::query()->create(['kind' => 'node.add', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'input' => [], 'state' => ['child_intents' => [$intent]],
+        'status' => 'running', 'lock_key' => 'node:'.$node->id, 'sequence' => 1, 'attempts' => 1]);
+    $snapshot = ['intent' => $intent, 'admitted' => ['parent_operation_id' => $parent->id, 'key' => $intent['key'],
+        'kind' => 'node.converge', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
+        'input' => $source->input, 'run_constraints' => []]];
+    $source->forceFill(['parent_operation_id' => $parent->id, 'child_key' => $intent['key'],
+        'child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    if ($tamper) {
+        $source->forceFill(['child_key' => 'foreign-footprint'])->save();
+    }
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertExitCode($tamper ? 1 : 0);
+    $recovery = Operation::query()->where('kind', 'node.agent_rekey')->first();
+    expect($recovery !== null)->toBe(! $tamper)
+        ->and($parent->children()->count())->toBe(1)->and($parent->fresh()->lock_key)->toBe('node:'.$node->id);
+    if ($recovery !== null) {
+        expect($recovery->parent_operation_id)->toBeNull()->and($recovery->lock_key)->toBeNull();
+    }
+})->with([false, true]);

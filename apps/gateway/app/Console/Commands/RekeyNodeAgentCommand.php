@@ -16,7 +16,7 @@ use Throwable;
 final class RekeyNodeAgentCommand extends Command
 {
     #[\Override]
-    protected $signature = 'orbit:node-agent-rekey {node : Owning Node ID} {operation : Uncertain standalone configure Operation ID} {--attempt=1 : Explicit recovery request number}';
+    protected $signature = 'orbit:node-agent-rekey {node : Owning Node ID} {operation : Uncertain configure Operation ID} {--attempt=1 : Explicit recovery request number}';
 
     #[\Override]
     protected $description = 'Record an agent authentication recovery on the owning Node worker.';

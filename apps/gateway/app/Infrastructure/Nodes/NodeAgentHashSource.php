@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
@@ -48,14 +49,18 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
     {
         $source = Operation::query()->find($sourceId);
         $run = ValidatedData::object($source->state['executor_runs'] ?? [])['footprint-agent'] ?? [];
+        $owner = Operation::query()->where('lock_key', 'node:'.$node->id)->first();
         if ($source === null || $source->kind !== 'node.converge' || $source->status->value !== 'running'
             || $source->node_id !== $node->id || $source->target_type !== 'node' || $source->target_id !== $node->id
-            || $source->parent_operation_id !== null || $source->lock_key !== 'node:'.$node->id
+            || app(OperationChildren::class)->nodeId($source) !== $node->id || $owner === null || $owner->status->terminal()
+            || $owner->id !== app(OperationChildren::class)->executionLeaseId($source)
             || ! is_array($run) || ($run['name'] ?? null) !== 'agent.configure' || ($run['transport'] ?? null) !== 'agent'
             || ($run['started'] ?? null) !== true || ! array_key_exists('result', $run) || $run['result'] !== null
             || app(NodeLocks::class)->lock('node-agent:id:'.$node->id, 420)->isLocked()) {
-            throw new ResourceOperationException('node.agent_rekey_unavailable', 'Recovery requires the owning open uncertain standalone configure.', 409);
+            throw new ResourceOperationException('node.agent_rekey_unavailable', 'Recovery requires the owning open uncertain configure.', 409);
         }
+
+        app(OperationChildren::class)->assertRun($source, checkConstraints: false);
 
         return ['schema_version' => 1, 'node_id' => $node->id, 'configure_operation_id' => $sourceId, 'worker_user' => $node->user,
             'configuration' => array_intersect_key(ValidatedData::object($run['input'] ?? []),
