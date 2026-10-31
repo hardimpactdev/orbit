@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
 import { startActions, StartInput, startMethods } from "./start.ts";
-import type { localAgent } from "./agent.ts";
+import type { localProcessAction } from "./native-action.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
 const input = {
@@ -36,7 +36,7 @@ const vite = {
 };
 function fixture(responses: Record<string, Record<string, unknown>> = {}) {
   const calls: { name: string; input: Record<string, unknown> }[] = [];
-  const invoke: typeof localAgent = (name, data, digest) => {
+  const invoke: typeof localProcessAction = (name, data, digest) => {
     assertEquals(digest, input.agent_sha256);
     calls.push({ name, input: data });
     return Promise.resolve(

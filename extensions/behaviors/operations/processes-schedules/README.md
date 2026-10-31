@@ -186,3 +186,7 @@ HTTP admission and public direct-input response. Its test normalizes only record
 IDs, artifact names and hashes, then requires exact shape equality. The native
 test passes those bytes through the shipped `Creation` schema and retains null
 refusal.
+
+The `reference-family` CI check compares this fixture SHA-256 with the public
+Gateway main fixture. The Gateway and native first-visit schema regressions remain
+in source and run locally; lane 19 restores required CI test execution.

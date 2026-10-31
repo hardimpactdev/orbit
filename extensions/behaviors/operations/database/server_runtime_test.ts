@@ -31,7 +31,8 @@ class Fixture {
     assertEquals(args.slice(0, 2), ["-n", "--"]);
     assertEquals(timeoutMs! > 0 && timeoutMs! <= 900000, true);
     assertEquals(JSON.stringify(args).includes("private-initializer"), false);
-    const executable = args[2], command = args.slice(3);
+    const executable = args[2];
+    let command = args.slice(3);
     const ok = { code: 0, stdout: "" };
     if (executable === "/usr/bin/curl") {
       const body = JSON.parse(stdin!);
@@ -47,6 +48,8 @@ class Fixture {
       });
     }
     assertEquals(executable, "/usr/bin/docker");
+    assertEquals(command[0], "--host=unix:///var/run/docker.sock");
+    command = command.slice(1);
     if (command[0] === "image") {
       return Promise.resolve({ code: 0, stdout: "sha256:fixture" });
     }
@@ -96,7 +99,7 @@ class Fixture {
   mutations() {
     return this.calls.filter((call) =>
       call.args[2] === "/usr/bin/curl" ||
-      ["start", "stop", "rename", "rm", "restart"].includes(call.args[4])
+      ["start", "stop", "rename", "rm", "restart"].includes(call.args[5])
     );
   }
 }
@@ -176,8 +179,8 @@ Deno.test("owned removal inspects every artifact before the first deletion and i
   );
   assertEquals(f.containers.size, 0);
   assertEquals(
-    f.calls.slice(0, f.calls.findIndex((call) => call.args[4] === "rm")).filter(
-      (call) => call.args[4] === "inspect",
+    f.calls.slice(0, f.calls.findIndex((call) => call.args[5] === "rm")).filter(
+      (call) => call.args[5] === "inspect",
     ).length,
     4,
   );

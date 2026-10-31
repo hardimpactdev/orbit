@@ -40,14 +40,6 @@ export const Input = z.object({
 });
 export type TurnInput = z.infer<typeof Input>;
 const Args = DirectArgs.extend({ kind: z.literal("tasks.turn"), node_id: Id });
-const Preparation = z.object({
-  operation_id: Id,
-  node_id: Id,
-  run_id: z.string().uuid(),
-  before: Snapshot.nullable(),
-  error_code: z.string().optional(),
-});
-type Prepared = z.infer<typeof Preparation>;
 const Usage = z.object({
   input: z.number().nonnegative().default(0),
   output: z.number().nonnegative().default(0),
@@ -405,100 +397,43 @@ async function withPi<T>(
 type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
-  writeResource(
-    spec: string,
-    name: string,
-    value: Record<string, unknown>,
-  ): Promise<{ name: string }>;
 };
-const http = (ctx: Context) =>
-  gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile);
-export const behavior = {
-  type: "@nckrtl/task-turn",
-  version: "2026.10.31.1",
+export const turnBehavior = {
   globalArguments: Globals,
-  resources: {
-    preparation: {
-      description: "Native turn preparation for the same root",
-      schema: Preparation,
-      lifetime: "1d",
-      garbageCollection: 1,
-    },
-  },
   methods: {
-    prepare: {
-      description: "Prepare the admitted VM workspace before Pi writes code",
-      arguments: Args,
-      execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-        const current = z.object({
-          id: z.literal(args.operation_id),
-          node_id: z.literal(args.node_id),
-          kind: z.literal(args.kind),
-          status: z.string(),
-          cancel_requested: z.boolean(),
-          input: Input,
-        }).parse(await new GatewayOperation(http(ctx), args).read(ctx.signal));
-        const prepared: Prepared = {
-          operation_id: args.operation_id,
-          node_id: args.node_id,
-          run_id: args.run_id,
-          before: null,
-        };
-        if (
-          !current.cancel_requested &&
-          !["succeeded", "failed", "cancelled"].includes(current.status)
-        ) {
-          if (current.input.node_id !== args.node_id) {
-            throw new Error("Wrong task VM Node");
-          }
-          prepared.before = await localWorkspace(current.input.checkout_path)
-            .prepare(current.input);
-        }
-        return {
-          dataHandles: [
-            await ctx.writeResource(
-              "preparation",
-              "turn-" + args.run_id,
-              prepared,
-            ),
-          ],
-        };
-      },
-    },
     execute: {
-      description: "Run one native Pi task turn",
-      arguments: Args.extend({ preparation: Preparation }),
-      execute: async (
-        args: z.infer<typeof Args> & { preparation: Prepared },
-        ctx: Context,
-      ) => {
-        const prepared = args.preparation;
-        if (
-          prepared.operation_id !== args.operation_id ||
-          prepared.node_id !== args.node_id || prepared.run_id !== args.run_id
-        ) throw new Error("Turn preparation belongs to another run");
-        return await directOperation(
+      description:
+        "Prepare the workspace and run Pi under one native write lock",
+      arguments: Args,
+      execute: (args: z.infer<typeof Args>, ctx: Context) =>
+        directOperation(
           args,
-          new GatewayOperation(http(ctx), args),
+          new GatewayOperation(
+            gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
+            args,
+          ),
           async (raw) => {
             const input = Input.parse(raw);
-            if (
-              input.node_id !== args.node_id || !prepared.before
-            ) throw new Error("Turn preparation is unavailable");
+            if (input.node_id !== args.node_id) {
+              throw new Error(
+                "Wrong task VM Node",
+              );
+            }
+            const workspace = localWorkspace(input.checkout_path);
+            const before = await workspace.prepare(input);
             return await withPi(input, (pi) =>
               turn(
                 input,
                 `operation-${args.operation_id}`,
-                prepared.before!,
+                before,
                 pi,
-                localWorkspace(input.checkout_path),
+                workspace,
                 ctx.signal,
               ));
           },
           (result) => result,
           ctx.signal,
-        );
-      },
+        ),
     },
   },
 };

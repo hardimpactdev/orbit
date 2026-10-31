@@ -12,6 +12,9 @@ class ProcessStartNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules', 'operations/routes')
+        helper = self.repo/'extensions/behaviors/operations/node/system_command.ts'
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_bytes((ROOT/'extensions/behaviors/operations/node/system_command.ts').read_bytes())
         routes = self.repo/'extensions/behaviors/operations/routes'
         process = self.repo/'extensions/behaviors/operations/processes-schedules/process-control.ts'
         process.write_text('import {http, invoke} from "./start_native_fixture.ts";\n'+process.read_text().replace('export const behavior = processControl();', 'export const behavior = processControl(() => http, undefined, startActions(invoke, () => Promise.resolve()));'))

@@ -32,7 +32,8 @@ class NativeTestCase(unittest.TestCase):
     def cli(self, *args, success=True, input=None):
         env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
         for key in ('SWAMP_SERVER_URL', 'SWAMP_SERVE_URL', 'SWAMP_SERVER_TOKEN',
-                    'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT'):
+                    'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT',
+                    'SWAMP_EXTENSIONS_DIR'):
             env.pop(key, None)
         env.update(self.native_env)
         result = subprocess.run([os.environ.get('SWAMP_BIN', 'swamp'), *args, '--json'],
