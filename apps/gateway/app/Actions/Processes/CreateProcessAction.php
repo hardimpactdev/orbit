@@ -65,18 +65,8 @@ final readonly class CreateProcessAction
         return $this->bootstrap($data, 'pi-server', ProcessRuntime::Systemd, $data->command);
     }
 
-    /** @return array{process: Process, created: bool} */
-    public function bootstrapHorizon(#[SensitiveParameter] AddProcessData $data): array
-    {
-        if (array_slice($data->command, 1) !== ['artisan', 'horizon']) {
-            throw new ResourceOperationException('process.bootstrap_invalid', 'Horizon bootstrap requires its server command.', 409);
-        }
-
-        return $this->bootstrap($data, 'horizon', ProcessRuntime::Systemd, $data->command);
-    }
-
     /**
-     * Only the three fixed bootstrap callers may execute here until their completion transitions move native.
+     * Only the remaining fixed bootstrap callers may execute here until their completion transitions move native.
      *
      * @param  list<string>  $command
      * @return array{process: Process, created: bool}
