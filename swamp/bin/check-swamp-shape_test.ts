@@ -810,3 +810,39 @@ Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock command
     );
   }
 });
+
+Deno.test("Python command bindings use execution order and immutable lexical captures", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['sleep','30']\nsubprocess.run(cmd)\ncmd=['echo','done']\n",
+      "import subprocess\nbase=['sleep','30']\ncmd=base\nbase=['echo','done']\nsubprocess.run(cmd)\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "custom-control"
+      ),
+      source,
+    );
+    assert(
+      agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory).some(
+        (f) => f.rule === "custom-control",
+      ),
+      source,
+    );
+  }
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute(cmd):\n    subprocess.run(cmd)\nexecute(['sleep','30'])\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nfor cmd in [['sleep','30']]:\n    pass\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ncmd,other=['sleep','30'],None\nexecute()\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "unknown-command"
+      ),
+      source,
+    );
+  }
+});

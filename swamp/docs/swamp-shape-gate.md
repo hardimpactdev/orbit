@@ -40,7 +40,11 @@ not passing. The agent rule examines executable command positions in shell and
 Python subprocess calls, including sudo, shell and SSH wrappers. Service units
 such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools and
 configuration metadata are not agent invocations. Actual executable calls still
-use the observer/action inventory; unresolved commands remain unknown.
+use the observer/action inventory; unresolved commands remain unknown. Python
+bindings follow execution order within a lexical scope. Outer captures require
+an immutable binding, including writes through loops, destructuring and context
+managers. Later assignments cannot replace the command evaluated at an earlier
+subprocess call.
 
 Guide rule 6 permits host-tool transaction locks. The Python AST checker accepts
 only proven file descriptors for the canonical UFW, observer self-update and
