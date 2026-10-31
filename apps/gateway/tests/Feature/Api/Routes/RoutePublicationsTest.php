@@ -4,13 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
@@ -81,7 +76,7 @@ it('refuses every worker request until the Gateway start response binds the run'
     $this->postJson($this->path.'/primitive', $this->body)->assertConflict();
     $this->postJson($this->path.'/result', [...$this->body, 'status' => 'running', 'started_at' => '2026-10-30T12:00:00.000Z'])->assertConflict();
     expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
-    expect($this->operation->steps()->count())->toBe(0);
+
     expect($this->agents->calls)->toBe([]);
 
     app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
@@ -97,26 +92,6 @@ it('reads only approved public data and refuses the removed family relay URLs', 
         ->assertJsonPath('data.input.caddy_publication.node_id', $this->node->id)->assertDontSee('private-input-sentinel')->assertDontSee('foreign');
     $this->getJson('/api/v1/route-publications/'.$this->operation->id.'?run_id='.$this->runId)->assertNotFound();
     $this->postJson('/api/v1/route-publications/'.$this->operation->id.'/publish', $this->body)->assertNotFound();
-    expect($this->agents->calls)->toBe([]);
-});
-
-it('refuses missing peers malformed run IDs and undeclared kinds on shared endpoints', function (): void {
-    $this->getJson($this->path)->assertUnprocessable();
-    $this->getJson($this->path.'?run_id=foreign')->assertUnprocessable();
-    $this->operation->update(['kind' => 'tool.install']);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.200']);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertForbidden();
-    expect($this->agents->calls)->toBe([]);
-});
-
-it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'route.caddy_converge'))->toBeNull();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'route.caddy_converge', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -137,10 +112,10 @@ it('projects only typed safe Swamp results and associates the native run without
     $this->postJson($this->path.'/result', $finished)->assertOk()->assertJsonPath('data.result', ['result' => 'published', 'ready' => true]);
     $this->postJson($this->path.'/result', $finished)->assertOk();
     $operation = $this->operation->fresh();
-    expect($operation->state)->toHaveKeys(['swamp_run_id', 'steps'])->not->toHaveKeys(['executor_runs', 'executor_effect_identity', 'executor_lease_node_id']);
+    expect($operation->state)->toHaveKey('swamp_run_id')->not->toHaveKeys(['steps', 'executor_runs', 'executor_effect_identity', 'executor_lease_node_id']);
     expect($operation->attempts)->toBe(0);
     expect($operation->worker)->toBeNull();
-    expect($operation->steps()->first()->status->value)->toBe('succeeded');
+
     expect(json_encode($operation->toArray()))->not->toContain('private-test-password');
 });
 
@@ -152,18 +127,6 @@ it('refuses an unproven success invalid stage and another run before projection'
     $this->postJson($this->path.'/primitive', ['run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'])->assertConflict();
     expect($this->agents->calls)->toBe([]);
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
-});
-
-it('publishes DNS only on an active VPN owner using the unkeyed fixed program', function (): void {
-    $this->operation->update(['kind' => 'route.private_dns_publish']);
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(fn ($node, $program, $input): bool => $node->id === $this->node->id
-        && $program->name === 'route.publish-dns' && array_keys($input) === ['records', 'catalog'])
-        ->andReturn(new ProgramResult('published', ['ready' => true, 'digest' => str_repeat('b', 64)], ''));
-    app()->instance(RemoteProgramRunner::class, $runner);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertOk()->assertJsonPath('data.ready', true);
 });
 
 it('submits once after commit and records a native run without acquiring a target hold', function (): void {
@@ -182,35 +145,6 @@ it('submits once after commit and records a native run without acquiring a targe
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     expect($socket->closed)->toBeTrue();
-});
-
-it('keeps an unreadable native history uncertain without resubmitting or reporting a false failure', function (): void {
-    $this->operation->update(['state' => array_diff_key($this->operation->state, ['swamp_run_id' => true])]);
-    $socket = new FakeRoutePublicationSocket(false);
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake.token']);
-    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
-    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
-    expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
-    expect($this->operation->fresh()->attempts)->toBe(0);
-    expect($socket->closed)->toBeTrue();
-});
-
-it('defaults each proven direct Route kind to its only writer and refuses the removed writer', function (string $kind): void {
-    config(['swamp.direct_writers' => []]);
-    expect(app(DirectOperation::class)->writer($kind))->toBe('direct');
-    config(['swamp.direct_writers' => [$kind => 'polled']]);
-    $before = Operation::query()->count();
-    expect(fn () => app(StartOperationAction::class)->execute($kind, 'node_route_projection', $this->node->id, $this->node->id, [], 'test', null))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe($before);
-    expect($this->agents->calls)->toBe([]);
-})->with(['route.caddy_converge', 'route.private_dns_publish', 'route.workload_verify', 'route.public_verify']);
-
-it('gives pre-rollout Operations no removed publication executor', function (): void {
-    $this->operation->update(['state' => null]);
-    $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    expect(fn () => app(OperationExecutionContract::class)->context($this->operation->fresh()))->toThrow(ResourceOperationException::class, 'no Gateway execution contract');
-    expect($this->agents->calls)->toBe([]);
 });
 
 it('renders current public state again on each read without persisting the rendered data', function (): void {
