@@ -16,7 +16,8 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        return array_diff_key($operation->input, ['credentials' => true]);
+        return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true]),
+            'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation

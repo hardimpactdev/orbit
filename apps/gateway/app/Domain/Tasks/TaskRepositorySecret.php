@@ -31,7 +31,7 @@ final readonly class TaskRepositorySecret implements OperationSecretSource
 
     public function ownerId(Operation $operation): ?int
     {
-        return in_array($operation->kind, ['tasks.check', 'tasks.publish'], true) ? Task::topLevel()->find($operation->target_id)?->project_id : null;
+        return $operation->kind === 'tasks.check' ? Task::topLevel()->find($operation->target_id)?->project_id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
@@ -44,9 +44,6 @@ final readonly class TaskRepositorySecret implements OperationSecretSource
             || ! $instance instanceof Instance || $instance->node_id !== $operation->node_id || $repository === null
             || $operation->input['repository'] !== $repository->owner.'/'.$repository->name) {
             throw new ResourceOperationException('tasks.repository_token_forbidden', 'The credential belongs to the admitted Task repository.', 403);
-        }
-        if ($operation->kind === 'tasks.publish') {
-            return new OperationSecretValue(['repository' => $repository->owner.'/'.$repository->name, 'write_token' => $this->access->token($repository)]);
         }
         $checks = $this->access->checksToken($repository);
         if ($checks === null) {
