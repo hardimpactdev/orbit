@@ -10,6 +10,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -64,6 +65,10 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $vm = $this->intent->owned($operation, lock: true);
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            if ($status === OperationStatus::Running && ($result['node_cleanup_started'] ?? false) === true && $vm->node_id !== null) {
+                Node::query()->findOrFail($vm->node_id)->update(['status' => LifecycleStatus::Removing]);
+                $vm->update(['state' => TaskVmState::Destroying]);
+            }
             if ($status === OperationStatus::Succeeded) {
                 $this->projectRemoval($operation->input);
             } elseif ($status === OperationStatus::Failed) {

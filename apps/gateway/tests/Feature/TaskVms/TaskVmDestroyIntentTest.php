@@ -242,3 +242,20 @@ it('projects native terminal status with only its bounded VM changes', function 
     expect($this->vm->fresh()->pi_token)->toBe($status === 'succeeded' ? null : 'private-pi-token');
     expect($this->vm->fresh()->provider_bootstrap)->toBe($status === 'succeeded' ? null : $bootstrap);
 })->with(['succeeded', 'failed', 'cancelled']);
+
+it('records the native Node cleanup checkpoint without removing records or credentials', function (bool $started): void {
+    $guest = Node::query()->create(['name' => $this->vm->name, 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'status' => LifecycleStatus::Active, 'wireguard_ip' => $this->vm->wireguard_ip, 'public_ssh_host' => '192.0.2.208']);
+    $this->vm->update(['node_id' => $guest->id, 'provider_bootstrap' => ['private' => 'provider-key', 'public' => 'provider-public']]);
+    $operation = savedDestroyIntent();
+    $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $operation->update(['state' => ['swamp_run_id' => $run]]);
+    app(TaskVmDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'running',
+        'started_at' => '2026-10-31T00:00:00.000Z', 'result' => $started ? ['node_cleanup_started' => true] : []]);
+
+    expect($guest->fresh()->status)->toBe($started ? LifecycleStatus::Removing : LifecycleStatus::Active)
+        ->and($this->vm->fresh()->state->value)->toBe($started ? 'destroying' : 'failed')
+        ->and($this->vm->fresh()->node_id)->toBe($guest->id)
+        ->and($this->vm->fresh()->pi_token)->toBe('private-pi-token')
+        ->and($this->vm->fresh()->provider_bootstrap['private'])->toBe('provider-key');
+})->with([true, false]);

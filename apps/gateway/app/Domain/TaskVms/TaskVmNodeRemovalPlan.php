@@ -26,7 +26,7 @@ final readonly class TaskVmNodeRemovalPlan
         $participants = Node::query()->whereKeyNot($node->id)->where('status', LifecycleStatus::Active)->orderBy('id')->get()
             ->filter(static fn (Node $target): bool => $target->platform === 'linux' && $target->ssh_host_fingerprint !== null && $target->wireguard_ip !== null)
             ->map(static fn (Node $target): array => ['node_id' => $target->id,
-                'peer' => true, 'residue' => true, 'dns' => PrivateDnsPublicationNodes::query()->whereKey($target->id)->exists()])->values()->all();
+                'peer' => true, 'routes' => false, 'residue' => true, 'dns' => PrivateDnsPublicationNodes::query()->whereKey($target->id)->exists()])->values()->all();
 
         return ['schema_version' => 1, 'node_id' => $node->id, 'name' => $node->name, 'prior_status' => $node->status->value,
             'task_vm_id' => $vm?->id, 'machine_deleted' => $machineDeleted, 'offline' => $offline,
