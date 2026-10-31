@@ -9,6 +9,8 @@ covers:
 
 # Vaultwarden
 
+The native sync extension ships its official Bitwarden CLI action scripts through its extension manifest. Serve includes the files in the Node 209 worker bundle. A missing script bundle fails the assets step before login or any vault-item mutation.
+
 The Gateway can publish the database credentials it holds into one collection of a [Vaultwarden](https://github.com/dani-garcia/vaultwarden) organization. Each credential becomes one **Database item**. The Vault app and Conn read those items, so people get current credentials without asking Orbit. Orbit stays the source of truth: it creates, rewrites, and permanently deletes the items. [`vault`](/cli/vault) lists the commands.
 
 Vaultwarden publishing is the `vault` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/vault`. While the switch is off, its API operations and MCP tools refuse with `extension.disabled`, the CLI hides its commands, and the sync does not run. The stored setup and the record of published items stay. New installs start with the switch off. Upgrades preserve its stored value.
