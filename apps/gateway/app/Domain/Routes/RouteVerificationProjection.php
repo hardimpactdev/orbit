@@ -26,20 +26,20 @@ final readonly class RouteVerificationProjection implements DirectOperationProje
             throw new ResourceOperationException('operation.direct_invalid', 'A Node-bound Route verification is required.', 422);
         }
         $input = ValidatedData::object($operation->input['verification'] ?? []);
-        if (! in_array($input['protocol'] ?? null, ['tls', 'http', 'skip'], true)
+        if (! in_array($input['protocol'] ?? null, ['tls', 'http'], true)
             || ! is_string($input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $input['agent_sha256']) !== 1) {
             throw new ResourceOperationException('route.verification_invalid', 'The admitted Route probe is missing.', 422);
         }
 
         $probe = $input['probe'] ?? null;
-        if ($input['protocol'] === 'skip' ? $probe !== null : (! is_array($probe)
+        if (! is_array($probe)
             || ! is_string($probe['address'] ?? null) || filter_var($probe['address'], FILTER_VALIDATE_IP) === false
             || ! is_int($probe['port'] ?? null) || $probe['port'] < 1 || $probe['port'] > 65535
-            || ! is_string($probe['domain'] ?? null) || RouteDomain::validate($probe['domain']) !== $probe['domain'])) {
+            || ! is_string($probe['domain'] ?? null) || RouteDomain::validate($probe['domain']) !== $probe['domain']) {
             throw new ResourceOperationException('route.verification_invalid', 'The admitted Route probe is invalid.', 422);
         }
 
-        return ['protocol' => $input['protocol'], 'probe' => is_array($probe) ? Arr::only($probe, ['address', 'port', 'domain']) : null,
+        return ['protocol' => $input['protocol'], 'probe' => Arr::only($probe, ['address', 'port', 'domain']),
             'agent_sha256' => $input['agent_sha256']];
     }
 
