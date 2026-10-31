@@ -456,13 +456,13 @@ def write_database(data):
     with as_account(user):
         fd=opened(selected,os.O_RDWR);os.close(fd)
         with contextlib.closing(connect(selected)) as db:
+            db.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED,0)
             db.execute('PRAGMA busy_timeout=10000')
             # execute accepts exactly one statement. SQL is never returned or logged.
             cursor=db.execute(sql.strip())
             truncated=False
             if cursor.description is not None:
                 truncated=len(cursor.fetchmany(501))>500
-                # Rust's write command consumes at most 501 rows too, without exposing any rows.
             count=db.execute('SELECT changes()').fetchone()[0]
             cursor.close()
             return {'row_count':max(0,count),'truncated':truncated}

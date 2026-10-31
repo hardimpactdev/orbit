@@ -90,6 +90,7 @@ Deno.test("local SQL refuses multiple statements, oversized SQL and missing data
     for (
       const sql of [
         "SELECT 1; DROP TABLE proof",
+        "VACUUM",
         "x".repeat(16385),
         "SELECT private-local-sqlite-sentinel FROM missing",
       ]
@@ -119,6 +120,35 @@ Deno.test("local SQL refuses multiple statements, oversized SQL and missing data
     await Deno.remove(root, { recursive: true });
   }
 });
+for (
+  const statement of ["ATTACH DATABASE", "VACUUM INTO", "VACUUM main INTO"]
+) {
+  Deno.test(`SQLite writes refuse ${statement} without creating another file`, async () => {
+    const root = await Deno.makeTempDir({ prefix: "sqlite-port-boundary-" });
+    const path = root + "/db.sqlite";
+    const outside = root + "/outside.sqlite";
+    await database(path);
+    const digest = async () =>
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", await Deno.readFile(path)),
+      );
+    const before = await digest();
+    try {
+      const expression = `('${root}/' || 'outside.sqlite')`;
+      const sql = `${statement} ${expression}${
+        statement === "ATTACH DATABASE" ? " AS other" : ""
+      }`;
+      assertEquals(
+        await runSqliteLocal({ action: "write", input: { owner, path, sql } }),
+        { error_code: "database.query_failed" },
+      );
+      await assertRejects(() => Deno.stat(outside), Deno.errors.NotFound);
+      assertEquals(await digest(), before);
+    } finally {
+      await Deno.remove(root, { recursive: true });
+    }
+  });
+}
 Deno.test("copy path and symlink checks preserve foreign files", async () => {
   const root = await Deno.makeTempDir({ prefix: "sqlite-port-path-" });
   const path = root + "/db.sqlite";

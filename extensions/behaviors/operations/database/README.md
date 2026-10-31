@@ -43,6 +43,12 @@ uncertain. SQL is limited to 16,384 characters and MySQL multi-statements are
 disabled. Inspect an uncertain mutation before starting another Operation. No
 family receipt, lock, claim or retry loop is added.
 
+SQLite writes set the engine attachment limit to zero before executing SQL.
+`ATTACH` and `VACUUM INTO` cannot create another database file, including when
+the destination is an SQL expression. SQLite also refuses ordinary `VACUUM`
+because its implementation needs an internal attachment. Refusals return only
+`database.query_failed` and leave the registered file unchanged.
+
 `write_native_test.py` uses the shared native harness and the REAL `gatewayHttp`
 client against an isolated TLS fixture. It scans the entire scratch repository,
 stdout and stderr for SQL, password, DSN and username; fixture SQL is injected.
