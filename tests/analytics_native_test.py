@@ -137,7 +137,9 @@ class AnalyticsFixture(NativeTestCase):
         lifecycle = base/'lifecycle.ts'
         lifecycle.write_text('import {grace} from "./native_effects.ts";\n'+lifecycle.read_text().replace('export const behavior = analyticsLifecycle();','export const behavior = analyticsLifecycle(undefined, undefined, grace);'))
         cert = self.repo/'extensions/behaviors/operations/certificates/mod.ts'
-        cert.write_text('import {signCertificateBatch} from "../analytics/native_effects.ts";\n'+cert.read_text().replace('import { type CertificateCaVault, signCertificateBatch } from "./signing.ts";', 'import { type CertificateCaVault } from "./signing.ts";'))
+        source = cert.read_text()
+        self.assertIn('...certificates()', source)
+        cert.write_text('import {signCertificateBatch as fixtureSign} from "../analytics/native_effects.ts";\n'+source.replace('...certificates()', '...certificates(undefined, undefined, fixtureSign)'))
         pub = self.repo/'extensions/behaviors/operations/routes/publication.ts'
         source = pub.read_text().replace('CaddyPublication, publishCaddy as applyCaddy','CaddyPublication')
         source = source.replace('DnsPublication, publishPrivateDns, runPrivateDns','DnsPublication, runPrivateDns')
