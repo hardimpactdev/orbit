@@ -12,6 +12,7 @@ import { ChildIntent, FamilyDriver, FamilyWaiting } from "./driver.ts";
 import { prepareRuntime, RuntimeInput } from "./runtime.ts";
 import { lifecycle, LifecycleInput } from "./lifecycle.ts";
 import { buildUpCloudImage, UpCloudImageInput } from "./upcloud-images.ts";
+import { sweepHost, SweepInput } from "./sweep.ts";
 
 export function taskVms(
   makeHttp = (ctx: Context) =>
@@ -72,6 +73,7 @@ export function taskVms(
               "task_vm.park",
               "task_vm.destroy",
               "task_vm.upcloud_image_build",
+              "task_vm.sweep_host",
             ],
           ),
           worker: z.string().min(1),
@@ -172,7 +174,10 @@ export function taskVms(
           const upcloudImage = operation.kind === "task_vm.upcloud_image_build"
             ? UpCloudImageInput.parse(operation.input)
             : null;
-          const invocation = runtime || life || upcloudImage
+          const sweep = operation.kind === "task_vm.sweep_host"
+            ? SweepInput.parse(operation.input)
+            : null;
+          const invocation = runtime || life || upcloudImage || sweep
             ? null
             : invocationFor(operation.kind, operation.input);
           if (runtime && runtime.node_id !== operation.node_id) {
@@ -225,12 +230,12 @@ export function taskVms(
           try {
             let completion: z.infer<typeof Completion>;
             if (
-              runtime || life || upcloudImage
+              runtime || life || upcloudImage || sweep
             ) {
               const driver = new FamilyDriver(
                 operation.id,
                 args.worker,
-                (runtime ?? life ?? upcloudImage)!
+                (runtime ?? life ?? upcloudImage ?? sweep)!
                   .deadline_at,
                 ctx,
                 makeHttp(ctx),
@@ -261,6 +266,8 @@ export function taskVms(
                     status: "succeeded",
                     result: runtime
                       ? await prepareRuntime(runtime, driver)
+                      : sweep
+                      ? await sweepHost(sweep, driver)
                       : upcloudImage
                       ? await buildUpCloudImage(upcloudImage, driver)
                       : await lifecycle(operation.kind, life!, driver),

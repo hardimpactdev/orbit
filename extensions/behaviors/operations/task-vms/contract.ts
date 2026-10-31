@@ -245,6 +245,26 @@ for (
       proof: command === "image.start-phase" ? "receipt" : "ready",
     };
 }
+for (const verb of ["delete", "delete_upcloud", "stop_upcloud", "observe"]) {
+  runtimeEffects[`task_vm.sweep_${verb}`] = {
+    name: "task_vm.sweep",
+    transport: "task_vm_sweep",
+    step: `sweep-${verb.replaceAll("_", "-")}`,
+    fields: [
+      "node_id",
+      "provider",
+      "sweep_id",
+      ...(verb === "observe" ? [] : ["deletion"]),
+      ...(["delete_upcloud", "stop_upcloud"].includes(verb) ? ["token"] : []),
+    ],
+    action: verb === "observe"
+      ? "observe"
+      : verb === "stop_upcloud"
+      ? "stop"
+      : "delete",
+    proof: "ready",
+  };
+}
 export const leafKinds = [
   ...IncusEffect.options,
   ...Object.keys(runtimeEffects),

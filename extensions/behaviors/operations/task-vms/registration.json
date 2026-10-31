@@ -46,13 +46,18 @@
     "task_vm.upcloud_guest_image_verify",
     "task_vm.upcloud_guest_agent_install_guest",
     "task_vm.upcloud_guest_pi_upload_guest",
+    "task_vm.sweep_delete",
+    "task_vm.sweep_delete_upcloud",
+    "task_vm.sweep_stop_upcloud",
+    "task_vm.sweep_observe",
     "task_vm.prepare_runtime",
     "task_vm.provision",
     "task_vm.enroll",
     "task_vm.resume",
     "task_vm.park",
     "task_vm.destroy",
-    "task_vm.upcloud_image_build"
+    "task_vm.upcloud_image_build",
+    "task_vm.sweep_host"
   ],
   "workflow": "operation-task-vms"
 }
