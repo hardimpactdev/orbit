@@ -106,9 +106,8 @@ final readonly class TaskVmDestroyIntent
     public function available(array $input): void
     {
         $nodeRemoval = $input['node_removal'] === null ? null : ValidatedData::object($input['node_removal']);
-        if ($input['workspace_ids'] !== [] || $input['route_ids'] !== [] || ($nodeRemoval !== null && $nodeRemoval['route_ids'] !== [])
-            ) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Same-root worker, credential and Route cleanup participants are not installed.', 409);
+        if ($input['workspace_ids'] !== [] || $input['route_ids'] !== [] || ($nodeRemoval !== null && $nodeRemoval['route_ids'] !== [])) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Same-root workspace and Route cleanup participants are not installed.', 409);
         }
     }
 
