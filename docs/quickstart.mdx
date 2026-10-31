@@ -127,7 +127,7 @@ Check each checkpoint before you continue to the next step.
     php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' --no-interaction
     ```
 
-    Bootstrap creates the Gateway's SSH key, WireGuard key, and root certificate authority. It registers the Gateway as the first Node with the `gateway` and `vpn` roles and starts the private HTTPS endpoint and DNS. It installs Caddy from the Caddy project's own package source, not the Ubuntu archive, because Orbit renders directives the archive release does not know. [Node provisioning](/reference/node-provisioning#package-sources) describes the pinned key and the release floor. `php artisan orbit:bootstrap --help` lists the range, address, port, and DNS options. A failure names its step and an error code; fix the cause and run the same command again.
+    Gateway bootstrap currently refuses with `gateway.bootstrap_unavailable` before changing keys, Nodes, roles, or host state. The PHP bootstrap executor is retired while native Swamp bootstrap is prepared. Existing installations remain usable. Do not run the retired bootstrap to repair or rekey an observer.
 
     **Checkpoint:** every service reports `active`, and `caddy version` reports 2.9.0 or newer:
 
