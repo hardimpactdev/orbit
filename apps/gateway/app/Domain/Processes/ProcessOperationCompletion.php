@@ -14,6 +14,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
+use Illuminate\Support\Facades\DB;
 
 /** Bounded Process writes from a native outcome; never executes on a Node. */
 final readonly class ProcessOperationCompletion
@@ -25,37 +26,56 @@ final readonly class ProcessOperationCompletion
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
         $process = Process::query()->whereKey($operation->input['process_id'])->firstOrFail();
+        $this->completeIntent($process, $operation->kind, $operation->input, $outcome, $operation);
+    }
+
+    /** The parent supplies its verified terminal outcome; no native run or child Operation is invented.
+     * @param  array<string,mixed>  $input  Captured Process update input, including content_hash when systemd.
+     */
+    public function completeRecordedUpdate(Process $process, array $input, OperationOutcome $outcome): void
+    {
+        DB::transaction(function () use ($process, $input, $outcome): void {
+            $this->completeIntent($process->refresh(), 'process.update', $input, $outcome);
+        });
+    }
+
+    /** @param array<string,mixed> $input */
+    private function completeIntent(Process $process, string $kind, array $input, OperationOutcome $outcome, ?Operation $operation = null): void
+    {
         if ($outcome->status !== OperationStatus::Succeeded) {
-            $process->update(['status' => $operation->kind === 'process.destroy' ? LifecycleStatus::Removing : LifecycleStatus::Failed,
+            $process->update(['status' => $kind === 'process.destroy' ? LifecycleStatus::Removing : LifecycleStatus::Failed,
                 'error_code' => $outcome->errorCode, 'failed_step' => null]);
-            $this->installed($operation, $process, $outcome);
+            if ($operation !== null) {
+                $this->installed($operation, $process, $outcome);
+            }
 
             return;
         }
-        if ($operation->kind === 'process.destroy') {
-            if (! $operation->input['preserve_record']) {
+        if ($kind === 'process.destroy') {
+            if (! $input['preserve_record']) {
                 $process->delete();
                 $this->broadcaster->broadcast(RecordEventType::ProcessDeleted, $process->id, ['id' => $process->id, 'name' => $process->name]);
             }
 
             return;
         }
-        $desired = match ($operation->kind) {
+        $desired = match ($kind) {
             'process.start', 'process.restart' => DesiredProcessState::Running,
             'process.stop' => DesiredProcessState::Stopped,
             default => $process->desired_state,
         };
         $attributes = ['status' => LifecycleStatus::Active, 'desired_state' => $desired,
             'failed_step' => null, 'error_code' => null, 'retired_runtime' => null];
-        $input = $operation->input;
         if (isset($input['content_hash'])) {
             $attributes['systemd_activation_hash'] = $input['content_hash'];
             $attributes['systemd_activation_pending'] = false;
         }
         $process->forceFill($attributes)->save();
-        $this->installed($operation, $process, $outcome);
+        if ($operation !== null) {
+            $this->installed($operation, $process, $outcome);
+        }
         $this->statuses->remember($process, ValidatedData::string($outcome->result['state'] ?? 'unknown'));
-        $this->broadcaster->broadcast(($operation->input['created'] ?? false) ? RecordEventType::ProcessCreated : RecordEventType::ProcessStatus,
+        $this->broadcaster->broadcast(($input['created'] ?? false) ? RecordEventType::ProcessCreated : RecordEventType::ProcessStatus,
             $process->id, ProcessData::fromModel($process, ValidatedData::string($outcome->result['state'] ?? 'unknown'))->toArray());
     }
 
