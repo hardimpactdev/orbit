@@ -49,7 +49,7 @@ final readonly class ProcessOperationSecrets implements OperationSecretSource
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process unit changed after admission.', 422);
             }
 
-            return new OperationSecretValue($value, (new OperationSecretValue($process->runtime_config))->strings());
+            return new OperationSecretValue($value, new OperationSecretValue($process->runtime_config)->strings());
         }
         if (! hash_equals(ValidatedData::string($operation->input['spec']), $this->docker->specHash($process, $target))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process definition changed after admission.', 422);

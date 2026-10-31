@@ -386,7 +386,9 @@ The host's image, instance-name, and host-wide resource inventories use the type
 
 `incus.volume` clones a base image's topology seed for a VM, gives a completed seed its final name, or removes an explicitly selected volume. The agent derives seed names from the image fingerprint and clone names from the VM name. It preserves existing clones, refuses a missing source seed, and treats an absent removal target as removed. Volume changes share a host lock; the Gateway keeps the decision about which records and images still own each volume.
 
-`incus.vm-state` returns one VM's running state, guest bridge address, and original image fingerprint. `incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
+`incus.vm-state` returns one VM's running state, explicit `settled: true`, guest bridge address, and original image fingerprint. It refuses a VM unless Incus reports `Running` or `Stopped`.
+
+`incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
 
 Image builders and smoke VMs use the same `incus.vm` boundary. Their `create_image` intent selects the source image, account key, resource limits, and builder account mode. Rust renders cloud-init, attaches an Incus cloud-init configuration disk, and initializes the VM with NIC isolation. Before its first start, Rust removes the source image’s NoCloud seed templates. The disk supplies the account configuration at power-on, so cloud-init cannot run with an empty datasource while the Incus agent copies seed files and requests a reboot. This applies to stock builders, smoke VMs, and task VMs.
 
@@ -683,9 +685,11 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Park and resume
 
-Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner, stops the VM through its provider and records `waiting_for_review` only after stopped power is confirmed. It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting.
+Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner and records an immutable park intent. One native Swamp root stops and observes the admitted VM on its exact Incus host or Gateway Node for UpCloud. The result projection records `waiting_for_review` only after stopped power is confirmed.
 
-The row enters `parked` before the provider stop. Its `vm_power` stays unknown until `stop_confirmed_at` records a confirmed stop. A failed stop clears that proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
+It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting. Parking has one dispatch path: the native `tasks.park` root replaces its PHP stop executor and the unused internal `task_vm.park` parent and `task_vm.confirm_stopped` child. The same root owns soft-stop, hard-stop and observation; it starts no child Operations.
+
+The row enters `parked` with `stop_confirmed_at` only after the native root confirms settled, stopped power. Admission and cancellation leave a running VM `ready`. A failed stop clears the proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
 
 A requested workspace operation queues the retained `ResumeTaskVm` job. It clears stop proof, starts the VM and waits for the Node agent and Pi within a fixed nine-minute deadline. Confirmed runtime readiness records `ready`; a failed wake retains its error evidence.
 
@@ -1395,11 +1399,11 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp orders UpCloud image cleanup and orphan sweeps. The native sweep uses its Gateway worker and callback-local credential; retained image primitives each submit one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build prints each stage with its time:
+`php artisan task-vms:build-upcloud-image` records one image intent and starts `operation-task-vm-upcloud-image-build` directly. One native Swamp workflow runs its API and guest steps on the admitted Gateway Node's worker. It creates billed servers. The Gateway projects progress, owned server UUIDs and the final template; it creates no child Operations and performs no image actions.
 
 | Stage | What it does |
 | --- | --- |
@@ -1428,7 +1432,9 @@ Reconcile raises a recipe-maintenance alert when the current identity has a fail
 
 The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
-The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
+The build takes about 20 minutes. Swamp owns dispatch, placed steps, cancellation and recovery. API credentials and generated guest host keys use the shared private-material and encrypted output boundaries. Private bytes stay out of native arguments, resources, reports and command arguments. The worker pins each guest's generated host key before its first SSH connection. It uses the official Swamp SSH library, pinned at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`, with the Gateway's existing managed identity. Pi uses the shared bounded private artifact reference and its admitted SHA-256 pin.
+
+Recipe observation uses the same native evaluator as Incus, including the 1440-second phase budget and 60-second consecutive read outage limit. A failed smoke check prevents promotion. Native recovery resumes the same root; an explicit retry records a new attempt.
 
 ### Sweep UpCloud
 

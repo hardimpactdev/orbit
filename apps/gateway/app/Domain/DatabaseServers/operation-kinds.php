@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $kinds = ['database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
+    $kinds = ['database.write' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code', 'row_count', 'truncated']], 'database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $kinds;
     }
@@ -28,11 +28,6 @@ return (static function (): array {
     $acl = ['transport' => 'agent', 'name' => 'database.write-valkey-acl', 'input_fields' => [], 'input_values' => [], 'secrets' => ['acl' => 'database.intent']];
     $serverAbsent = ['transport' => 'gateway', 'name' => 'database.server-absent', 'input_fields' => [], 'input_values' => []];
     $remove = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => [], 'input_values' => []];
-    $pdo = ['transport' => 'remote_program', 'name' => 'database.write', 'input_fields' => [], 'input_values' => [],
-        'secrets' => ['password' => 'database.intent', 'sql' => 'database.intent'],
-        'input_schema' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['dsn', 'username', 'password', 'sql'],
-            'properties' => ['dsn' => $string, 'username' => ['type' => ['string', 'null']], 'password' => $string, 'sql' => $string]]];
-    $sqlite = ['transport' => 'agent', 'name' => 'database.write-sqlite', 'input_fields' => [], 'input_values' => [], 'secrets' => ['sql' => 'database.intent']];
     $copy = [...$sql, 'input_values' => ['operation' => 'copy'], 'secrets' => ['password' => 'database.intent'], 'resumable' => false];
     $sqliteCopy = ['transport' => 'agent', 'name' => 'instance.copy-sqlite', 'input_fields' => [], 'input_values' => []];
     $owned = ['transport' => 'gateway', 'name' => 'database.owned-ready', 'input_fields' => [], 'input_values' => []];
@@ -50,7 +45,6 @@ return (static function (): array {
         'database.sqlite_export' => [$sqliteCopy, $seedSource],
         'database.sqlite_seed' => [$seedTarget, $relay],
         'database.sqlite_seed_abandon' => [$seedTarget],
-        'database.write' => [$sqlite, $pdo],
     ] as $kind => $runs) {
         if ($kind === 'database.sqlite_seed_abandon' && ! OperationKinds::supports('compensations')) {
             continue;
