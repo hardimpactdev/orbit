@@ -1,21 +1,25 @@
 import { z } from "npm:zod@4.4.3";
 
-const Caddy = z.object({
+export const CaddyInput = z.object({
     content: z.string(),
     version: z.string().regex(/^[a-f0-9]{32}$/),
     listen_addresses: z.array(z.ipv4()).max(1024),
     unserved: z.boolean(),
 }).strict();
-const Publication = z.object({
+export const CaddyPublication = z.object({
     node_id: z.number().int().positive(),
     user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
-    caddy: Caddy,
+    caddy: CaddyInput,
+    expected_current: z.object({
+        sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+        target: z.string().max(4096).startsWith("/").nullable(),
+    }).strict().optional(),
 }).strict();
 const Args = z.object({
     node_id: z.number().int().positive(),
     target_node_id: z.number().int().positive(),
     run_id: z.uuid(),
-    publication: Publication,
+    publication: CaddyPublication,
 }).strict();
 const Output = z.object({
     metadata_json: z.string(),
@@ -64,6 +68,9 @@ export async function prepareCaddyInput(raw: unknown) {
             content_bytes: bytes.length,
             listen_addresses: value.listen_addresses,
             unserved: value.unserved,
+            ...(publication.expected_current === undefined ? {} : {
+                expected_current: publication.expected_current,
+            }),
         }),
         chunks,
     };

@@ -111,3 +111,19 @@ Deno.test("a composing parent keeps its actual root while placing Caddy on anoth
     assertEquals(JSON.parse(result.metadata_json).root_node_id, 209);
     assertEquals(JSON.parse(result.metadata_json).node_id, 9);
 });
+
+Deno.test("a composed section candidate retains its exact observed generation precondition", async () => {
+    const args = await input();
+    const expected_current = {
+        sha256: "a".repeat(64),
+        target: "/etc/caddy/orbit-versions/old/Caddyfile",
+    };
+    const output = await prepareCaddyInput({
+        ...args,
+        publication: { ...args.publication, expected_current },
+    });
+    assertEquals(
+        JSON.parse(output.metadata_json).expected_current,
+        expected_current,
+    );
+});
