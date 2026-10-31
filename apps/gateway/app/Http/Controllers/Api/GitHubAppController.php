@@ -64,6 +64,7 @@ final class GitHubAppController extends Controller
     }
 
     /** GitHub redirects the operator's browser here after it registers the Project. */
+    #[StartsOperation('github.app_register')]
     public function callback(Request $request, CompleteGitHubAppRegistrationAction $action): JsonResponse
     {
         $state = $request->query('state');
