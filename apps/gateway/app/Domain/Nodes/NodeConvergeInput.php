@@ -8,6 +8,8 @@ use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
+use App\Domain\Routes\RouteRenderContext;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -41,9 +43,36 @@ final readonly class NodeConvergeInput
     public function __construct(private NodeFootprint $footprint, private AgentDelivery $delivery,
         #[Tag(NodeFootprintArtifact::class)] private iterable $artifacts) {}
 
+    /** Public footprint only; the owning parent supplies verified execution bindings separately.
+     * @param  array<string,mixed>|null  $normalizedPublicSettings
+     * @return array<string,mixed>
+     */
+    public function captureFootprint(Node $actual, ?NodeEnrollmentCandidate $candidate = null, ?array $normalizedPublicSettings = null): array
+    {
+        if ($candidate !== null && $candidate->nodeId !== $actual->id) {
+            throw new ResourceOperationException('node.footprint_invalid', 'The footprint candidate must name the actual reserved Node.', 422);
+        }
+        $render = app(RouteRenderContext::class);
+        $capture = function () use ($actual): array {
+            $result = $this->capture($actual, false, false);
+            unset($result['secret_hash']);
+
+            return $result;
+        };
+        $settings = fn (): array => $normalizedPublicSettings === null ? $capture()
+            : $render->renderSettings($actual, $normalizedPublicSettings, $capture);
+
+        return $candidate === null ? $settings() : $render->renderEnrollment($candidate, $settings);
+    }
+
     /** @return array<string,mixed> */
     public function capture(Node $node, bool $force, bool $firstVisit): array
     {
+        $render = app(RouteRenderContext::class);
+        $candidate = $render->enrollment();
+        $target = $candidate?->nodeId === $node->id ? $candidate : $node;
+        $pin = $this->delivery->pin($target);
+        $root = ValidatedData::nullableString(ValidatedData::object($render->settings($node)['apps'] ?? [])['path'] ?? null);
         $expected = $this->footprint->expected($node)->artifacts;
         $record = $this->footprint->recorded($node);
         $recorded = $record === null ? [] : ($record->artifacts ?? []);
@@ -58,7 +87,7 @@ final readonly class NodeConvergeInput
                     continue;
                 }
                 try {
-                    $expected[$name] = hash('sha256', $this->delivery->pin($node)."\0".$artifact->digest($node));
+                    $expected[$name] = hash('sha256', $pin."\0".$artifact->digest($node));
                 } catch (\Throwable) {
                     $expected[$name] = 'unavailable:private-dns';
                 }
@@ -91,16 +120,16 @@ final readonly class NodeConvergeInput
 
                     continue;
                 }
-                $network = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
+                $network = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $pin,
                     'peer_dns' => ['dns_server' => $server, 'public_key' => $node->wireguard_public_key, 'domains' => $policy->domains($node)]];
 
                 continue;
             }
             $payloads[$name] = match ($name) {
-                'agent' => [...app(NodeAgentSshExecutor::class)->configurationForRoot($node, null),
-                    'user' => $node->user, 'apps_root' => ValidatedData::object($node->settings['apps'] ?? [])['path'] ?? null,
+                'agent' => [...app(NodeAgentSshExecutor::class)->configurationForRoot($node, $root),
+                    'user' => $render->user($node), 'apps_root' => $root,
                     'checkouts' => $node->instances()->with('project')->orderBy('id')->get()->map(static fn ($instance): string => $instance->applicationDirectory())->all(),
-                    'url' => $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
+                    'url' => $this->delivery->artifacts()[AgentDelivery::key($target)]['url'] ?? null],
                 'caddy-package' => AgentCaddyPackage::input(),
                 'caddy' => $this->caddy($node),
                 'private-dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()
@@ -112,7 +141,7 @@ final readonly class NodeConvergeInput
             };
         }
 
-        return ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
+        return ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $pin,
             'force_artifacts' => $force, 'first_visit' => $firstVisit, 'artifacts' => $plan,
             'payloads' => $payloads, 'network' => $network, 'refusal' => $refusal,
             'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id]];

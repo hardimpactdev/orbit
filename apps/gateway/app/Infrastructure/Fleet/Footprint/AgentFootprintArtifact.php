@@ -8,8 +8,8 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 
 /**
@@ -33,6 +33,11 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
 
     public function applies(Node $node): bool
     {
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        if ($candidate?->nodeId === $node->id) {
+            return $candidate->platform === 'linux';
+        }
+
         return $this->eligibility->allows($node);
     }
 
@@ -44,9 +49,8 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
                 ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))
                 ->value('wireguard_ip'),
             'certificate' => hash('sha256', $this->certificates->rootCertificate()),
-            'user' => $node->user,
-            'settings' => $node->settings,
-            'worker' => app(NodeWorkerRollout::class)->allows($node),
+            'user' => app(RouteRenderContext::class)->user($node),
+            'settings' => app(RouteRenderContext::class)->settings($node),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 }

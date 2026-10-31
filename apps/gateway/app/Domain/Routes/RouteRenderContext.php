@@ -15,6 +15,39 @@ final class RouteRenderContext
 {
     private NativeRouteNodeRender|NodeEnrollmentCandidate|null $candidate = null;
 
+    /** @var ?array{node_id:int,settings:array<string,mixed>} */
+    private ?array $preparedSettings = null;
+
+    /** @template T
+     * @param  array<string,mixed>  $settings
+     * @param  Closure():T  $render
+     * @return T
+     */
+    public function renderSettings(Node $node, array $settings, Closure $render): mixed
+    {
+        $previous = $this->preparedSettings;
+        $this->preparedSettings = ['node_id' => $node->id, 'settings' => $settings];
+        try {
+            return $render();
+        } finally {
+            $this->preparedSettings = $previous;
+        }
+    }
+
+    /** @return array<string,mixed>|null */
+    public function settings(Node $node): ?array
+    {
+        return $this->preparedSettings !== null && $this->preparedSettings['node_id'] === $node->id
+            ? $this->preparedSettings['settings'] : $node->settings;
+    }
+
+    public function dnsServerOverride(Node $node): ?string
+    {
+        $candidate = $this->enrollment();
+
+        return $candidate?->nodeId === $node->id ? $candidate->dnsServerOverride : $node->dns_server_override;
+    }
+
     /** @var ?array{leaves:list<array{node_id:int,scope:string}>,withdrawals:list<array{node_id:int,scope:string}>} */
     private ?array $roleCertificates = null;
 
@@ -94,13 +127,16 @@ final class RouteRenderContext
     {
         $candidate = $this->candidate;
         $certificates = $this->roleCertificates;
+        $settings = $this->preparedSettings;
         $this->candidate = null;
         $this->roleCertificates = null;
+        $this->preparedSettings = null;
         try {
             return $render();
         } finally {
             $this->candidate = $candidate;
             $this->roleCertificates = $certificates;
+            $this->preparedSettings = $settings;
         }
     }
 

@@ -456,6 +456,8 @@ The table lists the footprint artifacts in contract order. The native DAG instal
 
 Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The footprint combines every artifact digest with the agent pin for that Node. A change to native code therefore re-applies the artifacts even when their PHP sources have not changed; an unchanged pin and artifact digest leave the matching live artifact unchanged. The native steps also inspect the agent, Caddy and peer DNS locally to repair drift. Manifest locations and other platforms do not change this identity.
 
+Enrollment captures the public footprint through `NodeConvergeInput::captureFootprint(actual, candidate, normalizedPublicSettings)`. It needs no role assignment. The candidate must name the actual reserved Node. The canonical render scope supplies the admitted user, storage settings, DNS override and TLD to both templates and digests, without changing the stored Node. Nested captures and failures restore the outer scope. A Linux candidate selects the supported Linux observer artifact; the native parent must verify that platform and architecture before installation. This pure capture supplies no SSH authority, secret hash, worker configuration or terminal readiness.
+
 The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, the site sources that [extensions contribute](/reference/extensions#plug-in-points), and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
 
 The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
@@ -804,6 +806,8 @@ The enrollment root owns the complete `node.add` run. Admission captures the act
 Every effect runs on a worker on209 through official SSH with the admitted full host keys. Public first contact collects a host key once, compares its fingerprint with the admitted value, and pins every subsequent mutation. The target receives the approved209 public key and observer; it receives no Swamp binary, worker or token.
 
 The role union selects the recipe's exact tool versions and artifact digests at admission. OS packages use one placed official SSH execution of the fixed APT installer. Application roles additionally use the fixed JavaScript/Vite+ installer and Composer scope preparation. These installers are shipped files. They accept the captured role input and create no Tool operations or Tool rows. They do not import the retained Tool manager dispatcher. The canonical account, Caddy and package lower exports remain available to role parents.
+
+### Runtime composition
 
 Role work composes `node-role-converge-command/root_steps.ts::roleConvergeSteps` directly in the enrollment run with the original `run.id`. The same root owns bootstrap, network, settings, role, publication and footprint ordering. Native compensation restores captured prior inputs before terminal projection records restored identity and Route checkpoints. A failed or incomplete restoration cannot report enrollment success.
 
