@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 use App\Domain\Routes\DirectRoutePublication;
+use App\Domain\Routes\NativeCaddyPublicationProjection;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
@@ -37,7 +38,10 @@ return [
         'workflow' => 'operation-route-lan-remove', 'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'route_lan_writer', 'projection' => RouteOperationProjection::class,
     ],
-    'route.caddy_converge' => [...$publication, 'workflow' => 'operation-route-caddy'],
+    'route.caddy_converge' => [
+        'workflow' => 'operation-route-caddy', 'projection' => NativeCaddyPublicationProjection::class,
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'completion', 'step' => 'result'],
+    ],
     'route.private_dns_publish' => [...$publication, 'primitive' => DirectRoutePublication::class],
     ...array_fill_keys(RouteOperationProjection::Kinds, [
         'workflow' => 'operation-route-verification',

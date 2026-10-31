@@ -1,25 +1,167 @@
 id: a7839446-4acb-4e72-b82f-d188f108a1fc
 name: operation-route-caddy
-description: Render and publish Caddy under the admitted Node's native publication lock.
+description: Official file application, validation and reload with complete public intent.
+vaults: []
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [route.caddy_converge] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    execution_secrets:
+      type: object
+      additionalProperties: false
+    intent:
+      type: object
+      properties:
+        caddy_publication:
+          type: object
+          properties:
+            node_id:
+              type: integer
+              minimum: 1
+              not:
+                enum:
+                - 1
+                - 18
+            user:
+              type: string
+            caddy:
+              type: object
+            control_node_id:
+              type: integer
+              minimum: 1
+            connection:
+              type: object
+              properties:
+                nodeHost:
+                  type: string
+                nodeUser:
+                  type: string
+                nodeIdentityFile:
+                  type: string
+                become:
+                  type: boolean
+                  const: true
+              required:
+              - nodeHost
+              - nodeUser
+              - nodeIdentityFile
+              - become
+              additionalProperties: false
+          required:
+          - node_id
+          - user
+          - caddy
+          - control_node_id
+          - connection
+          additionalProperties: false
+      required:
+      - caddy_publication
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - execution_secrets
+  - intent
+  additionalProperties: false
 jobs:
-  - name: publication
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: publish
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/route-publication"
-          behaviorName: '${{ "route-publication-node-" + string(inputs.node_id) }}'
-          methodName: convergeCaddy
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: publication
+  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+  labels:
+    node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
+  steps:
+  - name: input
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/caddy-public-input'
+      behaviorName: ${{ "input-" + run.id }}
+      methodName: prepare
+      inputs:
+        publication: ${{ inputs.intent.caddy_publication }}
+  - name: apply-config
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "apply-config-" + run.id }}
+      methodName: apply
+      inputs: {}
+      globalArgs:
+        path: /etc/caddy/Caddyfile
+        ensure: present
+        content: ${{ steps.input.outputs.caddy.content }}
+        owner: root
+        group: caddy
+        mode: '0640'
+        nodeHost: ${{ inputs.intent.caddy_publication.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.caddy_publication.connection.nodeUser }}
+        nodeIdentityFile: ${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}
+        become: ${{ inputs.intent.caddy_publication.connection.become }}
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+  - name: validate
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "validate-" + run.id }}
+      methodName: execute
+      inputs:
+        run: sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+    dependsOn:
+    - step: apply-config
+      condition:
+        type: succeeded
+  - name: reload
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "reload-" + run.id }}
+      methodName: execute
+      inputs:
+        run: sudo /usr/bin/systemctl reload caddy
+    dependsOn:
+    - step: validate
+      condition:
+        type: succeeded
+- name: completion
+  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+  labels:
+    node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+  dependsOn:
+  - job: publication
+    condition:
+      type: succeeded
+  steps:
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: printf '{"ready":true,"result":"published","version":"%s"}\n' "$ORBIT_CADDY_VERSION"
+        env:
+          ORBIT_CADDY_VERSION: ${{ inputs.intent.caddy_publication.caddy.version }}
