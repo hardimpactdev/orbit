@@ -30,6 +30,12 @@ The SDK exposes the mutation's Process or Operation result through `ProcessMutat
 
 Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record.
 
+### Transfer installation capture
+
+A transfer captures both Process placements before it starts native execution. `ProcessInstallationBatch::materialForCapture(Instance, ProcessTarget, capture)` renders the existing installation material at either captured target while database ownership remains on the captured origin. It uses the same Process renderers and account placeholders as installation admission. It performs no account discovery or host action. A changed origin Node, checkout, member set or Process specification refuses the snapshot before publication.
+
+The owning parent passes that protected material through the shared [command-step execution copy](/reference/swamp-command-steps) and keeps only vault/key descriptors outside public intent. Public Process descriptors come from `ProcessInstallationBatch::input`. Swamp executes from these captured inputs without an intermediate Gateway placement projection. The transfer parent owns placement changes, fixed vault fields and final projection.
+
 ## Owners
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
