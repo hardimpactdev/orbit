@@ -3,6 +3,10 @@ import { bootstrapProbeResult } from "./probe_result.ts";
 
 const User = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Sha = z.string().regex(/^[a-f0-9]{64}$/);
+const Packages = z.object({
+    releases: z.array(z.string().regex(/^[a-z]+$/)).min(1),
+    packages: z.array(z.string().regex(/^[a-z0-9][a-z0-9+.-]*$/)).min(1),
+}).strict();
 const Artifact = z.object({
     url: z.url().refine((value) => {
         const url = new URL(value);
@@ -13,8 +17,8 @@ const Artifact = z.object({
 const Command = z.object({
     user: User,
     public_key: z.string().min(1).max(16384).regex(/^[^\r\n\0]+$/),
-    releases: z.array(z.string().regex(/^[a-z]+$/)).min(1),
-    packages: z.array(z.string().regex(/^[a-z0-9][a-z0-9+.-]*$/)).min(1),
+    releases: Packages.shape.releases,
+    packages: Packages.shape.packages,
     dns_policy: z.enum(["managed", "preserve"]),
 }).strict();
 const Action = z.enum([
@@ -86,6 +90,20 @@ type Context = {
     extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+async function script(action: string, input: unknown, ctx: Context) {
+    const source = await Deno.readTextFile(
+        ctx.extensionFile("scripts/bootstrap_" + action + ".py"),
+    );
+    const result = Assets.parse({
+        script_body: source.replace(
+            "BOOTSTRAP_INPUT = None",
+            "BOOTSTRAP_INPUT = json.loads(" +
+                JSON.stringify(JSON.stringify(input)) + ")",
+        ),
+    });
+    await ctx.writeResource("assets", "assets", result);
+    return result;
+}
 /** Public asset delivery and decoding. Official SSH owns every connection. */
 export const behavior = {
     type: "@nckrtl/node-bootstrap-command",
@@ -99,6 +117,30 @@ export const behavior = {
         },
     },
     methods: {
+        authorized_key: {
+            description: "Read the tracked managed-account SSH access action",
+            arguments: z.object({
+                user: User,
+                public_key: Command.shape.public_key,
+            }).strict(),
+            execute: (
+                args: { user: string; public_key: string },
+                ctx: Context,
+            ) => {
+                const input = z.object({
+                    user: User,
+                    public_key: Command.shape.public_key,
+                }).strict().parse(args);
+                return script("authorized_key", input, ctx);
+            },
+        },
+        packages: {
+            description:
+                "Read the canonical package action for a role's admitted prerequisites",
+            arguments: Packages,
+            execute: (args: z.infer<typeof Packages>, ctx: Context) =>
+                script("packages", Packages.parse(args), ctx),
+        },
         observe: {
             description:
                 "Check the admitted fingerprint and public platform observation",
@@ -118,21 +160,11 @@ export const behavior = {
             description: "Read one shipped bootstrap action with public input",
             arguments: Args,
             execute: async (args: Args, ctx: Context) => {
-                const input = bootstrapActionInput(args);
-                const source = await Deno.readTextFile(
-                    ctx.extensionFile(
-                        "scripts/bootstrap_" + args.action + ".py",
-                    ),
+                return await script(
+                    args.action,
+                    bootstrapActionInput(args),
+                    ctx,
                 );
-                const result = Assets.parse({
-                    script_body: source.replace(
-                        "BOOTSTRAP_INPUT = None",
-                        "BOOTSTRAP_INPUT = json.loads(" +
-                            JSON.stringify(JSON.stringify(input)) + ")",
-                    ),
-                });
-                await ctx.writeResource("assets", "assets", result);
-                return result;
             },
         },
     },
