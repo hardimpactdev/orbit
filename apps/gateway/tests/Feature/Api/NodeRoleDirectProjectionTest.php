@@ -72,3 +72,14 @@ it('marks a refused baseline failed rather than reporting an active role', funct
     expect($this->assignment->refresh()->status->value)->toBe('failed')
         ->and($this->assignment->error_code)->toBe('role.prerequisite_failed');
 });
+
+it('records an agent installation refusal before any role baseline as a failed role', function (): void {
+    $this->data['status'] = 'failed';
+    $this->data['error_code'] = 'node.agent_install_failed';
+    $this->data['result'] = ['role_proven' => false, 'assignment_id' => $this->assignment->id, 'created' => true,
+        'baseline' => [], 'error_code' => 'node.agent_install_failed', 'failed_step' => 'agent-install'];
+    app(NodeRoleDirectProjection::class)->apply($this->operation, $this->data);
+    expect($this->assignment->refresh()->status->value)->toBe('failed')
+        ->and($this->assignment->error_code)->toBe('node.agent_install_failed')
+        ->and($this->operation->refresh()->status->value)->toBe('failed');
+});

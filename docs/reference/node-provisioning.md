@@ -142,7 +142,7 @@ Each failure names the check or step that stopped the request.
 
 ## CI runner role
 
-Standalone `node:role:add` records a `node.role_add` Operation and returns HTTP 202. One native Swamp DAG runs prerequisites, the role baseline, the optional footprint and CLI follow-ups on the exact Node worker. The Gateway records and projects the assignment; it does not execute these steps. The command follows the Operation.
+Standalone `node:role:add` records a `node.role_add` Operation and returns HTTP 202. One native Swamp DAG installs the admitted agent before its pinned role prerequisites and baseline. It then runs the optional footprint and CLI follow-ups on the exact Node worker. The Gateway records and projects the assignment; it does not execute these steps. The command follows the Operation.
 
 The admitted native scope is `ci-runner` and `database` on an active, selected Linux Node with an existing active role and recorded agent identity. The Metrics owner compares the complete desired fleet before and after the assignment. A changed Metrics projection, first-role enrollment, or an unsupported publication contribution refuses before the intent commits. The `app-dev` role still needs its canonical publisher on the VPN Node, which has no worker. Enrollment and relocation retain their existing parent composition until their owners replace it. VPN1 and usexit18 are outside the worker rollout.
 

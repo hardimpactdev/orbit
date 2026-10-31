@@ -94,7 +94,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 }
             } elseif (($result['role_proven'] ?? null) !== false || ($result['error_code'] ?? null) !== ($data['error_code'] ?? null)
                 || ! is_string($result['error_code'] ?? null) || preg_match('/\A[a-z][a-z0-9_-]*\.[a-z0-9_.-]{1,90}\z/D', $result['error_code']) !== 1
-                || ! in_array($result['failed_step'] ?? null, ['admission', 'prerequisites', 'ci-host', 'firewall'], true)
+                || ! in_array($result['failed_step'] ?? null, ['admission', 'agent-install', 'prerequisites', 'ci-host', 'firewall'], true)
                 || array_intersect(['footprint', 'cli', 'follow_up'], array_keys($result)) !== []) {
                 throw $this->invalid();
             }
