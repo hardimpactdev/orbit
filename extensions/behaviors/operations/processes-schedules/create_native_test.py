@@ -25,8 +25,9 @@ class ProcessCreationNative(NativeTestCase):
         control.write_text('import {http, invoke} from "./create_native_fixture.ts";\n'+control.read_text().replace('export const behavior = processControl();', 'export const behavior = processControl(() => http, undefined, startActions(invoke, () => Promise.resolve()), invoke);'))
         routes = base/'routes/publication.ts'
         routes.write_text('import {http,caddy} from "../processes-schedules/create_native_fixture.ts";\n'+routes.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => http, caddy);'))
-        source=ROOT/'workflows/workflow-operation-process-control.yaml'
-        (self.repo/'workflows'/source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('target:', 'labels:')))+'\n')
+        for name in ('control', 'update'):
+            source=ROOT/f'workflows/workflow-operation-process-{name}.yaml'
+            (self.repo/'workflows'/source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('target:', 'labels:')))+'\n')
         installation={'process_id':7,'agent_sha256':'a'*64,'runtime':'systemd','name':'orbit-process-7-proof.service','on_demand':False,'retired':None,'desired':'stopped','activation_pending':False,'content_hash':hashlib.sha256(f'[Service]\nEnvironment=PASSWORD={self.secret}\n'.encode()).hexdigest()}
         control_input={key:installation[key] for key in ('process_id','agent_sha256','runtime','name','on_demand')}
         control_input['vite']=None
@@ -37,7 +38,8 @@ class ProcessCreationNative(NativeTestCase):
         (self.repo/'start-native.json').write_text(json.dumps(self.state))
 
     def execute(self, success=True):
-        reply=self.cli('workflow','run','operation-process-control','--input','operation_id=17','--input','node_id=9','--input','kind=process.create',success=success)
+        workflow = 'operation-process-update' if self.state['operation']['kind'] == 'process.update' else 'operation-process-control'
+        reply=self.cli('workflow','run',workflow,'--input','operation_id=17','--input','node_id=9','--input','kind='+self.state['operation']['kind'],success=success)
         self.run=json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]
         return json.loads((self.repo/'start-native.json').read_text())
 
@@ -89,6 +91,26 @@ class ProcessCreationNative(NativeTestCase):
         self.assertFalse(any('/private-material?' in c['url'] for c in state['calls']))
 
     def test_changed_private_definition_refuses_before_effect_without_leaking_bytes(self):
+        self.state['operation']['input']['installation']['content_hash']='b'*64
+        self.save()
+        state=self.execute(success=False)
+        self.assertEqual(state['commands'],[])
+        self.assertNotEqual(state['operation']['status'],'succeeded')
+
+
+    def test_update_removes_only_admitted_retired_runtime_before_private_installation(self):
+        self.state['operation']['kind']='process.update'
+        self.state['operation']['input']['installation']['retired']={'runtime':'docker','name':'orbit-process-7-proof'}
+        self.save()
+        state=self.execute()
+        self.assertEqual(state['operation']['status'],'succeeded')
+        self.assertEqual([c['name'] for c in state['commands']],['process.remove','process.stage-unit','process.activate-unit','process.status'])
+        self.assertEqual(state['commands'][0]['input'],{'process_id':7,'runtime':'docker','name':'orbit-process-7-proof','vite':None})
+        self.assertEqual(sum('/private-material?' in c['url'] for c in state['calls']),1)
+
+    def test_update_digest_refusal_precedes_retired_runtime_removal(self):
+        self.state['operation']['kind']='process.update'
+        self.state['operation']['input']['installation']['retired']={'runtime':'docker','name':'orbit-process-7-proof'}
         self.state['operation']['input']['installation']['content_hash']='b'*64
         self.save()
         state=self.execute(success=False)
