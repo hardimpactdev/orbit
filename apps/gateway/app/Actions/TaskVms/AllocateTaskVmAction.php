@@ -7,6 +7,7 @@ namespace App\Actions\TaskVms;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -31,12 +32,13 @@ final readonly class AllocateTaskVmAction
         private TaskVmPlacementPolicy $policy,
         private RecordTaskVmAction $record,
         private RecipeImageBuilds $images,
+        private TaskVmEnrollmentIntent $enrollment,
     ) {}
 
     /** @throws TaskCapacityException when no host has a free slot */
     public function execute(Task $group): TaskVm
     {
-        return $this->allocate($group, static fn (TaskVm $vm) => app(StartTaskVmProvisionAction::class)->execute($vm->id));
+        return $this->enrollment->admit(fn () => $this->allocate($group, static fn (TaskVm $vm) => app(StartTaskVmProvisionAction::class)->execute($vm->id)));
     }
 
     /** State-only placement for an owning Task admission transaction. Starts no Operation or job. */

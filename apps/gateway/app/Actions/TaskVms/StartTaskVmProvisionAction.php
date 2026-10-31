@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
@@ -16,11 +17,11 @@ use Illuminate\Support\Facades\DB;
 /** Record one allocation intent and start its native DAG after the transaction commits. */
 final readonly class StartTaskVmProvisionAction
 {
-    public function __construct(private StartOperationAction $start, private TaskVmProvisionIntent $intent) {}
+    public function __construct(private StartOperationAction $start, private TaskVmProvisionIntent $intent, private TaskVmEnrollmentIntent $enrollment) {}
 
     public function execute(int $taskVmId): ?Operation
     {
-        return DB::transaction(function () use ($taskVmId): ?Operation {
+        return $this->enrollment->admit(fn () => DB::transaction(function () use ($taskVmId): ?Operation {
             $vm = TaskVm::query()->lockForUpdate()->find($taskVmId);
             if ($vm === null || $vm->state !== TaskVmState::Provisioning) {
                 return null;
@@ -34,6 +35,6 @@ final readonly class StartTaskVmProvisionAction
             $input = $this->intent->capture($vm);
 
             return $this->start->execute('task_vm.provision', 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm', null);
-        });
+        }));
     }
 }
