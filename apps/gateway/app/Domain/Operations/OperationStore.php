@@ -27,12 +27,12 @@ final readonly class OperationStore
         if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
             throw new LogicException('The Operation kind must match the request idempotency key.');
         }
-        $direct = app(DirectOperation::class);
-        $direct->writer($kind);
+        $gatewayJob = OperationKinds::gatewayJob($kind);
+        OperationKinds::executor($kind);
         if ($nodeId === null) {
             throw new ResourceOperationException('operation.node_required', 'A direct Operation requires its admitted root Node.', 422);
         }
-        $definition = $direct->definition($kind) ?? throw new LogicException('The admitted direct Operation declaration is unavailable.');
+        $definition = $gatewayJob ? [] : (app(DirectOperation::class)->definition($kind) ?? throw new LogicException('The admitted direct Operation declaration is unavailable.'));
         $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
@@ -43,9 +43,11 @@ final readonly class OperationStore
                     'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
                     'triggered_by' => $triggeredBy, 'request_id' => $requestId,
                 ]);
-                $operation->forceFill(['state' => [...($operation->state ?? []), 'swamp_start' => [
-                    'key' => 'operation:'.$operation->id, 'workflow' => $definition['workflow'],
-                ]]])->save();
+                if (isset($definition['workflow'])) {
+                    $operation->forceFill(['state' => [...($operation->state ?? []), 'swamp_start' => [
+                        'key' => 'operation:'.$operation->id, 'workflow' => $definition['workflow'],
+                    ]]])->save();
+                }
 
                 return $operation;
             });
