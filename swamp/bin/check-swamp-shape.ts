@@ -1,3 +1,4 @@
+import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
@@ -118,6 +119,142 @@ export function gatewayShellFindings(file: string, source: string): Finding[] {
   return findings;
 }
 
+type PythonNode = ReturnType<typeof pythonParser.parse>["topNode"];
+const quoteShellWord = (value: string) =>
+  "'" + value.replaceAll("'", "'\\''") + "'";
+export function agentPythonFindings(
+  file: string,
+  source: string,
+  inventory: Record<string, string>,
+  depth = 0,
+): Finding[] {
+  const root = pythonParser.parse(source).topNode;
+  const bindings = new Map<string, PythonNode>(),
+    aliases = new Map<string, string>();
+  const children = (node: PythonNode) => {
+    const out: PythonNode[] = [];
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      out.push(child);
+    }
+    return out;
+  };
+  const text = (node: PythonNode) => source.slice(node.from, node.to);
+  const visit = (node: PythonNode, fn: (node: PythonNode) => void) => {
+    fn(node);
+    for (const child of children(node)) visit(child, fn);
+  };
+  visit(root, (node) => {
+    if (
+      node.name === "AssignStatement" &&
+      node.firstChild?.name === "VariableName" && node.lastChild
+    ) bindings.set(text(node.firstChild), node.lastChild);
+    if (node.name === "ImportStatement") {
+      const statement = text(node);
+      const imported = /^from\s+([\w.]+)\s+import\s+(\w+)(?:\s+as\s+(\w+))?/
+        .exec(statement);
+      const module = /^import\s+([\w.]+)\s+as\s+(\w+)/.exec(statement);
+      if (imported) {
+        aliases.set(
+          imported[3] ?? imported[2],
+          imported[1] + "." + imported[2],
+        );
+      }
+      if (module) aliases.set(module[2], module[1]);
+    }
+  });
+  const name = (node: PythonNode) => {
+    const raw = text(node), first = /^[A-Za-z_]\w*/.exec(raw)?.[0];
+    return first && aliases.has(first)
+      ? aliases.get(first) + raw.slice(first.length)
+      : raw;
+  };
+  const argumentsOf = (node: PythonNode) =>
+    children(node).find((child) => child.name === "ArgList");
+  const expressions = (node: PythonNode) =>
+    children(node).filter((child) =>
+      !/[()[\],]/.test(child.name) && child.name !== "AssignOp"
+    );
+  const value = (
+    node: PythonNode | undefined,
+    seen = new Set<string>(),
+  ): string | string[] | undefined => {
+    if (!node) return;
+    if (
+      node.name === "VariableName" && bindings.has(text(node)) &&
+      !seen.has(text(node))
+    ) return value(bindings.get(text(node)), new Set([...seen, text(node)]));
+    if (node.name === "String") {
+      const raw = text(node),
+        match = /^([rRuUbB]*)(["']{1,3})([\s\S]*)\2$/.exec(raw);
+      if (!match) return;
+      return /r/i.test(match[1])
+        ? match[3]
+        : match[3].replace(/\\([\\'"nt])/g, (_, c) =>
+          c === "n" ? "\n" : c === "t" ? "\t" : c);
+    }
+    if (["ArrayExpression", "TupleExpression"].includes(node.name)) {
+      return expressions(node).flatMap((child) => {
+        const v = value(child, seen);
+        return child.name === "StarredExpression" && Array.isArray(v)
+          ? v
+          : [typeof v === "string" ? v : "<dynamic>"];
+      });
+    }
+    if (node.name === "BinaryExpression") {
+      const parts = children(node),
+        left = value(parts[0], seen),
+        right = value(parts.at(-1), seen);
+      if (Array.isArray(left) && Array.isArray(right)) {
+        return [...left, ...right];
+      }
+      if (typeof left === "string" || typeof right === "string") {
+        return (left ?? "<dynamic>") + String(right ?? "<dynamic>");
+      }
+    }
+    if (
+      node.name === "CallExpression" && node.firstChild &&
+      name(node.firstChild) === "shlex.quote"
+    ) {
+      const args = argumentsOf(node),
+        v = args ? value(expressions(args)[0], seen) : undefined;
+      if (typeof v === "string") return quoteShellWord(v);
+    }
+  };
+  const findings: Finding[] = [];
+  visit(root, (node) => {
+    if (node.name !== "CallExpression" || !node.firstChild) return;
+    let called = name(node.firstChild);
+    if (bindings.has(called)) called = name(bindings.get(called)!);
+    if (
+      !/^(?:subprocess\.(?:run|Popen|call|check_call|check_output)|os\.(?:system|execv|execve|popen))$/
+        .test(called)
+    ) return;
+    const args = argumentsOf(node),
+      argv = args ? value(expressions(args)[0]) : undefined;
+    if (typeof argv === "string") {
+      findings.push(...agentShellFindings(file, argv, inventory, depth + 1));
+    } else if (Array.isArray(argv)) {
+      findings.push(
+        ...agentShellFindings(
+          file,
+          argv.map(quoteShellWord).join(" "),
+          inventory,
+          depth + 1,
+        ),
+      );
+    } else if (/\borbit-agent\b/.test(source)) {
+      findings.push({
+        file,
+        rule: "agent-dynamic",
+        count: 1,
+        line: 1,
+        evidence: [],
+      });
+    }
+  });
+  return findings;
+}
+
 // Parse executable positions, not service names, artifact arguments or heredoc data.
 export function agentShellFindings(
   file: string,
@@ -134,19 +271,43 @@ export function agentShellFindings(
       evidence: [],
     }];
   }
-  const visible: string[] = [], documents: string[] = [];
+  const visible: string[] = [],
+    nested: string[] = [],
+    heredocFindings: Finding[] = [];
+  const documents: { tag: string; language: string; body: string[] }[] = [];
   for (const line of source.split("\n")) {
     if (documents.length) {
-      if (line.trim() === documents[0]) documents.shift();
+      const doc = documents[0];
+      if (line.trim() === doc.tag) {
+        if (doc.language === "python") {
+          heredocFindings.push(
+            ...agentPythonFindings(
+              file,
+              doc.body.join("\n"),
+              inventory,
+              depth + 1,
+            ),
+          );
+        }
+        if (doc.language === "shell") nested.push(doc.body.join("\n"));
+        documents.shift();
+      } else doc.body.push(line);
       continue;
     }
     visible.push(line);
     for (const match of line.matchAll(/<<-?\s*['"]?([A-Za-z_]\w*)['"]?/g)) {
-      documents.push(match[1]);
+      documents.push({
+        tag: match[1],
+        language: /\bpython[0-9.]*\b/.test(line)
+          ? "python"
+          : /\b(?:bash|sh|dash|zsh)\b/.test(line)
+          ? "shell"
+          : "data",
+        body: [],
+      });
     }
   }
   const text = visible.join("\n"), commands: string[][] = [];
-  const nested: string[] = [];
   let words: string[] = [], word = "", quote = "";
   const finish = () => {
     if (word) words.push(word);
@@ -162,6 +323,16 @@ export function agentShellFindings(
     if (ch === "\\" && quote !== "'") {
       if (text[i + 1] !== "\n") word += text[++i] ?? "";
       else i++;
+      continue;
+    }
+    if (quote !== "'" && ch === "`") {
+      let end = i + 1;
+      while (
+        end < text.length && (text[end] !== "`" || text[end - 1] === "\\")
+      ) end++;
+      nested.push(text.slice(i + 1, end));
+      word += "<substitution>";
+      i = end;
       continue;
     }
     if (quote !== "'" && ch === "$" && text[i + 1] === "(") {
@@ -209,9 +380,12 @@ export function agentShellFindings(
       );
     }
   }
-  const findings: Finding[] = nested.flatMap((body) =>
-    agentShellFindings(file, body, inventory, depth + 1)
-  );
+  const findings: Finding[] = [
+    ...heredocFindings,
+    ...nested.flatMap((body) =>
+      agentShellFindings(file, body, inventory, depth + 1)
+    ),
+  ];
   const executable = (argv: string[], level: number): void => {
     if (!argv.length || level > 8) return;
     while (
@@ -259,19 +433,21 @@ export function agentShellFindings(
         (argv[i].startsWith("-") || /^[A-Za-z_]\w*=/.test(argv[i]))
       ) {
         const option = argv[i++];
+        if (binary === "env" && ["-S", "--split-string"].includes(option)) {
+          findings.push(
+            ...agentShellFindings(
+              file,
+              argv.slice(i).join(" "),
+              inventory,
+              depth + 1,
+            ),
+          );
+          return;
+        }
         if (
-          [
-            "-u",
-            "-g",
-            "-h",
-            "-p",
-            "-C",
-            "--user",
-            "--group",
-            "--chdir",
-            "-S",
-            "--split-string",
-          ].includes(option)
+          (binary === "sudo"
+            ? ["-u", "-g", "-h", "-p", "-C", "--user", "--group", "--chdir"]
+            : ["-u", "--unset", "-C", "--chdir"]).includes(option)
         ) i++;
       }
       executable(argv.slice(i), level + 1);
@@ -310,6 +486,15 @@ export function agentShellFindings(
           depth + 1,
         ),
       );
+      return;
+    }
+    if (/^python[0-9.]*$/.test(binary ?? "")) {
+      const i = argv.indexOf("-c");
+      if (i >= 0 && argv[i + 1]) {
+        findings.push(
+          ...agentPythonFindings(file, argv[i + 1], inventory, depth + 1),
+        );
+      }
       return;
     }
     if (binary !== "orbit-agent") return;
@@ -913,7 +1098,7 @@ export function analyzeTs(
         literalAgentCalls.push(...agentShellFindings(
           file,
           tail.length
-            ? [command, ...tail].map((part) => JSON.stringify(part))
+            ? [command, ...tail].map((part) => quoteShellWord(part))
               .join(" ")
             : command,
           inventory,
@@ -932,7 +1117,7 @@ export function analyzeTs(
             literalAgentCalls.push(
               ...agentShellFindings(
                 file,
-                argv.slice(index).map((part) => JSON.stringify(part)).join(" "),
+                argv.slice(index).map((part) => quoteShellWord(part)).join(" "),
                 inventory,
               ),
             );
@@ -1249,7 +1434,10 @@ export function analyzeScript(
   inventory: Record<string, string> = {},
 ): Analysis {
   const result = empty();
-  if (file.endsWith(".py")) return result; // Python is parsed by the AST helper, never regexed as executable text.
+  if (file.endsWith(".py")) {
+    result.findings.push(...agentPythonFindings(file, source, inventory));
+    return result;
+  } // Python is parsed by the AST helper, never regexed as executable text.
   const add = (rule: string, count = 1) =>
     result.findings.push({ file, rule, count, line: 1, evidence: [] });
   result.findings.push(...gatewayShellFindings(file, source));
@@ -1437,7 +1625,6 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
 let pythonAnalyzer = "bin/swamp-shape-python.py";
 async function toolFindings(
   sources: Map<string, string>,
-  inventory: Record<string, string>,
 ): Promise<Finding[]> {
   const files: [string, string, string][] = [...sources].filter(([file]) =>
     /\.(?:py|sh)$/.test(file)
@@ -1484,7 +1671,6 @@ async function toolFindings(
           "python3",
           pythonAnalyzer,
           JSON.stringify(GATEWAY_PRIMITIVES),
-          JSON.stringify(inventory),
         ], source);
         if (!python.success) {
           throw new Error("Python source analysis failed");
@@ -1703,7 +1889,7 @@ if (import.meta.main) {
       }
     }
     const analyses = analyze(head, inventory);
-    const external = await toolFindings(head, inventory);
+    const external = await toolFindings(head);
     for (const f of external) {
       const analysis = analyses.get(f.file);
       analysis?.findings.push(f);
@@ -1724,7 +1910,7 @@ if (import.meta.main) {
         entries: aggregate(
           [...baseAnalyses.values()].flatMap((a) => a.findings)
             .concat(
-              await toolFindings(base, inventory),
+              await toolFindings(base),
             ),
         ),
       };
@@ -1761,7 +1947,7 @@ if (import.meta.main) {
     const baseAnalyses = analyze(base, inventory);
     const baseEntries = aggregate(
       [...baseAnalyses.values()].flatMap((a) => a.findings).concat(
-        await toolFindings(base, inventory),
+        await toolFindings(base),
       ),
     );
     const errors = [

@@ -119,6 +119,121 @@ jobs:
     condition: *id001
 - name: certificate-signatures
   steps:
+  - name: certificate-sign-http-input
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
+      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
+      run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
+      "admission-" + run.id).attributes.intent.mode == "publication" }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: orbit-certificate-signing
+      methodName: prepareSignBatch
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids.map(node,
+          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
+        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.certificates
+          }}
+  - name: certificate-sign-http
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
+      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
+      run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
+      "admission-" + run.id).attributes.intent.mode == "publication" }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: orbit-certificate-signing-http
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import ssl
+          import sys
+          import urllib.request
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          try:
+              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
+              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
+              if not re.fullmatch(r"[1-9][0-9]*", operation):
+                  raise ValueError("Invalid operation")
+              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
+                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
+                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
+              else:
+                  raw = [record for batch in raw for record in batch]
+              if len(raw) > 256:
+                  raise ValueError("Too many requests")
+              requests = [record for record in raw if record.get("state") == "request"]
+              if not requests:
+                  print(json.dumps({"certificates": []}))
+                  sys.exit(0)
+              body = {"run_id": run_id, "requests": requests}
+              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
+                  body["restoring"] = True
+              payload = json.dumps(body).encode()
+              url = (
+                  "https://gateway.orbit/api/v1/direct-operations/"
+                  + operation
+                  + "/certificates/sign"
+              )
+              request = urllib.request.Request(
+                  url,
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+              )
+              context = ssl.create_default_context(
+                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+              )
+              opener = urllib.request.build_opener(
+                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
+              )
+              with opener.open(request, timeout=60) as response:
+                  raw_response = response.read(16_777_217)
+                  if len(raw_response) > 16_777_216 or response.status != 200:
+                      raise ValueError("Invalid signing response")
+              result = json.loads(raw_response)["data"]
+              print(json.dumps(result))
+          except Exception:
+              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
+              sys.exit(1)
+          PYTHON
+        env:
+          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
+          ORBIT_CERTIFICATE_MODE: batch
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["certificate-sign-http-input"].outputs.requests_json }}
+    dependsOn:
+    - step: certificate-sign-http-input
+      condition:
+        type: succeeded
   - name: certificate-sign
     target: orbit-node-209
     labels:
@@ -137,11 +252,16 @@ jobs:
           data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
         leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.certificates
           }}
+        native_stdout: ${{ steps["certificate-sign-http"].outputs.stdout }}
     guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
+      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
+      run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
+      "admission-" + run.id).attributes.intent.mode == "publication" }}
     writes: true
+    dependsOn:
+    - step: certificate-sign-http
+      condition:
+        type: succeeded
   dependsOn:
   - job: admission
     condition: *id001
@@ -1053,6 +1173,118 @@ jobs:
     condition: *id001
 - name: analytics-signatures
   steps:
+  - name: analytics-signatures-http-input
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active
+      }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: orbit-certificate-signing
+      methodName: prepareSignBatch
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_signing_leaves
+          }}
+        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_request_node_ids.map(node,data.latest("route-convergence-node-"
+          + string(node), "analytics-requests-" + run.id).attributes.requests) }}
+  - name: analytics-signatures-http
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active
+      }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: orbit-certificate-signing-http
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import ssl
+          import sys
+          import urllib.request
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          try:
+              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
+              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
+              if not re.fullmatch(r"[1-9][0-9]*", operation):
+                  raise ValueError("Invalid operation")
+              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
+                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
+                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
+              else:
+                  raw = [record for batch in raw for record in batch]
+              if len(raw) > 256:
+                  raise ValueError("Too many requests")
+              requests = [record for record in raw if record.get("state") == "request"]
+              if not requests:
+                  print(json.dumps({"certificates": []}))
+                  sys.exit(0)
+              body = {"run_id": run_id, "requests": requests}
+              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
+                  body["restoring"] = True
+              payload = json.dumps(body).encode()
+              url = (
+                  "https://gateway.orbit/api/v1/direct-operations/"
+                  + operation
+                  + "/certificates/sign"
+              )
+              request = urllib.request.Request(
+                  url,
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+              )
+              context = ssl.create_default_context(
+                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+              )
+              opener = urllib.request.build_opener(
+                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
+              )
+              with opener.open(request, timeout=60) as response:
+                  raw_response = response.read(16_777_217)
+                  if len(raw_response) > 16_777_216 or response.status != 200:
+                      raise ValueError("Invalid signing response")
+              result = json.loads(raw_response)["data"]
+              print(json.dumps(result))
+          except Exception:
+              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
+              sys.exit(1)
+          PYTHON
+        env:
+          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
+          ORBIT_CERTIFICATE_MODE: batch
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["analytics-signatures-http-input"].outputs.requests_json
+            }}
+    dependsOn:
+    - step: analytics-signatures-http-input
+      condition:
+        type: succeeded
   - name: analytics-signatures
     target: orbit-node-209
     labels:
@@ -1071,9 +1303,14 @@ jobs:
           }}
         requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_request_node_ids.map(node,data.latest("route-convergence-node-"
           + string(node), "analytics-requests-" + run.id).attributes.requests) }}
+        native_stdout: ${{ steps["analytics-signatures-http"].outputs.stdout }}
     guard: ${{ !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active
       }}
     writes: true
+    dependsOn:
+    - step: analytics-signatures-http
+      condition:
+        type: succeeded
   dependsOn:
   - job: admission
     condition: *id001
@@ -2554,6 +2791,118 @@ jobs:
     condition: *id001
 - name: cleanup-certificate-sign
   steps:
+  - name: cleanup-certificate-sign-http-input
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ !(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
+      == "replace_domain") }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: orbit-certificate-signing
+      methodName: prepareSignBatch
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids.map(node,
+          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
+        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.update.cleanup.certificates
+          }}
+  - name: cleanup-certificate-sign-http
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ !(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
+      == "replace_domain") }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: orbit-certificate-signing-http
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import ssl
+          import sys
+          import urllib.request
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          try:
+              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
+              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
+              if not re.fullmatch(r"[1-9][0-9]*", operation):
+                  raise ValueError("Invalid operation")
+              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
+                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
+                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
+              else:
+                  raw = [record for batch in raw for record in batch]
+              if len(raw) > 256:
+                  raise ValueError("Too many requests")
+              requests = [record for record in raw if record.get("state") == "request"]
+              if not requests:
+                  print(json.dumps({"certificates": []}))
+                  sys.exit(0)
+              body = {"run_id": run_id, "requests": requests}
+              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
+                  body["restoring"] = True
+              payload = json.dumps(body).encode()
+              url = (
+                  "https://gateway.orbit/api/v1/direct-operations/"
+                  + operation
+                  + "/certificates/sign"
+              )
+              request = urllib.request.Request(
+                  url,
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+              )
+              context = ssl.create_default_context(
+                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+              )
+              opener = urllib.request.build_opener(
+                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
+              )
+              with opener.open(request, timeout=60) as response:
+                  raw_response = response.read(16_777_217)
+                  if len(raw_response) > 16_777_216 or response.status != 200:
+                      raise ValueError("Invalid signing response")
+              result = json.loads(raw_response)["data"]
+              print(json.dumps(result))
+          except Exception:
+              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
+              sys.exit(1)
+          PYTHON
+        env:
+          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
+          ORBIT_CERTIFICATE_MODE: batch
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["cleanup-certificate-sign-http-input"].outputs.requests_json
+            }}
+    dependsOn:
+    - step: cleanup-certificate-sign-http-input
+      condition:
+        type: succeeded
   - name: cleanup-certificate-sign
     target: orbit-node-209
     labels:
@@ -2572,9 +2921,14 @@ jobs:
           data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
         leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.update.cleanup.certificates
           }}
+        native_stdout: ${{ steps["cleanup-certificate-sign-http"].outputs.stdout }}
     guard: ${{ !(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
       == "replace_domain") }}
     writes: true
+    dependsOn:
+    - step: cleanup-certificate-sign-http
+      condition:
+        type: succeeded
   dependsOn:
   - job: admission
     condition: *id001
@@ -3538,6 +3892,128 @@ jobs:
     condition: *id001
 - name: rollback-analytics-signatures
   steps:
+  - name: rollback-analytics-signatures-http-input
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ (!((steps.exists(name, steps[name].status == "failed")) && (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root" || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "publication" && !("public-state"
+      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover"
+      in steps && steps["cutover"].status == "succeeded"))))) || !data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: orbit-certificate-signing
+      methodName: prepareSignBatch
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_signing_leaves
+          }}
+        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_request_node_ids.map(node,data.latest("route-convergence-node-"
+          + string(node), "analytics-requests-" + run.id + "-rollback").attributes.requests) }}
+  - name: rollback-analytics-signatures-http
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ (!((steps.exists(name, steps[name].status == "failed")) && (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root" || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "publication" && !("public-state"
+      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover"
+      in steps && steps["cutover"].status == "succeeded"))))) || !data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: orbit-certificate-signing-http
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import ssl
+          import sys
+          import urllib.request
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          try:
+              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
+              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
+              if not re.fullmatch(r"[1-9][0-9]*", operation):
+                  raise ValueError("Invalid operation")
+              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
+                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
+                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
+              else:
+                  raw = [record for batch in raw for record in batch]
+              if len(raw) > 256:
+                  raise ValueError("Too many requests")
+              requests = [record for record in raw if record.get("state") == "request"]
+              if not requests:
+                  print(json.dumps({"certificates": []}))
+                  sys.exit(0)
+              body = {"run_id": run_id, "requests": requests}
+              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
+                  body["restoring"] = True
+              payload = json.dumps(body).encode()
+              url = (
+                  "https://gateway.orbit/api/v1/direct-operations/"
+                  + operation
+                  + "/certificates/sign"
+              )
+              request = urllib.request.Request(
+                  url,
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+              )
+              context = ssl.create_default_context(
+                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+              )
+              opener = urllib.request.build_opener(
+                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
+              )
+              with opener.open(request, timeout=60) as response:
+                  raw_response = response.read(16_777_217)
+                  if len(raw_response) > 16_777_216 or response.status != 200:
+                      raise ValueError("Invalid signing response")
+              result = json.loads(raw_response)["data"]
+              print(json.dumps(result))
+          except Exception:
+              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
+              sys.exit(1)
+          PYTHON
+        env:
+          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
+          ORBIT_CERTIFICATE_MODE: batch
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["rollback-analytics-signatures-http-input"].outputs.requests_json
+            }}
+    dependsOn:
+    - step: rollback-analytics-signatures-http-input
+      condition:
+        type: succeeded
   - name: rollback-analytics-signatures
     target: orbit-node-209
     labels:
@@ -3556,14 +4032,19 @@ jobs:
           }}
         requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_request_node_ids.map(node,data.latest("route-convergence-node-"
           + string(node), "analytics-requests-" + run.id + "-rollback").attributes.requests) }}
+        native_stdout: ${{ steps["rollback-analytics-signatures-http"].outputs.stdout }}
     guard: ${{ (!((steps.exists(name, steps[name].status == "failed")) && (data.latest("route-convergence-node-"
       + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root" || (data.latest("route-convergence-node-"
       + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "publication" && !("public-state"
-      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-" + string(inputs.node_id),
-      "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover" in steps && steps["cutover"].status
-      == "succeeded"))))) || !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active
-      }}
+      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover"
+      in steps && steps["cutover"].status == "succeeded"))))) || !data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.analytics_active }}
     writes: true
+    dependsOn:
+    - step: rollback-analytics-signatures-http
+      condition:
+        type: succeeded
   dependsOn:
   - job: rollback-state
     condition: *id001
@@ -3876,6 +4357,128 @@ jobs:
     condition: *id001
 - name: rollback-certificate-signatures
   steps:
+  - name: restore-certificate-sign-http-input
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ !(((steps.exists(name, steps[name].status == "failed")) && (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root" || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "publication" && !("public-state"
+      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover"
+      in steps && steps["cutover"].status == "succeeded")))) && data.latest("route-convergence-node-" +
+      string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root") }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: orbit-certificate-signing
+      methodName: prepareSignBatch
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids.map(node,
+          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
+        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.update.previous.certificates
+          }}
+  - name: restore-certificate-sign-http
+    target: orbit-node-209
+    labels:
+      node: '209'
+    guard: ${{ !(((steps.exists(name, steps[name].status == "failed")) && (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root" || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "publication" && !("public-state"
+      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover"
+      in steps && steps["cutover"].status == "succeeded")))) && data.latest("route-convergence-node-" +
+      string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root") }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: orbit-certificate-signing-http
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          /usr/bin/python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import ssl
+          import sys
+          import urllib.request
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          try:
+              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
+              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
+              if not re.fullmatch(r"[1-9][0-9]*", operation):
+                  raise ValueError("Invalid operation")
+              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
+                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
+                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
+              else:
+                  raw = [record for batch in raw for record in batch]
+              if len(raw) > 256:
+                  raise ValueError("Too many requests")
+              requests = [record for record in raw if record.get("state") == "request"]
+              if not requests:
+                  print(json.dumps({"certificates": []}))
+                  sys.exit(0)
+              body = {"run_id": run_id, "requests": requests}
+              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
+                  body["restoring"] = True
+              payload = json.dumps(body).encode()
+              url = (
+                  "https://gateway.orbit/api/v1/direct-operations/"
+                  + operation
+                  + "/certificates/sign"
+              )
+              request = urllib.request.Request(
+                  url,
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+              )
+              context = ssl.create_default_context(
+                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+              )
+              opener = urllib.request.build_opener(
+                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
+              )
+              with opener.open(request, timeout=60) as response:
+                  raw_response = response.read(16_777_217)
+                  if len(raw_response) > 16_777_216 or response.status != 200:
+                      raise ValueError("Invalid signing response")
+              result = json.loads(raw_response)["data"]
+              print(json.dumps(result))
+          except Exception:
+              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
+              sys.exit(1)
+          PYTHON
+        env:
+          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
+          ORBIT_CERTIFICATE_MODE: batch
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["restore-certificate-sign-http-input"].outputs.requests_json
+            }}
+    dependsOn:
+    - step: restore-certificate-sign-http-input
+      condition:
+        type: succeeded
   - name: restore-certificate-sign
     target: orbit-node-209
     labels:
@@ -3894,14 +4497,19 @@ jobs:
           data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
         leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.update.previous.certificates
           }}
+        native_stdout: ${{ steps["restore-certificate-sign-http"].outputs.stdout }}
     guard: ${{ !(((steps.exists(name, steps[name].status == "failed")) && (data.latest("route-convergence-node-"
       + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root" || (data.latest("route-convergence-node-"
       + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "publication" && !("public-state"
-      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-" + string(inputs.node_id),
-      "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover" in steps && steps["cutover"].status
-      == "succeeded")))) && data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root") }}
+      in steps && steps["public-state"].status == "succeeded")) || (data.latest("route-convergence-node-"
+      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "replace_domain" && !("cutover"
+      in steps && steps["cutover"].status == "succeeded")))) && data.latest("route-convergence-node-" +
+      string(inputs.node_id), "admission-" + run.id).attributes.intent.mode == "web_root") }}
     writes: true
+    dependsOn:
+    - step: restore-certificate-sign-http
+      condition:
+        type: succeeded
   dependsOn:
   - job: rollback-state
     condition: *id001

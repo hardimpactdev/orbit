@@ -68,11 +68,18 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
-Runtime validation requires the existing Swamp account credentials. The old
-repo has `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`; Orbit needs an approved transfer
-before the caller can use this workflow. The reusable workflow declares both
-secrets. Pass them with `secrets: inherit` from the approved caller. No credential
-is printed, copied from local config or passed as argv.
+Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
+with `extensions:read` scope. Only the native workflow-validation step receives
+`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests and main pushes. Shape
+and Deno jobs receive neither. The caller maps both secrets explicitly, never
+through inherited secrets. Pull-request-target events cannot receive them.
+
+The helper downloads the public checksum-verified official artifact and starts
+it with fresh HOME, XDG and Swamp configuration directories. Its environment
+allowlist admits only these two approved credentials. Official e459's startup
+account gate precedes local schema loading and verifies through
+`GET /api/whoami`. Native validation is required: unavailable authentication and
+schema, checksum or download failures fail the job. There is no import exception.
 
 The gate prints current debt separately from base comparison. Retained historical
 agent actions are grandfathered; only growing counts or new action evidence fail.
