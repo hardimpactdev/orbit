@@ -217,6 +217,28 @@ it('exposes only public provision input to admitted participants without a globa
     expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
 });
 
+it('serves the bound public root to its placed Gateway and enrolled guest without changing root authority', function (string $placement): void {
+    $operation = savedNativeProvisionIntent();
+    $guest = $this->vm->fresh()->node;
+    $guest->update(['status' => LifecycleStatus::Active]);
+    $peer = $placement === 'gateway' ? $this->gateway : $guest;
+    $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $run = $operation->state['swamp_run_id'];
+    $edges = DB::table('node_access')->count();
+
+    $this->getJson($path.'?run_id='.$run)->assertOk()
+        ->assertJsonPath('data.node_id', $this->host->id)
+        ->assertJsonPath('data.input.gateway_node_id', $this->gateway->id)
+        ->assertJsonPath('data.input.guest_node_id', $guest->id)
+        ->assertJsonMissingPath('data.input.configuration')
+        ->assertJsonMissingPath('data.input.worker_credentials');
+    $this->getJson($path.'?run_id=f5518d34-4395-4454-ab37-7f3cdcae1ad4')->assertConflict();
+    $this->postJson($path.'/result', ['run_id' => $run, 'status' => 'running', 'started_at' => '2026-10-31T00:00:00.000Z', 'result' => []])->assertForbidden();
+    expect(DB::table('node_access')->count())->toBe($edges)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
+})->with(['gateway', 'guest']);
+
 it('ordinary allocation records the native parent instead of dispatching provision jobs', function (): void {
     TaskVmRecipeImages::ready($this->host->id);
     $group = Task::topLevel()->create(['project_id' => $this->vm->group->project_id, 'title' => 'New provision', 'brief' => 'Native provision', 'status' => 'reserved', 'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
