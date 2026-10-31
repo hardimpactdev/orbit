@@ -13,6 +13,7 @@
     "runtime": "systemd",
     "desired": "running",
     "on_demand": false,
+    "required_mount_paths": [],
     "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "activation_pending": false,
     "agent_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
