@@ -26,7 +26,7 @@ Swamp does all operational work, the way Swamp is designed to be used, with Swam
    - The Gateway stays the source of truth. It pushes the execution copy with `swamp vault put --server` (value on stdin) when a value changes.
    - Steps read `${{ vault.get('<vault>', '<key>') }}`. In `command/shell`, Swamp passes it as an environment variable.
    - Scripts pass a secret to a tool by stdin or a config file, never as an argument, because `ps` shows arguments to every user on the Node.
-   - The GitHub App key stays in the Gateway. Steps get short-lived minted tokens.
+   - Root-of-trust keys stay only in the Gateway: the GitHub App key and the Orbit CA private key. Steps get short-lived minted GitHub tokens, and signed certificates by sending a CSR plus the operation id to the Gateway sign primitive. These two calls are the only Gateway calls a step may make. Never copy either key into a Swamp vault.
 6. **Use native control flow, not your own.**
    - **Ordering:** `dependsOn` with `condition`.
    - **Fan-out:** `forEach`.
