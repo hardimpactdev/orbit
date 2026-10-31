@@ -7,7 +7,13 @@ use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
 
-return ['database.create' => [
+return ['database.mysql_clone' => [
+    'workflow' => 'operation-database-mysql-clone',
+    'writer_config' => 'swamp.direct_writers',
+    'writer_state' => 'database_mysql_clone_writer',
+    'projection' => DatabaseCreateProjection::class,
+    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
+], 'database.create' => [
     'workflow' => 'operation-database-create',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'database_create_writer',

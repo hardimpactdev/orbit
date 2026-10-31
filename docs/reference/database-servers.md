@@ -24,7 +24,11 @@ Database writes that change a Node return an [Operation](/reference/operations) 
 
 Retained Instance removal finishes its database work synchronously with the existing SQL plans, removal locks and ownership checks. MySQL removal accepts stored Activity receipts that prove creation without passwords, proven child receipts or explicit operator adoption. Removal refuses system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres` and names beginning with `template`), including any test prefix that could match them. The same check applies before retained synchronous removal probes and to expanded database names.
 
-Managed database creation starts one Node-placed Swamp run directly. The Gateway reserves names and credentials without live probes, and projects the result. Swamp checks live ownership and credentials before creating databases or ACL users. A resume retains the same credentials and never drops existing data. Clone reset still prepares work for Operations; they have no synchronous execution helper. SQLite seed callers keep their synchronous agent bindings.
+### Direct creation and clone
+
+Managed database creation starts one Node-placed Swamp run directly. The Gateway reserves names and credentials without live probes, and projects the result. Swamp checks live ownership and credentials before creating databases or ACL users. A resume retains the same credentials and never drops existing data.
+
+Managed MySQL clone reset and copy use the direct-only `database.mysql_clone` workflow on the SQL server Node; the existing Instance parent records its one database child. SQLite clone variants retain their current workflow. No clone reset SQL or live inventory probe runs in the Gateway; they have no synchronous execution helper. SQLite seed callers keep their synchronous agent bindings.
 
 For direct kinds, the shared private-material read returns only declared fields to the bound unfinished run on the admitted Node. Swamp keeps those values inside the effect callback. Retained polled kinds resolve stored credentials only for their authorized named commands. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
 
@@ -158,6 +162,8 @@ The database name comes from the slug, with hyphens replaced by underscores. On 
 On MySQL and PostgreSQL, each Instance has one owner user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets the server's driver, the server's Node address and port, and a link to the server.
 
 Orbit refuses a name with `database.name_conflict` when the server already has that database or user. MySQL also refuses a name that starts with another database's test database name. PostgreSQL checks exact names against the primary database and the recorded test pool. So one Instance's user never reaches another database through its test database grant. A failed Operation keeps its reserved connection and encrypted credentials. An identical new start reuses them; changed requests remain conflicts.
+
+Valkey refuses an index outside its configured range before any ACL write. Its unattached reservation is recorded as abandoned in Activity and removed automatically, so a corrected index can be admitted without deleting a live ACL user.
 
 On MySQL and PostgreSQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 

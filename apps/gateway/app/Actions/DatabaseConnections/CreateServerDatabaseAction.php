@@ -10,14 +10,9 @@ use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
-use App\Domain\DatabaseServers\DatabaseOwnership;
-use App\Domain\DatabaseServers\DatabaseRemovalLock;
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
-use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
@@ -51,15 +46,12 @@ final readonly class CreateServerDatabaseAction
     private const int PASSWORD_LENGTH = 40;
 
     public function __construct(
-        private DatabaseServerAdmin $admin,
         private MysqlNames $names,
         private MysqlStatements $statements,
         private RecordEventBroadcaster $broadcaster,
         private PostgresTestDatabases $postgresTests,
         private RecordDatabaseOperationAction $operations,
         private RetryDatabaseCreateAction $retries,
-        private DatabaseRemovalLock $lock,
-        private DatabaseOwnership $ownership,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): Operation
@@ -151,14 +143,13 @@ final readonly class CreateServerDatabaseAction
      *
      * @param  array<string, mixed>  $attributes
      */
-    /** @param array<string,mixed> $attributes */
     public function reserve(DatabaseServer $server, string $slug, string $database, Instance $instance, ?string $createdBy, array $attributes = []): DatabaseConnection
     {
-        return $this->lock->run([$server->id], fn (): DatabaseConnection => $this->reserveLocked($server, $slug, $database, $instance, $createdBy, $attributes));
+        return DB::transaction(fn (): DatabaseConnection => $this->reserveRecorded($server, $slug, $database, $instance, $createdBy, $attributes));
     }
 
     /** @param array<string,mixed> $attributes */
-    private function reserveLocked(
+    private function reserveRecorded(
         DatabaseServer $server,
         string $slug,
         string $database,
@@ -167,6 +158,7 @@ final readonly class CreateServerDatabaseAction
         array $attributes = [],
     ): DatabaseConnection {
         $this->assertActive($server);
+        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
         $this->assertHoldsDatabases($server);
         if ($server->driver === DatabaseDriver::Pgsql) {
             throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
@@ -176,9 +168,8 @@ final readonly class CreateServerDatabaseAction
         if ($existing !== null) {
             if ($existing->owner_instance_id === $instance->id && $existing->database_server_id === $server->id
                 && $existing->database === $database && $existing->clone_step !== null && $existing->clone_step !== DatabaseCloneStep::Complete) {
-                $this->assertNamesFree($server, $database, $existing->test_database,
-                    ['username' => $existing->username ?? '', 'password' => $existing->password ?? '', 'new' => false], null,
-                    $existing->id, $this->ownership->mysqlNames($existing));
+                $this->assertRecordedNamesFree($server, $database, $existing->test_database,
+                    ['username' => $existing->username ?? '', 'password' => $existing->password ?? '', 'new' => false], null, $existing->id);
 
                 return $existing;
             }
@@ -188,7 +179,7 @@ final readonly class CreateServerDatabaseAction
         $testDatabase = $this->names->testDatabase($database);
         $credentials = $this->credentials($server, $database, $instance);
 
-        $this->assertNamesFree($server, $database, $testDatabase, $credentials);
+        $this->assertRecordedNamesFree($server, $database, $testDatabase, $credentials);
 
         try {
             $connection = DB::transaction(function () use (
@@ -237,26 +228,6 @@ final readonly class CreateServerDatabaseAction
         );
 
         return $connection;
-    }
-
-    /**
-     * Make the recorded user, an empty database, and an empty test database on the server. Any
-     * database already there is dropped first, so a retry never trusts a partial copy.
-     */
-    public function prepareEmpty(DatabaseConnection $connection): PreparedDatabaseOperation
-    {
-        $server = $connection->server;
-        if (! $server instanceof DatabaseServer || $connection->database === null || $connection->username === null || $connection->password === null) {
-            throw new ResourceOperationException('database.server_required', 'The connection needs a Database server.', 422);
-        }
-        if ($server->driver !== DatabaseDriver::Mysql) {
-            throw new ResourceOperationException('database.driver_unsupported', 'Clone reset requires a managed MySQL database.', 422);
-        }
-        $plan = DatabaseCommands::mysqlCreate($server, [$connection->database, ...($connection->test_database === null ? [] : [$connection->test_database])],
-            $connection->username, $connection->password, $this->ownership->mysqlNames($connection), $connection->test_database);
-
-        return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
-            ['connection_id' => $connection->id, 'driver' => $server->driver->value], $plan['commands'], ['database_creates' => $plan['creates']]);
     }
 
     /**
@@ -348,30 +319,6 @@ final readonly class CreateServerDatabaseAction
             'password' => Str::random(self::PASSWORD_LENGTH),
             'new' => true,
         ];
-    }
-
-    /** @param array{username: string, password: string, new: bool} $credentials
-     * @param  list<string>  $allowedDatabases
-     */
-    private function assertNamesFree(
-        DatabaseServer $server,
-        string $database,
-        ?string $testDatabase,
-        #[SensitiveParameter] array $credentials,
-        ?int $testProcesses = null,
-        ?int $retryConnectionId = null,
-        array $allowedDatabases = [],
-    ): void {
-        $this->assertRecordedNamesFree($server, $database, $testDatabase, $credentials, $testProcesses, $retryConnectionId);
-        $planned = [$database, ...($testDatabase !== null && $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [])];
-        $statements = $this->statements->forDriver($server->driver);
-        $query = $statements instanceof PostgresStatements
-            ? ($retryConnectionId === null ? $statements->databasesIn($planned) : $statements->databasesNotOwnedBy($planned, $credentials['username']))
-            : $statements->databasesNamed($database, $testDatabase);
-        if (array_diff($this->admin->execute($server, $query), $allowedDatabases) !== []
-            || ($credentials['new'] && $this->admin->execute($server, $statements->userNamed($credentials['username'])) !== [])) {
-            throw $this->nameConflict($server, $database);
-        }
     }
 
     /** @param array{username:string,password:string,new:bool} $credentials */

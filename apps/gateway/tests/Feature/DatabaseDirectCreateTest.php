@@ -103,3 +103,23 @@ it('refuses create intent while removal on the same server is nonterminal', func
     $removal->update(['status' => 'succeeded', 'finished_at' => now()]);
     $this->postJson('/api/v1/database-connections', $request)->assertAccepted();
 });
+
+it('abandons an invalid Valkey index reservation without deleting an ACL user', function (): void {
+    $this->server->update(['driver' => 'redis']);
+    $request = ['slug' => 'invalid-index', 'server' => $this->server->slug, 'patterns' => ['proof:*'], 'allow' => ['@list'], 'database' => 16];
+    $this->postJson('/api/v1/database-connections', $request)->assertAccepted();
+    $operation = Operation::query()->sole();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $failed = [...$this->finish, 'status' => 'failed', 'error_code' => 'database.index_invalid', 'result' => ['error_code' => 'database.index_invalid']];
+    $this->postJson($path.'/result', $failed)->assertOk();
+    $this->assertDatabaseCount('database_connections', 0);
+    $this->assertDatabaseCount('database_users', 0);
+    expect(Activity::query()->where('command', 'database:lifecycle:abandon')->count())->toBe(1);
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.status', 'failed');
+    $this->postJson($path.'/result', $failed)->assertOk();
+    expect(Activity::query()->where('command', 'database:lifecycle:abandon')->count())->toBe(1);
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertConflict();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $this->postJson('/api/v1/database-connections', [...$request, 'database' => 15])->assertAccepted();
+});

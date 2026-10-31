@@ -5,13 +5,9 @@ declare(strict_types=1);
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
-use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
-use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentSchemas;
-use App\Models\DatabaseExecutionIntent;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Arr;
@@ -20,7 +16,7 @@ function databaseContractOperation(): Operation
 {
     $node = Node::query()->create(['name' => 'dev-db', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit']);
 
-    $prepared = app(RecordDatabaseOperationAction::class)->prepare('database.clone', 'database_server', 123, $node->id,
+    $prepared = app(RecordDatabaseOperationAction::class)->prepare('database.write', 'database_server', 123, $node->id,
         ['driver' => 'mysql'], ['database-apply' => ['name' => 'database.server-admin', 'input' => [
             'operation' => 'execute', 'container' => 'orbit-process-1-dev', 'password' => 'synthetic-admin-password',
             'password_variable' => 'MYSQL_PWD', 'client' => ['mysql'], 'sql' => 'CREATE DATABASE example;',
@@ -92,25 +88,6 @@ it('rejects a forged step and requires the recorded named run before projecting 
     ]]];
     $execution->assertCompletion($operation, OperationOutcome::succeeded(['backend' => 'active']));
     expect($operation->steps()->count())->toBe(1);
-});
-
-it('selects the copy allowlist variant before validating protected parameters', function (): void {
-    if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
-    }
-    $operation = databaseContractOperation();
-    $operation->kind = 'database.clone';
-    $intent = DatabaseExecutionIntent::query()->findOrFail($operation->input['intent_id']);
-    $intent->update(['payload' => ['commands' => ['database-apply' => ['name' => 'database.server-admin',
-        'input' => ['operation' => 'copy', 'container' => 'orbit-process-1-dev', 'password' => 'synthetic-admin-password', 'source' => 'source_db', 'target' => 'target_db'],
-        'protected' => ['password'], 'resumable' => false]], 'projection' => []]]);
-    $descriptor = app(DatabaseOperationExecution::class)->context($operation)['descriptors'][0];
-    $run = ['worker' => 'proof', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']];
-    $spec = app(OperationExecutionContract::class)->authorizeRun($operation, $run);
-
-    expect($spec['input_values'])->toBe(['operation' => 'copy']);
-    expect($spec['secrets'])->toBe(['password' => 'database.intent']);
-    expect(app(OperationSecrets::class)->hydrate($operation, $descriptor['key'], $descriptor['input'], $spec['secrets'])['input']['password'])->toBe('synthetic-admin-password');
 });
 
 it('refuses invented metadata on failed completion', function (): void {
