@@ -115,10 +115,52 @@ jobs:
 
 The second example is a sketch; the pilot fixes the exact syntax. Each action is a step that Swamp shows, can resume and can skip with `guard`.
 
-## Open points the pilot must settle
+## Settled pilot points
 
-The pilot (firewall or node-bootstrap) settles these and updates this guide:
-- How script files reach a remote worker. The manual says only the definitions a dispatch needs are bundled, so inline `run:` may be the only native form.
-- The exact way to map a `vault.get` value to a named environment variable in `command/shell`.
-- The manual's caveat that a vault value "appears in the command line" on the worker. Test it on a dev Node.
-- How the Gateway reads a run's terminal outputs through the serve API.
+The `node.bootstrap_probe` pilot uses these native contracts. Its source is the template below. The live canary and Gateway terminal subscription are still pending; a passing isolated fixture is not live proof.
+
+### Script delivery
+
+A behavior manifest lists the Python files under `additionalFiles`. Swamp includes those bytes in its dispatch fingerprint and ships them to the remote worker cache. The metadata step calls `ctx.extensionFile("scripts/probe_host.py")` and records the cached path with `ctx.writeResource`. The next placed `command/shell` step runs that file. The helper module travels in the same bundle. Neither a shared checkout nor a script embedded in TypeScript is needed.
+
+The actual remote-only worker fixture passed on native e459 and the compiled 614ab5ff build. It confirmed the returned script path was inside the worker cache and the built-in shell executed it. Keep each effect in its own step. Asset lookup is public metadata, not an effect runner.
+
+### Vault environment syntax
+
+Map the entire environment value to `vault.get` inside `task.inputs.env`:
+
+```yaml
+inputs:
+  run: '/usr/bin/python3 "${{ steps.assets.outputs.probe_script }}"'
+  env:
+    ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
+```
+
+The workflow input contains only the closed descriptor `{vault, key}`. The Gateway pushes the execution copy on value changes with `swamp vault put --server`, value on stdin. Exact native put authority is separate from workflow resolution authority. Do not grant general vault write or raw secret read to make this work.
+
+### The command-line caveat
+
+The dev-worker `/proc` test used a synthetic value. Whole-value environment delivery did not put the value in the shell's or script's arguments. Passing that environment value as an argument to a child did expose it in `/proc/<pid>/cmdline`. The environment itself was readable through `/proc`; this transport is not isolation from the worker user.
+
+The probe writes a mode-0600 temporary SSH identity, passes its path to SSH, removes the value from the child's environment, and removes the file after use. Never expand a secret in `run:`, argv or shell tracing. Native probe run `996e4603-e6b0-42c6-b8a2-e997731a9385` records this synthetic dev proof; it is not the live pilot canary.
+
+### Terminal outputs
+
+Native `completed` and `cancelled` events identify the run and its terminal status. A `completed` event can describe a failed run. The event's run metadata does not include step outputs, even with verbose enabled.
+
+The Gateway subscribes to the native terminal event, then makes one `workflow.history.get` request for that run. Native history includes outputs. The pilot selects `jobs[bootstrap].steps[probe-host].outputs.stdout`, parses the public JSON, and gives it to the existing Node bootstrap projector. The declaration fixes the job and step names with `terminal_result: {job: bootstrap, step: probe-host}`. Steps make no Gateway HTTP calls. No family polling, callback, resubmission or receipt is needed.
+
+The remote fixture recorded full non-secret inputs and the public probe result in history. A bad host fingerprint failed `scan-host-key` and skipped `probe-host`, including its private vault lookup.
+
+## Template
+
+Use `node.bootstrap_probe` for the next conversion. Preserve its separation between admitted inputs, native steps, outputs and Gateway projection.
+
+- [Workflow](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-node-bootstrap-probe.yaml): full intent plus vault/key names; exact placement; native step dependencies.
+- [Manifest and script assets](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap): native `additionalFiles` delivery and metadata-only `script_assets.ts`.
+- [Scripts](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap/scripts): one host-key scan and one pinned SSH probe; no Gateway client.
+- [Gateway admission](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Actions/Nodes/AdmitNodeBootstrapAction.php) and [vault copy primitive](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php): validate and store intent; synchronize the existing secret's execution copy; pass names only.
+- [Gateway declaration](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/bootstrap-direct-operations.php) and [projection](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeBootstrapProjection.php): select the fixed terminal output and record the result without repeating host checks.
+- [Remote native regression](https://github.com/hardimpactdev/orbit/blob/main/swamp/tests/bootstrap_script_native_test.py): actual script delivery, vault environment, history output and failed-scan ordering.
+
+Source PRs: [native workflow and scripts](https://github.com/hardimpactdev/orbit-swamp/pull/478) and [Gateway vault-copy primitive](https://github.com/hardimpactdev/orbit/pull/2001). These links identify the source during the monorepo move. Replace this pending status with the merged template, live Operation/run IDs and before/after evidence before declaring the migration resumed.
