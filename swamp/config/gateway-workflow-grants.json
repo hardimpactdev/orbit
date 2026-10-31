@@ -75,6 +75,7 @@
     {"workflow": "operation-node-role-remove-direct", "actions": ["run", "read"]},
     {"workflow": "operation-node-settings", "actions": ["run", "read"]},
     {"workflow": "operation-node-ssh-access-converge", "actions": ["run", "read"]},
+    {"workflow": "operation-node-worker-known-hosts", "actions": ["run", "read"]},
     {"workflow": "operation-node-wireguard-hub-converge", "actions": ["run", "read"]},
     {"workflow": "operation-observation-maintain", "actions": ["run", "read"]},
     {"workflow": "operation-process-control", "actions": ["run", "read"]},

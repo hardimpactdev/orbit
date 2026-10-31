@@ -9,6 +9,7 @@ use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
+use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -34,6 +35,10 @@ final readonly class FeatureTestEnvironment
 
     public static function start(): self
     {
+        app()->instance(WorkerKnownHostsPublisher::class, new class implements WorkerKnownHostsPublisher
+        {
+            public function publish(): void {}
+        });
         $guard = RealStorageGuard::watch(storage_path('app'));
         // Direct-file staging must be isolated too, not just writes through the Storage facade.
         $storage = sys_get_temp_dir().'/orbit-feature-storage-'.bin2hex(random_bytes(16));
