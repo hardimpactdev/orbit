@@ -8,7 +8,7 @@ inputs:
     node_id: { type: integer, minimum: 1 }
     kind:
       type: string
-      enum: [websocket.sync, websocket.app_create, websocket.app_destroy]
+      enum: [websocket.sync, websocket.app_create, websocket.app_destroy, websocket.app_rotate]
   required: [operation_id, node_id, kind]
 jobs:
   - name: registry

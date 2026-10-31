@@ -1,24 +1,24 @@
 """Prove integration recovery in a new pinned Swamp process, using a disposable Gateway fixture."""
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
-import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[4]
 FAMILY = Path(__file__).resolve().parent
-SWAMP = os.environ.get('SWAMP_BIN', shutil.which('swamp') or 'swamp')
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_harness import NativeTestCase
 
-class IntegrationNativeTest(unittest.TestCase):
+class IntegrationNativeTest(NativeTestCase):
+    native_timeout = 45
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='integration-native-')
-        self.addCleanup(self.temp.cleanup)
-        self.repo = Path(self.temp.name)
-        shutil.copy(ROOT / '.swamp.yaml', self.repo)
-        for name in ('automatic-deploy', 'operation-runner'):
-            shutil.copytree(ROOT / 'extensions/behaviors' / name, self.repo / 'extensions/behaviors' / name)
+        super().setUp()
+        self.copy_behaviors('automatic-deploy', 'operation-runner')
+        conn = self.repo / 'extensions/behaviors/operations/conn'
+        conn.mkdir(parents=True, exist_ok=True)
+        shutil.copy(FAMILY.parent / 'conn/maintenance.ts', conn / 'maintenance.ts')
         destination = self.repo / 'extensions/behaviors/operations/integrations'
         shutil.copytree(FAMILY, destination)
         fixture = self.repo / 'extensions/behaviors/_test/executor.ts'
@@ -27,7 +27,6 @@ class IntegrationNativeTest(unittest.TestCase):
         for name, factory, relative in [('operation-runner', 'operationDiscovery', '../_test/executor.ts'), ('operations/integrations', 'integrations', '../../_test/executor.ts')]:
             path = self.repo / 'extensions/behaviors' / name / 'mod.ts'
             path.write_text('import { fixtureHttp } from "' + relative + '";\n' + path.read_text().replace('...' + factory + '()', '...' + factory + '(() => fixtureHttp)'))
-        (self.repo / 'workflows').mkdir()
         for name in ('integrations',):
             source = (ROOT / f'workflows/workflow-operation-{name}.yaml').read_text()
             source = '\n'.join(line for line in source.splitlines() if not line.startswith(('labels:', 'queueTimeout:'))) + '\n'
@@ -42,13 +41,10 @@ class IntegrationNativeTest(unittest.TestCase):
     def swamp(self, *args, success=True):
         if args[:2] == ("workflow", "resume"):
             args = (*args[:3], "--run", self.last_run_id)
-        result = subprocess.run([SWAMP, *args, '--json'], cwd=self.repo, text=True, capture_output=True, timeout=45,
-            env={**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'})
+        result = self.cli(*args, success=success)
         if args[:2] == ("workflow", "run"):
             value = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
             self.last_run_id = value.get("id")
-        if success: self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        else: self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
     def test_native_dispatch_keeps_the_admitted_target_and_proven_step(self):
         for name in ('operation-integrations',):

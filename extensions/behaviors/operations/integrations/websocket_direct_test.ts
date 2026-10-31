@@ -68,8 +68,11 @@ class Fixture {
       return { status: 200, body: { data: this.operation } };
     });
   run(
-    kind: "websocket.sync" | "websocket.app_create" | "websocket.app_destroy" =
-      "websocket.sync",
+    kind:
+      | "websocket.sync"
+      | "websocket.app_create"
+      | "websocket.app_destroy"
+      | "websocket.app_rotate" = "websocket.sync",
   ) {
     this.operation.kind = kind;
     return websocketRegistry(() => this.http, () => this.clock, () => {
@@ -166,7 +169,11 @@ Deno.test("WebSocket cancellation in the final bounded delay wins over timeout",
 
 Deno.test("WebSocket app mutations confirm their existing revision without credentials or replaying a mutation", async () => {
   for (
-    const kind of ["websocket.app_create", "websocket.app_destroy"] as const
+    const kind of [
+      "websocket.app_create",
+      "websocket.app_destroy",
+      "websocket.app_rotate",
+    ] as const
   ) {
     const f = new Fixture();
     assertEquals(await f.run(kind), { status: "succeeded" });
@@ -184,4 +191,33 @@ Deno.test("WebSocket app mutations confirm their existing revision without crede
     await f.run(kind);
     assertEquals(f.reads, reads);
   }
+});
+
+Deno.test("WebSocket malformed identities and credential-bearing input never reach the registry", async () => {
+  for (const invalid of ["identity", "credential"]) {
+    const f = new Fixture();
+    if (invalid === "identity") {
+      f.operation.input.registry_operation_id = "../foreign";
+    } else Object.assign(f.operation.input, { secret: "private-sentinel" });
+    await assertRejects(() => f.run());
+    assertEquals(f.reads, 0);
+    assertEquals(f.operation.result, null);
+  }
+});
+
+Deno.test("WebSocket unavailable status proves nothing and native recovery can resume the same intent", async () => {
+  const f = new Fixture();
+  f.onRegistryRead = () => {
+    throw new Error("unavailable-private-diagnostic");
+  };
+  await assertRejects(() => f.run(), Error, "unavailable-private-diagnostic");
+  assertEquals(f.operation.status, "running");
+  assertEquals(f.operation.result, null);
+  f.onRegistryRead = undefined;
+  f.states = ["applied"];
+  assertEquals(await f.run(), { status: "succeeded" });
+  assertEquals(
+    JSON.stringify(f.operation.result).includes("diagnostic"),
+    false,
+  );
 });
