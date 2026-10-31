@@ -6,11 +6,13 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -49,12 +51,15 @@ final readonly class StartSwampRun
             $outcome = 'started';
             if (isset($declaration['terminal_result'], $response['terminal_run'])) {
                 try {
-                    app(SwampCommandStep::class)->projectTerminal($operation, $response['terminal_run'], $declaration['terminal_result']);
+                    ProjectSwampTerminal::dispatch($operation->id, $response['run_id'], $response['terminal_run']['status']);
                 } catch (Throwable $exception) {
                     Log::warning('Swamp accepted start terminal result unavailable', [
                         'operation_id' => $operation->id, 'exception_type' => $exception::class,
                     ]);
+                    app(OperationBroadcaster::class)->changed($operation, true);
                 }
+            } elseif (isset($declaration['terminal_result'])) {
+                app(OperationBroadcaster::class)->changed($operation, true);
             }
         } catch (Throwable $exception) {
             $safe = $exception instanceof ResourceOperationException

@@ -2,7 +2,8 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber}.php
+  - apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php
 ---
 
 # Swamp command steps
@@ -36,7 +37,13 @@ A `completed` event can carry a failed run status. Native `interrupted` maps to 
 
 ### Event connection
 
-The start connection can receive `started` and a terminal event in the same message batch. After binding the confirmed root run, `StartSwampRun` sends that matching terminal event to this same helper when the family declares `terminal_result`. Unrelated requests, child runs and foreign workflows cannot supply the event. An unavailable terminal result leaves the accepted run bound and records a diagnostic without changing the start outcome or resubmitting it.
+The existing `orbit:agent-view` Gateway observer also keeps the shared native run connection. It joins the private `orbit` record channel; a committed native binding publishes an Operation notice there. After subscription acknowledgement and on observer startup, it reads the active bound Operations once to cover notices missed while disconnected. Only kinds with `terminal_result` are followed. It multiplexes `run.attach` requests on one native socket; receiving events never waits for a workflow to finish or reads history in the socket loop.
+
+A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status and queued on the existing `gateway:operations` queue. `ProjectSwampTerminal` reloads the Operation and its declaration and calls the same `SwampCommandStep` helper. There is one history request per job, no automatic job retry, and no native execution command. An explicit attach `not_found` queues the same job without a claimed status for bounded late-result recovery. Authorization failures and `run.elsewhere` do not invent a terminal result. Duplicate frames are suppressed on the connection; the helper's row lock and terminal guard protect duplicate delivery after a process restart.
+
+Native socket reconnection reattaches the remembered active bindings. It does not start, resume, cancel or retry a workflow. Families add no subscriber, callback, timer or status poller. Native resume of an already terminal Operation remains a separate lifecycle contract; this observer does not reopen it.
+
+The start connection can receive `started` and a terminal event in the same message batch. After binding the confirmed root run, `StartSwampRun` queues that matching terminal event through the same `ProjectSwampTerminal` job when the family declares `terminal_result`. This replaces the initial synchronous projection path: admission never waits for a history request. Unrelated requests, child runs and foreign workflows cannot supply the event. An unavailable terminal result leaves the accepted run bound without changing the start outcome or resubmitting it.
 
 Official e459 supports `run.attach` with `{runId, afterSeq}` for an active run. It returns `run.attached` and streams events on that request id. Completed runs leave the active registry, so this is not a durable subscription after completion. The shared event-connection owner must preserve the terminal event; families must not invent a polling fallback.
 
