@@ -1,6 +1,14 @@
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { appStepRuntime } from "./app_step_runtime.ts";
+import { VpRuntime } from "./vp_requirements.ts";
+
+export const AppVpRuntime = VpRuntime.extend({
+  owner: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/).refine((x) =>
+    x !== "root"
+  ),
+});
+export type AppVpRuntime = z.infer<typeof AppVpRuntime>;
 
 export const StepTarget = z.discriminatedUnion("variant", [
   z.object({
@@ -25,6 +33,7 @@ export const AppStep = z.object({
   phase: z.enum(["setup", "teardown", "before_activation", "after_activation"]),
   command_digest: z.string().regex(/^[a-f0-9]{64}$/),
   timeout_seconds: z.number().int().min(1).max(3600),
+  vp_environment: AppVpRuntime.nullable().optional(),
 }).strict();
 export type AppStep = z.infer<typeof AppStep>;
 export const AppStepResult = z.union([
@@ -59,10 +68,15 @@ export async function currentProgram(
   http: Http,
   step: AppStep,
 ): Promise<string> {
+  const development = step.target.variant === "checkout" &&
+    !["setup", "teardown"].includes(step.phase);
   const path = (step.phase === "setup" || step.phase === "teardown")
     ? `/api/v1/projects/${step.project_id}/${step.phase}-steps`
+    : development
+    ? `/api/v1/projects/${step.project_id}/development-deploy-steps`
     : `/api/v1/instances/${step.instance_id}/deploy-steps`;
   try {
+    if (development && step.phase !== "before_activation") throw new Error();
     const response = await http("GET", path);
     if (response.status !== 200) throw new Error();
     const rows =
@@ -70,7 +84,8 @@ export async function currentProgram(
         .data;
     const matches = rows.filter((row) =>
       row.name === step.name &&
-      (["setup", "teardown"].includes(step.phase) || row.phase === step.phase)
+      (["setup", "teardown"].includes(step.phase) ||
+        (development ? row.phase === undefined : row.phase === step.phase))
     );
     if (matches.length !== 1) throw new Error();
     const row = matches[0];
@@ -136,6 +151,9 @@ export async function sudoAppStep(
       command_digest: step.command_digest,
       timeout_seconds: step.timeout_seconds,
       script,
+      ...(step.vp_environment === undefined
+        ? {}
+        : { vp_environment: step.vp_environment }),
     })));
     await writer.close();
     for await (const part of child.stdout) {

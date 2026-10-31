@@ -1,5 +1,18 @@
 # Instance deployment execution
 
+The direct deploy cutover remains unpublished source work. Its writer, complete
+native DAG, result projection and old-path deletion must ship together. Development app steps use the configured Node account frozen at admission.
+Production steps use `orbit-app-<ProjectID>` in the admitted release. Caller
+input cannot select either account. Shared Process/Schedule private-material
+consumers remain subject to orchestrator review before the writer switches.
+
+Source preparation and deploy scripts accept private callbacks only for the
+duration of delivery. Each callback can start at most one local action. Repeated
+or retained callbacks cannot repeat or start later effects. A delivery failure
+preserves a confirmed local result; an uncertain local action cannot become
+success through another callback. Private bytes stay outside native inputs,
+resources and public results.
+
 Swamp executes `instance.deploy` and `instance.rollback`. Orbit admits the request, owns deploy-step configuration, and records deployment history and Operation receipts. Automatic deployment policy and production smoke recovery continue to use their existing Gateway admission endpoints.
 
 Production deployment prepares one Operation-owned release, synchronizes its environment, runs before-activation steps, selects the release, refreshes PHP when configured, restarts opted-in running Processes, runs after-activation steps, and prunes old releases. A failure before selection keeps the previous release. A failure after selection reports the new selected release. Cleanup failure leaves the deployment successful and records a warning.
@@ -35,3 +48,10 @@ proven refusal stops later phases. A lost reply leaves the child unfinished so a
 later invocation can adopt the original target receipt. Cancellation stops new
 phases without claiming that an uncertain write succeeded. Existing synchronous
 Gateway callers keep their native path until their owning cutover.
+
+The deploy sudo runner accepts an optional admitted Vite+ runtime. It runs the
+script through the exact Node and package-manager pins. Runtime paths must be
+owned by the admitted runtime account and free of writable or symlink components.
+This runner grants no filesystem access. A production app that cannot traverse
+the runtime store refuses before its script starts. Setup and teardown keep their
+existing account and directory contract.

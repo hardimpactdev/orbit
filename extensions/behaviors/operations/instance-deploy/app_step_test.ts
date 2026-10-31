@@ -343,3 +343,49 @@ Deno.test("an interrupted running list refuses replay before another sudo effect
     failed_step: null,
   });
 });
+
+Deno.test("development deploy commands use only the Project before-activation list", async () => {
+  const target = {
+    variant: "checkout" as const,
+    user: "orbit",
+    directory: "/home/orbit/apps/default",
+    seed_path: "",
+    seed_commit: "",
+  };
+  const admitted = { ...step, target, phase: "before_activation" as const };
+  const paths: string[] = [];
+  const http: Http = (_method, path) => {
+    paths.push(path);
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: [{ name: "install", command: script, timeout_seconds: 30 }],
+      },
+    });
+  };
+  assertEquals(await currentProgram(http, admitted), script);
+  assertEquals(paths, ["/api/v1/projects/9/development-deploy-steps"]);
+  await assertRejects(
+    () => currentProgram(http, { ...admitted, phase: "after_activation" }),
+    Error,
+    "instance.step_not_admitted",
+  );
+  assertEquals(paths.length, 1);
+  await assertRejects(
+    () =>
+      currentProgram(() =>
+        Promise.resolve({
+          status: 200,
+          body: {
+            data: [{
+              name: "install",
+              command: script,
+              timeout_seconds: 30,
+              phase: "before_activation",
+            }],
+          },
+        }), admitted),
+    Error,
+    "instance.step_not_admitted",
+  );
+});
