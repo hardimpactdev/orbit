@@ -670,7 +670,7 @@
     {
       "file": "extensions/behaviors/operations/certificates/mod.ts",
       "rule": "gateway-http",
-      "count": 3,
+      "count": 2,
       "evidence": [
         "<unknown> <unknown>"
       ]
@@ -703,12 +703,6 @@
       "file": "extensions/behaviors/operations/certificates/role-publication.ts",
       "rule": "inline-script",
       "count": 89,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/certificates/signing.ts",
-      "rule": "inline-script",
-      "count": 57,
       "evidence": []
     },
     {
@@ -3789,12 +3783,6 @@
     {
       "file": "extensions/behaviors/projects/horizon-new-dawn/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "models/@nckrtl/certificates/orbit-certificate-signing.yaml",
-      "rule": "vault-placement",
       "count": 1,
       "evidence": []
     },
