@@ -79,7 +79,6 @@ pub mod php_build;
 mod php_fpm;
 mod php_profile;
 pub mod php_runtime;
-mod php_shared;
 pub mod pi_artifact;
 pub mod pi_runtime;
 pub mod plausible;
@@ -330,7 +329,6 @@ pub fn all() -> Vec<Entry> {
         entry::<production::PruneReleases>(),
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
-        entry::<production::PrepareServedWebRoots>(),
         entry::<production::CheckServedWebRoots>(),
         entry::<deploy_step::RunDeployStep>(),
         entry::<application_log::ReadApplicationLog>(),
@@ -339,8 +337,6 @@ pub fn all() -> Vec<Entry> {
         entry::<environment::InspectEnvironmentSync>(),
         entry::<environment::WriteEnvironment>(),
         entry::<laravel::InspectProfile>(),
-        entry::<laravel::WriteUrl>(),
-        entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
         entry::<sqlite_copy::CopySqlite>(),
         entry::<sqlite_transfer::ReadSnapshot>(),
@@ -357,9 +353,7 @@ pub fn all() -> Vec<Entry> {
         entry::<vite::SetViteTraffic>(),
         entry::<firewall::native::Inspect>(),
         entry::<firewall::native::Rule>(),
-        entry::<firewall::native::rules::Rules>(),
         entry::<firewall::native::rules::Router>(),
-        entry::<firewall::native::route::RouteLan>(),
         entry::<firewall::native::gateway::GatewayVpn>(),
         entry::<tls_check::VerifyCertificate>(),
         entry::<http_check::VerifyHttp>(),
@@ -438,10 +432,7 @@ pub fn all() -> Vec<Entry> {
         entry::<production_home::ValidateLayout>(),
         entry::<production_home::ClearCurrent>(),
         entry::<production_home::RemoveHome>(),
-        entry::<production_home::WriteDirectoryUrl>(),
         entry::<production_home::RefreshConfigCache>(),
-        entry::<php_shared::Inspect>(),
-        entry::<php_shared::Converge>(),
         entry::<php_runtime::ConvergeRuntime>(),
         entry::<php_runtime::RemoveRuntime>(),
         entry::<php_runtime::InspectPool>(),

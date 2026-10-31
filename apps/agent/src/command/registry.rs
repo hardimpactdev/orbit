@@ -595,10 +595,8 @@ mod tests {
         ];
         let firewall = [
             "firewall.gateway-vpn",
-            "firewall.route-lan",
             "firewall.router-lan",
             "firewall.rule",
-            "firewall.rules",
             "firewall.task-vm-hub",
             "image.firewall",
             "incus.prepare-host",
@@ -623,31 +621,6 @@ mod tests {
                 entry.name
             );
         }
-    }
-
-    /// Both `.env` writers run as root and lock the same key, so they serialize in one lock directory.
-    #[test]
-    fn both_environment_writers_share_a_privilege_and_a_lock() {
-        use crate::commands::{environment::WriteEnvironment, laravel::WriteUrl};
-        let directory = "/home/orbit/apps/shop";
-        let url = serde_json::from_value(json!({
-            "directory": directory, "owner": "orbit", "url": "https://shop.test", "app_key": "", "app_key_stored": false,
-            "app_name": "Shop", "app_name_stored": false, "require_artisan": true,
-        }))
-        .unwrap();
-        let environment = serde_json::from_value(json!({
-            "mode": "write", "base": directory, "user": "orbit", "maximum": 65536, "require_home": false,
-        }))
-        .unwrap();
-        assert_eq!(
-            WriteUrl::privilege(Platform::Linux),
-            WriteEnvironment::privilege(Platform::Linux)
-        );
-        assert_eq!(
-            WriteUrl::target(&url),
-            WriteEnvironment::target(&environment)
-        );
-        assert!(WriteUrl::target(&url).is_some());
     }
 
     /// Each Valkey volume has its own ACL lock.

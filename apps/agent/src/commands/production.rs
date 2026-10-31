@@ -130,33 +130,6 @@ pub(super) fn as_user(
     output.status.success().then_some(output.stdout)
 }
 
-/// Runs a program as the production user with `input` on its standard input. Whether it succeeded.
-pub(super) fn as_user_with_input(
-    user: &str,
-    program: &str,
-    arguments: &[&OsStr],
-    input: &[u8],
-) -> bool {
-    use std::io::Write;
-    let mut command = Process::new(program);
-    command
-        .args(arguments)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if identity::drop_to(&mut command, user).is_err() {
-        return false;
-    }
-    let Ok(mut child) = command.spawn() else {
-        return false;
-    };
-    let written = child
-        .stdin
-        .take()
-        .is_some_and(|mut stdin| stdin.write_all(input).is_ok());
-    child.wait().is_ok_and(|status| status.success()) && written
-}
-
 /// Git as the production user, without hooks or fsmonitor.
 pub(super) fn git(
     user: &str,
@@ -910,22 +883,6 @@ pub struct ServedInput {
     pub home: ReleaseHome,
 }
 
-/// Links each served application's `.env` and grants Caddy each served web root in the selected release.
-pub fn prepare_served(input: &ServedInput, layout: &Layout) -> Result<Release, ReleaseError> {
-    let release = selected_release(&input.home, layout)?;
-    input.home.link_served_environments(&release)?;
-    input.home.grant_served_web_roots(&release)?;
-    let name = input.home.selected()?.unwrap_or_default();
-    let commit = git(
-        &input.home.user,
-        &release,
-        &["rev-parse", "--verify", "HEAD"],
-        &none(),
-    )
-    .ok_or_else(|| invalid("the release has a commit"))?;
-    Ok(Release { name, commit })
-}
-
 /// Checks without a change that each served web root and its application directory exist in the selected release,
 /// with no link on the way and only the public storage link below.
 pub fn check_served(input: &ServedInput, layout: &Layout) -> Result<(), ReleaseError> {
@@ -952,31 +909,6 @@ pub fn check_served(input: &ServedInput, layout: &Layout) -> Result<(), ReleaseE
         )?;
     }
     Ok(())
-}
-
-pub struct PrepareServedWebRoots;
-
-impl Command for PrepareServedWebRoots {
-    const NAME: &'static str = "instance.prepare-served-web-roots";
-    const SUMMARY: &'static str =
-        "Link the environment and grant Caddy each Route web root in a production Instance's selected release.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(300);
-    type Input = ServedInput;
-    type Output = Release;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn target(input: &ServedInput) -> Option<String> {
-        Some(format!("release-home:{}", input.home.instance))
-    }
-
-    fn run(input: ServedInput, _: &Context) -> Result<Release, ReleaseError> {
-        prepare_served(&input, &Layout::system())
-    }
 }
 
 pub struct CheckServedWebRoots;

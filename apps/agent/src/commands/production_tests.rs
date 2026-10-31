@@ -582,7 +582,7 @@ fn a_rebind_refuses_a_url_that_is_neither_the_expected_nor_the_target() {
 }
 
 #[test]
-fn a_route_web_root_is_prepared_and_checked_in_the_selected_release_only() {
+fn a_route_web_root_is_checked_in_the_selected_release_only() {
     let mut fixture = Fixture::new();
     let input = |fixture: &Fixture| ServedInput {
         home: fixture.home.clone(),
@@ -591,10 +591,6 @@ fn a_route_web_root_is_prepared_and_checked_in_the_selected_release_only() {
         web_root: "admin/public".into(),
         directory: "admin".into(),
     }];
-    assert_eq!(
-        prepare_served(&input(&fixture), &fixture.layout),
-        Err(ReleaseError::ReleaseMissing {})
-    );
     assert_eq!(
         check_served(&input(&fixture), &fixture.layout),
         Err(ReleaseError::ReleaseMissing {})
@@ -612,13 +608,14 @@ fn a_route_web_root_is_prepared_and_checked_in_the_selected_release_only() {
     assert!(fs::symlink_metadata(&link).is_err());
 
     assert_eq!(check_served(&input(&fixture), &fixture.layout), Ok(()));
-    assert_eq!(
-        prepare_served(&input(&fixture), &fixture.layout),
-        Ok(Release {
-            name: release.name.clone(),
-            commit: release.commit.clone()
-        })
-    );
+    fixture
+        .home
+        .link_served_environments(&fixture.home.release(&release.name))
+        .unwrap();
+    fixture
+        .home
+        .grant_served_web_roots(&fixture.home.release(&release.name))
+        .unwrap();
     assert_eq!(
         fs::read_link(&link).unwrap(),
         Path::new("../../../env/admin/.env")
