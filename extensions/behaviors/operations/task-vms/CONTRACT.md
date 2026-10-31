@@ -270,3 +270,14 @@ still-eligible, exactly owned workspace. Cancellation preserves VM state. A
 bounded failure retains the prior board status and leaves stop proof unknown.
 The removed PHP stop executor and internal `task_vm.park` and
 `task_vm.confirm_stopped` registrations have no alternate dispatcher.
+
+Image cleanup removes every server with this attempt's exact title, hostname and
+`orbit-task-image` stamp, including duplicates left by lost create replies.
+Other servers remain untouched. Templates carry the same stamp label; promotion,
+discard and pruning refuse missing or mismatched ownership. Templatize accepts
+only a title in the provider API, so the exact returned template UUID is
+labelled before it can be consumed. Promotion retains that label.
+
+Before templatizing, `image.clean` runs cloud-init cleanup with logs and removes
+all SSH host keys. Its verification refuses publication if an SSH host key or
+cloud-init instance remains.

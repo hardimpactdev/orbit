@@ -77,37 +77,60 @@ export function imageCloud(
   const prefix = "orbit-task-base-" + input.stamp;
   const name = (slot: "builder" | "smoke") =>
     input.name + (slot === "smoke" ? "-smoke" : "");
+  const owned = (server: ImageServer, slot: "builder" | "smoke") => {
+    const stamp = server.labels.label.filter((label) =>
+      label.key === "orbit-task-image"
+    );
+    return server.title === name(slot) && server.hostname === name(slot) &&
+      stamp.length === 1 && stamp[0].value === input.stamp;
+  };
+  const candidates = async (slot: "builder" | "smoke", strict: boolean) => {
+    const rows = z.object({
+      servers: z.object({ server: z.array(listed).max(4096) }),
+    })
+      .parse(await request("GET", "server?label=orbit-task-image")).servers
+      .server
+      .filter((server) => server.title === name(slot));
+    const matches: ImageServer[] = [];
+    for (const row of rows) {
+      const detail = await request(
+        "GET",
+        `server/${row.uuid}`,
+        undefined,
+        true,
+      );
+      if (detail === null) continue;
+      const server = serverSchema.parse(detail.server);
+      if (server.uuid !== row.uuid || !owned(server, slot)) {
+        if (strict) throw refuse();
+        continue;
+      }
+      matches.push(server);
+    }
+    return matches;
+  };
   const find = async (
     slot: "builder" | "smoke",
   ): Promise<ImageServer | null> => {
-    const raw = await request("GET", "server?label=orbit-task-image");
-    const rows = z.object({
-      servers: z.object({ server: z.array(listed).max(4096) }),
-    }).parse(raw).servers.server
-      .filter((server) => server.title === name(slot));
+    const rows = await candidates(slot, true);
     if (rows.length > 1) throw refuse();
-    if (!rows.length) return null;
-    const detail = await request(
-      "GET",
-      `server/${rows[0].uuid}`,
-      undefined,
-      true,
-    );
-    if (detail === null) return null;
-    const server = serverSchema.parse(detail.server);
-    const owned = server.labels.label.filter((label) =>
-      label.key === "orbit-task-image"
-    );
+    const server = rows[0] ?? null;
     const stored = input.progress.resources[slot];
     if (
-      server.uuid !== rows[0].uuid || server.title !== name(slot) ||
-      server.hostname !== name(slot) ||
-      owned.length !== 1 || owned[0].value !== input.stamp ||
-      (stored !== undefined &&
-        z.object({ uuid: z.literal(server.uuid) }).safeParse(stored).success ===
-          false)
+      server && stored !== undefined &&
+      !z.object({ uuid: z.literal(server.uuid) }).safeParse(stored).success
     ) throw refuse();
     return server;
+  };
+  const templateOwned = (template: z.infer<typeof templateSchema>) => {
+    const stamp = /^orbit-task-base-([0-9]{14})(?:-unverified)?$/.exec(
+      template.title,
+    )?.[1];
+    const matches = (template.labels ?? []).filter((label) =>
+      label.key === "orbit-task-image"
+    );
+    return template.access === "private" && stamp !== undefined &&
+      matches.length === 1 && matches[0].value === stamp;
   };
   const templates = async () =>
     z.object({
@@ -122,7 +145,9 @@ export function imageCloud(
     const rows = (await templates()).filter((template) =>
       [prefix, prefix + "-unverified"].includes(template.title)
     );
-    if (rows.length > 1) throw refuse();
+    if (rows.length > 1 || rows.some((row) => !templateOwned(row))) {
+      throw refuse();
+    }
     const known = input.progress.template_uuid;
     if (rows[0] && known !== null && rows[0].uuid !== known) throw refuse();
     if (known !== null && !rows[0] && !allowMissing) throw refuse();
@@ -259,17 +284,43 @@ export function imageCloud(
     },
     stop,
     async remove(slot: "builder" | "smoke") {
-      await stop(slot, false);
-      const server = await find(slot);
-      if (server) {
-        await request(
-          "DELETE",
-          `server/${server.uuid}?storages=1&backups=delete`,
-          undefined,
-          true,
-        );
+      // Lost create replies can leave more than one exact attempt-owned server.
+      for (const server of await candidates(slot, false)) {
+        const current = async () => {
+          const detail = await request(
+            "GET",
+            `server/${server.uuid}`,
+            undefined,
+            true,
+          );
+          if (detail === null) return null;
+          const fresh = serverSchema.parse(detail.server);
+          if (fresh.uuid !== server.uuid || !owned(fresh, slot)) throw refuse();
+          return fresh;
+        };
+        const beforeStop = await current();
+        if (beforeStop !== null && beforeStop.state !== "stopped") {
+          await request("POST", `server/${server.uuid}/stop`, {
+            stop_server: { stop_type: "hard" },
+          });
+          await until(async () => {
+            const fresh = await current();
+            return fresh === null || fresh.state === "stopped";
+          }, 180);
+        }
+        if (await current() !== null) {
+          await request(
+            "DELETE",
+            `server/${server.uuid}?storages=1&backups=delete`,
+            undefined,
+            true,
+          );
+        }
       }
-      await until(async () => await find(slot) === null, 120);
+      await until(
+        async () => (await candidates(slot, false)).length === 0,
+        120,
+      );
     },
     async templatize() {
       const existing = await ownedTemplate();
@@ -283,8 +334,15 @@ export function imageCloud(
         }/templatize`,
         { storage: { title: prefix + "-unverified" } },
       );
-      return z.object({ storage: z.object({ uuid }) }).parse(result).storage
-        .uuid;
+      const id =
+        z.object({ storage: z.object({ uuid }) }).parse(result).storage.uuid;
+      // Templatize accepts title only; label the exact UUID returned by our create.
+      await request("PUT", `storage/${id}`, {
+        storage: {
+          labels: [{ key: "orbit-task-image", value: input.stamp }],
+        },
+      });
+      return id;
     },
     async online(id: string) {
       await until(
@@ -303,14 +361,17 @@ export function imageCloud(
       await request("PUT", `storage/${template.uuid}`, {
         storage: {
           title: prefix,
-          labels: [{ key: "orbit.recipe", value: input.identity }],
+          labels: [{ key: "orbit.recipe", value: input.identity }, {
+            key: "orbit-task-image",
+            value: input.stamp,
+          }],
         },
       });
       return template.uuid;
     },
     async prune(pinned: string[]) {
       const verified = (await templates()).filter((template) =>
-        !template.title.endsWith("-unverified")
+        !template.title.endsWith("-unverified") && templateOwned(template)
       )
         .sort((a, b) => b.title.localeCompare(a.title));
       for (const template of verified.slice(2)) {
@@ -318,6 +379,14 @@ export function imageCloud(
           !pinned.includes(template.uuid) &&
           template.uuid !== input.progress.template_uuid
         ) {
+          const fresh = templateSchema.parse(
+            (await request("GET", `storage/${template.uuid}`, undefined, true))
+              ?.storage,
+          );
+          if (
+            fresh.uuid !== template.uuid || fresh.title !== template.title ||
+            !templateOwned(fresh)
+          ) throw refuse();
           await request("DELETE", `storage/${template.uuid}`, undefined, true);
         }
       }

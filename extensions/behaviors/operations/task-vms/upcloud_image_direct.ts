@@ -82,7 +82,7 @@ export function upcloudImageDirect(
   };
   return {
     type: "@nckrtl/task-vm-upcloud-image-build",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       boot: {

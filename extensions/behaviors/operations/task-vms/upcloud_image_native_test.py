@@ -73,7 +73,7 @@ class UpCloudImageNative(NativeTestCase):
         self.assertEqual(saved['failure'], 'task_vm.image_check_failed')
         self.assertEqual(saved['servers'], {})
         self.assertEqual(list(saved['templates']), ['00000000-0000-4000-8000-000000000030'])
-        self.assertFalse(any(method == 'PUT' for method, _ in saved['provider']))
+        self.assertFalse(saved.get('promoted', False))
 
     def test_lost_terminal_projection_resumes_same_root_without_repeating_provider_actions(self):
         self.state['loseFinal'] = True
