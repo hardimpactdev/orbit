@@ -109,8 +109,7 @@ function fixture(scenario = "retire") {
   };
   const behavior = recipePr(
     () => http,
-    (http, args) =>
-      new GatewayOperation(http, args, undefined, undefined, github),
+    (http, args) => new GatewayOperation(http, args, undefined, github),
     (token, plans) => {
       assertEquals(token, "fixture-sentinel");
       return new RecipePrAction(
