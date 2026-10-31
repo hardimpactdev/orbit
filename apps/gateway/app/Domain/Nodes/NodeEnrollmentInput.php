@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 
@@ -12,7 +13,8 @@ use App\Models\Node;
 final readonly class NodeEnrollmentInput
 {
     public function __construct(private NodeEnrollmentToolInput $tools, private SwampSshExecutionInput $ssh,
-        private AgentDelivery $observer, private NodeNetworkInput $network, private NodeWireGuardCommandInput $hub) {}
+        private AgentDelivery $observer, private NodeNetworkInput $network, private NodeWireGuardCommandInput $hub,
+        private NodeRoleFirewallInput $firewall) {}
 
     /** @param list<RoleName> $roles
      * @return array<string,mixed>
@@ -44,6 +46,9 @@ final readonly class NodeEnrollmentInput
                 'command' => ['user' => $candidate->user, 'public_key' => $identity['public_key'],
                     'releases' => UbuntuRelease::supportedCodenames(), 'packages' => $packages, 'dns_policy' => 'preserve']],
             'tools' => $tools,
+            'prior_ssh' => $mode === 'tld_only' ? $this->ssh->forNode($actual) : null,
+            'bootstrap_firewall' => $mode === 'linux' ? $this->firewall->publicSsh($actual, true) : null,
+            'prior_trust' => $mode === 'linux' ? $this->firewall->trust($actual) : null,
             'network' => $mode !== 'linux' ? null : $this->network->forAdmitted($actual, $candidate->wireguardIp,
                 $candidate->wireguardEndpointOverride, $candidate->dnsServerOverride, $candidate->tld, $roles === [] && ! $actual->roles()->exists()),
             'hub' => $mode !== 'linux' ? null : $this->hub->capture($actual, $candidate->wireguardIp, $candidate->name),

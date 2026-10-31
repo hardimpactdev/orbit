@@ -20,7 +20,7 @@ use App\Models\Node;
 final readonly class NodeEnrollmentPolicy
 {
     public function __construct(private WireGuardAddressAllocator $addresses, private ActiveTldScopeGuard $tlds,
-        private ConfiguredStoragePathValidator $storage, private ManagedUserAccountResolver $accounts,
+        private ConfiguredStoragePathValidator $storage,
         private AssignRoleAction $assign, private RoleRegistry $roles) {}
 
     /** @return array{mode:string,candidate:array<string,mixed>,bootstrap_user:string,managed_user:string,fingerprint:string,requested_architecture:?string,roleless_operator:bool} */
@@ -53,9 +53,6 @@ final readonly class NodeEnrollmentPolicy
         }
         if ($data->settingsProvided) {
             $this->storage->validateGrammar($data->settings);
-            if ($node->exists) {
-                $this->storage->validateEffective($data->settings, $node, $this->accounts->resolve($node));
-            }
         }
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
         if ($node->exists && $node->cluster_id !== null && $data->clusterId !== null && $node->cluster_id !== $data->clusterId) {
@@ -116,6 +113,10 @@ final readonly class NodeEnrollmentPolicy
         $host = $data->publicSshHost !== '' ? $data->publicSshHost : ($node->exists ? $node->public_ssh_host : '');
         if ($host === '' && ! $mac) {
             $host = $address;
+        }
+        if (! $mac && $node->exists && $node->wireguard_ip !== null && $address !== $node->wireguard_ip
+            && in_array($host, [$node->wireguard_ip, $address], true)) {
+            throw $this->refuse('node.recovery_endpoint_required', 'A WireGuard address change requires a separate bootstrap SSH endpoint.', 409);
         }
         $fingerprint = $node->ssh_host_fingerprint ?? $data->expectedSshHostFingerprint;
         if (! $tldOnly && ($host === '' || $fingerprint === null)) {

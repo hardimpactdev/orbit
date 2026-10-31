@@ -5,13 +5,17 @@ declare(strict_types=1);
 use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
+use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\NodeEnrollmentInput;
+use App\Domain\Nodes\NodeEnrollmentPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -60,7 +64,7 @@ it('captures admitted settings without resolving the remote account and preserve
     $prior = $this->node->settings;
     $input = app(UpdateNodeSettingsAction::class)->captureForEnrollment($this->node, $this->candidate,
         new NodeSettingsData(apps: new NodeStorageAppsData('/srv/candidate')), true);
-    expect($input['settings'])->toBe(['t3' => ['connection' => 'retained'], 'apps' => ['path' => '/srv/candidate']])
+    expect($input['settings'])->toBe(['apps' => ['path' => '/srv/candidate']])
         ->and($input['storage']['root'])->toBe('/srv/candidate')
         ->and($input['storage']['user'])->toBe('managed')
         ->and($input['storage']['create_missing'])->toBeTrue()
@@ -75,6 +79,45 @@ it('rejects a protected settings root before recording identity or settings', fu
     expect($this->node->refresh()->attributesToArray())->toBe($prior);
 });
 
+it('admits public settings without remote account discovery', function (): void {
+    $accounts = Mockery::mock(ManagedUserAccountResolver::class);
+    $accounts->shouldNotReceive('resolve');
+    app()->instance(ManagedUserAccountResolver::class, $accounts);
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
+    $prior = $this->node->attributesToArray();
+    $input = app(NodeEnrollmentPolicy::class)->prepare($this->node, new ProvisionNodeData(
+        name: $this->node->name, publicSshHost: $this->node->public_ssh_host,
+        settingsProvided: true, settings: new NodeSettingsData(apps: new NodeStorageAppsData('/srv/candidate')),
+    ));
+    expect($input['candidate']['wireguard_ip'])->toBe($this->node->wireguard_ip)
+        ->and($this->node->refresh()->attributesToArray())->toBe($prior);
+});
+
+it('requires a stable bootstrap endpoint when changing a WireGuard address', function (): void {
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
+    $prior = $this->node->attributesToArray();
+    foreach ([$this->node->wireguard_ip, $this->candidate->wireguardIp] as $endpoint) {
+        try {
+            app(NodeEnrollmentPolicy::class)->prepare($this->node, new ProvisionNodeData(
+                name: $this->node->name, publicSshHost: $endpoint, wireguardIp: $this->candidate->wireguardIp,
+            ));
+            test()->fail('A tunnel-dependent recovery endpoint was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('node.recovery_endpoint_required');
+        }
+    }
+    $input = app(NodeEnrollmentPolicy::class)->prepare($this->node, new ProvisionNodeData(
+        name: $this->node->name, publicSshHost: '192.0.2.240', wireguardIp: $this->candidate->wireguardIp,
+    ));
+    expect($input['candidate']['public_ssh_host'])->toBe('192.0.2.240')
+        ->and($this->node->refresh()->attributesToArray())->toBe($prior);
+});
+
+it('has no storage duty for a roleless Node without an explicit apps root', function (): void {
+    $input = app(UpdateNodeSettingsAction::class)->captureForEnrollment($this->node, $this->candidate, null, false);
+    expect($input)->toBe(['settings' => null, 'storage' => null]);
+});
+
 it('uses the same prospective firewall rule without changing the actual Node', function (): void {
     $rules = app(RouteRenderContext::class)->renderEnrollment($this->candidate,
         fn (): array => app(NodeRoleFirewallInput::class)->converge($this->node, RoleName::AppProd));
@@ -85,11 +128,11 @@ it('uses the same prospective firewall rule without changing the actual Node', f
 
 it('keeps canonical observer configuration free of target worker installation', function (): void {
     FleetFixtures::node('observer-configuration-gateway', [RoleName::Gateway]);
-    $certificates = Mockery::mock(\App\Domain\Certificates\LeafCertificateSigner::class);
+    $certificates = Mockery::mock(LeafCertificateSigner::class);
     $certificates->shouldReceive('rootCertificate')->andReturn('public-root-certificate');
-    app()->instance(\App\Domain\Certificates\LeafCertificateSigner::class, $certificates);
+    app()->instance(LeafCertificateSigner::class, $certificates);
     config(['swamp_workers.nodes' => [$this->node->id]]);
-    $configuration = app(\App\Infrastructure\Nodes\NodeAgentSshExecutor::class)->configurationForRoot($this->node, null);
+    $configuration = app(NodeAgentSshExecutor::class)->configurationForRoot($this->node, null);
     expect($configuration['configuration'])->toContain('gateway_url = "https://gateway.orbit"')
         ->not->toContain('swamp_worker', 'worker_token', 'enrollment_token');
 });

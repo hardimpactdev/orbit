@@ -97,7 +97,7 @@ final readonly class UpdateNodeSettingsAction
     }
 
     /** Admission-only settings capture; account discovery and root preparation remain native.
-     * @return array{settings:array<string,mixed>|null,storage:array{root:?string,user:string,create_missing:bool,protected_roots:list<string>,managed_checkouts:list<string>}}
+     * @return array{settings:array<string,mixed>|null,storage:array{root:?string,user:string,create_missing:bool,protected_roots:list<string>,managed_checkouts:list<string>}|null}
      */
     public function captureForEnrollment(Node $actual, NodeEnrollmentCandidate $candidate, ?NodeSettingsData $settings, bool $create): array
     {
@@ -107,8 +107,9 @@ final readonly class UpdateNodeSettingsAction
         $normalized = $this->normalizer->normalize($settings);
         $this->validateHostBridge($actual, $normalized);
 
-        return ['settings' => $this->normalizer->storedOver($actual->settings, $normalized),
-            'storage' => [...$this->validator->directIntent($normalized, $actual, $create), 'user' => $candidate->user]];
+        return ['settings' => $this->normalizer->stored($normalized),
+            'storage' => ! $create && $normalized?->appsPath() === null ? null
+                : [...$this->validator->directIntent($normalized, $actual, $create), 'user' => $candidate->user]];
     }
 
     private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
