@@ -8,6 +8,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\HorizonOperation;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
@@ -250,6 +251,26 @@ describe(GatewayHorizon::class, function (): void {
             ->and($horizon->refresh()->desired_state)->toBe(DesiredProcessState::Running)
             ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
+
+    it('projects the native Horizon terminal result onto its Process', function (string $status): void {
+        $admitted = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
+        $operation = Operation::query()->findOrFail($admitted['operation_id']);
+        $result = $status === 'succeeded' ? ['ready' => true, 'state' => 'active', 'process_id' => $operation->target_id] : [];
+        app(HorizonOperation::class)->apply($operation, [
+            'run_id' => $operation->state['swamp_run_id'], 'status' => $status,
+            'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+            'error_code' => $status === 'failed' ? 'operation.native_failed' : null, 'result' => $result,
+        ]);
+        $horizon = Process::query()->findOrFail($operation->target_id);
+        expect($horizon->status)->toBe($status === 'succeeded' ? LifecycleStatus::Active : LifecycleStatus::Failed)
+            ->and($horizon->error_code)->toBe($status === 'failed' ? 'operation.native_failed' : null)
+            ->and($operation->refresh()->result)->toBe($result)
+            ->and($this->runtime->convergedProcessIds)->toBe([]);
+        if ($status === 'succeeded') {
+            expect($horizon->systemd_activation_hash)->toBe($operation->input['content_hash'])
+                ->and($horizon->systemd_activation_pending)->toBeFalse();
+        }
+    })->with(['succeeded', 'failed']);
 
     it('retains a failed Horizon intent when native submission cannot be confirmed', function (): void {
         app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket(false));

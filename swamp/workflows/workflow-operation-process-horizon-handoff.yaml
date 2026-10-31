@@ -1,0 +1,718 @@
+id: 2c2668b7-1864-48aa-966b-9705870cf69d
+name: operation-process-horizon-handoff
+description: Horizon handoff from complete admitted public inputs, with one inline command action per placed step.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - process.horizon_handoff
+    intent:
+      type: object
+      properties:
+        process_id:
+          type: integer
+          minimum: 1
+        unit:
+          type: string
+          pattern: ^orbit-process-[1-9][0-9]*-[a-z0-9-]+\.service$
+        content:
+          type: string
+          maxLength: 65536
+        content_hash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        command:
+          type: array
+          items:
+            type: string
+          minItems: 3
+          maxItems: 3
+        directory:
+          type: string
+          pattern: ^/
+        user:
+          type: string
+          pattern: ^[a-z_][a-z0-9_-]{0,31}$
+        created:
+          type: boolean
+      required:
+      - process_id
+      - unit
+      - content
+      - content_hash
+      - command
+      - directory
+      - user
+      - created
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
+jobs:
+- name: horizon
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: inspect
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-inspect-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${UNIT:?}" "${PROCESS_ID:?}" "${EXPECTED_HASH:?}"
+          sudo -n /usr/bin/env UNIT="$UNIT" PROCESS_ID="$PROCESS_ID" EXPECTED_HASH="$EXPECTED_HASH" /usr/bin/python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import stat
+          import subprocess
+
+          unit = os.environ["UNIT"]
+          path = "/etc/systemd/system/" + unit
+          present, matches = False, False
+          try:
+              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+          except FileNotFoundError:
+              fd = None
+          if fd is not None:
+              with os.fdopen(fd, "rb") as source:
+                  info = os.fstat(source.fileno())
+                  content = source.read(65537)
+              if (
+                  not stat.S_ISREG(info.st_mode)
+                  or info.st_uid != 0
+                  or info.st_mode & 0o022
+                  or len(content) > 65536
+              ):
+                  raise SystemExit("process.horizon_foreign_unit")
+              if (
+                  "X-Orbit-Process-ID=" + os.environ["PROCESS_ID"]
+              ).encode() not in content.splitlines():
+                  raise SystemExit("process.horizon_foreign_unit")
+              present = True
+              matches = hashlib.sha256(content).hexdigest() == os.environ["EXPECTED_HASH"]
+          state = subprocess.run(
+              ["/usr/bin/systemctl", "is-active", unit],
+              capture_output=True,
+              text=True,
+              check=False,
+          ).stdout.strip()
+          print(json.dumps({"present": present, "matches": matches, "active": state == "active"}))
+          PY
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+  - name: observation
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/horizon-observation'
+      behaviorName: ${{ "horizon-observation-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        stdout: ${{ steps.inspect.outputs.stdout }}
+  - name: stage-unit
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.observation.outputs.matches }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-stage-unit-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${UNIT_CONTENT:?}" "${CANDIDATE:?}" "${EXPECTED_HASH:?}"
+          sudo -n /usr/bin/env UNIT_CONTENT="$UNIT_CONTENT" CANDIDATE="$CANDIDATE" EXPECTED_HASH="$EXPECTED_HASH" /usr/bin/python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import stat
+          import tempfile
+
+          content = os.environ["UNIT_CONTENT"].encode()
+          if (
+              len(content) > 65536
+              or hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]
+          ):
+              raise SystemExit("process.horizon_unit_changed")
+          path = pathlib.Path(os.environ["CANDIDATE"])
+          parent = path.parent
+          for directory in [pathlib.Path("/etc/orbit"), parent]:
+              try:
+                  directory.mkdir(mode=0o755)
+              except FileExistsError:
+                  pass
+              info = directory.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                  raise SystemExit("process.horizon_foreign_directory")
+          fd, name = tempfile.mkstemp(prefix=".horizon-", suffix=".service", dir=parent)
+          try:
+              with os.fdopen(fd, "wb") as output:
+                  output.write(content)
+                  output.flush()
+                  os.fchmod(output.fileno(), 0o644)
+                  os.fsync(output.fileno())
+              os.replace(name, path)
+          finally:
+              if os.path.exists(name):
+                  os.unlink(name)
+          print("staged")
+          PY
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+          UNIT_CONTENT: ${{ inputs.intent.content }}
+          CANDIDATE: ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+  - name: validate-unit
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.observation.outputs.matches }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-validate-unit-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${CANDIDATE:?}"
+          sudo -n /usr/bin/systemd-analyze verify "$CANDIDATE"
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+          CANDIDATE: ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+  - name: publish-unit
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.observation.outputs.matches }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-publish-unit-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${CANDIDATE:?}" "${UNIT:?}" "${EXPECTED_HASH:?}"
+          sudo -n /usr/bin/env CANDIDATE="$CANDIDATE" UNIT="$UNIT" EXPECTED_HASH="$EXPECTED_HASH" /usr/bin/python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import stat
+
+          candidate = pathlib.Path(os.environ["CANDIDATE"])
+          target = pathlib.Path("/etc/systemd/system") / os.environ["UNIT"]
+          try:
+              fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+          except FileNotFoundError:
+              fd = None
+          if fd is not None:
+              with os.fdopen(fd, "rb") as current:
+                  info = os.fstat(current.fileno())
+                  content = current.read(65537)
+              if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                  raise SystemExit("process.horizon_foreign_unit")
+              if hashlib.sha256(content).hexdigest() == os.environ["EXPECTED_HASH"]:
+                  print("unchanged")
+                  raise SystemExit(0)
+          fd = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW)
+          with os.fdopen(fd, "rb") as source:
+              info = os.fstat(source.fileno())
+              content = source.read(65537)
+          if (
+              not stat.S_ISREG(info.st_mode)
+              or info.st_uid != 0
+              or info.st_mode & 0o022
+              or hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]
+          ):
+              raise SystemExit("process.horizon_invalid_candidate")
+          os.replace(candidate, target)
+          print("published")
+          PY
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+          CANDIDATE: ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+  - name: reload-units
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.observation.outputs.matches }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-reload-units-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n /usr/bin/systemctl daemon-reload
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+  - name: enable
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload-units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-enable-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${UNIT:?}"
+          sudo -n /usr/bin/systemctl enable "$UNIT"
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+  - name: graceful-handoff
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload-units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: enable
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.active }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-graceful-handoff-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${RUN_USER:?}" "${PHP_BINARY:?}" "${APPLICATION:?}"
+          cd "$APPLICATION"
+          sudo -n --user "$RUN_USER" -- "$PHP_BINARY" artisan horizon:terminate
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+          RUN_USER: ${{ inputs.intent.user }}
+          PHP_BINARY: ${{ inputs.intent.command[0] }}
+          APPLICATION: ${{ inputs.intent.directory }}
+  - name: start
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload-units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: enable
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: graceful-handoff
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.observation.outputs.active }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-start-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${UNIT:?}"
+          sudo -n /usr/bin/systemctl start "$UNIT"
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+  - name: verify
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload-units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: enable
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: graceful-handoff
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: start
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-verify-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${UNIT:?}"
+          sudo -n /usr/bin/systemctl is-active --quiet "$UNIT"
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stage-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: validate-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish-unit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload-units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: enable
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: graceful-handoff
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: start
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: verify
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "horizon-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          : "${OUTCOME:?}" "${PROCESS_ID:?}"
+          printf '{"ready":true,"state":"active","outcome":"%s","process_id":%s}\n' "$OUTCOME" "$PROCESS_ID"
+        env:
+          UNIT: ${{ inputs.intent.unit }}
+          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
+          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+          OUTCOME: '${{ steps.observation.outputs.active ? "terminated" : (inputs.intent.created ? "created" : "started")
+            }}'
