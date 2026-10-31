@@ -23,12 +23,12 @@ final readonly class InstanceRouteRemovalAdmission
     public function instance(Operation $parent, array $intent): Instance
     {
         $id = $intent['input']['instance_id'] ?? null;
-        if (! is_int($id) || $intent['kind'] !== 'instance.destroy' || $intent['key'] !== 'removal.'.$id
+        if (! is_int($id) || ! in_array($intent['kind'], ['instance.destroy', 'instance.destroy_development'], true) || $intent['key'] !== 'removal.'.$id
             || $intent['input'] !== ['instance_id' => $id, 'force' => true]) {
             throw $this->forbidden();
         }
         $instance = Instance::query()->with(['node', 'project'])->find($id);
-        if ($instance === null || $instance->node_id !== $intent['node_id']) {
+        if ($instance === null || $instance->node_id !== $intent['node_id'] || $intent['kind'] !== InstanceDestroyKind::forInstance($instance)) {
             throw $this->forbidden();
         }
         $this->assertAllowed($parent, $instance, true);
@@ -115,7 +115,7 @@ final readonly class InstanceRouteRemovalAdmission
             return null;
         }
         app(OperationChildren::class)->verify($parent, $operation);
-        if ($operation->kind !== 'instance.destroy' || $operation->target_type !== 'instance'
+        if (! in_array($operation->kind, ['instance.destroy', 'instance.destroy_development'], true) || $operation->target_type !== 'instance'
             || $operation->child_key !== 'removal.'.$operation->target_id) {
             throw $this->forbidden();
         }

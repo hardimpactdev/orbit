@@ -7,7 +7,7 @@ use App\Domain\Instances\InstanceTransferDiscardProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
-    'instance.destroy' => [
+    'instance.destroy_development' => [
         'workflow' => 'operation-instance-destroy',
         'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'instance_destroy_writer',

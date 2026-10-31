@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
@@ -51,7 +53,7 @@ beforeEach(function (): void {
     $this->command = 'printf "%s" private-teardown-proof-438824';
     $this->step = ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'teardown',
         'position' => 0, 'name' => 'release-resource', 'command' => $this->command, 'timeout_seconds' => 30]);
-    $this->operation = new Operation(['kind' => 'instance.destroy', 'target_type' => 'instance',
+    $this->operation = new Operation(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => [
             'environment' => 'development', 'instance_id' => $this->instance->id, 'node_id' => $this->node->id,
             'project_id' => $this->project->id, 'direct_destroy' => ['node_user' => $this->node->user, 'teardown' => [[
@@ -539,7 +541,7 @@ it('refuses inconsistent Task ending policy before recording removal', function 
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tasks.workspace_mismatch'));
     expect(InstanceRemoval::query()->count())->toBe(0)
         ->and($this->instance->refresh()->status->value)->toBe('reserved');
-})->with([['tasks.cancel', 'manual'], ['tasks.cancel', 'settle'], ['tasks.complete', 'cancel'], ['instance.destroy', 'cancel']]);
+})->with([['tasks.cancel', 'manual'], ['tasks.cancel', 'settle'], ['tasks.complete', 'cancel'], ['instance.destroy_development', 'cancel']]);
 
 it('rejects foreign or changed Task destruction identities without marking Removing', function (string $change): void {
     $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Owned workspace',
@@ -602,7 +604,7 @@ it('refuses unproven Task endings before deleting any workspace or association',
     [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.complete', 'settle');
     $result = taskEndingResult($parent);
     match ($change) {
-        'parent-kind' => $parent->kind = 'instance.destroy',
+        'parent-kind' => $parent->kind = 'instance.destroy_development',
         'parent-target' => $parent->target_id++,
         'parent-status' => $parent->status = 'failed',
         'result-group' => $result['group_id']++,
@@ -774,7 +776,7 @@ function directDestroyResult(array $intent, array $databaseIds = []): array
 {
     $results = array_map(static fn (array $artifact): array => [
         'artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
-        'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => 'absent',
+        'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => array_any($artifact['connections'], static fn (array $row): bool => $row['driver'] !== 'sqlite') ? 'record_only' : 'absent',
     ], $intent['direct_destroy']['databases']);
 
     return ['removal_id' => $intent['removal_id'], 'removed' => true,
@@ -944,7 +946,7 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
     $run = (string) Str::uuid();
-    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+    $operation = Operation::query()->create(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'destroy-callback-gateway', 'status' => 'active',
@@ -966,7 +968,7 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
 it('returns a fresh same-root Caddy render and keeps PHP in the private channel', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $operation = new Operation(['kind' => 'instance.destroy', 'target_type' => 'instance',
+    $operation = new Operation(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $intent]);
     $input = app(InstanceDestroyProjection::class)->input($operation);
     expect($input['caddy_publication']['node_id'])->toBe($this->node->id)
@@ -976,10 +978,60 @@ it('returns a fresh same-root Caddy render and keeps PHP in the private channel'
 
 it('has exactly one direct destroy dispatch and no executor or child execution contract', function (): void {
     $kinds = app(OperationKinds::class);
-    $definition = $kinds->definition('instance.destroy');
-    expect($kinds->directOnly('instance.destroy'))->toBeTrue()
+    $definition = $kinds->definition('instance.destroy_development');
+    expect($kinds->directOnly('instance.destroy_development'))->toBeTrue()
         ->and($definition)->not->toHaveKeys(['execution', 'runs', 'children', 'completion']);
-    expect(app(DirectOperation::class)->writer('instance.destroy'))->toBe('direct');
-    config(['swamp.direct_writers' => ['instance.destroy' => 'polled']]);
-    expect(fn () => app(DirectOperation::class)->writer('instance.destroy'))->toThrow(ResourceOperationException::class);
+    expect(app(DirectOperation::class)->writer('instance.destroy_development'))->toBe('direct');
+    config(['swamp.direct_writers' => ['instance.destroy_development' => 'polled']]);
+    expect(fn () => app(DirectOperation::class)->writer('instance.destroy_development'))->toThrow(ResourceOperationException::class);
+});
+
+it('replays the saved admission after failure without recapturing database artifacts or source facts', function (): void {
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $initial = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $removal = InstanceRemoval::query()->sole();
+    $removal->update(['status' => 'failed', 'failed_step' => 'source_preparation', 'error_code' => 'instance.destroy_failed']);
+    $this->project->update(['repository_url' => 'https://github.com/example/changed.git']);
+
+    $snapshot = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
+    $retried = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+
+    expect($retried)->toEqual($initial);
+    expect($removal->members()->sole()->origin)->toBe($initial['members'][0]['origin']);
+    expect($removal->members()->sole()->worktree_inventory)->toBe($initial['members'][0]['worktree_inventory']);
+    expect($removal->refresh()->status->value)->toBe('removing');
+});
+
+it('refuses normal cancellation of accepted native removal', function (): void {
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $input = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $operation = Operation::query()->create(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued', 'input' => $input]);
+
+    expect(fn () => app(CancelOperationAction::class)->execute($operation))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.cancel_refused'));
+    expect($operation->refresh()->status->value)->toBe('queued');
+    expect($operation->cancel_requested_at)->toBeNull();
+    expect($this->instance->refresh()->status->value)->toBe('removing');
+});
+
+it('projects native failure with its exact failed phase and retries the complete saved admission', function (): void {
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $run = (string) Str::uuid();
+    $operation = Operation::query()->create(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
+        'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
+    $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'];
+
+    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
+        'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
+        'result' => $result, 'error_code' => 'instance.destroy_failed']);
+
+    expect($operation->refresh()->status->value)->toBe('failed');
+    expect($operation->result)->toBe($result);
+    expect(InstanceRemoval::query()->sole()->failed_step->value)->toBe('runtime_cleanup');
+    $snapshot = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
+    expect(app(DirectInstanceDestroyIntent::class)->record($snapshot))->toEqual($intent);
+    $this->assertModelExists($this->instance);
 });

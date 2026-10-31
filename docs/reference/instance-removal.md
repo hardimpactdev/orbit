@@ -296,3 +296,9 @@ A production Instance owns its account, home, and source state. Removal deletes 
 ### The owner check is the directory
 
 The managed user must own the checkout directory and its parent. Checking every file was rejected, because the managed user can delete every entry while the directory stays writable.
+
+A failed direct removal reuses its complete saved admission, including source origin, worktree inventory and database artifacts. A retry never recaptures an owning database artifact. Accepted removal cannot be cancelled. Native removal stops Schedules and Processes before teardown, withdraws Caddy and DNS before database drops, and records the failed native phase without deleting resource rows. Database record projection refuses connections attached to another Instance.
+
+The local development writer uses `instance.destroy_development`. The public remove endpoint selects that kind from stored development placement when no managed database is owned. Production and managed-database removal keep `instance.destroy` until their native replacements are complete. The request kind is resolved before idempotency replay; a saved receipt remains replayable after its target row is removed. Callers cannot select an environment, account or writer.
+
+The retained synchronous caller is Task cancellation or completion through `RemoveTaskWorkspaceAction`, `InstanceRemover`, `DestroyInstanceAction::cleanupRuntime`, and `DropOwnedDatabasesAction`. It remains live until the complete Task root replaces it. The executor HTTP removal branch is removed. No synchronous result is replaced by admission-only success.

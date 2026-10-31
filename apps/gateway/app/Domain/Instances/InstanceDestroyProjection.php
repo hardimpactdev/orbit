@@ -58,10 +58,19 @@ final readonly class InstanceDestroyProjection implements DirectOperationProject
             $result = ValidatedData::object($data['result'] ?? []);
             $code = $data['error_code'] ?? null;
             $status = $data['status'] ?? null;
+            $failedStep = $result['failed_step'] ?? null;
+            $journalStep = match ($failedStep) {
+                'admission', 'prepare_sources' => InstanceRemovalStep::SourcePreparation,
+                'runtime', 'teardown', 'databases' => InstanceRemovalStep::RuntimeCleanup,
+                'php', 'caddy', 'dns', 'cleanup' => InstanceRemovalStep::RouteTargetClear,
+                'finalize_sources' => InstanceRemovalStep::SourceFinalization,
+                'complete' => InstanceRemovalStep::RowDeletion,
+                default => null,
+            };
             $valid = match ($status) {
                 'succeeded' => $code === null,
                 'failed' => is_string($code) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $code) === 1
-                    && $result === ['error_code' => $code],
+                    && $journalStep !== null && count($result) === 2 && ($result['error_code'] ?? null) === $code,
                 'running' => $code === null && $result === [],
                 // Accepted destruction must finish or resume; it cannot discard its intent.
                 default => false,
@@ -77,6 +86,7 @@ final readonly class InstanceDestroyProjection implements DirectOperationProject
             if ($status === 'failed' && ! $terminal) {
                 InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update([
                     'status' => InstanceRemovalStatus::Failed, 'error_code' => $code,
+                    'current_step' => $journalStep, 'failed_step' => $journalStep,
                 ]);
             }
 

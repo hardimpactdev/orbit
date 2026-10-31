@@ -163,7 +163,7 @@ final readonly class ServingNodeResolver
             }
             $key = $request->header('Idempotency-Key');
             $receipt = is_string($key) && $key !== ''
-                ? Operation::query()->where('kind', 'instance.destroy')->where('idempotency_key', $key)
+                ? Operation::query()->whereIn('kind', ['instance.destroy', 'instance.destroy_development'])->where('idempotency_key', $key)
                     ->where('target_type', 'instance')->where('target_id', $id)->first() : null;
             if ($receipt?->node_id !== null && ($receipt->input['instance_id'] ?? null) === $id) {
                 return [Node::query()->findOrFail($receipt->node_id)];

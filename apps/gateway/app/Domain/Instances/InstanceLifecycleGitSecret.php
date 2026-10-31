@@ -20,7 +20,7 @@ use InvalidArgumentException;
 /** Resolves the admitted Project's existing Git access only in request memory. */
 final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
 {
-    private const array InstanceKinds = ['instance.create', 'instance.clone', 'instance.destroy', 'instance.clone_candidate', 'instance.transfer_destination'];
+    private const array InstanceKinds = ['instance.create', 'instance.clone', 'instance.destroy', 'instance.destroy_development', 'instance.clone_candidate', 'instance.transfer_destination'];
 
     public function __construct(private RepositoryReadAccess $access) {}
 
@@ -46,7 +46,7 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
         if ($instance !== null) {
             return $instance->project_id === $id ? $id : null;
         }
-        if ($operation->kind === 'instance.destroy' && InstanceRemovalMember::query()
+        if (in_array($operation->kind, ['instance.destroy', 'instance.destroy_development'], true) && InstanceRemovalMember::query()
             ->where('instance_id', $operation->target_id)->where('project_id', $id)->where('node_id', $operation->node_id)
             ->whereNotNull('row_deleted_at')->exists()) {
             return $id;

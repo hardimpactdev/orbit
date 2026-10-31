@@ -30,6 +30,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_identity
  * @property list<string> $linked_worktree_paths
  * @property string $source_digest
+ * @property string|null $origin
+ * @property string|null $worktree_inventory
  * @property bool $runtime_published
  * @property Carbon|null $source_prepared_at
  * @property Carbon|null $route_cleared_at
@@ -68,6 +70,8 @@ final class InstanceRemovalMember extends Model
         'source_identity',
         'linked_worktree_paths',
         'source_digest',
+        'origin',
+        'worktree_inventory',
         'runtime_published',
         'source_prepared_at',
         'route_cleared_at',

@@ -11,8 +11,10 @@ use Illuminate\Routing\Route;
 #[Attribute(Attribute::TARGET_METHOD)]
 final readonly class StartsOperation
 {
-    /** @param list<string> $secretInputs Dot paths excluded from the idempotency fingerprint. */
-    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = [], public bool $bindCaller = false) {}
+    /** @param list<string> $secretInputs Dot paths excluded from the idempotency fingerprint.
+     * @param  class-string<OperationStartKind>|null  $kindResolver
+     */
+    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = [], public bool $bindCaller = false, public ?string $kindResolver = null) {}
 
     public static function forRoute(Route $route): ?self
     {

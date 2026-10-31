@@ -8,6 +8,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 
 /**
@@ -38,6 +39,9 @@ final readonly class PrepareOwnedDatabaseDestructionAction
         $connections = ($lock ? $query->lockForUpdate() : $query)->get();
         if ($connections->count() > 1000) {
             throw new ResourceOperationException('database.removal_conflict', 'The owned database set exceeds the native artifact bound.', 409);
+        }
+        if (DatabaseConnectionTarget::query()->whereIn('database_connection_id', $connections->modelKeys())->where('instance_id', '!=', $target->id)->exists()) {
+            throw new ResourceOperationException('database.removal_conflict', 'An owned database is attached to another Instance.', 409);
         }
         $snapshot = [];
         foreach ($connections as $connection) {

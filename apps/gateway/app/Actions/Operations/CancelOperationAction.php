@@ -36,6 +36,7 @@ final readonly class CancelOperationAction
             if ($this->cancelUnstartedRetired($operation)) {
                 return;
             }
+            $this->assertCancellableTree($operation);
             if ($this->native($operation)) {
                 if ($operation->cancel_requested_at === null) {
                     $this->store->change($operation, ['cancel_requested_at' => Carbon::now()]);
@@ -43,7 +44,6 @@ final readonly class CancelOperationAction
 
                 return;
             }
-            $this->assertCancellableTree($operation);
             $now = Carbon::now();
             $descendants = [];
             $cancelled = clone $operation;

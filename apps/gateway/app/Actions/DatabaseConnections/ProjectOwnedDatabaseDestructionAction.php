@@ -26,8 +26,7 @@ final readonly class ProjectOwnedDatabaseDestructionAction
      */
     public function execute(Instance $target, array $artifact, array $result): void
     {
-        $expected = ['artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
-            'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => 'absent'];
+        $expected = self::result($artifact);
         if (count($result) !== count($expected) || array_diff_key($result, $expected) !== []
             || array_any(array_keys($expected), static fn (string $key): bool => ($result[$key] ?? null) !== $expected[$key])) {
             throw new ResourceOperationException('operation.result_invalid', 'Owned database destruction requires its complete bounded native result.', 422);
@@ -52,13 +51,25 @@ final readonly class ProjectOwnedDatabaseDestructionAction
                 $this->conflict();
             }
             $ids = array_column($remaining, 'connection_id');
-            DatabaseConnectionTarget::query()->whereIn('database_connection_id', $ids)->delete();
+            if (DatabaseConnectionTarget::query()->whereIn('database_connection_id', $ids)->where('instance_id', '!=', $current->id)->exists()) {
+                $this->conflict();
+            }
+            DatabaseConnectionTarget::query()->whereIn('database_connection_id', $ids)->where('instance_id', $current->id)->delete();
             DatabaseConnection::query()->whereIn('id', $ids)->delete();
             foreach ($remaining as $connection) {
                 DB::afterCommit(fn () => $this->broadcaster->broadcast(RecordEventType::DatabaseDeleted, $connection['connection_id'],
                     ['id' => $connection['connection_id'], 'slug' => $connection['slug']]));
             }
         });
+    }
+
+    /** @param Artifact $artifact
+     * @return array<string,mixed>
+     */
+    public static function result(array $artifact): array
+    {
+        return ['artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
+            'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => array_any($artifact['connections'], static fn (array $connection): bool => $connection['driver'] !== 'sqlite') ? 'record_only' : 'absent'];
     }
 
     private function conflict(): never

@@ -25,7 +25,7 @@ final readonly class InstanceLifecycleChildAdmission implements OperationChildAd
 
             return app(StartInstanceDestroyAction::class)->execute($instance, true, 'route.target_set', $parent->request_id);
         }
-        if ($parent->kind !== 'instance.create' || $intent['key'] !== 'rollback-removal' || $intent['kind'] !== 'instance.destroy'
+        if ($parent->kind !== 'instance.create' || $intent['key'] !== 'rollback-removal' || ! in_array($intent['kind'], ['instance.destroy', 'instance.destroy_development'], true)
             || $intent['node_id'] !== $parent->node_id || $intent['input'] !== ['instance_id' => $parent->target_id, 'force' => true]) {
             throw new ResourceOperationException('operation.child_forbidden', 'The rollback removal does not belong to this create.', 422);
         }

@@ -226,3 +226,15 @@ it('serializes owner admission and removal with a real SQLite transaction barrie
         new Filesystem()->deleteDirectory($directory);
     }
 })->with([true, false]);
+
+
+it('refuses a new attachment to a database whose stored owner is Removing', function (): void {
+    $foreign = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id,
+        'name' => 'attachment-other', 'checkout_path' => '/srv/apps/attachment-other', 'source_layout' => 'checkout', 'status' => 'reserved']);
+    admitDatabaseOwnerRemoval($this->instance->fresh());
+
+    expect(fn () => \App\Models\DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
+        'instance_id' => $foreign->id, 'prefix' => 'DB']))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.owner_removing'));
+    expect(\App\Models\DatabaseConnectionTarget::query()->where('database_connection_id', $this->owned->id)->count())->toBe(0);
+});

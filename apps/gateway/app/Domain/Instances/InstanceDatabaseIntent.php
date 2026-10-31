@@ -73,6 +73,32 @@ final readonly class InstanceDatabaseIntent
         return ['database_required' => true];
     }
 
+    /** @return array<string, mixed> */
+    public function remove(Operation $operation, int $instanceId): array
+    {
+        $intent = app(RemovalLifecycleExecution::class)->intent($operation);
+        if ($operation->kind !== 'instance.destroy'
+            || ! in_array($instanceId, array_column(InstanceLifecycleInput::members($intent), 'instance_id'), true)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The database owner is outside the admitted removal set.', 422);
+        }
+        DB::transaction(function () use ($operation, $instanceId): void {
+            $children = ValidatedData::object($operation->state['lifecycle_owned_databases'] ?? []);
+            $key = 'remove-databases-'.$instanceId;
+            if (isset($children[$key])) {
+                return;
+            }
+            $instance = Instance::query()->findOrFail($instanceId);
+            if ($instance->node_id !== $operation->node_id || $instance->project_id !== $operation->input['project_id']) {
+                throw new ResourceOperationException('instance.removal_conflict', 'The database owner placement changed.', 409);
+            }
+            $child = app(PrepareDatabaseChildAction::class)->destroyOwned($instance, $operation);
+            $children[$key] = [...$child, 'key' => $key];
+            app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'lifecycle_owned_databases' => $children]]);
+        });
+
+        return ['database_required' => true];
+    }
+
     /** @return ChildIntent */
     public function child(Operation $operation, string $key): array
     {
@@ -81,11 +107,18 @@ final readonly class InstanceDatabaseIntent
         $recordedInput = ValidatedData::object($recorded['input'] ?? []);
         $kind = ($operation->input['database_clone_source_id'] ?? null) !== null
             ? (($recordedInput['driver'] ?? null) === 'mysql' ? 'database.mysql_clone' : 'database.clone') : 'database.create';
-        if ($key !== 'database' || $operation->kind !== 'instance.create') {
-            throw new ResourceOperationException('operation.child_unproven', 'Database preparation requires its create parent.', 409);
-
+        if ($key !== 'database') {
+            if ($operation->kind !== 'instance.destroy' || preg_match('/\Aremove-databases-([1-9][0-9]*)\z/D', $key, $match) !== 1
+                || ! in_array((int) $match[1], array_column(InstanceLifecycleInput::members(app(RemovalLifecycleExecution::class)->intent($operation)), 'instance_id'), true)) {
+                throw new ResourceOperationException('operation.child_unproven', 'The database child is outside the removal set.', 409);
+            }
+            $owner = (int) $match[1];
+            $kind = 'database.destroy_owned';
+        } elseif ($operation->kind !== 'instance.create') {
+            throw new ResourceOperationException('operation.child_unproven', 'Database creation requires its create parent.', 409);
         }
-        $child = $operation->state['lifecycle_database'] ?? null;
+        $child = $key === 'database' ? ($operation->state['lifecycle_database'] ?? null)
+            : ValidatedData::object($operation->state['lifecycle_owned_databases'] ?? [])[$key] ?? null;
         if (! is_array($child) || ($child['key'] ?? null) !== $key
             || ($child['kind'] ?? null) !== $kind || ! is_int($child['node_id'] ?? null) || ! is_array($child['input'] ?? null)
             || ($child['input']['owner_instance_id'] ?? null) !== $owner

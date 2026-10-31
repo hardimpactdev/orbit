@@ -49,6 +49,10 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
+        $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
+        if ($stored?->native_intent !== null) {
+            return $this->replay($stored, $input);
+        }
         $members = InstanceLifecycleInput::members($input);
         $ids = ValidatedData::integerList(array_column($members, 'instance_id'));
         if ($members === [] || count(array_unique($ids)) !== count($ids)
@@ -96,7 +100,7 @@ final readonly class DirectInstanceDestroyIntent
             $record = $removal->members()->firstOrCreate(['instance_id' => $instance->id], ['route_ids' => $ownedRoutes, ...Arr::only($member, [
                 'position', 'project_id', 'node_id', 'route_id', 'name', 'environment', 'source_layout', 'repository_identity',
                 'checkout_path', 'root', 'branch', 'starting_commit', 'source_commit', 'common_repository_path', 'source_identity',
-                'linked_worktree_paths', 'source_digest', 'runtime_published',
+                'linked_worktree_paths', 'source_digest', 'runtime_published', 'origin', 'worktree_inventory',
             ])]);
             if ($record->route_ids !== $ownedRoutes) {
                 throw new ResourceOperationException('instance.removal_conflict', 'The recorded Route inventory changed.', 409);
@@ -146,7 +150,7 @@ final readonly class DirectInstanceDestroyIntent
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
 
-        return [...$input, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+        $recorded = [...$input, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
             'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
             'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
             'direct_destroy' => [
@@ -155,6 +159,48 @@ final readonly class DirectInstanceDestroyIntent
                 'databases' => $databases,
             ],
         ];
+        $removal->update(['native_intent' => $recorded]);
+
+        return $recorded;
+    }
+
+    /** @param array<string,mixed> $input
+     * @return array<string,mixed>
+     */
+    private function replay(InstanceRemoval $removal, array $input): array
+    {
+        $saved = $removal->native_intent;
+        if ($saved === null || $removal->requested_instance_id !== $input['instance_id']
+            || $removal->inventory_digest !== $input['inventory_digest']
+            || $saved['node_id'] !== $input['node_id'] || $saved['project_id'] !== $input['project_id']
+            || ($saved['force'] !== $input['force'] && ($input['force'] !== true || $removal->status !== InstanceRemovalStatus::Failed))) {
+            throw new ResourceOperationException('instance.removal_conflict', 'The saved native removal admission changed.', 409);
+        }
+        foreach (InstanceLifecycleInput::members($saved) as $member) {
+            $instance = Instance::query()->findOrFail(ValidatedData::integer($member['instance_id']));
+            if ($instance->status !== InstanceState::Removing || $instance->node_id !== $member['node_id']
+                || $instance->project_id !== $member['project_id'] || $instance->checkout_path !== $member['checkout_path']) {
+                throw new ResourceOperationException('instance.removal_conflict', 'A saved native removal member changed.', 409);
+            }
+        }
+        if ($input['force'] !== $removal->force) {
+            $removal->update(['force' => $input['force']]);
+        }
+        $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
+        $detail = ValidatedData::object($saved['direct_destroy']);
+        $detail['routes'] = array_map(static function (array $route): array {
+            $php = ValidatedData::object($route['php']);
+            $php['configurations'] = (object) ValidatedData::object($php['configurations']);
+            $route['php'] = $php;
+
+            return $route;
+        }, InstanceLifecycleInput::members(['members' => $detail['routes']]));
+        if ($input['force'] === true) {
+            $detail['members'] = array_map(static fn (array $member): array => [...$member, 'force' => true],
+                InstanceLifecycleInput::members(['members' => $detail['members']]));
+        }
+
+        return [...$saved, 'force' => $input['force'], 'direct_destroy' => $detail];
     }
 
     /** @return list<int> */

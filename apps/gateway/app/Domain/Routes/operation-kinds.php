@@ -112,7 +112,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
         'route.workload_prepare', 'route.workload_firewall', 'route.lan_converge', 'route.lan_remove', 'route.router_lan_retire',
         'route.workload_verify', 'route.public_verify', 'route.public_firewall', 'route.shared_php_withdraw',
         'route.transfer_php_withdraw', 'route.transfer_lan_remove', 'instance.prepare_php_runtime', 'instance.prepare_served_web_roots',
-        'instance.sync_environment', 'instance.destroy', 'node.role_converge', 'node.role_remove', 'metrics.reconcile'];
+        'instance.sync_environment', 'instance.destroy', 'instance.destroy_development', 'node.role_converge', 'node.role_remove', 'metrics.reconcile'];
     foreach ([...RouteParentExecution::Kinds, ...ClusterRouterParentExecution::Kinds] as $kind) {
         $router = str_starts_with($kind, 'cluster.');
         $definitions[$kind] = [

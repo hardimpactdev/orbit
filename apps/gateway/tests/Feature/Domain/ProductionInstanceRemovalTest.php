@@ -475,3 +475,18 @@ it('resumes a Retiring Route using the same removal proven withdrawal and preser
     expect($this->route->fresh()->status->value)->toBe('retiring');
     expect($this->route->targets()->sole()->instance_id)->toBe($this->instance->id);
 });
+
+it('keeps production HTTP admission and keyed replay on its existing working writer', function (): void {
+    $node = $this->nodes[0];
+    $node->accessibleNodes()->attach($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $this->withHeader('Idempotency-Key', 'production-destroy-replay');
+    $path = '/api/v1/instances/'.$this->instance->id;
+
+    $first = $this->deleteJson($path, ['force' => true])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy')->json('data.id');
+    $this->deleteJson($path, ['force' => true])->assertAccepted()->assertJsonPath('data.id', $first);
+    expect(app(OperationKinds::class)->directOnly('instance.destroy'))->toBeFalse();
+    expect(Operation::query()->count())->toBe(1);
+    expect($this->instance->refresh()->status->value)->toBe('active');
+});

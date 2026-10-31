@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Instances\RemovalLifecycleExecution;
 use App\Domain\Instances\TransferLifecycleExecution;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationFamilyChildren;
@@ -22,6 +23,7 @@ final class InstanceLifecycleContextController extends Controller
     public function __invoke(LifecycleContextRequest $request, Operation $operation, OperationExecutionContract $contract, CommandActivityInputSanitizer $redactor): JsonResponse
     {
         $input = match ($operation->kind) {
+            'instance.destroy' => app(RemovalLifecycleExecution::class)->intent($operation),
             'instance.transfer_destination' => app(TransferLifecycleExecution::class)->intent($operation),
             'instance.create', 'instance.clone', 'instance.register', 'instance.rename', 'instance.transfer', 'instance.transfer_rollback' => $operation->input,
             default => throw new ResourceOperationException('operation.execution_forbidden', 'The Operation is outside the lifecycle family.', 422),

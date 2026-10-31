@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -25,6 +26,11 @@ final readonly class InstanceLifecycleCompletion implements OperationCompletion
     {
         if ($outcome->status !== OperationStatus::Succeeded) {
             $this->failed($operation, $outcome);
+
+            return;
+        }
+        if ($operation->kind === 'instance.destroy') {
+            $this->broadcaster->broadcast(RecordEventType::InstanceDeleted, $operation->target_id, ['id' => $operation->target_id]);
 
             return;
         }
@@ -48,6 +54,13 @@ final readonly class InstanceLifecycleCompletion implements OperationCompletion
         if ($instance !== null && ! ($operation->kind === 'instance.create'
             && ($operation->input['initial_status'] ?? null) === 'active' && ($operation->input['first_setup_pending'] ?? true) === false)) {
             $instance->update(['failed_step' => is_string($step) ? $step : $instance->failed_step ?? 'lifecycle', 'error_code' => $code]);
+        }
+        if ($operation->kind === 'instance.destroy') {
+            $id = $operation->input['removal_id'] ?? ValidatedData::object($operation->state['lifecycle_removal'] ?? [])['removal_id'] ?? null;
+            if (is_string($id)) {
+                InstanceRemoval::query()->whereKey($id)->update(['status' => InstanceRemovalStatus::Failed,
+                    'error_code' => $code]);
+            }
         }
         if ($operation->kind === 'instance.transfer') {
             $pending = $outcome->status === OperationStatus::Cancelled

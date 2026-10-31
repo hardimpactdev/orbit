@@ -31,7 +31,7 @@ final readonly class InstanceDestroyPhpSecret implements OperationSecretSource
     {
         $target = Instance::query()->with('node')->find($operation->target_id);
 
-        return $operation->kind === 'instance.destroy' && $operation->target_type === 'instance'
+        return $operation->kind === 'instance.destroy_development' && $operation->target_type === 'instance'
             && $target !== null && $target->id === ($operation->input['instance_id'] ?? null)
             && $target->node_id === $operation->node_id && $target->status === InstanceState::Removing
             && $target->placedOnAppDev() ? $target->id : null;

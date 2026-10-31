@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceLifecycleChildren;
 use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceLifecycleState;
@@ -54,15 +55,20 @@ final readonly class StartInstanceDestroyAction
 
     public function execute(Instance $instance, bool $force, ?string $caller = null, ?string $requestId = null): Operation
     {
-        if (($replay = $this->idempotency->replay('instance.destroy')) !== null) {
+        $kind = InstanceDestroyKind::forInstance($instance);
+        if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
         $snapshot = $this->snapshot($instance, $force, $this->idempotency->parent);
 
-        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId): Operation {
+        if ($kind === 'instance.destroy') {
+            return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $snapshot, $caller, $requestId);
+        }
+
+        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
             $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
 
-            return $this->operations->execute('instance.destroy', 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId, expectedWriter: 'direct');
+            return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId, expectedWriter: 'direct');
         });
     }
 
@@ -79,10 +85,15 @@ final readonly class StartInstanceDestroyAction
         }
         $input['members'] = array_map(static fn (array $member): array => [...$member, 'run_teardown' => false], $members);
 
-        return DB::transaction(function () use ($input, $instance, $parent): Operation {
+        $kind = InstanceDestroyKind::forInstance($instance);
+        if ($kind === 'instance.destroy') {
+            return $this->operations->execute($kind, 'instance', $instance->id, $parent->node_id, $input, 'instance.create', $parent->request_id);
+        }
+
+        return DB::transaction(function () use ($input, $instance, $parent, $kind): Operation {
             $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
 
-            return $this->operations->execute('instance.destroy', 'instance', $instance->id, $parent->node_id, $recorded, 'instance.create', $parent->request_id, expectedWriter: 'direct');
+            return $this->operations->execute($kind, 'instance', $instance->id, $parent->node_id, $recorded, 'instance.create', $parent->request_id, expectedWriter: 'direct');
         });
     }
 
@@ -101,7 +112,6 @@ final readonly class StartInstanceDestroyAction
 
             return app(ProductionRemovalIntent::class)->snapshot($instance, $force, $detached);
         }
-        $account = $this->accounts->resolve($instance->node);
         $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
         if ($instance->status === InstanceState::Removing) {
             if (! $retained instanceof InstanceRemovalMember || $retained->removal->requested_instance_id !== $instance->id) {
@@ -111,6 +121,10 @@ final readonly class StartInstanceDestroyAction
             if ($removal->force !== $force && (! $force || $removal->force || $removal->status !== InstanceRemovalStatus::Failed)) {
                 $this->conflict($instance);
             }
+            if ($removal->native_intent !== null) {
+                return [...$removal->native_intent, 'force' => $force];
+            }
+            $account = $this->accounts->resolve($instance->node);
             $members = [];
             foreach ($removal->members as $member) {
                 $members[] = [...$member->toArray(), 'run_teardown' => false,
@@ -128,6 +142,7 @@ final readonly class StartInstanceDestroyAction
             ];
         }
         $this->assertSupported($instance);
+        $account = $this->accounts->resolve($instance->node);
         [$members, $inventories] = $this->deletionSet($instance, $force, $detached);
         if ($detached && $members->count() !== 1) {
             throw new ResourceOperationException('operation.child_forbidden', 'The Route disposition cannot remove another linked Instance.', 422);

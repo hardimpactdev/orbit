@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\Instance;
 use App\Models\Operation;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
@@ -27,7 +28,7 @@ beforeEach(function (): void {
 function ownedDestructionResult(array $artifact): array
 {
     return ['artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
-        'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => 'absent'];
+        'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => array_any($artifact['connections'], static fn (array $row): bool => $row['driver'] !== 'sqlite') ? 'record_only' : 'absent'];
 }
 
 it('records only public owned local intent without any Gateway execution records or Node reads', function (): void {
@@ -113,3 +114,23 @@ it('refuses changed placement or ownership as a set without deleting unchanged r
         ->toThrow(ResourceOperationException::class);
     $this->assertModelExists($this->owned);
 })->with(['checkout', 'node', 'path', 'owner', 'server', 'added']);
+
+it('refuses an owned database attached to a foreign Instance before deleting any target', function (): void {
+    $foreign = Instance::query()->create(['project_id' => $this->instance->project_id,
+        'node_id' => $this->instance->node_id, 'name' => 'foreign-target', 'checkout_path' => '/srv/apps/foreign-target',
+        'source_layout' => 'checkout', 'status' => 'reserved']);
+    $target = DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
+        'instance_id' => $foreign->id, 'prefix' => 'DB']);
+    expect(fn () => $this->prepare->execute($this->instance))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.removal_conflict'));
+    $target->delete();
+    $artifact = $this->prepare->execute($this->instance);
+    $target = DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
+        'instance_id' => $foreign->id, 'prefix' => 'DB']);
+
+    expect(fn () => $this->project->execute($this->instance, $artifact, ownedDestructionResult($artifact)))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.removal_conflict'));
+    $this->assertModelExists($target);
+    $this->assertModelExists($this->owned);
+    $this->assertModelExists($this->instance);
+});

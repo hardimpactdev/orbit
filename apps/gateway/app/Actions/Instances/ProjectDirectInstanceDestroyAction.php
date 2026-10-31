@@ -46,10 +46,7 @@ final readonly class ProjectDirectInstanceDestroyAction
         $artifacts = array_map($this->artifact(...), $this->rows($detail['databases']));
         $owners = array_column($artifacts, 'owner_instance_id');
         sort($owners);
-        $databaseResults = array_map(static fn (array $artifact): array => [
-            'artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
-            'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => 'absent',
-        ], $artifacts);
+        $databaseResults = array_map(ProjectOwnedDatabaseDestructionAction::result(...), $artifacts);
         // The native final step validates every actual result, then hashes this fixed ordered JSON.
         // The digest bounds the parent wire without dropping set members or regenerating artifacts.
         $expected = ['removal_id' => $input['removal_id'], 'removed' => true, 'instance_ids' => $ids,

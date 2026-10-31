@@ -95,19 +95,19 @@ final readonly class OperationKinds
             throw new LogicException("Operation kind [{$kind}] needs declared result fields.");
         }
         OperationResultFields::validate($definition['result_fields']);
+        if (array_key_exists('cancel_guard', $definition) && (! self::supports('cancel_guard')
+            || ! is_string($definition['cancel_guard']) || ! class_exists($definition['cancel_guard'])
+            || ! is_a($definition['cancel_guard'], OperationCancelGuard::class, true))) {
+            throw new LogicException("Operation kind [{$kind}] requires an OperationCancelGuard class.");
+        }
         if (! array_key_exists('runs', $definition)) {
-            self::assertKeys($kind, 'direct-only kind', $definition, ['executor', 'result_fields', 'admission']);
+            self::assertKeys($kind, 'direct-only kind', $definition, ['executor', 'result_fields', 'admission', 'cancel_guard']);
             self::validateChildren($kind, $definition);
 
             return;
         }
         if (! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'])) {
             throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
-        }
-        if (array_key_exists('cancel_guard', $definition) && (! self::supports('cancel_guard')
-            || ! is_string($definition['cancel_guard']) || ! class_exists($definition['cancel_guard'])
-            || ! is_a($definition['cancel_guard'], OperationCancelGuard::class, true))) {
-            throw new LogicException("Operation kind [{$kind}] requires an OperationCancelGuard class.");
         }
         self::validateChildren($kind, $definition);
         if (array_key_exists('compensations', $definition) || array_key_exists('cancellation_boundary', $definition)) {

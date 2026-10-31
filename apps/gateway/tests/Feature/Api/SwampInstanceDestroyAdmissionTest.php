@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -20,15 +21,20 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'fixture.shared.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-destroy', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     app()->instance(OperationKinds::class, new OperationKinds(app(), [
         ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
     ]));
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
     $accounts->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     app()->instance(ManagedUserAccountResolver::class, $accounts);
-    $this->node = Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit',
+    $this->node = Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit',
         'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     NodeRole::query()->create(['node_id' => $this->node->id, 'role' => RoleName::AppDev, 'status' => 'active']);
     $this->node->accessibleNodes()->attach($this->node);
@@ -40,7 +46,7 @@ beforeEach(function (): void {
     $this->inventory = fn (array $paths = []): InstanceSourceInventory => new InstanceSourceInventory(
         instanceId: $this->instance->id, layout: 'checkout', repositoryIdentity: $project->repository_identity,
         checkoutPath: $this->instance->checkout_path, root: 'public', branch: 'isolated', startingCommit: str_repeat('b', 40),
-        commonRepositoryPath: $this->instance->checkout_path, sourceIdentity: 'proof:1',
+        commonRepositoryPath: $this->instance->checkout_path, sourceIdentity: '1:1',
         linkedWorktreePaths: $paths === [] ? [$this->instance->checkout_path] : $paths, digest: str_repeat('c', 64),
         origin: $project->repository_url,
     );
@@ -59,15 +65,15 @@ it('admits a fixed source set without executing teardown, deleting source or acc
     $this->source->shouldReceive('inspect')->times($force ? 1 : 2)->andReturn(($this->inventory)());
     $this->withHeader('Idempotency-Key', 'destroy-proof');
     $id = $this->deleteJson($this->path, ['force' => $force])->assertAccepted()
-        ->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.status', 'queued')->json('data.id');
+        ->assertJsonPath('data.kind', 'instance.destroy_development')->assertJsonPath('data.status', 'queued')->json('data.id');
     $this->deleteJson($this->path, ['force' => $force])->assertAccepted()->assertJsonPath('data.id', $id);
     $operation = Operation::query()->findOrFail($id);
     expect($operation->node_id)->toBe($this->node->id)->and($operation->target_id)->toBe($this->instance->id)
         ->and($operation->input['force'])->toBe($force)
         ->and($operation->input['members'][0]['starting_commit'])->toBe(str_repeat('a', 40))
         ->and($operation->input['members'][0]['source_commit'])->toBe(str_repeat('b', 40))
-        ->and($this->instance->refresh()->status)->toBe(InstanceState::Active)
-        ->and(InstanceRemoval::query()->count())->toBe(0);
+        ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)
+        ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();
 })->with([false, true]);
 
@@ -85,7 +91,7 @@ it('admits executor Node removal through the same parent without running a Gatew
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
     $operationId = $this->deleteJson($this->path, ['force' => true])->assertAccepted()
-        ->assertJsonPath('data.kind', 'instance.destroy')
+        ->assertJsonPath('data.kind', 'instance.destroy_development')
         ->assertJsonPath('data.status', 'queued')->json('data.id');
 
     $this->assertModelExists($this->instance);
@@ -95,7 +101,7 @@ it('admits executor Node removal through the same parent without running a Gatew
     expect($operation->input['force'])->toBeTrue()
         ->and($operation->node_id)->toBe($this->node->id)
         ->and($operation->target_id)->toBe($this->instance->id)
-        ->and(InstanceRemoval::query()->count())->toBe(0);
+        ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();
 })->with(['services', 'worker']);
 
@@ -106,7 +112,7 @@ it('replays the receipt after row deletion with the original Node access and req
     $this->instance->delete();
     $this->deleteJson($this->path, ['force' => true])->assertAccepted()->assertJsonPath('data.id', $id);
     $this->deleteJson($this->path, ['force' => false])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
-    $outsider = Node::query()->create(['name' => 'other', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit',
+    $outsider = Node::query()->create(['name' => 'other', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit',
         'public_ssh_host' => '192.0.2.18', 'wireguard_ip' => '10.44.0.18']);
     $this->withServerVariables(['REMOTE_ADDR' => $outsider->wireguard_ip]);
     $this->deleteJson($this->path, ['force' => true])->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
@@ -143,17 +149,17 @@ it('validates strict force input before inspecting source', function (): void {
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('returns 503 without inspecting source or recording removal when an owning child is unavailable', function (): void {
+it('admits native removal without the retired teardown child registration', function (): void {
     $definitions = [...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php')];
     unset($definitions['instance.run_steps']);
     app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
-    $this->source->shouldNotReceive('inspect');
+    $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
 
-    $this->deleteJson($this->path, ['force' => true])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+    $this->deleteJson($this->path, ['force' => true])->assertAccepted()->assertJsonPath('data.kind', 'instance.destroy_development');
 
-    $this->assertDatabaseCount('operations', 0);
-    $this->assertDatabaseCount('instance_removals', 0);
-    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'status' => 'active']);
+    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('instance_removals', 1);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'status' => 'removing']);
     Queue::assertNothingPushed();
 });
 
@@ -177,7 +183,24 @@ it('admits a registered worktree set only with force and records worktrees befor
         $response->assertConflict()->assertJsonPath('error.code', 'instance.remove_refused');
         expect(Operation::query()->count())->toBe(0);
     }
-    expect($this->instance->refresh()->status)->toBe(InstanceState::Active)
-        ->and($worktree->refresh()->status)->toBe(InstanceState::Active)
-        ->and(InstanceRemoval::query()->count())->toBe(0);
+    expect($this->instance->refresh()->status)->toBe($force ? InstanceState::Removing : InstanceState::Active)
+        ->and($worktree->refresh()->status)->toBe($force ? InstanceState::Removing : InstanceState::Active)
+        ->and(InstanceRemoval::query()->count())->toBe($force ? 1 : 0);
 })->with([false, true]);
+
+
+it('keeps managed development removal on its complete working admission without a direct SQL bypass', function (): void {
+    $server = \App\Models\DatabaseServer::query()->create(['slug' => 'dispatch-managed', 'node_id' => $this->node->id,
+        'driver' => 'mysql', 'tag' => 'test', 'port' => 3306, 'root_password' => 'fixture-private-password', 'status' => 'active']);
+    \App\Models\DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql',
+        'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
+    $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
+    $this->withHeader('Idempotency-Key', 'managed-destroy');
+
+    $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy')->json('data.id');
+    $this->deleteJson($this->path, ['force' => true])->assertAccepted()->assertJsonPath('data.id', $id);
+    expect(app(OperationKinds::class)->directOnly('instance.destroy'))->toBeFalse();
+    expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
+    expect(InstanceRemoval::query()->count())->toBe(0);
+});

@@ -7,7 +7,7 @@ use App\Domain\Instances\Smoke\InstanceSmokeOperation;
 use App\Domain\Operations\OperationKinds;
 
 $family = require __DIR__.'/lifecycle-operation-kinds.php';
-$enabled = ['instance.destroy', 'instance.create', 'instance.rename', 'instance.register', 'instance.clone'];
+$enabled = ['instance.destroy', 'instance.destroy_development', 'instance.create', 'instance.rename', 'instance.register', 'instance.clone'];
 // The relay slice and its complete destination/activation handlers land separately.
 if (OperationKinds::supports('archive_relay') && OperationKinds::supports('compensations') && OperationKinds::supports('cancel_guard')
     && isset($family['instance.transfer_destination'], $family['instance.transfer_activate'])) {

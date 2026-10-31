@@ -11,8 +11,25 @@ return new class extends Migration
     {
         Schema::table('instance_removal_members', function (Blueprint $table): void {
             $table->json('route_ids')->nullable();
+            $table->text('origin')->nullable();
+            $table->text('worktree_inventory')->nullable();
+        });
+        Schema::table('instance_removals', function (Blueprint $table): void {
+            $table->json('native_intent')->nullable();
         });
         DB::unprepared(<<<'SQL'
+            CREATE TRIGGER instance_removals_native_intent_immutable
+            BEFORE UPDATE OF native_intent ON instance_removals
+            WHEN OLD.native_intent IS NOT NULL AND NEW.native_intent IS NOT OLD.native_intent
+            BEGIN
+                SELECT RAISE(ABORT, 'Native Instance removal intent is immutable.');
+            END;
+            CREATE TRIGGER instance_removal_members_source_immutable
+            BEFORE UPDATE OF origin, worktree_inventory ON instance_removal_members
+            WHEN NEW.origin IS NOT OLD.origin OR NEW.worktree_inventory IS NOT OLD.worktree_inventory
+            BEGIN
+                SELECT RAISE(ABORT, 'Native Instance removal source inventory is immutable.');
+            END;
             CREATE TRIGGER instance_removal_members_routes_insert
             BEFORE INSERT ON instance_removal_members
             WHEN NEW.route_ids IS NOT NULL AND (
@@ -44,9 +61,12 @@ return new class extends Migration
     public function down(): void
     {
         $this->replaceRouteMatch(false);
-        DB::unprepared('DROP TRIGGER instance_removal_members_routes_insert; DROP TRIGGER instance_removal_members_routes_immutable;');
+        DB::unprepared('DROP TRIGGER instance_removal_members_routes_insert; DROP TRIGGER instance_removal_members_routes_immutable; DROP TRIGGER instance_removals_native_intent_immutable; DROP TRIGGER instance_removal_members_source_immutable;');
+        Schema::table('instance_removals', function (Blueprint $table): void {
+            $table->dropColumn('native_intent');
+        });
         Schema::table('instance_removal_members', function (Blueprint $table): void {
-            $table->dropColumn('route_ids');
+            $table->dropColumn(['route_ids', 'origin', 'worktree_inventory']);
         });
     }
 

@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Actions\Routes\RouteTargetState;
 use App\Data\Routes\SetRouteTargetsData;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -173,7 +174,7 @@ final readonly class RouteProjectionPlan
                 if ($snapshot === null || $snapshot['node_id'] !== $instance->node_id || $snapshot['checkout_path'] !== $instance->checkout_path) {
                     throw new ResourceOperationException('route.target_conflict', 'The admitted detached Instance Node or checkout path changed.', 409);
                 }
-                $this->child($stages, 'removal', 'instance.destroy', $instance->node_id,
+                $this->child($stages, 'removal', InstanceDestroyKind::forInstance($instance), $instance->node_id,
                     ['instance_id' => $instance->id, 'force' => true], (string) $instance->id);
             }
         }
