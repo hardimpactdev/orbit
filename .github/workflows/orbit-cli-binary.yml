@@ -62,6 +62,7 @@ jobs:
           ref: ${{ inputs.commit || github.sha }}
 
       - uses: ./.github/actions/ci-scope
+        if: inputs.changed-only == true
         id: scope
         with:
           job: cli
@@ -70,13 +71,13 @@ jobs:
       # The recipe's exact PHP build and pinned Composer (ADR 0216), as in every other PHP job. It only builds the
       # PHAR; the binary runs PHPacker's static PHP.
       - name: Set up PHP
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         uses: ./.github/actions/php
         with:
           coverage: none
 
       - name: Read build version
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         id: version
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -86,7 +87,7 @@ jobs:
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Cache CLI build dependencies
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -95,22 +96,22 @@ jobs:
           key: cli-build-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.lock', 'apps/cli/phpacker/composer.lock', 'packages/php-sdk/composer.json') }}
 
       - name: Install CLI dependencies
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Install isolated PHPacker
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         run: composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 
       - name: Build binary
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}
         run: bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"
 
       - name: Upload binary
-        if: steps.scope.outputs.selected == 'true'
+        if: inputs.changed-only != true || steps.scope.outputs.selected == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
