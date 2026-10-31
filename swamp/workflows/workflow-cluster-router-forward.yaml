@@ -1,0 +1,589 @@
+id: 8c9d019a-a5f2-46b6-8042-c1e8e28e6ab4
+name: cluster-router-forward
+description: Shared Route publication with exact contribution proof and public recovery summary.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+    parent_run_id:
+      type: string
+      format: uuid
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - parent_run_id
+  additionalProperties: false
+jobs:
+- name: forward
+  steps:
+  - name: forward_prepare_certificates
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.prepare_certificates }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn: []
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: false
+    allowFailure: true
+  - name: forward_php
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-php-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.before.php }}
+          after: ${{ self.part.after.php }}
+          direction: forward
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.lan }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: verify
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: probe
+      in: '${{ inputs.intent.cluster_router.candidate == null ? [] : inputs.intent.cluster_router.candidate.probes
+        }}'
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-probe
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent: ${{ self.probe }}
+    allowFailure: true
+  - name: forward_prepare_caddy
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.before.caddy }}
+          after: ${{ self.part.prepared.caddy }}
+          direction: forward
+          retain_removed: false
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_urls
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.url_writes }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-environment-write
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          write: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets:
+          material: ${{ inputs.execution_secrets[self.part.secret_field] }}
+    allowFailure: true
+  - name: forward_prepare_dns
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null) }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          host_keys: ${{ self.part.host_keys }}
+          before: ${{ self.part.before.dns }}
+          after: ${{ self.part.prepared.dns }}
+          alternatives: ${{ [self.part.before.dns,self.part.prepared.dns,self.part.withdrawn.dns,self.part.after.dns]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_dns_grace
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest
+        != p.after.dns.digest) ? [{}] : [] }}'
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: {}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_withdraw_caddy
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.prepared.caddy }}
+          after: ${{ self.part.withdrawn.caddy }}
+          direction: forward
+          retain_removed: false
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_live_certificates
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.certificates }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: false
+    allowFailure: true
+  - name: forward_live_caddy
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: forward_live_certificates, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.withdrawn.caddy }}
+          after: ${{ self.part.after.caddy }}
+          direction: forward
+          retain_removed: false
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_dns
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null) }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: forward_live_certificates, condition: {type: always}}
+    - {step: forward_live_caddy, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          host_keys: ${{ self.part.host_keys }}
+          before: ${{ self.part.before.dns }}
+          after: ${{ self.part.after.dns }}
+          alternatives: ${{ [self.part.before.dns,self.part.prepared.dns,self.part.withdrawn.dns,self.part.after.dns]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward_cleanup
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.cleanup }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: forward_live_certificates, condition: {type: always}}
+    - {step: forward_live_caddy, condition: {type: always}}
+    - {step: forward_dns, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-remove
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: false
+    allowFailure: true
+  - name: forward_retire_lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.retire_lan }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
+      key.startsWith("forward_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: forward_live_certificates, condition: {type: always}}
+    - {step: forward_live_caddy, condition: {type: always}}
+    - {step: forward_dns, condition: {type: always}}
+    - {step: forward_cleanup, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: forward
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: stage
+      in: ${{ [inputs.intent.route_mutations.forward] }}
+    guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) }}
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: forward_live_certificates, condition: {type: always}}
+    - {step: forward_live_caddy, condition: {type: always}}
+    - {step: forward_dns, condition: {type: always}}
+    - {step: forward_cleanup, condition: {type: always}}
+    - {step: forward_retire_lan, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: forward-result
+      methodName: result
+      inputs:
+        stage: ${{ self.stage }}
+        mode: forward
+        required:
+          forward_prepare_certificates: ${{ size(inputs.intent.route_mutations.forward.prepare_certificates) }}
+          forward_php: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}
+          forward_lan: ${{ size(inputs.intent.route_mutations.forward.lan) }}
+          forward_prepare_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
+            }}
+          forward_urls: ${{ size(inputs.intent.route_mutations.forward.url_writes) }}
+          forward_prepare_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns
+            != null)) }}
+          forward_dns_grace: '${{ size(inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns
+            != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
+          forward_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
+            }}
+          forward_live_certificates: ${{ size(inputs.intent.route_mutations.forward.certificates) }}
+          forward_live_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
+            }}
+          forward_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null))
+            }}
+          forward_cleanup: ${{ size(inputs.intent.route_mutations.forward.cleanup) }}
+          forward_retire_lan: ${{ size(inputs.intent.route_mutations.forward.retire_lan) }}
+        outcomes: ${{ steps }}
+    allowFailure: true
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: forward_prepare_certificates, condition: {type: always}}
+    - {step: forward_php, condition: {type: always}}
+    - {step: forward_lan, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    - {step: forward_prepare_caddy, condition: {type: always}}
+    - {step: forward_urls, condition: {type: always}}
+    - {step: forward_prepare_dns, condition: {type: always}}
+    - {step: forward_dns_grace, condition: {type: always}}
+    - {step: forward_withdraw_caddy, condition: {type: always}}
+    - {step: forward_live_certificates, condition: {type: always}}
+    - {step: forward_live_caddy, condition: {type: always}}
+    - {step: forward_dns, condition: {type: always}}
+    - {step: forward_cleanup, condition: {type: always}}
+    - {step: forward_retire_lan, condition: {type: always}}
+    - {step: forward, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/cluster-router-result'
+      behaviorName: ${{ "cluster-router-phase-" + run.id }}
+      methodName: phase
+      inputs:
+        mode: forward
+        dns_count: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null))
+          }}
+        steps: ${{ steps }}
