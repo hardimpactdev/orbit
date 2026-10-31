@@ -2,16 +2,17 @@ name: Swamp shape
 on:
   workflow_call:
     inputs:
-      allow-auth-unavailable:
-        description: "Only the caller-proven initial Orbit import PR or first main push may report unavailable auth"
-        type: boolean
-        default: false
       working-directory:
         type: string
         default: "."
       base-ref:
         type: string
         default: ""
+    secrets:
+      SWAMP_API_KEY:
+        required: true
+      SWAMP_SIGNIN_TOKEN:
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -46,6 +47,7 @@ jobs:
           deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
+          python3 tests/swamp_base_policy_test.py
       - name: Reject new violations with current and base rules
         env:
           SHAPE_BASE: ${{ inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
@@ -53,12 +55,7 @@ jobs:
           base="$SHAPE_BASE"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
           deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
-          prefix=$(git rev-parse --show-prefix)
-          if git cat-file -e "$base:${prefix}bin/check-swamp-shape.ts" 2>/dev/null; then
-            git show "$base:${prefix}bin/check-swamp-shape.ts" > "$RUNNER_TEMP/base-shape.ts"
-            git show "$base:${prefix}bin/swamp-shape-python.py" > "$RUNNER_TEMP/base-shape-python.py"
-            deno run --allow-env --allow-read --allow-run "$RUNNER_TEMP/base-shape.ts" --base "$base" --python-analyzer "$RUNNER_TEMP/base-shape-python.py"
-          fi
+          python3 bin/check-swamp-base-policy.py --base "$base"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -82,31 +79,11 @@ jobs:
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
-      - name: Native workflow validation without account credentials
-        id: native_validate
-        continue-on-error: true
-        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
-      - name: Require validation or explicitly report the initial import blocker
-        if: always()
+      - name: Native workflow validation with dedicated registry-read credentials
         env:
-          SHAPE_NATIVE_OUTCOME: ${{ steps.native_validate.outcome }}
-          SHAPE_IMPORT_AUTH_EXCEPTION: ${{ inputs.allow-auth-unavailable }}
-          SHAPE_PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
-        run: |
-          report="$RUNNER_TEMP/workflow-validation.json"
-          if [[ -f "$report" ]] && python3 -c 'import json,sys;sys.exit(json.load(open(sys.argv[1])).get("status") != "auth_unavailable")' "$report"; then
-            message='SWAMP AUTH UNAVAILABLE: official account startup gate; local workflow validation NOT RUN'
-            echo "::warning::$message"
-            echo "### $message" >> "$GITHUB_STEP_SUMMARY"
-            echo 'WORKFLOW-VALIDATE status=auth_unavailable workflows_validated=0 validation_ran=false'
-            if [[ "$SHAPE_IMPORT_AUTH_EXCEPTION" != 'true' || "$GITHUB_REPOSITORY" != 'hardimpactdev/orbit' ]] || ! [[ "$GITHUB_EVENT_NAME" == 'pull_request' && "$SHAPE_PR_NUMBER" == '2002' || "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == 'refs/heads/main' ]]; then
-              echo '::error::Native validation did not run; only the caller-proven initial import may proceed.'
-              exit 1
-            fi
-          elif [[ "$SHAPE_NATIVE_OUTCOME" != 'success' ]]; then
-            echo '::error::Native workflow validation failed.'
-            exit 1
-          fi
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - name: Check placement on every step
         if: always()
         run: deno run --allow-read bin/lint-workflow-placement.ts

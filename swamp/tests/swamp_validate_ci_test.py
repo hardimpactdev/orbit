@@ -1,8 +1,5 @@
-"""The auth-free callable reports blockers without waiving real failures."""
-import json
-import os
-import subprocess
-import tempfile
+"""Validation credentials stay scoped and cannot use ambient runner configuration."""
+import importlib.util
 import unittest
 from pathlib import Path
 
@@ -10,40 +7,34 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ValidateCI(unittest.TestCase):
-    def test_auth_free_workflows_and_identical_callable(self):
-        callable_source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
-        self.assertEqual(callable_source, (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text())
-        for path in [ROOT / '.github/workflows/swamp-shape.yml', ROOT / '.github/workflows/swamp-shape-ci.yml']:
-            source = path.read_text()
-            for forbidden in ['SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN', 'secrets: inherit']:
-                self.assertNotIn(forbidden, source)
-        self.assertIn('default: false', callable_source)
-
-    def test_only_explicit_initial_import_can_report_auth_unavailable(self):
+    def test_required_validation_only_receives_event_scoped_credentials(self):
         source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
-        script = source.split('          report="$RUNNER_TEMP/workflow-validation.json"', 1)[1].split('      - name: Check placement', 1)[0]
-        script = 'report="$RUNNER_TEMP/workflow-validation.json"\n' + '\n'.join(line[10:] if line.startswith('          ') else line for line in script.splitlines())
-        with tempfile.TemporaryDirectory() as scratch:
-            report = Path(scratch) / 'workflow-validation.json'
-            env = {**os.environ, 'RUNNER_TEMP': scratch, 'GITHUB_STEP_SUMMARY': str(Path(scratch) / 'summary'),
-                   'SHAPE_NATIVE_OUTCOME': 'failure', 'SHAPE_IMPORT_AUTH_EXCEPTION': 'true',
-                   'GITHUB_REPOSITORY': 'hardimpactdev/orbit', 'GITHUB_EVENT_NAME': 'pull_request',
-                   'SHAPE_PR_NUMBER': '2002', 'GITHUB_REF': 'refs/pull/2002/merge'}
-            def run(**updates):
-                return subprocess.run(['bash', '-e', '-c', script], env={**env, **updates}, text=True, capture_output=True)
-            report.write_text(json.dumps({'status': 'auth_unavailable'}))
-            self.assertEqual(run().returncode, 0)
-            self.assertIn('SWAMP AUTH UNAVAILABLE', run().stdout)
-            self.assertNotEqual(run(SHAPE_IMPORT_AUTH_EXCEPTION='false').returncode, 0)
-            self.assertNotEqual(run(SHAPE_PR_NUMBER='2003').returncode, 0)
-            self.assertNotEqual(run(GITHUB_REPOSITORY='other/orbit').returncode, 0)
-            self.assertEqual(run(GITHUB_EVENT_NAME='push', GITHUB_REF='refs/heads/main').returncode, 0)
-            self.assertNotEqual(run(GITHUB_EVENT_NAME='push', GITHUB_REF='refs/heads/other').returncode, 0)
-            report.write_text(json.dumps({'status': 'validated'}))
-            self.assertNotEqual(run().returncode, 0, 'Ordinary validation failure must never be waived')
-            self.assertEqual(run(SHAPE_NATIVE_OUTCOME='success').returncode, 0)
-            report.unlink()
-            self.assertNotEqual(run().returncode, 0)
+        self.assertEqual(source, (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text())
+        shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
+        validate = source.split('  validate:', 1)[1].split('  tests:', 1)[0]
+        tests = source.split('  tests:', 1)[1]
+        for name in ('SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN'):
+            self.assertNotIn(name, shape)
+            self.assertNotIn(name, tests)
+            self.assertIn('secrets.' + name, validate)
+        self.assertNotIn('allow-auth-unavailable', source)
+        self.assertNotIn('continue-on-error', validate)
+        self.assertNotIn('pull_request_target', source)
+        self.assertIn("github.event_name == 'pull_request'", validate)
+        self.assertIn("github.ref == 'refs/heads/main'", validate)
+
+    def test_native_environment_is_explicit_and_configuration_is_isolated(self):
+        spec = importlib.util.spec_from_file_location('validate', ROOT / 'bin/validate-swamp-workflows.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        env = module.native_env('/fixture/fresh', {'HOME': '/ambient', 'SWAMP_CONFIG_DIR': '/ambient',
+            'SWAMP_API_KEY': 'synthetic-key', 'SWAMP_SIGNIN_TOKEN': 'synthetic-proof', 'UNAPPROVED': 'synthetic'})
+        for name in ('HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'SWAMP_CONFIG_DIR'):
+            self.assertEqual(env[name], '/fixture/fresh')
+        self.assertEqual(env['SWAMP_API_KEY'], 'synthetic-key')
+        self.assertEqual(env['SWAMP_SIGNIN_TOKEN'], 'synthetic-proof')
+        self.assertNotIn('UNAPPROVED', env)
+        self.assertNotIn('SWAMP_API_KEY', module.native_env('/fresh', {}))
 
 
 if __name__ == '__main__':

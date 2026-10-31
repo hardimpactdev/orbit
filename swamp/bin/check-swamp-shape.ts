@@ -39,6 +39,8 @@ type Analysis = {
   findings: Finding[];
   imports: string[];
   types: string[];
+  workflowNames: string[];
+  workflowRefs: string[];
   inlineLines: number;
   loops: number;
   agentActions: number;
@@ -48,6 +50,8 @@ const empty = (): Analysis => ({
   findings: [],
   imports: [],
   types: [],
+  workflowNames: [],
+  workflowRefs: [],
   inlineLines: 0,
   loops: 0,
   agentActions: 0,
@@ -233,7 +237,9 @@ export function agentPythonFindings(
     const args = argumentsOf(node),
       argv = args ? value(expressions(args)[0]) : undefined;
     if (typeof argv === "string") {
-      findings.push(...agentShellFindings(file, argv, inventory, depth + 1));
+      findings.push(
+        ...agentShellFindings(file, argv, inventory, depth + 1, true),
+      );
     } else if (Array.isArray(argv)) {
       findings.push(
         ...agentShellFindings(
@@ -241,6 +247,7 @@ export function agentPythonFindings(
           argv.map(quoteShellWord).join(" "),
           inventory,
           depth + 1,
+          true,
         ),
       );
     } else if (/\borbit-agent\b/.test(source)) {
@@ -262,6 +269,7 @@ export function agentShellFindings(
   source: string,
   inventory: Record<string, string> = {},
   depth = 0,
+  controlCommands = false,
 ): Finding[] {
   if (depth > 8) {
     return [{
@@ -384,7 +392,7 @@ export function agentShellFindings(
   const findings: Finding[] = [
     ...heredocFindings,
     ...nested.flatMap((body) =>
-      agentShellFindings(file, body, inventory, depth + 1)
+      agentShellFindings(file, body, inventory, depth + 1, controlCommands)
     ),
   ];
   const executable = (argv: string[], level: number): void => {
@@ -415,6 +423,18 @@ export function agentShellFindings(
       argv = [resolved, ...argv.slice(1)];
     }
     const binary = argv[0]?.split("/").at(-1);
+    if (
+      controlCommands &&
+      ["sleep", "usleep", "flock", "lockfile"].includes(binary ?? "")
+    ) {
+      findings.push({
+        file,
+        rule: "custom-control",
+        count: 1,
+        line: 1,
+        evidence: [binary!],
+      });
+    }
     if (binary === "eval") {
       const body = argv.slice(1).map((arg) =>
         arg.replace(
@@ -423,7 +443,13 @@ export function agentShellFindings(
         )
       ).join(" ");
       findings.push(
-        ...agentShellFindings(file, body, inventory, depth + 1),
+        ...agentShellFindings(
+          file,
+          body,
+          inventory,
+          depth + 1,
+          controlCommands,
+        ),
       );
       return;
     }
@@ -441,6 +467,7 @@ export function agentShellFindings(
               argv.slice(i).join(" "),
               inventory,
               depth + 1,
+              controlCommands,
             ),
           );
           return;
@@ -463,6 +490,7 @@ export function agentShellFindings(
             argv[i + 1],
             inventory,
             depth + 1,
+            controlCommands,
           ),
         );
       }
@@ -485,6 +513,7 @@ export function agentShellFindings(
           argv.slice(i + 1).join(" "),
           inventory,
           depth + 1,
+          controlCommands,
         ),
       );
       return;
@@ -1269,6 +1298,12 @@ export function referenceOnlySchema(raw: unknown): boolean {
   return Object.values(properties).every(referenceOnlySchema);
 }
 
+function pythonHeredocs(source: string) {
+  return [...source.matchAll(
+    /(?:python[\d.]*[^\n]*<<[\t ]*['"]?(\w+)['"]?[^\n]*\n)([\s\S]*?)\n\1(?:\n|$)/g,
+  )];
+}
+
 export function analyzeYaml(
   file: string,
   source: string,
@@ -1337,7 +1372,16 @@ export function analyzeYaml(
           /(?:&&|\|\||;)[ \t]*(?:sudo|systemctl|apt|curl|docker|python|bash|sh)\b/
             .test(value)
         ) add("multi-action");
-        const controlsFound = value.match(
+        // The Python AST helper owns controls inside these same extracted bodies.
+        // Do not count a tool transaction lock again as a shell token.
+        let shellControls = value;
+        for (const block of pythonHeredocs(value).reverse()) {
+          const start = block.index! + block[0].indexOf("\n") + 1;
+          shellControls = shellControls.slice(0, start) +
+            block[2].replace(/[^\n]/g, " ") +
+            shellControls.slice(start + block[2].length);
+        }
+        const controlsFound = shellControls.match(
           /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
         ) ?? [];
         for (const _ of controlsFound) {
@@ -1380,6 +1424,9 @@ export function analyzeYaml(
   };
   walk(data, []);
   if (file.startsWith("workflows/")) {
+    result.workflowNames = [data.id, data.name].filter((
+      value,
+    ): value is string => typeof value === "string" && value.length > 0);
     if (!Array.isArray(data.jobs) || !data.jobs.length) {
       add("unknown-workflow");
       result.unknown = true;
@@ -1420,8 +1467,16 @@ export function analyzeYaml(
           result.unknown = true;
         }
         if (task.type === "workflow") {
-          add("unknown-nested-workflow");
-          result.unknown = true;
+          if (
+            typeof task.workflowIdOrName === "string" &&
+            task.workflowIdOrName.length > 0 &&
+            !/\$\{\{|\}\}/.test(task.workflowIdOrName)
+          ) {
+            result.workflowRefs.push(task.workflowIdOrName);
+          } else {
+            add("unknown-nested-workflow");
+            result.unknown = true;
+          }
         }
       }
     }
@@ -1623,12 +1678,11 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
   }
   return sources;
 }
-/** Inspect Python inside the remote action, not the outer Python transport heredoc. */
+/** Inspect Python inside the validated remote action, not its local transport envelope. */
 export function inlinePythonScripts(run: string): string[] {
-  const body = nodeCommandLaunch(run)?.action ?? run;
-  return [...body.matchAll(
-    /(?:python[\d.]*[^\n]*<<[\t ]*['"]?(\w+)['"]?[^\n]*\n)([\s\S]*?)\n\1(?:\n|$)/g,
-  )].map((block) => block[2]);
+  return pythonHeredocs(nodeCommandLaunch(run)?.action ?? run).map((block) =>
+    block[2]
+  );
 }
 
 let pythonAnalyzer = "bin/swamp-shape-python.py";
@@ -1786,6 +1840,28 @@ export function analyze(
       );
     }
   }
+  const workflows = new Map<string, string[]>();
+  for (const [file, a] of analyses) {
+    for (const name of a.workflowNames) {
+      workflows.set(name, [...new Set([...(workflows.get(name) ?? []), file])]);
+    }
+  }
+  for (const [file, a] of analyses) {
+    for (const reference of a.workflowRefs) {
+      const matches = workflows.get(reference) ?? [];
+      if (matches.length === 1) a.imports.push(matches[0]);
+      else {
+        a.unknown = true;
+        a.findings.push({
+          file,
+          rule: "unknown-nested-workflow",
+          count: 1,
+          line: 1,
+          evidence: [reference],
+        });
+      }
+    }
+  }
   for (const [file, a] of analyses) {
     for (const dependency of a.imports) {
       if (
@@ -1848,11 +1924,6 @@ export function workflowCoverage(analyses: Map<string, Analysis>) {
       total++;
       const queue = [file], seen = new Set<string>();
       let uncertain = a.unknown, findings = false;
-      for (const type of a.types) {
-        const files = types.get(type);
-        if (!files) uncertain = true;
-        else queue.push(...files);
-      }
       while (queue.length) {
         const current = queue.pop()!;
         if (seen.has(current)) continue;
@@ -1864,6 +1935,11 @@ export function workflowCoverage(analyses: Map<string, Analysis>) {
         }
         findings ||= node.findings.length > 0;
         uncertain ||= node.unknown;
+        for (const type of node.types) {
+          const files = types.get(type);
+          if (!files) uncertain = true;
+          else queue.push(...files);
+        }
         for (const dependency of node.imports) queue.push(dependency);
       }
       if (uncertain) unknown++;

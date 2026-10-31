@@ -113,6 +113,8 @@ Deno.test("role certificate jobs use canonical models and fixed signer, then roo
     name: string;
     dependsOn: unknown;
     steps: {
+      name: string;
+      dependsOn?: unknown;
       target?: string;
       labels?: unknown;
       guard?: string;
@@ -131,18 +133,23 @@ Deno.test("role certificate jobs use canonical models and fixed signer, then roo
       job: previous,
       condition: { type: "succeeded" },
     }]);
-    if (job.steps[0].task.methodName === "signBatch") {
-      assertEquals(job.steps[0].guard?.includes(".size() == 0"), true);
-    } else {assertEquals(
+    if (job.name === "role_certificates_sign_job") {
+      for (const step of job.steps) {
+        assertEquals(step.guard?.includes("!steps.admit.outputs.ready"), true);
+        assertEquals(step.guard?.includes(".size() == 0"), true);
+      }
+    } else {
+      assertEquals(
         job.steps[0].guard,
         "${{ !steps.admit.outputs.ready }}",
-      );}
+      );
+    }
     previous = job.name;
   }
   assertEquals(jobs.map((job) => job.steps[0].task.methodName), [
     "inventory",
     "roleRequest",
-    "signBatch",
+    "prepareSignBatch",
     "rolePublish",
     "record",
     "complete",
@@ -160,9 +167,30 @@ Deno.test("role certificate jobs use canonical models and fixed signer, then roo
       "@nckrtl/certificates",
     );
   }
-  assertEquals(jobs[2].steps[0].target, "orbit-node-209");
-  assertEquals(jobs[2].steps[0].labels, { node: "209" });
-  assertEquals(jobs[2].steps[0].task.behaviorName, "orbit-certificate-signing");
+  const signing = jobs[2].steps;
+  assertEquals(signing.map((step) => step.task.methodName), [
+    "prepareSignBatch",
+    "execute",
+    "signBatch",
+  ]);
+  for (const step of signing) {
+    assertEquals(step.target, "orbit-node-209");
+    assertEquals(step.labels, { node: "209" });
+  }
+  assertEquals(signing[0].task.behaviorName, "orbit-certificate-signing");
+  assertEquals(signing[1].task.behaviorType, "command/shell");
+  assertEquals(signing[1].task.behaviorName, "orbit-certificate-signing-http");
+  assertEquals(signing[2].task.behaviorName, "orbit-certificate-signing");
+  for (const index of [1, 2]) {
+    assertEquals(signing[index].dependsOn, [{
+      step: signing[index - 1].name,
+      condition: { type: "succeeded" },
+    }]);
+  }
+  assertEquals(
+    signing[2].task.inputs.native_stdout,
+    '${{ steps["role_certificates_sign-http"].outputs.stdout }}',
+  );
   assertEquals(
     jobs[4].steps[0].target,
     '${{ "orbit-node-" + string(inputs.node_id) }}',
