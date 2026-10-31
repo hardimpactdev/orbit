@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRegistryCheck;
 use Symfony\Component\Process\Process;
 
 it('boots and resolves every registered family without reading resource records', function (): void {
-    expect(app(OperationRegistryCheck::class)->execute())->toBe(count(OperationKinds::definitions()))->toBeGreaterThan(0);
+    expect(app(OperationRegistryCheck::class)->execute())->toBe(count(app(DirectOperation::class)->definitions()))->toBeGreaterThan(0);
 });
 
 it('boots the production registry with an empty in-memory database', function (): void {
