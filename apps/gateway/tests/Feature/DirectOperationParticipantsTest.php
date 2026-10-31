@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Logs\LogRedactor;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrimitive;
 use App\Domain\Operations\DirectOperationPrivateBindings;
@@ -17,9 +18,12 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -321,4 +325,79 @@ describe('native failure callback', function (): void {
         $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk()->assertJsonPath('data.status', 'succeeded');
         expect($fixture->operation->refresh()->result)->toBe(['ready' => true]);
     });
+});
+
+function taskVmParticipant(TestCase $test): object
+{
+    $fixture = participantIntent($test);
+    $fixture->guest->accessibleNodes()->detach();
+    TaskVm::query()->create(['name' => 'participant-task-vm', 'provider' => 'incus', 'state' => 'provisioning',
+        'node_id' => $fixture->guest->id, 'host_node_id' => $fixture->host->id, 'wireguard_ip' => $fixture->guest->wireguard_ip]);
+    $input = $fixture->operation->input;
+    $input['private_bindings']['credential']['read_node_ids'][] = $fixture->guest->id;
+    $fixture->operation->update(['input' => $input, 'status' => OperationStatus::Running]);
+    $test->withServerVariables(['REMOTE_ADDR' => $fixture->guest->wireguard_ip]);
+
+    return $fixture;
+}
+
+it('allows an active TaskVM participant only its run-bound public view and declared private fields', function (): void {
+    $fixture = taskVmParticipant($this);
+    $before = $fixture->operation->fresh()->getAttributes();
+    expect(app(NodeAccessAuthorizer::class)->allows($fixture->guest, $fixture->root))->toBeFalse();
+    expect(fn () => NodeAccess::query()->create(['consumer_node_id' => $fixture->guest->id, 'serving_node_id' => $fixture->root->id]))
+        ->toThrow(TaskVmException::class);
+
+    $this->getJson($fixture->path.'?run_id='.$fixture->run)->assertOk()
+        ->assertJsonPath('data.node_id', $fixture->root->id)->assertJsonPath('data.input.caller_node_id', $fixture->guest->id)
+        ->assertJsonMissingPath('data.result')->assertJsonMissingPath('data.input.root_secret');
+    $this->getJson($fixture->path.'/private-material?run_id='.$fixture->run)->assertOk()
+        ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.credential.owner_node_id', $fixture->guest->id)
+        ->assertJsonMissingPath('data.root_secret');
+    expect($fixture->operation->fresh()->getAttributes())->toBe($before);
+    expect($fixture->guest->accessibleNodes()->exists())->toBeFalse();
+    Http::assertNothingSent();
+});
+
+it('allows TaskVM secret output only for its admitted writable field and bound run', function (): void {
+    $fixture = taskVmParticipant($this);
+    $input = $fixture->operation->input;
+    $input['private_bindings']['credential']['write_node_ids'][] = $fixture->guest->id;
+    $fixture->operation->update(['input' => $input]);
+
+    $this->postJson($fixture->path.'/secret-output', ['run_id' => $fixture->run, 'outputs' => ['credential' => 'protected-test-value']])->assertOk();
+    expect($fixture->output->writes)->toBe([['owner' => $fixture->guest->id, 'value' => 'protected-test-value']]);
+    $this->postJson($fixture->path.'/secret-output', ['run_id' => '20e8138a-cf7f-4c6c-85fd-ff561b575ac8', 'outputs' => ['credential' => 'wrong-run']])->assertConflict();
+    $this->postJson($fixture->path.'/secret-output', ['run_id' => $fixture->run, 'outputs' => ['root_secret' => 'foreign']])->assertUnprocessable();
+    expect($fixture->output->writes)->toHaveCount(1);
+});
+
+it('keeps TaskVM participants out of mutations, foreign roots and unrelated Gateway APIs', function (): void {
+    $fixture = taskVmParticipant($this);
+    foreach (['result', 'primitive', 'failure'] as $action) {
+        $this->postJson($fixture->path.'/'.$action, ['run_id' => $fixture->run])->assertForbidden();
+    }
+    $this->postJson('/api/v1/operations/'.$fixture->operation->id.'/cancel')->assertForbidden();
+    $this->getJson('/api/v1/operations')->assertForbidden();
+    $this->getJson('/api/v1/gateway/releases')->assertForbidden();
+    $this->postJson($fixture->path.'/secret-output', ['run_id' => $fixture->run, 'outputs' => ['credential' => 'unwritable']])->assertForbidden();
+    $this->getJson($fixture->path.'?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict();
+    $this->getJson($fixture->path.'/private-material?run_id='.$fixture->run.'&caller_node_id='.$fixture->host->id)->assertUnprocessable();
+    $foreign = $fixture->operation->replicate();
+    $foreign->input = ['participant_node_ids' => [$fixture->root->id]];
+    $foreign->save();
+    $this->getJson('/api/v1/direct-operations/'.$foreign->id.'?run_id='.$fixture->run)->assertForbidden();
+    $this->getJson('/api/v1/direct-operations/'.$foreign->id.'/private-material?run_id='.$fixture->run)->assertForbidden();
+    expect($fixture->operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($fixture->output->writes)->toBe([]);
+    expect($fixture->primitive->calls)->toBe(0);
+});
+
+it('requires an active TaskVM peer and unfinished intent for scoped private transport', function (): void {
+    $fixture = taskVmParticipant($this);
+    $fixture->operation->update(['status' => OperationStatus::Succeeded]);
+    $this->getJson($fixture->path.'?run_id='.$fixture->run)->assertConflict();
+    $this->getJson($fixture->path.'/private-material?run_id='.$fixture->run)->assertConflict();
+    $fixture->guest->update(['status' => 'failed']);
+    $this->getJson($fixture->path.'?run_id='.$fixture->run)->assertForbidden()->assertJsonPath('error.code', 'peer.identity_unknown');
 });
