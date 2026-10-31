@@ -5,13 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Observation;
 
 use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
-use App\Domain\Doctor\DoctorCollectionReads;
-use App\Domain\Operations\OperationSweeper;
-use App\Domain\Problems\ProblemCollector;
+use App\Actions\Doctor\StartDoctorAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Processes\CommandDeadline;
 use Illuminate\Bus\BatchRepository;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
@@ -52,7 +49,7 @@ final readonly class MaintainObservationStateAction
     /** @return array<string, int|string|bool> */
     private function apply(string $routine): array
     {
-        if (in_array($routine, ['operations', 'metrics'], true) && ! GatewayQueueRedis::configured()) {
+        if (in_array($routine, ['metrics'], true) && ! GatewayQueueRedis::configured()) {
             return ['status' => 'skipped'];
         }
         if (in_array($routine, ['health', 'batches'], true) && ! app(TaskExtensionState::class)->enabled()) {
@@ -61,7 +58,6 @@ final readonly class MaintainObservationStateAction
 
         return match ($routine) {
             'activities' => ['status' => 'succeeded', 'finalized' => app(FinalizeInterruptedActivitiesAction::class)->execute()],
-            'operations' => ['status' => 'succeeded', 'requeued' => app(OperationSweeper::class)->sweep()],
             'metrics' => $this->metrics(),
             'health' => $this->health(),
             'batches' => $this->batches(),
@@ -73,7 +69,7 @@ final readonly class MaintainObservationStateAction
     /** @return array{status: string} */
     private function health(): array
     {
-        app(CommandDeadline::class)->withinForwardWork(DoctorCollectionReads::ProbeSeconds, fn () => app(ProblemCollector::class)->collectHorizon());
+        app(StartDoctorAction::class)->collect(horizonOnly: true);
 
         return ['status' => 'succeeded'];
     }

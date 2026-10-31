@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Doctor\StartDoctorAction;
 use App\Actions\Observation\MaintainObservationStateAction;
-use App\Domain\Doctor\DoctorCollectionReads;
+use App\Data\Operations\OperationData;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -17,24 +19,13 @@ use Illuminate\Http\JsonResponse;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class ObservationController extends Controller
 {
-    public function plan(ObservationRequest $request, string $collection, DoctorCollectionReads $reads): JsonResponse
+    public function plan(ObservationRequest $request, string $collection, StartDoctorAction $action, TaskExtensionState $tasks): JsonResponse
     {
-        return $this->respond($request, $reads->plan($collection));
-    }
+        if (! $tasks->enabled()) {
+            return $this->respond($request, ['status' => 'disabled']);
+        }
 
-    public function observe(ObservationRequest $request, string $collection, int $node, DoctorCollectionReads $reads): JsonResponse
-    {
-        return $this->respond($request, $reads->observe($collection, $node));
-    }
-
-    public function inspect(ObservationRequest $request, string $collection, int $probe, DoctorCollectionReads $reads): JsonResponse
-    {
-        return $this->respond($request, $reads->inspect($collection, $probe));
-    }
-
-    public function signals(ObservationRequest $request, string $collection, DoctorCollectionReads $reads): JsonResponse
-    {
-        return $this->respond($request, $reads->signals($collection));
+        return $this->respond($request, OperationData::fromModel($action->collect($request->attributes->getString('orbit.request_id')))->toArray());
     }
 
     public function maintain(MaintainObservationRequest $request, string $routine, MaintainObservationStateAction $action): JsonResponse
