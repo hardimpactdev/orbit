@@ -72,6 +72,7 @@ function directVaultProjection(object $test, array $result): array
 }
 
 it('starts sync with public intent and a separate names-only execution copy', function (): void {
+    $this->withHeader('Idempotency-Key', 'vault-sync-native');
     admitDirectVault($this);
     $input = $this->operation->input;
     expect($input)->toHaveKeys(['intent', 'execution_secrets'])
