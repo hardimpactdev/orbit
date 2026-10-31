@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -16,8 +16,8 @@ describe(RemoveNodeRequest::class, function (): void {
             RemoveNodeRequest::class => MockResponse::make([
                 'data' => [
                     'id' => 12,
-                    'name' => 'operator',
-                    'removed' => true,
+                    'kind' => 'node.remove', 'target_type' => 'node', 'target_id' => 12,
+                    'status' => 'running', 'sequence' => 1, 'input' => [],
                 ],
                 'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
             ]),
@@ -28,7 +28,7 @@ describe(RemoveNodeRequest::class, function (): void {
         );
         $connector->withMockClient($mockClient);
 
-        $response = $connector->send(new RemoveNodeRequest(12))->dto();
+        $response = $connector->send(new RemoveNodeRequest(12, idempotencyKey: 'remove-once'))->dto();
         $request = $mockClient->getLastRequest();
 
         expect($request?->getMethod())
@@ -37,14 +37,14 @@ describe(RemoveNodeRequest::class, function (): void {
             ->toBe('/api/v1/nodes/12')
             ->and($mockClient->getLastPendingRequest()?->body()->all())
             ->toBe(['force' => false, 'offline' => false])
+            ->and($mockClient->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('remove-once')
             ->and($response)
-            ->toBeInstanceOf(RemovedNodeResponse::class)
+            ->toBeInstanceOf(OperationResponse::class)
             ->and($response->id)
             ->toBe(12)
-            ->and($response->name)
-            ->toBe('operator')
-            ->and($response->removed)
-            ->toBeTrue()
+            ->and($response->kind)->toBe('node.remove')
+            ->and($response->status)->toBe('running')
+            ->and($response->targetId)->toBe(12)
             ->and($response->requestId)
             ->toBe('0198e15d-16c4-7855-8eb2-182b53ad28ba')
             ->and($mockClient->getLastPendingRequest()?->headers()->get('X-Orbit-Request-Id'))
@@ -60,8 +60,8 @@ describe(RemoveNodeRequest::class, function (): void {
             RemoveNodeRequest::class => MockResponse::make([
                 'data' => [
                     'id' => 12,
-                    'name' => 'operator',
-                    'removed' => true,
+                    'kind' => 'node.remove', 'target_type' => 'node', 'target_id' => 12,
+                    'status' => 'running', 'sequence' => 1, 'input' => [],
                 ],
                 'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
             ]),

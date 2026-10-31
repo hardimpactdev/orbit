@@ -5,79 +5,89 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Nodes\NodeReachabilityProbe;
+use App\Domain\Nodes\NodeRemovalEnvironmentSource;
+use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalPolicy;
-use App\Domain\Nodes\NodeSideResidue;
-use App\Domain\Nodes\NodeTaskVmLifecycleOwnership;
+use App\Domain\Nodes\NodeRoleMetricsInput;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationStore;
-use App\Domain\Processes\ProcessSwampSafety;
+use App\Domain\Routes\NativeRouteRemovalPlan;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Route;
+use App\Models\TaskVm;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-/** Claims removal without dropping a Route source relation or changing any serving Node. */
+/** Validate public intent and capture immutable participants. No reachability or Node execution. */
 final readonly class AdmitNodeRemovalOperationAction
 {
-    public function __construct(private StartOperationAction $operations, private OperationKinds $kinds, private OperationIdempotency $idempotency,
-        private OperationStore $store, private NodeRemovalPolicy $policy, private NodeRemovalPlan $plan, private NodeReachabilityProbe $reachability) {}
+    public function __construct(private StartOperationAction $operations, private NodeRemovalPolicy $policy, private NodeRemovalPlan $plan) {}
 
     public function execute(Node $node, Node $caller, bool $offline = false, bool $force = false, bool $deleted = false, ?string $requestId = null): Operation
     {
-        if (($existing = $this->idempotency->replay('node.remove')) !== null) {
-            return $existing;
+        if ($deleted || TaskVm::query()->where('node_id', $node->id)->exists()) {
+            throw new ResourceOperationException('node.removal_owner_required', 'Remove a TaskVM Node inside its owning native TaskVM workflow.', 422);
         }
-        if (! is_array($this->kinds->definition('node.remove'))) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Node removal is waiting for its complete execution contract.', 503);
-        }
-        if (app(ProcessSwampSafety::class)->requiresSynchronous($node)) {
-            throw new ResourceOperationException('node.executor_dependency', 'Executor Nodes require synchronous removal recovery.', 409);
-        }
-        if ($deleted || $this->idempotency->parent !== null) {
-            app(NodeTaskVmLifecycleOwnership::class)->removal($node, $deleted);
+        if ($offline && ! $force) {
+            throw new ResourceOperationException('node.confirmation_required', 'Offline Node removal requires explicit force confirmation.', 422);
         }
         $this->policy->protected($node, $caller);
-        $unreachable = $offline && ($deleted || $this->reachability->degradation($node) !== null);
-        if ($unreachable && ! $force) {
-            throw new ResourceOperationException('node.confirmation_required', 'Removing an unreachable Node sheds roles and resources. Use --force.', 422);
-        }
+        $this->policy->resources($node, $offline);
 
-        return DB::transaction(function () use ($node, $caller, $offline, $unreachable, $force, $deleted, $requestId): Operation {
-            $node = Node::query()->lockForUpdate()->findOrFail($node->id);
-            $this->policy->protected($node, $caller);
-            $this->policy->resources($node, $unreachable);
-            $operation = $this->operations->execute('node.remove', 'node', $node->id, $node->id,
-                ['offline' => $offline, 'force' => $force, 'deleted' => $deleted && $offline, 'caller_node_id' => $caller->id], 'operator', $requestId);
-            if (! $operation->wasRecentlyCreated) {
-                return $operation;
+        return DB::transaction(function () use ($node, $caller, $offline, $force, $requestId): Operation {
+            $snapshot = $this->plan->build(Node::query()->lockForUpdate()->findOrFail($node->id), $offline);
+            $executor = Node::query()->where('status', LifecycleStatus::Active)
+                ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
+            $participants = [$caller->id, $node->id, $snapshot['hub_id'], ...array_map(static fn (mixed $participant): int => ValidatedData::integer(ValidatedData::object($participant)['node_id']), is_array($snapshot['participants']) ? $snapshot['participants'] : [])];
+            if ($snapshot['metrics'] !== null) {
+                $metrics = ValidatedData::object($snapshot['metrics']);
+                $participants = [...$participants, $metrics['node_id'], $metrics['gateway_id']];
             }
-            $steps = $this->plan->build($node, $unreachable);
-            $intents = [];
-            foreach ($steps as $step) {
-                if ($step['type'] === 'child') {
-                    $intents[] = array_intersect_key($step, array_flip(['key', 'kind', 'node_id', 'input']));
-                }
-            }
-            $intents[] = ['key' => 'remove-restore', 'kind' => 'node.removal_restore', 'node_id' => $node->id, 'input' => []];
-            $routeRows = $this->policy->routeRows($node);
-            $roles = $node->roles()->orderBy('role')->get()->map(static fn ($role): string => $role->role->value)->all();
-            $mac = $node->platform === 'macos';
-            $result = ['id' => $node->id, 'name' => $node->name, 'removed' => true, 'wireguard_peer_removed' => $node->wireguard_public_key !== null,
-                'dns_records_removed' => true, 'degradation' => $unreachable ? 'unreachable' : null, 'roles_shed' => $unreachable ? $roles : [],
-                'retained_on_node' => $mac ? ['user', 'package-managers', 'host-wireguard'] : ($unreachable ? app(NodeSideResidue::class)->describe(array_map(RoleName::from(...), array_values($roles)), true) : []),
-                'follow_up' => $unreachable && ! $mac ? app(NodeSideResidue::class)->followUp(true) : null];
-            $this->store->change($operation, ['input' => [...$operation->input, '_node_plan' => $steps, '_node_result' => $result, '_node_failure_result' => ['id' => $node->id, 'name' => $node->name, 'removed' => false]],
-                'state' => [...($operation->state ?? []), 'child_intents' => $intents, 'removal_intent' => [
-                    'id' => $node->id, 'name' => $node->name, 'prior_status' => $node->status->value, 'offline' => $unreachable,
-                    'public_key' => $node->wireguard_public_key, 'route_ids' => array_column($routeRows, 'id'), 'route_rows' => $routeRows,
-                    'role_ids' => $node->roles()->orderBy('id')->pluck('id')->all(),
-                    'roles' => $roles]]]);
 
-            return $operation;
+            $participants[] = $executor->id;
+            $execution = app(NodeRemovalInput::class)->capture($snapshot, executor: $executor);
+            $snapshot = ValidatedData::object($execution['snapshot']);
+            if ($execution['restore_certificates'] !== []) {
+                $participants[] = 209;
+            }
+            $fleet = is_array($execution['metrics_fleet']) ? $execution['metrics_fleet'] : null;
+            $metricsOwner = $fleet['metrics_node_id'] ?? $executor->id;
+            $participants = [...$participants, ...NodeRoleMetricsInput::participants($fleet)];
+            $participants = [...$participants, ...array_map(static fn (mixed $row): int => ValidatedData::integer(ValidatedData::object($row)['node_id']),
+                is_array($snapshot['participants']) ? $snapshot['participants'] : [])];
+            $input = ['offline' => $offline, 'force' => $force, '_node_removal' => $snapshot, '_removal' => $execution,
+                'route_removal' => $execution['routes'],
+                'route_prior_states' => Route::query()->whereKey(ValidatedData::integerList($snapshot['route_ids']))->orderBy('id')->get()
+                    ->map(static fn (Route $route): array => ['id' => $route->id, ...$route->only(['status', 'sites_published', 'failed_step', 'error_code'])])->all(),
+                'participant_node_ids' => array_values(array_unique(array_filter($participants, is_int(...))))];
+            if ($execution['retirement'] !== null) {
+                $input['bootstrap_identity'] = ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $executor->id];
+                $input['private_bindings'] = ['bootstrap_identity' => ['owner_node_id' => $executor->id,
+                    'read_node_ids' => [$executor->id], 'write_node_ids' => []]];
+            }
+            if ($execution['hub'] !== null) {
+                $hub = ValidatedData::object($execution['hub']);
+                $hubId = ValidatedData::integer($hub['hub_id']);
+                $input['_wireguard'] = $hub;
+                $input['_wireguard_restore'] = $execution['restore_hub'];
+                $input['configuration'] = ['$secret' => 'node.vpn_configuration', 'id' => $hubId];
+                $input['private_bindings']['configuration'] = ['owner_node_id' => $hubId,
+                    'read_node_ids' => [$executor->id], 'write_node_ids' => []];
+            }
+            if ($fleet !== null) {
+                $input['metrics_runtime'] = ['$secret' => 'metrics.fleet_runtime', 'id' => $metricsOwner];
+                $input['private_bindings']['metrics_runtime'] = ['owner_node_id' => $metricsOwner, 'read_node_ids' => [$metricsOwner], 'write_node_ids' => []];
+            }
+            $input = NodeRemovalEnvironmentSource::bind($input, $executor->id);
+            $routes = ValidatedData::object($execution['routes']);
+            app(NativeRouteRemovalPlan::class)->recordWithdrawal(['routes' => array_map(
+                static fn (mixed $row): array => ['route_id' => ValidatedData::integer(ValidatedData::object($row)['route_id'])],
+                is_array($routes['routes']) ? array_values($routes['routes']) : [])]);
+
+            return $this->operations->execute('node.remove', 'node', $node->id, $executor->id, $input, 'operator', $requestId);
         });
     }
 }

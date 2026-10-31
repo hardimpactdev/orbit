@@ -90,7 +90,7 @@ it('runs ownership and scope guards through destructive action entry points', fu
         ->toThrow(ResourceOperationException::class, 'still has Instances')
         ->and(fn () => app(DestroyProjectAction::class)->execute($routed))
         ->toThrow(ResourceOperationException::class, 'still owns Routes')
-        ->and(fn () => app(RemoveNodeAction::class)->execute($this->node, $caller, offline: true, force: true))
+        ->and(fn () => app(RemoveNodeAction::class)->start($this->node, $caller, offline: true, force: true))
         ->toThrow(ResourceOperationException::class, 'referenced by Routes');
 
     $cluster = Cluster::query()->create(['name' => 'destructive', 'state' => 'active', 'tld' => null]);

@@ -99,7 +99,7 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
             'node.role_add', 'node.role_converge' => '_role.metrics_fleet',
             'node.role_remove' => '_role_remove.metrics_fleet',
             'node.role_relocate' => '_relocate.metrics_fleet',
-            'node.remove', 'node.removal_restore' => '_removal.metrics_fleet',
+            'node.remove' => ($operation->result['restoring'] ?? false) === true ? '_removal.restore_metrics_fleet' : '_removal.metrics_fleet',
             default => null,
         };
     }
