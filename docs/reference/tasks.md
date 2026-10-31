@@ -1497,3 +1497,9 @@ A range-to-dist-tag change is refused. Archive names are not dist-tags. A constr
 Operation input stores the credential reference. The callback receives fresh tokens for repository writes and for reading contents, checks and Actions. It revokes each token before it exits. Every native invocation and resume refreshes private Project configuration before credential resolution. When `dependencyAutoMerge` is off, an unmerged PR cannot receive a new PUT; an already-merged exact head can still return its receipt. Gateway policy disablement still refuses credential release and leaves recovery unconfirmed.
 
 The native run is explicitly resumable: lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.
+
+## Native Pi turns
+
+Swamp runs task turns on the task VM's exact Node worker. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
+
+Pi writes and reviews code inside the VM. Swamp installs the local turn command, sends the admitted prompt with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Review checks compare the admitted candidate in the VM before the send. Reviewer changes are captured and the candidate is restored before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.
