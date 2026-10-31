@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
 
-class ScheduleNative(NativeTestCase):
+class ScheduleNativeFixture(NativeTestCase):
+    binding_failure_calls = 2
+
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules')
@@ -41,6 +43,8 @@ class ScheduleNative(NativeTestCase):
         self.assertIn('id', payload, result.stdout+result.stderr)
         self.run_id = payload['id']
 
+
+class DirectControlRecovery:
     def test_native_dag_executes_one_local_action_without_gateway_execution(self):
         self.run_workflow()
         state = self.read()
@@ -66,13 +70,16 @@ class ScheduleNative(NativeTestCase):
         self.run_workflow(success=False)
         state = self.read()
         self.assertEqual(state['actions'], 0)
-        self.assertEqual(len(state['calls']), 2)
-        self.assertTrue(state['calls'][-1]['url'].endswith('/failure'))
+        self.assertEqual(len(state['calls']), self.binding_failure_calls)
+        if self.binding_failure_calls == 2:
+            self.assertTrue(state['calls'][-1]['url'].endswith('/failure'))
         state['unbound'] = False; self.state = state; self.save()
         self.cli('workflow', 'resume', 'operation-schedule-control', '--run', self.run_id, '--from', 'control')
         self.assertEqual(self.read()['actions'], 1)
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
+
+class ScheduleNative(DirectControlRecovery, ScheduleNativeFixture):
     def test_create_installs_private_command_in_same_native_root(self):
         self.state['operation']['kind'] = 'schedule.create'
         self.save()
