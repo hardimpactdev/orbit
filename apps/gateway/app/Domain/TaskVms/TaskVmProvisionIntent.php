@@ -1,0 +1,110 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\TaskVms;
+
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\WireGuard\VpnConfigurationRepository;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\TaskVm;
+use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
+
+/** Immutable allocation intent. Provider and guest work belongs to the native root. */
+final readonly class TaskVmProvisionIntent
+{
+    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents, private SshKeyProvider $keys, private TaskVmEnrollmentIntent $enrollment, private VpnConfigurationRepository $vpn) {}
+
+    /** @return array<string,mixed> */
+    public function capture(TaskVm $vm): array
+    {
+        if ($vm->state !== TaskVmState::Provisioning || $vm->name !== 'tvm-'.$vm->id
+            || $vm->image_fingerprint === null || $vm->recipe_identity === null) {
+            throw new ResourceOperationException('task_vm.provision_refused', 'Provision requires an allocated VM with its recorded recipe image.', 409);
+        }
+        $gateway = Node::query()->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
+        $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : $gateway;
+        if ($host->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('task_vm.provision_refused', 'The admitted provider worker host must be active.', 409);
+        }
+        $enrollment = $this->enrollment->capture($vm);
+        $guest = $vm->node ?? throw new ResourceOperationException('task_vm.provision_refused', 'Provision requires its reserved guest Node.', 409);
+        $network = $this->vpn->forPeer($guest);
+        $issuerId = filter_var(config('dependency_detection.services_node_id'), FILTER_VALIDATE_INT);
+        $issuer = is_int($issuerId) ? Node::query()->find($issuerId) : null;
+        if ($issuer === null || $issuer->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'The configured native issuer Node is unavailable.', 503);
+        }
+        $enrollment['wireguard_public_key'] = $guest->wireguard_public_key;
+        $enrollment['network'] = ['server_public_key' => $network->serverPublicKey, 'endpoint' => $network->endpoint,
+            'address' => $network->peerAddress, 'subnet' => $network->subnet, 'dns_server' => $network->dnsServer, 'domains' => [$network->domain]];
+        $input = ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $vm->host_node_id,
+            'gateway_node_id' => $gateway->id, 'issuer_node_id' => $issuer->id, 'guest_node_id' => $guest->id,
+            'enrollment' => $enrollment, 'participant_node_ids' => array_values(array_unique([$host->id, $gateway->id, $issuer->id, $guest->id, $network->server->id])),
+            'private_bindings' => [
+                'installation' => ['owner_node_id' => $guest->id, 'read_node_ids' => [$guest->id], 'write_node_ids' => []],
+                'enrollment_network' => ['owner_node_id' => $network->server->id, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []],
+            ],
+            'installation' => ['$secret' => 'task_vm.installation', 'id' => $vm->id],
+            'enrollment_network' => ['$secret' => 'task_vm.enrollment_network', 'id' => $vm->id], 'name' => $vm->name,
+            'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'wireguard_ip' => $vm->wireguard_ip,
+            'image_fingerprint' => $vm->image_fingerprint, 'recipe_identity' => $vm->recipe_identity,
+            'agent_sha256' => $this->agents->pin($host), 'deadline_at' => now()->addSeconds(1500)->toIso8601String(),
+            'origin' => $vm->ai_router_origin ?? $this->settings->modelProxyOrigin,
+            'gateway_public_key' => $this->keys->publicKey(), 'vm' => null, 'create' => null, 'upcloud' => null];
+        if ($vm->provider === TaskVmProviderKind::Incus) {
+            $location = $this->settings->host($host->id);
+            $resources = $vm->size->resources();
+            $input['vm'] = ['project' => $location->project, 'name' => $vm->name, 'cidr' => $location->cidr];
+            $input['create'] = ['kind' => 'create', 'image' => $vm->image_fingerprint,
+                'expected_fingerprint' => $vm->image_fingerprint, 'base_alias' => $location->imageAlias,
+                'gateway_public_key' => $input['gateway_public_key'], 'cpus' => $resources->cpusOn($location),
+                'memory' => $resources->memoryOn($location), 'disk' => $resources->diskOn($location),
+                'network' => $location->network, 'pool' => $location->pool, 'topology' => $resources->testNodes > 0];
+        } else {
+            $upcloud = $this->settings->upcloud ?? throw new ResourceOperationException('task_vm.provision_refused', 'UpCloud placement has no configured provider.', 409);
+            $input['upcloud'] = ['zone' => $upcloud->zone, 'plan' => $upcloud->plan, 'disk_gb' => $upcloud->diskGb, 'max_vms' => $upcloud->maxVms, 'source_template' => $vm->image_fingerprint, 'gateway_public_key' => $input['gateway_public_key']];
+            $input['first_visit'] = ['$secret' => 'task_vm.first_visit', 'id' => $vm->id];
+            $input['private_bindings']['first_visit'] = ['owner_node_id' => $guest->id, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []];
+            $input['upcloud_token'] = ['$secret' => 'upcloud.api', 'id' => $vm->id];
+        }
+
+        return $input;
+    }
+
+    public function owned(Operation $operation, bool $lock = false): TaskVm
+    {
+        $vm = TaskVm::query()->when($lock, static fn ($query) => $query->lockForUpdate())->findOrFail($operation->target_id);
+        $input = $operation->input;
+        $guest = $vm->node;
+        if ($operation->kind !== 'task_vm.provision' || $operation->target_type !== 'task_vm'
+            || ($input['task_vm_id'] ?? null) !== $vm->id || ($input['node_id'] ?? null) !== $operation->node_id
+            || ($input['host_node_id'] ?? null) !== $vm->host_node_id || ($input['name'] ?? null) !== $vm->name
+            || ($input['provider'] ?? null) !== $vm->provider->value || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip
+            || ($input['image_fingerprint'] ?? null) !== $vm->image_fingerprint || ($input['recipe_identity'] ?? null) !== $vm->recipe_identity
+            || (($input['guest_node_id'] ?? null) !== null && $input['guest_node_id'] !== $vm->node_id)
+            || (($input['provider_id'] ?? null) !== null && $input['provider_id'] !== $vm->provider_id)
+            || ($vm->node_id !== null && (! $guest instanceof Node || $guest->name !== $vm->name || $guest->wireguard_ip !== $vm->wireguard_ip))) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The provision no longer owns its admitted VM, image and placement.', 422);
+        }
+
+        return $vm;
+    }
+
+    /** @return array<string,mixed> */
+    public function input(Operation $operation): array
+    {
+        $vm = $this->owned($operation);
+
+        return [...Arr::except($operation->input, ['upcloud_token', 'installation', 'enrollment_network', 'first_visit']),
+            'enrollment' => [...ValidatedData::object($operation->input['enrollment']), 'wireguard_public_key' => $vm->node?->wireguard_public_key],
+            'eligible' => $vm->state === TaskVmState::Provisioning];
+    }
+}
