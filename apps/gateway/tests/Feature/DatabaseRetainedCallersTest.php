@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
+use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
@@ -38,6 +39,49 @@ it('removes an Instance database using stored password-free lifecycle ownership 
         ->and(Operation::query()->count())->toBe(0)
         ->and(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
+
+it('refuses system names and prefixes before retained removal probes or effects', function (string $driver, string $database, ?string $prefix, string $entrypoint): void {
+    $this->server->update(['driver' => $driver]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'unsafe-retained', 'driver' => $driver, 'database_server_id' => $this->server->id,
+        'database' => $database, 'test_database' => $prefix, 'username' => 'unsafe_owner', 'owner_instance_id' => $this->instance->id]);
+    $connection->forceFill(['ownership_adoption' => ['databases' => [$database], 'prefix' => $prefix,
+        'username' => 'unsafe_owner', 'server_id' => $this->server->id, 'node_id' => $this->server->node_id]])->save();
+
+    $remove = $entrypoint === 'synchronous'
+        ? fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id)
+        : fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection]);
+    expect($remove)->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('database.system_database');
+    });
+
+    $this->assertModelExists($connection);
+    expect($this->admin->statements)->toBe([]);
+    expect(Operation::query()->count())->toBe(0);
+    expect(DatabaseExecutionIntent::query()->count())->toBe(0);
+})->with([
+    ['mysql', 'mysql', null], ['mysql', 'sys', null], ['mysql', 'performance_schema', null], ['mysql', 'information_schema', null],
+    ['mysql', 'MySQL', null], ['mysql', 'safe', 'm'], ['mysql', 'safe', 's'], ['mysql', 'safe', 'performance_'],
+    ['mysql', 'safe', 'information_'], ['mysql', 'safe', ''], ['pgsql', 'postgres', null], ['pgsql', 'template0', null],
+    ['pgsql', 'template_other', null], ['pgsql', 'Template1', null], ['pgsql', 'safe', 'p'], ['pgsql', 'safe', 'tem'],
+])->with(['synchronous', 'admission']);
+
+it('refuses an expanded system database before ownership probes or drop SQL', function (string $entrypoint): void {
+    $connection = retainedCreatedDatabase($this->server, $this->instance);
+    $this->admin->rows['SCHEMATA'] = ['mysql'];
+
+    $remove = $entrypoint === 'synchronous'
+        ? fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id)
+        : fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection]);
+    expect($remove)->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('database.system_database');
+    });
+
+    $this->assertModelExists($connection);
+    expect($this->admin->statements)->toHaveCount(1);
+    expect($this->admin->sql())->toContain('SELECT SCHEMA_NAME')->not->toContain('DROP DATABASE', 'DROP USER', 'SELECT DISTINCT blocker');
+    expect(Operation::query()->count())->toBe(0);
+    expect(DatabaseExecutionIntent::query()->count())->toBe(0);
+})->with(['synchronous', 'admission']);
 
 it('does not accept a stored lifecycle creation receipt for a changed recorded identity', function (): void {
     $connection = retainedCreatedDatabase($this->server, $this->instance);
