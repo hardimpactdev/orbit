@@ -25,5 +25,8 @@ Ownership markers, generated paths and fingerprints prevent adoption of foreign
 runtime files. Existing `orbit-agent` code remains frozen.
 
 Wrappers export their typed inputs, results and injectable runners for parent
-tests. Sandbox tests use real files and sockets with fake package/service
-commands. No live rollout or parent-kind cutover is claimed by this lower layer.
+tests. `runtime_local.ts` also exports `ProductionRuntimeInputSchema` and
+`ProductionCacheInputSchema`. Parent admission schemas compose these canonical
+schemas rather than copying their validation rules. Sandbox tests use real files
+and sockets with fake package/service commands. No live rollout or parent-kind
+cutover is claimed by this lower layer.

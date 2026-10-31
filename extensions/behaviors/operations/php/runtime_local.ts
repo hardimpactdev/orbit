@@ -21,20 +21,22 @@ const Configuration = z.object({
   unit: Text,
   initial_pool: Text,
 }).strict();
-const ConvergeInput = Identity.extend({
+export const ProductionRuntimeInputSchema = Identity.extend({
   mode: z.enum(["converge", "monitor"]),
   home: Path,
   configuration: Configuration,
   application: Path,
   initial_application: Path,
 }).strict();
-const RefreshInput = Identity.extend({
+export const ProductionCacheInputSchema = Identity.extend({
   home: Path,
   deadline_seconds: z.number().int().min(1).max(30),
 }).strict();
-export type ProductionRuntimeInput = z.infer<typeof ConvergeInput>;
+export type ProductionRuntimeInput = z.infer<
+  typeof ProductionRuntimeInputSchema
+>;
 export type ProductionRuntimeIdentity = z.infer<typeof Identity>;
-export type ProductionCacheInput = z.infer<typeof RefreshInput>;
+export type ProductionCacheInput = z.infer<typeof ProductionCacheInputSchema>;
 export type LocalPhpRuntimeCommand = {
   executable: "sudo";
   args: string[];
@@ -85,7 +87,7 @@ export function convergeProductionRuntime(
 ): Promise<{ published: boolean }> {
   return run(
     "converge",
-    ConvergeInput.parse(input),
+    ProductionRuntimeInputSchema.parse(input),
     z.object({
       published: z.boolean(),
     }).strict(),
@@ -134,7 +136,7 @@ export function refreshProductionCache(
 ): Promise<{ complete: true }> {
   return run(
     "refresh",
-    RefreshInput.parse(input),
+    ProductionCacheInputSchema.parse(input),
     z.object({
       complete: z.literal(true),
     }).strict(),
