@@ -214,29 +214,11 @@ Swamp records public progress in native resources. A restarted run never repeats
 
 ### The rollback operation
 
-The Gateway validates the request and the access grant, checks that the Instance is a production Instance that retains the release, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope and changes nothing:
+The Gateway validates access, the production account and observed release retention, records immutable intent, and answers `202`. `rollback.release_not_retained` (422) refuses a release absent from that observation. Development rollback refuses `deployment_config.unavailable` (409) before admission.
 
-| Code | HTTP | Meaning |
-| --- | --- | --- |
-| `rollback.release_not_retained` | 422 | The Instance does not retain the release. [`instance:release:list`](/cli/instance#orbit-instancereleaselist) lists the releases it retains. A queued deploy stays queued |
-| `deployment_config.unavailable` | 409 | The Instance is not a production Instance |
-| `operation.target_busy` | 409 | Another operation holds the Instance |
-| `operation.queue_unavailable` | 503 | The Gateway has no queue |
+Swamp checks the retained release again before activation. If cleanup removed it after admission, rollback fails without changing the selection. The root runs retained-release inspection, activation, PHP refresh and captured Process restarts in order. It shares the deployment native model writer and unresolved-effect marker. It neither supersedes another root nor creates child Operations.
 
-The `rollback` step checks the release again, because a deploy's cleanup can remove it after the request. Then the operation fails at `rollback` with `rollback.release_invalid`. A rollback cancels a deploy that no worker has started, as [One operation at a time](#one-operation-at-a-time) describes.
-
-| Step | Resumable | Failed boundary |
-| --- | --- | --- |
-| `rollback` | yes | `rollback_selection` |
-| `activation` | yes | `activation` |
-| `php_refresh` | yes | `cache_refresh` |
-| `process_restart` | yes | `after_activation` |
-
-The `rollback` step reads the current selection and finds the retained release. It changes nothing. `php_refresh` appears only for an Instance that serves PHP.
-
-When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is its commit. A failed operation names the step in `failed_step` and the error code in `error_code`, such as `rollback.release_invalid`.
-
-A rollback ignores a cancel request once its `activation` step succeeded: it still refreshes PHP and restarts Processes. Before that, a cancel stops it before its next step, and the history row ends `failed` with `deployment.cancelled`.
+The terminal result records `deployment_id`, `release`, `selected_release`, `commit` and any `failed_step`. Gateway updates the selected path only when Swamp confirms the selection. Cancellation before activation stops without changing the release; after activation Swamp finishes PHP refresh and Process restarts. An interrupted active effect is never replayed or declared settled without evidence.
 
 ## Deploy
 
@@ -287,9 +269,11 @@ Rollback and the release list report the same two repository codes.
 
 ## Roll back
 
-A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption.
+A rollback is production-only. A development checkout has no retained releases and returns `409 deployment_config.unavailable` before an Operation or a Node effect. The Gateway records the chosen retained release, the Project account `orbit-app-<ProjectID>`, the PHP plan and the active, opted-in Instance Processes. It starts one native Swamp root. The root shares the deployment behavior's write lock on the admitted Node; it never creates a child Operation.
 
-After PHP refresh, a rollback restarts the same active, opted-in Instance Processes as a deployment. The `process_restart` step and its output record the results. A restart failure fails the rollback at `process_restart`, with the failed boundary `after_activation`, and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
+Swamp checks that the retained release and its web roots belong to the admitted production home. It switches `current`, reconciles the dedicated FPM runtime and resets its cache through local system commands. A changed resolved release restarts that service with the same brief serving interruption. The currently selected retained release is also a valid rollback target; selecting it needs no new release or checkout.
+
+After PHP refresh, the same root restarts the captured active, opted-in Instance Processes. A restart failure fails the rollback at `process_restart` and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command and changes no database file. Cancellation before activation stops without changing the release. After activation, the root finishes PHP refresh and Process restarts. A restart never repeats an interrupted effect. An unresolved effect retains the native active marker; a failed readback marks the selection unknown. The Gateway records only the root's bounded result and confirmed selected release.
 
 ## Automatic deployments
 
@@ -528,7 +512,7 @@ A manual deployment or a rollback is a person's decision about what runs. A merg
 
 ### One native root for every deployment
 
-Development and production deployment use one native workflow placed on the admitted Node. Manual and automatic runs share the same native model writer. An unresolved effect marker prevents another root from starting effects until the owning run settles it. Rollback joins that model in its own native cutover; no polled executor remains.
+Development and production deployment use one native workflow placed on the admitted Node. Manual and automatic runs share the same native model writer. An unresolved effect marker prevents another root from starting effects until the owning run settles it. Rollback shares that native model and marker; no polled executor remains.
 
 ### Three releases per home
 

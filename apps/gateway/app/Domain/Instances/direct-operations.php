@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\Deployment\InstanceRollbackProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceDestroyProjection;
@@ -30,6 +31,10 @@ return [
         'private_material' => ['git_read' => 'instance.lifecycle_git', 'teardown' => 'instance.destroy_teardown', 'php' => 'instance.destroy_php', 'database_material' => 'database.intent'],
     ],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
+    'instance.rollback' => [
+        'workflow' => 'operation-instance-rollback-direct',
+        'projection' => InstanceRollbackProjection::class,
+    ],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
         'projection' => InstanceDeployProjection::class,
