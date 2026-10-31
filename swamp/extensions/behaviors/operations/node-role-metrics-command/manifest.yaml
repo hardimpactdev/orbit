@@ -1,0 +1,17 @@
+manifestVersion: 1
+name: "@nckrtl/node-role-metrics-command"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Canonical public Metrics service specifications for a same-root role composition.
+behaviors:
+  - operations/node-role-metrics-command/assets.ts
+additionalFiles:
+  - scripts/inspect.py
+  - scripts/credential.py
+  - scripts/owner.py
+  - scripts/exporter_observe.py
+  - scripts/artifact.py
+  - scripts/service_observe.py
+  - scripts/service_directory.py
+  - scripts/service_directory_remove.py

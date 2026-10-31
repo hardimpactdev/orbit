@@ -29,6 +29,71 @@ account_directory = load("account_directory")
 composer_manifest = load("composer_manifest")
 observer_identity = load("observer_identity")
 observer_checkout = load("observer_checkout")
+file_snapshot = load("file_snapshot")
+file_restore = load("file_restore")
+file_snapshot_cleanup = load("file_snapshot_cleanup")
+
+
+class RoleFileRecoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.data = {"run_id": "46382a57-31e5-4b13-8938-c14a7951e05f", "path": str(self.root / "configuration")}
+        self.snapshot_patch = patch.object(file_snapshot, "SNAPSHOTS", self.root / "snapshots")
+        self.restore_patch = patch.object(file_restore, "SNAPSHOTS", self.root / "snapshots")
+        self.cleanup_patch = patch.object(file_snapshot_cleanup, "SNAPSHOTS", self.root / "snapshots")
+        self.cleanup_patch.start()
+        self.addCleanup(self.cleanup_patch.stop)
+        self.snapshot_patch.start()
+        self.restore_patch.start()
+        self.addCleanup(self.snapshot_patch.stop)
+        self.addCleanup(self.restore_patch.stop)
+
+    def test_snapshot_keeps_private_bytes_on_target_and_restores_original_mode_owner_and_content(self):
+        path = Path(self.data["path"])
+        path.write_bytes(b"previous-private-configuration")
+        path.chmod(0o400)
+        before = path.stat()
+        self.assertEqual(file_snapshot.snapshot(self.data), {"ready": True, "changed": False})
+        path.chmod(0o644)
+        path.write_bytes(b"replacement-private-configuration")
+        # Explicit native replay retains the original snapshot.
+        file_snapshot.snapshot(self.data)
+        self.assertEqual(file_restore.restore(self.data), {"ready": True, "changed": True})
+        self.assertEqual(path.read_bytes(), b"previous-private-configuration")
+        self.assertEqual((path.stat().st_mode, path.stat().st_uid, path.stat().st_gid),
+                         (before.st_mode, before.st_uid, before.st_gid))
+        self.assertEqual(list(self.root.glob(".orbit-role-restore-*")), [])
+
+    def test_completed_snapshot_cleanup_removes_only_that_file_and_is_idempotent(self):
+        path = Path(self.data["path"])
+        path.write_text("private")
+        file_snapshot.snapshot(self.data)
+        other = {**self.data, "path": str(self.root / "other")}
+        file_snapshot.snapshot(other)
+        self.assertEqual(file_snapshot_cleanup.cleanup(self.data), {"ready": True, "changed": True})
+        self.assertEqual(file_snapshot_cleanup.cleanup(self.data), {"ready": True, "changed": False})
+        self.assertEqual(path.read_text(), "private")
+        self.assertTrue(Path(str(file_snapshot.location(other)) + ".json").exists())
+
+    def test_initial_absence_is_restored_without_recreating_a_file(self):
+        file_snapshot.snapshot(self.data)
+        path = Path(self.data["path"])
+        path.write_text("new configuration")
+        file_restore.restore(self.data)
+        self.assertFalse(path.exists())
+
+    def test_missing_snapshot_and_link_source_are_refused_before_mutation(self):
+        path = Path(self.data["path"])
+        path.write_text("kept")
+        with self.assertRaises(FileNotFoundError):
+            file_restore.restore(self.data)
+        self.assertEqual(path.read_text(), "kept")
+        link = self.root / "link"
+        link.symlink_to(path)
+        with self.assertRaises(ValueError):
+            file_snapshot.snapshot({**self.data, "path": str(link)})
 
 
 class ObserverFilesTest(unittest.TestCase):

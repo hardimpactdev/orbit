@@ -109,3 +109,26 @@ it('captures the final prospective role footprint without storing certificate re
         ->and(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeFalse()
         ->and(Setting::query()->get()->toArray())->toBe($settings);
 });
+
+it('captures public Metrics specifications without rendering the existing password into intent', function (): void {
+    FleetFixtures::bind();
+    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+    {
+        public function rootCertificate(): string
+        {
+            return 'public-metrics-role-root';
+        }
+    });
+    FleetFixtures::node('metrics-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('metrics-role-owner', [RoleName::Metrics]);
+    $before = Setting::query()->get()->toArray();
+
+    $capture = app(NodeRoleConvergeInput::class)->capture($node, $node->roles->sole());
+    $runtime = ValidatedData::object($capture['intent']['runtime']);
+    $configuration = ValidatedData::object($runtime['public_configuration']);
+
+    expect($configuration)->toHaveKey('/etc/orbit/metrics/prometheus.yml')
+        ->and($configuration)->not->toHaveKey('/etc/orbit/metrics/grafana/admin-password')
+        ->and($capture['participant_node_ids'])->toContain(209, $node->id)
+        ->and(Setting::query()->get()->toArray())->toBe($before);
+});

@@ -6,6 +6,8 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Routes\NativeNodeRolePublicationInput;
 use App\Domain\Routes\RouteRenderContext;
+use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
+use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
@@ -21,6 +23,8 @@ final readonly class NodeRoleConvergeInput
         private NodeConvergeInput $footprint,
         private RouteRenderContext $render,
         private SwampSshExecutionInput $ssh,
+        private MetricsConfigurationRenderer $metrics,
+        private ServiceMetricsProjection $services,
     ) {}
 
     /** Runtime intent is prepared by the owning admission transaction before capture.
@@ -45,6 +49,18 @@ final readonly class NodeRoleConvergeInput
 
         $metrics = $intent['metrics_fleet'] === null ? null : ValidatedData::object($intent['metrics_fleet']);
         $runtime = ValidatedData::object($intent['runtime'] ?? []);
+        if (($runtime['role'] ?? null) === RoleName::Metrics->value) {
+            $scrapeTargets = $runtime['targets'];
+            if (! is_array($scrapeTargets)) {
+                throw new \InvalidArgumentException('Metrics runtime targets must be a list.');
+            }
+            $runtime['public_configuration'] = $this->metrics->publicFiles(array_map(static function (mixed $raw): array {
+                $target = ValidatedData::object($raw);
+
+                return ['name' => ValidatedData::string($target['name']), 'address' => ValidatedData::string($target['address'])];
+            }, array_values($scrapeTargets)), $this->services->forFleet($node));
+            $intent['runtime'] = $runtime;
+        }
         $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
         $effectIds = array_values(array_unique([$node->id,
             ...array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), $publication['publications']),

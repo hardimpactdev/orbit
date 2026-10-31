@@ -75,3 +75,9 @@ templates, closes world access to each admitted checkout environment, and
 converges only `orbit-agent.service`. It does not call the old agent configurator
 or worker installer. Observer binary delivery uses the canonical bootstrap
 asset separately. Empty checkout lists retain file-before-service ordering.
+
+Metrics service metadata reuses the canonical images, volume names, labels,
+mounts, health checks and specification hashes. The role capture supplies only
+the canonical public configuration to this metadata step. Its schema rejects a
+password file or incomplete public configuration. Private file delivery keeps
+the existing execution-copy boundary.

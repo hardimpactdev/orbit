@@ -5,7 +5,13 @@ const Path = z.string().startsWith("/").max(4096).refine((value) =>
     !value.includes("\0") &&
     !value.split("/").some((part) => part === "." || part === "..")
 );
+const FileSnapshot = z.object({ path: Path, run_id: z.uuid() }).strict();
 const Inputs = {
+    file_remove: z.object({ path: Path, marker: z.string().nullable() })
+        .strict(),
+    file_snapshot: FileSnapshot,
+    file_restore: FileSnapshot,
+    file_snapshot_cleanup: FileSnapshot,
     observer_identity: z.object({}).strict(),
     observer_checkout: z.object({ checkout: Path }).strict(),
     storage: z.object({ root: Path, user: Account, group: Account }).strict(),
@@ -56,6 +62,10 @@ const Args = z.object({
         "composer_manifest",
         "observer_identity",
         "observer_checkout",
+        "file_remove",
+        "file_snapshot",
+        "file_restore",
+        "file_snapshot_cleanup",
     ]),
     input: z.record(z.string(), z.unknown()),
 }).strict();
