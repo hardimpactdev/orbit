@@ -5,7 +5,7 @@ from process_common import Refused, artifact_name, main, observe
 from unit_files import installation, material
 
 
-def create(value):
+def create(value, healthcheck=None):
     admitted = installation(value)
     if admitted["runtime"] != "docker" or value.get("slot", "canonical") not in (
         "canonical",
@@ -18,7 +18,10 @@ def create(value):
         if current["spec"] != admitted["spec"]:
             raise Refused("process.spec_changed")
         return {"ready": True}
-    request_create(artifact_name(value), create_body(value, admitted, private))
+    body = create_body(value, admitted, private)
+    if healthcheck is not None:
+        body["Healthcheck"] = healthcheck
+    request_create(artifact_name(value), body)
     return {"ready": True}
 
 

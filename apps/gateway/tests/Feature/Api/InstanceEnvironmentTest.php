@@ -15,6 +15,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -27,6 +28,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakesEnvironmentSyncInspection;
 
 function environment_api_production(Instance $instance): void
@@ -408,8 +410,8 @@ it('returns 409 when a retained terminal step carries failed activation evidence
 it('returns one native Operation without reading or writing the workload during admission', function (): void {
     $this->instance->node->update(['architecture' => 'x86_64']);
     $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'synthetic-private-value']);
-    $socket = new \Tests\Support\FakeRoutePublicationSocket;
-    app()->instance(\App\Infrastructure\AgentView\WebSocketClient::class, $socket);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'synthetic-shared-run-token']);
     $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')

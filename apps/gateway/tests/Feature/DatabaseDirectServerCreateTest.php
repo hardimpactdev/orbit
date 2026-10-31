@@ -22,7 +22,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => $this->runId]]];
+    $socket->reply = fn (array $sent): array => ($sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => $this->runId]]]);
     app()->instance(WebSocketClient::class, $socket);
     $this->create = fn (string $driver) => app(CreateDatabaseServerAction::class)->execute(new CreateDatabaseServerData('proof', $this->node->id, DatabaseDriver::from($driver), $driver === 'pgsql' ? '18' : '8.0', $driver === 'pgsql' ? 5432 : ($driver === 'redis' ? 6379 : 3306)));
 });
@@ -34,18 +34,14 @@ it('records a direct-only server with safe container intent and protected initia
     expect($operation->lock_key)->toBeNull();
     expect($server->status->value)->toBe('provisioning');
     expect($server->process->runtime_config['environment'])->toBe([]);
-    $safe = $this->getJson($path.'?run_id='.$this->runId)->assertJsonMissingPath('error')->assertOk()->json('data.input');
+    $safe = $this->getJson($path.'?run_id='.$this->runId)->assertJsonMissingPath('error')->assertOk()->json('data.input.intent');
     expect($safe['driver'])->toBe($driver);
     expect($safe['initialize'])->toBe($driver !== 'redis');
     expect($safe['container_input'])->not->toHaveKey('environment');
     expect($safe)->not->toHaveKeys(['password', 'environment', 'acl', 'payload', 'agent_sha256']);
-    $material = $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $material = DatabaseExecutionIntent::recorded($operation->input['intent_id'])->payload['commands']['database-apply']['input'];
     expect($material['password'])->toBe($server->root_password);
-    if ($driver !== 'redis') {
-        expect($material['environment'])->toBe([$driver === 'pgsql' ? 'POSTGRES_PASSWORD' : 'MYSQL_ROOT_PASSWORD' => $server->root_password]);
-    } else {
-        expect($material['acl'])->toContain(hash('sha256', $server->root_password));
-    }
     expect(json_encode($operation->fresh()->toArray()))->not->toContain($server->root_password);
     expect(json_encode($server->process->toArray()))->not->toContain($server->root_password);
     $this->postJson($path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
@@ -87,7 +83,7 @@ it('keeps admitted server identity and refuses a foreign caller', function (): v
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     DatabaseServer::query()->sole()->update(['node_id' => $this->gateway->id]);
     $this->getJson($path.'?run_id='.$this->runId)->assertOk();
-    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk();
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
 });
 
 it('refuses new create admission while an existing run retains its immutable input', function (): void {
@@ -95,7 +91,7 @@ it('refuses new create admission while an existing run retains its immutable inp
     DatabaseServer::query()->sole()->update(['status' => 'removing']);
     expect(fn () => ($this->create)('mysql'))->toThrow(ResourceOperationException::class, 'unfinished removal intent');
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk();
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)->assertOk();
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)->assertUnprocessable();
 });
 
 it('leaves runtime Valkey policy checks to the native workflow', function (): void {
@@ -107,7 +103,7 @@ it('leaves runtime Valkey policy checks to the native workflow', function (): vo
     $server->update(['default_open' => false]);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->getJson($path.'?run_id='.$this->runId)->assertOk();
-    $this->getJson($path.'?run_id='.$this->runId)->assertJsonPath('data.input.default_open', true);
+    $this->getJson($path.'?run_id='.$this->runId)->assertJsonPath('data.input.intent.default_open', true);
     $this->postJson($path.'/result', ['run_id' => $this->runId, 'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z', 'status' => 'failed', 'error_code' => 'database.server_policy_changed',
         'result' => ['error_code' => 'database.server_policy_changed']])->assertOk();
     expect($server->fresh()->default_open)->toBeFalse();

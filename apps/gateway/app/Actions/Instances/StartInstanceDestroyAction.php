@@ -9,7 +9,6 @@ use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceRemovalStatus;
-use App\Domain\Instances\InstanceRouteRemovalAdmission;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -64,16 +63,12 @@ final readonly class StartInstanceDestroyAction
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $force, ?Operation $parent = null, bool $routesOwnedByParent = false): array
+    public function snapshot(Instance $instance, bool $force, bool $routesOwnedByParent = false): array
     {
         if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
         }
         $instance->load($this->removalRelations());
-        $detached = $parent?->kind === 'route.target_set';
-        if ($detached) {
-            app(InstanceRouteRemovalAdmission::class)->assertAllowed($parent, $instance, $force);
-        }
         $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
         if ($instance->status === InstanceState::Removing) {
             if (! $retained instanceof InstanceRemovalMember || $retained->removal->requested_instance_id !== $instance->id) {
@@ -94,7 +89,7 @@ final readonly class StartInstanceDestroyAction
         $snapshots = [];
         $additional = [];
         foreach ($members as $position => $member) {
-            $route = $routesOwnedByParent ? $member->routes->sortBy('id')->first() : $this->route($member, $detached);
+            $route = $routesOwnedByParent ? $member->routes->sortBy('id')->first() : $this->route($member);
             foreach ($member->routes as $candidate) {
                 if ($route === null || $candidate->id !== $route->id) {
                     $additional[] = $candidate->id;
@@ -229,9 +224,9 @@ final readonly class StartInstanceDestroyAction
         );
     }
 
-    private function route(Instance $instance, bool $detached = false): ?Route
+    private function route(Instance $instance): ?Route
     {
-        if ($this->withoutRoute($instance) || $detached && $instance->routes->isEmpty()) {
+        if ($this->withoutRoute($instance)) {
             return null;
         }
 

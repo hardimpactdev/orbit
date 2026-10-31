@@ -39,6 +39,6 @@ final readonly class TaskVmLifecycleIntentProjection implements DirectOperationP
             throw new ResourceOperationException('operation.result_invalid', 'The lifecycle acknowledgement needs exactly ready:true.', 422);
         }
 
-        return app(DirectOperation::class)->project($operation, $data, $result, 'lifecycle-intent');
+        return app(DirectOperation::class)->project($operation, $data, $result);
     }
 }

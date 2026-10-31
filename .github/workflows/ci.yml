@@ -53,6 +53,44 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
 
+  gateway-static:
+    name: Gateway static analysis
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: gateway-static
+      - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          coverage: none
+      - name: Cache Gateway analysis dependencies
+        if: steps.scope.outputs.selected == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/gateway/vendor
+          key: php-analysis-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.lock', 'packages/php-sdk/composer.json') }}
+      - name: Install Gateway analysis dependencies
+        if: steps.scope.outputs.selected == 'true'
+        run: |
+          cp apps/gateway/.env.example apps/gateway/.env
+          composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
+      - name: Analyze the complete Gateway and collect its tests
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: apps/gateway
+        env:
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+        run: |
+          composer analyse
+          vendor/bin/pest --list-tests
+
   cli:
     name: CLI build
     uses: ./.github/workflows/orbit-cli-binary.yml
@@ -230,7 +268,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, cli, docs, api-reference, web, swamp, gateway-release, changes]
+    needs: [php, gateway-static, cli, docs, api-reference, web, swamp, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks

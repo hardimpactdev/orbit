@@ -34,10 +34,12 @@ use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
@@ -58,7 +60,36 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\PhpBuildAnswers;
+use Tests\Support\RootCaFixture;
 use Tests\Support\SharedPhpPoolAnswers;
+
+beforeAll(function (): void {
+    RootCaFixture::prepare('app-dev-sign', '/CN=Orbit Test Root CA', 3650,
+        ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']);
+});
+
+afterEach(function (): void {
+    if (isset($this->certificateHome)) {
+        (new Filesystem)->deleteDirectory($this->certificateHome);
+    }
+});
+
+/** @return array{LeafCertificateSigner, string, string} */
+function app_dev_signing_fixture(string $domain): array
+{
+    $home = sys_get_temp_dir().'/orbit-app-dev-sign-'.bin2hex(random_bytes(8));
+    test()->certificateHome = $home;
+    mkdir($home.'/ca', 0o700, true);
+    RootCaFixture::install($home.'/ca', 'app-dev-sign');
+    config(['orbit.home' => $home]);
+    app()->instance(ProcessRunner::class, new NativeProcessRunner);
+    $signer = new FilesystemRootCertificate($home);
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    $request = openssl_csr_new(['commonName' => $domain], $key, ['digest_alg' => 'sha256']);
+    openssl_csr_export($request, $csr);
+
+    return [$signer, $csr, $signer->rootCertificate()];
+}
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -345,10 +376,10 @@ it('signs the request of the Node and publishes the leaf without the key leaving
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    [$signer, $csr, $root] = app_dev_signing_fixture('acme.app-dev.orbit');
     $agents = new FakeAgentCommandRunner()
-        ->answer('certificate.request-leaf', ['state' => 'request', 'request' => 'CSR FROM TARGET'])
+        ->answer('certificate.request-leaf', ['state' => 'request', 'request' => $csr])
         ->answer('certificate.publish-leaf', []);
-    $signer = app_dev_test_signer();
     $manager = new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver());
 
     $manager->convergeInstance($instance, $route);
@@ -358,12 +389,15 @@ it('signs the request of the Node and publishes the leaf without the key leaving
         ->and($leaf)->toMatchArray([
             'scope' => "app-instance-{$instance->id}",
             'domain' => 'acme.app-dev.orbit',
-            'root_hash' => hash('sha256', "ROOT CERTIFICATE\n"),
+            'root_hash' => hash('sha256', $root),
             'user' => 'orbit',
             'home' => '/home/orbit',
         ])
-        ->and($signer->calls)->toBe([['domain' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
-        ->and($agents->calls[1]['input'])->toBe([...$leaf, 'certificate' => "LEAF CERTIFICATE\n", 'root_certificate' => "ROOT CERTIFICATE\n"]);
+        ->and($agents->calls[1]['input']['root_certificate'])->toBe($root);
+    $certificate = $agents->calls[1]['input']['certificate'];
+    expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe('acme.app-dev.orbit')
+        ->and(openssl_x509_verify($certificate, openssl_pkey_get_public($root)))->toBe(1)
+        ->and(json_encode($agents->calls))->not->toContain('PRIVATE KEY');
 });
 
 it('reuses a current leaf without signing', function (): void {
@@ -384,11 +418,12 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
     [$node, $project] = app_dev_runtime_models(account: $account);
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    [$signer, $csr] = app_dev_signing_fixture('acme.app-dev.orbit');
     $agents = new FakeAgentCommandRunner()
-        ->answer('certificate.request-leaf', ['state' => 'request', 'request' => 'CSR'])
+        ->answer('certificate.request-leaf', ['state' => 'request', 'request' => $csr])
         ->answer('certificate.publish-leaf', [])
         ->answer('certificate.remove-leaf', []);
-    $manager = new RemoteAppDevCertificateManager($agents, app_dev_test_signer(), app_dev_account_resolver($account));
+    $manager = new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver($account));
 
     $manager->convergeInstance($instance, $route);
     // Removal withdraws the Route's sites before it removes their certificate.

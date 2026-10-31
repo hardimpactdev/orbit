@@ -101,7 +101,7 @@ it('routes direct server adoption projection through owned identity admission', 
         'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
     $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => $runId]]];
+    $socket->reply = fn (array $sent): array => ($sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => $runId]]]);
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     $operation = app(CreateDatabaseServerAction::class)->execute(new CreateDatabaseServerData('adopt-proof', $this->dbNode->id, DatabaseDriver::Redis, '8.0', null, $process->id, $this->owned->slug));
