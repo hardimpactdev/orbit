@@ -4,6 +4,11 @@ import { Globals } from "../_lib/direct.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
 import { incusGuest } from "./image_guest.ts";
+import { cleanupImageVms } from "./image_cleanup.ts";
+import {
+  localSystemCommand,
+  type SystemTransport,
+} from "../node/system_command.ts";
 import { imagePhase } from "./image_phase.ts";
 import { recipePhases as phases } from "./images.ts";
 
@@ -27,6 +32,7 @@ export const stages = [
   "complete",
 ] as const;
 const StoredImageIntent = z.object({
+  current: z.boolean(),
   build_id: z.number().int().positive(),
   attempt: z.number().int().positive(),
   host_node_id: z.number().int().positive(),
@@ -65,6 +71,15 @@ export const ImageIntent = z.preprocess((value) => {
   }
   return value;
 }, StoredImageIntent).superRefine((input, ctx) => {
+  if (
+    input.name !== `tvm-image-${input.build_id}` &&
+    input.name !== `tvm-image-${input.build_id}-attempt-${input.attempt}`
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Image name differs from admitted attempt",
+    });
+  }
   if (
     input.recipe.identity !== input.identity ||
     input.recipe.agent_sha256 !== input.agent_sha256 ||
@@ -274,10 +289,11 @@ export function imageBuildDirect(
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   host: Host = runNodeAgent,
   guests = incusGuest,
+  cleanupSystem: SystemTransport = localSystemCommand,
 ) {
   const gateway = (args: z.infer<typeof Args>, ctx: Context) =>
     new GatewayOperation(makeHttp(ctx), args);
-  const read = async (args: z.infer<typeof Args>, ctx: Context) => {
+  const owned = async (args: z.infer<typeof Args>, ctx: Context) => {
     const current = z.object({
       id: z.number(),
       kind: z.literal("task_vm.image_build"),
@@ -291,8 +307,15 @@ export function imageBuildDirect(
       current.id !== args.operation_id || current.node_id !== args.node_id ||
       current.input.host_node_id !== args.node_id
     ) throw new Error("Image host differs from admission");
+    return current;
+  };
+  const read = async (args: z.infer<typeof Args>, ctx: Context) => {
+    const current = await owned(args, ctx);
     if (current.cancel_requested || ctx.signal?.aborted) {
       throw new Error("operation.cancelled");
+    }
+    if (!current.input.current) {
+      throw new Error("task_vm.image_recipe_superseded");
     }
     if (["failed", "cancelled"].includes(current.status)) {
       throw new Error("Image attempt is terminal");
@@ -301,9 +324,21 @@ export function imageBuildDirect(
   };
   return {
     type: "@nckrtl/task-vm-image-build",
-    version: "2026.10.31.5",
+    version: "2026.10.31.6",
     globalArguments: Globals,
     resources: {
+      failure: {
+        description: "Sanitized failure retained until owned VM cleanup",
+        schema: z.object({ error_code: z.string() }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+      completion: {
+        description: "Build outcome awaiting final owned VM cleanup",
+        schema: z.object({ ready: z.literal(true), fingerprint: hash }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
       boot: {
         description: "Native builder boot identity",
         schema: z.object({ boot_id: z.string().uuid() }),
@@ -321,14 +356,8 @@ export function imageBuildDirect(
       failure: {
         description: "Project a failed native admission or artifact step",
         arguments: Args,
-        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-          const api = gateway(args, ctx);
-          const timestamp = new Date().toISOString();
-          await api.project({
-            status: "failed",
-            started_at: timestamp,
-            finished_at: timestamp,
-            result: { error_code: "task_vm.image_build_failed" },
+        execute: async (_args: z.infer<typeof Args>, ctx: Context) => {
+          await ctx.writeResource("failure", "failure", {
             error_code: "task_vm.image_build_failed",
           });
           return {};
@@ -353,6 +382,12 @@ export function imageBuildDirect(
           const current = await read(args, ctx);
           if (current.status === "succeeded") return {};
           const input = current.input;
+          const guard = async () => {
+            const fresh = await read(args, ctx);
+            if (JSON.stringify(fresh.input) !== JSON.stringify(input)) {
+              throw new Error("task_vm.image_attempt_changed");
+            }
+          };
           const api = gateway(args, ctx);
           const started_at = new Date().toISOString();
           await api.project({
@@ -368,13 +403,34 @@ export function imageBuildDirect(
               args.stage,
               input,
               published ? fingerprint(published) : null,
-              host,
-              (smoke) =>
-                guests(
+              async (call) => {
+                await guard();
+                return await host(call);
+              },
+              (smoke) => {
+                const guest = guests(
                   input.project,
                   input.name + (smoke ? "-smoke" : ""),
                   input.agent_sha256,
-                ),
+                  undefined,
+                  guard,
+                );
+                return {
+                  ...guest,
+                  async bootstrap() {
+                    await guard();
+                    await guest.bootstrap();
+                  },
+                  async command(...args: Parameters<Guest["command"]>) {
+                    await guard();
+                    return await guest.command(...args);
+                  },
+                  async artifact(...args: Parameters<Guest["artifact"]>) {
+                    await guard();
+                    return await guest.artifact(...args);
+                  },
+                };
+              },
               () =>
                 api.artifact(
                   "pi_artifact_file",
@@ -404,15 +460,18 @@ export function imageBuildDirect(
                 ],
               };
             }
+            await guard();
+            if (args.stage === "complete") {
+              return {
+                dataHandles: [
+                  await ctx.writeResource("completion", "completion", result),
+                ],
+              };
+            }
             await api.project({
-              status: args.stage === "complete" ? "succeeded" : "running",
+              status: "running",
               started_at,
-              ...(args.stage === "complete"
-                ? { finished_at: new Date().toISOString() }
-                : {}),
-              result: args.stage === "complete"
-                ? result
-                : { phase: args.stage, completed: true },
+              result: { phase: args.stage, completed: true },
             });
             return {};
           } catch (error) {
@@ -421,15 +480,76 @@ export function imageBuildDirect(
                 /^[a-z0-9_]+\.[a-z0-9_.-]{1,80}$/.test(error.message)
               ? error.message
               : "task_vm.image_build_failed";
-            await api.project({
-              status: "failed",
-              started_at,
-              finished_at: new Date().toISOString(),
-              result: { error_code },
-              error_code,
-            });
+            await ctx.writeResource("failure", "failure", { error_code });
             throw new Error(error_code);
           }
+        },
+      },
+      cleanup: {
+        description:
+          "Always remove this attempt's builder and smoke VM before terminal projection",
+        arguments: Args,
+        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
+          const current = await owned(args, ctx);
+          if (current.status === "succeeded") return {};
+          const guard = async () => {
+            const fresh = await owned(args, ctx);
+            if (JSON.stringify(fresh.input) !== JSON.stringify(current.input)) {
+              // Recipe currency can change during cleanup, ownership cannot.
+              const { current: _old, ...before } = current.input;
+              const { current: _new, ...after } = fresh.input;
+              if (JSON.stringify(before) !== JSON.stringify(after)) {
+                throw new Error("task_vm.image_attempt_changed");
+              }
+            }
+            if (fresh.status === "succeeded") {
+              throw new Error("Image attempt is terminal");
+            }
+          };
+          let cleanupFailed = false;
+          try {
+            await cleanupImageVms(
+              current.input,
+              guard,
+              cleanupSystem,
+              ctx.signal,
+            );
+          } catch {
+            cleanupFailed = true;
+          }
+          // Never project another attempt, even when the cleanup guard refused it.
+          await guard();
+          const fresh = await owned(args, ctx);
+          if (["failed", "cancelled"].includes(fresh.status)) {
+            if (cleanupFailed) throw new Error("task_vm.image_cleanup_failed");
+            return {};
+          }
+          const failure = await ctx.readResource("failure");
+          const completion = await ctx.readResource("completion");
+          const cancelled = fresh.cancel_requested && !cleanupFailed;
+          const succeeded = !cleanupFailed && !cancelled &&
+            fresh.input.current && completion !== null;
+          const error_code = cleanupFailed
+            ? "task_vm.image_cleanup_failed"
+            : !fresh.input.current
+            ? "task_vm.image_recipe_superseded"
+            : typeof failure?.error_code === "string"
+            ? failure.error_code
+            : "task_vm.image_build_failed";
+          const timestamp = new Date().toISOString();
+          await gateway(args, ctx).project({
+            status: succeeded
+              ? "succeeded"
+              : cancelled
+              ? "cancelled"
+              : "failed",
+            started_at: timestamp,
+            finished_at: timestamp,
+            result: succeeded ? completion : cancelled ? {} : { error_code },
+            ...(!succeeded && !cancelled ? { error_code } : {}),
+          });
+          if (cleanupFailed) throw new Error("task_vm.image_cleanup_failed");
+          return {};
         },
       },
     },

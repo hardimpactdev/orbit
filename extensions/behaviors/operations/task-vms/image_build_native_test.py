@@ -18,13 +18,13 @@ class ImageBuildNative(NativeTestCase):
         artifact_text = 'image-artifact-' + uuid.uuid4().hex
         self.native_env['ORBIT_TEST_PI_ARTIFACT'] = artifact_text
         self.secrets = (artifact_text,)
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/task-vms')
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/task-vms', 'operations/node')
         module = self.repo / 'extensions/behaviors/operations/task-vms/image_build_direct.ts'
-        module.write_text('import {fixtureHttp, fixtureHost, fixtureGuest} from "./image_build_native_fixture.ts";\n' + module.read_text().replace('...imageBuildDirect()', '...imageBuildDirect(() => fixtureHttp, fixtureHost, fixtureGuest)'))
+        module.write_text('import {fixtureHttp, fixtureHost, fixtureGuest, fixtureCleanup} from "./image_build_native_fixture.ts";\n' + module.read_text().replace('...imageBuildDirect()', '...imageBuildDirect(() => fixtureHttp, fixtureHost, fixtureGuest, fixtureCleanup)'))
         workflow = ROOT / 'workflows/workflow-operation-task-vm-image-build.yaml'
         source = yaml.safe_load(workflow.read_text())
         self.assertEqual(source['jobs'][1]['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
-        self.assertEqual([job['name'] for job in source['jobs']], ['admission', 'build', 'admission-failed'])
+        self.assertEqual([job['name'] for job in source['jobs']], ['admission', 'build', 'cleanup'])
         for job in source['jobs']:
             self.assertIn('node', job.pop('labels'))
             job.pop('target')
@@ -33,7 +33,7 @@ class ImageBuildNative(NativeTestCase):
         self.state = {'calls': [], 'actions': [], 'guest': [], 'artifactDelivered': False,
             'operation': {'id': 7, 'kind': 'task_vm.image_build', 'node_id': 13, 'status': 'queued',
                 'cancel_requested': False, 'result': None, 'input': {
-                    'build_id': 7, 'attempt': 1, 'host_node_id': 13,
+                    'current': True, 'build_id': 7, 'attempt': 1, 'host_node_id': 13,
                     'agent_sha256': 'a' * 64, 'identity': 'sha256:' + 'b' * 64, 'generation': 1,
                     'project': 'orbit-tasks', 'name': 'tvm-image-7', 'cidr': '10.251.77.0/24',
                     'pool': 'orbit-tasks', 'network': 'orbittask0', 'cpus': 2, 'memory': '4GiB', 'disk': '45GiB',
@@ -86,6 +86,7 @@ class ImageBuildNative(NativeTestCase):
         self.run_workflow(success=False)
         saved = self.read()
         self.assertEqual(saved['operation']['status'], 'failed')
+        self.assertEqual(saved['instances'], {})
         self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote'
             and call['input']['operation'].get('alias') == 'orbit-task-base' for call in saved['actions']))
 
@@ -104,9 +105,49 @@ class ImageBuildNative(NativeTestCase):
         self.run_workflow(success=False)
         saved = self.read()
         self.assertEqual(saved['operation']['status'], 'failed')
+        self.assertEqual(saved['instances'], {})
         self.assertFalse(saved['artifactDelivered'])
         self.assertFalse(any(call['input'].get('operation', {}).get('kind') == 'promote'
             and call['input']['operation'].get('alias') == 'orbit-task-base' for call in saved['actions']))
+
+    def test_cancellation_during_recipe_deletes_builder_before_projecting_cancelled(self):
+        self.state['cancelDuringPhase'] = True
+        self.save()
+        self.run_workflow(success=False)
+        saved = self.read()
+        self.assertEqual(saved['operation']['status'], 'cancelled')
+        self.assertEqual(saved['instances'], {})
+        self.assertTrue(any(argv[5] == 'delete' for argv in saved['cleanup']))
+
+    def test_superseded_recipe_still_cleans_its_builder(self):
+        self.state['supersedeDuringPhase'] = True
+        self.save()
+        self.run_workflow(success=False)
+        saved = self.read()
+        self.assertEqual(saved['operation']['status'], 'failed')
+        self.assertEqual(saved['operation']['result']['error_code'], 'task_vm.image_recipe_superseded')
+        self.assertEqual(saved['instances'], {})
+
+    def test_cancellation_before_admission_still_cleans_admitted_orphans(self):
+        self.state['operation']['cancel_requested'] = True
+        self.state['instances'] = {'tvm-image-7': 'Running', 'tvm-image-7-smoke': 'Stopped'}
+        self.save()
+        self.run_workflow(success=False)
+        saved = self.read()
+        self.assertEqual(saved['operation']['status'], 'cancelled')
+        self.assertEqual(saved['instances'], {})
+        self.assertEqual(saved['actions'], [])
+
+    def test_cleanup_failure_overrides_cancellation(self):
+        self.state['operation']['cancel_requested'] = True
+        self.state['instances'] = {'tvm-image-7': 'Stopped'}
+        self.state['failCleanup'] = True
+        self.save()
+        self.run_workflow(success=False)
+        saved = self.read()
+        self.assertEqual(saved['operation']['status'], 'failed')
+        self.assertEqual(saved['operation']['result']['error_code'], 'task_vm.image_cleanup_failed')
+        self.assertIn('tvm-image-7', saved['instances'])
 
 
 if __name__ == '__main__':

@@ -91,6 +91,7 @@ export function incusGuest(
   name: string,
   pin: string,
   invoke = incusProcess,
+  guard: () => Promise<void> = () => Promise.resolve(),
 ) {
   if (!Digest.test(pin)) throw new Error("Invalid image agent pin");
   const command = async (
@@ -106,6 +107,7 @@ export function incusGuest(
         input,
       }) + "\n",
     );
+    await guard();
     const result = await invoke(
       guestArgv(project, nameOfGuest, [binary, "command", name]),
       envelope,
@@ -136,6 +138,7 @@ export function incusGuest(
       // Incus's guest agent appears during boot. Only this read-only availability check retries.
       const deadline = Date.now() + 600000;
       for (;;) {
+        await guard();
         const ready = await invoke(
           guestArgv(project, name, ["/usr/bin/true"]),
           new Uint8Array(),
@@ -147,6 +150,7 @@ export function incusGuest(
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+      await guard();
       const cloud = await invoke(
         guestArgv(project, name, ["/usr/bin/cloud-init", "status", "--wait"]),
         new Uint8Array(),
@@ -155,6 +159,7 @@ export function incusGuest(
       if (!cloud.success) throw new Error("task_vm.bootstrap_failed");
       const candidate = await imageAgent(pin);
       const path = `/var/tmp/orbit-agent-candidate-${pin}`;
+      await guard();
       const pushed = await invoke(
         [
           "-n",

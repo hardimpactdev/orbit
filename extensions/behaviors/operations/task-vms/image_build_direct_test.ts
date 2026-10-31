@@ -15,6 +15,7 @@ import { guestArgv, incusGuest } from "./image_guest.ts";
 
 export const intent = () =>
   ImageIntent.parse({
+    current: true,
     build_id: 7,
     attempt: 1,
     host_node_id: 13,

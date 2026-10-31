@@ -56,6 +56,15 @@ export async function fixtureHost(
 ) {
   const state = JSON.parse(await Deno.readTextFile(file));
   state.actions.push(call);
+  const operation = call.input.operation as Record<string, unknown> | undefined;
+  const vm = call.input.vm as { name: string } | undefined;
+  if (call.name === "incus.vm" && vm) {
+    state.instances ??= {};
+    if (operation?.kind === "create_image") {
+      state.instances[vm.name] = "Running";
+    }
+    if (operation?.kind === "remove_instance") delete state.instances[vm.name];
+  }
   await save(state);
   if (call.name === "incus.volume") {
     return { name: "orbit-topology-seed-" + "c".repeat(12) };
@@ -92,6 +101,13 @@ export function fixtureGuest(
       }
       const state = JSON.parse(await Deno.readTextFile(file));
       state.guest.push({ name, input, uid });
+      if (
+        name === "image.start-phase" &&
+        (input.key as { phase?: string })?.phase === "packages"
+      ) {
+        if (state.cancelDuringPhase) state.operation.cancel_requested = true;
+        if (state.supersedeDuringPhase) state.operation.input.current = false;
+      }
       await save(state);
       if (name === "image.check" && state.failSmoke) {
         throw new Error("task_vm.image_check_failed");
@@ -112,4 +128,40 @@ export function fixtureGuest(
       return { ready: true };
     },
   };
+}
+
+export async function fixtureCleanup(
+  command: { command: string; args: readonly string[] },
+) {
+  const state = JSON.parse(await Deno.readTextFile(file));
+  state.cleanup ??= [];
+  state.cleanup.push(command.args);
+  const args = command.args.slice(5);
+  const name = args.at(-1)!;
+  if (state.failCleanup && args[0] === "delete") {
+    await save(state);
+    return { success: false, stdout: "" };
+  }
+  if (args[0] === "stop") state.instances[name] = "Stopped";
+  if (args[0] === "delete") delete state.instances[name];
+  await save(state);
+  if (args[0] === "list") {
+    return {
+      success: true,
+      stdout: JSON.stringify(
+        state.instances?.[name]
+          ? [{
+            name,
+            type: "virtual-machine",
+            status: state.instances[name],
+            expanded_devices: {
+              root: { type: "disk", path: "/", pool: "orbit-tasks" },
+            },
+          }]
+          : [],
+      ),
+    };
+  }
+  if (args[0] === "storage") return { success: true, stdout: "[]" };
+  return { success: true, stdout: "" };
 }
