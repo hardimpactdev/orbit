@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRequestFingerprint;
+use App\Domain\Shared\ResourceOperationException;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Node;
@@ -39,7 +42,12 @@ function admitDirectVault(object $test, string $action = 'sync'): void
     match ($action) {
         'setup' => $test->putJson('/api/v1/vault', $test->payload)->assertAccepted(),
         'sync' => $test->postJson('/api/v1/vault/sync')->assertAccepted(),
-        'teardown' => $test->deleteJson('/api/v1/vault')->assertAccepted(),
+        'teardown' => (function () use ($test): void {
+            $operation = Operation::query()->create(['kind' => 'vault.teardown', 'target_type' => 'vault', 'target_id' => $test->gateway->id,
+                'node_id' => $test->gateway->id, 'status' => 'queued', 'input' => ['configuration' => ['$secret' => 'vault.credentials', 'id' => $test->gateway->id]],
+                'state' => ['vault_writer' => 'direct', 'swamp_run_id' => $test->run]]);
+            app(VaultOperationSecrets::class)->store($operation, app(VaultSettings::class)->configuration()->toStoredArray());
+        })(),
     };
     $test->operation = Operation::query()->sole();
     $test->path = '/api/v1/direct-operations/'.$test->operation->id;
@@ -134,12 +142,12 @@ it('refuses the removed setup writer and legacy claim', function (): void {
     Http::assertNothingSent();
 });
 
-it('tears down directly and clears settings and ledger only after proven removal', function (): void {
+it('projects an already admitted teardown and clears settings and ledger only after proven removal', function (): void {
     admitDirectVault($this, 'teardown');
     VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'cipher', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
     expect(app(DirectOperation::class)->writer('vault.teardown'))->toBe('direct');
     expect(app(OperationKinds::class)->definition('vault.teardown'))->not->toHaveKeys(['runs', 'completion', 'completion_contract']);
-    expect($this->socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $this->operation->id, 'kind' => 'vault.teardown', 'node_id' => $this->gateway->id]);
+    expect($this->socket->sent)->toBe([]);
     $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertJsonPath('data.configuration.client_secret', 'private-vault-client');
     $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced']]))->assertConflict();
     expect(app(VaultSettings::class)->configuration())->not->toBeNull();
@@ -169,8 +177,41 @@ it('preserves settings and ledger after a failed direct teardown and forgets its
 it('refuses the removed teardown writer and legacy claim', function (): void {
     app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'private-vault-client', 'private-vault-master', 'fixture-device'), 'fixture@example.test', 'org', 'Orbit', 'collection', 'Test'));
     config(['swamp.direct_writers' => ['vault.teardown' => 'polled']]);
-    $this->deleteJson('/api/v1/vault')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(fn () => app(DirectOperation::class)->writer('vault.teardown'))->toThrow(ResourceOperationException::class);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'vault.teardown', 'worker' => 'old-worker'])->assertUnprocessable();
     $this->assertDatabaseCount('operations', 0);
+    Http::assertNothingSent();
+});
+
+it('refuses teardown admission before storing intent or private material while runtime support is unavailable', function (bool $keepItems): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'private-vault-client', 'private-vault-master', 'fixture-device'), 'fixture@example.test', 'org', 'Orbit', 'collection', 'Test'));
+    VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'cipher', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
+    $settings = Setting::query()->orderBy('id')->get()->toArray();
+    $items = VaultItem::query()->get()->toArray();
+    $this->withHeader('Idempotency-Key', 'unavailable-teardown')->deleteJson('/api/v1/vault', ['keep_items' => $keepItems])
+        ->assertServiceUnavailable()->assertJsonPath('error.code', 'vault.teardown_unavailable');
+    $this->withHeader('Idempotency-Key', 'unavailable-teardown')->deleteJson('/api/v1/vault', ['keep_items' => $keepItems])
+        ->assertServiceUnavailable()->assertJsonPath('error.code', 'vault.teardown_unavailable');
+    $this->assertDatabaseCount('operations', 0);
+    expect($this->socket->sent)->toBe([])
+        ->and(Setting::query()->orderBy('id')->get()->toArray())->toBe($settings)
+        ->and(VaultItem::query()->get()->toArray())->toBe($items);
+    expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
+    Http::assertNothingSent();
+})->with([false, true]);
+
+it('refuses a matching historical unbound teardown key before idempotent start recovery', function (): void {
+    admitDirectVault($this, 'teardown');
+    $body = ['keep_items' => false];
+    $fingerprint = app(OperationRequestFingerprint::class)->make($this->gateway, 'vault:teardown', [], json_encode($body, JSON_THROW_ON_ERROR), new StartsOperation('vault.teardown'));
+    $this->operation->update(['idempotency_key' => 'historical-unbound-teardown', 'idempotency_fingerprint' => $fingerprint, 'state' => ['vault_writer' => 'direct']]);
+    $before = $this->operation->fresh()->getRawOriginal();
+    $settings = Setting::query()->orderBy('id')->get()->toArray();
+    $this->withHeader('Idempotency-Key', 'historical-unbound-teardown')->deleteJson('/api/v1/vault', $body)
+        ->assertServiceUnavailable()->assertJsonPath('error.code', 'vault.teardown_unavailable');
+    expect($this->operation->fresh()->getRawOriginal())->toBe($before)
+        ->and($this->socket->sent)->toBe([])
+        ->and(Setting::query()->orderBy('id')->get()->toArray())->toBe($settings);
+    $this->assertDatabaseCount('operations', 1);
     Http::assertNothingSent();
 });

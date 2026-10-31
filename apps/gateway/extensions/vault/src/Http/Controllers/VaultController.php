@@ -40,7 +40,6 @@ final class VaultController extends Controller
         return $this->operationResponse($request, $action->execute());
     }
 
-    #[StartsOperation('vault.teardown')]
     public function teardown(TeardownVaultRequest $request, TeardownVaultAction $action): JsonResponse
     {
         return $this->operationResponse($request, $action->execute($request->keepItems()));

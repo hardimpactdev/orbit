@@ -26,6 +26,10 @@ final readonly class StartVaultOperationAction
 
         IntegrationAvailability::assertKind('vault.'.$action);
 
+        if ($action === 'teardown') {
+            throw new VaultException('vault.teardown_unavailable', 'Vault teardown is unavailable until the Swamp runtime supports its current method schema.', 503);
+        }
+
         return DB::transaction(function () use ($nodeId, $action, $configuration, $trigger): Operation {
             $operation = $this->operations->execute('vault.'.$action, 'vault', $nodeId, $nodeId,
                 ['configuration' => ['$secret' => 'vault.credentials', 'id' => $nodeId]], $trigger, null);

@@ -106,6 +106,10 @@ One failed change does not stop the others. The run records its error, keeps tha
 
 ## Tear down
 
+Teardown is temporarily unavailable while the Swamp runtime cannot load its current method schema. The Gateway returns `vault.teardown_unavailable` (503) before recording an Operation or an encrypted credential snapshot, for both normal teardown and `--keep-items`. Retrying an old teardown key does not recover or resubmit its native start. Stored configuration and published items remain unchanged. Sync and setup remain available.
+
+The retained Swamp teardown contract works as follows once admission is restored:
+
 [`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
 
 Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
@@ -119,12 +123,13 @@ All operations need access to the Gateway.
 | `GET` | `/api/v1/vault` | Show the status. |
 | `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns an Operation (202). |
 | `POST` | `/api/v1/vault/sync` | Record a sync Operation (202). |
-| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns an Operation (202). |
+| `DELETE` | `/api/v1/vault` | Temporarily unavailable (503), including `{"keep_items": true}`. No Operation is recorded. |
 
 | Error | Status | When |
 | --- | --- | --- |
 | `extension.disabled` | 409 | The `vault` extension is off. |
 | `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
+| `vault.teardown_unavailable` | 503 | Teardown admission is suspended until the Swamp runtime supports its current method schema. |
 | `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
 | `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
 | `vault.item_shared` | 409 | A published teardown item also belongs to another collection. No item is deleted. |
