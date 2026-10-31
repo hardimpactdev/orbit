@@ -20,7 +20,6 @@ jobs:
             family: operation-database
             kinds: [
               "database_server.create",
-              "database_server.destroy",
               "database.create",
               "database.destroy",
               "database.clone",

@@ -56,3 +56,12 @@ SQLite sudo effects only on disposable fixtures. Each can run under `timeout 60`
 with a driver filter. Neither proof claims fleet admission or authorization. The
 pair needs credential approval, exact source/UUID/run-read grant proofs, normal
 release and an owning disposable live canary before takeover.
+
+`database_server.destroy` runs the fixed `operation-database-server-destroy`
+workflow (`2fb743f6-7bd7-4d0a-8a61-168d30da8a44`) on exact orbit-node-ID
+placement. It removes only the admitted owned Process and preserves its named
+data volume. The Gateway refuses servers that hold databases, records removal
+intent, and deletes records only after the native absent result. No private
+material or family relay is needed. Require normal healthy load, exact existing
+Gateway-principal run/read proof and a disposable-server canary before takeover.
+Never use a production database server for the proof.
