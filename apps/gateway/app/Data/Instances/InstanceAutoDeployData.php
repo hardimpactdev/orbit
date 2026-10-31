@@ -36,6 +36,7 @@ final class InstanceAutoDeployData extends Data
         /** @var list<string> */
         public array $blocked,
         public ?string $historyVersion,
+        public bool $eligible,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -51,6 +52,7 @@ final class InstanceAutoDeployData extends Data
         $active = $pause !== null && $pause['deployment_id'] > $instance->auto_deploy_resumed_after;
 
         return new self(
+            eligible: app(AutomaticDeployPolicyWriter::class)->eligibilityRefusal($instance) === null,
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? $automatic->smokeBlocked() : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,

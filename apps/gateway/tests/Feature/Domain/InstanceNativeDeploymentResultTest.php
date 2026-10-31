@@ -23,7 +23,7 @@ function native_deploy_result_fixture(bool $development = true): array
         'instance_id' => $instance->id, 'commit' => str_repeat('a', 40),
         'release' => $development ? null : $release, 'previous' => $development ? null : $previous,
         'selected_release' => $development ? null : $release, 'selection_confirmed' => true,
-        'failed_step' => null, 'warnings' => 0,
+        'failed_step' => null, 'warnings' => 0, 'output_tail' => null,
     ]];
 }
 

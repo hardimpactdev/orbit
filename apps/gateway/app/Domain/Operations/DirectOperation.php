@@ -184,6 +184,7 @@ final readonly class DirectOperation
         }
         app(OperationStore::class)->change($operation, [
             'status' => $status, 'started_at' => $operation->started_at ?? $startedAt, 'finished_at' => $finishedAt,
+            'lock_key' => $status->terminal() ? null : $operation->lock_key,
             'current_step' => $status->terminal() ? null : $stepName, 'failed_step' => $status === OperationStatus::Failed ? $stepName : null,
             'error_code' => $code, 'result' => $status->terminal() ? $result : null, 'state' => $state,
         ], $step, [

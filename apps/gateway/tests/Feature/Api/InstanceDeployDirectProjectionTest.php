@@ -52,7 +52,7 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
         'release' => $production ? $candidate : null,
         'previous' => $production ? ['name' => 'previous', 'commit' => str_repeat('b', 40)] : null,
         'selected_release' => $production ? $candidate : null,
-        'selection_confirmed' => true, 'failed_step' => null, 'warnings' => 0];
+        'selection_confirmed' => true, 'failed_step' => null, 'warnings' => 0, 'output_tail' => null];
     $body = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'running',
         'started_at' => '2026-10-31T02:00:00.000Z', 'result' => [], 'error_code' => null];
 
@@ -273,4 +273,34 @@ it('exposes only pending authoritative development publication instead of the di
     $this->getJson($url)->assertOk()->assertJsonPath('data.route.id', $receipt->target_id)
         ->assertJsonPath('data.development_projection_route_id', null);
     expect($instance->fresh()->development_projection_pending)->toBeTrue();
+});
+
+it('settles a native pre-effect interruption and releases the Instance hold without advancing seed', function (): void {
+    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this);
+    $operation->update(['lock_key' => 'instance:'.$instance->id]);
+    $seed = $instance->seed_commit;
+    $this->postJson($path.'/result', $body)->assertOk();
+    $payload['failed_step'] = 'source_preparation';
+    $this->postJson($path.'/result', [...$body, 'status' => 'failed', 'error_code' => 'deployment.interrupted',
+        'finished_at' => '2026-10-31T02:00:01.000Z', 'result' => $payload])->assertOk()->assertJsonPath('data.status', 'failed');
+    expect($operation->fresh()->lock_key)->toBeNull()->and($instance->fresh()->seed_commit)->toBe($seed)
+        ->and(InstanceDeployment::query()->sole()->error_code)->toBe('deployment.interrupted');
+});
+
+it('projects only the bounded redacted failed-step tail into the Operation and history', function (): void {
+    [, , $path, $body, $payload] = native_deploy_projection_fixture($this);
+    $this->postJson($path.'/result', $body)->assertOk();
+    $payload['failed_step'] = 'before_activation';
+    $payload['output_tail'] = 'Build failed: TOKEN=[REDACTED]';
+    $this->postJson($path.'/result', [...$body, 'status' => 'failed', 'error_code' => 'deployment.step_failed',
+        'finished_at' => '2026-10-31T02:00:01.000Z', 'result' => $payload])->assertOk()
+        ->assertJsonPath('data.result.output_tail', $payload['output_tail']);
+    $events = InstanceDeployment::query()->sole()->events;
+    expect(base64_decode($events[0]['value_base64'], true))->toBe($payload['output_tail']);
+});
+
+it('advertises the canonical automatic eligibility for an ambiguous app-dev plus app-prod Node', function (): void {
+    [$instance] = native_deploy_projection_fixture($this);
+    NodeRole::query()->create(['node_id' => $instance->node_id, 'role' => RoleName::AppProd, 'status' => 'active']);
+    $this->getJson('/api/v1/instances/'.$instance->id)->assertOk()->assertJsonPath('data.auto_deploy.eligible', false);
 });

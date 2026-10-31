@@ -84,7 +84,11 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $home = $admitted['home'];
                 $instance->update(['seed_path' => $home, 'seed_repository' => $home, 'seed_commit' => $deployment->commit]);
             }
-            $this->history->finish($row, $deployment, $row->events ?? []);
+            $events = DeploymentEventCollector::resume($row->events ?? []);
+            if ($result->outputTail !== '') {
+                $events->output(new DeploymentEvent($result->failedStep ?? 'operation', DeploymentOutputStream::Stderr, $result->outputTail));
+            }
+            $this->history->finish($row, $deployment, $events->events());
 
             return $projected;
         });
