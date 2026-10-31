@@ -281,7 +281,7 @@ orbit node:role:add <node> <role> [--converge] [--idempotency-key=KEY] [--postgr
 | Option | Meaning |
 | --- | --- |
 | `--converge` | Converge an existing role again. It works for a role that is `active`, `failed` at a `converge:` step, or `provisioning` for more than 11 minutes with no operation holding the Node's role lock. |
-| `--idempotency-key=KEY` | Reuse the same admitted Operation for an exact start retry. |
+| `--idempotency-key=KEY` | For native `database` and `ci-runner` additions, reuse the same admitted Operation for an exact start retry. |
 | `--postgres-process=ID` | For `analytics` only: the PostgreSQL 16 Process that holds the Plausible accounts. |
 | `--clickhouse-process=ID` | For `analytics` only: the ClickHouse Process that holds the events. |
 

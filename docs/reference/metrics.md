@@ -234,7 +234,7 @@ Runtime configuration and credentials are resolved inside the Gateway through ow
 
 ## Native fleet composition under development
 
-The Metrics owner supplies one immutable public fleet capture for standalone reconciliation and role roots. The role root keeps its required post-baseline reconciliation dependency. Native placed stages perform snapshot, exporter and service changes, canonical locked Caddy publication, verification and restoration in one run; the Gateway records intent and projects bounded results. Nodes without workers remain in owner selection and produce an explicit `metrics.no_worker` failure. The writer switch is held pending the placement decision for Nodes1 and18. Public input contains no credential, and foreign participant private access requires its reviewed shared contract.
+The Metrics owner supplies one immutable public fleet capture for standalone reconciliation. Unported role roots keep their required post-baseline reconciliation dependency. Native placed stages perform snapshot, exporter and service changes, canonical locked Caddy publication, verification and restoration in one run; the Gateway records intent and projects bounded results. Nodes without workers remain in owner selection and produce an explicit `metrics.no_worker` failure. The writer switch is held pending the placement decision for Nodes1 and18. Public input contains no credential, and foreign participant private access requires its reviewed shared contract.
 
 ### Role changes with unchanged monitoring intent
 
