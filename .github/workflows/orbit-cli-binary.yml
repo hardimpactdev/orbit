@@ -73,6 +73,14 @@ jobs:
           VERSION="${RELEASE_VERSION:-$(bin/orbit-version)}"
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Cache CLI build dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/cli/vendor
+            apps/cli/phpacker/vendor
+          key: cli-build-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.lock', 'apps/cli/phpacker/composer.lock', 'packages/php-sdk/composer.json') }}
+
       - name: Install CLI dependencies
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
 
