@@ -4,7 +4,6 @@ declare(strict_types=1);
 use App\Domain\Instances\Deployment\InstanceChildReceiptCommand;
 use App\Domain\Instances\Deployment\InstanceDeploymentBudgetCommand;
 use App\Domain\Instances\Deployment\InstanceDeploymentReceiptCommand;
-use App\Domain\Instances\Deployment\InstanceExecutorRuntimeCommand;
 use App\Domain\Instances\Environment\InstanceServedWebRootsReceiptCommand;
 use App\Domain\Instances\PhpRuntime\InstancePhpPlanCommand;
 use App\Domain\Instances\PhpRuntime\InstancePhpReceiptCommand;
@@ -14,7 +13,6 @@ use App\Domain\Instances\VpEnvironment\InstanceVpReceiptCommand;
 return [
     ...require __DIR__.'/lifecycle-operation-commands.php',
     'instance.web-roots-receipt' => InstanceServedWebRootsReceiptCommand::class,
-    'instance.executor-runtime' => InstanceExecutorRuntimeCommand::class,
     'instance.child-receipt' => InstanceChildReceiptCommand::class,
     'instance.deployment-budget' => InstanceDeploymentBudgetCommand::class,
     'instance.php-plan' => InstancePhpPlanCommand::class,
