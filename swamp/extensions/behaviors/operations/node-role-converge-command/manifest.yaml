@@ -12,3 +12,5 @@ additionalFiles:
   - scripts/directory.py
   - scripts/ci_resource.py
   - scripts/file.py
+  - scripts/account_directory.py
+  - scripts/composer_manifest.py

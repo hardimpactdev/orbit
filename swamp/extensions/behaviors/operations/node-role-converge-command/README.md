@@ -44,6 +44,14 @@ no child action. The capture stores full pinned SSH descriptors for every
 effect participant and lists209 as the executor. It performs no host action or
 serving-state write.
 
+Package prerequisites retain their existing application-directory and shared
+Composer duties. Each directory is a separate action. Existing directories must
+belong to the admitted account before permissions are converged; parent paths
+are left untouched. The Composer manifest action creates a missing manifest and
+preserves an existing one. Package installation and Composer verification remain
+separate native actions. These files do not install a manager or change Tool
+intent.
+
 `rolePublicationSteps(name, intentExpr, mode, dependency?, activeExpr?)` composes
 the canonical Route PHP, Caddy and DNS children. Its fan-out lists depend only
 on immutable intent; native guards evaluate readiness after dependencies finish.

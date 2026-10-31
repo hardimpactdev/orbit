@@ -25,6 +25,74 @@ storage = load("storage")
 ci = load("ci_resource")
 directory = load("directory")
 file = load("file")
+account_directory = load("account_directory")
+composer_manifest = load("composer_manifest")
+
+
+class PrerequisiteFilesTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.user = pwd.getpwuid(os.getuid()).pw_name
+        self.group = grp.getgrgid(os.getgid()).gr_name
+        self.account = {"user": self.user, "group": self.group}
+
+    def test_application_directory_preserves_the_scratch_parent_and_repairs_only_its_own_mode(self):
+        before = self.root.stat()
+        data = {**self.account, "home": str(self.root), "scope": "apps"}
+        self.assertEqual(account_directory.apply(data), {"ready": True, "changed": True})
+        path = self.root / "apps"
+        path.chmod(0o700)
+        self.assertEqual(account_directory.apply(data), {"ready": True, "changed": True})
+        self.assertEqual(account_directory.apply(data), {"ready": True, "changed": False})
+        self.assertEqual(path.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(self.root.stat().st_mode, before.st_mode)
+        self.assertEqual(self.root.stat().st_uid, before.st_uid)
+
+    def test_symlinked_or_foreign_application_directory_is_refused_without_adoption(self):
+        path = self.root / "apps"
+        path.symlink_to(self.root)
+        data = {**self.account, "home": str(self.root), "scope": "apps"}
+        with self.assertRaises(ValueError):
+            account_directory.apply(data)
+        path.unlink()
+        path.mkdir(mode=0o700)
+        foreign = type("Account", (), {"pw_uid": os.getuid() + 1})()
+        with patch.object(account_directory.pwd, "getpwnam", return_value=foreign), self.assertRaises(ValueError):
+            account_directory.apply(data)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+
+    def test_composer_directories_are_separate_actions_with_no_ancestor_permission_change(self):
+        composer = self.root / "composer"
+        with patch.object(account_directory, "COMPOSER", composer):
+            for scope, path in (("composer_home", composer), ("composer_vendor", composer / "vendor"),
+                                ("composer_bin", composer / "vendor/bin")):
+                with self.subTest(scope=scope):
+                    self.assertEqual(account_directory.apply({**self.account, "home": str(self.root), "scope": scope}),
+                                     {"ready": True, "changed": True})
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(self.root.stat().st_mode & 0o777, 0o700)
+
+    def test_composer_manifest_creates_only_missing_intent_and_preserves_existing_dependencies_and_mode(self):
+        with patch.object(composer_manifest, "COMPOSER", self.root):
+            self.assertEqual(composer_manifest.apply(self.account), {"ready": True, "changed": True})
+            manifest = self.root / "composer.json"
+            self.assertEqual(manifest.read_text(), '{"require":{}}\n')
+            content = '{"require":{"vendor/kept":"^1.0"}}\n'
+            manifest.write_text(content)
+            manifest.chmod(0o400)
+            self.assertEqual(composer_manifest.apply(self.account), {"ready": True, "changed": False})
+            self.assertEqual(manifest.read_text(), content)
+            self.assertEqual(manifest.stat().st_mode & 0o777, 0o400)
+
+    def test_composer_manifest_refuses_a_foreign_link_without_touching_the_target(self):
+        target = self.root / "operator.json"
+        target.write_text("operator-owned")
+        (self.root / "composer.json").symlink_to(target)
+        with patch.object(composer_manifest, "COMPOSER", self.root), self.assertRaises(ValueError):
+            composer_manifest.apply(self.account)
+        self.assertEqual(target.read_text(), "operator-owned")
 
 
 class StorageTest(unittest.TestCase):

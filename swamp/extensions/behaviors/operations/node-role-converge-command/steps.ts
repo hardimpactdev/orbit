@@ -1,3 +1,4 @@
+import type { RoleBaselineAction } from "./assets.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const placement = { target: "orbit-node-209", labels: { node: "209" } };
@@ -6,7 +7,7 @@ const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 /** One baseline action; the parent supplies its immutable public input and SSH globals. */
 export function roleBaselineSteps(
     name: string,
-    action: "storage" | "directory" | "ci_resource" | "file",
+    action: RoleBaselineAction,
     input: Fields,
     globalArgs: Fields,
     dependency?: string,

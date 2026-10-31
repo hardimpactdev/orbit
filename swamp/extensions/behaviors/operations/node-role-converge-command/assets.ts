@@ -7,6 +7,19 @@ const Path = z.string().startsWith("/").max(4096).refine((value) =>
 );
 const Inputs = {
     storage: z.object({ root: Path, user: Account, group: Account }).strict(),
+    account_directory: z.object({
+        scope: z.enum([
+            "apps",
+            "composer_parent",
+            "composer_home",
+            "composer_vendor",
+            "composer_bin",
+        ]),
+        user: Account,
+        group: Account,
+        home: Path,
+    }).strict(),
+    composer_manifest: z.object({ user: Account, group: Account }).strict(),
     directory: z.object({
         path: z.enum([
             "/dev/shm/orbit/hibernation",
@@ -32,9 +45,17 @@ const Inputs = {
     }).strict(),
 };
 const Args = z.object({
-    action: z.enum(["storage", "directory", "ci_resource", "file"]),
+    action: z.enum([
+        "storage",
+        "directory",
+        "ci_resource",
+        "file",
+        "account_directory",
+        "composer_manifest",
+    ]),
     input: z.record(z.string(), z.unknown()),
 }).strict();
+export type RoleBaselineAction = keyof typeof Inputs;
 const Assets = z.object({ script_body: z.string() }).strict();
 const Result = z.object({ ready: z.literal(true), changed: z.boolean() })
     .strict();
