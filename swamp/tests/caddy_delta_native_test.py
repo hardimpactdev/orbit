@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tests.cfgmgmt_fixture import install_cfgmgmt
 from tests.native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,7 @@ class CaddyDeltaNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
+        connection = install_cfgmgmt(self)
         self.host = self.repo / "host"
         self.host.mkdir()
         self.audit = self.repo / "commands.log"
@@ -69,6 +71,8 @@ if name == "ip": print("1: wg0 inet 10.44.0.9/24 scope global")
                     step.pop("target")
                     step.pop("labels")
                     task = step["task"]
+                    if task.get("behaviorType", "").startswith("@swamp/cfgmgmt/"):
+                        task["globalArgs"]["become"] = False
                     if task.get("behaviorType") != "command/shell":
                         continue
                     script = task["inputs"]["run"]
@@ -115,6 +119,10 @@ if name == "ip": print("1: wg0 inet 10.44.0.9/24 scope global")
             )
             text = text.replace(".st_uid != 0", ".st_uid != os.getuid()")
             path.write_text(text)
+        assets = destination / "publication-command/assets.ts"
+        assets.write_text(
+            assets.read_text().replace('"/etc/caddy"', repr(str(self.host)))
+        )
         self.a = site("moving", "app.test", "10.44.0.11")
         self.b = site("moving", "app.test", "10.44.0.12")
         self.survivor = site("survivor", "other.test", "10.44.0.13")
@@ -127,6 +135,7 @@ if name == "ip": print("1: wg0 inet 10.44.0.9/24 scope global")
             "execution_secrets": {},
             "intent": {
                 "node_id": 9,
+                "connection": connection,
                 "user": "orbit",
                 "before": descriptor(config(self.a, self.survivor)),
                 "after": descriptor(config(self.b, self.survivor)),

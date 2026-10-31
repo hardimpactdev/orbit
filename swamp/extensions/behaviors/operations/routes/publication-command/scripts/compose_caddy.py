@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from caddy_sections import PublicationConflict, merge, split
-from payload_common import ROOT, metadata, payload, stage_for
+from publication_files import ROOT, metadata, payload, stage_for
 
 value = metadata()
 admitted = payload(stage_for(value), value)

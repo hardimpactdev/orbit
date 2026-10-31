@@ -151,7 +151,9 @@ it('captures prospective complete publications without changing stored placement
     $rows = collect($publications['nodes'])->keyBy('node_id');
     $source = $rows[$this->node->id];
     $destination = $rows[$this->destination->id];
-    expect($source['before']['caddy']['content'])->toContain('native.test')->toContain('survivor.source.test')
+    expect($source['connection'])->toBe(['nodeHost' => '10.44.0.11', 'nodeUser' => 'orbit'])
+        ->and($destination['connection'])->toBe(['nodeHost' => '10.44.0.12', 'nodeUser' => 'orbit'])
+        ->and($source['before']['caddy']['content'])->toContain('native.test')->toContain('survivor.source.test')
         ->and($source['after']['caddy']['content'])->toContain('survivor.source.test')->not->toContain('https://native.test')
         ->and($destination['after']['caddy']['content'])->toContain('native.destination.test')->toContain('/srv/new-native')->toContain('extra.test')
         ->and($destination['before']['caddy']['content'])->not->toContain('native.destination.test')

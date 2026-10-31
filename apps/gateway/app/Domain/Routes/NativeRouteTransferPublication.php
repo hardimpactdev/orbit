@@ -89,6 +89,7 @@ final readonly class NativeRouteTransferPublication
         foreach ($nodeIds as $nodeId) {
             $node = Node::query()->findOrFail($nodeId);
             $nodes[] = ['node_id' => $node->id, 'user' => $node->user,
+                'connection' => ['nodeHost' => $node->wireguard_ip, 'nodeUser' => $node->user],
                 'before' => $this->publication($node, $before), 'after' => $this->publication($node, $after)];
         }
 

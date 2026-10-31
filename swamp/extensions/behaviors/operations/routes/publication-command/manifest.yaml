@@ -8,9 +8,7 @@ behaviors:
   - operations/routes/publication-command/assets.ts
 additionalFiles:
   - scripts/caddy_sections.py
-  - scripts/payload_common.py
-  - scripts/prepare_payload.py
-  - scripts/write_payload_chunk.py
+  - scripts/publication_files.py
   - scripts/compose_caddy.py
   - scripts/cleanup_payload.py
   - scripts/php_sections.py

@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tests.cfgmgmt_fixture import install_cfgmgmt
 from tests.native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,7 @@ class PhpDeltaNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
+        connection = install_cfgmgmt(self)
         self.copy_behaviors(FAMILY)
         shutil.copy(
             ROOT / "extensions/behaviors/operations/routes/caddy-input.ts",
@@ -87,6 +89,10 @@ p.write_text(json.dumps(s));sys.exit(code)
             text = text.replace('"/usr/bin/systemctl"', repr(str(command)))
             text = text.replace('f"/usr/sbin/php-fpm{version}"', repr(str(fpm)))
             path.write_text(text)
+        assets = self.repo / "extensions/behaviors" / FAMILY / "assets.ts"
+        assets.write_text(
+            assets.read_text().replace('"/etc/php"', repr(str(self.host)))
+        )
         workflow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-route-php-delta.yaml").read_text()
         )
@@ -99,6 +105,8 @@ p.write_text(json.dumps(s));sys.exit(code)
                 step.pop("target")
                 step.pop("labels")
                 task = step["task"]
+                if task.get("behaviorType", "").startswith("@swamp/cfgmgmt/"):
+                    task["globalArgs"]["become"] = False
                 if task.get("behaviorType") == "command/shell":
                     task["inputs"]["run"] = re.sub(
                         r"sudo --preserve-env=[A-Z_,]+ ", "", task["inputs"]["run"]
@@ -113,6 +121,7 @@ p.write_text(json.dumps(s));sys.exit(code)
             "execution_secrets": {},
             "intent": {
                 "node_id": 9,
+                "connection": connection,
                 "user": self.user,
                 "before": {
                     "account_user": self.user,

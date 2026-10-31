@@ -21,7 +21,9 @@ const Args = z.object({
 }).strict();
 const Assets = z.object({
     metadata_json: z.string(),
-    chunks: z.array(z.object({ json: z.string() })),
+    input_json: z.string(),
+    input_path: z.string(),
+    stage_path: z.string(),
     scripts: z.record(z.string(), z.string()),
     versions: z.array(z.string()).optional(),
 });
@@ -39,8 +41,6 @@ export async function publicationAssets(
         });
     }
     return payloadAssets(args, "caddy", [
-        "prepare_payload",
-        "write_payload_chunk",
         "compose_caddy",
         "cleanup_payload",
     ], extensionFile);
@@ -53,30 +53,19 @@ async function payloadAssets(
     extensionFile: (name: string) => string,
 ) {
     const bytes = new TextEncoder().encode(JSON.stringify(value));
-    // Base64 and native metadata must fit the shared measured 8 MiB frame.
+    // Full public input and metadata must fit the shared measured 8 MiB frame.
     if (bytes.length > 4194304) throw new Error("caddy.delta_input_too_large");
-    const sha256 = Array.from(
-        new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-        (b) => b.toString(16).padStart(2, "0"),
-    ).join("");
-    const chunks = [];
-    for (let offset = 0; offset < bytes.length; offset += 32768) {
-        const data = btoa(
-            Array.from(
-                bytes.subarray(offset, offset + 32768),
-                (b) => String.fromCharCode(b),
-            ).join(""),
-        );
-        chunks.push({ json: JSON.stringify({ offset, data }) });
-    }
+    const roots = {
+        caddy: "/etc/caddy",
+        php: "/etc/php",
+        dns: "/var/lib/orbit/private-dns",
+    };
+    const stage_path = `${roots[family]}/.orbit-deltas/${value.run_id}`;
     return {
-        metadata_json: JSON.stringify({
-            run_id: value.run_id,
-            family,
-            content_bytes: bytes.length,
-            sha256,
-        }),
-        chunks,
+        metadata_json: JSON.stringify({ run_id: value.run_id, family }),
+        input_json: new TextDecoder().decode(bytes),
+        input_path: `${stage_path}/input.json`,
+        stage_path,
         scripts: Object.fromEntries(
             names.map((name) => [name, extensionFile(`scripts/${name}.py`)]),
         ),
@@ -114,8 +103,6 @@ export async function phpAssets(
         ]),
     ].sort();
     const output = await payloadAssets(args, "php", [
-        "prepare_payload",
-        "write_payload_chunk",
         "php_stage",
         "php_validate",
         "php_publish",

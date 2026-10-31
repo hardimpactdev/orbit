@@ -2,7 +2,7 @@
 
 import shutil
 
-from payload_common import metadata, stage_for
+from publication_files import metadata, stage_for
 
 value = metadata()
 stage = stage_for(value)

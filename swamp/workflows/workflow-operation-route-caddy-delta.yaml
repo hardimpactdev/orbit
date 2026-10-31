@@ -1,7 +1,6 @@
 id: 2c1fb8bb-5e46-4f5e-b742-99e7801684d9
 name: operation-route-caddy-delta
-description: Compose and publish a Route-owned section delta while preserving unrelated
-  current publications.
+description: Compose and publish a Route-owned section delta while preserving unrelated current publications.
 vaults: []
 inputs:
   type: object
@@ -39,12 +38,24 @@ inputs:
           enum:
           - forward
           - restore
+        connection:
+          type: object
+          properties:
+            nodeHost:
+              type: string
+            nodeUser:
+              type: string
+          required:
+          - nodeHost
+          - nodeUser
+          additionalProperties: false
       required:
       - node_id
       - user
       - before
       - after
       - direction
+      - connection
       additionalProperties: false
   required:
   - operation_id
@@ -78,42 +89,43 @@ jobs:
   target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
   labels: *id001
   steps:
-  - name: prepare-payload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id001
+  - name: prepare-input
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-delta-prepare-payload-" + run.id }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.prepare_payload }}"
-        env: &id002
-          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
-  - name: write-payload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id001
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ "caddy-delta-prepare-input-" + run.id }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        become: true
+        path: ${{ steps.assets.outputs.stage_path }}
+        ensure: present
+        mode: '0700'
+  - name: copy-input
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-delta-write-payload-" + run.id }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.write_payload_chunk }}"
-        env:
-          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
-          ORBIT_CADDY_DELTA_CHUNK: ${{ self.chunk.json }}
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "caddy-delta-copy-input-" + run.id }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        become: true
+        path: ${{ steps.assets.outputs.input_path }}
+        ensure: present
+        content: ${{ steps.assets.outputs.input_json }}
+        mode: '0600'
     dependsOn:
-    - step: prepare-payload
+    - step: prepare-input
       condition:
         type: succeeded
-    forEach:
-      item: chunk
-      in: ${{ steps.assets.outputs.chunks }}
   - name: compose
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
     labels: *id001
@@ -123,12 +135,16 @@ jobs:
       behaviorName: ${{ "caddy-delta-compose-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.compose_caddy }}"
-        env: *id002
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META /usr/bin/python3 "${{ steps.assets.outputs.scripts.compose_caddy
+          }}"
+
+          '
+        env: &id002
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
     dependsOn:
-    - step: write-payload
+    - step: copy-input
       condition:
         type: succeeded
   - name: candidate
@@ -187,9 +203,12 @@ jobs:
       behaviorName: ${{ "caddy-delta-cleanup-payload-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup_payload }}"
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup_payload
+          }}"
+
+          '
         env: *id002
     allowFailure: true
   - name: result
@@ -201,9 +220,11 @@ jobs:
       behaviorName: ${{ "caddy-delta-result-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
-          printf '%s\n' "$ORBIT_CADDY_DELTA_RESULT"
+        run: 'set -eu
+
+          printf ''%s\n'' "$ORBIT_CADDY_DELTA_RESULT"
+
+          '
         env:
           ORBIT_CADDY_DELTA_RESULT: ${{ steps.candidate.outputs.result_json }}
     dependsOn:

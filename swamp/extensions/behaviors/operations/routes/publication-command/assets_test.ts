@@ -27,27 +27,21 @@ async function args() {
         direction: "forward" as const,
     };
 }
-Deno.test("public delta fragments round-trip admitted data and resolve only shipped paths", async () => {
+Deno.test("official file content round-trips full intent and resolves only shipped paths", async () => {
     const input = await args();
     const value = await publicationAssets(
         input,
         (name) => "/worker/cache/" + name,
     );
-    const bytes = value.chunks.flatMap((chunk) =>
-        Array.from(atob(JSON.parse(chunk.json).data), (c) => c.charCodeAt(0))
-    );
-    assertEquals(
-        JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))),
-        input,
-    );
+    assertEquals(JSON.parse(value.input_json), input);
     assertEquals(
         value.scripts.compose_caddy,
         "/worker/cache/scripts/compose_caddy.py",
     );
-    assertEquals(JSON.parse(value.metadata_json).content_bytes, bytes.length);
+    assertEquals(JSON.parse(value.metadata_json).family, "caddy");
     assertEquals(
-        value.chunks.every((chunk) => chunk.json.length < 65536),
-        true,
+        value.input_path,
+        `/etc/caddy/.orbit-deltas/${input.run_id}/input.json`,
     );
 });
 Deno.test("delta validates both canonical digests and refuses logical proxy placement", async () => {
@@ -77,10 +71,7 @@ Deno.test("canonical capture block evidence is accepted without duplicating the 
         before: { ...input.before, blocks: [] },
         after: { ...input.after, blocks: [] },
     }, (v) => v);
-    const bytes = value.chunks.flatMap((chunk) =>
-        Array.from(atob(JSON.parse(chunk.json).data), (c) => c.charCodeAt(0))
-    );
-    const payload = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes)));
+    const payload = JSON.parse(value.input_json);
     assertEquals("blocks" in payload.before, false);
     assertEquals(payload.before, input.before);
 });

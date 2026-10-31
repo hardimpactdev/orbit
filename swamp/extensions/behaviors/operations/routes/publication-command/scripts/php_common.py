@@ -12,8 +12,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from payload_common import ROOTS, directory, metadata, payload, stage_for
 from php_sections import merge, split
+from publication_files import ROOTS, directory, metadata, payload, stage_for
 
 
 def digest(path):

@@ -38,12 +38,24 @@ inputs:
           enum:
           - forward
           - restore
+        connection:
+          type: object
+          properties:
+            nodeHost:
+              type: string
+            nodeUser:
+              type: string
+          required:
+          - nodeHost
+          - nodeUser
+          additionalProperties: false
       required:
       - node_id
       - user
       - before
       - after
       - direction
+      - connection
       additionalProperties: false
   required:
   - operation_id
@@ -75,58 +87,53 @@ jobs:
         direction: ${{ inputs.intent.direction }}
 - name: composition
   target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-  labels: &id002
+  labels:
     node: ${{ string(inputs.intent.node_id) }}
   steps:
-  - name: prepare-payload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id002
+  - name: prepare-input
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "php-delta-prepare-payload-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{
-          steps.assets.outputs.scripts.prepare_payload }}"
-
-          '
-        env:
-          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
-  - name: write-payload
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id002
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ "php-delta-prepare-input-" + run.id }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        become: true
+        path: ${{ steps.assets.outputs.stage_path }}
+        ensure: present
+        mode: '0700'
+  - name: copy-input
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "php-delta-write-payload-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{
-          steps.assets.outputs.scripts.write_payload_chunk }}"
-
-          '
-        env:
-          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
-          ORBIT_CADDY_DELTA_CHUNK: ${{ self.chunk.json }}
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "php-delta-copy-input-" + run.id }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        become: true
+        path: ${{ steps.assets.outputs.input_path }}
+        ensure: present
+        content: ${{ steps.assets.outputs.input_json }}
+        mode: '0600'
     dependsOn:
-    - step: prepare-payload
+    - step: prepare-input
       condition:
         type: succeeded
-    forEach:
-      item: chunk
-      in: ${{ steps.assets.outputs.chunks }}
   dependsOn:
   - job: admission
     condition:
       type: succeeded
 - name: publication
   target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-  labels: &id003
+  labels: &id002
     node: ${{ string(inputs.intent.node_id) }}
   dependsOn:
   - job: composition
@@ -135,7 +142,7 @@ jobs:
   steps:
   - name: stage
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -156,7 +163,7 @@ jobs:
       in: ${{ steps.assets.outputs.versions }}
   - name: validate
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -181,7 +188,7 @@ jobs:
         type: succeeded
   - name: publish
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -206,7 +213,7 @@ jobs:
         type: succeeded
   - name: enable
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -231,7 +238,7 @@ jobs:
         type: succeeded
   - name: reload
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -256,7 +263,7 @@ jobs:
         type: succeeded
   - name: confirm
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -281,7 +288,7 @@ jobs:
         type: succeeded
 - name: restore
   target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-  labels: *id003
+  labels: *id002
   dependsOn:
   - job: publication
     condition:
@@ -289,7 +296,7 @@ jobs:
   steps:
   - name: recovery-restore
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -310,7 +317,7 @@ jobs:
       in: ${{ steps.assets.outputs.versions }}
   - name: recovery-restore_enable
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -335,7 +342,7 @@ jobs:
         type: succeeded
   - name: recovery-restore_runtime
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -360,7 +367,7 @@ jobs:
         type: succeeded
 - name: completion
   target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-  labels: *id003
+  labels: *id002
   dependsOn:
   - job: publication
     condition:
@@ -368,7 +375,7 @@ jobs:
   steps:
   - name: cleanup-payload
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -386,7 +393,7 @@ jobs:
     allowFailure: true
   - name: result
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id003
+    labels: *id002
     dependsOn:
     - step: cleanup-payload
       condition:
