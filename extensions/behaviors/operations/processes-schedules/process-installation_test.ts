@@ -24,7 +24,11 @@ const base = {
   activation_pending: false,
   retired: null,
 };
-type Call = { name: string; input: Record<string, unknown>; pin: string };
+type Call = {
+  name: string;
+  input: Record<string, unknown>;
+  pin: string | undefined;
+};
 function fixture(override: Record<string, Record<string, unknown>> = {}) {
   const calls: Call[] = [];
   const defaults: Record<string, Record<string, unknown>> = {
@@ -311,4 +315,15 @@ Deno.test("parent callback installer accepts the canonical SystemTransport witho
   );
   assertEquals(reads, 1);
   assertEquals(commands, 1);
+});
+
+Deno.test("native parent Process installation needs no agent digest", async () => {
+  const f = fixture();
+  const { agent_sha256: _stamp, ...admitted } = base;
+  assertEquals(
+    await installProcess(admitted, f.material, undefined, f.invoke),
+    { ready: true, state: "inactive" },
+  );
+  assertEquals(f.calls.length, 3);
+  assertEquals(f.calls.every((call) => call.pin === undefined), true);
 });

@@ -1,6 +1,6 @@
 id: 738a2f9d-dc6c-4754-92c3-f51de9cb91f9
 name: operation-instance-deploy-direct
-description: Development deployment on its admitted configured Node account.
+description: Instance deployment on its admitted Node and development or production account.
 vaults: []
 inputs:
   properties:

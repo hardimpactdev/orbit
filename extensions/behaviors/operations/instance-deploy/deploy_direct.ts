@@ -18,6 +18,17 @@ import {
 import { DeploySourceInput, prepareDeploySource } from "./deploy_source.ts";
 import { DeployAppInput, runDeployPhase } from "./deploy_steps.ts";
 import { prepareDeployVp } from "./deploy_vp.ts";
+import {
+  assertDeploymentExecutionAvailable,
+  DeploymentExecution,
+  readDeploymentExecution,
+  sameDeploymentExecution,
+  saveDeploymentExecution,
+} from "./deployment_execution.ts";
+import {
+  ProductionCheckpoint,
+  runProductionDeploy,
+} from "./deploy_production.ts";
 
 const Args = DirectArgs.extend({
   kind: z.literal("instance.deploy"),
@@ -60,6 +71,10 @@ type Ports = {
   vp?: Pick<Parameters<typeof prepareDeployVp>[2], "local" | "materialize">;
   run?: typeof sudoAppStep;
   now?: () => number;
+  production?: Omit<
+    NonNullable<Parameters<typeof runProductionDeploy>[2]>,
+    "http" | "now" | "source" | "inspectRunner" | "run"
+  >;
 };
 
 /** Native development deploy; the admitted environment selects its configured Node account. */
@@ -67,9 +82,23 @@ export function deployDirect(ports: Ports = {}) {
   const now = ports.now ?? Date.now;
   return {
     type: "@nckrtl/instance-deploy-direct",
-    version: "2026.10.31.3",
+    version: "2026.10.31.4",
     globalArguments: Globals,
     resources: {
+      activeExecution: {
+        description:
+          "Public pointer to the same model's active deployment effect",
+        schema: DeploymentExecution,
+        lifetime: "infinite",
+        garbageCollection: 1,
+      },
+      productionExecution: {
+        description:
+          "Public production deployment progress, never private material",
+        schema: ProductionCheckpoint,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
       execution: {
         description:
           "Public effect checkpoint; no private material or command output",
@@ -91,6 +120,39 @@ export function deployDirect(ports: Ports = {}) {
               ctx,
             );
           const gateway = new GatewayOperation(http, args);
+          const active = await readDeploymentExecution(ctx);
+          if (active?.active && !sameDeploymentExecution(args, active)) {
+            return { status: "held" };
+          }
+          const production = await ctx.readResource(
+            `production-${args.operation_id}-${args.run_id}`,
+          );
+          if (production !== null) {
+            const checkpoint = ProductionCheckpoint.parse(production);
+            if (
+              checkpoint.operation_id !== args.operation_id ||
+              checkpoint.run_id !== args.run_id
+            ) throw new Error("deployment.identity_changed");
+            if (
+              checkpoint.active ||
+              (checkpoint.stage >= 4 && !checkpoint.result.selection_confirmed)
+            ) return { status: "held" };
+            const at = new Date(now()).toISOString();
+            const outcome = checkpoint.outcome ??
+              { status: "failed", error_code: "deployment.interrupted" };
+            await gateway.project({
+              ...outcome,
+              started_at: checkpoint.started_at,
+              finished_at: at,
+              result: {
+                ...checkpoint.result,
+                failed_step: checkpoint.result.failed_step ??
+                  "native_execution",
+              },
+            });
+            await saveDeploymentExecution(ctx, args, false);
+            return { status: outcome.status };
+          }
           const stored = await ctx.readResource(
             `execution-${args.operation_id}-${args.run_id}`,
           );
@@ -102,7 +164,9 @@ export function deployDirect(ports: Ports = {}) {
           ) {
             throw new Error("deployment.identity_changed");
           }
-          if (checkpoint?.active) return { status: "held" };
+          if (checkpoint?.active || (active?.active && checkpoint === null)) {
+            return { status: "held" };
+          }
           const at = new Date(now()).toISOString();
           await gateway.project({
             status: "failed",
@@ -113,6 +177,7 @@ export function deployDirect(ports: Ports = {}) {
               failed_step: "native_execution",
             },
           });
+          await saveDeploymentExecution(ctx, args, false);
           return { status: "failed" };
         },
       },
@@ -149,11 +214,32 @@ export function deployDirect(ports: Ports = {}) {
           if (["succeeded", "failed", "cancelled"].includes(initial.status)) {
             return { status: initial.status };
           }
+          if (
+            z.object({ deployment: z.object({ variant: z.string() }) }).parse(
+              initial.input,
+            ).deployment.variant === "production"
+          ) {
+            return await runProductionDeploy(args, ctx, {
+              ...ports.production,
+              http: ports.http,
+              now,
+              source: ports.source,
+              inspectRunner: ports.inspectRunner,
+              run: ports.run,
+            });
+          }
+          const activeOwner = await assertDeploymentExecutionAvailable(
+            ctx,
+            args,
+          );
           const input = Input.parse(initial.input), d = input.deployment;
           const checkpointName =
             `execution-${args.operation_id}-${args.run_id}`;
           const stored = await ctx.readResource(checkpointName);
           const checkpoint = stored === null ? null : Checkpoint.parse(stored);
+          if (activeOwner?.active && checkpoint === null) {
+            throw new Error("deployment.execution_unconfirmed");
+          }
           if (
             checkpoint &&
             (checkpoint.operation_id !== args.operation_id ||
@@ -208,6 +294,7 @@ export function deployDirect(ports: Ports = {}) {
               active,
               step,
             });
+            await saveDeploymentExecution(ctx, args, active);
             effectActive = active;
           };
           const run: typeof sudoAppStep = async (...parameters) => {
@@ -456,6 +543,7 @@ export function deployDirect(ports: Ports = {}) {
             : error_code === "operation.cancelled"
             ? "cancelled"
             : "failed";
+          await mark(false);
           await gateway.project({
             status,
             started_at,

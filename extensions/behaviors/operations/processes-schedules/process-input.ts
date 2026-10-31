@@ -10,7 +10,7 @@ const Removal = z.object({
 );
 export const Input = z.object({
   process_id: z.number().int().positive(),
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   runtime: z.enum(["systemd", "docker"]),
   name: z.string().regex(/^orbit-process-[0-9]+-[a-z0-9-]+(?:\.service)?$/),
   on_demand: z.boolean(),

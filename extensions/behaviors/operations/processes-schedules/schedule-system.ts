@@ -730,3 +730,42 @@ export async function scheduleSystem(
     };
   }
 }
+
+/** Read the actual local account used by a parent installation, without guessing its group. */
+export async function lookupScheduleAccount(
+  user: string,
+  signal?: AbortSignal,
+  run: SystemCommand = systemCommand,
+): Promise<
+  {
+    user: string;
+    uid: number;
+    gid: number;
+    group: string;
+    home: string;
+    shell: string;
+  }
+> {
+  Account.parse(user);
+  const host = new Host(run, signal);
+  const fields = (await host.checked("/usr/bin/getent", ["passwd", user]))
+    .trim().split(":");
+  if (
+    fields.length !== 7 || fields[0] !== user ||
+    !/^[0-9]+$/.test(fields[2]) || Number(fields[2]) <= 0 ||
+    !/^[0-9]+$/.test(fields[3])
+  ) refuse("schedule.target_unavailable");
+  const group = (await host.checked("/usr/bin/getent", ["group", fields[3]]))
+    .trim().split(":");
+  if (group.length !== 4 || group[2] !== fields[3]) {
+    refuse("schedule.target_unavailable");
+  }
+  return {
+    user,
+    uid: Number(fields[2]),
+    gid: Number(fields[3]),
+    group: Account.parse(group[0]),
+    home: Path.parse(fields[5]),
+    shell: Path.parse(fields[6]),
+  };
+}

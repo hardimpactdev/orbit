@@ -13,7 +13,7 @@ const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
 const Artifact = z.object({ runtime: Runtime, name: z.string() }).strict();
 const Base = z.object({
   process_id: z.number().int().positive(),
-  agent_sha256: Digest,
+  agent_sha256: Digest.optional(),
   name: z.string(),
   desired: z.enum(["running", "stopped"]),
   on_demand: z.boolean(),
@@ -80,7 +80,7 @@ export type ProcessInstallationOutcome = { ready: true; state: string } | {
 type Invoke = (
   name: ProcessSystemCommand,
   input: Record<string, unknown>,
-  admittedDigest: string,
+  admittedDigest: string | undefined,
   signal?: AbortSignal,
 ) => Promise<Record<string, unknown>>;
 const localProcess: Invoke = (name, input, _digest, signal) =>

@@ -26,7 +26,7 @@ for (
     const calls: {
       name: string;
       data: Record<string, unknown>;
-      digest: string;
+      digest: string | undefined;
     }[] = [];
     const action = processAction((name, data, digest) => {
       calls.push({ name, data, digest });
@@ -200,4 +200,21 @@ Deno.test("native destroy passes only the exact admitted Vite environment", asyn
     );
     assertEquals(invalid.effects(), 0);
   }
+});
+
+Deno.test("native parent Process restart needs no agent digest", async () => {
+  const { agent_sha256: _stamp, ...admitted } = input;
+  const calls: string[] = [];
+  const action = processAction((name, _value, digest) => {
+    assertEquals(digest, undefined);
+    calls.push(name);
+    return Promise.resolve(
+      name === "process.status" ? { state: "active" } : {},
+    );
+  });
+  assertEquals(await action("process.restart", admitted), {
+    ready: true,
+    state: "active",
+  });
+  assertEquals(calls, ["process.control", "process.status"]);
 });

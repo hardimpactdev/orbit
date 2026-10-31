@@ -857,3 +857,30 @@ Deno.test("fresh StartSwampRun running intent with Node x86_64 executes once wit
   assertEquals(f.calls.length, count);
   assertEquals(f.commands.length, 1);
 });
+
+Deno.test("fresh dev execution cannot overwrite a foreign active production or rollback checkpoint", async () => {
+  const f = await fixture(),
+    active = {
+      operation_id: 999,
+      run_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      active: true,
+    };
+  f.checkpoints.set("activeExecution", active);
+  const root = fixtureDirect({
+    http: () => f.http,
+    invoke: f.invoke,
+    run: f.run,
+  });
+  await assertRejects(
+    () => root.methods.run.execute(f.args, f.ctx),
+    Error,
+    "deployment.target_busy",
+  );
+  assertEquals(await root.methods.failure.execute(f.args, f.ctx), {
+    status: "held",
+  });
+  assertEquals(f.checkpoints.get("activeExecution"), active);
+  assertEquals(f.calls, []);
+  assertEquals(f.posts, []);
+  assertEquals(f.commands, []);
+});

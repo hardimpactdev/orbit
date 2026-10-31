@@ -1,9 +1,11 @@
 import {
   assertEquals,
   assertMatch,
+  assertRejects,
   assertStringIncludes,
 } from "jsr:@std/assert@1.0.14";
 import {
+  lookupScheduleAccount,
   renderScheduleUnits,
   type ScheduleCommand,
   scheduleSystem,
@@ -849,5 +851,51 @@ Deno.test("busy legacy migration and standalone deletion retain the original own
     assertEquals([f.enabled, f.active], [true, false]);
     assertEquals(f.serviceActive, true);
     assertEquals(f.calls.some((call) => call.args[0] === "stop"), false);
+  }
+});
+
+Deno.test("same-root Schedule account lookup reads actual primary group without guessing", async () => {
+  const calls: readonly string[][] = [];
+  const trace: string[][] = calls as string[][];
+  const run: SystemCommand = (program, args) => {
+    assertEquals(program, "/usr/bin/sudo");
+    trace.push([...args]);
+    return Promise.resolve({
+      code: 0,
+      stdout: args.includes("passwd")
+        ? "orbit-app-9:x:1234:5678::/home/orbit-app-9:/usr/sbin/nologin\n"
+        : "applications:x:5678:orbit-app-9\n",
+    });
+  };
+  assertEquals(await lookupScheduleAccount("orbit-app-9", undefined, run), {
+    user: "orbit-app-9",
+    uid: 1234,
+    gid: 5678,
+    group: "applications",
+    home: "/home/orbit-app-9",
+    shell: "/usr/sbin/nologin",
+  });
+  assertEquals(trace, [
+    ["-n", "--", "/usr/bin/getent", "passwd", "orbit-app-9"],
+    ["-n", "--", "/usr/bin/getent", "group", "5678"],
+  ]);
+});
+Deno.test("same-root Schedule account lookup rejects missing root foreign and mismatched primary group", async () => {
+  for (
+    const passwd of [
+      "",
+      "orbit-app-9:x:0:5678::/home/orbit-app-9:/bin/bash",
+      "foreign:x:1234:5678::/home/foreign:/bin/bash",
+      "orbit-app-9:x:1234:5678::/home/orbit-app-9:/bin/bash",
+    ]
+  ) {
+    const run: SystemCommand = (_program, args) =>
+      Promise.resolve({
+        code: 0,
+        stdout: args.includes("passwd") ? passwd : "foreign:x:9999:",
+      });
+    await assertRejects(() =>
+      lookupScheduleAccount("orbit-app-9", undefined, run)
+    );
   }
 });

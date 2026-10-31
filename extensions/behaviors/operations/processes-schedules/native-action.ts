@@ -13,7 +13,7 @@ const vite = viteSystem();
 export function localProcessAction(
   name: LocalCommand,
   input: Record<string, unknown>,
-  _admittedDigest: string,
+  _admittedDigest: string | undefined,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   return name.startsWith("process.")

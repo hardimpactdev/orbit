@@ -17,7 +17,13 @@ class DevDeployDirectNativeTest(NativeTestCase):
     native_timeout = 90
 
     def test_native_parent_uses_http_private_binding_and_leaves_no_private_artifacts(self):
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/instance-deploy', 'operations/tools')
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib',
+                            'operations/instance-deploy', 'operations/tools',
+                            'operations/php', 'operations/processes-schedules')
+        for family, name in [('operations/node', 'system_command.ts'), ('node-worker', 'command.ts')]:
+            destination = self.repo / 'extensions/behaviors' / family
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / 'extensions/behaviors' / family / name, destination)
         # Unit source files are not part of the native extension fixture.
         for path in (self.repo / 'extensions').rglob('*_test.ts'):
             path.unlink()
@@ -146,6 +152,11 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertEqual(state['posts'], before)
         # A worker loss during an app step keeps its marker. Operator cancellation
         # resumes the SAME run, probes its bound runner, and projects unknown failure.
+        # Isolate this scenario: the unresolved source effect still owns its model.
+        for job in workflow['jobs']:
+            for step in job['steps']:
+                step['task']['behaviorName'] = 'dev-step-interruption-proof'
+        Path(created['path']).write_text(json.dumps(workflow))
         state.update(status='running', posts=[], paths=[], run_id=None, cancel_requested=False)
         self.native_env.pop('ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE')
         self.native_env.pop('ORBIT_DEPLOY_TEST_FAIL_AFTER_STEPS')

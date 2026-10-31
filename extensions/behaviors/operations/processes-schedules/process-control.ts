@@ -30,7 +30,7 @@ type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 type Invoke = (
   name: LocalCommand,
   input: Record<string, unknown>,
-  digest: string,
+  digest: string | undefined,
   signal?: AbortSignal,
 ) => Promise<Record<string, unknown>>;
 
