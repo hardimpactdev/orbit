@@ -21,15 +21,9 @@ final readonly class DatabaseServerCloseProjection implements DirectOperationPro
         $intent = $id === null ? null : DatabaseExecutionIntent::recorded($id);
         $command = $intent?->payload['commands']['database-apply'] ?? [];
         $input = $command['input'] ?? [];
-        $server = DatabaseServer::query()->find($operation->target_id);
         if ($operation->kind !== 'database_server.close' || $operation->target_type !== 'database_server'
-            || $server === null || $server->node_id !== $operation->node_id || $server->driver->value !== 'redis'
-            || $intent === null || count($intent->payload['commands']) !== 1 || ($command['name'] ?? null) !== 'database.valkey'
-            || ($command['protected'] ?? []) !== ['password', 'payload']
-            || ($intent->payload['projection'] ?? []) !== ['server' => ['default_open' => false]]
-            || ! is_bool($input['default_open'] ?? null) || ($input['action'] ?? null) !== ($input['default_open'] ? 'close' : 'ready')
-            || ($input['host'] ?? null) !== $server->node->wireguard_ip || ($input['port'] ?? null) !== $server->port
-            || ! is_string($operation->input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $operation->input['agent_sha256']) !== 1) {
+            || $intent === null
+            || ! is_bool($input['default_open'] ?? null) || ($input['action'] ?? null) !== ($input['default_open'] ? 'close' : 'ready')) {
             throw new ResourceOperationException('database.server_intent_invalid', 'Closure does not match its admitted Database server.', 422);
         }
 
@@ -50,9 +44,8 @@ final readonly class DatabaseServerCloseProjection implements DirectOperationPro
 
         return DB::transaction(function () use ($operation, $data, $result, $status): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            $this->input($operation);
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'database-apply');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $status === 'succeeded') {
                 DatabaseServer::query()->whereKey($operation->target_id)->update(['default_open' => false]);
             }
