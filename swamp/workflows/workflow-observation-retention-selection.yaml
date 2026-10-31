@@ -1,0 +1,67 @@
+id: 16fec6ec-aa4a-432c-a81e-a5ec88f8506b
+name: observation-retention-selection
+description: Select expired batch and failed-job records from admitted public metadata.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - observation.maintain
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      maxProperties: 0
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: retention
+  steps:
+  - name: select
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/observation-retention-selection'
+      behaviorName: ${{ "observation-retention-" + string(inputs.operation_id) }}
+      methodName: select
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: select
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          exec /usr/bin/python3 - <<'PY_RESULT'
+          import json
+          import os
+
+          print(json.dumps(json.loads(os.environ['ORBIT_PUBLIC_RESULT'])))
+          PY_RESULT
+        env:
+          ORBIT_PUBLIC_RESULT: ${{ steps.select.outputs.result_json }}
+      behaviorName: ${{ "observation-retention-result-" + string(inputs.operation_id) }}

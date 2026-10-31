@@ -35,11 +35,22 @@ function observation_result($operation, array $result, string $status = 'succeed
 it('admits one native parent and reads only safe state metadata without performing maintenance', function (): void {
     $id = observation_running();
     $operation = app(StartObservationMaintenance::class)->execute('maintenance');
-    $input = $this->projection->input($operation);
+    $input = $this->projection->input($operation)['intent'];
     expect($operation->kind)->toBe('observation.maintain')->and($operation->node_id)->toBe($this->gateway->id)
         ->and($input['activities'])->toHaveCount(1)->and($input['activities'][0]['id'])->toBe($id)
         ->and(json_encode($input))->not->toContain('private.activity.payload')
         ->and(Activity::query()->findOrFail($id)->status)->toBe('running');
+});
+it('keeps admitted record metadata immutable when the Gateway state changes before native execution', function (): void {
+    $admitted = observation_running();
+    $operation = app(StartObservationMaintenance::class)->execute('maintenance');
+    observation_running();
+
+    $input = $this->projection->input($operation);
+
+    expect(array_column($input['intent']['activities'], 'id'))->toBe([$admitted]);
+    expect($input['execution_secrets'])->toBe([]);
+    expect($input['intent'])->toBe($operation->input);
 });
 it('applies selected Activity outcomes conditionally without changing saved properties duration or exit code', function (): void {
     $selected = observation_running();
@@ -69,7 +80,7 @@ it('records only Swamp-selected batch and failed-job deletions while Tasks is di
     DB::table('job_batches')->insert(['id' => 'batch-private', 'name' => 'fixture', 'total_jobs' => 1, 'pending_jobs' => 1, 'failed_jobs' => 0, 'failed_job_ids' => '[]', 'options' => 'private.batch.options', 'created_at' => 1]);
     $failed = DB::table('failed_jobs')->insertGetId(['uuid' => (string) Str::uuid(), 'connection' => 'fixture', 'queue' => 'fixture', 'payload' => 'private.job.payload', 'exception' => 'private.job.exception', 'failed_at' => now()->subYear()]);
     $operation = app(StartObservationMaintenance::class)->execute('retention');
-    $input = $this->projection->input($operation);
+    $input = $this->projection->input($operation)['intent'];
     expect($input['batches'])->toBe([])->and($input['failed'][0]['id'])->toBe($failed)
         ->and(json_encode($input))->not->toContain('private.job', 'private.batch');
     $result = $this->projection->apply($operation, observation_result($operation, ['failed_ids' => [$failed]]));

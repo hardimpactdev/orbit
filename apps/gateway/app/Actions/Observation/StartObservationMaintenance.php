@@ -10,8 +10,10 @@ use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 /** Stores maintenance intent; native Swamp owns selection, snapshots and scheduling. */
 final readonly class StartObservationMaintenance
@@ -39,6 +41,10 @@ final readonly class StartObservationMaintenance
             'activity_seconds' => config()->integer('orbit.activity_interrupted_after'),
             'batch_hours' => config()->integer('retention.job_batch_hours'), 'failed_hours' => config()->integer('retention.failed_jobs_hours'),
             'redis' => $redis];
+        $input += $routine === 'maintenance'
+            ? ['activities' => Activity::query()->where('status', 'running')->orderBy('id')->get(['id', 'created_at'])->toArray(), 'batches' => [], 'failed' => []]
+            : ['activities' => [], 'batches' => $input['tasks_enabled'] ? DB::connection(config()->string('queue.batching.database'))->table(config()->string('queue.batching.table'))->get(['id', 'created_at', 'finished_at', 'cancelled_at'])->map(static fn (object $row): array => (array) $row)->all() : [],
+                'failed' => DB::connection(config()->string('queue.failed.database'))->table(config()->string('queue.failed.table'))->get(['id', 'failed_at'])->map(static fn (object $row): array => (array) $row)->all()];
         if ($redis !== null) {
             $input['queue_redis'] = ['$secret' => 'observation.queue_redis', 'id' => $nodeId];
         }
