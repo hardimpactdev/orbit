@@ -91,6 +91,8 @@ The serving phase of a release's [runtime handoff](/reference/gateway-recovery#r
 
 The native run receives the complete non-secret intent as workflow inputs. Placed `command/shell` steps inspect, stage, validate, publish and reload the unit, then enable and hand it over. Scripts are inline in each step. No step reads intent or reports results to the Gateway; the shared terminal-run adapter projects the bounded final output.
 
+The handoff uses Swamp core's command execution, guards and dependencies with their defaults. The official `@swamp/cfgmgmt/systemd` extension also manages units over SSH; this run already executes on the Gateway Node, so the local core steps need no second connection or transport. Horizon's `horizon:terminate` remains a separate action so active jobs can finish.
+
 An active unit receives `horizon:terminate` without a restart, so running jobs can finish. A stopped or missing unit starts with its desired state running. Typed native results update the Process and Operation; the Gateway executes no Process command or Artisan termination. Verify the handoff Operation as well as the release after changing this path.
 
 Horizon uses cached application configuration. This parent adds no private-material field, and refuses managed environment overrides instead of exposing them in the public unit. The Gateway never removes the Process. After emptying `ORBIT_GATEWAY_QUEUE_CONNECTION`, destroy it with `orbit process:destroy <id>`.

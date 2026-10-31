@@ -59,13 +59,10 @@ describe('the schedule', function (): void {
     it('runs its commands itself, with their overlap locks, while the Gateway queue is not set', function (): void {
         config(['orbit.gateway_queue.connection' => '']);
 
-        $tick = gateway_queue_event('tasks:tick');
         $vault = gateway_queue_event('orbit:vault-sync');
 
-        expect($tick->command)->toEndWith("'artisan' tasks:tick")
-            ->and($tick->withoutOverlapping)->toBeFalse()
-            ->and([$vault->withoutOverlapping, $vault->expiresAt])->toBe([true, 15])
-            ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => str_contains((string) $event->description, 'TaskVm') && $event->filtersPass(app())))->toBeEmpty();
+        expect($vault->command)->toEndWith("'artisan' orbit:vault-sync")
+            ->and([$vault->withoutOverlapping, $vault->expiresAt])->toBe([true, 15]);
     });
 
     it('runs the Vaultwarden sync only while the vault extension is on', function (): void {
@@ -78,28 +75,28 @@ describe('the schedule', function (): void {
 
     it('only dispatches while the Gateway queue is set, one unique job per command, and starts no queue worker', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $tick = gateway_queue_event('tasks:tick');
+        $vault = gateway_queue_event('orbit:vault-sync');
 
-        expect($tick)->toBeInstanceOf(CallbackEvent::class)
+        expect($vault)->toBeInstanceOf(CallbackEvent::class)
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work')))->toBeEmpty()
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => is_string($event->command) && str_contains($event->command, 'artisan')
                 && ! str_contains($event->command, 'project-documents:') && ! str_contains($event->command, 'problems:')))->toBeEmpty();
 
-        $tick->run(app());
-        $tick->run(app());
+        $vault->run(app());
+        $vault->run(app());
 
         $jobs = DB::table('jobs')->get();
         $job = unserialize(json_decode($jobs->sole()->payload, true)['data']['command']);
         expect($jobs->sole()->queue)->toBe(GatewayQueue::Tasks->value)
             ->and($job)->toBeInstanceOf(RunScheduledCommand::class)
-            ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['tasks:tick', 330, 330, GatewayQueue::Connection]);
+            ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['orbit:vault-sync', 900, 900, GatewayQueue::Connection]);
     });
 
-    it('lists tasks:tick under its own name, as the release smoke reads it', function (): void {
+    it('lists retained commands by name and keeps the retired PHP task tick absent', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         Artisan::call('schedule:list', ['--json' => true]);
 
-        expect(collect(json_decode(Artisan::output(), true))->pluck('command'))->toContain('tasks:tick');
+        expect(collect(json_decode(Artisan::output(), true))->pluck('command'))->toContain('orbit:vault-sync')->not->toContain('tasks:tick');
     });
 
     it('frees the unique lock and throws when the queue cannot take the job, so the next run dispatches it again', function (): void {
