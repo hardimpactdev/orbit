@@ -29,6 +29,7 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->node = Node::query()->create(['ssh_host_fingerprint' => 'SHA256:test', 'name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']);
+    config(['swamp_workers.nodes' => [$this->node->id]]);
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->snapshot = ['schema_version' => 1, 'node_id' => $this->node->id, 'agent_sha256' => str_repeat('a', 64),
         'artifacts' => [['name' => 'agent', 'digest' => str_repeat('a', 64), 'required' => true, 'repair' => false],
@@ -73,13 +74,13 @@ it('binds the native start after commit with no SSH during pure admission', func
     expect(Operation::query()->where('parent_operation_id', $op->id)->exists())->toBeFalse();
 });
 
-it('keeps parent admissions and the default writer unchanged until integration', function (): void {
+it('limits direct scope to admitted worker roots and preserves parent contexts', function (): void {
     $direct = app(DirectOperation::class);
-    expect($direct->writer('node.converge', [], $this->node->id))->toBe('polled');
+    expect($direct->writer('node.converge', ['native_footprint' => true], $this->node->id))->toBe('polled');
     config(['swamp.direct_writers' => ['node.converge' => 'direct']]);
-    expect($direct->writer('node.converge', [], $this->node->id))->toBe('direct');
+    expect($direct->writer('node.converge', ['native_footprint' => true], $this->node->id))->toBe('direct');
     app(OperationIdempotency::class)->parent = $this->operation;
-    expect($direct->writer('node.converge', [], $this->node->id))->toBe('polled');
+    expect($direct->writer('node.converge', ['native_footprint' => true], $this->node->id))->toBe('polled');
 });
 
 it('projects bounded artifact digests once without changing roles or the agent hash', function (): void {
@@ -199,3 +200,10 @@ it('refuses an unsupported contribution before effects even when its digest matc
     expect($snapshot['refusal'])->toBe('operation.kind_unavailable');
     expect($artifact->applied)->toBe([]);
 });
+
+it('clears only the failed agent pin proven by this native result', function (bool $matching): void {
+    $failedPin = str_repeat($matching ? 'a' : 'b', 64);
+    $this->node->forceFill(['agent_failed_pin' => $failedPin])->save();
+    $this->postJson($this->path, $this->body)->assertOk();
+    expect($this->node->fresh()->agent_failed_pin)->toBe($matching ? null : $failedPin);
+})->with([true, false]);

@@ -11,6 +11,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -26,13 +27,19 @@ final readonly class StartNodeConvergeAction
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node has a Gateway-rendered footprint.', 422);
         }
 
-        $direct = app(DirectOperation::class)->writer('node.converge', [], $node->id) === 'direct';
+        $input = ['force_artifacts' => $force, 'first_visit' => $firstVisit];
+        if ($workerCredentials === null && ! in_array($node->id, [1, 18], true) && app(NodeWorkerRollout::class)->allows($node)) {
+            $input['native_footprint'] = true;
+        }
+        $direct = app(DirectOperation::class)->writer('node.converge', $input, $node->id) === 'direct';
         if (! $direct && (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('secret_outputs'))) {
             throw new ResourceOperationException('operation.kind_unavailable', 'The Node footprint requires recorded-intent child completion and transient protected agent-secret outputs.', 503);
         }
 
         $reference = $workerCredentials === null ? null : app(NodeWorkerEnrollment::class)->stage($node, $workerCredentials);
-        $input = ['force_artifacts' => $force, 'first_visit' => $firstVisit, ...($reference === null ? [] : ['_worker_enrollment' => $reference])];
+        if ($reference !== null) {
+            $input['_worker_enrollment'] = $reference;
+        }
         if ($direct) {
             $snapshot = app(NodeConvergeInput::class)->capture($node, $force, $firstVisit);
             $input['secret_hash'] = $snapshot['secret_hash'];

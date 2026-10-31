@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
 use App\Models\RouteRemovalResidue;
@@ -77,6 +78,9 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             }
             $snapshot = $this->input($operation);
             $admitted = $this->admitted($operation);
+            if (isset($artifacts['agent']) && in_array($artifacts['agent']['status'], ['applied', 'unchanged'], true)) {
+                Node::query()->whereKey($operation->node_id)->where('agent_failed_pin', $snapshot['agent_sha256'])->update(['agent_failed_pin' => null]);
+            }
             NodeFootprint::query()->firstOrCreate(['node_id' => $operation->node_id]);
             $record = NodeFootprint::query()->where('node_id', $operation->node_id)->lockForUpdate()->firstOrFail();
             $digests = $projected->status === OperationStatus::Succeeded ? [] : ($record->artifacts ?? []);
