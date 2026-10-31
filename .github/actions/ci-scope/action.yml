@@ -7,17 +7,25 @@ inputs:
   enabled:
     description: Select from changes, or run unconditionally for release builds.
     default: 'true'
+  swamp-base:
+    description: Resolve the retained Swamp comparison source with a full-history checkout.
+    default: 'false'
 outputs:
   selected:
     description: Whether this build has changed inputs.
     value: ${{ steps.scope.outputs.selected }}
+  swamp-base-ref:
+    description: Actual Orbit base or retained initial-import source.
+    value: ${{ steps.scope.outputs.swamp-base-ref }}
 runs:
   using: composite
   steps:
     - id: scope
       shell: bash
+      working-directory: ${{ github.workspace }}
       env:
         SCOPE_JOB: ${{ inputs.job }}
+        SWAMP_BASE: ${{ inputs.swamp-base }}
         SCOPE_ENABLED: ${{ inputs.enabled }}
         BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         EVENT_SHA: ${{ github.sha }}
@@ -32,4 +40,5 @@ runs:
         fi
         args=()
         if [ "$MAIN" = true ]; then args+=(--main); fi
-        python3 bin/ci-build-plan --base "$BASE" "${args[@]}" | python3 -c 'import json,os,sys; print("selected=" + str(json.load(sys.stdin)["jobs"][os.environ["SCOPE_JOB"]]).lower())' >> "$GITHUB_OUTPUT"
+        if [ "$SWAMP_BASE" = true ]; then args+=(--swamp-base); fi
+        python3 bin/ci-build-plan --base "$BASE" "${args[@]}" | python3 -c 'import json,os,sys; plan=json.load(sys.stdin); print("selected=" + str(plan["jobs"][os.environ["SCOPE_JOB"]]).lower()); print("swamp-base-ref=" + plan.get("swamp_base_ref", ""))' >> "$GITHUB_OUTPUT"

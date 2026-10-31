@@ -75,7 +75,7 @@ class ImportBaseTest(unittest.TestCase):
                     ['python3', loader.path, '--base', without_marker, '--swamp-base'],
                     cwd=root, timeout=60))
                 self.assertEqual(without_marker, result['swamp_base_ref'])
-                # Ordinary job scopes work with a shallow checkout; only the central selector resolves history.
+                # Ordinary job scopes work with a shallow checkout; only the full-history shape scope resolves history.
                 shallow = root / 'shallow'
                 git('clone', '--depth=1', root.as_uri(), str(shallow))
                 subprocess.run(['git', '-C', str(shallow), 'fetch', '--depth=1', 'origin', orbit],
