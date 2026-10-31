@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 18,
+      "pages": [
+        "decisions/0240-bound-environment-import-private-output"
+      ]
+    }
+  ]
+}
