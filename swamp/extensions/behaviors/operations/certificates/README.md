@@ -50,19 +50,11 @@ hex characters and `root_hash` is the SHA-256 digest of the public root PEM.
 (`AnalyticsHostname::Value` in Orbit). Paths are fixed by scope; callers cannot
 supply paths or private material.
 
-Use one parent DAG: `roleRequest` on the effect Node, canonical `sign` or
-`signBatch` on control209, then `rolePublish` on the effect Node. These methods
-belong to `@nckrtl/certificates`. Pass `leaf`, the public `request`, and the
-public `signed` bundle with the existing root arguments and effect
-`target_node_id`. `signBatch` also accepts role leaves alongside Route leaves.
-It uses the same public decoder and Gateway signing policy; there is no CA vault
-locator.
+New parents compose the `node-role-certificate-publish` child with `roleCertificateSteps(name,leafExpr,fullGlobals,dependency?,guard?)` from `certificates/role_steps.ts`. Supply the canonical role leaf and complete official SSH `name`, `transport` and `hosts` map with target `target`, approved209 identity and full pins. Read `steps["<name>"].outputs.result` for `{ready:true,node_id,scope,version}`. Every child action runs on209. The signer receives the root parent run ID. Native activation, pair restoration and recovery activation are separate steps; an activation failure restores the prior pair and fails without readiness.
 
-The lower methods are `.request(leaf, signal?)` and
-`.publish(leaf, request, signed, signal?)`. They return the existing public
-Request and Applied shapes. The pending RSA key stays in a root-owned local
-directory; publication consumes it locally and removes the pending copy after
-success. It never enters arguments, resources or logs.
+The shared Python file `scripts/role_policy.py` owns role paths, key preparation, certificate checks and pair writes. Native assets read it through `extensionFile`; retained `roleRequest` and `rolePublish` pass the same resolver to `roleCertificateActions`. Retained Caddy and certificate exports compose only the corresponding helper sections from those bytes. The new native path includes neither the legacy Caddy lock loop nor the whole-Node publication engine. The existing retained transaction remains isolated to its legacy callers.
+
+The pending RSA key stays on its effect Node. Only the CSR and signed public certificate bundle enter Swamp resources. Native pair publication retains the prior pair locally until activation succeeds; finalization removes that snapshot and pending key. Failed activation restores the prior pair, and native resume from publication can use the same pending key. The child does not restore the whole role parent or perform role withdrawal. The complete contract is in [Native Node role certificates](https://github.com/hardimpactdev/orbit/blob/main/docs/reference/node-role-certificates.md).
 
 Publication keeps
 `/etc/caddy/orbit-cert-current/{gateway.pem,gateway.key,root-ca.pem}`,

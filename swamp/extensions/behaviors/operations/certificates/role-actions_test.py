@@ -12,7 +12,7 @@ class RoleActionsTest(unittest.TestCase):
     def tearDownClass(cls):cls.tmp.cleanup()
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=pathlib.Path(self.tmp.name)
-        self.ns={'__name__':'fixture'};exec(program(HERE.parent/'routes/caddy-program.ts')+program(HERE/'role-publication.ts')+program(HERE/'role-actions.ts'),self.ns)
+        self.ns={'__name__':'fixture'};exec((HERE/'scripts/role_policy.py').read_text().split('ROLE_ACTION_INPUT = None')[0]+program(HERE/'role-publication.ts'),self.ns)
         self.ns['ROOT']=self.root/'caddy';self.ns['ROOT'].mkdir();self.ns['OWNER_UID']=os.getuid();self.ns['KEY_ROOT']=self.root/'orbit'/'role-certificates'
         self.ns['grp']=types.SimpleNamespace(getgrnam=lambda _:types.SimpleNamespace(gr_gid=os.getgid()))
         self.reloads=[];self.ns['certificate_active']=lambda:True;self.ns['certificate_reload']=lambda:self.reloads.append(True) or True

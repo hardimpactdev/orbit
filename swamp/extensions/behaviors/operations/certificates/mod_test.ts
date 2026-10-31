@@ -127,6 +127,7 @@ Deno.test("an effect rejects another Node before touching the local account", as
       cancelled: false,
     }, {
       globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/fixture" },
+      extensionFile: (path: string) => new URL(path, import.meta.url).pathname,
       writeResource: () => Promise.resolve({}),
     })
   );
@@ -171,7 +172,8 @@ Deno.test("parent requests effect Nodes, signs once on control209, then publishe
         throw new Error("Injected signer does not read CA");
       },
     },
-    writeResource: (spec: string, _name: string, value: unknown) => {
+    extensionFile: (path: string) => new URL(path, import.meta.url).pathname,
+      writeResource: (spec: string, _name: string, value: unknown) => {
       resources.push({ spec, value });
       return Promise.resolve({});
     },

@@ -608,33 +608,9 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/certificates/role-actions.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/certificates/role-actions.ts",
-      "rule": "inline-script",
-      "count": 81,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/certificates/role-publication.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/certificates/role-publication.ts",
       "rule": "inline-script",
-      "count": 89,
+      "count": 30,
       "evidence": []
     },
     {
@@ -2463,7 +2439,7 @@
     {
       "file": "extensions/behaviors/operations/routes/caddy-program.ts",
       "rule": "inline-script",
-      "count": 166,
+      "count": 150,
       "evidence": []
     },
     {
