@@ -15,8 +15,8 @@ return (static function (): array {
         ...array_map(static fn (string $field): array => ['name' => 'data.'.$field, 'type' => 'list', 'items' => 'string', 'max' => 4096],
             ['sources', 'cipher_ids', 'revisions', 'fingerprints']),
     ];
-    $kinds = ['vault.sync' => ['executor' => 'swamp', 'result_fields' => $resultFields]];
-    foreach (['setup', 'teardown'] as $action) {
+    $kinds = array_fill_keys(['vault.sync', 'vault.setup'], ['executor' => 'swamp', 'result_fields' => $resultFields]);
+    foreach (['teardown'] as $action) {
         $kinds['vault.'.$action] = [
             'executor' => 'swamp',
             'completion' => VaultOperationCompletion::class,

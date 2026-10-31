@@ -37,23 +37,7 @@ $nodeKinds = [
             ['name' => 'stale_masters', 'type' => 'list', 'items' => 'string', 'max' => 256],
             ['name' => 'deferred', 'type' => 'list', 'items' => 'string', 'max' => 256]],
     ],
-    'node.settings' => [
-        'executor' => 'swamp',
-        'completion' => NodeSettingsOperationCompletion::class,
-        'runs' => [[
-            'transport' => 'agent',
-            'name' => 'node.prepare-storage-root',
-            'input_fields' => ['root', 'user', 'group', 'create_missing'],
-            'input_values' => [],
-        ]],
-        'completion_contract' => [
-            'step' => 'node-storage-root',
-            'transport' => 'agent',
-            'name' => 'node.prepare-storage-root',
-            'result' => [],
-        ],
-        'result_fields' => ['error_code'],
-    ],
+    'node.settings' => ['executor' => 'swamp', 'result_fields' => ['prepared', 'error_code']],
 ];
 
 if (! OperationKinds::supports('list_of')) {
