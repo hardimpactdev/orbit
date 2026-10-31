@@ -2813,6 +2813,7 @@
         "agent.update_busy",
         "swamp.node_worker_not_ready",
         "swamp.node_worker_memory_low",
+        "agent.secret_mismatch",
         "agent.configure_failed"
       ]
     },
@@ -2829,6 +2830,7 @@
         "agent.update_busy",
         "swamp.node_worker_not_ready",
         "swamp.node_worker_memory_low",
+        "agent.secret_mismatch",
         "agent.configure_failed"
       ]
     },
@@ -5275,24 +5277,6 @@
       "summary": "Check out a commit on a development default's branch in place.",
       "mutates": true,
       "timeout_seconds": 300,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.development_checkout_invalid",
-        "instance.checkout_dirty",
-        "instance.branch_diverged",
-        "instance.commit_not_on_branch",
-        "instance.lifecycle_busy",
-        "instance.development_step_failed"
-      ]
-    },
-    {
-      "name": "instance.run-development-step",
-      "summary": "Run a development deploy step in a development default's checkout, live.",
-      "mutates": true,
-      "timeout_seconds": 900,
       "privilege": {
         "linux": "account",
         "macos": null
