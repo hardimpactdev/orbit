@@ -13,6 +13,7 @@ use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeRoutePublicationSocket;
 
@@ -97,6 +98,48 @@ it('records a native refusal as failed without its diagnostic', function (): voi
     expect(json_encode($operation->fresh()->toArray()))->not->toContain('private remote diagnostic');
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
 });
+
+it('logs refusal diagnostics after removing credentials and secret patterns', function (): void {
+    $operation = startIntent();
+    $socket = new FakeRoutePublicationSocket;
+    $message = "Access denied: user:orbit-gateway needs run on workflow:operation-route-publication private.start-token password=hidden-password Bearer hidden-bearer-token\n-----BEGIN PRIVATE KEY-----\nhidden-pem\n-----END PRIVATE KEY-----";
+    $socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized', 'message' => $message, 'details' => ['token' => 'hidden-detail']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.start-token']);
+    Log::spy();
+
+    expect(fn () => app(StartSwampRun::class)->start($operation))->toThrow(ResourceOperationException::class, 'Swamp refused');
+
+    Log::shouldHaveReceived('warning')->with('Swamp direct start refused', Mockery::on(static function (array $context): bool {
+        expect($context['remote_code'])->toBe('unauthorized');
+        expect($context['remote_type'])->toBe('error');
+        expect($context['remote_message'])->toContain('Access denied', 'workflow:operation-route-publication', '[REDACTED]');
+        expect(json_encode($context))->not->toContain('private.start-token', 'hidden-password', 'hidden-bearer-token', 'hidden-pem', 'hidden-detail');
+
+        return true;
+    }))->once();
+    expect(json_encode($operation->fresh()->toArray()))->not->toContain('Access denied', 'hidden-password', 'hidden-pem');
+});
+
+it('withholds malformed diagnostics without losing a native refusal', function (mixed $diagnostic, string $expected): void {
+    $operation = startIntent();
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'code' => 'workflow_execution_failed', 'message' => $diagnostic]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.start-token']);
+    Log::spy();
+
+    expect(fn () => app(StartSwampRun::class)->start($operation))->toThrow(ResourceOperationException::class, 'Swamp refused');
+
+    Log::shouldHaveReceived('warning')->with('Swamp direct start refused', Mockery::on(static function (array $context) use ($expected): bool {
+        expect($context['remote_code'])->toBe('workflow_execution_failed');
+        expect($context['remote_message'])->toBe($expected);
+
+        return true;
+    }))->once();
+    expect($operation->fresh()->error_code)->toBe('swamp.start_refused');
+})->with(['flat error' => ['Workflow is not loaded', 'Workflow is not loaded'], 'not text' => [['token' => 'hidden'], '[withheld]'],
+    'invalid UTF-8' => ["\xff", '[withheld]'], 'over limit' => [str_repeat('x', 32769), '[withheld]']]);
 
 it('makes a lost or malformed response terminal and never resubmits on replay', function (bool $malformed): void {
     $operation = startIntent();
