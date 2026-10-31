@@ -1,63 +1,54 @@
-# Direct Route publications
+# Native Route publications
 
-`route.caddy_converge` starts `operation-route-caddy` on its exact admitted
-`orbit-node-ID` target with the matching string Node label. The workflow uses
-`@nckrtl/route-publication`, model name `route-publication-node-ID`, method
-`convergeCaddy`. Native locking covers the method's fresh bound Operation GET,
-local pinned sudo `caddy.publish`, and result projection. The Gateway returns
-public rendered data and projects status; it does not execute Caddy.
+Swamp applies Route effects on the admitted Node's exact `orbit-node-ID` target
+with the matching string `node` label. Logical Nodes 1 and 18 use those same
+selectors. Their proxy workers own transport; Route code has no special case.
+The Gateway supplies public desired state and records the root result.
 
-The public artifact is `input.caddy_publication`:
+`@nckrtl/route-publication` uses the canonical model name
+`route-publication-node-ID`. Each method reads fresh public data after acquiring
+that model's native lock. Root identity stays truthful when the effect runs on a
+foreign admitted participant. The artifact's `node_id` must match the placed
+Node. Ended or cancelled parents refuse before any effect.
 
-```ts
-{
-  node_id: number,
-  user: string,
-  agent_sha256: string,
-  caddy: { content, version, listen_addresses, unserved }
-}
-```
+Same-root callers use these methods with
+`{operation_id, kind, node_id, run_id, target_node_id?}`. `node_id` identifies
+the root or placed participant; `target_node_id`, when supplied, identifies the
+placed participant. The Gateway authorizes the actual caller against the
+immutable participant list. These methods return their result without posting
+the parent result or starting another workflow.
 
-A refused render instead supplies the same identity plus
-`error_code: "caddy.render_failed", stage: "render"`. No configuration is
-applied on a refusal. The content digest proves byte integrity; freshness comes
-from reading inside the canonical model method after its native lock is
-acquired. No full render belongs in pre-lock task inputs. The Gateway owns this
-render through `CaddyPublicationPlan::forNode(Node)`; it performs no Node calls.
+| Method            | Fresh public input                                 | Local effect                                                       |
+| ----------------- | -------------------------------------------------- | ------------------------------------------------------------------ |
+| `publishCaddy`    | `caddy_publication`                                | Validate, swap and activate the whole Caddy configuration          |
+| `publishPhp`      | `php_publication`                                  | Reconcile all shared PHP pools, including an empty final set       |
+| `publishDns`      | `private_dns_publication`                          | Validate and publish the DNS owner's records and requester catalog |
+| `publishFirewall` | `ingress_firewall` and `caddy_publication.node_id` | Reconcile managed ingress rules                                    |
 
-Other same-Node parents use method `publishCaddy` on that SAME resolved model:
+Lower functions are exported from `routes/caddy.ts`, `php.ts`, `dns.ts`, and
+`firewall-local.ts`. Calling a lower function alone does not acquire the native
+model lock. Public plans contain data only. `runLocalProgram` executes fixed
+repository-owned Python with sudo, a deadline, bounded stdout and suppressed
+stderr. No agent action or Gateway execution primitive runs these effects.
 
-```ts
-{ operation_id: number, kind: string, node_id: number, run_id: string }
-```
+Caddy keeps its host publication lock, validation before swap, manual-file
+backups, pruning and restoration after activation failure. PHP validates before
+changing live pool files and restores them if activation fails. DNS uses the DNS
+owner's host lock, verifies the loaded catalog digest and listener response, and
+restores prior data and service state after a failed activation.
 
-The method fetches the existing bound root GET, verifies the parent and payload
-Node identities and unfinished status, honors cancellation before the effect,
-and returns `{ready:true,result,version}`. It makes no result POST and starts no
-child. The owning parent alone projects its final result. Process Vite callers
-must commit the admitted allocation before this read so the current render
-contains it. The local action export is `publishCaddy` from `routes/caddy.ts`;
-calling that function alone does not acquire the native publication lock.
-Foreign Node public reads and private-material access are unchanged.
+All UFW writers share `/run/lock/orbit-firewall.lock` for the complete observe,
+delete, apply and confirm transaction. The lock is a root-owned regular file
+opened without following symlinks. `convergeFirewall({desired,remove,enable})`
+owns managed rule reconciliation. `convergeRouteLan` and `removeRouteLan` own
+only the exact admitted Route comment. Router-LAN extends this same engine.
 
-The local agent verifies its admitted digest and supervises Caddy for 120s. It
-validates the whole configuration, publishes/reloads, and restores on failure.
-Only proven render or target validation failures expose a bounded stage. Lost
-responses escape to native recovery; there is no custom receipt or retry loop.
-Swamp retains its default locking, concurrency, waits and retention policies.
+`verifyLocal` in `routes/verification.ts` runs bounded OpenSSL or curl probes.
+TLS checks both the admitted hostname and certificate trust. Agent observation
+endpoints remain separate read-only interfaces.
 
-The four direct Route kinds use `swamp.direct_writers`; the removed writer
-refuses admission. Their discovery entries and Gateway executor contracts are
-deleted. The separate publication writer settings and environment variables are
-removed. Rollback is a revert PR. No Caddy Gateway primitive or old
-`/route-publications` relay remains. Private DNS still uses
-`operation-route-publication` with its existing Gateway primitive and migration
-placement; this Caddy slice does not switch that kind's local execution.
-
-Release requires the exact workflow loaded and its existing Gateway principal
-run/read grant verified, exact serving Node workers, and a disposable real
-canary. The same-root contention proof must show lock acquisition -> fresh GET
--> local effect and preserve newer whole-Node configuration. Retained Gateway
-builders do not yet share this native model; audit and migrate those callers
-before claiming that every Caddy writer is coordinated. Source/unit tests are
-not a live canary or activation approval.
+Standalone Caddy uses `operation-route-caddy` / `convergeCaddy`. Standalone DNS
+uses `operation-route-publication` / `publish`. Standalone LAN removal uses
+`operation-route-lan-remove` / `removeLan`. Each uses exact Node placement and
+projects only its own root. Native history is the execution record; there are no
+claims, child Operations or keyed receipts.

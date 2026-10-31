@@ -92,3 +92,15 @@ Deno.test("Node library exception accepts only the exact pinned SSH operations s
     false,
   );
 });
+
+Deno.test("quoted command arguments in fixed local programs are not module imports", async () => {
+  const both = 'target: orbit-node-9\nlabels: {node: "9"}';
+  assertEquals(
+    await check(
+      both,
+      "@fixture/local",
+      "export const program = String.raw`args.extend(['from',wildcard if shape['source']=='any' else shape['source']])`; export const behavior = {type: \"@fixture/local\"};",
+    ),
+    true,
+  );
+});
