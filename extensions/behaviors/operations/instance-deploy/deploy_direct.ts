@@ -15,7 +15,6 @@ const Args = DirectArgs.extend({
 });
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
 const Input = DeploySourceInput.extend({
-  timeout_seconds: z.number().int().positive().max(1600),
   deployment: DeploySourceInput.shape.deployment.extend({
     variant: z.literal("development"),
     node_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/).refine((x) =>
@@ -81,10 +80,18 @@ export function deployDirect(ports: Ports = {}) {
           }
           const input = Input.parse(initial.input), d = input.deployment;
           const started_at = new Date(now()).toISOString();
-          const deadline = now() + input.timeout_seconds * 1000;
+          const deadline = now() +
+            Math.min(
+                1600,
+                900 +
+                  d.steps.reduce(
+                    (total, step) => total + step.timeout_seconds,
+                    0,
+                  ),
+              ) * 1000;
           const result = {
             instance_id: input.instance_id,
-            commit: null as string | null,
+            commit: input.commit,
             release: null,
             previous: null,
             selected_release: null,
@@ -139,7 +146,7 @@ export function deployDirect(ports: Ports = {}) {
               result: {},
             });
             await check();
-            // The existing independent repair owner settles publication before admission.
+            // Native automatic policy settles pending publication before admission.
             if (d.projection_route_id !== null) {
               throw new Refused("deployment.projection_pending");
             }

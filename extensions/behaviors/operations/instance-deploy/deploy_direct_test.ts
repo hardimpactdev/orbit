@@ -509,3 +509,17 @@ Deno.test("cancellation cannot turn an uncertain app action into a terminal canc
   );
   assertEquals(f.posts.map((post) => post.status), ["running"]);
 });
+
+Deno.test("a settled source refusal retains the admitted commit for automatic retry accounting", async () => {
+  const f = await fixture();
+  await assertRejects(() =>
+    deployDirect({
+      http: () => f.http,
+      invoke: () => Promise.resolve({ error_code: "agent.version_mismatch" }),
+      run: f.run,
+    }).methods.run.execute(f.args, f.ctx)
+  );
+  assertEquals(f.posts.at(-1)?.status, "failed");
+  assertEquals((f.posts.at(-1)?.result as { commit: string }).commit, commit);
+  assertEquals(f.commands, []);
+});
