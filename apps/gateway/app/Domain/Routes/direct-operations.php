@@ -9,6 +9,7 @@ use App\Domain\Routes\NativeRouteLanRemovalProjection;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetProjection;
+use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\Routes\RouteOperationProjection;
 
 $publication = [
@@ -19,6 +20,11 @@ $publication = [
 ];
 
 return [
+    'route.update' => [
+        'workflow' => 'operation-route-update', 'projection' => NativeRouteUpdateProjection::class,
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
+    ],
     'route.create' => [
         'workflow' => 'operation-route-create', 'projection' => NativeRouteConvergenceProjection::class,
         'private_material' => NativeRouteAdmission::privateMaterial(),

@@ -69,6 +69,7 @@ final readonly class RouteMutationState
             || ($allowRetiring && $route->status === RouteStatus::Retiring);
 
         $effectivePublication = $publication ?? $route->publication;
+        $this->assertPublication($route, $effectivePublication);
         $generatedTldChange = $allowGenerated
             && $route->provenance === RouteProvenance::Generated
             && $effectivePublication === RoutePublication::Private
@@ -80,7 +81,6 @@ final readonly class RouteMutationState
                 ! $generatedTldChange
                 && $route->provenance !== RouteProvenance::Explicit
             )
-            || ($effectivePublication === RoutePublication::Public && $environments !== ['production'])
             || array_diff($environments, ['development', 'production']) !== []
             || (count($targets) > 1 && $environments !== ['production'])
         ) {
@@ -98,6 +98,14 @@ final readonly class RouteMutationState
         }
 
         return $targets;
+    }
+
+    public function assertPublication(Route $route, RoutePublication $publication): void
+    {
+        if ($publication === RoutePublication::Public
+            && $route->targets->map(static fn (RouteTarget $target): string => $target->instance->defaultAppEnv())->unique()->values()->all() !== ['production']) {
+            app(RouteReconciliationGuard::class)->refuse();
+        }
     }
 
     public function reserve(

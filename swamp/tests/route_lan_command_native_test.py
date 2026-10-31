@@ -14,7 +14,7 @@ from tests.route_ssh_fixture import PIN, install_ssh
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class RouteLanCommandNative(NativeTestCase):
+class RouteLanFixture(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.connection = install_ssh(self)
@@ -189,6 +189,9 @@ else:raise SystemExit(9)
             json.dumps({"tuples": tuples or [], "legacy": legacy or [], **extra})
         )
 
+
+
+class RouteLanCommandNative(RouteLanFixture):
     def test_present_before_legacy_removal_and_shared_tuple_survives(self):
         self.initialize(
             legacy=[

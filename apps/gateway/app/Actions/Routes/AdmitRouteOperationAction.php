@@ -74,6 +74,7 @@ final readonly class AdmitRouteOperationAction
                 || ($data->webRootProvided && $data->webRoot !== $route->web_root);
             if ($changed) {
                 WebSocketRouteSelection::assertMutable($route);
+                $this->mutations->assertPublication($route, $data->publication ?? $route->publication);
             }
             $input = ['mode' => $data->webRootProvided ? ($changed ? 'web_root' : 'state_only') : 'publication',
                 'domain' => $domain, 'publication' => ($data->publication ?? $route->publication)->value,
