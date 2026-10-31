@@ -712,6 +712,74 @@ Deno.test("native stdin and protected environment do not become argv findings", 
   );
 });
 
+Deno.test("dynamic execution descriptor maps keep every value closed without a cardinality cap", () => {
+  const descriptor = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      vault: { type: "string", enum: ["orbit-control-inputs"] },
+      key: {
+        type: "string",
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$",
+      },
+    },
+    required: ["vault", "key"],
+  };
+  const map = { type: "object", additionalProperties: descriptor };
+  const findings = (schema: unknown) =>
+    analyzeYaml(
+      "workflows/route-descriptor-map.yaml",
+      "inputs:\n  properties:\n    execution_secrets: " +
+        JSON.stringify(schema) +
+        "\n" + workflow("        run: true\n"),
+    ).findings.filter((finding) => finding.rule === "secret-input");
+  for (
+    const valid of [
+      map,
+      { ...map, properties: {}, required: [] },
+      {
+        type: "object",
+        additionalProperties: false,
+        properties: { routes: map },
+        required: ["routes"],
+      },
+    ]
+  ) assertEquals(findings(valid), []);
+  for (
+    const invalid of [
+      { ...map, additionalProperties: true },
+      { ...map, additionalProperties: {} },
+      { ...map, additionalProperties: { type: "string" } },
+      {
+        ...map,
+        additionalProperties: {
+          ...descriptor,
+          additionalProperties: true,
+        },
+      },
+      {
+        ...map,
+        additionalProperties: { ...descriptor, required: ["vault"] },
+      },
+      {
+        ...map,
+        additionalProperties: {
+          ...descriptor,
+          properties: {
+            ...descriptor.properties,
+            value: { type: "string" },
+          },
+        },
+      },
+      { ...map, properties: { password: { type: "string" } } },
+      { ...map, properties: [] },
+      { ...map, required: ["material"] },
+      { ...map, patternProperties: { ".*": { type: "string" } } },
+      { ...map, additionalProperties: map },
+    ]
+  ) assert(findings(invalid).length > 0, JSON.stringify(invalid));
+});
+
 Deno.test("closed execution_secrets containers carry only public vault-key references", () => {
   const ref = {
     type: "object",
