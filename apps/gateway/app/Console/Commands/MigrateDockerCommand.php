@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Actions\Fleet\MigrateDockerAction;
+use App\Actions\Fleet\AdmitDockerMigrationAction;
+use App\Data\Operations\OperationData;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\Node;
 use Illuminate\Console\Command;
@@ -23,7 +24,7 @@ final class MigrateDockerCommand extends Command
     #[\Override]
     protected $description = 'Explicitly migrate one Docker CE Node to Ubuntu docker.io in a planned window';
 
-    public function handle(RecipeLoader $loader, MigrateDockerAction $migration): int
+    public function handle(RecipeLoader $loader, AdmitDockerMigrationAction $migration): int
     {
         try {
             if ($this->option('restore-policies') && ($this->option('dry-run') || $this->option('fallback'))) {
@@ -38,10 +39,11 @@ final class MigrateDockerCommand extends Command
             }
             $target = $this->stringArgument('node');
             $node = ctype_digit($target) ? Node::query()->findOrFail((int) $target) : Node::query()->where('name', $target)->firstOrFail();
-            $report = $migration->execute($node, $recipe, (bool) $this->option('dry-run'), (bool) $this->option('fallback'), (bool) $this->option('restore-policies'));
+            $operation = $migration->execute($node, $recipe, $this->option('dry-run') ? 'plan' : ($this->option('restore-policies') ? 'restore-policies' : 'migrate'), (bool) $this->option('fallback'));
+            $report = OperationData::fromModel($operation)->toArray();
             $this->output->writeln(json_encode($report, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
-            return ($report['healthy'] ?? true) === false ? self::FAILURE : self::SUCCESS;
+            return self::SUCCESS;
         } catch (Throwable $exception) {
             $this->output->writeln(json_encode(['status' => 'failed', 'message' => $exception->getMessage(), 'automatic_rollback' => false], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 

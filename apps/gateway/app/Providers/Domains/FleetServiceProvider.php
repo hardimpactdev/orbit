@@ -9,6 +9,7 @@ use App\Console\Commands\FleetConvergeCommand;
 use App\Console\Commands\ResolveDesiredFleetStateCommand;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
+use App\Domain\Fleet\DockerMigrationProcesses;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\NodeFootprint;
@@ -19,7 +20,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeCliInstaller;
-
+use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -48,6 +49,7 @@ final class FleetServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
+        $this->app->tag([DockerMigrationProcesses::class], OperationSecretSource::class);
 
         $this->app->bind(
             ReleaseHistory::class,

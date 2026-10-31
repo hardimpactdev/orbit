@@ -206,26 +206,6 @@ jobs:
           if [ "$MAIN" = true ]; then args+=(--main); fi
           python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --github-output "$GITHUB_OUTPUT"
 
-  agent-delivery:
-    name: Combine agent delivery
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Reuse the frozen published agent
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 bin/ci-agent-delivery reuse --destination "$RUNNER_TEMP/agent-delivery"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: agent-delivery
-          path: ${{ runner.temp }}/agent-delivery
-          if-no-files-found: error
-          retention-days: 30
-
   required:
     name: Required checks
     if: always()

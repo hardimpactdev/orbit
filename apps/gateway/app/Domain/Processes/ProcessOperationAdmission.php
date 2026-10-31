@@ -8,10 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -28,21 +25,14 @@ final readonly class ProcessOperationAdmission
 
     public function execute(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        if (! array_key_exists('process.'.$verb, OperationKinds::definitions())) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'This Process kind requires the shared child and result contracts.', 409);
-        }
-
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            if ($verb === 'create') {
+            if (in_array($verb, ['create', 'update'], true)) {
                 $input['installation'] = ['$secret' => 'process.installation', 'id' => $process->id];
             }
             $nodeId = ValidatedData::integer($input['node_id']);
-            $writer = app(DirectOperation::class)->writer('process.'.$verb, $input, $nodeId);
-            if ($writer === 'direct') {
-                $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($nodeId));
-            }
-            $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, $nodeId, $input, 'operator', $requestId, expectedWriter: $writer);
+            $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($nodeId));
+            $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, $nodeId, $input, 'operator', $requestId);
             $process->update(['status' => $verb === 'destroy' ? LifecycleStatus::Removing : LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
 
             return $operation;
@@ -57,9 +47,6 @@ final readonly class ProcessOperationAdmission
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        if (! in_array($verb, ['create', 'stop', 'destroy'], true)) {
-            app(ProcessSwampSafety::class)->assertAllowed($target->node);
-        }
         if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
             $instance = $target->instance;
             if ($instance !== null) {
@@ -80,13 +67,9 @@ final readonly class ProcessOperationAdmission
         if (in_array($verb, ['create', 'update'], true)) {
             if ($systemd) {
                 $content = $this->systemd->render($process, $target, $target->certificateScope === null ? null : $this->accounts->resolve($target->node));
-                $input += ['unit' => $name, 'content' => ['$secret' => 'process.unit_content', 'id' => $process->id],
-                    'content_hash' => hash('sha256', $content), 'activation_pending' => $process->systemd_activation_pending];
+                $input += ['content_hash' => hash('sha256', $content), 'activation_pending' => $process->systemd_activation_pending];
             } else {
-                $definition = $this->docker->containerInput($process, $target);
-                $definition['environment'] = ['$secret' => 'process.environment', 'id' => $process->id];
-                $definition['command'] = ['$secret' => 'process.command', 'id' => $process->id];
-                $input += ['container' => $name, 'spec' => $this->docker->specHash($process, $target), ...$definition];
+                $input['spec'] = $this->docker->specHash($process, $target);
             }
             if ($process->retired_runtime !== null) {
                 $retired = clone $process;
