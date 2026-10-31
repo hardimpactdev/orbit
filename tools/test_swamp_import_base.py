@@ -50,8 +50,20 @@ class ImportBaseTest(unittest.TestCase):
                 git('add', '.')
                 git('commit', '-m', 'A later Swamp change')
                 self.assertEqual(imported, plan.swamp_comparison_base(imported, 'HEAD'))
+                # Ordinary job scopes work with a shallow checkout; only the central selector resolves history.
+                shallow = root / 'shallow'
+                git('clone', '--depth=1', root.as_uri(), str(shallow))
+                subprocess.run(['git', '-C', str(shallow), 'fetch', '--depth=1', 'origin', orbit],
+                               check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                missing = subprocess.run(['git', '-C', str(shallow), 'cat-file', '-e', source],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                self.assertNotEqual(0, missing.returncode)
+                result = json.loads(subprocess.check_output(['python3', loader.path, '--base', orbit],
+                                                            cwd=shallow, timeout=60))
+                self.assertTrue(result['jobs']['swamp'])
+                self.assertNotIn('swamp_base_ref', result)
                 (root / 'swamp/import-source.json').write_text(json.dumps({'commit': 'f' * 40}))
-                git('add', '.')
+                git('add', 'swamp/import-source.json')
                 git('commit', '-m', 'Invalid import source')
                 with self.assertRaises(subprocess.CalledProcessError):
                     plan.swamp_comparison_base(orbit, 'HEAD')

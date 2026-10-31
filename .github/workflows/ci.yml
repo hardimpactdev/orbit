@@ -195,20 +195,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Select changed build inputs
         id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
-          PR: ${{ github.event_name == 'pull_request' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
-          if [ "$PR" = true ]; then git fetch --no-tags --depth=1 origin "$BASE"; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
-          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --github-output "$GITHUB_OUTPUT"
+          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --swamp-base --github-output "$GITHUB_OUTPUT"
 
   swamp:
     name: Swamp

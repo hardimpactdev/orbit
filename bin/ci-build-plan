@@ -54,7 +54,8 @@ def swamp_comparison_base(base, head):
         ['git', 'show', f'{head}:swamp/import-source.json'], timeout=60))['commit']
     if not isinstance(source, str) or not re.fullmatch('[0-9a-f]{40}', source):
         raise ValueError('The Swamp import source must be a full commit SHA')
-    subprocess.run(['git', 'merge-base', '--is-ancestor', source, head], check=True, timeout=60)
+    subprocess.run(['git', 'merge-base', '--is-ancestor', source, head], check=True,
+                   stderr=subprocess.PIPE, timeout=60)
     return source
 
 
@@ -64,10 +65,11 @@ def main():
     p.add_argument('--head', default='HEAD')
     p.add_argument('--main', action='store_true')
     p.add_argument('--github-output', type=Path)
+    p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', a.base, a.head], timeout=60).decode().rstrip('\0').split('\0')
     result = select(paths, a.main)
-    if result['jobs']['swamp']:
+    if a.swamp_base and result['jobs']['swamp']:
         result['swamp_base_ref'] = swamp_comparison_base(a.base, a.head)
     print(json.dumps(result))
     if a.github_output:
