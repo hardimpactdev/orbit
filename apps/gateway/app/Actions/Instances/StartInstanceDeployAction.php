@@ -7,14 +7,18 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\Deployment\InstanceDeploymentEnvironmentMaterial;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,18 +43,25 @@ final readonly class StartInstanceDeployAction
         return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId): Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
             $development = $instance->placedOnAppDev();
-            if (! $development) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Production deployment is not yet available through its native workflow.', 503);
-            }
+            $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
             $deployment = $this->intent->snapshot($instance);
-            if ($deployment['projection_route_id'] !== null) {
+            if ($development && $deployment['projection_route_id'] !== null) {
                 throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);
             }
             $private = ['$secret' => 'instance.deployment', 'id' => $instance->id];
             $input = ['instance_id' => $instance->id, 'deployment' => $deployment,
                 'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
                 'git_read' => $private, 'vp_materialize' => $private,
+                'environment_material' => $private, 'definitions_material' => $private,
                 ...($commit === null ? [] : ['commit' => $commit])];
+            if (! $development) {
+                $input['runtime_definitions'] = $members;
+                $input['environment'] = app(InstanceDeploymentEnvironmentMaterial::class)->capture($instance);
+                $input['php_input'] = $deployment['php'] ? [
+                    'packages' => app(RemotePhpPackageManager::class)->packagesOnlyInputForAppProd($instance->node, [ValidatedData::string($deployment['php_version'])]),
+                    'profile' => $deployment['php_profile'], 'runtime' => $deployment['php_runtime'], 'refresh' => $deployment['php_refresh'],
+                ] : null;
+            }
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;
             }

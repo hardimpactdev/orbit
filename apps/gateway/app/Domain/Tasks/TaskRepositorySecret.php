@@ -45,6 +45,9 @@ final readonly class TaskRepositorySecret implements OperationSecretSource
             || $operation->input['repository'] !== $repository->owner.'/'.$repository->name) {
             throw new ResourceOperationException('tasks.repository_token_forbidden', 'The credential belongs to the admitted Task repository.', 403);
         }
+        if ($operation->kind === 'tasks.publish') {
+            return new OperationSecretValue(['repository' => $repository->owner.'/'.$repository->name, 'write_token' => $this->access->token($repository)]);
+        }
         $checks = $this->access->checksToken($repository);
         if ($checks === null) {
             throw new ResourceOperationException('tasks.handoff_ci_unavailable', 'The repository requires Checks read access.', 503);

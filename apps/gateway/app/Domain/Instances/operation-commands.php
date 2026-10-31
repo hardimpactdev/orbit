@@ -1,9 +1,6 @@
 <?php
 
 declare(strict_types=1);
-use App\Domain\Instances\Deployment\InstanceChildReceiptCommand;
-use App\Domain\Instances\Deployment\InstanceDeploymentBudgetCommand;
-use App\Domain\Instances\Deployment\InstanceDeploymentReceiptCommand;
 use App\Domain\Instances\Environment\InstanceServedWebRootsReceiptCommand;
 use App\Domain\Instances\PhpRuntime\InstancePhpPlanCommand;
 use App\Domain\Instances\PhpRuntime\InstancePhpReceiptCommand;
@@ -12,11 +9,8 @@ use App\Domain\Instances\VpEnvironment\InstanceVpReceiptCommand;
 
 return [
     'instance.web-roots-receipt' => InstanceServedWebRootsReceiptCommand::class,
-    'instance.child-receipt' => InstanceChildReceiptCommand::class,
-    'instance.deployment-budget' => InstanceDeploymentBudgetCommand::class,
     'instance.php-plan' => InstancePhpPlanCommand::class,
     'instance.php-receipt' => InstancePhpReceiptCommand::class,
     'instance.vp-plan' => InstanceVpPlanCommand::class,
     'instance.vp-receipt' => InstanceVpReceiptCommand::class,
-    'instance.deployment-receipt' => InstanceDeploymentReceiptCommand::class,
 ];

@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\DependencyMergeProjection;
+use App\Domain\Tasks\TaskAnalysisProjection;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskParkProjection;
+use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskScriptProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
-return ['tasks.check' => ['workflow' => 'operation-task-check', 'projection' => TaskCheckProjection::class, 'private_material' => ['credentials' => 'github.task_repository']], 'tasks.script' => ['workflow' => 'operation-task-script', 'projection' => TaskScriptProjection::class], 'tasks.turn' => ['workflow' => 'operation-task-turn', 'projection' => TaskTurnProjection::class], 'tasks.dependency_merge' => [
+return ['tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'private_material' => ['credentials' => 'github.task_repository']], 'tasks.analyze' => ['workflow' => 'operation-task-analyze', 'projection' => TaskAnalysisProjection::class], 'tasks.check' => ['workflow' => 'operation-task-check', 'projection' => TaskCheckProjection::class, 'private_material' => ['credentials' => 'github.task_repository']], 'tasks.script' => ['workflow' => 'operation-task-script', 'projection' => TaskScriptProjection::class], 'tasks.turn' => ['workflow' => 'operation-task-turn', 'projection' => TaskTurnProjection::class], 'tasks.dependency_merge' => [
     'workflow' => 'operation-dependency-merge', 'projection' => DependencyMergeProjection::class,
     'private_material' => ['token' => 'github.dependency_merge'],
 ], 'tasks.park' => [

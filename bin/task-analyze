@@ -7,7 +7,6 @@ declare(strict_types=1);
 use App\Documentation\DocsImpact;
 use App\Documentation\DocsImpactReport;
 use App\Domain\Tasks\TaskAnalysisPlan;
-use App\Domain\Tasks\TaskAnalysisReport;
 use App\Support\StrictJson;
 
 $root = dirname(__DIR__);
@@ -17,7 +16,7 @@ $failure = static function (string $code, ?int $requiredBytes = null): never {
     exit(1);
 };
 try {
-    foreach (['apps/docs/vendor/autoload.php', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisReport.php'] as $path) {
+    foreach (['apps/docs/vendor/autoload.php', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php'] as $path) {
         if (! is_file($root.'/'.$path) || ! is_readable($root.'/'.$path)) {
             throw new RuntimeException('Required analysis tooling is unavailable.');
         }
@@ -40,7 +39,7 @@ try {
     }
     $input = StrictJson::fields(StrictJson::decode($bytes, TaskAnalysisPlan::RequestBytes + 512), ['execution_id', 'plan', 'plan_sha256', 'base', 'head', 'tree']);
     if (! is_string($input['execution_id']) || preg_match('/\A[a-f0-9]{32}\z/D', $input['execution_id']) !== 1 || ! is_string($input['plan_sha256'])) {
-        throw new InvalidArgumentException('Invalid Gateway execution identity.');
+        throw new InvalidArgumentException('Invalid execution identity.');
     }
     foreach (['base', 'head', 'tree'] as $key) {
         if (! is_string($input[$key]) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $input[$key]) !== 1) {
@@ -105,10 +104,10 @@ try {
         'diagnostics' => [], 'report' => ['schema' => 'orbit.docs-impact.v1', 'data' => $report],
     ];
     $output = json_encode($envelope, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
-    if (strlen($output) > TaskAnalysisReport::MaxBytes) {
+    if (strlen($output) > TaskAnalysisPlan::ReportBytes) {
         $failure('tasks.analysis_report_too_large', strlen($output));
     }
-    StrictJson::decode($output, TaskAnalysisReport::MaxBytes, 24);
+    StrictJson::decode($output, TaskAnalysisPlan::ReportBytes, 24);
     fwrite(STDOUT, $output);
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage()."\n");
