@@ -11,7 +11,7 @@ import { installProcess, ProcessInstallation } from "./process-installation.ts";
 import { Preparation, startActions, StartInput } from "./start.ts";
 
 const Args = DirectArgs.extend({
-  kind: z.literal("process.create"),
+  kind: z.enum(["process.create", "process.update"]),
   node_id: z.number().int().positive(),
 });
 export const Creation = z.object({
@@ -58,7 +58,7 @@ export function createMethods(
   return {
     prepareCreate: {
       description:
-        "Prepare admitted Process creation before same-root publication",
+        "Prepare admitted Process installation before same-root publication",
       arguments: Args,
       execute: async (
         args: z.infer<typeof Args>,
@@ -76,7 +76,7 @@ export function createMethods(
         if (
           current.id !== args.operation_id || current.kind !== args.kind ||
           current.node_id !== args.node_id
-        ) throw new Error("Process creation parent differs");
+        ) throw new Error("Process installation parent differs");
         const vite = current.input.control.vite_plan !== undefined;
         let preparation: z.infer<typeof Preparation> = { vite, proceed: false };
         if (
@@ -126,7 +126,7 @@ export function createMethods(
             }
             if (!args.preparation.proceed) {
               throw new Error(
-                "Process creation was not prepared",
+                "Process installation was not prepared",
               );
             }
             if (

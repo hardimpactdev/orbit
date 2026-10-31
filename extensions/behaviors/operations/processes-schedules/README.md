@@ -190,3 +190,12 @@ refusal.
 The `reference-family` CI check compares this fixture SHA-256 with the public
 Gateway main fixture. The Gateway and native first-visit schema regressions
 remain in source and run locally; lane 19 restores required CI test execution.
+
+## Process update
+
+`process.update` records intent and runs `operation-process-update` on the exact
+admitted Node. It composes the canonical native Process installer in the same
+root, with Caddy publication before Vite activation. Command and environment
+bytes stay within the declared private-material callback and protected stdin.
+The obsolete combined polled family is removed. Unported parent kinds remain
+unavailable until their own native conversion lands.

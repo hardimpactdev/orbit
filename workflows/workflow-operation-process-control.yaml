@@ -8,7 +8,13 @@ inputs:
     node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
-      enum: [process.create, process.start, process.stop, process.restart, process.destroy],
+      enum: [
+        process.create,
+        process.start,
+        process.stop,
+        process.restart,
+        process.destroy,
+      ],
     }
   required: [operation_id, node_id, kind]
 jobs:
@@ -91,7 +97,7 @@ jobs:
             publication_status: '${{ has(steps.caddy) ? steps.caddy.status : "skipped" }}'
 
       - name: prepare-create
-        guard: '${{ inputs.kind != "process.create" }}'
+        guard: '${{ !(inputs.kind in ["process.create"]) }}'
         task:
           type: behavior
           behaviorType: "@nckrtl/process-control"
@@ -116,12 +122,19 @@ jobs:
             kind: "${{ inputs.kind }}"
             run_id: "${{ run.id }}"
       - name: install-create
-        guard: '${{ inputs.kind != "process.create" }}'
+        guard: '${{ !(inputs.kind in ["process.create"]) }}'
         dependsOn:
           - step: prepare-create
             condition: { type: succeeded }
           - step: creation_caddy
-            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+            condition: {
+              type: or,
+              conditions: [
+                { type: succeeded },
+                { type: failed },
+                { type: skipped },
+              ],
+            }
         task:
           type: behavior
           behaviorType: "@nckrtl/process-control"
