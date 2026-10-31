@@ -119,3 +119,61 @@ it('preserves null Docker defaults during relocation', function (): void {
     $relocated = $this->batch->placedProcess($this->process, '/srv/source', '/srv/destination');
     expect($relocated->working_directory)->toBeNull()->and($relocated->runtime_config['environment_file'])->toBeNull();
 });
+
+it('renders both captured installation placements before any transfer cutover', function (): void {
+    $sourceTarget = ($this->target)($this->source, '/srv/source');
+    $destinationTarget = ($this->target)($this->destination, '/srv/destination');
+    $captures = ($this->captures)();
+
+    $source = $this->batch->materialForCapture($this->instance, $sourceTarget, $captures['source_installations']);
+    $destination = $this->batch->materialForCapture($this->instance, $destinationTarget, $captures['destination_installations']);
+
+    expect($source->value[$this->process->id]['installation']['content'])->toContain('/srv/source/app', '/srv/source/.env')
+        ->and($destination->value[$this->process->id]['installation']['content'])->toContain('/srv/destination/app', '/srv/destination/.env', ProcessOperationAdmission::AccountHomeToken)
+        ->and($destination->value[$this->process->id]['installation']['environment'])->toContain('batch-private-value')
+        ->and($this->instance->fresh()->node_id)->toBe($this->source->id)
+        ->and($this->process->fresh()->working_directory)->toBe('/srv/source/app')
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('refuses pre-run material after the captured origin placement changes', function (string $field): void {
+    $target = ($this->target)($this->destination, '/srv/destination');
+    $capture = $this->batch->capture($this->instance, $target);
+    $this->instance->update($field === 'node_id' ? ['node_id' => $this->destination->id] : ['checkout_path' => '/srv/elsewhere']);
+
+    expect(fn () => $this->batch->materialForCapture($this->instance->fresh(), $target, $capture))->toThrow(ResourceOperationException::class);
+})->with(['node_id', 'checkout_path']);
+
+it('refuses stale prospective input or changed Process material before vault publication', function (string $change): void {
+    $target = ($this->target)($this->destination, '/srv/destination');
+    $capture = $this->batch->capture($this->instance, $target);
+    if ($change === 'descriptor') {
+        $capture['members'][0]['input']['content_hash'] = str_repeat('a', 64);
+    } else {
+        $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => ['PASSWORD' => 'replaced']]]);
+    }
+
+    expect(fn () => $this->batch->materialForCapture($this->instance, $target, $capture))->toThrow(ResourceOperationException::class);
+})->with(['descriptor', 'material']);
+
+it('renders prospective Docker material without moving its owner or exposing the environment in public input', function (): void {
+    $this->process->update(['runtime' => 'docker', 'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment' => ['PASSWORD' => 'docker-batch-private']]]);
+    $target = ($this->target)($this->destination, '/srv/destination');
+    $capture = $this->batch->capture($this->instance, $target);
+    $material = $this->batch->materialForCapture($this->instance, $target, $capture)->value[$this->process->id]['installation'];
+
+    expect($material['runtime'])->toBe('docker')
+        ->and($material['definition']['working_directory'])->toBe('/srv/destination/app')
+        ->and($material['definition']['environment']['PASSWORD'])->toBe('docker-batch-private')
+        ->and(json_encode($this->batch->input($capture)))->not->toContain('docker-batch-private')
+        ->and($this->instance->fresh()->node_id)->toBe($this->source->id)
+        ->and($this->process->fresh()->working_directory)->toBe('/srv/source/app');
+});
+
+it('refuses pre-run material for a destination that is no longer an active Linux Node', function (): void {
+    $target = ($this->target)($this->destination, '/srv/destination');
+    $capture = $this->batch->capture($this->instance, $target);
+    $this->destination->update(['status' => 'removing']);
+
+    expect(fn () => $this->batch->materialForCapture($this->instance, $target, $capture))->toThrow(ResourceOperationException::class);
+});
