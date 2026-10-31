@@ -24,12 +24,6 @@ export const RoleCertificates = z.object({
 );
 const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
-  kind: z.enum([
-    "node.role_add",
-    "node.role_converge",
-    "node.role_remove",
-    "node.role_relocate",
-  ]),
 });
 const Phase = z.object({
   phase: z.literal("certificates_published"),

@@ -20,18 +20,19 @@ class DirectRoleNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'node-worker', 'operations/_lib',
-                            'operations/node', 'operations/fleet', 'operations/tools', 'operations/routes', 'operations/processes-schedules', 'operations/integrations', 'operations/certificates', 'operations/analytics', 'operations/php')
+        self.copy_behaviors('automatic-deploy', 'node-worker', 'operations')
         module = self.repo / 'extensions/behaviors/operations/node/role_direct.ts'
         module.write_text('import {fixtureHttp, fixtureBaseline, fixtureFootprint, fixtureCli} from "./role_direct_native_fixture.ts";\n' +
                           module.read_text().replace('export const behavior = nodeRoleAdd();',
                             'export const behavior = nodeRoleAdd(fixtureBaseline, () => fixtureHttp, fixtureFootprint, fixtureCli);'))
+        removal = self.repo / 'extensions/behaviors/operations/node/role_removal.ts'
+        removal.write_text('import {fixtureSourceHttp,fixtureCleanup,fixtureGrace} from "./role_removal_native_fixture.ts";\n' + removal.read_text().replace('export const behavior = roleRemoval();','export const behavior = roleRemoval(() => fixtureSourceHttp, fixtureCleanup, fixtureGrace);'))
         for filename, factory in [('role_metrics.ts', 'roleMetrics'), ('role_publication.ts', 'rolePublication'), ('role_certificates.ts', 'roleCertificates')]:
             helper = self.repo / 'extensions/behaviors/operations/node' / filename
             helper.write_text('import {fixtureHttp} from "./role_direct_native_fixture.ts";\n' + helper.read_text().replace(f'export const behavior = {factory}();', f'export const behavior = {factory}(() => fixtureHttp);'))
         failure = self.repo / 'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {fixtureHttp} from "./node/role_direct_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
-        source = ROOT / 'workflows/workflow-operation-node-role-add-direct.yaml'
+        source = ROOT / ('workflows/workflow-' + getattr(self, 'workflow_name', 'operation-node-role-add-direct') + '.yaml')
         self.source = source.read_text()
         parsed = subprocess.run(['/tmp/lane0d-deno/deno', 'eval',
             'import {parse} from "jsr:@std/yaml@1.0.12"; console.log(JSON.stringify(parse(await new Response(Deno.stdin.readable).text())));'],
@@ -62,10 +63,10 @@ class DirectRoleNative(NativeTestCase):
         return json.loads((self.repo / 'native-role.json').read_text())
 
     def run_workflow(self, success=True):
-        self.cli('workflow', 'validate', 'operation-node-role-add-direct')
-        result = self.cli('workflow', 'run', 'operation-node-role-add-direct',
+        self.cli('workflow', 'validate', getattr(self, 'workflow_name', 'operation-node-role-add-direct'))
+        result = self.cli('workflow', 'run', getattr(self, 'workflow_name', 'operation-node-role-add-direct'),
                         '--input', 'operation_id=91', '--input', 'node_id=13',
-                        '--input', 'kind=node.role_add', success=success)
+                        '--input', 'kind=' + self.state['operation']['kind'], success=success)
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
         return result
 

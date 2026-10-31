@@ -16,6 +16,7 @@ const dependency = (job: string) => ({
 export function rolePublicationJobs(
   afterJob: string,
   options: {
+    stages?: readonly string[];
     prefix?: string;
     blocked?: string;
     /** Relocation publishes the target first, then withdraws the source after target readiness. */
@@ -50,9 +51,10 @@ export function rolePublicationJobs(
       ["dns", "dns_node_ids", "publishDns"],
     ]
   ) {
+    if (options.stages && !options.stages.includes(stage)) continue;
     const name = `${prefix}_${stage}`;
     let members = `steps.${inventory}.outputs.${field}`;
-    if (options.excludeNodeId) {
+    if (options.excludeNodeId && stage !== "dns") {
       members += `.filter(node, node != ${options.excludeNodeId})`;
     }
     jobs.push({

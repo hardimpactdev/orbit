@@ -1,3 +1,7 @@
+import {
+  roleRemovalJobs,
+  roleRemovalWorkflow,
+} from "./role_removal_workflow.ts";
 import { roleMetricsJobs } from "./role_metrics_workflow.ts";
 import { roleCertificateJobs } from "./role_certificates_workflow.ts";
 import { rolePublicationJobs } from "./role_publication_workflow.ts";
@@ -30,7 +34,11 @@ const dependency = (job: string, type = "succeeded") => ({
   condition: { type },
 });
 
-export function footprintWorkflow(role: boolean, convergeRole = false) {
+export function footprintWorkflow(
+  role: boolean,
+  convergeRole = false,
+  relocateRole = false,
+) {
   const behavior = role ? "node-role-add-direct" : "node-converge-direct";
   const task = (methodName: string, inputs: Fields = {}) => ({
     type: "behavior",
@@ -86,6 +94,12 @@ export function footprintWorkflow(role: boolean, convergeRole = false) {
       previous = certificates.lastJob;
       const publication = rolePublicationJobs(previous, {
         blocked: "!steps.admit.outputs.ready",
+        ...(relocateRole
+          ? {
+            excludeNodeId:
+              "steps.admit.outputs.snapshot.source_removal.node_id",
+          }
+          : {}),
       });
       jobs.push(...publication.jobs);
       previous = publication.lastJob;
@@ -193,6 +207,30 @@ export function footprintWorkflow(role: boolean, convergeRole = false) {
       }],
     });
   }
+  let cleanup: string | undefined;
+  if (relocateRole) {
+    jobs.push({
+      name: "target_ready_job",
+      dependsOn: [dependency("cli_job")],
+      steps: [{
+        name: "target_ready",
+        writes: true,
+        task: task("targetReady", {
+          admission: expression(
+            "has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs",
+          ),
+          ...results,
+          dependencies: expression(`{"ready": ${dependencies}}`),
+          cli: expression(
+            "has(steps.cli) && has(steps.cli.outputs) ? steps.cli.outputs : null",
+          ),
+        }),
+      }],
+    });
+    const source = roleRemovalJobs("target_ready_job");
+    jobs.push(...source.jobs);
+    cleanup = source.result;
+  }
   jobs.push({
     name: "projection",
     dependsOn: jobs.map((job) => dependency(String(job.name), "always")),
@@ -209,6 +247,7 @@ export function footprintWorkflow(role: boolean, convergeRole = false) {
         ...results,
         ...(role
           ? {
+            ...(cleanup ? { cleanup: expression(cleanup) } : {}),
             dependencies: expression(`{"ready": ${dependencies}}`),
             cli: expression(
               "has(steps.cli) && has(steps.cli.outputs) ? steps.cli.outputs : null",
@@ -252,11 +291,15 @@ export function footprintWorkflow(role: boolean, convergeRole = false) {
   });
   return {
     id: role
-      ? convergeRole
+      ? relocateRole
+        ? "48ce785a-7429-463e-a776-7b5a59bb2961"
+        : convergeRole
         ? "2c3425ad-31c5-4ab3-9039-191438338fb6"
         : "36af16a4-008f-41f3-81ed-187cb11b1a6b"
       : "daace7ba-223f-47b6-9452-7c0da7cf384e",
-    name: convergeRole
+    name: relocateRole
+      ? "operation-node-role-relocate-direct"
+      : convergeRole
       ? "operation-node-role-converge-direct"
       : `operation-${behavior}`,
     description:
@@ -270,7 +313,11 @@ export function footprintWorkflow(role: boolean, convergeRole = false) {
           type: "string",
           enum: [
             role
-              ? convergeRole ? "node.role_converge" : "node.role_add"
+              ? relocateRole
+                ? "node.role_relocate"
+                : convergeRole
+                ? "node.role_converge"
+                : "node.role_add"
               : "node.converge",
           ],
         },
@@ -288,6 +335,9 @@ export function generatedFootprintWorkflows() {
   return [
     footprintWorkflow(false),
     footprintWorkflow(true),
+    footprintWorkflow(true, true),
+    footprintWorkflow(true, false, true),
+    roleRemovalWorkflow(),
   ].map((workflow) => {
     return {
       path: new URL(

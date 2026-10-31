@@ -12,6 +12,15 @@ import { runMetricsProcess } from "../integrations/metrics_system.ts";
 const Id = z.number().int().positive();
 const Record = z.record(z.string(), z.unknown());
 const Code = z.string().regex(/^[a-z][a-z0-9_.-]{1,99}$/);
+export const ProxyNodeIds = z.array(z.union([z.literal(1), z.literal(18)])).max(
+  2,
+);
+export function hasRoleTransport(
+  member: { node_id: number; worker: boolean },
+  proxies: readonly number[] = [],
+) {
+  return member.worker || proxies.includes(member.node_id);
+}
 export const MetricsMember = z.object({
   node_id: Id,
   address: z.ipv4(),
@@ -37,12 +46,6 @@ export const RoleMetricsPlan = z.object({
 }).passthrough();
 const Args = DirectArgs.extend({
   node_id: Id,
-  kind: z.enum([
-    "node.role_add",
-    "node.role_converge",
-    "node.role_remove",
-    "node.role_relocate",
-  ]),
 });
 const Current = z.object({
   id: Id,
@@ -155,7 +158,13 @@ export function roleMetrics(
           return await output(ctx, "capture", {
             plan,
             ids,
-            available: plan === null || plan.fleet.every((node) => node.worker),
+            available: plan === null ||
+              plan.fleet.every((node) =>
+                hasRoleTransport(
+                  node,
+                  ProxyNodeIds.parse(current.input.proxy_node_ids ?? []),
+                )
+              ),
             runtime_required: plan !== null &&
               !(args.kind === "node.role_remove" &&
                 current.input.role === "metrics"),

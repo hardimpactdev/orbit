@@ -17,8 +17,16 @@ export const fixtureHttp: Http = async (method, path, body) => {
   const state = await read();
   state.calls.push({ method, path, body });
   if (method === "POST") {
-    state.operation.status = (body as { status: string }).status;
-    state.operation.result = (body as { result?: unknown }).result ?? null;
+    if (
+      (body as { result?: { target_completed?: boolean } })?.result
+        ?.target_completed
+    ) state.target_ready = true;
+    if (path.endsWith("/failure")) {
+      state.operation.status = "failed";
+    } else {
+      state.operation.status = (body as { status: string }).status;
+      state.operation.result = (body as { result?: unknown }).result ?? null;
+    }
   }
   await save(state);
   return { status: 200, body: { data: state.operation } };

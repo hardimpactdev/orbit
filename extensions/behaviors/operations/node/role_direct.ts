@@ -1,3 +1,4 @@
+import { hasRoleTransport } from "./role_metrics.ts";
 import { stripRolePublication } from "./role_publication.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
@@ -71,6 +72,7 @@ const FollowUpArgs = RoleArgs.extend({
 });
 const CliArgs = FollowUpArgs;
 const ProjectArgs = FollowUpArgs.extend({
+  cleanup: z.object({ ready: z.boolean() }).nullable().optional(),
   cli: CliConvergeResult.nullable(),
   dependencies: z.object({ ready: z.boolean() }).passthrough().nullable()
     .optional(),
@@ -219,7 +221,9 @@ export function nodeRoleAdd(
             ? "operation.cancelled"
             : snapshot.footprint.refusal
             ? snapshot.footprint.refusal
-            : snapshot.metrics_fleet?.fleet.some((node) => !node.worker)
+            : snapshot.metrics_fleet?.fleet.some((node) =>
+                !hasRoleTransport(node, snapshot.proxy_node_ids)
+              )
             ? "metrics.no_worker"
             : null;
           const admission = {
@@ -464,6 +468,28 @@ export function nodeRoleAdd(
           return { ok: !Object.hasOwn(outcome, "error_code") };
         },
       },
+      targetReady: {
+        description: "Record the confirmed target before source cleanup starts",
+        arguments: ProjectArgs,
+        execute: async (raw: z.infer<typeof ProjectArgs>, ctx: Context) => {
+          const args = ProjectArgs.parse(raw);
+          if (args.kind !== "node.role_relocate") {
+            throw new Error("role.target_root_changed");
+          }
+          const { result, code, cancelled } = roleResult(args);
+          if (code || cancelled) throw new Error(code ?? "operation.cancelled");
+          await gateway(args, ctx).project({
+            status: "running",
+            started_at: args.admission.started_at,
+            result: { ...result, target_completed: true },
+          });
+          await ctx.writeResource("outcome", "target-ready", {
+            stage: "target-ready",
+            ok: true,
+          });
+          return { ready: true };
+        },
+      },
       project: {
         description:
           "Project bounded assignment state and optional follow-ups without Gateway execution",
@@ -474,7 +500,16 @@ export function nodeRoleAdd(
           if (snapshot.node_id !== args.node_id) {
             throw new Error("Projection changed the admitted Node");
           }
-          const { result, code, cancelled } = roleResult(args);
+          const evaluated = roleResult(args);
+          const cleanupFailed = args.kind === "node.role_relocate" &&
+            !evaluated.code && args.cleanup?.ready !== true;
+          const code = cleanupFailed
+            ? "node_role.source_cleanup_failed"
+            : evaluated.code;
+          const cancelled = evaluated.cancelled;
+          const result = cleanupFailed
+            ? { ...evaluated.result, error_code: code, failed_step: "source" }
+            : evaluated.result;
           await gateway(args, ctx).project({
             status: cancelled ? "cancelled" : code ? "failed" : "succeeded",
             started_at: args.admission.started_at,

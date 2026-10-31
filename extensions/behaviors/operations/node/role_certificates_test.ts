@@ -173,3 +173,17 @@ Deno.test("role certificate jobs use canonical models and fixed signer, then roo
   assertEquals(jobs.at(-1)?.name, generated.lastJob);
   assertThrows(() => roleCertificateJobs("baseline", { prefix: 'bad"prefix' }));
 });
+
+Deno.test("a parent owns its aggregate certificate view without impersonating a standalone role kind", async () => {
+  const f = new Fixture();
+  f.current.kind = "node.add";
+  await f.behavior.methods.inventory.execute(
+    { ...args, kind: "node.add" },
+    f.ctx,
+  );
+  assertEquals(f.posts, []);
+  f.current.id++;
+  await assertRejects(() =>
+    f.behavior.methods.inventory.execute({ ...args, kind: "node.add" }, f.ctx)
+  );
+});

@@ -1,3 +1,4 @@
+import { roleRemovalWorkflow } from "./role_removal_workflow.ts";
 import { assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { BaselineStage } from "./role_direct_local.ts";
 import { parse } from "jsr:@std/yaml@1.0.12";
@@ -26,7 +27,16 @@ Deno.test("checked-in footprint DAGs match their single template", async () => {
     const convergeRole = path.pathname.endsWith(
       "node-role-converge-direct.yaml",
     );
-    assertEquals(parse(text), footprintWorkflow(role, convergeRole));
+    assertEquals(
+      parse(text),
+      path.pathname.endsWith("node-role-remove-direct.yaml")
+        ? roleRemovalWorkflow()
+        : footprintWorkflow(
+          role,
+          convergeRole,
+          path.pathname.endsWith("node-role-relocate-direct.yaml"),
+        ),
+    );
   }
 });
 

@@ -19,6 +19,7 @@ const FreshFields = new Set([
   "ingress_firewall",
   "php_publication",
   "private_dns_publication",
+  "role_removal",
 ]);
 
 /** Fresh participant artifacts are outside the immutable role snapshot schema. */
@@ -29,14 +30,7 @@ export function stripRolePublication(raw: unknown): unknown {
   );
 }
 
-const Args = DirectArgs.extend({
-  kind: z.enum([
-    "node.role_add",
-    "node.role_converge",
-    "node.role_remove",
-    "node.role_relocate",
-  ]),
-});
+const Args = DirectArgs.extend({});
 const Current = z.object({
   id: z.number().int().positive(),
   kind: Args.shape.kind,

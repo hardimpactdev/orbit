@@ -137,7 +137,7 @@ Deno.test("relocation target publication excludes source until the owning withdr
         String((step.forEach as { in: string }).in).includes(
           ".filter(node, node != steps.admit.outputs.source_node_id)",
         ),
-        true,
+        !String(step.name).includes("_dns_"),
       );
     }
   }
@@ -161,4 +161,17 @@ Deno.test("fresh public artifacts are stripped without weakening immutable role 
   assertEquals(Object.keys(raw).length, 7);
   assertEquals(stripRolePublication(null), null);
   assertEquals(stripRolePublication([]), []);
+});
+
+Deno.test("parent publication keeps its actual kind and exact immutable root", async () => {
+  const f = new Fixture();
+  f.current.kind = "node.add";
+  await f.behavior.methods.inventory.execute(
+    { ...args, kind: "node.add" },
+    ctx,
+  );
+  f.current.node_id++;
+  await assertRejects(() =>
+    f.behavior.methods.inventory.execute({ ...args, kind: "node.add" }, ctx)
+  );
 });

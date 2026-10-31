@@ -1,5 +1,5 @@
 import { RoleCertificates } from "./role_certificates.ts";
-import { RoleMetricsPlan } from "./role_metrics.ts";
+import { ProxyNodeIds, RoleMetricsPlan } from "./role_metrics.ts";
 import { RolePublication } from "./role_publication.ts";
 import { ParentManagerInput } from "./manager_parent.ts";
 import { RoleRuntime } from "./role_runtime_local.ts";
@@ -51,6 +51,9 @@ export const Prerequisites = z.object({
   composer_home: z.boolean(),
 }).strict();
 export const RoleSnapshot = z.object({
+  proxy_node_ids: ProxyNodeIds.optional(),
+  source_removal: z.record(z.string(), z.unknown()).optional(),
+  withdrawal_grace_seconds: z.union([z.literal(0), z.literal(31)]).optional(),
   publication: RolePublication,
   certificates: RoleCertificates.optional(),
   metrics_fleet: RoleMetricsPlan.nullable().optional(),
