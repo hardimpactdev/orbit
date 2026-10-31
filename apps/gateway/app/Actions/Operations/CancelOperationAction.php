@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationExecutors;
@@ -83,6 +84,17 @@ final readonly class CancelOperationAction
                 $executors->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
             }
         });
+
+        if ($this->unsubmitted($operation)) {
+            app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation): void {
+                DB::transaction(function () use ($operation): void {
+                    $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+                    if ($this->unsubmitted($operation) && $this->store->cancelQueued($operation)) {
+                        $this->store->change($operation, ['error_code' => 'operation.cancelled']);
+                    }
+                });
+            });
+        }
 
         if (! $operation->status->terminal() && ! app(OperationExecutors::class)->swamp($operation->kind)) {
             $this->runner->cancelWaiting($operation, $targetEnding);
@@ -176,5 +188,26 @@ final readonly class CancelOperationAction
     private function native(Operation $operation): bool
     {
         return DirectOperation::owns($operation) || app(OperationKinds::class)->directOnly($operation->kind);
+    }
+
+    /** Only admission can establish that no native request has ever been attempted. */
+    private function unsubmitted(Operation $operation): bool
+    {
+        $definition = app(DirectOperation::class)->definition($operation->kind);
+        $state = $operation->state ?? [];
+        $target = $state['executor_target'] ?? null;
+
+        return $definition !== null && DirectOperation::owns($operation)
+            && ($state['swamp_submission'] ?? null) === 'unattempted'
+            && array_diff(array_keys($state), [$definition['writer_state'], 'swamp_submission', 'executor_target']) === []
+            && is_array($target) && count($target) === 3
+            && array_diff(array_keys($target), ['node_id', 'target_type', 'target_id']) === []
+            && ($target['node_id'] ?? null) === $operation->node_id && ($target['target_type'] ?? null) === $operation->target_type
+            && ($target['target_id'] ?? null) === $operation->target_id
+            && $operation->status === OperationStatus::Queued && $operation->attempts === 0
+            && $operation->cancel_requested_at !== null && $operation->started_at === null && $operation->dispatched_at === null
+            && $operation->finished_at === null && $operation->worker === null && $operation->lock_key === null
+            && $operation->current_step === null && $operation->result === null && $operation->parent_operation_id === null
+            && ! $operation->steps()->exists() && ! $operation->children()->exists();
     }
 }

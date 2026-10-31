@@ -96,7 +96,10 @@ final readonly class DirectOperation
     {
         $definition = $this->definition($kind);
 
-        return $definition === null || $writer === null ? [] : [$definition['writer_state'] => $writer];
+        return $definition === null || $writer === null ? [] : [
+            $definition['writer_state'] => $writer,
+            ...($writer === 'direct' ? ['swamp_submission' => 'unattempted'] : []),
+        ];
     }
 
     /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>}|null */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -32,6 +33,13 @@ final readonly class StartSwampRun
 
     private function submit(Operation $operation, bool $historyFirst): void
     {
+        if (! app(OperationAttemptLease::class)->hold($operation->id, fn () => $this->submitHeld($operation, $historyFirst))) {
+            throw $this->uncertain();
+        }
+    }
+
+    private function submitHeld(Operation $operation, bool $historyFirst): void
+    {
         $declaration = app(DirectOperation::class)->definition($operation->kind);
         if ($declaration === null || ! DirectOperation::owns($operation)) {
             throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
@@ -51,6 +59,9 @@ final readonly class StartSwampRun
         $payload = ['workflowIdOrName' => $workflow, 'inputs' => $inputs, 'runtimeTags' => ['orbit_start_key' => $key]];
         $started = microtime(true);
         $outcome = 'uncertain';
+        if (($operation->state['swamp_submission'] ?? null) === 'unattempted') {
+            $operation->update(['state' => [...$operation->state, 'swamp_submission' => 'attempted']]);
+        }
         try {
             $runId = null;
             if (! $historyFirst) {
