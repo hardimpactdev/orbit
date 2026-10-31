@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Operation;
-use App\Models\Process;
+use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
+use LogicException;
 
 /** Existing environment values, delivered only to their exact native Instance parent. */
 final readonly class NativeInstanceEnvironmentMaterial implements OperationSecretSource
@@ -23,6 +24,7 @@ final readonly class NativeInstanceEnvironmentMaterial implements OperationSecre
         private InstanceEnvironmentStore $store,
         private InstanceEnvironmentRenderer $renderer,
         private InstanceTestEnvironment $testing,
+        private ProcessInstanceOperation $processes,
     ) {}
 
     public function name(): string
@@ -90,23 +92,32 @@ final readonly class NativeInstanceEnvironmentMaterial implements OperationSecre
     public function forContext(InstanceEnvironmentContext $context, bool $explicit = true): array
     {
         $instance = Instance::query()->findOrFail($context->instanceId);
-        $pin = app(AgentDelivery::class)->pin($context->node);
         $runtime = null;
         if ($explicit && $context->environment === 'production') {
-            $requiresRestart = Process::query()->whereIn('owner_type', Instance::morphTypes())
-                ->where('owner_id', $instance->id)->where('status', LifecycleStatus::Active)
-                ->where('desired_state', DesiredProcessState::Running)->where('restart_on_deploy', true)->exists();
-            if ($requiresRestart) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Native environment Process restart composition is unavailable.', 409);
+            $identity = $instance->selected_php_version === null ? null : ProductionPhpRuntimeIdentity::from($instance);
+            $members = $this->processes->capture($instance, 'process.restart_instance')['members'];
+            if (! is_array($members)) {
+                throw new LogicException('The captured Process members must be a list.');
             }
-            if ($instance->selected_php_version !== null) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Native production PHP environment refresh is unavailable.', 409);
+            $processes = [];
+            foreach ($members as $value) {
+                $member = ValidatedData::object($value);
+                $processes[] = ['id' => ValidatedData::integer($member['id']), 'input' => Arr::only(ValidatedData::object($member['input']), [
+                    'process_id', 'agent_sha256', 'runtime', 'name', 'on_demand', 'directory', 'vite', 'vite_plan',
+                ])];
             }
+            $runtime = ['config' => $identity === null ? null : [
+                'user' => $identity->user, 'home' => $identity->home, 'version' => $identity->version,
+                'application' => $identity->applicationDirectory(),
+            ], 'php' => $identity === null ? null : [
+                'user' => $identity->user, 'home' => $identity->home, 'version' => $identity->version,
+                'marker' => $identity->marker(), 'deadline_seconds' => 30,
+            ], 'processes' => $processes];
         }
 
         return ['instance_id' => $context->instanceId, 'node_id' => $context->nodeId,
             'environment' => $context->environment, 'base' => $context->path, 'user' => $context->executionUser,
-            'agent_sha256' => $pin, 'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,
+            'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,
             'required_capacity' => InstanceEnvironmentValidator::MaximumFileBytes * 2,
             'preserve_workload_keys' => $explicit, 'runtime' => $runtime];
     }

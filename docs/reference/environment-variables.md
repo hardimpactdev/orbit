@@ -84,7 +84,7 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 The admission freezes the environment, account, application path and agent digest from stored placement. Development uses the configured Node account. Production uses the Instance production account. Caller input cannot choose an account or a Node. Native jobs target `orbit-node-N` with the string Node label. There is no Gateway child, agent relay, receipt protocol or polled writer.
 
-The local preflight refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization that needs a PHP runtime refresh or an opted-in Process restart returns `operation.kind_unavailable` before admission. Development and file-only parent preparation use the local filesystem steps.
+The local preflight refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization composes native config-cache preparation, FPM OPcache refresh and opted-in Process restarts after the file writes. Development and file-only parent preparation use only the local filesystem steps.
 
 ## Parent environment steps
 
@@ -167,7 +167,7 @@ When Git cannot report whether it tracks the file, for example because of a dubi
 
 Development synchronization changes only `.env` and `.env.testing`. The placed Swamp worker performs these writes directly as the admitted Node account, using fixed local filesystem commands. It never calls an agent action.
 
-Production synchronization that needs PHP cache refresh, FPM refresh or an opted-in Process restart returns `operation.kind_unavailable` before admission. No file changes or private material reads occur. These runtime steps require their owners' native lower actions. Production with no selected PHP version and no opted-in Process restart can synchronize files only.
+Production synchronization rebuilds an existing Laravel configuration cache into a private candidate, boots Artisan against it and replaces the old cache only after success. An uncached application stays uncached. It then refreshes the dedicated FPM OPcache through the canonical PHP action and restarts active Processes whose desired state is running and whose `restart_on_deploy` setting is true. All steps run on the admitted Node within the same native root. A failed cache build preserves the previous cache and prevents FPM refresh and Process restarts. A missing current release skips runtime refresh.
 
 The Gateway records the native outcome and updates the list of owned keys only after success. A failed root preserves the previous key list and pending-runtime marker. Repeat synchronization after correcting the bounded error.
 
@@ -233,7 +233,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
 | `env.config_cache_refresh_failed` | 502 | The file changed, but config cache preparation failed or was unconfirmed. FPM opcache was not reset. |
 | `env.php_runtime_refresh_failed` | 502 | The file changed and config cache preparation completed, but FPM opcache refresh failed. |
-| `operation.kind_unavailable` | 409 | Production synchronization needs PHP runtime refresh or an owned Process restart whose native composition is not implemented. No Operation or file change is admitted. |
+| `operation.kind_unavailable` | 409 | Native synchronization is not registered. No Operation or file change is admitted. |
 | `env.runtime_refresh_failed` | 502 | Orbit could not record or confirm the runtime refresh. No application output is returned. Retry env-sync. |
 | `env.sync_would_drop_keys` | 409 | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
 | `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
@@ -262,7 +262,7 @@ A write that pulls edits from the Node would replace stored intent with changes 
 
 Development synchronization must work before dependencies are installed and before the application runs, so it only writes files. Production FPM disables opcache timestamp validation. Writing `.env` alone cannot make a cached Laravel configuration take effect there. A changed production sync therefore rebuilds an existing config cache before resetting opcache.
 
-Production environment refresh is unavailable until the native PHP and Process actions can be composed in this root. The Gateway refuses before admission instead of writing files whose runtime refresh cannot finish.
+Swamp composes the canonical PHP and Process actions in the environment root. The Gateway captures their public intent and records the final outcome; it does not execute or revalidate runtime work. Environment contents and application output never enter public results.
 
 ### The Node role decides isolation
 
