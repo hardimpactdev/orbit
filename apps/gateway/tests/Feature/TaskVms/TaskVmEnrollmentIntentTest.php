@@ -24,6 +24,8 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -305,4 +307,49 @@ it('retains the trusted first-visit SSH identity through the final readiness pro
     expect($vm->fresh()->node->ssh_host_fingerprint)->toBe($fingerprint);
     expect(app(ManagedNodeEligibility::class)->allows($vm->fresh()->node))->toBeTrue();
     expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+});
+
+it('keeps router teardown fenced until its outer admission callback returns', function (): void {
+    $vm = nativeEnrollmentVm();
+    $intent = app(TaskVmEnrollmentIntent::class);
+    $captured = $intent->admit(function () use ($intent, $vm): array {
+        $other = Cache::lock(ModelKeyIssuer::Lock, 600);
+        expect($other->get())->toBeFalse();
+        $input = $intent->capture($vm);
+        expect($vm->fresh()->model_key)->not->toBeNull();
+        expect($other->get())->toBeFalse();
+
+        return $input;
+    });
+    expect($captured['task_vm_id'])->toBe($vm->id);
+    $released = Cache::lock(ModelKeyIssuer::Lock, 600);
+    expect($released->get())->toBeTrue();
+    $released->release();
+});
+
+it('keeps one teardown fence through nested allocation and provision admission callbacks', function (): void {
+    $vm = nativeEnrollmentVm();
+    $intent = app(TaskVmEnrollmentIntent::class);
+    $intent->admit(function () use ($vm): void {
+        DB::transaction(function () use ($vm): void {
+            $nested = app(TaskVmEnrollmentIntent::class);
+            $nested->admit(fn (): array => $nested->capture($vm));
+            expect(Cache::lock(ModelKeyIssuer::Lock, 600)->get())->toBeFalse();
+            expect($vm->fresh()->model_key)->not->toBeNull();
+        });
+        expect(Cache::lock(ModelKeyIssuer::Lock, 600)->get())->toBeFalse();
+    });
+    $released = Cache::lock(ModelKeyIssuer::Lock, 600);
+    expect($released->get())->toBeTrue();
+    $released->release();
+});
+
+it('releases the admission scope after an exception without retaining nested ownership', function (): void {
+    $intent = app(TaskVmEnrollmentIntent::class);
+    expect(fn () => $intent->admit(fn () => $intent->admit(fn () => throw new RuntimeException('admission refused'))))
+        ->toThrow(RuntimeException::class, 'admission refused');
+    $released = Cache::lock(ModelKeyIssuer::Lock, 600);
+    expect($released->get())->toBeTrue();
+    $released->release();
+    expect($intent->admit(fn (): string => 'fresh admission'))->toBe('fresh admission');
 });
