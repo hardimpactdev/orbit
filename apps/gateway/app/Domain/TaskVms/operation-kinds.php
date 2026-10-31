@@ -9,7 +9,7 @@ use App\Domain\TaskVms\TaskVmCommandContracts;
 use App\Domain\TaskVms\TaskVmDestroyCancelGuard;
 use App\Domain\TaskVms\TaskVmEffectCompletion;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
-use App\Domain\TaskVms\TaskVmSweepProjection;
+use App\Domain\TaskVms\TaskVmSweepContracts;
 use App\Domain\TaskVms\TaskVmUpCloudImageContracts;
 
 return (static function (): array {

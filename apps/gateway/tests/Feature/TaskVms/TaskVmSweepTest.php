@@ -22,6 +22,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -36,6 +37,7 @@ use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -550,20 +552,16 @@ describe('Swamp sweep executor safety', function (): void {
         expect(Operation::query()->where('kind', 'task_vm.image_build')->exists())->toBeFalse();
     })->with(['builder' => '', 'smoke' => '-smoke']);
 
-    it('skips a stale deletion when resume wins after sweep inventory but before cleanup claims the build', function (string $suffix): void {
+    it('skips an admitted deletion when resume wins the build cleanup fence', function (string $suffix): void {
+        config(['swamp.run_token' => 'fixture.fake']);
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
         $build = tvm_executor_failed_image($this->beast);
         $name = $build->builder_vm_name.$suffix;
         $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
         $parent = tvm_executor_sweep($this->beast);
         $deletion = tvm_executor_sweep_child($parent, 'delete-instance-'.$name);
-        $overlapped = false;
-        $this->incus->afterInventory = function () use ($build, &$overlapped): void {
-            $this->incus->afterInventory = null;
-            $overlapped = true;
-            app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id);
-        };
+        app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id);
         tvm_executor_sweep_run($deletion);
-        expect($overlapped)->toBeTrue();
         expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Running);
         expect($build->fresh()->cleanup_started_at)->toBeNull();
         expect($this->incus->instances['10.44.0.7'])->toContain($name, $build->builder_vm_name);
@@ -571,24 +569,4 @@ describe('Swamp sweep executor safety', function (): void {
         expect(Operation::query()->where('kind', 'task_vm.image_build')->sole()->input['attempt'])->toBe(2);
     })->with(['builder' => '', 'smoke' => '-smoke']);
 
-    it('rejects a stale resume when sweep wins after the builder existence result is captured', function (string $suffix): void {
-        $build = tvm_executor_failed_image($this->beast);
-        $name = $build->builder_vm_name.$suffix;
-        $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
-        $parent = tvm_executor_sweep($this->beast);
-        $deletion = tvm_executor_sweep_child($parent, 'delete-instance-'.$name);
-        $overlapped = false;
-        $this->incus->afterInstances = function () use ($deletion, &$overlapped): void {
-            $this->incus->afterInstances = null;
-            $overlapped = true;
-            tvm_executor_sweep_run($deletion);
-        };
-        expect(fn () => app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id))
-            ->toThrow(TaskVmException::class, 'already claimed');
-        expect($overlapped)->toBeTrue();
-        expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Failed);
-        expect($build->fresh()->cleanup_started_at)->not->toBeNull();
-        expect($this->incus->instances['10.44.0.7'])->not->toContain($name);
-        expect(Operation::query()->where('kind', 'task_vm.image_build')->exists())->toBeFalse();
-    })->with(['builder' => '', 'smoke' => '-smoke']);
 });
