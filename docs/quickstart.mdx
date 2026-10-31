@@ -127,7 +127,7 @@ Check each checkpoint before you continue to the next step.
     php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' --no-interaction
     ```
 
-    Gateway bootstrap currently refuses with `gateway.bootstrap_unavailable` before changing keys, Nodes, roles, or host state. The PHP bootstrap executor is retired while native Swamp bootstrap is prepared. Existing installations remain usable. Do not run the retired bootstrap to repair or rekey an observer.
+    Gateway bootstrap currently refuses with `gateway.bootstrap_unavailable` before changing keys, Nodes, roles, or host state. Native Swamp bootstrap must be installed before this command can initialize a Gateway. Existing installations remain usable. This command cannot repair or rekey an observer.
 
     **Checkpoint:** every service reports `active`, and `caddy version` reports 2.9.0 or newer:
 
