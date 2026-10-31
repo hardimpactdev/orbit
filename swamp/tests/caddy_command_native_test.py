@@ -409,6 +409,15 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             ((self.host / "Caddyfile").resolve().parent / "loaded.json").is_file()
         )
 
+    def test_composed_candidate_refuses_an_intervening_revision_before_effects(self):
+        live = self.host / "Caddyfile"
+        live.write_text("newer accepted config")
+        self.input["intent"]["caddy_publication"]["expected_current"] = {"sha256": "a" * 64, "target": str(live)}
+        self.run_caddy(success=False)
+        self.assertEqual(live.read_text(), "newer accepted config")
+        self.assertFalse((self.host / ".orbit-staging").exists())
+        self.assertFalse(self.audit.exists())
+
     def test_native_unchanged_does_not_stage_enable_or_reload(self):
         self.run_caddy()
         prior_stages = list((self.host / ".orbit-staging").iterdir())
