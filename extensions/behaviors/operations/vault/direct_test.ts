@@ -12,7 +12,10 @@ const identity = {
   run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
 };
 for (
-  const [kind, backend] of [["vault.sync", "synced"]] as const
+  const [kind, backend] of [["vault.sync", "synced"], [
+    "vault.setup",
+    "configured",
+  ]] as const
 ) {
   Deno.test(`${kind} fetches private input and projects only safe metadata`, async () => {
     const projections: unknown[] = [];

@@ -8,7 +8,7 @@ import {
 } from "../_lib/direct.ts";
 import { collection } from "./collection.ts";
 const Args = DirectArgs.extend({
-  kind: z.enum(["vault.sync"]),
+  kind: z.enum(["vault.sync", "vault.setup"]),
 });
 const Text = z.string().max(1024);
 const Metadata = z.object({

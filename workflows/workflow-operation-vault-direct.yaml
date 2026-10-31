@@ -6,7 +6,7 @@ inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
     node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [vault.sync] }
+    kind: { type: string, enum: [vault.sync, vault.setup] }
   required: [operation_id, node_id, kind]
 jobs:
   - name: vault

@@ -256,10 +256,7 @@ Deno.test("cancellation after an uncertain effect reconciles the same receipt", 
 
 Deno.test("Vault carries only a secret reference and persists only safe collection metadata", async () => {
   for (
-    const [action, backend] of [["setup", "configured"], [
-      "teardown",
-      "absent",
-    ]]
+    const [action, backend] of [["teardown", "absent"]]
   ) {
     const f = new Fixture();
     f.operation.kind = `vault.${action}`;
@@ -292,7 +289,7 @@ Deno.test("Vault carries only a secret reference and persists only safe collecti
 });
 Deno.test("Vault refuses wrong backend and retains machine-readable failure", async () => {
   const f = new Fixture();
-  f.operation.kind = "vault.setup";
+  f.operation.kind = "vault.teardown";
   f.operation.input = {
     configuration: { $secret: "vault.credentials", id: 2 },
   };

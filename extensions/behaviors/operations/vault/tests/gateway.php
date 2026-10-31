@@ -16,7 +16,9 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Extensions\Vault\Actions\SetupVaultAction;
 use Orbit\Extensions\Vault\Actions\SyncVaultAction;
+use Orbit\Extensions\Vault\Data\SetupVaultData;
 use Orbit\Extensions\Vault\Domain\VaultConfiguration;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
@@ -232,25 +234,41 @@ try {
             'collection_id' => item($collection, 'id'), 'collection_name' => 'Isolated test collection'];
         app(SettingRepository::class)->put(fixtureScope(), 'vault.fixture',
             json_encode(['configuration' => $config, 'hidden' => $hidden], JSON_THROW_ON_ERROR), SettingValueProtection::Secret);
-        app(VaultSettings::class)->put(VaultConfiguration::fromStoredArray($config));
+        if (getenv('VAULT_TEST_ACTION') !== 'setup') {
+            app(VaultSettings::class)->put(VaultConfiguration::fromStoredArray($config));
+        }
         DatabaseConnection::create(['slug' => 'vault-dev', 'driver' => 'pgsql', 'node_id' => 9,
             'host' => '127.0.0.1', 'port' => 5432, 'database' => 'isolated', 'username' => 'fixture', 'password' => $hidden]);
         echo json_encode(['initialized' => true, 'node_id' => 9, 'isolated' => true]);
     } elseif ($mode === 'admit') {
-        $operation = app(SyncVaultAction::class)->execute('isolated-real-http-canary');
+        if (getenv('VAULT_TEST_ACTION') === 'setup') {
+            $config = vaultFixtureData()['configuration'];
+            insist(app(VaultSettings::class)->configuration() === null, 'fixture_setup_not_fresh');
+            $operation = app(SetupVaultAction::class)->execute(
+                new SetupVaultData($config['url'], $config['client_id'],
+                    $config['client_secret'], $config['master_password'], $config['organization_id'], $config['collection_id']));
+        } else {
+            $operation = app(SyncVaultAction::class)->execute('isolated-real-http-canary');
+        }
         $operation->refresh();
         echo json_encode(['id' => $operation->id, 'run_id' => $operation->state['swamp_run_id'] ?? null,
             'writer' => $operation->state['vault_writer'] ?? null]);
     } elseif ($mode === 'inspect') {
-        $operation = Operation::where('kind', 'vault.sync')->sole();
+        $operation = Operation::where('kind', 'vault.'.getenv('VAULT_TEST_ACTION'))->sole();
+        $stored = app(VaultSettings::class)->configuration()?->toStoredArray();
+        $expected = vaultFixtureData()['configuration'];
+        $matches = $stored !== null;
+        foreach (['url', 'client_id', 'client_secret', 'master_password', 'organization_id', 'collection_id'] as $key) {
+            $matches = $matches && ($stored[$key] ?? null) === $expected[$key];
+        }
         $bytes = json_encode(['id' => $operation->id, 'status' => $operation->status->value,
             'result' => $operation->result, 'error_code' => $operation->error_code,
             'run_id' => $operation->state['swamp_run_id'] ?? null,
-            'items' => VaultItem::count()]);
+            'items' => VaultItem::count(), 'configured' => $stored !== null, 'configuration_matches_fixture' => $matches]);
         vaultFixtureScan($bytes);
         echo $bytes;
     } elseif ($mode === 'diagnose') {
-        $operation = Operation::where('kind', 'vault.sync')->sole();
+        $operation = Operation::where('kind', 'vault.'.getenv('VAULT_TEST_ACTION'))->sole();
         $socket = app(WebSocketClient::class);
         $socket->connect(new WebSocketEndpoint('127.0.0.1', 443, 'swamp.orbit', '/', $scratch.'/cert.pem', 'isolated-auth-none'), 5);
         $id = bin2hex(random_bytes(8));

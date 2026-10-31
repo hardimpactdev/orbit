@@ -39,6 +39,11 @@ class VaultDirectNative(NativeTestCase):
         self.run_workflow()
         self.assertEqual(self.read()['operations']['17']['status'],'succeeded')
         self.assertEqual(self.read()['effects'],1)
+    def test_setup_uses_shared_material_and_projects_configuration_metadata(self):
+        self.add_operation(17, 'vault.setup')
+        self.run_workflow()
+        self.assertEqual(self.read()['operations']['17']['result']['data']['backend'],'configured')
+        self.assertEqual(self.read()['effects'],1)
     def test_projection_resume_survives_an_interleaved_gateway_operation(self):
         self.state['loseProjection']=True;self.save()
         first=self.run_workflow(success=False)
