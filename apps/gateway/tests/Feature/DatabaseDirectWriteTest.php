@@ -37,12 +37,11 @@ it('starts direct SQLite writes with only fixed private references and the safe 
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertConflict();
 });
 
-it('refuses a changed SQLite path and invalid success without projecting a row count', function (): void {
+it('refuses a changed SQLite path and projects the bounded native pre-effect refusal', function (): void {
     $this->connection->update(['path' => '/tmp/foreign.sqlite']);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
     $this->connection->update(['path' => '/tmp/write-proof.sqlite']);
-    $this->postJson($this->path.'/result', [...$this->finished, 'result' => ['backend' => 'active']])->assertUnprocessable();
-    $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.query_failed', 'result' => ['error_code' => 'database.query_failed']])->assertOk();
+    $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.write_outcome_unknown', 'result' => ['error_code' => 'database.write_outcome_unknown']])->assertOk();
 });
 
 it('keeps PDO connection material private on the exact admitted Gateway worker', function (string $driver): void {
@@ -68,3 +67,11 @@ it('refuses changed network connection identity before releasing private SQL', f
     $this->getJson($path.'?run_id='.$this->runId)->assertUnprocessable();
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable()->assertDontSee('UPDATE proof');
 })->with(['host', 'node_id']);
+
+it('uses the shared result whitelist to omit nested values under declared scalar fields', function (string $field): void {
+    $result = [...$this->finished['result'], $field => ['private' => 'nested-private-sentinel']];
+    $this->postJson($this->path.'/result', [...$this->finished, 'result' => $result])->assertOk()->assertDontSee('nested-private-sentinel');
+    unset($result[$field]);
+    expect($this->operation->fresh()->result)->toBe($result);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertDontSee('nested-private-sentinel');
+})->with(['backend', 'error_code', 'row_count', 'truncated']);

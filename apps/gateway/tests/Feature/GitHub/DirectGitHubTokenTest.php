@@ -235,3 +235,69 @@ it('rechecks the requested run after refreshing before any GitHub mint', functio
     Http::assertNothingSent();
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
 });
+
+it('revokes a freshly minted credential when the intent changes during minting', function (string $change): void {
+    if ($change === 'grant') {
+        $reflection = new ReflectionClass(DirectOperation::class);
+        $definitions = $reflection->getProperty('definitions')->getValue(app(DirectOperation::class));
+        $definitions['route.private_dns_publish'] = [...$definitions[$this->operation->kind],
+            'github_token' => ['repository' => 'hardimpactdev/orbit', 'permissions' => ['contents' => 'read']]];
+        $direct = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('definitions')->setValue($direct, $definitions);
+        app()->instance(DirectOperation::class, $direct);
+    }
+    Http::fake(function (Request $request) use ($change) {
+        if ($request->method() === 'DELETE') {
+            expect($request->url())->toBe('https://api.github.com/installation/token');
+            expect($request->header('Authorization'))->toBe(['Bearer ephemeral-sentinel']);
+
+            return Http::response(null, 204);
+        }
+        if ($request->method() === 'GET') {
+            return Http::response(['id' => 7]);
+        }
+        $changes = match ($change) {
+            'cancel' => ['cancel_requested_at' => now()],
+            'terminal' => ['status' => OperationStatus::Succeeded],
+            'node' => ['node_id' => $this->gateway->id],
+            'run' => ['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']],
+            'writer' => ['state' => ['route_publication_writer' => 'polled', 'swamp_run_id' => $this->runId]],
+            'grant' => ['kind' => 'route.private_dns_publish'],
+        };
+        $this->operation->update($changes);
+
+        return Http::response($this->reply, 201);
+    });
+
+    $this->getJson($this->path.'?'.http_build_query($this->body))
+        ->assertStatus(match ($change) {
+            'node' => 403, 'writer' => 422, default => 409
+        })
+        ->assertDontSee('ephemeral-sentinel');
+
+    Http::assertSentCount(3);
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+})->with(['cancel', 'terminal', 'node', 'run', 'writer', 'grant']);
+
+it('keeps a stale mint refused when revocation fails and logs only a fixed code', function (bool $throws): void {
+    Http::fake(function (Request $request) use ($throws) {
+        if ($request->method() === 'GET') {
+            return Http::response(['id' => 7]);
+        }
+        if ($request->method() === 'POST') {
+            $this->operation->update(['cancel_requested_at' => now()]);
+
+            return Http::response($this->reply, 201);
+        }
+        if ($throws) {
+            throw new ConnectionException('private-upstream-sentinel');
+        }
+
+        return Http::response(['message' => 'private-upstream-sentinel'], 503);
+    });
+
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertConflict()
+        ->assertJsonPath('error.code', 'operation.github_token_forbidden')->assertDontSee('ephemeral-sentinel');
+    expect(array_column($this->logs, 0))->toContain('operation.github_token_revoke_failed');
+    expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
+})->with([false, true]);

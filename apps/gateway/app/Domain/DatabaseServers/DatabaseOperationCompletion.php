@@ -16,7 +16,6 @@ use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Operation;
-use App\Models\Process;
 use App\Support\ValidatedData;
 
 final readonly class DatabaseOperationCompletion implements OperationCompletion
@@ -56,10 +55,6 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
             $connection = DatabaseConnection::query()->findOrFail($id);
             $connection->delete();
             $this->broadcaster->broadcast(RecordEventType::DatabaseDeleted, $id, ['id' => $id, 'slug' => $connection->slug]);
-        }
-        if ($projection['delete_server'] ?? false) {
-            $server?->delete();
-            Process::query()->whereKey($projection['process_id'] ?? null)->delete();
         }
         if (isset($projection['created_connection'])) {
             $connection = DatabaseConnection::query()->findOrFail($projection['created_connection']);
