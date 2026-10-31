@@ -30,6 +30,8 @@ import {
   runProductionDeploy,
 } from "./deploy_production.ts";
 
+import { rollbackDirect } from "./rollback_direct.ts";
+
 const Args = DirectArgs.extend({
   kind: z.literal("instance.deploy"),
   node_id: z.number().int().positive(),
@@ -65,6 +67,7 @@ type Context = {
 };
 class Refused extends Error {}
 type Ports = {
+  rollback?: Parameters<typeof rollbackDirect>[0];
   http?: (ctx: Context) => Http;
   source?: DeploySourceLocal;
   inspectRunner?: typeof inspectDeployRunner;
@@ -80,11 +83,13 @@ type Ports = {
 /** Native development deploy; the admitted environment selects its configured Node account. */
 export function deployDirect(ports: Ports = {}) {
   const now = ports.now ?? Date.now;
+  const rollback = rollbackDirect(ports.rollback);
   return {
     type: "@nckrtl/instance-deploy-direct",
-    version: "2026.10.31.4",
+    version: "2026.10.31.5",
     globalArguments: Globals,
     resources: {
+      rollbackExecution: rollback.resources.rollbackExecution,
       activeExecution: {
         description:
           "Public pointer to the same model's active deployment effect",
@@ -108,6 +113,8 @@ export function deployDirect(ports: Ports = {}) {
       },
     },
     methods: {
+      rollback: rollback.methods.run,
+      rollbackFailure: rollback.methods.failure,
       failure: {
         description:
           "Settle a failed root only when its effect checkpoint is inactive",
