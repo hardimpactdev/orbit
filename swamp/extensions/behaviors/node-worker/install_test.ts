@@ -230,3 +230,18 @@ Deno.test("rendered worker policy retains retry, credential custody, sudo accoun
   ) assertEquals(unit.includes(value), true);
   assertEquals(unit.includes("orbit-agent"), false);
 });
+
+Deno.test("only the Node209 worker receives the approved existing SSH identity", () => {
+  const directive =
+    "LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519\n";
+  const control = workerUnit({ node_id: 209, user: "orbit" });
+  assertEquals(control.split(directive).length - 1, 1);
+  assertEquals(control.includes("LoadCredential=enrollment:"), true);
+  assertEquals(control.includes("LoadCredential=server:"), true);
+  for (const node_id of [1, 9, 13, 14, 18]) {
+    assertEquals(
+      workerUnit({ node_id, user: "orbit" }).includes("proxy-ssh-identity"),
+      false,
+    );
+  }
+});

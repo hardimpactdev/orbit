@@ -6,7 +6,7 @@ Workflow overrides belong under `task.globalArgs`, with the complete `name`, `tr
 
 The canary keeps its existing workflow UUID. It has separate identity, directory, write, read, remove-file and remove-directory steps. All execute on `orbit-node-209` with the string Node209 label. `exec` receives public argv; `script` sends its body over stdin. Root effects use `sudo: true`. Each run has its own runtime directory. Cleanup follows failed read/write outcomes through native dependencies.
 
-The approved key path is `/etc/orbit/node-proxy/id_ed25519`. The current normal worker cannot read its root0600 file. This source does not change that custody or invent another identity. Live canaries stay blocked until the orchestrator and sole issuer provide an approved existing-key route. An approved whole vault expression may replace identityFile with identityContent through the official interface.
+Node209’s `orbit-node-worker.service` loads the approved existing key with `LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519`. Official SSH uses `identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity`. Only Node209 receives this credential. Systemd exposes it to the configured worker account after restart; the source key stays root-owned 0600. Worker-wide read scope is approved. This uses the same key and existing VPN1/usexit18 access edges, with no new vault, grant or key.
 
 Script environment uses OpenSSH SendEnv. Remote AcceptEnv and, for root scripts, sudo env_keep must allow each variable. The canary needs neither. Keep secrets out of argv and script bodies; use only the official stdin or documented environment support.
 
@@ -18,3 +18,5 @@ Script environment uses OpenSSH SendEnv. Remote AcceptEnv and, for root scripts,
 4. Remove the obsolete proxy installer/renewal source and selections, then let the sole issuer retire only their worker credentials. Preserve the approved SSH key and public host keys for official SSH. Do not delete the whole proxy directory.
 
 This is a removal plan, not authorization to stop units, revoke credentials or change key custody. No Serve restart or worker binary upgrade belongs to this migration.
+
+Apply the rendered Node209 unit in an ordinary maintenance window. Check `gateway-release-auto-status` and announce the worker restart before applying it; never restart during a Gateway release handoff. Verify the worker reconnects and its systemd credential is readable without printing the key. After normal source publication, run VPN1 identity/effect/cleanup first, then usexit18.
