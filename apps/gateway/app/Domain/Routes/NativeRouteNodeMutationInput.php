@@ -16,7 +16,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Complete Route supplier for the owning Node admission; no Operation or Node mutation.
- * @phpstan-type CapturedRoute array{route_id:int,domain:string,intent:array<string,mixed>,sites:list<DevelopmentSite>,url_writes:list<array{node_id:int,instance_id:int,name:string,input:array<string,mixed>}>,lan:list<array<string,mixed>>}
+ * @phpstan-type CapturedRoute array{route_id:int,domain:string,intent:array<string,mixed>,sites:list<DevelopmentSite>,url_writes:list<array{node_id:int,instance_id:int,name:string,input:array<string,mixed>}>}
  */
 final readonly class NativeRouteNodeMutationInput
 {
@@ -150,21 +150,19 @@ final readonly class NativeRouteNodeMutationInput
                     $restore['cleanup'] = $cleanup;
                 }
             }
-            $allLan = array_values(array_unique([...RouteExecutionProof::objects($forward['lan']), ...RouteExecutionProof::objects($restore['lan'])], SORT_REGULAR));
-            foreach (['forward', 'restore'] as $side) {
-                $selected = $side === 'forward' ? $forward : $restore;
-                $retire = [];
-                foreach ($allLan as $rule) {
-                    $key = ValidatedData::integer($rule['node_id']).':'.ValidatedData::integer($rule['route_id']).':'.ValidatedData::string($rule['destination']);
-                    $keep = array_values(array_map(static fn (array $kept): string => ValidatedData::string($kept['router']),
-                        array_filter(RouteExecutionProof::objects($selected['lan']), static fn (array $kept): bool => $kept['node_id'] === $rule['node_id'] && $kept['route_id'] === $rule['route_id'] && $kept['destination'] === $rule['destination'])));
-                    $retire[$key] = ['node_id' => $rule['node_id'], 'route_id' => $rule['route_id'], 'destination' => $rule['destination'], 'operation' => 'retire', 'keep' => $keep];
+            $lanPolicy = app(NativeRouteLanInput::class);
+            $forward['lan'] = $restore['lan'] = $forward['retire_lan'] = $restore['retire_lan'] = [];
+            foreach ($nodeIds as $nodeId) {
+                $node = Node::query()->findOrFail($nodeId);
+                $prior = $lanPolicy->forSites($node, $beforeSites);
+                $desired = $lanPolicy->forSites($node, $afterSites);
+                $union = array_values(array_unique([...$prior, ...$desired], SORT_REGULAR));
+                if ($union === []) {
+                    continue;
                 }
-                if ($side === 'forward') {
-                    $forward['retire_lan'] = array_values($retire);
-                } else {
-                    $restore['retire_lan'] = array_values($retire);
-                }
+                $forward['lan'][] = $restore['lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes([], $union), 'migrate' => $lanPolicy->migrationPending($nodeId)];
+                $forward['retire_lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes($union, $desired), 'migrate' => false];
+                $restore['retire_lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes($union, $prior), 'migrate' => false];
             }
             $certificates = $allLeaves;
             if ($certificates !== []) {
@@ -230,18 +228,8 @@ final readonly class NativeRouteNodeMutationInput
                 $writes[] = ['node_id' => $nodeId, ...$write];
             }
         }
-        $lan = [];
-        $routerId = $intent['router_node_id'];
-        if (is_int($routerId)) {
-            foreach ($route->targets as $target) {
-                $rule = app(RouteHopInput::class)->firewall($target->instance, $route, Node::query()->findOrFail($routerId), $target->instance->node_id);
-                if ($rule !== null) {
-                    $lan[] = ['node_id' => $target->instance->node_id, 'route_id' => $rule['route_id'], 'operation' => 'converge', 'router' => $rule['router'], 'destination' => $rule['workload']];
-                }
-            }
-        }
 
-        return ['route_id' => $route->id, 'domain' => $route->domain, 'intent' => $intent, 'sites' => $this->sites->routeSites($route), 'url_writes' => $writes, 'lan' => $lan];
+        return ['route_id' => $route->id, 'domain' => $route->domain, 'intent' => $intent, 'sites' => $this->sites->routeSites($route), 'url_writes' => $writes];
     }
 
     /** @param list<CapturedRoute> $routes
@@ -253,10 +241,8 @@ final readonly class NativeRouteNodeMutationInput
     {
         $writes = [];
         $certificates = [];
-        $lan = [];
         foreach ($routes as $route) {
             $certificates = [...$certificates, ...RouteExecutionProof::objects($route['intent']['certificates'])];
-            $lan = [...$lan, ...$route['lan']];
             foreach ($route['url_writes'] as $write) {
                 $field = 'route_material_'.count($secrets);
                 $private = array_intersect_key($write['input'], array_flip(['content', 'app_key', 'app_name']));
@@ -278,6 +264,6 @@ final readonly class NativeRouteNodeMutationInput
 
         return ['routes' => array_map(static fn (array $row): array => ['route_id' => $row['route_id'], 'domain' => $row['domain'], 'node_ids' => $row['intent']['node_ids'],
             'certificate_scopes' => array_map(static fn (array $leaf): array => array_intersect_key($leaf, array_flip(['node_id', 'scope'])), RouteExecutionProof::objects($row['intent']['certificates']))], $routes),
-            'certificates' => $certificates, 'url_writes' => $writes, 'publications' => $publications, 'lan' => array_values(array_unique($lan, SORT_REGULAR))];
+            'certificates' => $certificates, 'url_writes' => $writes, 'publications' => $publications];
     }
 }

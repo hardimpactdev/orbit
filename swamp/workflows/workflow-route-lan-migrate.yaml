@@ -1,0 +1,173 @@
+id: 612ea82d-eaaa-4c4b-807a-60e35822472d
+name: route-lan-migrate
+description: One-time approved removal of old Route-tagged rules after official tuple convergence.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+      properties:
+        rule:
+          type: object
+        control_node_id:
+          type: integer
+          const: 209
+        connection:
+          type: object
+        host_keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
+      required:
+      - rule
+      - control_node_id
+      - connection
+      - host_keys
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: lan
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-assets-" + run.id }}
+      methodName: lanMigration
+      inputs: {}
+  - name: prepare-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - -m
+        - '0700'
+        - ${{ "/tmp/orbit-route-" + run.id }}
+  - name: copy-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: write
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-write-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_ROUTE_INPUT=' + string(steps.assets.outputs.input_json) }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/route_lan.py" }}
+        sudo: true
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
+  - name: cleanup-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: write
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - ${{ "/tmp/orbit-route-" + run.id }}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: write
+      condition:
+        type: succeeded
+    - step: cleanup-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-lan-result-" + run.id }}
+      methodName: lanMigrationResult
+      inputs:
+        stdout: ${{ steps.write.outputs.stdout }}
