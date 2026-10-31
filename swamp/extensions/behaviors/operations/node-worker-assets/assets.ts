@@ -55,7 +55,7 @@ export async function assets(
 }
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
     },
