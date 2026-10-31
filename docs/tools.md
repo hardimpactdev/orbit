@@ -4,7 +4,9 @@ The Gateway validates and records `tool.install`, `tool.update`, `tool.remove`,
 `tool.adopt` and `tool.manager_converge` intent. It starts `operation-tool-direct`
 and projects bounded native results into manager and Tool records.
 
-Swamp runs fixed typed actions on the admitted Node. Install refuses silent
+Every write uses the exact admitted orbit-node-N worker and matching node
+label, including update, remove, adopt and manager convergence. Swamp runs fixed
+system commands on that Node, without agent actions. Install refuses silent
 adoption. Adoption observes one package without changing it. Constraints gate
 normal candidates; removal checks the exact root and verifies absence without
 autoremove. Manager materialization is a native action. Scan reads inventory

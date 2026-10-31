@@ -16,7 +16,6 @@ export const Identity = z.object({
 });
 export const ToolIntentInput = Input.extend({
   user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const Result = z.object({
   status: z.enum(["succeeded", "failed", "cancelled"]),
