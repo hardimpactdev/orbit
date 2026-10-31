@@ -21,6 +21,7 @@ jobs:
             kinds: [
               "fleet.recipe",
               "fleet.rollout",
+              "fleet.recipe_pr",
               "fleet.cli_converge",
             ]
             worker: "${{ run.id }}"

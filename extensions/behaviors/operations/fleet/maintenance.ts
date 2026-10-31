@@ -128,40 +128,22 @@ export async function maintenance(
     }
   });
   await independently(async () => {
-    if (minute % 5 !== 0) return;
     const prPlan = z.object({
       status: z.string(),
-      writer: z.string().default("polled"),
-      recipe_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-      serving_recipe_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-      base_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
       date: z.string().optional(),
       pulls: z.array(
         z.object({
           number: z.number(),
           variant: z.string(),
           head_sha: z.string(),
-          checks: z.enum([
-            "passed",
-            "failed",
-            "pending",
-            "missing",
-            "unreadable",
-          ]).optional(),
-          checks_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-          policy_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
         }),
       ).default([]),
     }).parse(await request("GET", "/api/v1/fleet/recipe-pr/plan"));
-    if (
-      prPlan.status === "ready" && prPlan.writer === "direct" &&
-      prPlan.recipe_revision && prPlan.serving_recipe_revision &&
-      prPlan.base_revision
-    ) {
+    if (prPlan.status === "ready") {
       if (hour >= 3 && minute % 5 === 0) {
         for (const variant of ["snapshot", "artifacts"]) {
-          await request(
-            "POST",
+          await admit(
+            `open-${variant}-${prPlan.date}`,
             "/api/v1/fleet/recipe-pr",
             {
               action: "open",
@@ -170,51 +152,18 @@ export async function maintenance(
               head_sha: "",
               date: prPlan.date,
             },
-            `fleet:recipe-pr:open:${prPlan.date}:${variant}:${prPlan.serving_recipe_revision}`,
+            false,
           );
         }
       }
-      // The native behavior lock serializes GitHub writes; each action rechecks its admitted head.
+      // Each PR has one active Operation; each action revalidates the exact App head.
       // The merge command checks retirement first, including on this cadence’s merge tick.
       const action =
         ["retire", "update", "merge"][Math.floor(at.getTime() / 60_000) % 3];
       for (const pull of prPlan.pulls) {
-        if (!pull.checks || !pull.checks_revision || !pull.policy_revision) {
-          throw new Error("fleet.recipe_pr_plan_incomplete");
-        }
-        if (
-          action === "update" &&
-          (pull.variant !== "snapshot" || pull.checks !== "failed")
-        ) continue;
-        if (
-          action === "merge" && pull.variant === "snapshot" &&
-          pull.checks !== "passed"
-        ) continue;
-        const evidence = action === "retire"
-          ? [
-            prPlan.recipe_revision,
-            prPlan.pulls.map((candidate) =>
-              `${candidate.number}:${candidate.head_sha}:${candidate.policy_revision}`
-            ).sort(),
-          ]
-          : action === "update"
-          ? [prPlan.base_revision, pull.checks_revision]
-          : pull.variant === "artifacts"
-          ? [prPlan.recipe_revision, pull.checks_revision]
-          : [pull.checks_revision];
-        const digest = Array.from(
-          new Uint8Array(
-            await crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(
-                JSON.stringify([pull.head_sha, pull.policy_revision, evidence]),
-              ),
-            ),
-          ),
-          (byte) => byte.toString(16).padStart(2, "0"),
-        ).join("");
-        await request(
-          "POST",
+        if (action === "update" && pull.variant !== "snapshot") continue;
+        await admit(
+          `pr-${pull.number}-${prPlan.date}-${pull.head_sha}`,
           "/api/v1/fleet/recipe-pr",
           {
             action,
@@ -223,7 +172,7 @@ export async function maintenance(
             head_sha: pull.head_sha,
             date: prPlan.date,
           },
-          `fleet:recipe-pr:${prPlan.date}:${action}:${pull.number}:${digest}`,
+          true,
         );
       }
     }
