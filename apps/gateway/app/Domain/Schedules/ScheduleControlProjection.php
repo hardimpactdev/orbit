@@ -67,7 +67,7 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         $result = match ($status) {
             OperationStatus::Succeeded => ['ready' => true],
-            OperationStatus::Failed => ['error_code' => $code],
+            OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };
 
@@ -80,6 +80,7 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
                     OperationStatus::Succeeded => OperationOutcome::succeeded($result),
                     OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
                     OperationStatus::Cancelled => OperationOutcome::cancelled(),
+                    OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
                     default => throw new \LogicException('A terminal Schedule status is required.'),
                 };
                 $this->completion->complete($projected, $outcome);

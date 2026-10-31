@@ -103,8 +103,6 @@ jobs:
   steps:
   - name: assets
     target: orbit-node-209
-    labels: &id001
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -114,7 +112,6 @@ jobs:
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-assets" }}
   - name: workspace
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -137,7 +134,6 @@ jobs:
         type: succeeded
   - name: configure
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -163,7 +159,6 @@ jobs:
         type: succeeded
   - name: login
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -188,7 +183,6 @@ jobs:
         type: succeeded
   - name: unlock
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -213,7 +207,6 @@ jobs:
         type: succeeded
   - name: sync
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -238,7 +231,6 @@ jobs:
         type: succeeded
   - name: inventory
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -264,7 +256,6 @@ jobs:
         type: succeeded
   - name: trash
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -290,7 +281,6 @@ jobs:
         type: succeeded
   - name: plan
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -312,7 +302,6 @@ jobs:
   steps:
   - name: delete
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -344,7 +333,6 @@ jobs:
   steps:
   - name: write
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -376,7 +364,6 @@ jobs:
   steps:
   - name: logout
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -398,7 +385,6 @@ jobs:
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
   - name: remove-cache
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -428,7 +414,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'

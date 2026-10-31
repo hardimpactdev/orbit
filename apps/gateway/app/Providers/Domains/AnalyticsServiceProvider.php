@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
-use App\Domain\Analytics\AnalyticsManagementCredentialsSource;
 use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsRuntimeEnvironmentSource;
@@ -35,7 +34,7 @@ final class AnalyticsServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([AnalyticsRuntimeEnvironmentSource::class, AnalyticsManagementCredentialsSource::class], OperationSecretSource::class);
+        $this->app->tag([AnalyticsRuntimeEnvironmentSource::class], OperationSecretSource::class);
         $this->app->tag([AnalyticsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([AnalyticsProcessOwnership::class], ProcessRemovalGuard::class);

@@ -234,3 +234,35 @@ function direct_sign_csr(string $domain = 'example.orbit', int $bits = 2048, boo
         unlink($configuration);
     }
 }
+
+it('signs only the captured Route update phase when one stable scope changes domain', function (bool $restoring): void {
+    $prior = [...$this->leaf, 'domain' => 'before.orbit'];
+    $input = ['certificates' => [$this->leaf, $prior], 'route_update' => ['route_mutations' => [
+        'forward' => ['prepare_certificates' => [$this->leaf], 'certificates' => [$this->leaf]],
+        'restore' => ['certificates' => [$prior]],
+    ]]];
+    $this->operation->update(['kind' => 'route.update', 'input' => $input]);
+    $this->body['restoring'] = $restoring;
+    $domain = $restoring ? 'before.orbit' : 'example.orbit';
+    $this->body['requests'][0]['request_base64'] = base64_encode(direct_sign_csr($domain));
+    $response = $this->postJson($this->path, $this->body)->assertOk();
+    $certificate = base64_decode($response->json('data.certificates.0.certificate_base64'), true);
+    expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain)
+        ->and($this->operation->fresh()->input)->toBe($input);
+})->with([false, true]);
+
+it('does not grant Route update signing authority from the opposite phase or a flat fallback', function (bool $missing): void {
+    $prior = [...$this->leaf, 'domain' => 'before.orbit'];
+    $input = ['certificates' => [$this->leaf, $prior]];
+    if (! $missing) {
+        $input['route_update'] = ['route_mutations' => [
+            'forward' => ['prepare_certificates' => [$this->leaf], 'certificates' => [$this->leaf]],
+            'restore' => ['certificates' => [$prior]],
+        ]];
+    }
+    $this->operation->update(['kind' => 'route.update', 'input' => $input]);
+    $this->body['requests'][0]['request_base64'] = base64_encode(direct_sign_csr('before.orbit'));
+    $this->postJson($this->path, $this->body)->assertStatus($missing ? 403 : 422)
+        ->assertJsonPath('error.code', $missing ? 'certificate.intent_missing' : 'certificate.request_invalid');
+    expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+})->with([false, true]);

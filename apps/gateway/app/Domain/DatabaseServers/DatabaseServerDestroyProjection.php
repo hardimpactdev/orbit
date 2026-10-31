@@ -56,7 +56,7 @@ final readonly class DatabaseServerDestroyProjection implements DirectOperationP
                 if (! ($input['record_only'] ?? false)) {
                     Process::query()->whereKey($input['process_id'])->delete();
                 }
-            } elseif (! $terminal && in_array($status, ['failed', 'cancelled'], true)) {
+            } elseif (! $terminal && in_array($status, ['failed', 'cancelled', 'interrupted'], true)) {
                 DatabaseServer::query()->whereKey($operation->target_id)->update([
                     'status' => 'failed', 'error_code' => $data['error_code'] ?? null, 'failed_step' => 'database-apply',
                 ]);

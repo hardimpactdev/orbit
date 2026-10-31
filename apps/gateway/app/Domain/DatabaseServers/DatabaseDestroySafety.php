@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
 use App\Models\Operation;
@@ -37,7 +38,7 @@ final readonly class DatabaseDestroySafety
     public function assertAcceptsCreates(DatabaseServer $server): void
     {
         $operations = Operation::query()->whereIn('kind', ['database.destroy', 'database.destroy_owned', 'instance.destroy'])
-            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->get();
+            ->whereNotIn('status', OperationStatus::terminalValues())->get();
         foreach ($operations as $operation) {
             $direct = $operation->target_type === 'database_server' && $operation->target_id === $server->id;
             $servers = $operation->kind === 'instance.destroy'
@@ -54,9 +55,9 @@ final readonly class DatabaseDestroySafety
     {
         if (Operation::query()->whereIn('kind', ['database.create', 'database_user.create', 'database.clone'])
             ->where('target_type', 'database_server')->where('target_id', $server->id)
-            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()
             || Operation::query()->where('kind', 'database.clone')->where('input->server_id', $server->id)
-                ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+                ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             throw new ResourceOperationException('database.server_in_use', 'Database creation is unfinished on this server.', 409);
         }
     }

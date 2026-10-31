@@ -49,7 +49,8 @@ class RouteMutationFixture(NativeTestCase):
             "url_writes": [{"node_id": 9, "secret_field": "route_material_0"}],
             "lan": [{"node_id": 9}],
             "retire_lan": [{"node_id": 9}],
-            "ingress": [], "retire_ingress": [],
+            "ingress": [],
+            "retire_ingress": [],
             "publications": [
                 {
                     "node_id": node,
@@ -168,7 +169,6 @@ print('{"ready":true}')
         return json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
 
 
-
 class RouteMutationNative(RouteMutationFixture):
     def test_multi_item_parent_requires_every_public_contribution(self):
         self.parent()
@@ -190,15 +190,17 @@ class RouteMutationNative(RouteMutationFixture):
         )
 
     def test_empty_optional_fanouts_do_not_skip_required_publication(self):
-        self.plan['lan'] = []
-        self.plan['url_writes'] = []
-        self.plan['cleanup'] = []
-        self.plan['retire_lan'] = []
+        self.plan["lan"] = []
+        self.plan["url_writes"] = []
+        self.plan["cleanup"] = []
+        self.plan["retire_lan"] = []
         self.parent()
         history = self.run_parent()
-        result = next(step for step in history['jobs'][0]['steps'] if step['name'] == 'forward-0')
-        self.assertTrue(result['outputs']['ready'])
-        self.assertEqual(result['outputs']['contributions']['forward_lan'], 0)
+        result = next(
+            step for step in history["jobs"][0]["steps"] if step["name"] == "forward-0"
+        )
+        self.assertTrue(result["outputs"]["ready"])
+        self.assertEqual(result["outputs"]["contributions"]["forward_lan"], 0)
 
     def test_false_guard_creates_no_effects_and_no_completion_claim(self):
         self.parent(guard="false")
@@ -231,6 +233,14 @@ class RouteMutationNative(RouteMutationFixture):
 
 class RouteEnvironmentNative(NativeTestCase):
     def test_real_vault_environment_write_returns_public_result(self):
+        self.environment_write(False)
+
+    def test_route_update_root_allows_its_native_vault_child_without_public_secret_output(
+        self,
+    ):
+        self.environment_write(True)
+
+    def environment_write(self, update_parent):
         import pwd
         import tempfile
 
@@ -313,11 +323,79 @@ class RouteEnvironmentNative(NativeTestCase):
             "connection": connection,
             "host_keys": [PIN],
         }
+        name = "route-environment-write"
+        if update_parent:
+            self.copy_behaviors("operations/routes/update-command")
+            parent = yaml.safe_load(
+                (ROOT / "workflows/workflow-operation-route-update.yaml").read_text()
+            )
+            for step in parent["jobs"][0]["steps"]:
+                step.pop("target", None)
+                step.pop("labels", None)
+            (self.repo / "workflows/workflow-operation-route-update.yaml").write_text(
+                yaml.safe_dump(parent, sort_keys=False)
+            )
+            value["kind"] = "route.update"
+            for mode in ("forward", "restore"):
+                phase = {
+                    "id": "b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7"
+                    if mode == "forward"
+                    else "f11fa84e-418c-44cf-86d9-a84f46ef0146",
+                    "name": "route-mutation-" + mode,
+                    "inputs": {"type": "object"},
+                    "jobs": [
+                        {
+                            "name": "write",
+                            "steps": [
+                                {
+                                    "name": mode + "-0",
+                                    "task": {
+                                        "type": "workflow",
+                                        "workflowIdOrName": "route-environment-write",
+                                        "inputs": value,
+                                    },
+                                },
+                                {
+                                    "name": "result",
+                                    "dependsOn": [
+                                        {
+                                            "step": mode + "-0",
+                                            "condition": {"type": "succeeded"},
+                                        }
+                                    ],
+                                    "task": {
+                                        "type": "behavior",
+                                        "behaviorType": "@nckrtl/route-update-result",
+                                        "behaviorName": "route-update-vault-phase",
+                                        "methodName": "phase",
+                                        "inputs": {
+                                            "mode": mode,
+                                            "steps": "${{ steps }}",
+                                        },
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                }
+                (
+                    self.repo / ("workflows/workflow-route-mutation-" + mode + ".yaml")
+                ).write_text(yaml.safe_dump(phase, sort_keys=False))
+            value = {
+                **value,
+                "intent": {
+                    "effectful": True,
+                    "route_id": 31,
+                    "result_route_id": 32,
+                    "workloads": [],
+                },
+            }
+            name = "operation-route-update"
         reply = json.loads(
             self.cli(
                 "workflow",
                 "run",
-                "route-environment-write",
+                name,
                 "--input",
                 json.dumps(value),
             ).stdout
@@ -327,4 +405,7 @@ class RouteEnvironmentNative(NativeTestCase):
         self.assertIn("APP_URL=https://new.test", (path / ".env").read_text())
         self.assertIn("APP_KEY=keep-current", (path / ".env").read_text())
         result = history["jobs"][0]["steps"][-1]["outputs"]
-        self.assertEqual(result, {"ready": True, "route_id": 31, "instance_id": 33})
+        if update_parent:
+            self.assertTrue(json.loads(result["stdout"])["ready"])
+        else:
+            self.assertEqual(result, {"ready": True, "route_id": 31, "instance_id": 33})

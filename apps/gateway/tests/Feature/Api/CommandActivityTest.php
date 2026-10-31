@@ -25,7 +25,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
@@ -48,7 +47,6 @@ use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeToolManager;
-use Tests\Support\FakeToolManagerMaterializer;
 
 it('records environment commands without submitted imported or rejected values', function (): void {
     $submitted = 'arbitrary-submitted-value';
@@ -639,7 +637,6 @@ it('records node access add and remove commands against the serving node and pre
 });
 
 it('records node role commands against the node with bounded inputs and stable failures', function (): void {
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(NodeConverger::class, new FakeNodeConverger);
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'role-activity-gateway',
@@ -751,7 +748,6 @@ it('records node role commands against the node with bounded inputs and stable f
 });
 
 it('records complete SDK role removal input on success and before authentication', function (): void {
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(NodeReachabilityProbe::class, new class implements NodeReachabilityProbe
     {
         public function degradation(Node $node): ?ExporterDegradationReason

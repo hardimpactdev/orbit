@@ -10,6 +10,7 @@ use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Data\Tasks\TaskWorkerData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
@@ -142,6 +143,6 @@ final readonly class TaskOperations
     {
         return Operation::query()->where(fn (Builder $q) => $q->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))
             ->orWhere(fn (Builder $q) => $q->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-                ->where('state->task_park_writer', 'direct')->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])));
+                ->where('state->task_park_writer', 'direct')->whereNotIn('status', OperationStatus::terminalValues())));
     }
 }

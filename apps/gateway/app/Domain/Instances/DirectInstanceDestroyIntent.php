@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\DatabaseConnections\PrepareOwnedDatabaseDestructionAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -52,7 +53,7 @@ final readonly class DirectInstanceDestroyIntent
         $members = InstanceLifecycleInput::members($input);
         if (Operation::query()->whereIn('kind', ['instance.destroy'])
             ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
-            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
         }
         $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();

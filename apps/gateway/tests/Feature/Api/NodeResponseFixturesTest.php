@@ -9,7 +9,6 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -17,7 +16,6 @@ use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
-use Tests\Support\FakeToolManagerMaterializer;
 
 /**
  * Records the node family responses that the CLI replays. Data is deterministic on purpose:
@@ -25,7 +23,6 @@ use Tests\Support\FakeToolManagerMaterializer;
  */
 describe('node response fixtures', function (): void {
     beforeEach(function (): void {
-        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
         {
             public function converge(Node $node, NodeRole $assignment): void {}

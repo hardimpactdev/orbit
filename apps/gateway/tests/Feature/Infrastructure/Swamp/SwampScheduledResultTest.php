@@ -10,6 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
+use App\Infrastructure\Swamp\SwampScheduledResults;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Cache;
@@ -195,17 +196,19 @@ it('projects a discovered native scheduled result end to end through the existin
     config(['swamp.run_token' => 'fixture.events']);
     Cache::flush();
     $events = new FakeSwampEventSocket;
-    $subscriber = new SwampRunSubscriber($events, new NullLogger);
+    $subscriber = new SwampRunSubscriber(new FakeSwampEventSocket, new NullLogger, scheduled: new SwampScheduledResults($events, new NullLogger));
     $subscriber->pass();
-    $feed = $events->sent[0];
+    $read = $events->sent[0];
+    $events->push(['type' => 'workflow.get', 'id' => $read['id'], 'payload' => ['data' => [
+        'id' => scheduledObservationDeclaration()['workflow_id'], 'name' => 'task-check-ci',
+    ]]]);
+    $subscriber->pass();
+    $feed = array_last($events->sent);
+    $this->row['result']['pending'] = false;
     $events->push(['type' => 'commits.subscribe', 'id' => $feed['id'], 'payload' => ['cursor' => 4, 'head' => 4, 'done' => false,
         'changes' => [['cursor' => 4, 'commit' => ['ops' => [['intent' => ['kind' => 'run.update', 'run' => [
             'workflowId' => scheduledObservationDeclaration()['workflow_id'], 'runId' => $this->scheduled,
         ]]]]]]]]]);
-    $subscriber->pass();
-    $request = array_last($events->sent);
-    $this->row['result']['pending'] = false;
-    $events->push(['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'not_found']]);
     $subscriber->pass();
 
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Succeeded);
@@ -213,3 +216,35 @@ it('projects a discovered native scheduled result end to end through the existin
     expect($this->operation->fresh()->state['swamp_scheduled_result']['run_id'])->toBe($this->scheduled);
     expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.history.get']);
 });
+
+it('keeps a newer scheduled pending observation when startup replays the original admission result', function (): void {
+    $this->row['result']['ci']['observed'] = 'newer-observation';
+    $step = app(SwampCommandStep::class);
+    $step->projectScheduledTerminal(scheduledObservationDeclaration()['workflow_id'], ['id' => $this->scheduled]);
+    $sequence = $this->operation->fresh()->sequence;
+    $newerResult = $this->operation->fresh()->result;
+    $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $this->original, 'workflowName' => 'operation-test-check', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->operation->node_id, 'kind' => $this->operation->kind],
+        'startedAt' => '2026-10-31T23:59:00Z', 'completedAt' => '2026-10-31T23:59:01Z',
+        'jobs' => [['name' => 'check', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode(['check_id' => 17, 'pending' => true])]]]]],
+    ]]]];
+    config(['swamp.run_token' => 'fixture.events']);
+    $events = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($events, new NullLogger);
+    $subscriber->pass();
+    $attach = array_values(array_filter($events->sent, fn (array $message): bool => $message['type'] === 'run.attach' && $message['payload']['runId'] === $this->original))[0];
+    $events->push(['type' => 'error', 'id' => $attach['id'], 'error' => ['code' => 'not_found']]);
+    $subscriber->pass();
+    expect($this->operation->fresh()->result)->toBe($newerResult);
+    expect($this->operation->fresh()->sequence)->toBe($sequence);
+    expect($this->operation->fresh()->state['swamp_scheduled_result']['run_id'])->toBe($this->scheduled);
+});
+
+it('retains nonterminal native hints until a later native commit supplies terminal history', function (string $status): void {
+    $this->history['status'] = $status;
+    $this->history['completedAt'] = null;
+    expect(app(SwampCommandStep::class)->projectScheduledTerminal(scheduledObservationDeclaration()['workflow_id'], ['id' => $this->scheduled]))->toBeFalse();
+    expect($this->operation->fresh()->sequence)->toBe(1);
+    expect($this->operation->fresh()->state)->toBe(['swamp_run_id' => $this->original]);
+})->with(['pending', 'running', 'suspended']);

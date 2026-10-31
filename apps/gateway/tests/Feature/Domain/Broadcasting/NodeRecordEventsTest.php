@@ -14,15 +14,12 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\Event;
-use Tests\Support\FakeToolManagerMaterializer;
 
 describe('Node record events', function (): void {
     beforeEach(function (): void {
-        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
         {
             public function converge(Node $node, NodeRole $assignment): void {}

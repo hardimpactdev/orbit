@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Actions\Operations\CancelOperationAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Models\Operation;
@@ -22,7 +23,7 @@ final readonly class CancelTaskCheckAction
         $checkId = $check?->id;
         $check = $task->checks()->whereIn('status', [TaskCheckStatus::Running, TaskCheckStatus::Lost])->when($checkId !== null, fn ($query) => $query->whereKey($checkId))->latest('id')->first();
         $operation = $check === null ? null : Operation::query()->where('kind', 'tasks.check')->where('target_type', 'task_group')->where('target_id', $group->id)
-            ->where('input->check_id', $check->id)->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
+            ->where('input->check_id', $check->id)->whereNotIn('status', OperationStatus::terminalValues())->first();
         if (! $check instanceof TaskCheck || ! $operation instanceof Operation) {
             throw new ResourceOperationException('tasks.check_not_running', 'The task has no running check.', 409);
         }

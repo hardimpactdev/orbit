@@ -595,7 +595,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')
             ->toContain('- Vault: status, setup, sync, and teardown.')
             ->toContain(
-                '- Node: list, show, add, rename, settings update, WireGuard key set, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
+                '- Node: list, show, add, rename, settings update, WireGuard key set, standalone WireGuard hub converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',

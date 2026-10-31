@@ -1,7 +1,8 @@
 id: b1a5e413-5c52-4d05-966b-f78d57c2da06
 name: operation-route-update
 description: Immutable Route update and restoration through official209 publication children.
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:

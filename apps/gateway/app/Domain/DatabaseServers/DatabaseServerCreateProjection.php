@@ -72,7 +72,7 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
                 if (($id = $this->intent($operation)->payload['admission']['input']['adoption_connection_id'] ?? null) !== null) {
                     DatabaseConnection::query()->find(ValidatedData::integer($id))?->update(['database_server_id' => $server->id]);
                 }
-            } elseif (! $terminal && $server !== null && in_array($status, ['failed', 'cancelled'], true)) {
+            } elseif (! $terminal && $server !== null && in_array($status, ['failed', 'cancelled', 'interrupted'], true)) {
                 $admitted = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
                 if ($status === 'failed' && $code === 'database.server_adoption_refused'
                     && $admitted['created'] && $admitted['validate_existing'] && ! $admitted['was_active']

@@ -11,7 +11,7 @@ use stdClass;
 /** One parent Operation with its admitted input and native result. */
 final readonly class OperationResponse
 {
-    public const array TerminalStatuses = ['succeeded', 'failed', 'cancelled'];
+    public const array TerminalStatuses = ['succeeded', 'failed', 'cancelled', 'interrupted'];
 
     /**
      * @param  array<string, mixed>  $input
