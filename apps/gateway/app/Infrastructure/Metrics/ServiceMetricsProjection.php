@@ -40,9 +40,6 @@ final readonly class ServiceMetricsProjection
         $caddy = $selected && $roles->contains(RoleName::Ingress);
         $fpm = $selected && $roles->contains(RoleName::AppProd);
         $instances = array_values(Instance::query()->where('node_id', $node->id)
-            ->whereHas('node.roles', static fn ($query) => $query
-                ->where('role', RoleName::AppProd)
-                ->where('status', LifecycleStatus::Active))
             ->where('status', InstanceState::Active)
             ->whereNotNull('production_php_service')->whereNotNull('selected_php_version')
             ->with(['project', 'node'])->orderBy('id')->get()->all());
